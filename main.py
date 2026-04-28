@@ -8,6 +8,7 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
+from news_service import fetch_crypto_news
 from price_service import get_btc_price
 from storage import load_state, save_state
 from telegram import Update
@@ -141,11 +142,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
         if should_alert:
             try:
+                news_items = fetch_crypto_news(limit=5)
+
+                log(f"Fetched {len(news_items)} news items for AI context.")
+
                 message = await create_ai_alert_message(
                     previous_price=previous_price,
                     current_price=current_price,
                     price_change_percent=price_change_percent,
                     change_24h=change_24h,
+                    news_items=news_items,
                 )
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
