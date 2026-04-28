@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from gc import set_threshold
 
 from ai_agent_groq import create_ai_alert_message
 from alert_rules import calculate_price_change_percent, should_send_alert
@@ -11,7 +12,7 @@ from config import (
 from news_service import fetch_crypto_news
 from price_service import get_btc_price
 from storage import load_state, save_state
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 
@@ -33,6 +34,76 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
+
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    state = load_state()
+    alert_settings = get_alert_settings(state)
+
+    message = (
+        "Current alert settings ⚙️\n\n"
+        f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
+        f"Alert cooldown: {alert_settings['alert_cooldown_minutes']} minutes\n\n"
+        "Change them with:\n"
+        "/setthreshold 1.0\n"
+        "/setcooldown 30"
+    )
+
+    await update.message.reply_text(message)
+
+
+async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "Please provide a threshold value.\n\n" "Example:\n" "/setthreshold 1.0"
+        )
+        return
+
+    try:
+        threshold = float(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "Threshold must be a number.\n\n" "Example:\n" "/setthreshold 1.0"
+        )
+        return
+
+    if threshold <= 0:
+        await update.message.reply_text("Threshold must be greater than 0.")
+        return
+
+    state = load_state()
+    state["price_move_alert_percent"] = threshold
+    save_state(state)
+
+    await update.message.reply_text(
+        f"Price movement threshold updated to {threshold}% ✅"
+    )
+
+
+async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "Please provide cooldown in minutes.\n\n" "Example:\n" "/setcooldown 30"
+        )
+        return
+
+    try:
+        cooldown = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "Cooldown must be a whole number.\n\n" "Example:\n" "/setcooldown 30"
+        )
+        return
+
+    if cooldown < 0:
+        await update.message.reply_text("Cooldown cannot be negative.")
+        return
+
+    state = load_state()
+    state["alert_cooldown_minutes"] = cooldown
+    save_state(state)
+
+    await update.message.reply_text(f"Alert cooldown updated to {cooldown} minutes ✅")
 
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,15 +197,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         state["last_24h_change"] = change_24h
         state["last_checked_at"] = checked_at
 
+        alert_settings = get_alert_settings(state)
+
         movement_is_big_enough, cooldown_is_active, should_alert = should_send_alert(
             price_change_percent=price_change_percent,
-            threshold_percent=PRICE_MOVE_ALERT_PERCENT,
+            threshold_percent=alert_settings["price_move_alert_percent"],
             last_alert_at=state.get("last_alert_at"),
-            cooldown_minutes=ALERT_COOLDOWN_MINUTES,
+            cooldown_minutes=alert_settings["alert_cooldown_minutes"],
         )
         print(
             f"Raw change: {price_change_percent:.6f}%, "
-            f"threshold: {PRICE_MOVE_ALERT_PERCENT}%, "
+            f"threshold: {alert_settings['price_move_alert_percent']}%, "
             f"movement_is_big_enough: {movement_is_big_enough}, "
             f"cooldown_is_active: {cooldown_is_active}, "
             f"should_alert: {should_alert}"
@@ -187,6 +260,34 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         print(f"Automatic check error: {error}")
 
 
+def get_alert_settings(state: dict) -> dict:
+    """Get alert settings from state.json, fallback to config values."""
+    return {
+        "price_move_alert_percent": float(
+            state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)
+        ),
+        "alert_cooldown_minutes": int(
+            state.get("alert_cooldown_minutes", ALERT_COOLDOWN_MINUTES)
+        ),
+    }
+
+
+async def setup_bot_commands(app: Application) -> None:
+    """Set clickable command menu in Telegram."""
+    commands = [
+        BotCommand("start", "Show available commands"),
+        BotCommand("price", "Get current BTC price"),
+        BotCommand("status", "Show bot status and last saved BTC data"),
+        BotCommand("chatid", "Show your Telegram chat ID"),
+        BotCommand("settings", "Show current alert settings"),
+        BotCommand("setthreshold", "Change price movement threshold"),
+        BotCommand("setcooldown", "Change alert cooldown"),
+    ]
+
+    await app.bot.set_my_commands(commands)
+    log("Telegram command menu has been updated.")
+
+
 def main():
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN is missing. Check your .env file.")
@@ -203,6 +304,9 @@ def main():
     app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
+    app.add_handler(CommandHandler("settings", settings))
+    app.add_handler(CommandHandler("setthreshold", set_threshold))
+    app.add_handler(CommandHandler("setcooldown", set_cooldown))
 
     app.job_queue.run_repeating(
         automatic_price_check,
@@ -213,6 +317,7 @@ def main():
     log("Bot is running. Automatic BTC checks are enabled.")
     log("Open Telegram and send /start, /price, or /status.")
 
+    app.post_init = setup_bot_commands
     app.run_polling()
 
 

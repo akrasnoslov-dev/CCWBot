@@ -107,12 +107,13 @@ This is an early learning project created to practise building AI agents, Telegr
 
 ## Planned improvements
 
-* Add support for more cryptocurrencies (ETH, etc)
-* Add configurable alert settings from Telegram
-* Add news monitoring
-* Add stronger AI reasoning with structured outputs
-* Add deployment for 24/7 operation
-* Add persistent database instead of local JSON
-* Change threshold/cooldown from Telegram
-* Add clickable Telegram commands/buttons
+- Change threshold/cooldown from Telegram
+- Add configurable alert settings from Telegram
+- Add support for more cryptocurrencies
+- Add stronger AI reasoning with structured outputs
+- Add full news monitoring
+- Add persistent database instead of local JSON
+- Add deployment for 24/7 operation
+- Admin policy for commands
+
 
