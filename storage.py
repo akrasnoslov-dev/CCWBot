@@ -1,0 +1,24 @@
+import json
+
+
+STATE_FILE = "state.json"
+
+
+def load_state() -> dict:
+    """Read bot state from state.json."""
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {
+            "last_price": None,
+            "last_24h_change": None,
+            "last_checked_at": None,
+            "last_alert_at": None,
+        }
+
+
+def save_state(state: dict) -> None:
+    """Save bot state to state.json."""
+    with open(STATE_FILE, "w", encoding="utf-8") as file:
+        json.dump(state, file, indent=2)
