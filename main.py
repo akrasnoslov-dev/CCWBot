@@ -174,6 +174,8 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_price_message(update.message, requested_symbol)
     except CoinGeckoRateLimitError:
         await update.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+    except ValueError as error:
+        await update.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
         print(f"Price error: {error}")
@@ -226,6 +228,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except CoinGeckoRateLimitError:
         await query.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+    except ValueError as error:
+        await query.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
         log(f"Callback handling error: {error}")
         await query.message.reply_text("Sorry, something went wrong.")
@@ -310,7 +314,11 @@ async def setup_bot_commands(app: Application) -> None:
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [BotCommand("settings", "Open settings menu"), BotCommand("status", "Show bot status")]
-        await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=int(TELEGRAM_ADMIN_USER_ID)))
+        try:
+            admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)
+            await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_chat_id))
+        except (TypeError, ValueError):
+            log("TELEGRAM_ADMIN_USER_ID is not a numeric ID. Skipping admin-only command scope setup.")
     log("Telegram command menu has been updated.")
 
 
