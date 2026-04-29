@@ -1,3 +1,5 @@
+import time
+
 import httpx
 
 
@@ -13,6 +15,25 @@ COIN_SYMBOL_TO_ID = {
 }
 
 DEFAULT_SYMBOL = "btc"
+CACHE_TTL_SECONDS = 60
+_PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
+
+
+def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None:
+    cached = _PRICE_CACHE.get(normalized_symbol)
+    if not cached:
+        return None
+
+    price, change_24h, cached_at = cached
+    if time.time() - cached_at <= CACHE_TTL_SECONDS:
+        return price, change_24h, normalized_symbol
+
+    _PRICE_CACHE.pop(normalized_symbol, None)
+    return None
+
+
+def _set_cached_price(normalized_symbol: str, price: float, change_24h: float) -> None:
+    _PRICE_CACHE[normalized_symbol] = (price, change_24h, time.time())
 
 
 async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, str]:
@@ -22,6 +43,10 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
     if normalized_symbol not in COIN_SYMBOL_TO_ID:
         supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
         raise ValueError(f"Unsupported coin symbol '{symbol}'. Supported: {supported}")
+
+    cached = _get_cached_price(normalized_symbol)
+    if cached:
+        return cached
 
     coin_id = COIN_SYMBOL_TO_ID[normalized_symbol]
     url = "https://api.coingecko.com/api/v3/simple/price"
@@ -42,6 +67,7 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
     coin_data = data[coin_id]
     price = coin_data["usd"]
     change_24h = coin_data.get("usd_24h_change", 0)
+    _set_cached_price(normalized_symbol, price, change_24h)
 
     return price, change_24h, normalized_symbol
 
