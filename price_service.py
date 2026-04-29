@@ -1,4 +1,5 @@
 import time
+import logging
 
 import httpx
 
@@ -17,6 +18,7 @@ COIN_SYMBOL_TO_ID = {
 DEFAULT_SYMBOL = "btc"
 CACHE_TTL_SECONDS = 60
 _PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
+logger = logging.getLogger(__name__)
 
 
 def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None:
@@ -68,6 +70,14 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
         raise ValueError("Unexpected CoinGecko response format.")
 
     coin_data = data.get(coin_id)
+    if coin_data is None and normalized_symbol == "ton":
+        logger.warning(
+            "CoinGecko simple price response missing expected id for TON fallback. "
+            "expected_id=%s returned_keys=%s",
+            coin_id,
+            list(data.keys()),
+        )
+        coin_data = await _fetch_ton_fallback_coin_data()
     if not isinstance(coin_data, dict):
         raise ValueError(f"CoinGecko response did not include expected coin data for '{coin_id}'.")
 
@@ -89,3 +99,61 @@ async def get_btc_price() -> tuple[float, float]:
     """Backward-compatible helper for BTC-specific callers."""
     price, change_24h, _ = await get_coin_price("btc")
     return price, change_24h
+
+
+async def _fetch_ton_fallback_coin_data() -> dict | None:
+    """Fallback fetch for TON when /simple/price ids=toncoin does not include toncoin."""
+    base_url = "https://api.coingecko.com/api/v3"
+    timeout = 10
+    async with httpx.AsyncClient() as client:
+        # First attempt: discover the best id using /search.
+        search_response = await client.get(f"{base_url}/search", params={"query": "toncoin"}, timeout=timeout)
+        if search_response.status_code == 429:
+            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
+        search_response.raise_for_status()
+        search_data = search_response.json()
+        found_id = _extract_ton_candidate_id(search_data)
+
+        candidate_ids = ["toncoin"]
+        if found_id and found_id not in candidate_ids:
+            candidate_ids.append(found_id)
+
+        # Try each candidate via /simple/price (small response and includes 24h change).
+        for candidate_id in candidate_ids:
+            response = await client.get(
+                f"{base_url}/simple/price",
+                params={"ids": candidate_id, "vs_currencies": "usd", "include_24hr_change": "true"},
+                timeout=timeout,
+            )
+            if response.status_code == 429:
+                raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict) and isinstance(data.get(candidate_id), dict):
+                logger.info("TON fallback resolved via CoinGecko id '%s'.", candidate_id)
+                return data.get(candidate_id)
+
+        logger.warning("TON fallback could not resolve price data via CoinGecko search/simple endpoints.")
+        return None
+
+
+def _extract_ton_candidate_id(search_payload: dict) -> str | None:
+    if not isinstance(search_payload, dict):
+        return None
+    coins = search_payload.get("coins")
+    if not isinstance(coins, list):
+        return None
+
+    for item in coins:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol", "")).lower()
+        name = str(item.get("name", "")).lower()
+        item_id = str(item.get("id", "")).strip().lower()
+        if not item_id:
+            continue
+        if item_id == "toncoin":
+            return item_id
+        if symbol == "ton" and "ton" in name:
+            return item_id
+    return None
