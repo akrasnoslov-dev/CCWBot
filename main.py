@@ -32,6 +32,15 @@ def log(message: str) -> None:
     print(f"[{timestamp}] {message}")
 
 
+
+
+def is_admin_chat(chat_id: int | str | None) -> bool:
+    return str(chat_id) == str(TELEGRAM_CHAT_ID)
+
+
+async def reply_admin_only(target) -> None:
+    await target.reply_text("Sorry, only the bot admin can change settings.")
+
 def build_supported_symbols_message() -> str:
     return ", ".join(COIN_SYMBOL_TO_ID.keys())
 
@@ -79,12 +88,12 @@ def build_cooldown_keyboard() -> InlineKeyboardMarkup:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Hi! I am your BTC Watcher Bot. 🚀\n\n"
-        "Available commands:\n"
-        "/price [symbol] - get current coin price\n"
-        "/settings - open alert settings menu\n"
-        "/status - show last saved BTC data\n"
-        "/chatid - show your Telegram chat ID"
+        "Hi! I’m CCWBot 🚀\n\n"
+        "I monitor crypto prices and send AI-assisted alerts with news context.\n\n"
+        "Use:\n"
+        "/price - check crypto prices\n"
+        "/settings - manage alert settings\n"
+        "/status - show bot status"
     )
 
 
@@ -100,6 +109,9 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_chat(update.effective_chat.id if update.effective_chat else None):
+        await reply_admin_only(update.message)
+        return
     if not context.args:
         await update.message.reply_text(
             "Please provide a threshold value.\n\nExample:\n/setthreshold 1.0"
@@ -122,6 +134,9 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_chat(update.effective_chat.id if update.effective_chat else None):
+        await reply_admin_only(update.message)
+        return
     if not context.args:
         await update.message.reply_text(
             "Please provide cooldown in minutes.\n\nExample:\n/setcooldown 30"
@@ -229,6 +244,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if data.startswith("settings:set_threshold:"):
+            if not is_admin_chat(query.message.chat_id if query.message else None):
+                await reply_admin_only(query.message)
+                return
             threshold = float(data.rsplit(":", maxsplit=1)[1])
             state = load_state()
             state["price_move_alert_percent"] = threshold
@@ -239,6 +257,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if data.startswith("settings:set_cooldown:"):
+            if not is_admin_chat(query.message.chat_id if query.message else None):
+                await reply_admin_only(query.message)
+                return
             cooldown = int(data.rsplit(":", maxsplit=1)[1])
             state = load_state()
             state["alert_cooldown_minutes"] = cooldown
@@ -359,13 +380,10 @@ def get_alert_settings(state: dict) -> dict:
 
 async def setup_bot_commands(app: Application) -> None:
     commands = [
-        BotCommand("start", "Show available commands"),
-        BotCommand("price", "Get coin price or open price menu"),
-        BotCommand("status", "Show bot status and last saved BTC data"),
-        BotCommand("chatid", "Show your Telegram chat ID"),
+        BotCommand("start", "Show bot intro"),
+        BotCommand("price", "Check crypto prices"),
         BotCommand("settings", "Open settings menu"),
-        BotCommand("setthreshold", "Set price movement threshold"),
-        BotCommand("setcooldown", "Set alert cooldown in minutes"),
+        BotCommand("status", "Show bot status"),
     ]
     await app.bot.set_my_commands(commands)
     log("Telegram command menu has been updated.")

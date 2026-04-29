@@ -6,8 +6,9 @@ CCWBot is a Telegram bot that monitors **BTC** and sends automatic AI-enhanced a
 
 - `/price` supports direct lookup (`/price btc`) and a button menu when no symbol is provided
 - Supported `/price` symbols: `btc`, `eth`, `ton`, `usdt`
+- Visible Telegram command menu: `/start`, `/price`, `/settings`, `/status`
 - `/settings` opens an inline settings menu (current settings, threshold presets, cooldown presets)
-- Text fallback commands: `/setthreshold` and `/setcooldown`
+- Hidden fallback commands: `/setthreshold` and `/setcooldown` (still supported)
 - `/status` command for last saved BTC state
 - Automatic BTC background checks + threshold/cooldown-based alerts
 - AI-generated BTC alert messages via Groq
@@ -38,10 +39,22 @@ If a symbol is unsupported (example: `/price abc`), the bot replies with a frien
 - **Set threshold** → preset buttons: `0.5%`, `1.0%`, `2.0%`
 - **Set cooldown** → preset buttons: `10 min`, `30 min`, `60 min`
 
-You can still configure settings via text commands:
+You can still configure settings via hidden text fallback commands:
 
 - `/setthreshold 1.0`
 - `/setcooldown 30`
+
+## Admin-only settings changes
+
+`TELEGRAM_CHAT_ID` is treated as the bot admin ID.
+
+- Anyone can use read-only commands (`/start`, `/price`, `/settings`, `/status`)
+- Anyone can open `/settings` and view current settings
+- Only the admin chat ID can change threshold/cooldown values (via inline buttons or fallback commands)
+
+Non-admin setting-change attempts receive:
+
+- `Sorry, only the bot admin can change settings.`
 
 ## Automatic alerts behavior
 
