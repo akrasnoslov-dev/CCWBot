@@ -64,9 +64,22 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
         response.raise_for_status()
         data = response.json()
 
-    coin_data = data[coin_id]
-    price = coin_data["usd"]
-    change_24h = coin_data.get("usd_24h_change", 0)
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected CoinGecko response format.")
+
+    coin_data = data.get(coin_id)
+    if not isinstance(coin_data, dict):
+        raise ValueError(f"CoinGecko response did not include expected coin data for '{coin_id}'.")
+
+    price = coin_data.get("usd")
+    if price is None:
+        raise ValueError(f"CoinGecko response did not include USD price for '{coin_id}'.")
+    price = float(price)
+
+    change_24h = coin_data.get("usd_24h_change")
+    if change_24h is None:
+        change_24h = 0.0
+    change_24h = float(change_24h)
     _set_cached_price(normalized_symbol, price, change_24h)
 
     return price, change_24h, normalized_symbol
