@@ -10,7 +10,7 @@ from config import (
     TELEGRAM_CHAT_ID,
 )
 from news_service import fetch_crypto_news
-from price_service import get_btc_price
+from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, get_btc_price, get_coin_price
 from storage import load_state, save_state
 from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -26,7 +26,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Hi! I am your BTC Watcher Bot. 🚀\n\n"
         "Available commands:\n"
-        "/price - get current BTC price\n"
+        "/price [symbol] - get current coin price (BTC default)\n"
         "/status - show last saved BTC data\n"
         "/chatid - show your Telegram chat ID"
     )
@@ -108,23 +108,36 @@ async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        btc_price, change_24h = await get_btc_price()
+        requested_symbol = context.args[0].lower() if context.args else DEFAULT_SYMBOL
+
+        if requested_symbol not in COIN_SYMBOL_TO_ID:
+            supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
+            await update.message.reply_text(
+                f"Unsupported symbol '{requested_symbol}'.\n"
+                f"Supported symbols: {supported}\n"
+                "Example: /price eth"
+            )
+            return
+
+        coin_price, change_24h, resolved_symbol = await get_coin_price(requested_symbol)
 
         checked_at = datetime.now(timezone.utc).isoformat()
 
         state = load_state()
-        state["last_price"] = btc_price
-        state["last_24h_change"] = change_24h
-        state["last_checked_at"] = checked_at
+        if resolved_symbol == DEFAULT_SYMBOL:
+            state["last_price"] = coin_price
+            state["last_24h_change"] = change_24h
+            state["last_checked_at"] = checked_at
 
-        if "last_alert_at" not in state:
-            state["last_alert_at"] = None
+            if "last_alert_at" not in state:
+                state["last_alert_at"] = None
 
-        save_state(state)
+            save_state(state)
 
+        display_symbol = resolved_symbol.upper()
         message = (
-            "BTC price\n\n"
-            f"Current price: ${btc_price:,.2f}\n"
+            f"{display_symbol} price\n\n"
+            f"Current price: ${coin_price:,.2f}\n"
             f"24h change: {change_24h:.2f}%"
         )
 
@@ -132,7 +145,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as error:
         await update.message.reply_text(
-            "Sorry, I could not get the BTC price right now."
+            "Sorry, I could not get the price right now."
         )
         print(f"Price error: {error}")
 
@@ -276,7 +289,7 @@ async def setup_bot_commands(app: Application) -> None:
     """Set clickable command menu in Telegram."""
     commands = [
         BotCommand("start", "Show available commands"),
-        BotCommand("price", "Get current BTC price"),
+        BotCommand("price", "Get coin price (default: BTC)"),
         BotCommand("status", "Show bot status and last saved BTC data"),
         BotCommand("chatid", "Show your Telegram chat ID"),
         BotCommand("settings", "Show current alert settings"),

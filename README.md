@@ -1,57 +1,54 @@
-Great. Paste this into `README.md`:
-
-````markdown
 # CCWBot - CryptoCurrencyWatcherBot
 
-CCWBot is a Telegram-based BTC monitoring bot with AI-generated alerts.
+CCWBot is a Telegram bot that monitors **BTC** and sends automatic AI-enhanced alerts for significant BTC moves.
 
-The bot checks the BTC price at regular intervals, compares the current price with the previous saved value, applies threshold and cooldown rules, and sends a Telegram alert when the movement is significant enough. The alert message is generated with Groq AI.
+## Features
 
-## Current features
+- `/price` command for live crypto prices (default: BTC)
+- Supported `/price` symbols: `btc`, `eth`, `sol`, `xrp`, `doge`, `usdt`
+- `/status` command for last saved BTC state
+- Automatic BTC background checks + threshold/cooldown-based alerts
+- AI-generated BTC alert messages via Groq
+- Local JSON state storage
 
-- Telegram bot interface
-- `/start` command
-- `/price` command to get current BTC price
-- `/status` command to show last saved BTC data
-- Automatic BTC price checks
-- Price movement threshold
-- Alert cooldown to avoid spam
-- AI-generated alert messages via Groq
-- Local state storage using `state.json`
-- Environment-based configuration
+## Supported `/price` symbols
+
+The bot maps symbols to CoinGecko IDs internally:
+
+- `btc` → `bitcoin`
+- `eth` → `ethereum`
+- `sol` → `solana`
+- `xrp` → `ripple`
+- `doge` → `dogecoin`
+- `usdt` → `tether`
+
+Examples:
+
+- `/price` → BTC (default)
+- `/price eth`
+- `/price XRP`
+
+## Automatic alerts behavior
+
+Automatic alert behavior remains **BTC-only**:
+
+- Background scheduler checks BTC only
+- Threshold/cooldown rules are applied to BTC only
+- Saved status fields (`last_price`, `last_24h_change`, etc.) remain BTC-focused
 
 ## Project structure
 
-```text
-CCWBot/
-│
-├── main.py              # Telegram bot, commands, scheduler
-├── config.py            # Environment variables and bot settings
-├── ai_agent_groq.py     # Groq AI alert generation
-├── price_service.py     # CoinGecko BTC price fetching
-├── storage.py           # Local state loading/saving
-├── alert_rules.py       # Threshold and cooldown logic
-├── requirements.txt     # Python dependencies
-├── .env.example         # Example environment variables
-└── .gitignore           # Files excluded from Git
-````
+- `main.py` - Telegram commands, scheduler, alert flow
+- `price_service.py` - CoinGecko symbol mapping + price fetching
+- `alert_rules.py` - Threshold and cooldown logic
+- `news_service.py` - News fetching used in AI alert context
+- `ai_agent_groq.py` - Groq AI message generation
+- `storage.py` - Local state loading/saving
+- `config.py` - Environment configuration
 
-## How it works
+## Environment
 
-```text
-Scheduled BTC check
-→ Fetch BTC price from CoinGecko
-→ Compare with previous saved price
-→ Check movement threshold
-→ Check alert cooldown
-→ Generate AI alert with Groq
-→ Send alert to Telegram
-→ Save new state
-```
-
-## Environment variables
-
-Create a `.env` file based on `.env.example`:
+Create a `.env` file from `.env.example`:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
@@ -64,56 +61,11 @@ PRICE_MOVE_ALERT_PERCENT=0.01
 ALERT_COOLDOWN_MINUTES=2
 ```
 
-For real usage, increase the threshold and cooldown, for example:
+## Run locally
 
-```env
-PRICE_MOVE_ALERT_PERCENT=1.0
-ALERT_COOLDOWN_MINUTES=30
-```
-
-## Local setup
-
-Create and activate a virtual environment:
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Install dependencies:
-
-```powershell
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Run the bot:
-
-```powershell
 python main.py
 ```
-
-## Telegram commands
-
-```text
-/start   - show available commands
-/price   - get current BTC price
-/status  - show last saved BTC data
-/chatid  - show your Telegram chat ID
-```
-
-## Current status
-
-This is an early learning project created to practise building AI agents, Telegram bots, external API integrations, background jobs, and basic project structure in Python.
-
-## Planned improvements
-
-- Change threshold/cooldown from Telegram
-- Add configurable alert settings from Telegram
-- Add support for more cryptocurrencies
-- Add stronger AI reasoning with structured outputs
-- Add full news monitoring
-- Add persistent database instead of local JSON
-- Add deployment for 24/7 operation
-- Admin policy for commands
-
-
