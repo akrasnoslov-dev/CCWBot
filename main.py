@@ -6,6 +6,7 @@ from alert_rules import calculate_price_change_percent, should_send_alert
 from config import (
     ALERT_COOLDOWN_MINUTES,
     PRICE_MOVE_ALERT_PERCENT,
+    TELEGRAM_ADMIN_USER_ID,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
@@ -18,13 +19,8 @@ from price_service import (
     get_coin_price,
 )
 from storage import load_state, save_state
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    Application,
-    CallbackQueryHandler,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 
 def log(message: str) -> None:
@@ -32,97 +28,90 @@ def log(message: str) -> None:
     print(f"[{timestamp}] {message}")
 
 
+def is_admin_user(user_id: int | str | None) -> bool:
+    if user_id is None or TELEGRAM_ADMIN_USER_ID is None:
+        return False
+    return str(user_id) == str(TELEGRAM_ADMIN_USER_ID)
 
-
-def is_admin_chat(chat_id: int | str | None) -> bool:
-    return str(chat_id) == str(TELEGRAM_CHAT_ID)
-
-
-async def reply_admin_only(target) -> None:
-    await target.reply_text("Sorry, only the bot admin can change settings.")
 
 def build_supported_symbols_message() -> str:
     return ", ".join(COIN_SYMBOL_TO_ID.keys())
 
 
 def build_price_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
-        [
-            InlineKeyboardButton("BTC", callback_data="price:btc"),
-            InlineKeyboardButton("ETH", callback_data="price:eth"),
-        ],
-        [
-            InlineKeyboardButton("TON", callback_data="price:ton"),
-            InlineKeyboardButton("USDT", callback_data="price:usdt"),
-        ],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("BTC", callback_data="price:btc"), InlineKeyboardButton("ETH", callback_data="price:eth")],
+        [InlineKeyboardButton("TON", callback_data="price:ton"), InlineKeyboardButton("USDT", callback_data="price:usdt")],
+    ])
 
 
 def build_settings_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("Current settings", callback_data="settings:current")],
         [InlineKeyboardButton("Set threshold", callback_data="settings:threshold_menu")],
         [InlineKeyboardButton("Set cooldown", callback_data="settings:cooldown_menu")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 
 def build_threshold_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("0.5%", callback_data="settings:set_threshold:0.5")],
         [InlineKeyboardButton("1.0%", callback_data="settings:set_threshold:1.0")],
         [InlineKeyboardButton("2.0%", callback_data="settings:set_threshold:2.0")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 
 def build_cooldown_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("10 min", callback_data="settings:set_cooldown:10")],
         [InlineKeyboardButton("30 min", callback_data="settings:set_cooldown:30")],
         [InlineKeyboardButton("60 min", callback_data="settings:set_cooldown:60")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    is_admin = is_admin_user(update.effective_user.id if update.effective_user else None)
+    message = (
         "Hi! I’m CCWBot 🚀\n\n"
-        "I monitor crypto prices and send AI-assisted alerts with news context.\n\n"
+        "I monitor crypto prices and send automatic BTC alerts.\n\n"
         "Use:\n"
-        "/price - check crypto prices\n"
-        "/settings - manage alert settings\n"
-        "/status - show bot status"
+        "/price - check crypto prices"
     )
+    if is_admin:
+        message += "\n/settings - open settings menu\n/status - show bot status"
+    await update.message.reply_text(message)
+
+
+async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id_value = update.effective_user.id if update.effective_user else "unknown"
+    await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
 
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
+        return
     await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
 
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Settings menu ⚙️",
-        reply_markup=build_settings_keyboard(),
-    )
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can access settings.")
+        return
+    await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
 
 
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_chat(update.effective_chat.id if update.effective_chat else None):
-        await reply_admin_only(update.message)
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
-        await update.message.reply_text(
-            "Please provide a threshold value.\n\nExample:\n/setthreshold 1.0"
-        )
+        await update.message.reply_text("Please provide a threshold value.\n\nExample:\n/setthreshold 1.0")
         return
     try:
         threshold = float(context.args[0])
     except ValueError:
-        await update.message.reply_text(
-            "Threshold must be a number.\n\nExample:\n/setthreshold 1.0"
-        )
+        await update.message.reply_text("Threshold must be a number.\n\nExample:\n/setthreshold 1.0")
         return
     if threshold <= 0:
         await update.message.reply_text("Threshold must be greater than 0.")
@@ -134,20 +123,16 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_chat(update.effective_chat.id if update.effective_chat else None):
-        await reply_admin_only(update.message)
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
-        await update.message.reply_text(
-            "Please provide cooldown in minutes.\n\nExample:\n/setcooldown 30"
-        )
+        await update.message.reply_text("Please provide cooldown in minutes.\n\nExample:\n/setcooldown 30")
         return
     try:
         cooldown = int(context.args[0])
     except ValueError:
-        await update.message.reply_text(
-            "Cooldown must be a whole number.\n\nExample:\n/setcooldown 30"
-        )
+        await update.message.reply_text("Cooldown must be a whole number.\n\nExample:\n/setcooldown 30")
         return
     if cooldown < 0:
         await update.message.reply_text("Cooldown cannot be negative.")
@@ -161,7 +146,6 @@ async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_price_message(target, symbol: str) -> None:
     coin_price, change_24h, resolved_symbol = await get_coin_price(symbol)
     checked_at = datetime.now(timezone.utc).isoformat()
-
     state = load_state()
     if resolved_symbol == DEFAULT_SYMBOL:
         state["last_price"] = coin_price
@@ -171,38 +155,25 @@ async def send_price_message(target, symbol: str) -> None:
             state["last_alert_at"] = None
         save_state(state)
 
-    display_symbol = resolved_symbol.upper()
-    message = (
-        f"{display_symbol} price\n\n"
-        f"Current USD price: ${coin_price:,.2f}\n"
-        f"24h change: {change_24h:.2f}%"
+    await target.reply_text(
+        f"{resolved_symbol.upper()} price\n\nCurrent USD price: ${coin_price:,.2f}\n24h change: {change_24h:.2f}%"
     )
-    await target.reply_text(message)
 
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
-            await update.message.reply_text(
-                "Choose a coin symbol:",
-                reply_markup=build_price_keyboard(),
-            )
+            await update.message.reply_text("Choose a coin symbol:", reply_markup=build_price_keyboard())
             return
-
         requested_symbol = context.args[0].lower()
         if requested_symbol not in COIN_SYMBOL_TO_ID:
             await update.message.reply_text(
-                f"Unsupported symbol '{requested_symbol}'.\n"
-                f"Supported symbols: {build_supported_symbols_message()}"
+                f"Unsupported symbol '{requested_symbol}'.\nSupported symbols: {build_supported_symbols_message()}"
             )
             return
-
         await send_price_message(update.message, requested_symbol)
-
     except CoinGeckoRateLimitError:
-        await update.message.reply_text(
-            "CoinGecko rate limit reached. Please wait a bit and try again."
-        )
+        await update.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
         print(f"Price error: {error}")
@@ -210,15 +181,19 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data or ""
 
     try:
-        if data.startswith("price:"):
-            symbol = data.split(":", maxsplit=1)[1]
-            await send_price_message(query.message, symbol)
+        if data.startswith("settings:") and not is_admin_user(query.from_user.id if query.from_user else None):
+            await query.answer("Sorry, only the bot admin can change settings.")
+            await query.message.reply_text("Sorry, only the bot admin can change settings.")
             return
 
+        await query.answer()
+
+        if data.startswith("price:"):
+            await send_price_message(query.message, data.split(":", maxsplit=1)[1])
+            return
         if data == "settings:current":
             state = load_state()
             alert_settings = get_alert_settings(state)
@@ -228,75 +203,50 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Alert cooldown: {alert_settings['alert_cooldown_minutes']} minutes"
             )
             return
-
         if data == "settings:threshold_menu":
-            await query.message.reply_text(
-                "Choose a new threshold:",
-                reply_markup=build_threshold_keyboard(),
-            )
+            await query.message.reply_text("Choose a new threshold:", reply_markup=build_threshold_keyboard())
             return
-
         if data == "settings:cooldown_menu":
-            await query.message.reply_text(
-                "Choose a new cooldown:",
-                reply_markup=build_cooldown_keyboard(),
-            )
+            await query.message.reply_text("Choose a new cooldown:", reply_markup=build_cooldown_keyboard())
             return
-
         if data.startswith("settings:set_threshold:"):
-            if not is_admin_chat(query.message.chat_id if query.message else None):
-                await reply_admin_only(query.message)
-                return
             threshold = float(data.rsplit(":", maxsplit=1)[1])
             state = load_state()
             state["price_move_alert_percent"] = threshold
             save_state(state)
-            await query.message.reply_text(
-                f"Price movement threshold updated to {threshold}% ✅"
-            )
+            await query.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
             return
-
         if data.startswith("settings:set_cooldown:"):
-            if not is_admin_chat(query.message.chat_id if query.message else None):
-                await reply_admin_only(query.message)
-                return
             cooldown = int(data.rsplit(":", maxsplit=1)[1])
             state = load_state()
             state["alert_cooldown_minutes"] = cooldown
             save_state(state)
-            await query.message.reply_text(
-                f"Alert cooldown updated to {cooldown} minutes ✅"
-            )
+            await query.message.reply_text(f"Alert cooldown updated to {cooldown} minutes ✅")
             return
 
     except CoinGeckoRateLimitError:
-        await query.message.reply_text(
-            "CoinGecko rate limit reached. Please wait a bit and try again."
-        )
+        await query.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
     except Exception as error:
         log(f"Callback handling error: {error}")
         await query.message.reply_text("Sorry, something went wrong.")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can view status.")
+        return
     state = load_state()
     last_price = state.get("last_price")
-    last_24h_change = state.get("last_24h_change")
-    last_checked_at = state.get("last_checked_at")
-    last_alert_at = state.get("last_alert_at")
     if last_price is None:
-        await update.message.reply_text(
-            "Status: running ✅\n\nNo BTC price has been saved yet.\nSend /price first."
-        )
+        await update.message.reply_text("Status: running ✅\n\nNo BTC price has been saved yet.\nSend /price first.")
         return
-    message = (
+    await update.message.reply_text(
         "Status: running ✅\n\n"
         f"Last saved BTC price: ${last_price:,.2f}\n"
-        f"Last 24h change: {last_24h_change:.2f}%\n"
-        f"Last checked at: {last_checked_at}\n"
-        f"Last alert at: {last_alert_at}"
+        f"Last 24h change: {state.get('last_24h_change'):.2f}%\n"
+        f"Last checked at: {state.get('last_checked_at')}\n"
+        f"Last alert at: {state.get('last_alert_at')}"
     )
-    await update.message.reply_text(message)
 
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
@@ -308,19 +258,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         current_price, change_24h = await get_btc_price()
         checked_at = datetime.now(timezone.utc).isoformat()
         if previous_price is None:
-            state["last_price"] = current_price
-            state["last_24h_change"] = change_24h
-            state["last_checked_at"] = checked_at
-            state["last_alert_at"] = state.get("last_alert_at")
+            state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at, "last_alert_at": state.get("last_alert_at")})
             save_state(state)
             print(f"Initial BTC price saved: ${current_price:,.2f}")
             return
-
         price_change_percent = calculate_price_change_percent(previous_price, current_price)
-        state["last_price"] = current_price
-        state["last_24h_change"] = change_24h
-        state["last_checked_at"] = checked_at
-
+        state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at})
         alert_settings = get_alert_settings(state)
         movement_is_big_enough, cooldown_is_active, should_alert = should_send_alert(
             price_change_percent=price_change_percent,
@@ -328,37 +271,25 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             last_alert_at=state.get("last_alert_at"),
             cooldown_minutes=alert_settings["alert_cooldown_minutes"],
         )
-
         if should_alert:
             try:
                 news_items = fetch_crypto_news(limit=5)
-                message = await create_ai_alert_message(
-                    previous_price=previous_price,
-                    current_price=current_price,
-                    price_change_percent=price_change_percent,
-                    change_24h=change_24h,
-                    news_items=news_items,
-                )
+                message = await create_ai_alert_message(previous_price, current_price, price_change_percent, change_24h, news_items)
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
                 direction = "up" if price_change_percent > 0 else "down"
                 message = (
                     "🚨 BTC price alert\n\n"
                     f"BTC moved {direction} by {price_change_percent:.2f}% since last check.\n\n"
-                    f"Previous price: ${previous_price:,.2f}\n"
-                    f"Current price: ${current_price:,.2f}\n"
-                    f"24h change: {change_24h:.2f}%\n\n"
-                    "AI summary was unavailable, so this is a basic alert."
+                    f"Previous price: ${previous_price:,.2f}\nCurrent price: ${current_price:,.2f}\n"
+                    f"24h change: {change_24h:.2f}%\n\nAI summary was unavailable, so this is a basic alert."
                 )
-
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
             log("Alert sent.")
         elif movement_is_big_enough and cooldown_is_active:
             log("Alert skipped because cooldown is active.")
-
         save_state(state)
-
     except CoinGeckoRateLimitError:
         log("CoinGecko returned 429 during automatic BTC check. Skipping this cycle.")
     except httpx.HTTPStatusError as error:
@@ -369,23 +300,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
 def get_alert_settings(state: dict) -> dict:
     return {
-        "price_move_alert_percent": float(
-            state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)
-        ),
-        "alert_cooldown_minutes": int(
-            state.get("alert_cooldown_minutes", ALERT_COOLDOWN_MINUTES)
-        ),
+        "price_move_alert_percent": float(state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)),
+        "alert_cooldown_minutes": int(state.get("alert_cooldown_minutes", ALERT_COOLDOWN_MINUTES)),
     }
 
 
 async def setup_bot_commands(app: Application) -> None:
-    commands = [
-        BotCommand("start", "Show bot intro"),
-        BotCommand("price", "Check crypto prices"),
-        BotCommand("settings", "Open settings menu"),
-        BotCommand("status", "Show bot status"),
-    ]
-    await app.bot.set_my_commands(commands)
+    default_commands = [BotCommand("start", "Show bot intro"), BotCommand("price", "Check crypto prices")]
+    await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
+    if TELEGRAM_ADMIN_USER_ID:
+        admin_commands = default_commands + [BotCommand("settings", "Open settings menu"), BotCommand("status", "Show bot status")]
+        await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=int(TELEGRAM_ADMIN_USER_ID)))
     log("Telegram command menu has been updated.")
 
 
@@ -394,19 +319,20 @@ def main():
         raise ValueError("TELEGRAM_BOT_TOKEN is missing. Check your .env file.")
     if not TELEGRAM_CHAT_ID:
         raise ValueError("TELEGRAM_CHAT_ID is missing. Check your .env file.")
+    if not TELEGRAM_ADMIN_USER_ID:
+        raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
+    app.add_handler(CommandHandler("userid", user_id))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("setthreshold", set_threshold))
     app.add_handler(CommandHandler("setcooldown", set_cooldown))
     app.add_handler(CallbackQueryHandler(button_router))
-
     app.job_queue.run_repeating(automatic_price_check, interval=60, first=5)
-
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()
