@@ -4,8 +4,10 @@ CCWBot is a Telegram bot that monitors **BTC** and sends automatic AI-enhanced a
 
 ## Features
 
-- `/price` command for live crypto prices (default: BTC)
-- Supported `/price` symbols: `btc`, `eth`, `sol`, `xrp`, `doge`, `usdt`
+- `/price` supports direct lookup (`/price btc`) and a button menu when no symbol is provided
+- Supported `/price` symbols: `btc`, `eth`, `ton`, `usdt`
+- `/settings` opens an inline settings menu (current settings, threshold presets, cooldown presets)
+- Text fallback commands: `/setthreshold` and `/setcooldown`
 - `/status` command for last saved BTC state
 - Automatic BTC background checks + threshold/cooldown-based alerts
 - AI-generated BTC alert messages via Groq
@@ -17,16 +19,29 @@ The bot maps symbols to CoinGecko IDs internally:
 
 - `btc` → `bitcoin`
 - `eth` → `ethereum`
-- `sol` → `solana`
-- `xrp` → `ripple`
-- `doge` → `dogecoin`
+- `ton` → `toncoin`
 - `usdt` → `tether`
 
 Examples:
 
-- `/price` → BTC (default)
+- `/price` → opens inline button menu (BTC, ETH, TON, USDT)
 - `/price eth`
-- `/price XRP`
+- `/price USDT`
+
+If a symbol is unsupported (example: `/price abc`), the bot replies with a friendly message listing supported symbols.
+
+## Settings menu
+
+`/settings` opens a button menu with:
+
+- **Current settings**
+- **Set threshold** → preset buttons: `0.5%`, `1.0%`, `2.0%`
+- **Set cooldown** → preset buttons: `10 min`, `30 min`, `60 min`
+
+You can still configure settings via text commands:
+
+- `/setthreshold 1.0`
+- `/setcooldown 30`
 
 ## Automatic alerts behavior
 
@@ -38,7 +53,7 @@ Automatic alert behavior remains **BTC-only**:
 
 ## Project structure
 
-- `main.py` - Telegram commands, scheduler, alert flow
+- `main.py` - Telegram commands, inline button handlers, scheduler, alert flow
 - `price_service.py` - CoinGecko symbol mapping + price fetching
 - `alert_rules.py` - Threshold and cooldown logic
 - `news_service.py` - News fetching used in AI alert context
