@@ -1,11 +1,14 @@
 import httpx
 
+
+class CoinGeckoRateLimitError(Exception):
+    """Raised when CoinGecko returns HTTP 429."""
+
+
 COIN_SYMBOL_TO_ID = {
     "btc": "bitcoin",
     "eth": "ethereum",
-    "sol": "solana",
-    "xrp": "ripple",
-    "doge": "dogecoin",
+    "ton": "toncoin",
     "usdt": "tether",
 }
 
@@ -31,6 +34,8 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url, params=params, timeout=10)
+        if response.status_code == 429:
+            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
         response.raise_for_status()
         data = response.json()
 
