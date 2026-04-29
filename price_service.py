@@ -1,12 +1,30 @@
 import httpx
 
+COIN_SYMBOL_TO_ID = {
+    "btc": "bitcoin",
+    "eth": "ethereum",
+    "sol": "solana",
+    "xrp": "ripple",
+    "doge": "dogecoin",
+    "usdt": "tether",
+}
 
-async def get_btc_price() -> tuple[float, float]:
-    """Get current BTC price and 24h change from CoinGecko."""
+DEFAULT_SYMBOL = "btc"
+
+
+async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, str]:
+    """Get current coin price and 24h change from CoinGecko."""
+    normalized_symbol = symbol.lower()
+
+    if normalized_symbol not in COIN_SYMBOL_TO_ID:
+        supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
+        raise ValueError(f"Unsupported coin symbol '{symbol}'. Supported: {supported}")
+
+    coin_id = COIN_SYMBOL_TO_ID[normalized_symbol]
     url = "https://api.coingecko.com/api/v3/simple/price"
 
     params = {
-        "ids": "bitcoin",
+        "ids": coin_id,
         "vs_currencies": "usd",
         "include_24hr_change": "true",
     }
@@ -16,7 +34,14 @@ async def get_btc_price() -> tuple[float, float]:
         response.raise_for_status()
         data = response.json()
 
-    btc_price = data["bitcoin"]["usd"]
-    change_24h = data["bitcoin"].get("usd_24h_change", 0)
+    coin_data = data[coin_id]
+    price = coin_data["usd"]
+    change_24h = coin_data.get("usd_24h_change", 0)
 
-    return btc_price, change_24h
+    return price, change_24h, normalized_symbol
+
+
+async def get_btc_price() -> tuple[float, float]:
+    """Backward-compatible helper for BTC-specific callers."""
+    price, change_24h, _ = await get_coin_price("btc")
+    return price, change_24h
