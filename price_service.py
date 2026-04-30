@@ -103,57 +103,87 @@ async def get_btc_price() -> tuple[float, float]:
 
 async def _fetch_ton_fallback_coin_data() -> dict | None:
     """Fallback fetch for TON when /simple/price ids=toncoin does not include toncoin."""
-    base_url = "https://api.coingecko.com/api/v3"
+    url = "https://api.coingecko.com/api/v3/simple/price"
     timeout = 10
+
     async with httpx.AsyncClient() as client:
-        # First attempt: discover the best id using /search.
-        search_response = await client.get(f"{base_url}/search", params={"query": "toncoin"}, timeout=timeout)
-        if search_response.status_code == 429:
+        # First fallback: symbol-based lookup.
+        symbol_params = {
+            "symbols": "ton",
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+        }
+        symbol_response = await client.get(url, params=symbol_params, timeout=timeout)
+        if symbol_response.status_code == 429:
             raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-        search_response.raise_for_status()
-        search_data = search_response.json()
-        found_id = _extract_ton_candidate_id(search_data)
+        symbol_response.raise_for_status()
+        symbol_data = symbol_response.json()
 
-        candidate_ids = ["toncoin"]
-        if found_id and found_id not in candidate_ids:
-            candidate_ids.append(found_id)
+        symbol_coin_data = _extract_ton_coin_data_from_simple_price(symbol_data)
+        if isinstance(symbol_coin_data, dict):
+            logger.info("TON fallback succeeded via CoinGecko symbols=ton.")
+            return symbol_coin_data
 
-        # Try each candidate via /simple/price (small response and includes 24h change).
-        for candidate_id in candidate_ids:
-            response = await client.get(
-                f"{base_url}/simple/price",
-                params={"ids": candidate_id, "vs_currencies": "usd", "include_24hr_change": "true"},
-                timeout=timeout,
-            )
-            if response.status_code == 429:
-                raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-            response.raise_for_status()
-            data = response.json()
-            if isinstance(data, dict) and isinstance(data.get(candidate_id), dict):
-                logger.info("TON fallback resolved via CoinGecko id '%s'.", candidate_id)
-                return data.get(candidate_id)
+        logger.warning(
+            "TON fallback via symbols=ton failed. returned_keys=%s",
+            list(symbol_data.keys()) if isinstance(symbol_data, dict) else type(symbol_data).__name__,
+        )
 
-        logger.warning("TON fallback could not resolve price data via CoinGecko search/simple endpoints.")
+        # Second fallback: name-based lookup.
+        name_params = {
+            "names": "Toncoin",
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+        }
+        name_response = await client.get(url, params=name_params, timeout=timeout)
+        if name_response.status_code == 429:
+            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
+        name_response.raise_for_status()
+        name_data = name_response.json()
+
+        name_coin_data = _extract_ton_coin_data_from_simple_price(name_data)
+        if isinstance(name_coin_data, dict):
+            logger.info("TON fallback succeeded via CoinGecko names=Toncoin.")
+            return name_coin_data
+
+        logger.warning(
+            "TON fallback via names=Toncoin failed. returned_keys=%s",
+            list(name_data.keys()) if isinstance(name_data, dict) else type(name_data).__name__,
+        )
         return None
 
 
-def _extract_ton_candidate_id(search_payload: dict) -> str | None:
-    if not isinstance(search_payload, dict):
-        return None
-    coins = search_payload.get("coins")
-    if not isinstance(coins, list):
+def _extract_ton_coin_data_from_simple_price(payload: dict) -> dict | None:
+    if not isinstance(payload, dict):
         return None
 
-    for item in coins:
-        if not isinstance(item, dict):
+    # Prefer explicit toncoin result when present.
+    preferred = payload.get("toncoin")
+    if isinstance(preferred, dict) and preferred.get("usd") is not None:
+        return preferred
+
+    # For symbols/names lookups, CoinGecko may return one or multiple ids.
+    candidates: list[tuple[str, dict]] = []
+    for coin_id, coin_data in payload.items():
+        if not isinstance(coin_data, dict):
             continue
-        symbol = str(item.get("symbol", "")).lower()
-        name = str(item.get("name", "")).lower()
-        item_id = str(item.get("id", "")).strip().lower()
-        if not item_id:
+        if coin_data.get("usd") is None:
             continue
-        if item_id == "toncoin":
-            return item_id
-        if symbol == "ton" and "ton" in name:
-            return item_id
-    return None
+        candidates.append((str(coin_id).lower(), coin_data))
+
+    if not candidates:
+        return None
+
+    for coin_id, coin_data in candidates:
+        if coin_id == "toncoin":
+            return coin_data
+
+    for coin_id, coin_data in candidates:
+        if coin_id == "the-open-network" or ("ton" in coin_id and "ton" != coin_id):
+            return coin_data
+
+    for coin_id, coin_data in candidates:
+        if coin_id == "ton":
+            return coin_data
+
+    return candidates[0][1]
