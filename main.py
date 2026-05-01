@@ -1,14 +1,26 @@
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 
 import httpx
-from ai_agent_groq import build_fallback_alert_message, create_ai_alert_message
+from ai_agent_groq import (
+    build_fallback_alert_message,
+    classify_strong_signal,
+    create_ai_alert_message,
+    create_daily_report,
+    create_weekly_report,
+)
 from alert_rules import calculate_price_change_percent, should_send_alert
 from config import (
     AUTOMATIC_CHECK_INTERVAL_SECONDS,
+    ENABLE_STRONG_SIGNAL_ALERTS,
+    ENABLE_WEEKLY_REPORT,
     PRICE_MOVE_ALERT_PERCENT,
+    STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
+    STRONG_SIGNAL_COOLDOWN_HOURS,
     TELEGRAM_ADMIN_USER_ID,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+    WEEKLY_REPORT_DAY,
+    WEEKLY_REPORT_HOUR,
 )
 from news_service import fetch_crypto_news
 from price_service import (
@@ -24,6 +36,17 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
+WEEKLY_REPORT_JOB_NAME = "weekly_report"
+STRONG_SIGNAL_JOB_NAME = "strong_signal"
+WEEKDAY_MAP = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
 
 
@@ -82,13 +105,50 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/price - check crypto prices"
     )
     if is_admin:
-        message += "\n/settings - open settings menu\n/status - show bot status"
+        message += "\n/settings - open settings menu\n/status - show bot status\n/dailyreport - BTC daily report\n/weeklyreport - BTC weekly report"
     await update.message.reply_text(message)
 
 
 async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_value = update.effective_user.id if update.effective_user else "unknown"
     await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
+
+
+async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can request daily reports.")
+        return
+    try:
+        price, change_24h, change_7d = await get_btc_market_data()
+        news_items = fetch_crypto_news(limit=5)
+        report = await create_daily_report(price, change_24h, news_items)
+        if report and report.get("telegram_message"):
+            await update.message.reply_text(str(report["telegram_message"]))
+            return
+        await update.message.reply_text(build_fallback_alert_message(price, price, 0.0, change_24h, change_7d))
+    except Exception as error:
+        log(f"Daily report generation failed: {error}")
+        await update.message.reply_text("Daily report unavailable. Monitor risk and avoid impulsive action.\nNot financial advice.")
+
+
+async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can request weekly reports.")
+        return
+    try:
+        price, change_24h, change_7d = await get_btc_market_data()
+        news_items = fetch_crypto_news(limit=6)
+        report = await create_weekly_report(price, change_24h, change_7d, news_items)
+        if report and report.get("telegram_message"):
+            await update.message.reply_text(str(report["telegram_message"]))
+            return
+        trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
+        await update.message.reply_text(
+            f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
+            "Risk level: Medium\nPossible action: consider waiting for clearer confirmation.\nNot financial advice."
+        )
+    except Exception as error:
+        log(f"Weekly report generation failed: {error}")
 
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -158,6 +218,37 @@ def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> Non
         name=AUTOMATIC_BTC_CHECK_JOB_NAME,
     )
     log(f"Automatic BTC check interval: {interval_seconds} seconds")
+
+
+def schedule_weekly_report(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(WEEKLY_REPORT_JOB_NAME):
+        job.schedule_removal()
+    if not ENABLE_WEEKLY_REPORT:
+        log("Weekly report scheduling is disabled.")
+        return
+    weekday = WEEKDAY_MAP.get(WEEKLY_REPORT_DAY, WEEKDAY_MAP["sunday"])
+    app.job_queue.run_daily(
+        send_scheduled_weekly_report,
+        time=time(hour=WEEKLY_REPORT_HOUR, minute=0, second=0),
+        days=(weekday,),
+        name=WEEKLY_REPORT_JOB_NAME,
+    )
+    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
+
+
+def schedule_strong_signal_job(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(STRONG_SIGNAL_JOB_NAME):
+        job.schedule_removal()
+    if not ENABLE_STRONG_SIGNAL_ALERTS:
+        log("Strong-signal alerting is disabled.")
+        return
+    app.job_queue.run_repeating(
+        strong_signal_check,
+        interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
+        first=15,
+        name=STRONG_SIGNAL_JOB_NAME,
+    )
+    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
 
 
 async def update_interval_and_reschedule(context: ContextTypes.DEFAULT_TYPE, interval: int) -> None:
@@ -341,6 +432,47 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         print(f"Automatic check error: {error}")
 
 
+async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        price, change_24h, change_7d = await get_btc_market_data()
+        news_items = fetch_crypto_news(limit=6)
+        report = await create_weekly_report(price, change_24h, change_7d, news_items)
+        message = report.get("telegram_message") if report else None
+        if not message:
+            trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
+            message = (
+                f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
+                "Risk level: Medium\nPossible action: monitor risk and avoid impulsive action.\nNot financial advice."
+            )
+        await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    except Exception as error:
+        log(f"Scheduled weekly report failed: {error}")
+
+
+async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
+    state = load_state()
+    now = datetime.now(timezone.utc)
+    last_alert_at = state.get("last_strong_signal_alert_at")
+    if last_alert_at:
+        try:
+            if now - datetime.fromisoformat(last_alert_at) < timedelta(hours=STRONG_SIGNAL_COOLDOWN_HOURS):
+                return
+        except ValueError:
+            pass
+    price, change_24h, change_7d = await get_btc_market_data()
+    news_items = fetch_crypto_news(limit=6)
+    result = await classify_strong_signal(price, change_24h, change_7d, news_items)
+    if not result:
+        return
+    strength = str(result.get("signal_strength", "")).lower()
+    if result.get("should_alert") is True and strength in {"medium", "strong"}:
+        await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=str(result.get("telegram_message")))
+        state["last_strong_signal_alert_at"] = now.isoformat()
+        state["last_strong_signal_strength"] = strength
+        state["last_strong_signal_direction"] = str(result.get("direction", "unclear")).lower()
+        save_state(state)
+
+
 def get_alert_settings(state: dict) -> dict:
     return {
         "price_move_alert_percent": float(state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)),
@@ -352,7 +484,12 @@ async def setup_bot_commands(app: Application) -> None:
     default_commands = [BotCommand("start", "Show bot intro"), BotCommand("price", "Check crypto prices")]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
     if TELEGRAM_ADMIN_USER_ID:
-        admin_commands = default_commands + [BotCommand("settings", "Open settings menu"), BotCommand("status", "Show bot status")]
+        admin_commands = default_commands + [
+            BotCommand("settings", "Open settings menu"),
+            BotCommand("status", "Show bot status"),
+            BotCommand("dailyreport", "BTC daily report"),
+            BotCommand("weeklyreport", "BTC weekly report"),
+        ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)
             await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_chat_id))
@@ -376,6 +513,8 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
+    app.add_handler(CommandHandler("dailyreport", daily_report))
+    app.add_handler(CommandHandler("weeklyreport", weekly_report))
     app.add_handler(CommandHandler("setthreshold", set_threshold))
     app.add_handler(CommandHandler("setcooldown", set_interval))
     app.add_handler(CommandHandler("setinterval", set_interval))
@@ -383,6 +522,8 @@ def main():
     runtime_state = load_state()
     runtime_settings = get_alert_settings(runtime_state)
     schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
+    schedule_weekly_report(app)
+    schedule_strong_signal_job(app)
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()

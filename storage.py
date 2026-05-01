@@ -15,6 +15,9 @@ def load_state() -> dict:
             "last_24h_change": None,
             "last_checked_at": None,
             "last_alert_at": None,
+            "last_strong_signal_alert_at": None,
+            "last_strong_signal_strength": None,
+            "last_strong_signal_direction": None,
         }
 
 
