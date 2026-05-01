@@ -18,6 +18,7 @@ COIN_SYMBOL_TO_ID = {
 
 DEFAULT_SYMBOL = "btc"
 _PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
+_BTC_MARKET_CACHE: tuple[float, float, float | None, float] | None = None
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +100,48 @@ async def get_btc_price() -> tuple[float, float]:
     """Backward-compatible helper for BTC-specific callers."""
     price, change_24h, _ = await get_coin_price("btc")
     return price, change_24h
+
+
+async def get_btc_market_data() -> tuple[float, float, float | None]:
+    """Get BTC price, 24h change, and 7d change when available."""
+    global _BTC_MARKET_CACHE
+
+    if _BTC_MARKET_CACHE is not None:
+        price, change_24h, change_7d, cached_at = _BTC_MARKET_CACHE
+        if time.time() - cached_at <= PRICE_CACHE_TTL_SECONDS:
+            return price, change_24h, change_7d
+
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": COIN_SYMBOL_TO_ID["btc"],
+        "vs_currencies": "usd",
+        "include_24hr_change": "true",
+        "include_7d_change": "true",
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params, timeout=10)
+        if response.status_code == 429:
+            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
+        response.raise_for_status()
+        data = response.json()
+
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected CoinGecko response format.")
+
+    coin_data = data.get("bitcoin")
+    if not isinstance(coin_data, dict):
+        raise ValueError("CoinGecko response did not include expected coin data for 'bitcoin'.")
+
+    price = float(coin_data["usd"])
+    change_24h_raw = coin_data.get("usd_24h_change")
+    change_24h = float(change_24h_raw) if change_24h_raw is not None else 0.0
+    change_7d_raw = coin_data.get("usd_7d_change")
+    change_7d = float(change_7d_raw) if change_7d_raw is not None else None
+
+    _set_cached_price("btc", price, change_24h)
+    _BTC_MARKET_CACHE = (price, change_24h, change_7d, time.time())
+    return price, change_24h, change_7d
 
 
 async def _fetch_ton_fallback_coin_data() -> dict | None:

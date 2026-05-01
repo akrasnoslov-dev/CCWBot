@@ -15,7 +15,7 @@ from price_service import (
     COIN_SYMBOL_TO_ID,
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
-    get_btc_price,
+    get_btc_market_data,
     get_coin_price,
 )
 from storage import load_state, save_state
@@ -295,7 +295,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     try:
         state = load_state()
         previous_price = state.get("last_price")
-        current_price, change_24h = await get_btc_price()
+        current_price, change_24h, change_7d = await get_btc_market_data()
         checked_at = datetime.now(timezone.utc).isoformat()
         if previous_price is None:
             state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at, "last_alert_at": state.get("last_alert_at")})
@@ -312,7 +312,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         if should_alert:
             try:
                 news_items = fetch_crypto_news(limit=5)
-                message = await create_ai_alert_message(previous_price, current_price, price_change_percent, change_24h, news_items)
+                message = await create_ai_alert_message(
+                    previous_price,
+                    current_price,
+                    price_change_percent,
+                    change_24h,
+                    change_7d,
+                    news_items,
+                )
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
                 message = build_fallback_alert_message(
@@ -320,6 +327,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     current_price=current_price,
                     price_change_percent=price_change_percent,
                     change_24h=change_24h,
+                    change_7d=change_7d,
                 )
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
