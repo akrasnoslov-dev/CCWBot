@@ -5,7 +5,7 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 ## Project overview
 
 - Runs as a polling Telegram bot (`python-telegram-bot`).
-- Checks BTC price every 60 seconds.
+- Checks BTC price on a configurable interval (default: every 300 seconds).
 - Sends automatic alerts when BTC moves beyond a configurable threshold.
 - Optionally enriches automatic alerts with AI-generated summaries and recent crypto news.
 
@@ -74,6 +74,8 @@ GROQ_MODEL=openai/gpt-oss-20b
 
 PRICE_MOVE_ALERT_PERCENT=0.01
 ALERT_COOLDOWN_MINUTES=2
+PRICE_CACHE_TTL_SECONDS=300
+AUTOMATIC_CHECK_INTERVAL_SECONDS=300
 ```
 
 ### Notes
@@ -81,6 +83,8 @@ ALERT_COOLDOWN_MINUTES=2
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_ADMIN_USER_ID` are required at startup.
 - `TELEGRAM_ADMIN_USER_ID` should be your numeric Telegram user ID.
 - `PRICE_MOVE_ALERT_PERCENT` is interpreted as a percent value in current behavior (default `0.01`).
+- `PRICE_CACHE_TTL_SECONDS` controls in-memory CoinGecko cache TTL for `btc`, `eth`, `ton`, and `usdt` (default `300`).
+- `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls automatic BTC check frequency (default `300`).
 
 ## Local setup
 
@@ -102,11 +106,17 @@ If startup succeeds, the bot begins polling Telegram and schedules automatic BTC
 
 ## CoinGecko rate limits and caching
 
-- Manual price lookups use an in-memory cache per symbol (TTL: 60 seconds).
+- Manual price lookups use an in-memory cache per symbol (TTL from `PRICE_CACHE_TTL_SECONDS`, default `300`).
 - Repeated `/price` requests inside the TTL reuse cached data to reduce API calls.
+- Inline `/price` button clicks also reuse the same symbol cache.
 - If CoinGecko returns HTTP `429`:
-  - Manual commands return a user-facing rate-limit message.
-  - Automatic BTC checks skip that cycle and log the event (no alert spam).
+  - Manual commands return `CoinGecko rate limit reached. Please wait a bit and try again.` (cooldown: max one Telegram warning per chat per 120 seconds).
+  - Automatic BTC checks log `CoinGecko returned 429 during automatic BTC check. Skipping this cycle.` and skip alerting for that cycle.
+
+## Graceful shutdown
+
+- Pressing `Ctrl+C` stops the bot cleanly and logs: `Bot stopped by user.`
+- Normal `Ctrl+C` shutdown avoids noisy traceback output while preserving real runtime errors during operation.
 
 ## Current limitations
 
