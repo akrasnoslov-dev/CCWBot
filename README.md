@@ -9,7 +9,7 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 - Sends automatic alerts when BTC moves beyond a configurable threshold.
 - Enriches automatic alerts with Groq AI structured reasoning (severity, risk level, cautious possible actions, news relevance) and recent crypto news context.
 - Includes BTC weekly trend context (7d change when available) in automatic alerts.
-- Adds admin-only BTC `/dailyreport` and `/weeklyreport` with cautious AI market summaries.
+- Adds admin-only BTC `/reports` menu with Daily/Weekly report buttons and cautious AI summaries.
 - Supports optional scheduled weekly report delivery and optional strong-signal alert checks.
 
 ## Current features
@@ -40,8 +40,7 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 
 - `/settings` — open settings menu.
 - `/status` — bot health + last saved BTC state.
-- `/dailyreport` — generate BTC daily market report.
-- `/weeklyreport` — generate BTC weekly market report.
+- `/reports` — open admin BTC reports menu with `Daily report` and `Weekly report` buttons.
 - `/chatid` — show current chat ID (admin utility).
 - `/setthreshold <percent>` — set alert trigger threshold.
 - `/setinterval <seconds>` — set automatic BTC check interval.
@@ -50,6 +49,7 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 ### Hidden utility command
 
 - `/userid` — returns your Telegram user ID (useful when configuring admin).
+- Hidden fallback commands: `/dailyreport` and `/weeklyreport` still work for admin but are not shown in command menus.
 
 ### Inline button menus
 
@@ -58,14 +58,18 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
   - `Current settings`
   - `Set threshold` → `0.5%`, `1.0%`, `2.0%`
   - `Set check interval` → `60 sec`, `300 sec`, `600 sec`
+- **Reports menu** (`/reports`, admin only):
+  - `Daily report`
+  - `Weekly report`
 
 ## Admin policy
 
 - `TELEGRAM_ADMIN_USER_ID` controls admin permissions.
-  - Only this user can access admin commands and settings buttons.
+  - Only this user can access admin commands, settings buttons, and report buttons.
 - `TELEGRAM_CHAT_ID` controls where automatic alerts are delivered.
   - Automatic BTC alerts are sent to this chat ID.
 - `/userid` is intentionally hidden from command menus and helps you discover your Telegram user ID.
+- `/chatid` is admin-only and hidden from command menus.
 
 ## Environment variables
 

@@ -96,6 +96,13 @@ def build_interval_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def build_reports_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Daily report", callback_data="reports:daily")],
+        [InlineKeyboardButton("Weekly report", callback_data="reports:weekly")],
+    ])
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = is_admin_user(update.effective_user.id if update.effective_user else None)
     message = (
@@ -105,7 +112,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/price - check crypto prices"
     )
     if is_admin:
-        message += "\n/settings - open settings menu\n/status - show bot status\n/dailyreport - BTC daily report\n/weeklyreport - BTC weekly report"
+        message += "\n/settings - open settings menu\n/status - show bot status\n/reports - BTC reports menu"
     await update.message.reply_text(message)
 
 
@@ -118,37 +125,52 @@ async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin_user(update.effective_user.id if update.effective_user else None):
         await update.message.reply_text("Sorry, only the bot admin can request daily reports.")
         return
+    await send_daily_report_message(update.message)
+
+
+async def send_daily_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = fetch_crypto_news(limit=5)
         report = await create_daily_report(price, change_24h, news_items)
         if report and report.get("telegram_message"):
-            await update.message.reply_text(str(report["telegram_message"]))
+            await target.reply_text(str(report["telegram_message"]))
             return
-        await update.message.reply_text(build_fallback_alert_message(price, price, 0.0, change_24h, change_7d))
+        await target.reply_text(build_fallback_alert_message(price, price, 0.0, change_24h, change_7d))
     except Exception as error:
         log(f"Daily report generation failed: {error}")
-        await update.message.reply_text("Daily report unavailable. Monitor risk and avoid impulsive action.\nNot financial advice.")
+        await target.reply_text("Daily report unavailable. Monitor risk and avoid impulsive action.\nNot financial advice.")
 
 
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin_user(update.effective_user.id if update.effective_user else None):
         await update.message.reply_text("Sorry, only the bot admin can request weekly reports.")
         return
+    await send_weekly_report_message(update.message)
+
+
+async def send_weekly_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = fetch_crypto_news(limit=6)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         if report and report.get("telegram_message"):
-            await update.message.reply_text(str(report["telegram_message"]))
+            await target.reply_text(str(report["telegram_message"]))
             return
         trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
-        await update.message.reply_text(
+        await target.reply_text(
             f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
             "Risk level: Medium\nPossible action: consider waiting for clearer confirmation.\nNot financial advice."
         )
     except Exception as error:
         log(f"Weekly report generation failed: {error}")
+
+
+async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user.id if update.effective_user else None):
+        await update.message.reply_text("Sorry, only the bot admin can access reports.")
+        return
+    await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
 
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -323,6 +345,12 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("price:"):
             await send_price_message(query.message, data.split(":", maxsplit=1)[1])
             return
+        if data == "reports:daily":
+            await send_daily_report_message(query.message)
+            return
+        if data == "reports:weekly":
+            await send_weekly_report_message(query.message)
+            return
         if data == "settings:current":
             state = load_state()
             alert_settings = get_alert_settings(state)
@@ -487,8 +515,7 @@ async def setup_bot_commands(app: Application) -> None:
         admin_commands = default_commands + [
             BotCommand("settings", "Open settings menu"),
             BotCommand("status", "Show bot status"),
-            BotCommand("dailyreport", "BTC daily report"),
-            BotCommand("weeklyreport", "BTC weekly report"),
+            BotCommand("reports", "Open BTC reports menu"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)
@@ -513,6 +540,7 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
+    app.add_handler(CommandHandler("reports", reports))
     app.add_handler(CommandHandler("dailyreport", daily_report))
     app.add_handler(CommandHandler("weeklyreport", weekly_report))
     app.add_handler(CommandHandler("setthreshold", set_threshold))

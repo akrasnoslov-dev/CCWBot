@@ -72,8 +72,25 @@ async def create_daily_report(current_price: float, change_24h: float, news_item
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
 Return only minified JSON with required fields: risk_level(low|medium|high), market_interpretation, possible_actions(array), telegram_message.
-Include current BTC price and 24h change in telegram_message and include 'Not financial advice.'
-No direct buy/sell advice. Use cautious wording.
+telegram_message must be a concise, readable Telegram message (about 7-10 short lines) using this style:
+📊 BTC Daily Report
+
+Price: $...
+24h change: ...%
+7d trend: optional if context helps
+Risk level: ...
+
+Market view:
+<1 short sentence>
+
+News:
+<1 short sentence>
+
+Possible action:
+<1 cautious sentence>
+Not financial advice.
+No raw JSON in telegram_message. No dense paragraphs. No direct buy/sell advice.
+Use cautious wording such as: consider reviewing exposure, consider waiting for confirmation, monitor risk, avoid impulsive action.
 Data: price={current_price:.2f}, change24h={change_24h:.4f}%.
 News:\n{news_text}
 """
@@ -91,8 +108,25 @@ async def create_weekly_report(current_price: float, change_24h: float | None, c
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
 Return only minified JSON with required fields: risk_level(low|medium|high), weekly_interpretation, possible_actions(array), telegram_message.
-Include price, 24h change, 7d trend (or unknown) and 'Not financial advice.'
-No direct buy/sell advice.
+telegram_message must be concise and easy to read in Telegram, using short sections and line breaks:
+📊 BTC Weekly Report
+
+Price: $...
+7d trend: ...%
+24h change: optional
+Risk level: ...
+
+Weekly market view:
+<1 short sentence>
+
+Weekly news theme:
+<1 short sentence>
+
+Possible action:
+<1 cautious sentence>
+Not financial advice.
+No raw JSON in telegram_message. No dense paragraphs. No direct buy/sell advice.
+Use cautious wording such as: consider reviewing exposure, consider waiting for confirmation, monitor risk, avoid impulsive action.
 Data: price={current_price:.2f}, change24h={change_24h if change_24h is not None else 'unknown'}%, change7d={change_7d if change_7d is not None else 'unknown'}%.
 News:\n{news_text}
 """
