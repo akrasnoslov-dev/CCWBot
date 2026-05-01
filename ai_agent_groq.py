@@ -33,16 +33,16 @@ def build_fallback_alert_message(
     price_change_percent: float,
     change_24h: float,
 ) -> str:
-    direction = "up" if price_change_percent > 0 else "down"
     severity = "high" if abs(price_change_percent) >= 2 else "medium" if abs(price_change_percent) >= 1 else "low"
+    direction_text = "increase" if price_change_percent > 0 else "decrease" if price_change_percent < 0 else "no change"
     return (
-        "🚨 BTC price alert\n\n"
-        f"BTC: ${current_price:,.2f}\n"
-        f"Movement: {direction} {price_change_percent:.2f}%\n"
-        f"24h change: {change_24h:.2f}%\n"
-        f"Severity: {severity}\n"
-        "News relevance: unknown\n\n"
-        "Note: This is an informational market update, not financial advice."
+        "🚨 BTC movement alert\n\n"
+        f"Price: ${current_price:,.2f}\n"
+        f"Move since last check: {price_change_percent:+.2f}%\n"
+        f"24h change: {change_24h:+.2f}%\n"
+        f"Severity: {severity.title()}\n\n"
+        "Context: This appears to be a short-term "
+        f"{direction_text} in BTC. Recent news relevance is unknown, so the move is not clearly explained by current headlines."
     )
 
 
@@ -131,12 +131,18 @@ Rules:
 - Severity must be one of: low, medium, high.
 - News relevance must be one of: relevant, partly_relevant, not_relevant, unknown.
 - If the news does not clearly explain the move, say so in news_summary.
-- telegram_message must include:
-  - coin symbol BTC
-  - current price
-  - movement percentage
-  - severity
-  - whether news seems relevant
+- telegram_message must be a user-facing multi-line message with 4-7 short lines (blank lines are allowed).
+- telegram_message must not look like JSON and must not be a single compressed line.
+- telegram_message must include BTC symbol, current price, movement since last check, 24h change, severity, short interpretation, and whether news seems relevant.
+- telegram_message should follow this style:
+  🚨 BTC movement alert
+
+  Price: $77,332
+  Move since last check: +0.17%
+  24h change: +1.54%
+  Severity: Low
+
+  Context: short neutral interpretation mentioning news relevance.
 - telegram_message must stay neutral and must not tell the user to buy or sell.
 
 Expected JSON fields:

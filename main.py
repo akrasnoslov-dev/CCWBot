@@ -357,6 +357,7 @@ def main():
     app.add_handler(CommandHandler("setcooldown", set_cooldown))
     app.add_handler(CallbackQueryHandler(button_router))
     app.job_queue.run_repeating(automatic_price_check, interval=AUTOMATIC_CHECK_INTERVAL_SECONDS, first=5)
+    log(f"Automatic BTC check interval: {AUTOMATIC_CHECK_INTERVAL_SECONDS} seconds")
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()
