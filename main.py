@@ -23,6 +23,7 @@ from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScope
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
+AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
 
 
@@ -140,14 +141,30 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if interval <= 0:
         await update.message.reply_text("Interval must be greater than 0.")
         return
+    await update_interval_and_reschedule(context, interval)
+    await update.message.reply_text(
+        f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
+    )
+
+
+def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
+    existing_jobs = app.job_queue.get_jobs_by_name(AUTOMATIC_BTC_CHECK_JOB_NAME)
+    for job in existing_jobs:
+        job.schedule_removal()
+    app.job_queue.run_repeating(
+        automatic_price_check,
+        interval=interval_seconds,
+        first=5,
+        name=AUTOMATIC_BTC_CHECK_JOB_NAME,
+    )
+    log(f"Automatic BTC check interval: {interval_seconds} seconds")
+
+
+async def update_interval_and_reschedule(context: ContextTypes.DEFAULT_TYPE, interval: int) -> None:
     state = load_state()
     state["automatic_check_interval_seconds"] = interval
     save_state(state)
-    await update.message.reply_text(
-        f"Check interval updated to {interval} seconds ✅\n"
-        "Restart the bot to apply the new interval."
-    )
-
+    schedule_automatic_btc_check(context.application, interval)
 
 async def send_price_message(target, symbol: str) -> None:
     coin_price, change_24h, resolved_symbol = await get_coin_price(symbol)
@@ -239,12 +256,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
-            state = load_state()
-            state["automatic_check_interval_seconds"] = interval
-            save_state(state)
+            await update_interval_and_reschedule(context, interval)
             await query.message.reply_text(
-                f"Check interval updated to {interval} seconds ✅\n"
-                "Restart the bot to apply the new interval."
+                f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
             )
             return
 
@@ -360,8 +374,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_router))
     runtime_state = load_state()
     runtime_settings = get_alert_settings(runtime_state)
-    app.job_queue.run_repeating(automatic_price_check, interval=runtime_settings["automatic_check_interval_seconds"], first=5)
-    log(f"Automatic BTC check interval: {runtime_settings['automatic_check_interval_seconds']} seconds")
+    schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()
