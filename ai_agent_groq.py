@@ -98,12 +98,65 @@ def _format_related_news_section(news_relevance: str, related_news: list[dict] |
     return "Related news:\n" + "\n".join(lines)
 
 
+def _build_news_listing_with_ids(news_items: list[dict] | None) -> tuple[str, list[dict]]:
+    indexed_items: list[dict] = []
+    lines: list[str] = []
+    for item in (news_items or []):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        source = str(item.get("source", "")).strip()
+        link = str(item.get("link", "")).strip()
+        if not title:
+            continue
+        indexed_items.append({"title": title, "source": source, "link": link})
+        lines.append(f"[{len(indexed_items)}] {title} | {source or 'Source unavailable'} | {link or 'No link'}")
+
+    if not lines:
+        return "No relevant recent news found.", []
+    return "\n".join(lines), indexed_items
+
+
+def _extract_related_news_from_ids(news_relevance: str, related_news_ids: list[int] | None, indexed_news_items: list[dict]) -> list[dict]:
+    if news_relevance not in {"relevant", "partly_relevant"}:
+        return []
+    if not isinstance(related_news_ids, list):
+        return []
+
+    valid_items: list[dict] = []
+    used_ids: set[int] = set()
+    for raw_id in related_news_ids:
+        if len(valid_items) >= 2:
+            break
+        if not isinstance(raw_id, int) or raw_id in used_ids:
+            continue
+        used_ids.add(raw_id)
+        if raw_id < 1 or raw_id > len(indexed_news_items):
+            continue
+        item = indexed_news_items[raw_id - 1]
+        link = str(item.get("link", "")).strip()
+        if not link:
+            continue
+        valid_items.append({
+            "title": str(item.get("title", "")).strip(),
+            "source": str(item.get("source", "")).strip(),
+            "link": link,
+        })
+    return valid_items
+
+
+def _sanitize_telegram_message(telegram_message: str) -> str:
+    removed_prefixes = ("Data:", "News:")
+    kept_lines = [line for line in telegram_message.splitlines() if not line.strip().startswith(removed_prefixes)]
+    cleaned = "\n".join(kept_lines).strip()
+    if not cleaned.endswith("Not financial advice."):
+        cleaned = cleaned.rstrip(".") + "\n\nNot financial advice."
+    return cleaned
+
+
 def _build_alert_message_with_related_news(structured: dict) -> str:
-    telegram_message = str(structured.get("telegram_message", "")).strip()
-    related_news_section = _format_related_news_section(
-        str(structured.get("news_relevance", "")).strip(),
-        structured.get("related_news"),
-    )
+    telegram_message = _sanitize_telegram_message(str(structured.get("telegram_message", "")).strip())
+    related_news_section = _format_related_news_section(str(structured.get("news_relevance", "")).strip(), structured.get("related_news"))
     if not related_news_section:
         return telegram_message
     if "Related news:" in telegram_message:
@@ -179,14 +232,14 @@ async def create_ai_alert_message(
     check_interval_seconds: int | None = None,
 ) -> str:
     """Create BTC alert message from structured model output with safe fallback."""
-    news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
+    news_text, indexed_news_items = _build_news_listing_with_ids(news_items)
     prompt = f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news, telegram_message.
+Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids, telegram_message.
 Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
-related_news must be an array with up to 2 items. Each item: title, source, link(optional).
-Set related_news to [] when news_relevance is not_relevant or unknown.
+related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
+Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Use this exact style and labels:
 🚨 BTC movement alert
 
@@ -210,6 +263,11 @@ News:\n{news_text}
     if not structured or not structured.get("telegram_message"):
         print("AI alert fallback used due to parsing/validation failure.")
         return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
+    structured["related_news"] = _extract_related_news_from_ids(
+        str(structured.get("news_relevance", "")).strip(),
+        structured.get("related_news_ids"),
+        indexed_news_items,
+    )
     telegram_message = _build_alert_message_with_related_news(structured)
     if not _is_structured_alert_message(telegram_message):
         print("AI alert fallback used due to non-structured telegram_message.")
@@ -228,14 +286,14 @@ async def create_ai_alert_payload(
     check_interval_seconds: int | None = None,
 ) -> dict:
     """Create alert payload with plain text and optional HTML variant for Telegram."""
-    news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
+    news_text, indexed_news_items = _build_news_listing_with_ids(news_items)
     prompt = f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news, telegram_message.
+Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids, telegram_message.
 Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
-related_news must be an array with up to 2 items. Each item: title, source, link(optional).
-Set related_news to [] when news_relevance is not_relevant or unknown.
+related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
+Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Use this exact style and labels:
 🚨 BTC movement alert
 
@@ -259,6 +317,11 @@ News:\n{news_text}
     if not structured or not structured.get("telegram_message"):
         plain_message = build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
         return {"plain_text": plain_message, "html_text": None}
+    structured["related_news"] = _extract_related_news_from_ids(
+        str(structured.get("news_relevance", "")).strip(),
+        structured.get("related_news_ids"),
+        indexed_news_items,
+    )
     plain_message = _build_alert_message_with_related_news(structured)
     if not _is_structured_alert_message(plain_message):
         plain_message = build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
