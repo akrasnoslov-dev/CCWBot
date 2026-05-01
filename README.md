@@ -7,12 +7,13 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 - Runs as a polling Telegram bot (`python-telegram-bot`).
 - Checks BTC price on a configurable interval (default: every 300 seconds).
 - Sends automatic alerts when BTC moves beyond a configurable threshold.
-- Optionally enriches automatic alerts with AI-generated summaries and recent crypto news.
+- Enriches automatic alerts with Groq AI structured reasoning (severity + news relevance) and recent crypto news context.
 
 ## Current features
 
 - Manual `/price` lookup with button menu.
 - Automatic BTC monitoring with cooldown logic.
+- AI alert pipeline that validates structured JSON output before sending the final Telegram alert text.
 - Admin-only alert configuration (`threshold`, `cooldown`) via commands and inline buttons.
 - In-memory CoinGecko response caching for manual price checks.
 - Persistent runtime state in local storage (`last price`, `last alert time`, settings overrides).

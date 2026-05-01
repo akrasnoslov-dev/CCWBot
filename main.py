@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 import httpx
-from ai_agent_groq import create_ai_alert_message
+from ai_agent_groq import build_fallback_alert_message, create_ai_alert_message
 from alert_rules import calculate_price_change_percent, should_send_alert
 from config import (
     ALERT_COOLDOWN_MINUTES,
@@ -298,12 +298,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 message = await create_ai_alert_message(previous_price, current_price, price_change_percent, change_24h, news_items)
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
-                direction = "up" if price_change_percent > 0 else "down"
-                message = (
-                    "🚨 BTC price alert\n\n"
-                    f"BTC moved {direction} by {price_change_percent:.2f}% since last check.\n\n"
-                    f"Previous price: ${previous_price:,.2f}\nCurrent price: ${current_price:,.2f}\n"
-                    f"24h change: {change_24h:.2f}%\n\nAI summary was unavailable, so this is a basic alert."
+                message = build_fallback_alert_message(
+                    previous_price=previous_price,
+                    current_price=current_price,
+                    price_change_percent=price_change_percent,
+                    change_24h=change_24h,
                 )
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
