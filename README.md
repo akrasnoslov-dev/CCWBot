@@ -11,6 +11,7 @@ CCWBot is a Telegram crypto watcher bot focused on automatic **BTC movement aler
 ## Current features
 - Manual `/price` checks and inline coin buttons.
 - Automatic BTC checks with configurable interval and movement threshold.
+- Automatic BTC alerts separate **since last check** movement from **24h trend** (and 7d trend when available).
 - AI-assisted alert/report text generation (Groq provider) with safe fallback messages.
 - RSS news context filtering for crypto/BTC relevance.
 - Admin-only settings, status, and reports.
