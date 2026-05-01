@@ -7,6 +7,7 @@ All prompts explicitly avoid direct financial advice.
 
 import json
 import os
+from html import escape
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -76,6 +77,87 @@ def _is_structured_alert_message(message: str) -> bool:
     return "\n" in message and all(marker in message for marker in required_markers)
 
 
+def _format_related_news_section(news_relevance: str, related_news: list[dict] | None) -> str:
+    if news_relevance not in {"relevant", "partly_relevant"}:
+        return ""
+    if not related_news:
+        return ""
+
+    lines: list[str] = []
+    for item in related_news[:2]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        source = str(item.get("source", "")).strip()
+        if not title:
+            continue
+        lines.append(f"- {title} - {source}" if source else f"- {title}")
+
+    if not lines:
+        return ""
+    return "Related news:\n" + "\n".join(lines)
+
+
+def _build_alert_message_with_related_news(structured: dict) -> str:
+    telegram_message = str(structured.get("telegram_message", "")).strip()
+    related_news_section = _format_related_news_section(
+        str(structured.get("news_relevance", "")).strip(),
+        structured.get("related_news"),
+    )
+    if not related_news_section:
+        return telegram_message
+    if "Related news:" in telegram_message:
+        return telegram_message
+    if "Possible action:" not in telegram_message:
+        return telegram_message
+    return telegram_message.replace("Possible action:", f"{related_news_section}\n\nPossible action:", 1)
+
+
+def _extract_related_news_with_links(news_relevance: str, related_news: list[dict] | None) -> list[dict]:
+    if news_relevance not in {"relevant", "partly_relevant"} or not related_news:
+        return []
+    valid_items: list[dict] = []
+    for item in related_news[:2]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        source = str(item.get("source", "")).strip()
+        link = str(item.get("link", "")).strip()
+        if not title or not link:
+            continue
+        valid_items.append({"title": title, "source": source, "link": link})
+    return valid_items
+
+
+def build_html_alert_message(plain_message: str, related_news_links: list[dict]) -> str | None:
+    if not related_news_links or "Related news:" not in plain_message:
+        return None
+    escaped_message = escape(plain_message)
+    escaped_lines = escaped_message.split("\n")
+
+    try:
+        header_index = escaped_lines.index("Related news:")
+    except ValueError:
+        return None
+
+    html_lines: list[str] = []
+    for item in related_news_links[:2]:
+        title = escape(item["title"])
+        source = escape(item["source"])
+        link = escape(item["link"], quote=True)
+        if source:
+            html_lines.append(f'- <a href="{link}">{title}</a> - {source}')
+        else:
+            html_lines.append(f'- <a href="{link}">{title}</a>')
+    if not html_lines:
+        return None
+
+    end_index = header_index + 1
+    while end_index < len(escaped_lines) and escaped_lines[end_index].startswith("- "):
+        end_index += 1
+    return "\n".join(escaped_lines[: header_index + 1] + html_lines + escaped_lines[end_index:])
+
+
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
     response = await groq_client.chat.completions.create(
@@ -99,10 +181,12 @@ async def create_ai_alert_message(
     """Create BTC alert message from structured model output with safe fallback."""
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, telegram_message.
+Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news, telegram_message.
 Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
+related_news must be an array with up to 2 items. Each item: title, source, link(optional).
+Set related_news to [] when news_relevance is not_relevant or unknown.
 Use this exact style and labels:
 🚨 BTC movement alert
 
@@ -126,11 +210,65 @@ News:\n{news_text}
     if not structured or not structured.get("telegram_message"):
         print("AI alert fallback used due to parsing/validation failure.")
         return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
-    telegram_message = str(structured["telegram_message"])
+    telegram_message = _build_alert_message_with_related_news(structured)
     if not _is_structured_alert_message(telegram_message):
         print("AI alert fallback used due to non-structured telegram_message.")
         return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
     return telegram_message
+
+
+async def create_ai_alert_payload(
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict] | None = None,
+    alert_threshold_percent: float | None = None,
+    check_interval_seconds: int | None = None,
+) -> dict:
+    """Create alert payload with plain text and optional HTML variant for Telegram."""
+    news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
+    prompt = f"""
+Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news, telegram_message.
+Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
+Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
+telegram_message must be multi-line, section-based, and never a dense paragraph.
+related_news must be an array with up to 2 items. Each item: title, source, link(optional).
+Set related_news to [] when news_relevance is not_relevant or unknown.
+Use this exact style and labels:
+🚨 BTC movement alert
+
+Price: $...
+Since last check: ...% in ... sec
+24h trend: ...%
+7d trend: ...% or unknown
+Risk level: Low|Medium|High
+
+Context:
+<1-2 short cautious sentences, including one short sentence about whether recent news appears relevant to this move>
+
+Possible action:
+<1 short cautious sentence>
+
+Not financial advice.
+Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}, threshold={alert_threshold_percent if alert_threshold_percent is not None else 'unknown'}%, interval={check_interval_seconds if check_interval_seconds is not None else 'unknown'} sec.
+News:\n{news_text}
+"""
+    structured = await _ask_json(prompt)
+    if not structured or not structured.get("telegram_message"):
+        plain_message = build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
+        return {"plain_text": plain_message, "html_text": None}
+    plain_message = _build_alert_message_with_related_news(structured)
+    if not _is_structured_alert_message(plain_message):
+        plain_message = build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
+        return {"plain_text": plain_message, "html_text": None}
+    related_news_links = _extract_related_news_with_links(
+        str(structured.get("news_relevance", "")).strip(),
+        structured.get("related_news"),
+    )
+    html_message = build_html_alert_message(plain_message, related_news_links)
+    return {"plain_text": plain_message, "html_text": html_message}
 
 
 async def create_daily_report(current_price: float, change_24h: float, news_items: list[dict] | None = None) -> dict | None:
