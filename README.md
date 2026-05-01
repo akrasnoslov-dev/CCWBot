@@ -84,8 +84,10 @@ AUTOMATIC_CHECK_INTERVAL_SECONDS=300
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_ADMIN_USER_ID` are required at startup.
 - `TELEGRAM_ADMIN_USER_ID` should be your numeric Telegram user ID.
 - `PRICE_MOVE_ALERT_PERCENT` is interpreted as a percent value in current behavior (default `0.01`).
+- `ALERT_COOLDOWN_MINUTES` controls how often automatic alerts may be sent after a trigger (default `2`).
+- `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls how often BTC is checked (default `300`).
+- `ALERT_COOLDOWN_MINUTES` and `AUTOMATIC_CHECK_INTERVAL_SECONDS` are different settings: one limits alert sending, the other controls check frequency.
 - `PRICE_CACHE_TTL_SECONDS` controls in-memory CoinGecko cache TTL for `btc`, `eth`, `ton`, and `usdt` (default `300`).
-- `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls automatic BTC check frequency (default `300`).
 
 ## Local setup
 

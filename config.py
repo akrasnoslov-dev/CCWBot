@@ -5,6 +5,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value < minimum:
+        return default
+    return value
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -20,6 +33,6 @@ else:
     TELEGRAM_ADMIN_USER_ID = None
 
 PRICE_MOVE_ALERT_PERCENT = float(os.getenv("PRICE_MOVE_ALERT_PERCENT", "0.01"))
-ALERT_COOLDOWN_MINUTES = int(os.getenv("ALERT_COOLDOWN_MINUTES", "2"))
-PRICE_CACHE_TTL_SECONDS = int(os.getenv("PRICE_CACHE_TTL_SECONDS", "300"))
-AUTOMATIC_CHECK_INTERVAL_SECONDS = int(os.getenv("AUTOMATIC_CHECK_INTERVAL_SECONDS", "300"))
+ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 2, minimum=0)
+PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
+AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 300, minimum=1)
