@@ -441,10 +441,27 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         if should_send_alert(price_change_percent=price_change_percent, threshold_percent=alert_settings["price_move_alert_percent"]):
             try:
                 news_items = fetch_crypto_news(limit=5)
-                message = await create_ai_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, news_items)
+                message = await create_ai_alert_message(
+                    previous_price,
+                    current_price,
+                    price_change_percent,
+                    change_24h,
+                    change_7d,
+                    news_items,
+                    alert_threshold_percent=alert_settings["price_move_alert_percent"],
+                    check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                )
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
-                message = build_fallback_alert_message(previous_price=previous_price, current_price=current_price, price_change_percent=price_change_percent, change_24h=change_24h, change_7d=change_7d)
+                message = build_fallback_alert_message(
+                    previous_price=previous_price,
+                    current_price=current_price,
+                    price_change_percent=price_change_percent,
+                    change_24h=change_24h,
+                    change_7d=change_7d,
+                    alert_threshold_percent=alert_settings["price_move_alert_percent"],
+                    check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                )
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
             log("Alert sent.")

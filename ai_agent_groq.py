@@ -37,20 +37,47 @@ def _parse_json(raw_content: str | None) -> dict | None:
     return parsed
 
 
-def build_fallback_alert_message(previous_price: float, current_price: float, price_change_percent: float, change_24h: float, change_7d: float | None = None) -> str:
+def build_fallback_alert_message(
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None = None,
+    alert_threshold_percent: float | None = None,
+    check_interval_seconds: int | None = None,
+) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
     weekly_trend = f"{change_7d:+.2f}%" if change_7d is not None else "unknown"
+    interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
+    threshold_text = f"{alert_threshold_percent:.2f}%" if alert_threshold_percent is not None else "unknown"
     return (
-        "🚨 BTC market alert\n\n"
+        "🚨 BTC movement alert\n\n"
         f"Price: ${current_price:,.2f}\n"
-        f"Move since last check: {price_change_percent:+.2f}%\n"
-        f"24h change: {change_24h:+.2f}%\n"
+        f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
+        f"Alert threshold: {threshold_text}\n"
+        f"24h trend: {change_24h:+.2f}%\n"
         f"7d trend: {weekly_trend}\n"
         "Risk level: Medium\n\n"
-        "Context: BTC moved quickly and signal confidence is limited.\n\n"
-        "Possible action: monitor risk and avoid impulsive action.\n"
+        "Why this alert:\n"
+        "BTC moved above your configured threshold since the previous check.\n\n"
+        "Context:\n"
+        "Short-term movement is notable while broader market context remains uncertain.\n\n"
+        "Possible action:\n"
+        "Monitor for confirmation before acting.\n\n"
         "Not financial advice."
     )
+
+
+def _is_structured_alert_message(message: str) -> bool:
+    required_markers = [
+        "Since last check:",
+        "Alert threshold:",
+        "24h trend:",
+        "Why this alert:",
+        "Context:",
+        "Possible action:",
+    ]
+    return "\n" in message and all(marker in message for marker in required_markers)
 
 
 async def _ask_json(prompt: str) -> dict | None:
@@ -63,21 +90,55 @@ async def _ask_json(prompt: str) -> dict | None:
     return _parse_json(response.choices[0].message.content)
 
 
-async def create_ai_alert_message(previous_price: float, current_price: float, price_change_percent: float, change_24h: float, change_7d: float | None, news_items: list[dict] | None = None) -> str:
+async def create_ai_alert_message(
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict] | None = None,
+    alert_threshold_percent: float | None = None,
+    check_interval_seconds: int | None = None,
+) -> str:
     """Create BTC alert message from structured model output with safe fallback."""
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
 Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, telegram_message.
 Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
-Do not give direct buy/sell advice. Include 'Not financial advice.' in telegram_message.
-Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}.
+Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
+telegram_message must be multi-line, section-based, and never a dense paragraph.
+Use this exact style and labels:
+🚨 BTC movement alert
+
+Price: $...
+Since last check: ...% in ... sec
+Alert threshold: ...%
+24h trend: ...%
+7d trend: ...% or unknown
+Risk level: Low|Medium|High
+
+Why this alert:
+BTC moved above your configured threshold since the previous check.
+
+Context:
+<1 short cautious sentence>
+
+Possible action:
+<1 short cautious sentence>
+
+Not financial advice.
+Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}, threshold={alert_threshold_percent if alert_threshold_percent is not None else 'unknown'}%, interval={check_interval_seconds if check_interval_seconds is not None else 'unknown'} sec.
 News:\n{news_text}
 """
     structured = await _ask_json(prompt)
     if not structured or not structured.get("telegram_message"):
         print("AI alert fallback used due to parsing/validation failure.")
-        return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d)
-    return str(structured["telegram_message"])
+        return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
+    telegram_message = str(structured["telegram_message"])
+    if not _is_structured_alert_message(telegram_message):
+        print("AI alert fallback used due to non-structured telegram_message.")
+        return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
+    return telegram_message
 
 
 async def create_daily_report(current_price: float, change_24h: float, news_items: list[dict] | None = None) -> dict | None:
