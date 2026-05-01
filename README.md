@@ -12,9 +12,9 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 ## Current features
 
 - Manual `/price` lookup with button menu.
-- Automatic BTC monitoring with cooldown logic.
+- Automatic BTC monitoring with simple interval + threshold logic.
 - AI alert pipeline that validates structured JSON output before sending the final Telegram alert text.
-- Admin-only alert configuration (`threshold`, `cooldown`) via commands and inline buttons.
+- Admin-only alert configuration (`threshold`, `check interval`) via commands and inline buttons.
 - In-memory CoinGecko response caching for manual price checks.
 - Persistent runtime state in local storage (`last price`, `last alert time`, settings overrides).
 
@@ -39,7 +39,8 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 - `/status` — bot health + last saved BTC state.
 - `/chatid` — show current chat ID (admin utility).
 - `/setthreshold <percent>` — set alert trigger threshold.
-- `/setcooldown <minutes>` — set alert cooldown.
+- `/setinterval <seconds>` — set automatic BTC check interval.
+- `/setcooldown <seconds>` — legacy alias for `/setinterval` (hidden).
 
 ### Hidden utility command
 
@@ -51,7 +52,7 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 - **Settings menu** (`/settings`, admin only):
   - `Current settings`
   - `Set threshold` → `0.5%`, `1.0%`, `2.0%`
-  - `Set cooldown` → `10 min`, `30 min`, `60 min`
+  - `Set check interval` → `60 sec`, `300 sec`, `600 sec`
 
 ## Admin policy
 
@@ -84,9 +85,10 @@ AUTOMATIC_CHECK_INTERVAL_SECONDS=300
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_ADMIN_USER_ID` are required at startup.
 - `TELEGRAM_ADMIN_USER_ID` should be your numeric Telegram user ID.
 - `PRICE_MOVE_ALERT_PERCENT` is interpreted as a percent value in current behavior (default `0.01`).
-- `ALERT_COOLDOWN_MINUTES` controls how often automatic alerts may be sent after a trigger (default `2`).
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls how often BTC is checked (default `300`).
-- `ALERT_COOLDOWN_MINUTES` and `AUTOMATIC_CHECK_INTERVAL_SECONDS` are different settings: one limits alert sending, the other controls check frequency.
+- `PRICE_MOVE_ALERT_PERCENT` controls when an alert is sent based on BTC movement since the previous check.
+- MVP alert timing model: no separate alert cooldown is used for sending decisions.
+- `ALERT_COOLDOWN_MINUTES` is legacy and ignored by current alert logic.
 - `PRICE_CACHE_TTL_SECONDS` controls in-memory CoinGecko cache TTL for `btc`, `eth`, `ton`, and `usdt` (default `300`).
 
 ## Local setup
@@ -132,7 +134,7 @@ If startup succeeds, the bot begins polling Telegram and schedules automatic BTC
 ## Planned improvements
 
 - Multi-coin automatic monitoring rules.
-- More configurable thresholds/cooldowns from Telegram UI.
+- More configurable thresholds from Telegram UI.
 - Stronger resilience (retries/backoff/circuit-breaking).
 - Better observability (structured logs, metrics, health endpoints).
 - Optional datastore-backed state and distributed cache.
