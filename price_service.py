@@ -9,6 +9,8 @@ class CoinGeckoRateLimitError(Exception):
     """Raised when CoinGecko returns HTTP 429."""
 
 
+# Keep this mapping intentionally small and explicit.
+# Only these symbols are supported in command handlers and callbacks.
 COIN_SYMBOL_TO_ID = {
     "btc": "bitcoin",
     "eth": "ethereum",
@@ -23,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None:
+    """Return cached symbol price when TTL is still valid.
+
+    Caching reduces CoinGecko API traffic and helps avoid 429 responses.
+    """
     cached = _PRICE_CACHE.get(normalized_symbol)
     if not cached:
         return None
@@ -40,7 +46,10 @@ def _set_cached_price(normalized_symbol: str, price: float, change_24h: float) -
 
 
 async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, str]:
-    """Get current coin price and 24h change from CoinGecko."""
+    """Get current coin price and 24h change from CoinGecko.
+
+    Unsupported symbols raise ValueError so callers can return a clear user message.
+    """
     normalized_symbol = symbol.lower()
 
     if normalized_symbol not in COIN_SYMBOL_TO_ID:
@@ -71,6 +80,7 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
         raise ValueError("Unexpected CoinGecko response format.")
 
     coin_data = data.get(coin_id)
+    # TON has a fallback because CoinGecko occasionally omits toncoin in ids-based responses.
     if coin_data is None and normalized_symbol == "ton":
         logger.warning(
             "CoinGecko simple price response missing expected id for TON fallback. "
@@ -145,7 +155,10 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
 
 
 async def _fetch_ton_fallback_coin_data() -> dict | None:
-    """Fallback fetch for TON when /simple/price ids=toncoin does not include toncoin."""
+    """Fallback fetch for TON when ids=toncoin does not return toncoin data.
+
+    This keeps TON support stable without expanding supported symbols or APIs.
+    """
     url = "https://api.coingecko.com/api/v3/simple/price"
     timeout = 10
 
