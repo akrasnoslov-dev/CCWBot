@@ -34,5 +34,6 @@ else:
 
 PRICE_MOVE_ALERT_PERCENT = float(os.getenv("PRICE_MOVE_ALERT_PERCENT", "0.01"))
 ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 2, minimum=0)
+# Legacy setting kept for backward compatibility. Not used by MVP alert logic.
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
 AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 300, minimum=1)

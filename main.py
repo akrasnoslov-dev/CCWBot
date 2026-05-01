@@ -4,7 +4,6 @@ import httpx
 from ai_agent_groq import build_fallback_alert_message, create_ai_alert_message
 from alert_rules import calculate_price_change_percent, should_send_alert
 from config import (
-    ALERT_COOLDOWN_MINUTES,
     AUTOMATIC_CHECK_INTERVAL_SECONDS,
     PRICE_MOVE_ALERT_PERCENT,
     TELEGRAM_ADMIN_USER_ID,
@@ -53,7 +52,7 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Current settings", callback_data="settings:current")],
         [InlineKeyboardButton("Set threshold", callback_data="settings:threshold_menu")],
-        [InlineKeyboardButton("Set cooldown", callback_data="settings:cooldown_menu")],
+        [InlineKeyboardButton("Set check interval", callback_data="settings:interval_menu")],
     ])
 
 
@@ -65,11 +64,11 @@ def build_threshold_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def build_cooldown_keyboard() -> InlineKeyboardMarkup:
+def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("10 min", callback_data="settings:set_cooldown:10")],
-        [InlineKeyboardButton("30 min", callback_data="settings:set_cooldown:30")],
-        [InlineKeyboardButton("60 min", callback_data="settings:set_cooldown:60")],
+        [InlineKeyboardButton("60 sec", callback_data="settings:set_interval:60")],
+        [InlineKeyboardButton("300 sec", callback_data="settings:set_interval:300")],
+        [InlineKeyboardButton("600 sec", callback_data="settings:set_interval:600")],
     ])
 
 
@@ -126,25 +125,28 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
 
 
-async def set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin_user(update.effective_user.id if update.effective_user else None):
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
-        await update.message.reply_text("Please provide cooldown in minutes.\n\nExample:\n/setcooldown 30")
+        await update.message.reply_text("Please provide interval in seconds.\n\nExample:\n/setinterval 300")
         return
     try:
-        cooldown = int(context.args[0])
+        interval = int(context.args[0])
     except ValueError:
-        await update.message.reply_text("Cooldown must be a whole number.\n\nExample:\n/setcooldown 30")
+        await update.message.reply_text("Interval must be a whole number.\n\nExample:\n/setinterval 300")
         return
-    if cooldown < 0:
-        await update.message.reply_text("Cooldown cannot be negative.")
+    if interval <= 0:
+        await update.message.reply_text("Interval must be greater than 0.")
         return
     state = load_state()
-    state["alert_cooldown_minutes"] = cooldown
+    state["automatic_check_interval_seconds"] = interval
     save_state(state)
-    await update.message.reply_text(f"Alert cooldown updated to {cooldown} minutes ✅")
+    await update.message.reply_text(
+        f"Check interval updated to {interval} seconds ✅\n"
+        "Restart the bot to apply the new interval."
+    )
 
 
 async def send_price_message(target, symbol: str) -> None:
@@ -219,14 +221,14 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "Current alert settings ⚙️\n\n"
                 f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
-                f"Alert cooldown: {alert_settings['alert_cooldown_minutes']} minutes"
+                f"Automatic BTC check interval: {alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
         if data == "settings:threshold_menu":
             await query.message.reply_text("Choose a new threshold:", reply_markup=build_threshold_keyboard())
             return
-        if data == "settings:cooldown_menu":
-            await query.message.reply_text("Choose a new cooldown:", reply_markup=build_cooldown_keyboard())
+        if data == "settings:interval_menu":
+            await query.message.reply_text("Choose a new check interval:", reply_markup=build_interval_keyboard())
             return
         if data.startswith("settings:set_threshold:"):
             threshold = float(data.rsplit(":", maxsplit=1)[1])
@@ -235,12 +237,15 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_state(state)
             await query.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
             return
-        if data.startswith("settings:set_cooldown:"):
-            cooldown = int(data.rsplit(":", maxsplit=1)[1])
+        if data.startswith("settings:set_interval:"):
+            interval = int(data.rsplit(":", maxsplit=1)[1])
             state = load_state()
-            state["alert_cooldown_minutes"] = cooldown
+            state["automatic_check_interval_seconds"] = interval
             save_state(state)
-            await query.message.reply_text(f"Alert cooldown updated to {cooldown} minutes ✅")
+            await query.message.reply_text(
+                f"Check interval updated to {interval} seconds ✅\n"
+                "Restart the bot to apply the new interval."
+            )
             return
 
     except CoinGeckoRateLimitError:
@@ -286,11 +291,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         price_change_percent = calculate_price_change_percent(previous_price, current_price)
         state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at})
         alert_settings = get_alert_settings(state)
-        movement_is_big_enough, cooldown_is_active, should_alert = should_send_alert(
+        should_alert = should_send_alert(
             price_change_percent=price_change_percent,
             threshold_percent=alert_settings["price_move_alert_percent"],
-            last_alert_at=state.get("last_alert_at"),
-            cooldown_minutes=alert_settings["alert_cooldown_minutes"],
         )
         if should_alert:
             try:
@@ -307,8 +310,6 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
             log("Alert sent.")
-        elif movement_is_big_enough and cooldown_is_active:
-            log("Alert skipped because cooldown is active.")
         save_state(state)
     except CoinGeckoRateLimitError:
         log("CoinGecko returned 429 during automatic BTC check. Skipping this cycle.")
@@ -321,7 +322,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 def get_alert_settings(state: dict) -> dict:
     return {
         "price_move_alert_percent": float(state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)),
-        "alert_cooldown_minutes": int(state.get("alert_cooldown_minutes", ALERT_COOLDOWN_MINUTES)),
+        "automatic_check_interval_seconds": int(state.get("automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS)),
     }
 
 
@@ -354,10 +355,13 @@ def main():
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("setthreshold", set_threshold))
-    app.add_handler(CommandHandler("setcooldown", set_cooldown))
+    app.add_handler(CommandHandler("setcooldown", set_interval))
+    app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CallbackQueryHandler(button_router))
-    app.job_queue.run_repeating(automatic_price_check, interval=AUTOMATIC_CHECK_INTERVAL_SECONDS, first=5)
-    log(f"Automatic BTC check interval: {AUTOMATIC_CHECK_INTERVAL_SECONDS} seconds")
+    runtime_state = load_state()
+    runtime_settings = get_alert_settings(runtime_state)
+    app.job_queue.run_repeating(automatic_price_check, interval=runtime_settings["automatic_check_interval_seconds"], first=5)
+    log(f"Automatic BTC check interval: {runtime_settings['automatic_check_interval_seconds']} seconds")
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()
