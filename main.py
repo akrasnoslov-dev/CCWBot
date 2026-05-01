@@ -5,6 +5,7 @@ from ai_agent_groq import create_ai_alert_message
 from alert_rules import calculate_price_change_percent, should_send_alert
 from config import (
     ALERT_COOLDOWN_MINUTES,
+    AUTOMATIC_CHECK_INTERVAL_SECONDS,
     PRICE_MOVE_ALERT_PERCENT,
     TELEGRAM_ADMIN_USER_ID,
     TELEGRAM_BOT_TOKEN,
@@ -21,6 +22,9 @@ from price_service import (
 from storage import load_state, save_state
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+
+MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
+_MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
 
 
 def log(message: str) -> None:
@@ -160,6 +164,19 @@ async def send_price_message(target, symbol: str) -> None:
     )
 
 
+async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
+    log("CoinGecko rate limit reached during manual price request.")
+    if chat_id is None:
+        await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+        return
+    now_ts = datetime.now(timezone.utc).timestamp()
+    last_sent_ts = _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT.get(chat_id)
+    if last_sent_ts is not None and (now_ts - last_sent_ts) < MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS:
+        return
+    _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT[chat_id] = now_ts
+    await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+
+
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
@@ -173,7 +190,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await send_price_message(update.message, requested_symbol)
     except CoinGeckoRateLimitError:
-        await update.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+        await send_manual_rate_limit_message(update.message, update.effective_chat.id if update.effective_chat else None)
     except ValueError as error:
         await update.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
@@ -227,7 +244,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     except CoinGeckoRateLimitError:
-        await query.message.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+        await send_manual_rate_limit_message(query.message, query.message.chat_id if query.message else None)
     except ValueError as error:
         await query.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
@@ -340,11 +357,14 @@ def main():
     app.add_handler(CommandHandler("setthreshold", set_threshold))
     app.add_handler(CommandHandler("setcooldown", set_cooldown))
     app.add_handler(CallbackQueryHandler(button_router))
-    app.job_queue.run_repeating(automatic_price_check, interval=60, first=5)
+    app.job_queue.run_repeating(automatic_price_check, interval=AUTOMATIC_CHECK_INTERVAL_SECONDS, first=5)
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        log("Bot stopped by user.")

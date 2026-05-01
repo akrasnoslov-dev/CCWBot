@@ -2,6 +2,7 @@ import time
 import logging
 
 import httpx
+from config import PRICE_CACHE_TTL_SECONDS
 
 
 class CoinGeckoRateLimitError(Exception):
@@ -16,7 +17,6 @@ COIN_SYMBOL_TO_ID = {
 }
 
 DEFAULT_SYMBOL = "btc"
-CACHE_TTL_SECONDS = 60
 _PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None
         return None
 
     price, change_24h, cached_at = cached
-    if time.time() - cached_at <= CACHE_TTL_SECONDS:
+    if time.time() - cached_at <= PRICE_CACHE_TTL_SECONDS:
         return price, change_24h, normalized_symbol
 
     _PRICE_CACHE.pop(normalized_symbol, None)
