@@ -49,21 +49,17 @@ def build_fallback_alert_message(
     """Deterministic fallback used when structured AI output cannot be trusted."""
     weekly_trend = f"{change_7d:+.2f}%" if change_7d is not None else "unknown"
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
-    threshold_text = f"{alert_threshold_percent:.2f}%" if alert_threshold_percent is not None else "unknown"
     return (
         "🚨 BTC movement alert\n\n"
         f"Price: ${current_price:,.2f}\n"
         f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
-        f"Alert threshold: {threshold_text}\n"
         f"24h trend: {change_24h:+.2f}%\n"
         f"7d trend: {weekly_trend}\n"
         "Risk level: Medium\n\n"
-        "Why this alert:\n"
-        "BTC moved above your configured threshold since the previous check.\n\n"
         "Context:\n"
-        "Short-term movement is notable while broader market context remains uncertain.\n\n"
+        "Short-term movement is notable while broader market context remains uncertain. Recent news does not appear to be a clear driver.\n\n"
         "Possible action:\n"
-        "Monitor for confirmation before acting.\n\n"
+        "Monitor for continuation; no immediate action required.\n\n"
         "Not financial advice."
     )
 
@@ -71,9 +67,9 @@ def build_fallback_alert_message(
 def _is_structured_alert_message(message: str) -> bool:
     required_markers = [
         "Since last check:",
-        "Alert threshold:",
         "24h trend:",
-        "Why this alert:",
+        "7d trend:",
+        "Risk level:",
         "Context:",
         "Possible action:",
     ]
@@ -112,16 +108,12 @@ Use this exact style and labels:
 
 Price: $...
 Since last check: ...% in ... sec
-Alert threshold: ...%
 24h trend: ...%
 7d trend: ...% or unknown
 Risk level: Low|Medium|High
 
-Why this alert:
-BTC moved above your configured threshold since the previous check.
-
 Context:
-<1 short cautious sentence>
+<1-2 short cautious sentences, including one short sentence about whether recent news appears relevant to this move>
 
 Possible action:
 <1 short cautious sentence>
