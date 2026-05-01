@@ -4,7 +4,7 @@ import httpx
 from ai_agent_groq import (
     build_fallback_alert_message,
     classify_strong_signal,
-    create_ai_alert_message,
+    create_ai_alert_payload,
     create_daily_report,
     create_weekly_report,
 )
@@ -32,6 +32,7 @@ from price_service import (
 )
 from storage import load_state, save_state
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 # ---- Constants ----
@@ -441,7 +442,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         if should_send_alert(price_change_percent=price_change_percent, threshold_percent=alert_settings["price_move_alert_percent"]):
             try:
                 news_items = fetch_crypto_news(limit=5)
-                message = await create_ai_alert_message(
+                alert_payload = await create_ai_alert_payload(
                     previous_price,
                     current_price,
                     price_change_percent,
@@ -453,7 +454,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
-                message = build_fallback_alert_message(
+                plain_message = build_fallback_alert_message(
                     previous_price=previous_price,
                     current_price=current_price,
                     price_change_percent=price_change_percent,
@@ -462,7 +463,18 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_threshold_percent=alert_settings["price_move_alert_percent"],
                     check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
                 )
-            await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+                alert_payload = {"plain_text": plain_message, "html_text": None}
+
+            html_text = alert_payload.get("html_text")
+            plain_text = str(alert_payload.get("plain_text", ""))
+            if html_text:
+                try:
+                    await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=str(html_text), parse_mode=ParseMode.HTML)
+                except Exception as error:
+                    log(f"HTML alert send failed; falling back to plain text: {error}")
+                    await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=plain_text)
+            else:
+                await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=plain_text)
             state["last_alert_at"] = checked_at
             log("Alert sent.")
 
