@@ -1,7 +1,13 @@
+"""Centralized configuration loaded from environment variables.
+
+Notes about key IDs:
+- TELEGRAM_CHAT_ID: destination chat for automatic bot alerts/jobs.
+- TELEGRAM_ADMIN_USER_ID: Telegram user allowed to run admin-only commands.
+"""
+
 import os
 
 from dotenv import load_dotenv
-
 
 load_dotenv()
 
@@ -14,7 +20,18 @@ def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
         value = int(raw)
     except ValueError:
         return default
-    if value < minimum:
+    return value if value >= minimum else default
+
+
+def _get_float_env(name: str, default: float, minimum: float | None = None) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    if minimum is not None and value < minimum:
         return default
     return value
 
@@ -27,22 +44,24 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
 
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Chat ID that receives automatic BTC alerts and scheduled reports.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 _admin_user_id_raw = os.getenv("TELEGRAM_ADMIN_USER_ID")
 if _admin_user_id_raw and _admin_user_id_raw.strip():
     _admin_user_id_raw = _admin_user_id_raw.strip()
-    TELEGRAM_ADMIN_USER_ID = (
-        int(_admin_user_id_raw)
-        if _admin_user_id_raw.lstrip("-").isdigit()
-        else _admin_user_id_raw
-    )
+    # User ID allowed to run admin-only commands (/settings, /status, /reports, etc.).
+    TELEGRAM_ADMIN_USER_ID = int(_admin_user_id_raw) if _admin_user_id_raw.lstrip("-").isdigit() else _admin_user_id_raw
 else:
     TELEGRAM_ADMIN_USER_ID = None
 
-PRICE_MOVE_ALERT_PERCENT = float(os.getenv("PRICE_MOVE_ALERT_PERCENT", "0.01"))
+# Movement threshold (in percentage points) required to send an automatic BTC alert.
+PRICE_MOVE_ALERT_PERCENT = _get_float_env("PRICE_MOVE_ALERT_PERCENT", 0.01, minimum=0)
 ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 2, minimum=0)
+
+# In-memory CoinGecko cache TTL to reduce API calls and reduce 429 risk.
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
+# Automatic BTC check cadence in seconds.
 AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 300, minimum=1)
 
 ENABLE_WEEKLY_REPORT = _get_bool_env("ENABLE_WEEKLY_REPORT", default=False)

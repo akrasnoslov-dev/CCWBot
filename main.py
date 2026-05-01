@@ -34,6 +34,7 @@ from storage import load_state, save_state
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+# ---- Constants ----
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
@@ -47,9 +48,11 @@ WEEKDAY_MAP = {
     "saturday": 5,
     "sunday": 6,
 }
+
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
 
 
+# ---- Small utilities ----
 def log(message: str) -> None:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     print(f"[{timestamp}] {message}")
@@ -65,6 +68,14 @@ def build_supported_symbols_message() -> str:
     return ", ".join(COIN_SYMBOL_TO_ID.keys())
 
 
+def get_alert_settings(state: dict) -> dict:
+    return {
+        "price_move_alert_percent": float(state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)),
+        "automatic_check_interval_seconds": int(state.get("automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS)),
+    }
+
+
+# ---- Keyboards ----
 def build_price_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("BTC", callback_data="price:btc"), InlineKeyboardButton("ETH", callback_data="price:eth")],
@@ -103,31 +114,7 @@ def build_reports_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    is_admin = is_admin_user(update.effective_user.id if update.effective_user else None)
-    message = (
-        "Hi! I’m CCWBot 🚀\n\n"
-        "I monitor crypto prices and send automatic BTC alerts.\n\n"
-        "Use:\n"
-        "/price - check crypto prices"
-    )
-    if is_admin:
-        message += "\n/settings - open settings menu\n/status - show bot status\n/reports - BTC reports menu"
-    await update.message.reply_text(message)
-
-
-async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id_value = update.effective_user.id if update.effective_user else "unknown"
-    await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
-
-
-async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can request daily reports.")
-        return
-    await send_daily_report_message(update.message)
-
-
+# ---- Shared message helpers ----
 async def send_daily_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
@@ -140,13 +127,6 @@ async def send_daily_report_message(target) -> None:
     except Exception as error:
         log(f"Daily report generation failed: {error}")
         await target.reply_text("Daily report unavailable. Monitor risk and avoid impulsive action.\nNot financial advice.")
-
-
-async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can request weekly reports.")
-        return
-    await send_weekly_report_message(update.message)
 
 
 async def send_weekly_report_message(target) -> None:
@@ -166,122 +146,10 @@ async def send_weekly_report_message(target) -> None:
         log(f"Weekly report generation failed: {error}")
 
 
-async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can access reports.")
-        return
-    await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
-
-
-async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
-        return
-    await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
-
-
-async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can access settings.")
-        return
-    await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
-
-
-async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can change settings.")
-        return
-    if not context.args:
-        await update.message.reply_text("Please provide a threshold value.\n\nExample:\n/setthreshold 1.0")
-        return
-    try:
-        threshold = float(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Threshold must be a number.\n\nExample:\n/setthreshold 1.0")
-        return
-    if threshold <= 0:
-        await update.message.reply_text("Threshold must be greater than 0.")
-        return
-    state = load_state()
-    state["price_move_alert_percent"] = threshold
-    save_state(state)
-    await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
-
-
-async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can change settings.")
-        return
-    if not context.args:
-        await update.message.reply_text("Please provide interval in seconds.\n\nExample:\n/setinterval 300")
-        return
-    try:
-        interval = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Interval must be a whole number.\n\nExample:\n/setinterval 300")
-        return
-    if interval <= 0:
-        await update.message.reply_text("Interval must be greater than 0.")
-        return
-    await update_interval_and_reschedule(context, interval)
-    await update.message.reply_text(
-        f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
-    )
-
-
-def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
-    existing_jobs = app.job_queue.get_jobs_by_name(AUTOMATIC_BTC_CHECK_JOB_NAME)
-    for job in existing_jobs:
-        job.schedule_removal()
-    app.job_queue.run_repeating(
-        automatic_price_check,
-        interval=interval_seconds,
-        first=5,
-        name=AUTOMATIC_BTC_CHECK_JOB_NAME,
-    )
-    log(f"Automatic BTC check interval: {interval_seconds} seconds")
-
-
-def schedule_weekly_report(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(WEEKLY_REPORT_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_WEEKLY_REPORT:
-        log("Weekly report scheduling is disabled.")
-        return
-    weekday = WEEKDAY_MAP.get(WEEKLY_REPORT_DAY, WEEKDAY_MAP["sunday"])
-    app.job_queue.run_daily(
-        send_scheduled_weekly_report,
-        time=time(hour=WEEKLY_REPORT_HOUR, minute=0, second=0),
-        days=(weekday,),
-        name=WEEKLY_REPORT_JOB_NAME,
-    )
-    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
-
-
-def schedule_strong_signal_job(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(STRONG_SIGNAL_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_STRONG_SIGNAL_ALERTS:
-        log("Strong-signal alerting is disabled.")
-        return
-    app.job_queue.run_repeating(
-        strong_signal_check,
-        interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
-        first=15,
-        name=STRONG_SIGNAL_JOB_NAME,
-    )
-    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
-
-
-async def update_interval_and_reschedule(context: ContextTypes.DEFAULT_TYPE, interval: int) -> None:
-    state = load_state()
-    state["automatic_check_interval_seconds"] = interval
-    save_state(state)
-    schedule_automatic_btc_check(context.application, interval)
-
 async def send_price_message(target, symbol: str) -> None:
     coin_price, change_24h, resolved_symbol = await get_coin_price(symbol)
     checked_at = datetime.now(timezone.utc).isoformat()
+
     state = load_state()
     if resolved_symbol == DEFAULT_SYMBOL:
         state["last_price"] = coin_price
@@ -301,12 +169,121 @@ async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
     if chat_id is None:
         await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
         return
+
     now_ts = datetime.now(timezone.utc).timestamp()
     last_sent_ts = _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT.get(chat_id)
     if last_sent_ts is not None and (now_ts - last_sent_ts) < MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS:
         return
+
     _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT[chat_id] = now_ts
     await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
+
+
+async def update_interval_and_reschedule(context: ContextTypes.DEFAULT_TYPE, interval: int) -> None:
+    state = load_state()
+    state["automatic_check_interval_seconds"] = interval
+    save_state(state)
+    schedule_automatic_btc_check(context.application, interval)
+
+
+def _is_admin_update(update: Update) -> bool:
+    return is_admin_user(update.effective_user.id if update.effective_user else None)
+
+
+# ---- Command handlers ----
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    is_admin = _is_admin_update(update)
+    message = (
+        "Hi! I’m CCWBot 🚀\n\n"
+        "I monitor crypto prices and send automatic BTC alerts.\n\n"
+        "Use:\n"
+        "/price - check crypto prices"
+    )
+    if is_admin:
+        message += "\n/settings - open settings menu\n/status - show bot status\n/reports - BTC reports menu"
+    await update.message.reply_text(message)
+
+
+async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id_value = update.effective_user.id if update.effective_user else "unknown"
+    await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
+
+
+async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can request daily reports.")
+        return
+    await send_daily_report_message(update.message)
+
+
+async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can request weekly reports.")
+        return
+    await send_weekly_report_message(update.message)
+
+
+async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can access reports.")
+        return
+    await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
+
+
+async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
+        return
+    await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
+
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can access settings.")
+        return
+    await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
+
+
+async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
+        return
+    if not context.args:
+        await update.message.reply_text("Please provide a threshold value.\n\nExample:\n/setthreshold 1.0")
+        return
+    try:
+        threshold = float(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Threshold must be a number.\n\nExample:\n/setthreshold 1.0")
+        return
+    if threshold <= 0:
+        await update.message.reply_text("Threshold must be greater than 0.")
+        return
+
+    state = load_state()
+    state["price_move_alert_percent"] = threshold
+    save_state(state)
+    await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
+
+
+async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
+        return
+    if not context.args:
+        await update.message.reply_text("Please provide interval in seconds.\n\nExample:\n/setinterval 300")
+        return
+    try:
+        interval = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Interval must be a whole number.\n\nExample:\n/setinterval 300")
+        return
+    if interval <= 0:
+        await update.message.reply_text("Interval must be greater than 0.")
+        return
+
+    await update_interval_and_reschedule(context, interval)
+    await update.message.reply_text(f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately.")
 
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,6 +307,25 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Price error: {error}")
 
 
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_update(update):
+        await update.message.reply_text("Sorry, only the bot admin can view status.")
+        return
+    state = load_state()
+    last_price = state.get("last_price")
+    if last_price is None:
+        await update.message.reply_text("Status: running ✅\n\nNo BTC price has been saved yet.\nSend /price first.")
+        return
+    await update.message.reply_text(
+        "Status: running ✅\n\n"
+        f"Last saved BTC price: ${last_price:,.2f}\n"
+        f"Last 24h change: {state.get('last_24h_change'):.2f}%\n"
+        f"Last checked at: {state.get('last_checked_at')}\n"
+        f"Last alert at: {state.get('last_alert_at')}"
+    )
+
+
+# ---- Callback handlers ----
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data or ""
@@ -376,11 +372,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
             await update_interval_and_reschedule(context, interval)
-            await query.message.reply_text(
-                f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
-            )
+            await query.message.reply_text(f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately.")
             return
-
     except CoinGeckoRateLimitError:
         await send_manual_rate_limit_message(query.message, query.message.chat_id if query.message else None)
     except ValueError as error:
@@ -390,22 +383,40 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Sorry, something went wrong.")
 
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin_user(update.effective_user.id if update.effective_user else None):
-        await update.message.reply_text("Sorry, only the bot admin can view status.")
+# ---- Scheduled jobs ----
+def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
+    for job in app.job_queue.get_jobs_by_name(AUTOMATIC_BTC_CHECK_JOB_NAME):
+        job.schedule_removal()
+    app.job_queue.run_repeating(automatic_price_check, interval=interval_seconds, first=5, name=AUTOMATIC_BTC_CHECK_JOB_NAME)
+    log(f"Automatic BTC check interval: {interval_seconds} seconds")
+
+
+def schedule_weekly_report(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(WEEKLY_REPORT_JOB_NAME):
+        job.schedule_removal()
+    if not ENABLE_WEEKLY_REPORT:
+        log("Weekly report scheduling is disabled.")
         return
-    state = load_state()
-    last_price = state.get("last_price")
-    if last_price is None:
-        await update.message.reply_text("Status: running ✅\n\nNo BTC price has been saved yet.\nSend /price first.")
-        return
-    await update.message.reply_text(
-        "Status: running ✅\n\n"
-        f"Last saved BTC price: ${last_price:,.2f}\n"
-        f"Last 24h change: {state.get('last_24h_change'):.2f}%\n"
-        f"Last checked at: {state.get('last_checked_at')}\n"
-        f"Last alert at: {state.get('last_alert_at')}"
+
+    weekday = WEEKDAY_MAP.get(WEEKLY_REPORT_DAY, WEEKDAY_MAP["sunday"])
+    app.job_queue.run_daily(
+        send_scheduled_weekly_report,
+        time=time(hour=WEEKLY_REPORT_HOUR, minute=0, second=0),
+        days=(weekday,),
+        name=WEEKLY_REPORT_JOB_NAME,
     )
+    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
+
+
+def schedule_strong_signal_job(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(STRONG_SIGNAL_JOB_NAME):
+        job.schedule_removal()
+    if not ENABLE_STRONG_SIGNAL_ALERTS:
+        log("Strong-signal alerting is disabled.")
+        return
+
+    app.job_queue.run_repeating(strong_signal_check, interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS, first=15, name=STRONG_SIGNAL_JOB_NAME)
+    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
 
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
@@ -416,41 +427,28 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         previous_price = state.get("last_price")
         current_price, change_24h, change_7d = await get_btc_market_data()
         checked_at = datetime.now(timezone.utc).isoformat()
+
         if previous_price is None:
             state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at, "last_alert_at": state.get("last_alert_at")})
             save_state(state)
             print(f"Initial BTC price saved: ${current_price:,.2f}")
             return
+
         price_change_percent = calculate_price_change_percent(previous_price, current_price)
         state.update({"last_price": current_price, "last_24h_change": change_24h, "last_checked_at": checked_at})
         alert_settings = get_alert_settings(state)
-        should_alert = should_send_alert(
-            price_change_percent=price_change_percent,
-            threshold_percent=alert_settings["price_move_alert_percent"],
-        )
-        if should_alert:
+
+        if should_send_alert(price_change_percent=price_change_percent, threshold_percent=alert_settings["price_move_alert_percent"]):
             try:
                 news_items = fetch_crypto_news(limit=5)
-                message = await create_ai_alert_message(
-                    previous_price,
-                    current_price,
-                    price_change_percent,
-                    change_24h,
-                    change_7d,
-                    news_items,
-                )
+                message = await create_ai_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, news_items)
             except Exception as error:
                 log(f"AI alert generation failed: {error}")
-                message = build_fallback_alert_message(
-                    previous_price=previous_price,
-                    current_price=current_price,
-                    price_change_percent=price_change_percent,
-                    change_24h=change_24h,
-                    change_7d=change_7d,
-                )
+                message = build_fallback_alert_message(previous_price=previous_price, current_price=current_price, price_change_percent=price_change_percent, change_24h=change_24h, change_7d=change_7d)
             await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             state["last_alert_at"] = checked_at
             log("Alert sent.")
+
         save_state(state)
     except CoinGeckoRateLimitError:
         log("CoinGecko returned 429 during automatic BTC check. Skipping this cycle.")
@@ -487,11 +485,13 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
                 return
         except ValueError:
             pass
+
     price, change_24h, change_7d = await get_btc_market_data()
     news_items = fetch_crypto_news(limit=6)
     result = await classify_strong_signal(price, change_24h, change_7d, news_items)
     if not result:
         return
+
     strength = str(result.get("signal_strength", "")).lower()
     if result.get("should_alert") is True and strength in {"medium", "strong"}:
         await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=str(result.get("telegram_message")))
@@ -501,16 +501,11 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
         save_state(state)
 
 
-def get_alert_settings(state: dict) -> dict:
-    return {
-        "price_move_alert_percent": float(state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)),
-        "automatic_check_interval_seconds": int(state.get("automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS)),
-    }
-
-
+# ---- Setup/startup ----
 async def setup_bot_commands(app: Application) -> None:
     default_commands = [BotCommand("start", "Show bot intro"), BotCommand("price", "Check crypto prices")]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
+
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
             BotCommand("settings", "Open settings menu"),
@@ -522,6 +517,7 @@ async def setup_bot_commands(app: Application) -> None:
             await app.bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin_chat_id))
         except (TypeError, ValueError):
             log("TELEGRAM_ADMIN_USER_ID is not a numeric ID. Skipping admin-only command scope setup.")
+
     log("Telegram command menu has been updated.")
 
 
@@ -534,6 +530,7 @@ def main():
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("userid", user_id))
@@ -547,11 +544,13 @@ def main():
     app.add_handler(CommandHandler("setcooldown", set_interval))
     app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CallbackQueryHandler(button_router))
+
     runtime_state = load_state()
     runtime_settings = get_alert_settings(runtime_state)
     schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)
+
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     app.run_polling()

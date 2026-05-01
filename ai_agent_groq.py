@@ -1,9 +1,15 @@
+"""Groq-backed AI helpers.
+
+The bot asks for structured JSON so code can validate output before posting messages.
+When parsing/validation fails, callers fall back to deterministic templates.
+All prompts explicitly avoid direct financial advice.
+"""
+
 import json
 import os
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-
 
 load_dotenv()
 
@@ -12,8 +18,11 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
+SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
+
 
 def _parse_json(raw_content: str | None) -> dict | None:
+    """Parse and validate top-level JSON object responses from the model."""
     if not raw_content:
         print("AI parsing failed: empty response.")
         return None
@@ -29,6 +38,7 @@ def _parse_json(raw_content: str | None) -> dict | None:
 
 
 def build_fallback_alert_message(previous_price: float, current_price: float, price_change_percent: float, change_24h: float, change_7d: float | None = None) -> str:
+    """Deterministic fallback used when structured AI output cannot be trusted."""
     weekly_trend = f"{change_7d:+.2f}%" if change_7d is not None else "unknown"
     return (
         "🚨 BTC market alert\n\n"
@@ -44,15 +54,17 @@ def build_fallback_alert_message(previous_price: float, current_price: float, pr
 
 
 async def _ask_json(prompt: str) -> dict | None:
+    """Request JSON from Groq/OpenAI-compatible API and parse it."""
     response = await groq_client.chat.completions.create(
         model=GROQ_MODEL,
-        messages=[{"role": "system", "content": "You are a careful crypto monitoring assistant."}, {"role": "user", "content": prompt}],
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
         temperature=0.2,
     )
     return _parse_json(response.choices[0].message.content)
 
 
 async def create_ai_alert_message(previous_price: float, current_price: float, price_change_percent: float, change_24h: float, change_7d: float | None, news_items: list[dict] | None = None) -> str:
+    """Create BTC alert message from structured model output with safe fallback."""
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
 Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, telegram_message.
@@ -141,6 +153,7 @@ News:\n{news_text}
 
 
 async def classify_strong_signal(current_price: float, change_24h: float, change_7d: float | None, news_items: list[dict] | None = None) -> dict | None:
+    """Classify strong-signal conditions with structured output for downstream checks."""
     news_text = "\n".join([f"- {item.get('title', 'No title')}" for item in (news_items or [])]) or "No relevant recent news found."
     prompt = f"""
 Return only minified JSON with fields:
