@@ -9,6 +9,8 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 - Sends automatic alerts when BTC moves beyond a configurable threshold.
 - Enriches automatic alerts with Groq AI structured reasoning (severity, risk level, cautious possible actions, news relevance) and recent crypto news context.
 - Includes BTC weekly trend context (7d change when available) in automatic alerts.
+- Adds admin-only BTC `/dailyreport` and `/weeklyreport` with cautious AI market summaries.
+- Supports optional scheduled weekly report delivery and optional strong-signal alert checks.
 
 ## Current features
 
@@ -38,6 +40,8 @@ CCWBot is a Telegram bot for tracking crypto prices and sending automatic **BTC 
 
 - `/settings` — open settings menu.
 - `/status` — bot health + last saved BTC state.
+- `/dailyreport` — generate BTC daily market report.
+- `/weeklyreport` — generate BTC weekly market report.
 - `/chatid` — show current chat ID (admin utility).
 - `/setthreshold <percent>` — set alert trigger threshold.
 - `/setinterval <seconds>` — set automatic BTC check interval.
@@ -79,6 +83,12 @@ PRICE_MOVE_ALERT_PERCENT=0.01
 ALERT_COOLDOWN_MINUTES=2
 PRICE_CACHE_TTL_SECONDS=300
 AUTOMATIC_CHECK_INTERVAL_SECONDS=300
+ENABLE_WEEKLY_REPORT=false
+WEEKLY_REPORT_DAY=sunday
+WEEKLY_REPORT_HOUR=9
+ENABLE_STRONG_SIGNAL_ALERTS=false
+STRONG_SIGNAL_CHECK_INTERVAL_SECONDS=1800
+STRONG_SIGNAL_COOLDOWN_HOURS=6
 ```
 
 ### Notes
@@ -91,6 +101,11 @@ AUTOMATIC_CHECK_INTERVAL_SECONDS=300
 - MVP alert timing model: no separate alert cooldown is used for sending decisions.
 - `ALERT_COOLDOWN_MINUTES` is legacy and ignored by current alert logic.
 - `PRICE_CACHE_TTL_SECONDS` controls in-memory CoinGecko cache TTL for `btc`, `eth`, `ton`, and `usdt` (default `300`).
+- `ENABLE_WEEKLY_REPORT` enables/disables scheduled weekly report delivery to `TELEGRAM_CHAT_ID`.
+- `WEEKLY_REPORT_DAY` and `WEEKLY_REPORT_HOUR` set weekly schedule in UTC.
+- `ENABLE_STRONG_SIGNAL_ALERTS` enables/disables periodic AI strong-signal classification.
+- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS` controls periodic strong-signal check frequency.
+- `STRONG_SIGNAL_COOLDOWN_HOURS` reduces spam by enforcing cooldown between strong-signal alerts.
 
 ## Local setup
 
@@ -132,6 +147,7 @@ If startup succeeds, the bot begins polling Telegram and schedules automatic BTC
 - No built-in retry/backoff queue beyond current handling paths.
 - Depends on third-party APIs (Telegram, CoinGecko, Groq/news sources).
 - Alerts are informational and do not provide financial advice.
+- Reports and strong-signal alerts are decision-support only, use cautious language, and include “Not financial advice.”
 
 ## Planned improvements
 
