@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     inspect,
     text,
@@ -174,6 +175,62 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
+
+
+class MarketEvent(Base):
+    __tablename__ = "market_events"
+    __table_args__ = (UniqueConstraint("event_key", name="uq_market_events_event_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    event_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    price: Mapped[float] = mapped_column(Float)
+    previous_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_change_percent: Mapped[float] = mapped_column(Float)
+    last_24h_change: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_7d_change: Mapped[float | None] = mapped_column(Float, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    ai_analyses: Mapped[list[EventAiAnalysis]] = relationship(
+        back_populates="market_event"
+    )
+
+
+class EventAiAnalysis(Base):
+    __tablename__ = "event_ai_analyses"
+    __table_args__ = (
+        UniqueConstraint(
+            "market_event_id",
+            "input_hash",
+            name="uq_event_ai_analyses_market_event_input_hash",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_event_id: Mapped[int] = mapped_column(
+        ForeignKey("market_events.id"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(255))
+    input_hash: Mapped[str] = mapped_column(String(128), index=True)
+    analysis_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    plain_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    html_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(64), default="completed", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
 
 
 def init_db(database_url: str):
@@ -537,3 +594,126 @@ def save_alert(
     session.commit()
     session.refresh(alert)
     return alert
+
+
+def get_or_create_market_event(
+    session,
+    *,
+    symbol: str,
+    event_type: str,
+    event_key: str,
+    price: float,
+    price_change_percent: float,
+    previous_price: float | None = None,
+    last_24h_change: float | None = None,
+    last_7d_change: float | None = None,
+    detected_at: datetime | None = None,
+) -> MarketEvent:
+    """Return the market event for event_key, creating it when needed."""
+    existing = session.query(MarketEvent).filter_by(event_key=event_key).first()
+    if existing:
+        return existing
+
+    market_event = MarketEvent(
+        symbol=symbol.upper(),
+        event_type=event_type,
+        event_key=event_key,
+        price=price,
+        previous_price=previous_price,
+        price_change_percent=price_change_percent,
+        last_24h_change=last_24h_change,
+        last_7d_change=last_7d_change,
+        detected_at=detected_at or utc_now(),
+    )
+    session.add(market_event)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        return session.query(MarketEvent).filter_by(event_key=event_key).first()
+    session.refresh(market_event)
+    return market_event
+
+
+def get_event_ai_analysis(
+    session, *, market_event_id: int, input_hash: str
+) -> EventAiAnalysis | None:
+    """Return an existing AI analysis for the event/input pair if present."""
+    return (
+        session.query(EventAiAnalysis)
+        .filter_by(market_event_id=market_event_id, input_hash=input_hash)
+        .first()
+    )
+
+
+def save_event_ai_analysis(
+    session,
+    *,
+    market_event_id: int,
+    provider: str,
+    model: str,
+    input_hash: str,
+    analysis_text: str | None = None,
+    plain_text: str | None = None,
+    html_text: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    estimated_cost: float | None = None,
+    status: str = "completed",
+    error_message: str | None = None,
+) -> EventAiAnalysis:
+    """Save one AI analysis row for a market event."""
+    existing = get_event_ai_analysis(
+        session, market_event_id=market_event_id, input_hash=input_hash
+    )
+    if existing:
+        return existing
+
+    analysis = EventAiAnalysis(
+        market_event_id=market_event_id,
+        provider=provider,
+        model=model,
+        input_hash=input_hash,
+        analysis_text=analysis_text,
+        plain_text=plain_text,
+        html_text=html_text,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        estimated_cost=estimated_cost,
+        status=status,
+        error_message=error_message,
+    )
+    session.add(analysis)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        return get_event_ai_analysis(
+            session, market_event_id=market_event_id, input_hash=input_hash
+        )
+    session.refresh(analysis)
+    return analysis
+
+
+def count_market_events(session, symbol: str | None = None) -> int:
+    """Return the number of stored market events, optionally for one symbol."""
+    query = session.query(MarketEvent)
+    if symbol:
+        query = query.filter_by(symbol=symbol.upper())
+    return query.count()
+
+
+def get_recent_market_events(
+    session, *, symbol: str | None = None, limit: int = 20
+) -> list[MarketEvent]:
+    """Return recent market events, newest first."""
+    query = session.query(MarketEvent)
+    if symbol:
+        query = query.filter_by(symbol=symbol.upper())
+    return (
+        query.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
