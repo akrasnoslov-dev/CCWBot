@@ -26,10 +26,10 @@ from storage import load_state, save_state
 from telegram.constants import ParseMode
 from telegram.ext import Application, ContextTypes
 
-from bot_news import fetch_news_context, remember_news_context
-from bot_reports import send_scheduled_weekly_report
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot_settings import get_db_alert_settings, get_state_alert_settings
+from bot.news import fetch_news_context, remember_news_context
+from bot.reports import send_scheduled_weekly_report
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.settings import get_db_alert_settings, get_state_alert_settings
 
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"

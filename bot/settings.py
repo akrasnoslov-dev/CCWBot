@@ -2,7 +2,7 @@ from config import AUTOMATIC_CHECK_INTERVAL_SECONDS, PRICE_MOVE_ALERT_PERCENT
 from database import get_or_create_app_settings, update_app_settings
 from storage import load_state, save_state
 
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
 DEFAULT_BTC_ALERT_THRESHOLD_PERCENT = 2.0
 DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS = 300

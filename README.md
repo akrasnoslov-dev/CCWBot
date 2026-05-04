@@ -81,6 +81,12 @@ Then fill `.env` and run:
 python main.py
 ```
 
+## Project structure
+- `main.py` starts the Telegram bot and wires handlers/jobs.
+- `bot/` contains Telegram handlers, keyboards, scheduled jobs, permissions, reports, and runtime settings helpers.
+- Root service modules such as `database.py`, `storage.py`, `price_service.py`, `news_service.py`, and `ai_agent_groq.py` keep shared runtime, API, and AI logic.
+- `tests/test_seen_news_dedup.py` is a lightweight direct Python test for news deduplication and app settings.
+
 ## How to find your Telegram user ID
 Use `/userid` in a private chat with the bot.
 

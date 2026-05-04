@@ -1,12 +1,12 @@
 from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
-from bot_alerts import (
+from bot.alerts import (
     schedule_automatic_btc_check,
     schedule_strong_signal_job,
     schedule_weekly_report,
 )
-from bot_handlers import (
+from bot.handlers import (
     button_router,
     chat_id,
     daily_report,
@@ -20,9 +20,9 @@ from bot_handlers import (
     user_id,
     weekly_report,
 )
-from bot_runtime import log
-from bot_setup import setup_bot_commands
-from bot_settings import get_runtime_alert_settings
+from bot.runtime import log
+from bot.setup import setup_bot_commands
+from bot.settings import get_runtime_alert_settings
 
 
 def register_handlers(app: Application) -> None:
