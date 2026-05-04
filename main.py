@@ -25,14 +25,19 @@ from config import (
 )
 from database import (
     User,
+    cleanup_seen_news,
     get_or_create_user,
     get_or_create_user_settings,
     get_price_state,
     get_user_role,
     init_db,
+    make_news_key,
+    mark_news_items_seen,
     save_alert,
+    telegram_id_columns_are_bigint,
     update_price_state,
     update_user_settings,
+    was_news_seen,
 )
 from news_service import fetch_crypto_news
 from price_service import (
@@ -84,6 +89,10 @@ DB_SESSION_LOCAL = None
 if DB_ENABLED:
     log("Database configured. Using PostgreSQL state.")
     _, DB_SESSION_LOCAL = init_db(DATABASE_URL)
+    if telegram_id_columns_are_bigint():
+        log("Telegram ID columns are configured as PostgreSQL BIGINT.")
+    else:
+        log("Warning: Telegram ID columns are not all configured as PostgreSQL BIGINT.")
 else:
     log("DATABASE_URL is not configured. Using local JSON state.")
 
@@ -134,6 +143,33 @@ def get_alert_settings(state: dict) -> dict:
             )
         ),
     }
+
+
+def fetch_news_context(limit: int, *, prefer_unseen: bool = False) -> list[dict]:
+    """Fetch RSS news and use seen_news for dedupe when PostgreSQL is active."""
+    fetch_limit = max(limit * 3, limit)
+    news_items = fetch_crypto_news(limit=fetch_limit)
+    if not (DB_ENABLED and DB_SESSION_LOCAL):
+        return news_items[:limit]
+
+    with DB_SESSION_LOCAL() as session:
+        unseen_items = [
+            item for item in news_items if not was_news_seen(session, make_news_key(item))
+        ]
+
+    if prefer_unseen and unseen_items:
+        return unseen_items[:limit]
+    return news_items[:limit]
+
+
+def remember_news_context(news_items: list[dict]) -> None:
+    """Mark news items as seen in PostgreSQL after they were used by the bot."""
+    if not (DB_ENABLED and DB_SESSION_LOCAL and news_items):
+        return
+
+    with DB_SESSION_LOCAL() as session:
+        mark_news_items_seen(session, news_items)
+        cleanup_seen_news(session, keep_latest=200)
 
 
 # ---- Keyboards ----
@@ -215,11 +251,12 @@ def build_reports_keyboard() -> InlineKeyboardMarkup:
 async def send_daily_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_crypto_news(limit=5)
+        news_items = fetch_news_context(limit=5, prefer_unseen=True)
         report = await create_daily_report(price, change_24h, news_items)
         if report and report.get("telegram_message"):
             message = str(report["telegram_message"])
             await target.reply_text(message)
+            remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
                 with DB_SESSION_LOCAL() as session:
                     save_alert(
@@ -243,11 +280,12 @@ async def send_daily_report_message(target) -> None:
 async def send_weekly_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_crypto_news(limit=6)
+        news_items = fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         if report and report.get("telegram_message"):
             message = str(report["telegram_message"])
             await target.reply_text(message)
+            remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
                 with DB_SESSION_LOCAL() as session:
                     save_alert(
@@ -818,8 +856,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             price_change_percent=price_change_percent,
             threshold_percent=alert_settings["price_move_alert_percent"],
         ):
+            news_items = []
             try:
-                news_items = fetch_crypto_news(limit=5)
+                news_items = fetch_news_context(limit=5)
                 alert_payload = await create_ai_alert_payload(
                     previous_price,
                     current_price,
@@ -863,6 +902,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     )
             else:
                 await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=plain_text)
+            remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL:
                 with DB_SESSION_LOCAL() as session:
                     update_price_state(
@@ -896,7 +936,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_crypto_news(limit=6)
+        news_items = fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         message = report.get("telegram_message") if report else None
         if not message:
@@ -908,6 +948,7 @@ async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
         await context.application.bot.send_message(
             chat_id=TELEGRAM_CHAT_ID, text=message
         )
+        remember_news_context(news_items)
     except Exception as error:
         log(f"Scheduled weekly report failed: {error}")
 
@@ -926,7 +967,7 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
             pass
 
     price, change_24h, change_7d = await get_btc_market_data()
-    news_items = fetch_crypto_news(limit=6)
+    news_items = fetch_news_context(limit=6)
     result = await classify_strong_signal(price, change_24h, change_7d, news_items)
     if not result:
         return
@@ -936,6 +977,7 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
         await context.application.bot.send_message(
             chat_id=TELEGRAM_CHAT_ID, text=str(result.get("telegram_message"))
         )
+        remember_news_context(news_items)
         state["last_strong_signal_alert_at"] = now.isoformat()
         state["last_strong_signal_strength"] = strength
         state["last_strong_signal_direction"] = str(

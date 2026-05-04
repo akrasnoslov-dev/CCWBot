@@ -93,7 +93,10 @@ Use `/userid` in a private chat with the bot.
 ## Runtime storage
 - Primary: PostgreSQL when `DATABASE_URL` is configured.
 - Fallback: local `state.json` only when `DATABASE_URL` is missing.
-- Runtime tables used: `users`, `user_settings`, `price_state`, `alerts`.
+- Runtime tables used: `users`, `user_settings`, `price_state`, `alerts`, `seen_news`.
+- Telegram user/chat IDs are stored as `BIGINT` in PostgreSQL.
+- `seen_news` tracks processed RSS items by stable link/title keys to help avoid duplicate news processing.
+- Non-DB mode keeps using the local `state.json` fallback and existing local behaviour.
 - You can inspect these tables with DBeaver when PostgreSQL is running.
 
 ## Current limitations
@@ -122,3 +125,4 @@ Use `/userid` in a private chat with the bot.
 
 Notes:
 - If `DATABASE_URL` is not set, CCWBot continues to use local `state.json`.
+- If your local PostgreSQL tables were created before the Telegram ID `BIGINT` fix, reset the dev database with `docker compose down -v` and `docker compose up -d postgres`.

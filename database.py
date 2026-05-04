@@ -7,8 +7,11 @@ If DATABASE_URL is configured, main.py can initialize these tables for future us
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -18,6 +21,7 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -36,12 +40,55 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _collapse_whitespace(value: str) -> str:
+    """Normalize repeated spaces so keys stay stable across feed formatting."""
+    return " ".join(value.strip().split())
+
+
+def _normalize_news_link(link: str) -> str:
+    """Return a stable URL string for news identity checks."""
+    parsed = urlsplit(link.strip())
+    query_params = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+    ]
+    normalized_path = parsed.path.rstrip("/") or parsed.path
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            normalized_path,
+            urlencode(sorted(query_params)),
+            "",
+        )
+    )
+
+
+def make_news_key(news_item: dict) -> str:
+    """Build a stable key for a news item.
+
+    Links are preferred because RSS titles can change slightly. The normalized
+    value is hashed to keep the key short enough for the database index.
+    """
+    link = _collapse_whitespace(str(news_item.get("link") or ""))
+    if link:
+        normalized = _normalize_news_link(link)
+        return f"link:{sha256(normalized.encode('utf-8')).hexdigest()}"
+
+    title = _collapse_whitespace(str(news_item.get("title") or "")).lower()
+    if title:
+        return f"title:{sha256(title.encode('utf-8')).hexdigest()}"
+
+    return ""
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_user_id: Mapped[int] = mapped_column(Integer, index=True)
-    telegram_chat_id: Mapped[int] = mapped_column(Integer, index=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(64), default="user")
@@ -109,10 +156,20 @@ class Alert(Base):
     symbol: Mapped[str] = mapped_column(String(32), index=True)
     alert_type: Mapped[str] = mapped_column(String(64), index=True)
     message: Mapped[str] = mapped_column(Text)
-    sent_to_chat_id: Mapped[int] = mapped_column(Integer, index=True)
+    sent_to_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
+
+
+def telegram_id_columns_are_bigint() -> bool:
+    """Return True when Telegram ID model columns are configured as BIGINT."""
+    telegram_columns = (
+        User.__table__.c.telegram_user_id,
+        User.__table__.c.telegram_chat_id,
+        Alert.__table__.c.sent_to_chat_id,
+    )
+    return all(isinstance(column.type, BigInteger) for column in telegram_columns)
 
 
 def init_db(database_url: str):
@@ -237,6 +294,101 @@ def update_price_state(
     session.commit()
     session.refresh(row)
     return row
+
+
+def was_news_seen(session, news_key: str) -> bool:
+    """Return True when a news key already exists in seen_news."""
+    if not news_key:
+        return False
+    return session.query(SeenNews).filter_by(news_key=news_key).first() is not None
+
+
+def mark_news_seen(session, news_item: dict):
+    """Store one news item in seen_news if it has not been stored before."""
+    news_key = make_news_key(news_item)
+    if not news_key:
+        return None
+
+    existing = session.query(SeenNews).filter_by(news_key=news_key).first()
+    if existing:
+        return existing
+
+    row = SeenNews(
+        news_key=news_key,
+        title=str(news_item.get("title") or "")[:1000],
+        link=str(news_item.get("link") or "")[:2000],
+        source=str(news_item.get("source") or "")[:255] or None,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        return session.query(SeenNews).filter_by(news_key=news_key).first()
+    session.refresh(row)
+    return row
+
+
+def mark_news_items_seen(session, news_items: list[dict]) -> list[SeenNews]:
+    """Store multiple news items while skipping duplicates."""
+    rows = []
+    for item in news_items:
+        news_key = make_news_key(item)
+        if not news_key or was_news_seen(session, news_key):
+            continue
+        row = SeenNews(
+            news_key=news_key,
+            title=str(item.get("title") or "")[:1000],
+            link=str(item.get("link") or "")[:2000],
+            source=str(item.get("source") or "")[:255] or None,
+        )
+        session.add(row)
+        rows.append(row)
+
+    if not rows:
+        return []
+
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        stored_rows = []
+        for item in news_items:
+            row = mark_news_seen(session, item)
+            if row:
+                stored_rows.append(row)
+        return stored_rows
+
+    for row in rows:
+        session.refresh(row)
+    return rows
+
+
+def get_recent_seen_news(session, limit: int = 100) -> list[SeenNews]:
+    """Return recent seen news rows, newest first."""
+    return (
+        session.query(SeenNews)
+        .order_by(SeenNews.seen_at.desc(), SeenNews.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def cleanup_seen_news(session, keep_latest: int = 100) -> int:
+    """Keep only the latest seen_news rows and return how many were deleted."""
+    if keep_latest < 1:
+        raise ValueError("keep_latest must be at least 1.")
+
+    rows_to_delete = (
+        session.query(SeenNews)
+        .order_by(SeenNews.seen_at.desc(), SeenNews.id.desc())
+        .offset(keep_latest)
+        .all()
+    )
+    for row in rows_to_delete:
+        session.delete(row)
+    session.commit()
+    return len(rows_to_delete)
 
 
 def save_alert(
