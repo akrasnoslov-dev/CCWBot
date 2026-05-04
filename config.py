@@ -50,7 +50,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 _admin_user_id_raw = os.getenv("TELEGRAM_ADMIN_USER_ID")
 if _admin_user_id_raw and _admin_user_id_raw.strip():
     _admin_user_id_raw = _admin_user_id_raw.strip()
-    # User ID allowed to run admin-only commands (/settings, /status, /reports, etc.).
+    # User ID allowed to run admin-only commands (/settings, /status, etc.).
     TELEGRAM_ADMIN_USER_ID = (
         int(_admin_user_id_raw)
         if _admin_user_id_raw.lstrip("-").isdigit()
@@ -60,7 +60,7 @@ else:
     TELEGRAM_ADMIN_USER_ID = None
 
 # Movement threshold (in percentage points) required to send an automatic BTC alert.
-PRICE_MOVE_ALERT_PERCENT = _get_float_env("PRICE_MOVE_ALERT_PERCENT", 0.01, minimum=0)
+PRICE_MOVE_ALERT_PERCENT = _get_float_env("PRICE_MOVE_ALERT_PERCENT", 2, minimum=0)
 ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 2, minimum=0)
 
 # In-memory CoinGecko cache TTL to reduce API calls and reduce 429 risk.

@@ -122,6 +122,20 @@ class UserSettings(Base):
     user: Mapped[User] = relationship(back_populates="settings")
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    setting_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    setting_value: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class PriceState(Base):
     __tablename__ = "price_state"
 
@@ -221,6 +235,62 @@ def get_or_create_user(
 def get_user_role(session, telegram_user_id: int) -> str | None:
     user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
     return user.role if user else None
+
+
+def _get_or_create_app_setting(session, setting_key: str, default_value: str):
+    setting = session.query(AppSetting).filter_by(setting_key=setting_key).first()
+    if setting is None:
+        setting = AppSetting(setting_key=setting_key, setting_value=default_value)
+        session.add(setting)
+        session.commit()
+        session.refresh(setting)
+    return setting
+
+
+def get_or_create_app_settings(
+    session,
+    *,
+    default_threshold: float,
+    default_interval: int,
+) -> dict:
+    threshold = _get_or_create_app_setting(
+        session, "btc_alert_threshold_percent", str(default_threshold)
+    )
+    interval = _get_or_create_app_setting(
+        session, "automatic_check_interval_seconds", str(default_interval)
+    )
+    return {
+        "btc_alert_threshold_percent": float(threshold.setting_value),
+        "automatic_check_interval_seconds": int(interval.setting_value),
+    }
+
+
+def update_app_settings(
+    session,
+    *,
+    default_threshold: float,
+    default_interval: int,
+    threshold: float | None = None,
+    interval_seconds: int | None = None,
+) -> dict:
+    if threshold is not None:
+        threshold_setting = _get_or_create_app_setting(
+            session, "btc_alert_threshold_percent", str(threshold)
+        )
+        threshold_setting.setting_value = str(threshold)
+        threshold_setting.updated_at = utc_now()
+    if interval_seconds is not None:
+        interval_setting = _get_or_create_app_setting(
+            session, "automatic_check_interval_seconds", str(interval_seconds)
+        )
+        interval_setting.setting_value = str(interval_seconds)
+        interval_setting.updated_at = utc_now()
+    session.commit()
+    return get_or_create_app_settings(
+        session,
+        default_threshold=default_threshold,
+        default_interval=default_interval,
+    )
 
 
 def get_or_create_user_settings(
