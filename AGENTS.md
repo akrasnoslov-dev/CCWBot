@@ -1,13 +1,46 @@
 # CCWBot Codex Instructions
 
+Important: A task is not considered complete until a GitHub pull request has been created against `main`, or Codex has clearly explained why it could not create one and provided the exact manual commands for the user to run.
+
 ## Workflow
 
 - Keep changes small and focused.
 - Do not modify files outside the current task scope.
-- Prefer creating a pull request instead of pushing directly to `main`.
-- Show or summarise the diff before finalising changes.
 - Do not make broad refactors unless the task explicitly asks for refactoring.
+- Show or summarise the diff before finalising changes.
 - Auto-review is okay, but do not auto-merge changes into `main` unless the user explicitly asks for it.
+- Do not leave completed work only as local uncommitted changes unless the user explicitly asks for local-only work.
+
+## Git and PR workflow
+
+Codex must work through a normal GitHub PR flow by default.
+
+Default workflow:
+
+1. Create a new focused branch for each task.
+2. Make only the requested changes.
+3. Run the required verification commands.
+4. Commit the changes with a clear commit message.
+5. Push the branch to GitHub.
+6. Create a pull request against `main`.
+
+Codex must not commit directly to `main`.
+
+Codex must not push directly to `main`.
+
+Codex must not auto-merge pull requests into `main`.
+
+Each pull request must be small and focused on one task.
+
+The pull request description must include:
+
+- what changed;
+- which files were changed;
+- verification commands that were run;
+- any manual verification steps;
+- whether protected files were modified.
+
+If Codex cannot push or create a pull request because of permissions, authentication, GitHub access, network limitations, or environment limitations, it must clearly state this and provide the exact commands the user should run manually.
 
 ## Protected files
 
@@ -18,7 +51,7 @@ Do not modify these files unless the current task explicitly asks for it:
 - `requirements.txt`
 - `README.md`
 
-If changing one of these files is necessary, keep the change minimal and explain why.
+If changing one of these files is necessary, keep the change minimal and explain why in the pull request description.
 
 ## Docker Compose rules
 
@@ -123,6 +156,9 @@ docker compose config
 - `.env` is not changed.
 - `state.json` is not included.
 - `.venv`, `__pycache__`, `.pyc`, database files, and generated files are not included.
+- Protected files are not changed unless explicitly requested.
+- If a protected file is changed, the pull request description explains why.
 - `docker-compose.yml` still contains top-level `services:`.
 - The bot still starts locally.
 - The change matches the requested task scope.
+- A GitHub pull request has been created, or Codex has clearly explained why it could not create one.
