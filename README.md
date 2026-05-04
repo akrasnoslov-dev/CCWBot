@@ -101,3 +101,20 @@ Use `/userid` in a private chat with the bot.
 - More granular admin settings.
 - Stronger resilience/observability.
 - Optional shared/distributed state storage.
+
+## Local PostgreSQL setup (optional for now)
+1. Install Docker Desktop (includes Docker Compose).
+2. Start PostgreSQL locally:
+   ```bash
+   docker compose up -d postgres
+   ```
+3. Add `DATABASE_URL` to your `.env` (see `.env.example`).
+4. Run the bot:
+   ```bash
+   python main.py
+   ```
+
+Notes:
+- PostgreSQL support is optional in this stage.
+- If `DATABASE_URL` is not set, CCWBot continues to use local `state.json`.
+- Full migration from `state.json` to PostgreSQL will be added later.
