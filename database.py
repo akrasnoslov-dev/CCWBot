@@ -172,6 +172,11 @@ class Alert(Base):
     alert_type: Mapped[str] = mapped_column(String(64), index=True)
     message: Mapped[str] = mapped_column(Text)
     sent_to_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    market_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event_ai_analysis_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -241,7 +246,37 @@ def init_db(database_url: str):
     )
     _migrate_legacy_app_settings_table(engine)
     Base.metadata.create_all(bind=engine)
+    _migrate_alert_delivery_columns(engine)
     return engine, SessionLocal
+
+
+def _migrate_alert_delivery_columns(engine) -> None:
+    """Add nullable delivery metadata columns to existing alerts tables."""
+    inspector = inspect(engine)
+    if "alerts" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("alerts")}
+    column_sql = {
+        "market_event_id": "INTEGER",
+        "event_ai_analysis_id": "INTEGER",
+        "user_id": "INTEGER",
+        "status": "VARCHAR(64)",
+        "error_message": "TEXT",
+    }
+    missing_columns = [
+        (column_name, sql_type)
+        for column_name, sql_type in column_sql.items()
+        if column_name not in columns
+    ]
+    if not missing_columns:
+        return
+
+    with engine.begin() as connection:
+        for column_name, sql_type in missing_columns:
+            connection.execute(
+                text(f"ALTER TABLE alerts ADD COLUMN {column_name} {sql_type}")
+            )
 
 
 def get_or_create_user(
@@ -582,13 +617,28 @@ def cleanup_seen_news(session, keep_latest: int = 100) -> int:
 
 
 def save_alert(
-    session, *, symbol: str, alert_type: str, message: str, sent_to_chat_id: int
+    session,
+    *,
+    symbol: str,
+    alert_type: str,
+    message: str,
+    sent_to_chat_id: int,
+    market_event_id: int | None = None,
+    event_ai_analysis_id: int | None = None,
+    user_id: int | None = None,
+    status: str | None = None,
+    error_message: str | None = None,
 ):
     alert = Alert(
         symbol=symbol.upper(),
         alert_type=alert_type,
         message=message,
         sent_to_chat_id=sent_to_chat_id,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        user_id=user_id,
+        status=status,
+        error_message=error_message,
     )
     session.add(alert)
     session.commit()

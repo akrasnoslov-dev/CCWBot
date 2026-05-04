@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -55,6 +56,12 @@ WEEKDAY_MAP = {
     "saturday": 5,
     "sunday": 6,
 }
+
+
+@dataclass(frozen=True)
+class AlertRecipient:
+    chat_id: int
+    user_id: int | None = None
 
 
 def _stable_float(value: float | None, digits: int) -> float | None:
@@ -141,6 +148,229 @@ def _build_alert_ai_input_hash(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
+    """Resolve recipients for automatic alerts.
+
+    Automatic alerts are still BTC-only. This boundary exists so future
+    subscription logic can expand recipients without changing event analysis.
+    """
+    if symbol.upper() != "BTC" or event_type != "price_movement":
+        return []
+    if not TELEGRAM_CHAT_ID:
+        return []
+    return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
+
+
+def _get_or_create_btc_market_event(
+    *,
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+) -> tuple[int | None, str | None]:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None, None
+
+    event_key = _build_price_movement_event_key(
+        symbol=DEFAULT_SYMBOL,
+        previous_price=previous_price,
+        current_price=current_price,
+        price_change_percent=price_change_percent,
+    )
+    with DB_SESSION_LOCAL() as session:
+        market_event = get_or_create_market_event(
+            session,
+            symbol=DEFAULT_SYMBOL,
+            event_type="price_movement",
+            event_key=event_key,
+            price=current_price,
+            previous_price=previous_price,
+            price_change_percent=price_change_percent,
+            last_24h_change=change_24h,
+            last_7d_change=change_7d,
+            detected_at=datetime.now(timezone.utc),
+        )
+        return market_event.id, event_key
+
+
+async def _get_or_create_event_ai_analysis(
+    *,
+    market_event_id: int | None,
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+    alert_settings: dict,
+) -> tuple[dict, int | None]:
+    input_hash = _build_alert_ai_input_hash(
+        symbol=DEFAULT_SYMBOL,
+        event_type="price_movement",
+        previous_price=previous_price,
+        current_price=current_price,
+        price_change_percent=price_change_percent,
+        change_24h=change_24h,
+        change_7d=change_7d,
+        news_items=news_items,
+        alert_threshold_percent=alert_settings["price_move_alert_percent"],
+        check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+    )
+
+    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
+        with DB_SESSION_LOCAL() as session:
+            existing_analysis = get_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+                input_hash=input_hash,
+            )
+            if (
+                existing_analysis
+                and existing_analysis.status in {"success", "completed"}
+                and existing_analysis.plain_text
+            ):
+                log("Reusing saved AI analysis for BTC market event.")
+                return (
+                    {
+                        "plain_text": existing_analysis.plain_text,
+                        "html_text": existing_analysis.html_text,
+                    },
+                    existing_analysis.id,
+                )
+
+    provider = "groq"
+    model = GROQ_MODEL
+    error_message = None
+    try:
+        alert_payload = await create_ai_alert_payload(
+            previous_price,
+            current_price,
+            price_change_percent,
+            change_24h,
+            change_7d,
+            news_items,
+            alert_threshold_percent=alert_settings["price_move_alert_percent"],
+            check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+        )
+    except Exception as error:
+        log(f"AI alert generation failed: {error}")
+        provider = "fallback"
+        model = "deterministic"
+        error_message = str(error)
+        plain_message = build_fallback_alert_message(
+            previous_price=previous_price,
+            current_price=current_price,
+            price_change_percent=price_change_percent,
+            change_24h=change_24h,
+            change_7d=change_7d,
+            alert_threshold_percent=alert_settings["price_move_alert_percent"],
+            check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+        )
+        alert_payload = {"plain_text": plain_message, "html_text": None}
+
+    event_ai_analysis_id = None
+    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
+        with DB_SESSION_LOCAL() as session:
+            analysis = save_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+                provider=provider,
+                model=model,
+                input_hash=input_hash,
+                analysis_text=str(alert_payload.get("plain_text", "")),
+                plain_text=str(alert_payload.get("plain_text", "")),
+                html_text=alert_payload.get("html_text"),
+                status="success",
+                error_message=error_message,
+            )
+            event_ai_analysis_id = analysis.id if analysis else None
+    return alert_payload, event_ai_analysis_id
+
+
+async def _send_alert_to_recipient(
+    app: Application, recipient: AlertRecipient, alert_payload: dict
+) -> tuple[bool, str | None]:
+    html_text = alert_payload.get("html_text")
+    plain_text = str(alert_payload.get("plain_text", ""))
+    try:
+        if html_text:
+            try:
+                await app.bot.send_message(
+                    chat_id=recipient.chat_id,
+                    text=str(html_text),
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as error:
+                log(f"HTML alert send failed; falling back to plain text: {error}")
+                await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
+        else:
+            await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
+    except Exception as error:
+        return False, str(error)
+    return True, None
+
+
+def _record_alert_delivery(
+    *,
+    recipient: AlertRecipient,
+    plain_text: str,
+    status: str,
+    market_event_id: int | None,
+    event_ai_analysis_id: int | None,
+    error_message: str | None = None,
+) -> None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return
+
+    with DB_SESSION_LOCAL() as session:
+        save_alert(
+            session,
+            symbol="BTC",
+            alert_type="price_movement",
+            message=plain_text,
+            sent_to_chat_id=recipient.chat_id,
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            user_id=recipient.user_id,
+            status=status,
+            error_message=error_message,
+        )
+
+
+async def _deliver_btc_market_event_alert(
+    app: Application,
+    *,
+    alert_payload: dict,
+    market_event_id: int | None,
+    event_ai_analysis_id: int | None,
+) -> bool:
+    recipients = get_alert_recipients(symbol="BTC", event_type="price_movement")
+    if not recipients:
+        log("No configured recipients for BTC price movement alert.")
+        return False
+
+    plain_text = str(alert_payload.get("plain_text", ""))
+    delivered = False
+    for recipient in recipients:
+        sent, error_message = await _send_alert_to_recipient(
+            app, recipient, alert_payload
+        )
+        _record_alert_delivery(
+            recipient=recipient,
+            plain_text=plain_text,
+            status="sent" if sent else "failed",
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            error_message=error_message,
+        )
+        if sent:
+            delivered = True
+        else:
+            log(f"Alert delivery failed for chat {recipient.chat_id}: {error_message}")
+    return delivered
 
 
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
@@ -251,137 +481,32 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             price_change_percent=price_change_percent,
             threshold_percent=alert_settings["price_move_alert_percent"],
         ):
-            news_items = []
-            market_event = None
-            market_event_id = None
-            input_hash = None
-            existing_analysis = None
             news_items = fetch_news_context(limit=5)
-
-            if DB_ENABLED and DB_SESSION_LOCAL:
-                event_key = _build_price_movement_event_key(
-                    symbol=DEFAULT_SYMBOL,
-                    previous_price=previous_price,
-                    current_price=current_price,
-                    price_change_percent=price_change_percent,
-                )
-                input_hash = _build_alert_ai_input_hash(
-                    symbol=DEFAULT_SYMBOL,
-                    event_type="price_movement",
-                    previous_price=previous_price,
-                    current_price=current_price,
-                    price_change_percent=price_change_percent,
-                    change_24h=change_24h,
-                    change_7d=change_7d,
-                    news_items=news_items,
-                    alert_threshold_percent=alert_settings[
-                        "price_move_alert_percent"
-                    ],
-                    check_interval_seconds=alert_settings[
-                        "automatic_check_interval_seconds"
-                    ],
-                )
-                with DB_SESSION_LOCAL() as session:
-                    market_event = get_or_create_market_event(
-                        session,
-                        symbol=DEFAULT_SYMBOL,
-                        event_type="price_movement",
-                        event_key=event_key,
-                        price=current_price,
-                        previous_price=previous_price,
-                        price_change_percent=price_change_percent,
-                        last_24h_change=change_24h,
-                        last_7d_change=change_7d,
-                        detected_at=datetime.now(timezone.utc),
-                    )
-                    market_event_id = market_event.id
-                    existing_analysis = get_event_ai_analysis(
-                        session,
-                        market_event_id=market_event_id,
-                        input_hash=input_hash,
-                    )
-
-            if (
-                existing_analysis
-                and existing_analysis.status in {"success", "completed"}
-                and existing_analysis.plain_text
-            ):
-                alert_payload = {
-                    "plain_text": existing_analysis.plain_text,
-                    "html_text": existing_analysis.html_text,
-                }
-                log("Reusing saved AI analysis for BTC market event.")
-            else:
-                provider = "groq"
-                model = GROQ_MODEL
-                error_message = None
-                try:
-                    alert_payload = await create_ai_alert_payload(
-                        previous_price,
-                        current_price,
-                        price_change_percent,
-                        change_24h,
-                        change_7d,
-                        news_items,
-                        alert_threshold_percent=alert_settings[
-                            "price_move_alert_percent"
-                        ],
-                        check_interval_seconds=alert_settings[
-                            "automatic_check_interval_seconds"
-                        ],
-                    )
-                except Exception as error:
-                    log(f"AI alert generation failed: {error}")
-                    provider = "fallback"
-                    model = "deterministic"
-                    error_message = str(error)
-                    plain_message = build_fallback_alert_message(
-                        previous_price=previous_price,
-                        current_price=current_price,
-                        price_change_percent=price_change_percent,
-                        change_24h=change_24h,
-                        change_7d=change_7d,
-                        alert_threshold_percent=alert_settings[
-                            "price_move_alert_percent"
-                        ],
-                        check_interval_seconds=alert_settings[
-                            "automatic_check_interval_seconds"
-                        ],
-                    )
-                    alert_payload = {"plain_text": plain_message, "html_text": None}
-
-                if DB_ENABLED and DB_SESSION_LOCAL and market_event_id and input_hash:
-                    with DB_SESSION_LOCAL() as session:
-                        save_event_ai_analysis(
-                            session,
-                            market_event_id=market_event_id,
-                            provider=provider,
-                            model=model,
-                            input_hash=input_hash,
-                            analysis_text=str(alert_payload.get("plain_text", "")),
-                            plain_text=str(alert_payload.get("plain_text", "")),
-                            html_text=alert_payload.get("html_text"),
-                            status="success",
-                            error_message=error_message,
-                        )
-
-            html_text = alert_payload.get("html_text")
-            plain_text = str(alert_payload.get("plain_text", ""))
-            if html_text:
-                try:
-                    await app.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        text=str(html_text),
-                        parse_mode=ParseMode.HTML,
-                    )
-                except Exception as error:
-                    log(f"HTML alert send failed; falling back to plain text: {error}")
-                    await app.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID, text=plain_text
-                    )
-            else:
-                await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=plain_text)
-            remember_news_context(news_items)
+            market_event_id, _ = _get_or_create_btc_market_event(
+                previous_price=previous_price,
+                current_price=current_price,
+                price_change_percent=price_change_percent,
+                change_24h=change_24h,
+                change_7d=change_7d,
+            )
+            alert_payload, event_ai_analysis_id = await _get_or_create_event_ai_analysis(
+                market_event_id=market_event_id,
+                previous_price=previous_price,
+                current_price=current_price,
+                price_change_percent=price_change_percent,
+                change_24h=change_24h,
+                change_7d=change_7d,
+                news_items=news_items,
+                alert_settings=alert_settings,
+            )
+            delivered = await _deliver_btc_market_event_alert(
+                app,
+                alert_payload=alert_payload,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+            )
+            if delivered:
+                remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL:
                 with DB_SESSION_LOCAL() as session:
                     update_price_state(
@@ -390,18 +515,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         last_price=current_price,
                         last_24h_change=change_24h,
                         last_checked_at=datetime.now(timezone.utc),
-                        last_alert_at=datetime.now(timezone.utc),
-                    )
-                    save_alert(
-                        session,
-                        symbol="BTC",
-                        alert_type="price_movement",
-                        message=plain_text,
-                        sent_to_chat_id=int(TELEGRAM_CHAT_ID),
+                        last_alert_at=(
+                            datetime.now(timezone.utc) if delivered else None
+                        ),
                     )
             else:
-                state["last_alert_at"] = checked_at
-            log("Alert sent.")
+                if delivered:
+                    state["last_alert_at"] = checked_at
+            log("Alert sent." if delivered else "Alert was not delivered.")
         if not DB_ENABLED:
             save_state(state)
     except CoinGeckoRateLimitError:
