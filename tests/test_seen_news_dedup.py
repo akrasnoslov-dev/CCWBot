@@ -7,6 +7,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from bot.alerts import _build_alert_ai_input_hash, _build_price_movement_event_key
 from database import (
     Base,
     EventAiAnalysis,
@@ -196,6 +197,90 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
         session.close()
 
 
+def test_price_movement_event_key_is_stable_for_same_movement():
+    first = _build_price_movement_event_key(
+        symbol="btc",
+        previous_price=65000.001,
+        current_price=67000.004,
+        price_change_percent=3.0769234,
+    )
+    second = _build_price_movement_event_key(
+        symbol="BTC",
+        previous_price=65000.002,
+        current_price=67000.003,
+        price_change_percent=3.0769235,
+    )
+    different_move = _build_price_movement_event_key(
+        symbol="BTC",
+        previous_price=65000.0,
+        current_price=67100.0,
+        price_change_percent=3.2308,
+    )
+
+    assert first == second
+    assert first != different_move
+    assert first.startswith("btc:price_movement:")
+
+
+def test_alert_ai_input_hash_uses_stable_news_identity():
+    base_news = [
+        {
+            "title": "BTC ETF inflows rise",
+            "link": "https://example.com/article?id=1&utm_source=rss",
+            "source": "Example",
+            "ignored": "not part of hash",
+        }
+    ]
+    same_news_identity = [
+        {
+            "title": "BTC ETF inflows rise",
+            "link": "https://EXAMPLE.com/article?id=1",
+            "source": "Example",
+        }
+    ]
+
+    first = _build_alert_ai_input_hash(
+        symbol="btc",
+        event_type="price_movement",
+        previous_price=65000.0,
+        current_price=67000.0,
+        price_change_percent=3.0769,
+        change_24h=2.5,
+        change_7d=6.25,
+        news_items=base_news,
+        alert_threshold_percent=2.0,
+        check_interval_seconds=300,
+    )
+    second = _build_alert_ai_input_hash(
+        symbol="BTC",
+        event_type="price_movement",
+        previous_price=65000.0,
+        current_price=67000.0,
+        price_change_percent=3.0769,
+        change_24h=2.5,
+        change_7d=6.25,
+        news_items=same_news_identity,
+        alert_threshold_percent=2.0,
+        check_interval_seconds=300,
+    )
+    changed_price = _build_alert_ai_input_hash(
+        symbol="BTC",
+        event_type="price_movement",
+        previous_price=65000.0,
+        current_price=67100.0,
+        price_change_percent=3.2308,
+        change_24h=2.5,
+        change_7d=6.25,
+        news_items=same_news_identity,
+        alert_threshold_percent=2.0,
+        check_interval_seconds=300,
+    )
+
+    assert first == second
+    assert first != changed_price
+    assert len(first) == 64
+
+
 def test_legacy_app_settings_table_migrates_to_global_columns():
     db_path = PROJECT_ROOT / "legacy_app_settings_test.sqlite"
     if db_path.exists():
@@ -253,5 +338,7 @@ if __name__ == "__main__":
     test_app_settings_defaults_and_updates_are_global()
     test_market_event_helpers_create_and_reuse_event_key()
     test_event_ai_analysis_helpers_save_and_reuse_input_hash()
+    test_price_movement_event_key_is_stable_for_same_movement()
+    test_alert_ai_input_hash_uses_stable_news_identity()
     test_legacy_app_settings_table_migrates_to_global_columns()
     print("seen_news dedup tests passed")
