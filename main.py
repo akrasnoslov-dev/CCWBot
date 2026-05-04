@@ -24,10 +24,9 @@ from config import (
     WEEKLY_REPORT_HOUR,
 )
 from database import (
-    User,
     cleanup_seen_news,
+    get_or_create_app_settings,
     get_or_create_user,
-    get_or_create_user_settings,
     get_price_state,
     get_user_role,
     init_db,
@@ -35,8 +34,8 @@ from database import (
     mark_news_items_seen,
     save_alert,
     telegram_id_columns_are_bigint,
+    update_app_settings,
     update_price_state,
-    update_user_settings,
     was_news_seen,
 )
 from news_service import fetch_crypto_news
@@ -112,19 +111,13 @@ def sync_user_from_update(update: Update) -> None:
     if not update.effective_user or not update.effective_chat:
         return
     with DB_SESSION_LOCAL() as session:
-        user = get_or_create_user(
+        get_or_create_user(
             session,
             telegram_user_id=update.effective_user.id,
             telegram_chat_id=update.effective_chat.id,
             username=update.effective_user.username,
             first_name=update.effective_user.first_name,
             admin_user_id=TELEGRAM_ADMIN_USER_ID,
-        )
-        get_or_create_user_settings(
-            session,
-            user_id=user.id,
-            default_threshold=PRICE_MOVE_ALERT_PERCENT,
-            default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
         )
 
 
@@ -135,13 +128,31 @@ def build_supported_symbols_message() -> str:
 def get_alert_settings(state: dict) -> dict:
     return {
         "price_move_alert_percent": float(
-            state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT)
+            state.get(
+                "btc_alert_threshold_percent",
+                state.get("price_move_alert_percent", PRICE_MOVE_ALERT_PERCENT),
+            )
         ),
         "automatic_check_interval_seconds": int(
             state.get(
                 "automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS
             )
         ),
+    }
+
+
+def get_db_alert_settings() -> dict:
+    with DB_SESSION_LOCAL() as session:
+        settings = get_or_create_app_settings(
+            session,
+            default_threshold=PRICE_MOVE_ALERT_PERCENT,
+            default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
+        )
+    return {
+        "price_move_alert_percent": settings["btc_alert_threshold_percent"],
+        "automatic_check_interval_seconds": settings[
+            "automatic_check_interval_seconds"
+        ],
     }
 
 
@@ -362,28 +373,15 @@ async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
 async def update_interval_and_reschedule(
     context: ContextTypes.DEFAULT_TYPE,
     interval: int,
-    telegram_user_id: int | None = None,
-    telegram_chat_id: int | None = None,
-    username: str | None = None,
-    first_name: str | None = None,
 ) -> None:
-    if DB_ENABLED and DB_SESSION_LOCAL and telegram_user_id and telegram_chat_id:
+    if DB_ENABLED and DB_SESSION_LOCAL:
         with DB_SESSION_LOCAL() as session:
-            user = get_or_create_user(
+            update_app_settings(
                 session,
-                telegram_user_id=telegram_user_id,
-                telegram_chat_id=telegram_chat_id,
-                username=username,
-                first_name=first_name,
-                admin_user_id=TELEGRAM_ADMIN_USER_ID,
-            )
-            get_or_create_user_settings(
-                session,
-                user_id=user.id,
+                interval_seconds=interval,
                 default_threshold=PRICE_MOVE_ALERT_PERCENT,
                 default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
             )
-            update_user_settings(session, user_id=user.id, interval_seconds=interval)
         schedule_automatic_btc_check(context.application, interval)
         return
     state = load_state()
@@ -405,9 +403,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "I monitor crypto prices and send automatic BTC alerts.\n\n"
         "Use:\n"
         "/price - check crypto prices"
+        "\n/reports - BTC reports menu"
     )
     if is_admin:
-        message += "\n/settings - open settings menu\n/status - show bot status\n/reports - BTC reports menu"
+        message += "\n/settings - open settings menu\n/status - show bot status"
     await update.message.reply_text(message)
 
 
@@ -419,29 +418,16 @@ async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
-    if not _is_admin_update(update):
-        await update.message.reply_text(
-            "Sorry, only the bot admin can request daily reports."
-        )
-        return
     await send_daily_report_message(update.message)
 
 
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
-    if not _is_admin_update(update):
-        await update.message.reply_text(
-            "Sorry, only the bot admin can request weekly reports."
-        )
-        return
     await send_weekly_report_message(update.message)
 
 
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
-    if not _is_admin_update(update):
-        await update.message.reply_text("Sorry, only the bot admin can access reports.")
-        return
     await update.message.reply_text(
         "Reports menu 📊", reply_markup=build_reports_keyboard()
     )
@@ -492,24 +478,15 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if DB_ENABLED and DB_SESSION_LOCAL:
         with DB_SESSION_LOCAL() as session:
-            user = get_or_create_user(
+            update_app_settings(
                 session,
-                telegram_user_id=update.effective_user.id,
-                telegram_chat_id=update.effective_chat.id,
-                username=update.effective_user.username,
-                first_name=update.effective_user.first_name,
-                admin_user_id=TELEGRAM_ADMIN_USER_ID,
-            )
-            get_or_create_user_settings(
-                session,
-                user_id=user.id,
+                threshold=threshold,
                 default_threshold=PRICE_MOVE_ALERT_PERCENT,
                 default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
             )
-            update_user_settings(session, user_id=user.id, threshold=threshold)
     else:
         state = load_state()
-        state["price_move_alert_percent"] = threshold
+        state["btc_alert_threshold_percent"] = threshold
         save_state(state)
     await update.message.reply_text(
         f"Price movement threshold updated to {threshold}% ✅"
@@ -542,10 +519,6 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update_interval_and_reschedule(
         context,
         interval,
-        telegram_user_id=update.effective_user.id if update.effective_user else None,
-        telegram_chat_id=update.effective_chat.id if update.effective_chat else None,
-        username=update.effective_user.username if update.effective_user else None,
-        first_name=update.effective_user.first_name if update.effective_user else None,
     )
     await update.message.reply_text(
         f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
@@ -644,25 +617,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data == "settings:current":
             if DB_ENABLED and DB_SESSION_LOCAL:
-                with DB_SESSION_LOCAL() as session:
-                    user = get_or_create_user(
-                        session,
-                        telegram_user_id=query.from_user.id,
-                        telegram_chat_id=query.message.chat_id,
-                        username=query.from_user.username,
-                        first_name=query.from_user.first_name,
-                        admin_user_id=TELEGRAM_ADMIN_USER_ID,
-                    )
-                    settings_row = get_or_create_user_settings(
-                        session,
-                        user_id=user.id,
-                        default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                        default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
-                    )
-                    alert_settings = {
-                        "price_move_alert_percent": settings_row.price_move_alert_percent,
-                        "automatic_check_interval_seconds": settings_row.automatic_check_interval_seconds,
-                    }
+                alert_settings = get_db_alert_settings()
             else:
                 state = load_state()
                 alert_settings = get_alert_settings(state)
@@ -686,24 +641,15 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             threshold = float(data.rsplit(":", maxsplit=1)[1])
             if DB_ENABLED and DB_SESSION_LOCAL:
                 with DB_SESSION_LOCAL() as session:
-                    user = get_or_create_user(
+                    update_app_settings(
                         session,
-                        telegram_user_id=query.from_user.id,
-                        telegram_chat_id=query.message.chat_id,
-                        username=query.from_user.username,
-                        first_name=query.from_user.first_name,
-                        admin_user_id=TELEGRAM_ADMIN_USER_ID,
-                    )
-                    get_or_create_user_settings(
-                        session,
-                        user_id=user.id,
+                        threshold=threshold,
                         default_threshold=PRICE_MOVE_ALERT_PERCENT,
                         default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
                     )
-                    update_user_settings(session, user_id=user.id, threshold=threshold)
             else:
                 state = load_state()
-                state["price_move_alert_percent"] = threshold
+                state["btc_alert_threshold_percent"] = threshold
                 save_state(state)
             await query.message.reply_text(
                 f"Price movement threshold updated to {threshold}% ✅"
@@ -714,10 +660,6 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update_interval_and_reschedule(
                 context,
                 interval,
-                telegram_user_id=query.from_user.id if query.from_user else None,
-                telegram_chat_id=query.message.chat_id if query.message else None,
-                username=query.from_user.username if query.from_user else None,
-                first_name=query.from_user.first_name if query.from_user else None,
             )
             await query.message.reply_text(
                 f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
@@ -830,20 +772,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             previous_price, current_price
         )
         if DB_ENABLED and DB_SESSION_LOCAL:
-            with DB_SESSION_LOCAL() as session:
-                admin_user = session.query(User).filter_by(role="admin").first()
-                settings_row = None
-                if admin_user:
-                    settings_row = get_or_create_user_settings(
-                        session,
-                        user_id=admin_user.id,
-                        default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                        default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
-                    )
-                alert_settings = {
-                    "price_move_alert_percent": settings_row.price_move_alert_percent if settings_row else PRICE_MOVE_ALERT_PERCENT,
-                    "automatic_check_interval_seconds": settings_row.automatic_check_interval_seconds if settings_row else AUTOMATIC_CHECK_INTERVAL_SECONDS,
-                }
+            alert_settings = get_db_alert_settings()
         else:
             state.update(
                 {
@@ -993,6 +922,7 @@ async def setup_bot_commands(app: Application) -> None:
     default_commands = [
         BotCommand("start", "Show bot intro"),
         BotCommand("price", "Check crypto prices"),
+        BotCommand("reports", "Open BTC reports menu"),
     ]
     await app.bot.set_my_commands(
         default_commands, scope=BotCommandScopeAllPrivateChats()
@@ -1002,7 +932,6 @@ async def setup_bot_commands(app: Application) -> None:
         admin_commands = default_commands + [
             BotCommand("settings", "Open settings menu"),
             BotCommand("status", "Show bot status"),
-            BotCommand("reports", "Open BTC reports menu"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)
@@ -1042,24 +971,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_router))
 
     if DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
-            admin_user = session.query(User).filter_by(role="admin").first()
-            if admin_user:
-                settings_row = get_or_create_user_settings(
-                    session,
-                    user_id=admin_user.id,
-                    default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                    default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
-                )
-                runtime_settings = {
-                    "price_move_alert_percent": settings_row.price_move_alert_percent,
-                    "automatic_check_interval_seconds": settings_row.automatic_check_interval_seconds,
-                }
-            else:
-                runtime_settings = {
-                    "price_move_alert_percent": PRICE_MOVE_ALERT_PERCENT,
-                    "automatic_check_interval_seconds": AUTOMATIC_CHECK_INTERVAL_SECONDS,
-                }
+        runtime_settings = get_db_alert_settings()
     else:
         runtime_state = load_state()
         runtime_settings = get_alert_settings(runtime_state)
