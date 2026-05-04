@@ -34,6 +34,7 @@ from database import (
     make_news_key,
     mark_news_items_seen,
     save_alert,
+    telegram_id_columns_are_bigint,
     update_price_state,
     update_user_settings,
     was_news_seen,
@@ -88,6 +89,10 @@ DB_SESSION_LOCAL = None
 if DB_ENABLED:
     log("Database configured. Using PostgreSQL state.")
     _, DB_SESSION_LOCAL = init_db(DATABASE_URL)
+    if telegram_id_columns_are_bigint():
+        log("Telegram ID columns are configured as PostgreSQL BIGINT.")
+    else:
+        log("Warning: Telegram ID columns are not all configured as PostgreSQL BIGINT.")
 else:
     log("DATABASE_URL is not configured. Using local JSON state.")
 
