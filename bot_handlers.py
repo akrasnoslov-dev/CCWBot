@@ -170,7 +170,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
-        print(f"Price error: {error}")
+        log(f"Price error: {error}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):

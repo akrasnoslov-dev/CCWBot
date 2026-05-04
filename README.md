@@ -14,8 +14,8 @@ CCWBot is a Telegram crypto watcher bot focused on automatic **BTC movement aler
 - Automatic BTC alerts separate **since last check** movement from **24h trend** (and 7d trend when available).
 - AI-assisted alert/report text generation (Groq provider) with safe fallback messages.
 - RSS news context filtering for crypto/BTC relevance.
-- Admin-only settings, status, and reports.
-- PostgreSQL runtime state when `DATABASE_URL` is configured, with local `state.json` fallback.
+- Public reports menu, with admin-only settings and status.
+- PostgreSQL runtime state and global `app_settings` when `DATABASE_URL` is configured, with local `state.json` fallback.
 
 ## Supported coins
 - `btc`
@@ -29,12 +29,12 @@ CCWBot is a Telegram crypto watcher bot focused on automatic **BTC movement aler
 - `/price` (or `/price <symbol>`)
 - `/settings` (admin only)
 - `/status` (admin only)
-- `/reports` (admin only, if present in your menu)
+- `/reports`
 
 ### Hidden utility commands
 - `/userid` - returns your Telegram user ID.
 - `/chatid` - admin utility to show current chat ID.
-- `/dailyreport` and `/weeklyreport` - admin report shortcuts.
+- `/dailyreport` and `/weeklyreport` - report shortcuts.
 
 ### Menus
 - Price menu: BTC / ETH / TON / USDT.
@@ -93,8 +93,9 @@ Use `/userid` in a private chat with the bot.
 ## Runtime storage
 - Primary: PostgreSQL when `DATABASE_URL` is configured.
 - Fallback: local `state.json` only when `DATABASE_URL` is missing.
-- Runtime tables used: `users`, `user_settings`, `price_state`, `alerts`, `seen_news`.
+- Runtime tables used: `users`, `user_settings`, `app_settings`, `price_state`, `alerts`, `seen_news`.
 - Telegram user/chat IDs are stored as `BIGINT` in PostgreSQL.
+- Global alert settings are stored in `app_settings` in PostgreSQL mode.
 - `seen_news` tracks processed RSS items by stable link/title keys to help avoid duplicate news processing.
 - Non-DB mode keeps using the local `state.json` fallback and existing local behaviour.
 - You can inspect these tables with DBeaver when PostgreSQL is running.
@@ -125,4 +126,3 @@ Use `/userid` in a private chat with the bot.
 
 Notes:
 - If `DATABASE_URL` is not set, CCWBot continues to use local `state.json`.
-- If your local PostgreSQL tables were created before the Telegram ID `BIGINT` fix, reset the dev database with `docker compose down -v` and `docker compose up -d postgres`.

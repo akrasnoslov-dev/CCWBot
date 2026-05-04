@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from config import DATABASE_URL
-from database import init_db, telegram_id_columns_are_bigint
+from database import init_db
 
 
 def log(message: str) -> None:
@@ -16,9 +16,5 @@ DB_SESSION_LOCAL = None
 if DB_ENABLED:
     log("Database configured. Using PostgreSQL state.")
     _, DB_SESSION_LOCAL = init_db(DATABASE_URL)
-    if telegram_id_columns_are_bigint():
-        log("Telegram ID columns are configured as PostgreSQL BIGINT.")
-    else:
-        log("Warning: Telegram ID columns are not all configured as PostgreSQL BIGINT.")
 else:
     log("DATABASE_URL is not configured. Using local JSON state.")

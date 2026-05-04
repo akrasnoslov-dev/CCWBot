@@ -131,7 +131,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     }
                 )
                 save_state(state)
-            print(f"Initial BTC price saved: ${current_price:,.2f}")
+            log(f"Initial BTC price saved: ${current_price:,.2f}")
             return
 
         price_change_percent = calculate_price_change_percent(
@@ -227,7 +227,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     except httpx.HTTPStatusError as error:
         log(f"Automatic check HTTP error: {error}")
     except Exception as error:
-        print(f"Automatic check error: {error}")
+        log(f"Automatic check error: {error}")
 
 
 async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):

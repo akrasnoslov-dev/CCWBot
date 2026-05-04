@@ -1,4 +1,8 @@
 from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -111,7 +115,7 @@ def test_app_settings_defaults_and_updates_are_global():
 
 
 def test_legacy_app_settings_table_migrates_to_global_columns():
-    db_path = Path("legacy_app_settings_test.sqlite").resolve()
+    db_path = PROJECT_ROOT / "legacy_app_settings_test.sqlite"
     if db_path.exists():
         db_path.unlink()
     try:
