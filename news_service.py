@@ -1,5 +1,7 @@
 import feedparser
 
+from database import make_news_key
+
 # Existing curated RSS feeds used by the bot for context in AI summaries.
 RSS_FEEDS = [
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -33,7 +35,7 @@ def fetch_crypto_news(limit: int = 5) -> list[dict]:
     """Fetch and filter recent crypto/BTC RSS entries.
 
     This function is intentionally simple: parse feed, filter by keywords,
-    deduplicate by normalized title, then trim to requested limit.
+    deduplicate by stable link/title key, then trim to requested limit.
     """
     news_items = []
 
@@ -58,12 +60,12 @@ def fetch_crypto_news(limit: int = 5) -> list[dict]:
             )
 
     unique_news = []
-    seen_titles = set()
+    seen_keys = set()
     for item in news_items:
-        normalized_title = item["title"].strip().lower()
-        if normalized_title in seen_titles:
+        news_key = make_news_key(item)
+        if not news_key or news_key in seen_keys:
             continue
-        seen_titles.add(normalized_title)
+        seen_keys.add(news_key)
         unique_news.append(item)
 
     return unique_news[:limit]
