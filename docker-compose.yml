@@ -1,5 +1,7 @@
-postgres:
+services:
+  postgres:
     image: postgres:16
+    container_name: ccwbot-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ccwbot
@@ -8,7 +10,7 @@ postgres:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ccwbot_postgres_data:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  ccwbot_postgres_data:
