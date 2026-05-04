@@ -122,3 +122,9 @@ Use `/userid` in a private chat with the bot.
 
 Notes:
 - If `DATABASE_URL` is not set, CCWBot continues to use local `state.json`.
+- If your local PostgreSQL tables were created before Telegram IDs used `BIGINT`,
+  recreate the dev database with:
+  ```bash
+  docker compose down -v
+  docker compose up -d postgres
+  ```
