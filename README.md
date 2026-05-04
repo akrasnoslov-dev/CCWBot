@@ -15,7 +15,7 @@ CCWBot is a Telegram crypto watcher bot focused on automatic **BTC movement aler
 - AI-assisted alert/report text generation (Groq provider) with safe fallback messages.
 - RSS news context filtering for crypto/BTC relevance.
 - Admin-only settings, status, and reports.
-- Local `state.json` persistence for runtime state/settings overrides.
+- PostgreSQL runtime state when `DATABASE_URL` is configured, with local `state.json` fallback.
 
 ## Supported coins
 - `btc`
@@ -90,9 +90,15 @@ Use `/userid` in a private chat with the bot.
 - AI text generation uses Groq via an OpenAI-compatible client.
 - Bot output is informational only and includes **Not financial advice** guidance.
 
+## Runtime storage
+- Primary: PostgreSQL when `DATABASE_URL` is configured.
+- Fallback: local `state.json` only when `DATABASE_URL` is missing.
+- Runtime tables used: `users`, `user_settings`, `price_state`, `alerts`.
+- You can inspect these tables with DBeaver when PostgreSQL is running.
+
 ## Current limitations
 - Automatic monitoring targets BTC only.
-- `state.json` is local-file persistence (single-instance oriented).
+- JSON fallback is local-file persistence (single-instance oriented).
 - No database/backend queue in this version.
 - Depends on third-party APIs/services.
 
@@ -102,7 +108,7 @@ Use `/userid` in a private chat with the bot.
 - Stronger resilience/observability.
 - Optional shared/distributed state storage.
 
-## Local PostgreSQL setup (optional for now)
+## Local PostgreSQL setup
 1. Install Docker Desktop (includes Docker Compose).
 2. Start PostgreSQL locally:
    ```bash
@@ -115,6 +121,4 @@ Use `/userid` in a private chat with the bot.
    ```
 
 Notes:
-- PostgreSQL support is optional in this stage.
 - If `DATABASE_URL` is not set, CCWBot continues to use local `state.json`.
-- Full migration from `state.json` to PostgreSQL will be added later.

@@ -123,3 +123,132 @@ def init_db(database_url: str):
     )
     Base.metadata.create_all(bind=engine)
     return engine, SessionLocal
+
+
+def get_or_create_user(
+    session,
+    *,
+    telegram_user_id: int,
+    telegram_chat_id: int,
+    username: str | None,
+    first_name: str | None,
+    admin_user_id: int | str | None,
+):
+    """Create or update a user row for current Telegram interaction."""
+    user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
+    role = "admin" if admin_user_id is not None and str(telegram_user_id) == str(admin_user_id) else "user"
+    if user is None:
+        user = User(
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            username=username,
+            first_name=first_name,
+            role=role,
+            is_active=True,
+        )
+        session.add(user)
+    else:
+        user.telegram_chat_id = telegram_chat_id
+        user.username = username
+        user.first_name = first_name
+        user.role = role
+        user.is_active = True
+        user.updated_at = utc_now()
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def get_user_role(session, telegram_user_id: int) -> str | None:
+    user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
+    return user.role if user else None
+
+
+def get_or_create_user_settings(
+    session,
+    *,
+    user_id: int,
+    default_threshold: float,
+    default_interval: int,
+):
+    settings = session.query(UserSettings).filter_by(user_id=user_id).first()
+    if settings is None:
+        settings = UserSettings(
+            user_id=user_id,
+            price_move_alert_percent=default_threshold,
+            automatic_check_interval_seconds=default_interval,
+        )
+        session.add(settings)
+        session.commit()
+        session.refresh(settings)
+    return settings
+
+
+def update_user_settings(
+    session,
+    *,
+    user_id: int,
+    threshold: float | None = None,
+    interval_seconds: int | None = None,
+):
+    settings = session.query(UserSettings).filter_by(user_id=user_id).first()
+    if settings is None:
+        raise ValueError("User settings row not found.")
+    if threshold is not None:
+        settings.price_move_alert_percent = threshold
+    if interval_seconds is not None:
+        settings.automatic_check_interval_seconds = interval_seconds
+    settings.updated_at = utc_now()
+    session.commit()
+    session.refresh(settings)
+    return settings
+
+
+def get_price_state(session, symbol: str):
+    return session.query(PriceState).filter_by(symbol=symbol.upper()).first()
+
+
+def update_price_state(
+    session,
+    *,
+    symbol: str,
+    last_price: float,
+    last_24h_change: float,
+    last_checked_at: datetime | None,
+    last_alert_at: datetime | None = None,
+):
+    row = get_price_state(session, symbol)
+    if row is None:
+        row = PriceState(
+            symbol=symbol.upper(),
+            last_price=last_price,
+            last_24h_change=last_24h_change,
+            last_checked_at=last_checked_at,
+            last_alert_at=last_alert_at,
+        )
+        session.add(row)
+    else:
+        row.last_price = last_price
+        row.last_24h_change = last_24h_change
+        row.last_checked_at = last_checked_at
+        if last_alert_at is not None:
+            row.last_alert_at = last_alert_at
+    row.updated_at = utc_now()
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def save_alert(
+    session, *, symbol: str, alert_type: str, message: str, sent_to_chat_id: int
+):
+    alert = Alert(
+        symbol=symbol.upper(),
+        alert_type=alert_type,
+        message=message,
+        sent_to_chat_id=sent_to_chat_id,
+    )
+    session.add(alert)
+    session.commit()
+    session.refresh(alert)
+    return alert
