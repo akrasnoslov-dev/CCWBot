@@ -145,7 +145,7 @@ def get_alert_settings(state: dict) -> dict:
     }
 
 
-def fetch_news_context(limit: int, *, prefer_unseen: bool = False) -> list[dict]:
+def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
     """Fetch RSS news and use seen_news for dedupe when PostgreSQL is active."""
     fetch_limit = max(limit * 3, limit)
     news_items = fetch_crypto_news(limit=fetch_limit)
@@ -157,8 +157,10 @@ def fetch_news_context(limit: int, *, prefer_unseen: bool = False) -> list[dict]
             item for item in news_items if not was_news_seen(session, make_news_key(item))
         ]
 
-    if prefer_unseen and unseen_items:
+    if unseen_items:
         return unseen_items[:limit]
+    if prefer_unseen:
+        log("No unseen RSS news found in PostgreSQL seen_news; reusing recent fetched news.")
     return news_items[:limit]
 
 
