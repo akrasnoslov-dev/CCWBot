@@ -74,6 +74,8 @@ WEEKDAY_MAP = {
 }
 
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
+DEFAULT_BTC_ALERT_THRESHOLD_PERCENT = 2.0
+DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS = 300
 
 
 # ---- Small utilities ----
@@ -82,7 +84,7 @@ def log(message: str) -> None:
     print(f"[{timestamp}] {message}")
 
 
-# Optional DB bootstrap: JSON state remains source of truth for now.
+# Optional DB bootstrap: PostgreSQL stores runtime state when configured.
 DB_ENABLED = bool(DATABASE_URL)
 DB_SESSION_LOCAL = None
 if DB_ENABLED:
@@ -145,8 +147,8 @@ def get_db_alert_settings() -> dict:
     with DB_SESSION_LOCAL() as session:
         settings = get_or_create_app_settings(
             session,
-            default_threshold=PRICE_MOVE_ALERT_PERCENT,
-            default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
+            default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+            default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
         )
     return {
         "price_move_alert_percent": settings["btc_alert_threshold_percent"],
@@ -379,8 +381,8 @@ async def update_interval_and_reschedule(
             update_app_settings(
                 session,
                 interval_seconds=interval,
-                default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
+                default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+                default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
             )
         schedule_automatic_btc_check(context.application, interval)
         return
@@ -481,8 +483,8 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_app_settings(
                 session,
                 threshold=threshold,
-                default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
+                default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+                default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
             )
     else:
         state = load_state()
@@ -644,8 +646,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     update_app_settings(
                         session,
                         threshold=threshold,
-                        default_threshold=PRICE_MOVE_ALERT_PERCENT,
-                        default_interval=AUTOMATIC_CHECK_INTERVAL_SECONDS,
+                        default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+                        default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
                     )
             else:
                 state = load_state()
