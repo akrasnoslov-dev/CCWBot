@@ -20,6 +20,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import (
@@ -122,12 +124,12 @@ class UserSettings(Base):
     user: Mapped[User] = relationship(back_populates="settings")
 
 
-class AppSetting(Base):
+class AppSettings(Base):
     __tablename__ = "app_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    setting_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    setting_value: Mapped[str] = mapped_column(String(255))
+    btc_alert_threshold_percent: Mapped[float] = mapped_column(Float)
+    automatic_check_interval_seconds: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -194,6 +196,7 @@ def init_db(database_url: str):
     SessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False, future=True
     )
+    _migrate_legacy_app_settings_table(engine)
     Base.metadata.create_all(bind=engine)
     return engine, SessionLocal
 
@@ -237,14 +240,86 @@ def get_user_role(session, telegram_user_id: int) -> str | None:
     return user.role if user else None
 
 
-def _get_or_create_app_setting(session, setting_key: str, default_value: str):
-    setting = session.query(AppSetting).filter_by(setting_key=setting_key).first()
-    if setting is None:
-        setting = AppSetting(setting_key=setting_key, setting_value=default_value)
-        session.add(setting)
+def _migrate_legacy_app_settings_table(engine) -> None:
+    """Replace the early key/value app_settings table with explicit columns.
+
+    This keeps existing development databases usable without Alembic while new
+    databases get the concrete global settings model from SQLAlchemy metadata.
+    """
+    inspector = inspect(engine)
+    if "app_settings" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("app_settings")}
+    legacy_columns = {"setting_key", "setting_value"}
+    required_columns = {
+        "btc_alert_threshold_percent",
+        "automatic_check_interval_seconds",
+    }
+    missing_columns = required_columns - columns
+
+    if not missing_columns:
+        return
+
+    if not legacy_columns.issubset(columns):
+        raise RuntimeError(
+            "app_settings table exists but does not contain the required global "
+            "settings columns."
+        )
+
+    with engine.begin() as connection:
+        legacy_rows = connection.execute(
+            text(
+                "SELECT setting_key, setting_value FROM app_settings "
+                "WHERE setting_key IN ("
+                "'btc_alert_threshold_percent', "
+                "'automatic_check_interval_seconds'"
+                ")"
+            )
+        ).mappings()
+        legacy_values = {
+            str(row["setting_key"]): str(row["setting_value"]) for row in legacy_rows
+        }
+        threshold = float(legacy_values.get("btc_alert_threshold_percent", "2"))
+        interval = int(legacy_values.get("automatic_check_interval_seconds", "300"))
+        now = utc_now()
+
+        connection.execute(text("DROP TABLE app_settings"))
+        AppSettings.__table__.create(bind=connection)
+        connection.execute(
+            AppSettings.__table__.insert().values(
+                btc_alert_threshold_percent=threshold,
+                automatic_check_interval_seconds=interval,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _get_app_settings_row(session, *, default_threshold: float, default_interval: int):
+    settings = session.query(AppSettings).order_by(AppSettings.id.asc()).first()
+    if settings is None:
+        settings = AppSettings(
+            btc_alert_threshold_percent=default_threshold,
+            automatic_check_interval_seconds=default_interval,
+        )
+        session.add(settings)
         session.commit()
-        session.refresh(setting)
-    return setting
+        session.refresh(settings)
+        return settings
+
+    changed = False
+    if settings.btc_alert_threshold_percent is None:
+        settings.btc_alert_threshold_percent = default_threshold
+        changed = True
+    if settings.automatic_check_interval_seconds is None:
+        settings.automatic_check_interval_seconds = default_interval
+        changed = True
+    if changed:
+        settings.updated_at = utc_now()
+        session.commit()
+        session.refresh(settings)
+    return settings
 
 
 def get_or_create_app_settings(
@@ -253,15 +328,16 @@ def get_or_create_app_settings(
     default_threshold: float,
     default_interval: int,
 ) -> dict:
-    threshold = _get_or_create_app_setting(
-        session, "btc_alert_threshold_percent", str(default_threshold)
-    )
-    interval = _get_or_create_app_setting(
-        session, "automatic_check_interval_seconds", str(default_interval)
+    settings = _get_app_settings_row(
+        session,
+        default_threshold=default_threshold,
+        default_interval=default_interval,
     )
     return {
-        "btc_alert_threshold_percent": float(threshold.setting_value),
-        "automatic_check_interval_seconds": int(interval.setting_value),
+        "btc_alert_threshold_percent": float(settings.btc_alert_threshold_percent),
+        "automatic_check_interval_seconds": int(
+            settings.automatic_check_interval_seconds
+        ),
     }
 
 
@@ -273,19 +349,18 @@ def update_app_settings(
     threshold: float | None = None,
     interval_seconds: int | None = None,
 ) -> dict:
+    settings = _get_app_settings_row(
+        session,
+        default_threshold=default_threshold,
+        default_interval=default_interval,
+    )
     if threshold is not None:
-        threshold_setting = _get_or_create_app_setting(
-            session, "btc_alert_threshold_percent", str(threshold)
-        )
-        threshold_setting.setting_value = str(threshold)
-        threshold_setting.updated_at = utc_now()
+        settings.btc_alert_threshold_percent = threshold
     if interval_seconds is not None:
-        interval_setting = _get_or_create_app_setting(
-            session, "automatic_check_interval_seconds", str(interval_seconds)
-        )
-        interval_setting.setting_value = str(interval_seconds)
-        interval_setting.updated_at = utc_now()
+        settings.automatic_check_interval_seconds = interval_seconds
+    settings.updated_at = utc_now()
     session.commit()
+    session.refresh(settings)
     return get_or_create_app_settings(
         session,
         default_threshold=default_threshold,
