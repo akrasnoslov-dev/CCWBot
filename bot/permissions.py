@@ -2,7 +2,7 @@ from config import TELEGRAM_ADMIN_USER_ID
 from database import get_or_create_user, get_user_role
 from telegram import Update
 
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
 
 def is_admin_user(user_id: int | str | None) -> bool:

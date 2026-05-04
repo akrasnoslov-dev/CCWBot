@@ -2,7 +2,7 @@ from config import TELEGRAM_ADMIN_USER_ID
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat
 from telegram.ext import Application
 
-from bot_runtime import log
+from bot.runtime import log
 
 
 async def setup_bot_commands(app: Application) -> None:

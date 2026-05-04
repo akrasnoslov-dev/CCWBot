@@ -6,7 +6,7 @@ from database import (
 )
 from news_service import fetch_crypto_news
 
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 
 def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:

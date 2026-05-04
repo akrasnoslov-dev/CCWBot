@@ -1,8 +1,4 @@
-"""Database infrastructure for optional PostgreSQL support.
-
-This module is intentionally lightweight and does not replace existing JSON state.
-If DATABASE_URL is configured, main.py can initialize these tables for future use.
-"""
+"""Database infrastructure for optional PostgreSQL runtime storage."""
 
 from __future__ import annotations
 
@@ -178,16 +174,6 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
-
-
-def telegram_id_columns_are_bigint() -> bool:
-    """Return True when Telegram ID model columns are configured as BIGINT."""
-    telegram_columns = (
-        User.__table__.c.telegram_user_id,
-        User.__table__.c.telegram_chat_id,
-        Alert.__table__.c.sent_to_chat_id,
-    )
-    return all(isinstance(column.type, BigInteger) for column in telegram_columns)
 
 
 def init_db(database_url: str):

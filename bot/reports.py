@@ -8,8 +8,8 @@ from database import save_alert
 from price_service import get_btc_market_data
 from telegram.ext import ContextTypes
 
-from bot_news import fetch_news_context, remember_news_context
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.news import fetch_news_context, remember_news_context
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 
 async def send_daily_report_message(target) -> None:

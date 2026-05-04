@@ -4,23 +4,23 @@ from storage import load_state
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot_alerts import schedule_automatic_btc_check
-from bot_keyboards import (
+from bot.alerts import schedule_automatic_btc_check
+from bot.keyboards import (
     build_interval_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
     build_settings_keyboard,
     build_threshold_keyboard,
 )
-from bot_permissions import is_admin_update, is_admin_user, sync_user_from_update
-from bot_prices import (
+from bot.permissions import is_admin_update, is_admin_user, sync_user_from_update
+from bot.prices import (
     build_supported_symbols_message,
     send_manual_rate_limit_message,
     send_price_message,
 )
-from bot_reports import send_daily_report_message, send_weekly_report_message
-from bot_runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot_settings import (
+from bot.reports import send_daily_report_message, send_weekly_report_message
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.settings import (
     get_db_alert_settings,
     get_state_alert_settings,
     save_interval_setting,
@@ -170,7 +170,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
-        print(f"Price error: {error}")
+        log(f"Price error: {error}")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
