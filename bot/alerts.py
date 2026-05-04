@@ -1,7 +1,11 @@
+import json
 from datetime import datetime, time, timedelta, timezone
+from hashlib import sha256
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from ai_agent_groq import (
+    GROQ_MODEL,
     build_fallback_alert_message,
     classify_strong_signal,
     create_ai_alert_payload,
@@ -16,7 +20,15 @@ from config import (
     WEEKLY_REPORT_DAY,
     WEEKLY_REPORT_HOUR,
 )
-from database import get_price_state, save_alert, update_price_state
+from database import (
+    get_event_ai_analysis,
+    get_or_create_market_event,
+    get_price_state,
+    make_news_key,
+    save_alert,
+    save_event_ai_analysis,
+    update_price_state,
+)
 from price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
@@ -43,6 +55,92 @@ WEEKDAY_MAP = {
     "saturday": 5,
     "sunday": 6,
 }
+
+
+def _stable_float(value: float | None, digits: int) -> float | None:
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
+def _stable_news_link(link: str) -> str:
+    parsed = urlsplit(link.strip())
+    query_params = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+    ]
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/") or parsed.path,
+            urlencode(sorted(query_params)),
+            "",
+        )
+    )
+
+
+def _build_price_movement_event_key(
+    *,
+    symbol: str,
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+) -> str:
+    """Build one key for one observed BTC price movement.
+
+    Prices are rounded to cents and movement to 4 decimals so retries for the
+    same check reuse the event, while genuinely different movements do not
+    collapse into a broad time bucket.
+    """
+    key_parts = {
+        "symbol": symbol.upper(),
+        "event_type": "price_movement",
+        "previous_price": _stable_float(previous_price, 2),
+        "price": _stable_float(current_price, 2),
+        "price_change_percent": _stable_float(price_change_percent, 4),
+    }
+    encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
+    return f"btc:price_movement:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
+
+
+def _build_alert_ai_input_hash(
+    *,
+    symbol: str,
+    event_type: str,
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+    alert_threshold_percent: float,
+    check_interval_seconds: int,
+) -> str:
+    news_context = [
+        {
+            "key": make_news_key(item),
+            "title": str(item.get("title") or ""),
+            "source": str(item.get("source") or ""),
+            "link": _stable_news_link(str(item.get("link") or "")),
+        }
+        for item in news_items
+    ]
+    payload = {
+        "symbol": symbol.upper(),
+        "event_type": event_type,
+        "previous_price": _stable_float(previous_price, 2),
+        "price": _stable_float(current_price, 2),
+        "price_change_percent": _stable_float(price_change_percent, 4),
+        "change_24h": _stable_float(change_24h, 4),
+        "change_7d": _stable_float(change_7d, 4),
+        "alert_threshold_percent": _stable_float(alert_threshold_percent, 4),
+        "check_interval_seconds": int(check_interval_seconds),
+        "news": news_context,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
@@ -154,34 +252,118 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             threshold_percent=alert_settings["price_move_alert_percent"],
         ):
             news_items = []
-            try:
-                news_items = fetch_news_context(limit=5)
-                alert_payload = await create_ai_alert_payload(
-                    previous_price,
-                    current_price,
-                    price_change_percent,
-                    change_24h,
-                    change_7d,
-                    news_items,
-                    alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                    check_interval_seconds=alert_settings[
-                        "automatic_check_interval_seconds"
-                    ],
+            market_event = None
+            market_event_id = None
+            input_hash = None
+            existing_analysis = None
+            news_items = fetch_news_context(limit=5)
+
+            if DB_ENABLED and DB_SESSION_LOCAL:
+                event_key = _build_price_movement_event_key(
+                    symbol=DEFAULT_SYMBOL,
+                    previous_price=previous_price,
+                    current_price=current_price,
+                    price_change_percent=price_change_percent,
                 )
-            except Exception as error:
-                log(f"AI alert generation failed: {error}")
-                plain_message = build_fallback_alert_message(
+                input_hash = _build_alert_ai_input_hash(
+                    symbol=DEFAULT_SYMBOL,
+                    event_type="price_movement",
                     previous_price=previous_price,
                     current_price=current_price,
                     price_change_percent=price_change_percent,
                     change_24h=change_24h,
                     change_7d=change_7d,
-                    alert_threshold_percent=alert_settings["price_move_alert_percent"],
+                    news_items=news_items,
+                    alert_threshold_percent=alert_settings[
+                        "price_move_alert_percent"
+                    ],
                     check_interval_seconds=alert_settings[
                         "automatic_check_interval_seconds"
                     ],
                 )
-                alert_payload = {"plain_text": plain_message, "html_text": None}
+                with DB_SESSION_LOCAL() as session:
+                    market_event = get_or_create_market_event(
+                        session,
+                        symbol=DEFAULT_SYMBOL,
+                        event_type="price_movement",
+                        event_key=event_key,
+                        price=current_price,
+                        previous_price=previous_price,
+                        price_change_percent=price_change_percent,
+                        last_24h_change=change_24h,
+                        last_7d_change=change_7d,
+                        detected_at=datetime.now(timezone.utc),
+                    )
+                    market_event_id = market_event.id
+                    existing_analysis = get_event_ai_analysis(
+                        session,
+                        market_event_id=market_event_id,
+                        input_hash=input_hash,
+                    )
+
+            if (
+                existing_analysis
+                and existing_analysis.status in {"success", "completed"}
+                and existing_analysis.plain_text
+            ):
+                alert_payload = {
+                    "plain_text": existing_analysis.plain_text,
+                    "html_text": existing_analysis.html_text,
+                }
+                log("Reusing saved AI analysis for BTC market event.")
+            else:
+                provider = "groq"
+                model = GROQ_MODEL
+                error_message = None
+                try:
+                    alert_payload = await create_ai_alert_payload(
+                        previous_price,
+                        current_price,
+                        price_change_percent,
+                        change_24h,
+                        change_7d,
+                        news_items,
+                        alert_threshold_percent=alert_settings[
+                            "price_move_alert_percent"
+                        ],
+                        check_interval_seconds=alert_settings[
+                            "automatic_check_interval_seconds"
+                        ],
+                    )
+                except Exception as error:
+                    log(f"AI alert generation failed: {error}")
+                    provider = "fallback"
+                    model = "deterministic"
+                    error_message = str(error)
+                    plain_message = build_fallback_alert_message(
+                        previous_price=previous_price,
+                        current_price=current_price,
+                        price_change_percent=price_change_percent,
+                        change_24h=change_24h,
+                        change_7d=change_7d,
+                        alert_threshold_percent=alert_settings[
+                            "price_move_alert_percent"
+                        ],
+                        check_interval_seconds=alert_settings[
+                            "automatic_check_interval_seconds"
+                        ],
+                    )
+                    alert_payload = {"plain_text": plain_message, "html_text": None}
+
+                if DB_ENABLED and DB_SESSION_LOCAL and market_event_id and input_hash:
+                    with DB_SESSION_LOCAL() as session:
+                        save_event_ai_analysis(
+                            session,
+                            market_event_id=market_event_id,
+                            provider=provider,
+                            model=model,
+                            input_hash=input_hash,
+                            analysis_text=str(alert_payload.get("plain_text", "")),
+                            plain_text=str(alert_payload.get("plain_text", "")),
+                            html_text=alert_payload.get("html_text"),
+                            status="success",
+                            error_message=error_message,
+                        )
 
             html_text = alert_payload.get("html_text")
             plain_text = str(alert_payload.get("plain_text", ""))
