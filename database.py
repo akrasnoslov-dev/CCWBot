@@ -318,6 +318,17 @@ def get_user_role(session, telegram_user_id: int) -> str | None:
     return user.role if user else None
 
 
+def get_active_users_with_chat_ids(session) -> list[User]:
+    """Return active users that can receive automatic Telegram alerts."""
+    return (
+        session.query(User)
+        .filter(User.telegram_chat_id.isnot(None))
+        .filter(User.is_active.is_(True))
+        .order_by(User.id.asc())
+        .all()
+    )
+
+
 def _migrate_legacy_app_settings_table(engine) -> None:
     """Replace the early key/value app_settings table with explicit columns.
 

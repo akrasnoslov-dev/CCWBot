@@ -7,13 +7,20 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from bot.alerts import _build_alert_ai_input_hash, _build_price_movement_event_key
+from bot.alerts import (
+    AlertRecipient,
+    _build_alert_ai_input_hash,
+    _build_price_movement_event_key,
+    get_alert_recipients,
+)
 from database import (
     Base,
     EventAiAnalysis,
     MarketEvent,
     SeenNews,
+    User,
     count_market_events,
+    get_active_users_with_chat_ids,
     get_event_ai_analysis,
     get_or_create_app_settings,
     get_or_create_market_event,
@@ -195,6 +202,81 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
         )
     finally:
         session.close()
+
+
+def test_active_alert_recipients_use_active_users_with_chat_ids():
+    session = build_session()
+    try:
+        session.add_all(
+            [
+                User(
+                    telegram_user_id=1001,
+                    telegram_chat_id=2001,
+                    username="admin",
+                    first_name="Admin",
+                    role="admin",
+                    is_active=True,
+                ),
+                User(
+                    telegram_user_id=1002,
+                    telegram_chat_id=2002,
+                    username="normal",
+                    first_name="Normal",
+                    role="user",
+                    is_active=True,
+                ),
+                User(
+                    telegram_user_id=1003,
+                    telegram_chat_id=2003,
+                    username="inactive",
+                    first_name="Inactive",
+                    role="user",
+                    is_active=False,
+                ),
+            ]
+        )
+        session.commit()
+
+        recipients = get_active_users_with_chat_ids(session)
+
+        assert [recipient.telegram_chat_id for recipient in recipients] == [2001, 2002]
+        assert [recipient.role for recipient in recipients] == ["admin", "user"]
+    finally:
+        session.close()
+
+
+def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
+    class UserRow:
+        def __init__(self, user_id, telegram_chat_id):
+            self.id = user_id
+            self.telegram_chat_id = telegram_chat_id
+
+    class SessionContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr("bot.alerts.DB_ENABLED", True)
+    monkeypatch.setattr("bot.alerts.DB_SESSION_LOCAL", lambda: SessionContext())
+    monkeypatch.setattr(
+        "bot.alerts.get_active_users_with_chat_ids",
+        lambda session: [
+            UserRow(1, 2001),
+            UserRow(2, 2002),
+            UserRow(3, 2001),
+        ],
+    )
+
+    recipients = get_alert_recipients(symbol="BTC", event_type="price_movement")
+
+    assert recipients == [
+        AlertRecipient(chat_id=2001, user_id=1),
+        AlertRecipient(chat_id=2002, user_id=2),
+    ]
+    assert get_alert_recipients(symbol="ETH", event_type="price_movement") == []
+    assert get_alert_recipients(symbol="BTC", event_type="daily_report") == []
 
 
 def test_price_movement_event_key_is_stable_for_same_movement():

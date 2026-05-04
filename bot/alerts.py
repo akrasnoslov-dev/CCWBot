@@ -22,6 +22,7 @@ from config import (
     WEEKLY_REPORT_HOUR,
 )
 from database import (
+    get_active_users_with_chat_ids,
     get_event_ai_analysis,
     get_or_create_market_event,
     get_price_state,
@@ -158,9 +159,24 @@ def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
     """
     if symbol.upper() != "BTC" or event_type != "price_movement":
         return []
-    if not TELEGRAM_CHAT_ID:
-        return []
-    return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
+
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        recipients = []
+        seen_chat_ids = set()
+        with DB_SESSION_LOCAL() as session:
+            for user in get_active_users_with_chat_ids(session):
+                if user.telegram_chat_id is None:
+                    continue
+                chat_id = int(user.telegram_chat_id)
+                if chat_id in seen_chat_ids:
+                    continue
+                seen_chat_ids.add(chat_id)
+                recipients.append(AlertRecipient(chat_id=chat_id, user_id=user.id))
+        return recipients
+
+    if TELEGRAM_CHAT_ID:
+        return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
+    return []
 
 
 def _get_or_create_btc_market_event(
