@@ -76,9 +76,11 @@ def make_news_key(news_item: dict) -> str:
         normalized = _normalize_news_link(link)
         return f"link:{sha256(normalized.encode('utf-8')).hexdigest()}"
 
+    source = _collapse_whitespace(str(news_item.get("source") or "")).lower()
     title = _collapse_whitespace(str(news_item.get("title") or "")).lower()
     if title:
-        return f"title:{sha256(title.encode('utf-8')).hexdigest()}"
+        fallback_identity = f"{source}:{title}" if source else title
+        return f"source_title:{sha256(fallback_identity.encode('utf-8')).hexdigest()}"
 
     return ""
 

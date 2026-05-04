@@ -55,7 +55,7 @@ def fetch_crypto_news(limit: int = 5) -> list[dict]:
                     "title": title,
                     "link": entry.get("link", ""),
                     "published": entry.get("published", ""),
-                    "source": feed.feed.get("title", "Unknown source"),
+                    "source": feed.feed.get("title") or feed_url,
                 }
             )
 
