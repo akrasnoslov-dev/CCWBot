@@ -1,4 +1,6 @@
+import logging
 import time
+from functools import wraps
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -31,8 +33,60 @@ from storage import load_state
 
 PRICE_RATE_LIMIT_SECONDS = 10
 _user_last_price_call: dict[int, float] = {}
+logger = logging.getLogger(__name__)
 
 
+def _telegram_user_id(update: Update) -> int | str:
+    return update.effective_user.id if update.effective_user else "unknown"
+
+
+async def _role_label(update: Update) -> str:
+    user_id = update.effective_user.id if update.effective_user else None
+    return "admin" if await is_admin_user(user_id) else "user"
+
+
+def _mark_denied(context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data["_ccwbot_command_denied"] = True
+
+
+def _pop_denied(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return bool(context.user_data.pop("_ccwbot_command_denied", False))
+
+
+def log_request(action_name: str):
+    def decorator(handler):
+        @wraps(handler)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            started_at = time.perf_counter()
+            try:
+                result = await handler(update, context)
+            except Exception:
+                duration_ms = int((time.perf_counter() - started_at) * 1000)
+                role = await _role_label(update)
+                logger.warning(
+                    "Failed %s for user_id=%s role=%s in %sms",
+                    action_name,
+                    _telegram_user_id(update),
+                    role,
+                    duration_ms,
+                )
+                raise
+
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            role = await _role_label(update)
+            outcome = "Denied" if _pop_denied(context) else "Handled"
+            log(
+                f"{outcome} {action_name} for user_id={_telegram_user_id(update)} "
+                f"role={role} in {duration_ms}ms"
+            )
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+@log_request("/start")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     is_admin = await is_admin_update(update)
@@ -48,46 +102,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 
+@log_request("/userid")
 async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     user_id_value = update.effective_user.id if update.effective_user else "unknown"
     await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
 
 
+@log_request("/dailyreport")
 async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     await send_daily_report_message(update.message)
 
 
+@log_request("/weeklyreport")
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     await send_weekly_report_message(update.message)
 
 
+@log_request("/reports")
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
 
 
+@log_request("/chatid")
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     if not await is_admin_update(update):
+        _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
         return
     await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
 
 
+@log_request("/settings")
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     if not await is_admin_update(update):
+        _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can access settings.")
         return
     await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
 
 
+@log_request("/setthreshold")
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     if not await is_admin_update(update):
+        _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
@@ -110,9 +174,11 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
 
 
+@log_request("/setinterval")
 async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     if not await is_admin_update(update):
+        _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
@@ -138,6 +204,7 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@log_request("/price")
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     try:
@@ -176,9 +243,11 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log(f"Price error: {error}")
 
 
+@log_request("/status")
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     if not await is_admin_update(update):
+        _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can view status.")
         return
     if DB_ENABLED and DB_SESSION_LOCAL:
@@ -213,6 +282,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@log_request("callback")
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data or ""
@@ -222,6 +292,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("settings:") and not await is_admin_user(
             query.from_user.id if query.from_user else None
         ):
+            _mark_denied(context)
             await query.answer("Sorry, only the bot admin can change settings.")
             await query.message.reply_text("Sorry, only the bot admin can change settings.")
             return

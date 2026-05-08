@@ -92,7 +92,6 @@ def _build_stale_price_payload(params: dict) -> dict | None:
         requested_symbols.append("ton")
 
     payload: dict[str, dict[str, float]] = {}
-    include_7d_change = _coingecko_bool(params, "include_7d_change")
     for symbol in dict.fromkeys(requested_symbols):
         stale_price = _get_stale_cached_price(symbol)
         if stale_price is None:
@@ -102,10 +101,6 @@ def _build_stale_price_payload(params: dict) -> dict | None:
         coin_data: dict[str, float] = {"usd": price}
         if _coingecko_bool(params, "include_24hr_change"):
             coin_data["usd_24h_change"] = change_24h
-        if symbol == "btc" and include_7d_change and _BTC_MARKET_CACHE is not None:
-            _, _, change_7d, _ = _BTC_MARKET_CACHE
-            if change_7d is not None:
-                coin_data["usd_7d_change"] = change_7d
         payload[COIN_SYMBOL_TO_ID[symbol]] = coin_data
 
     return payload or None
@@ -253,7 +248,12 @@ async def get_btc_price() -> tuple[float, float]:
 
 
 async def get_btc_market_data() -> tuple[float, float, float | None]:
-    """Get BTC price, 24h change, and 7d change when available."""
+    """Get BTC price and 24h change.
+
+    CoinGecko's simple price endpoint does not reliably return a BTC 7d
+    change, so this intentionally leaves change_7d unset until a future
+    endpoint-specific implementation is added.
+    """
     global _BTC_MARKET_CACHE
 
     if _BTC_MARKET_CACHE is not None:
@@ -267,7 +267,6 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
         "ids": COIN_SYMBOL_TO_ID["btc"],
         "vs_currencies": "usd",
         "include_24hr_change": "true",
-        "include_7d_change": "true",
     }
 
     async with httpx.AsyncClient() as client:
@@ -283,8 +282,7 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     price = float(coin_data["usd"])
     change_24h_raw = coin_data.get("usd_24h_change")
     change_24h = float(change_24h_raw) if change_24h_raw is not None else 0.0
-    change_7d_raw = coin_data.get("usd_7d_change")
-    change_7d = float(change_7d_raw) if change_7d_raw is not None else None
+    change_7d = None
 
     cached_at = time.time()
     _sync_btc_price_cache(price, change_24h, cached_at)

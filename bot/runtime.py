@@ -1,13 +1,14 @@
-from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from config import DATABASE_URL
 from database import init_db
 
+logger = logging.getLogger(__name__)
+
 
 def log(message: str) -> None:
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    print(f"[{timestamp}] {message}")
+    logger.info(message)
 
 
 # Optional DB bootstrap: PostgreSQL stores runtime state when configured.

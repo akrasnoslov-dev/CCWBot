@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
+_RAW_DIAGNOSTIC_LINE_RE = re.compile(
+    r"(?i)\b(move|change24h|change7d|threshold|interval|previous|current|price)\s*="
+)
+_NOT_FINANCIAL_ADVICE = "Not financial advice."
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
@@ -54,14 +58,14 @@ def build_fallback_alert_message(
     check_interval_seconds: int | None = None,
 ) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
-    weekly_trend = f"{change_7d:+.2f}%" if change_7d is not None else "unknown"
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
+    weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
     return (
         "🚨 BTC movement alert\n\n"
         f"Price: ${current_price:,.2f}\n"
         f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
         f"24h trend: {change_24h:+.2f}%\n"
-        f"7d trend: {weekly_trend}\n"
+        f"{weekly_trend_line}"
         "Risk level: Medium\n\n"
         "Context:\n"
         "Short-term movement is notable while broader market context remains uncertain. "
@@ -76,7 +80,6 @@ def _is_structured_alert_message(message: str) -> bool:
     required_markers = [
         "Since last check:",
         "24h trend:",
-        "7d trend:",
         "Risk level:",
         "Context:",
         "Possible action:",
@@ -160,15 +163,37 @@ def _extract_related_news_from_ids(
 
 def _sanitize_telegram_message(telegram_message: str) -> str:
     removed_prefixes = ("Data:", "News:")
-    kept_lines = [
-        line
-        for line in telegram_message.splitlines()
-        if not line.strip().startswith(removed_prefixes)
-    ]
+    kept_lines: list[str] = []
+    dropping_debug_block = False
+    for line in telegram_message.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            dropping_debug_block = False
+            kept_lines.append(line)
+            continue
+        if stripped.startswith(removed_prefixes):
+            dropping_debug_block = True
+            continue
+        if dropping_debug_block and (_RAW_DIAGNOSTIC_LINE_RE.search(stripped) or "=" in stripped):
+            continue
+        dropping_debug_block = False
+        if _RAW_DIAGNOSTIC_LINE_RE.search(stripped):
+            continue
+        if re.match(r"(?i)^7d trend:\s*(unknown|n/a|none|null|unavailable)\s*\.?$", stripped):
+            continue
+        if stripped == _NOT_FINANCIAL_ADVICE:
+            continue
+        kept_lines.append(line)
     cleaned = "\n".join(kept_lines).strip()
-    if not cleaned.endswith("Not financial advice."):
-        cleaned = cleaned.rstrip(".") + "\n\nNot financial advice."
-    return cleaned
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    if not cleaned:
+        return _NOT_FINANCIAL_ADVICE
+    return cleaned.rstrip() + f"\n\n{_NOT_FINANCIAL_ADVICE}"
+
+
+def sanitize_alert_message(telegram_message: str) -> str:
+    """Public sanitizer for alert messages loaded from AI output or cache."""
+    return _sanitize_telegram_message(telegram_message)
 
 
 def _build_alert_message_with_related_news(structured: dict) -> str:
@@ -246,7 +271,12 @@ def _build_alert_prompt(
     check_interval_seconds: int | None,
     news_text: str,
 ) -> str:
-    change_7d_text = change_7d if change_7d is not None else "unknown"
+    change_7d_text = f"{change_7d:.4f}%" if change_7d is not None else "unavailable"
+    trend_7d_instruction = "7d trend: ...%\n" if change_7d is not None else ""
+    trend_7d_rule = (
+        "Include the 7d trend line only when the provided 7d value is available. "
+        "When it is unavailable, omit the entire 7d trend line. Never write '7d trend: unknown'."
+    )
     threshold_text = alert_threshold_percent if alert_threshold_percent is not None else "unknown"
     interval_text = check_interval_seconds if check_interval_seconds is not None else "unknown"
     return f"""
@@ -259,14 +289,14 @@ Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
 related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
+Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
 Use this exact style and labels:
 🚨 BTC movement alert
 
 Price: $...
 Since last check: ...% in ... sec
 24h trend: ...%
-7d trend: ...% or unknown
-Risk level: Low|Medium|High
+{trend_7d_instruction}Risk level: Low|Medium|High
 
 Context:
 <1-2 short cautious sentences, including whether recent news appears relevant to this move>
