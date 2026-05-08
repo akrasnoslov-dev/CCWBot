@@ -23,6 +23,7 @@ Since last check: +2.50% in 300 sec
 24h trend: +3.10%
 7d trend: +5.20%
 Risk level: Medium
+Risk reason: Related news may affect short-term BTC sentiment.
 
 Context:
 Short-term movement is notable. Recent news appears partly relevant.
@@ -62,6 +63,7 @@ def test_build_fallback_alert_message_contains_required_fields():
     assert "Since last check: +2.50% in 300 sec" in message
     assert "24h trend: +3.10%" in message
     assert "7d trend: +5.20%" in message
+    assert "Risk level: Medium\nRisk reason:" in message
     assert "Not financial advice." in message
 
 
@@ -111,6 +113,7 @@ def test_create_ai_alert_message_returns_string(monkeypatch):
     async def fake_ask_json(prompt):
         return {
             "news_relevance": "partly_relevant",
+            "risk_reason": "Related news may affect short-term BTC sentiment.",
             "related_news_ids": [1],
             "telegram_message": VALID_TELEGRAM_MESSAGE,
         }
@@ -127,6 +130,7 @@ def test_create_ai_alert_payload_returns_dict_with_plain_text(monkeypatch):
     async def fake_ask_json(prompt):
         return {
             "news_relevance": "partly_relevant",
+            "risk_reason": "Related news may affect short-term BTC sentiment.",
             "related_news_ids": [1],
             "telegram_message": VALID_TELEGRAM_MESSAGE,
         }
@@ -148,6 +152,7 @@ Since last check: +2.50% in 300 sec
 24h trend: +3.10%
 7d trend: unknown
 Risk level: Medium
+Risk reason: Consider buying now because momentum is strong and selling now if it reverses.
 
 Context:
 Short-term movement is notable.
@@ -157,6 +162,8 @@ move=2.5000%, change24h=3.1000%,
 change7d=unknown, threshold=2.0%, interval=300 sec.
 News:
 - ETF inflows rise
+Debug:
+model_notes=internal
 
 Possible action:
 Monitor for continuation; no immediate action required.
@@ -164,16 +171,43 @@ Monitor for continuation; no immediate action required.
 Not financial advice.
 Not financial advice."""
 
-    message = ai_agent_groq._sanitize_telegram_message(raw_message)
+    message = ai_agent_groq.sanitize_alert_message(raw_message)
 
     assert "7d trend:" not in message
     assert "Data:" not in message
     assert "News:" not in message
+    assert "Debug:" not in message
+    assert "model_notes=" not in message
     assert "move=" not in message
     assert "change24h=" not in message
     assert "change7d=" not in message
     assert "threshold=" not in message
     assert "interval=" not in message
+    assert "buy now" not in message.lower()
+    assert "sell now" not in message.lower()
+    assert message.count("Not financial advice.") == 1
+
+
+def test_sanitize_alert_message_adds_missing_risk_reason_after_risk_level():
+    raw_message = """BTC movement alert
+
+Price: $102,500.00
+Since last check: +2.50% in 300 sec
+24h trend: +3.10%
+Risk level: High
+
+Context:
+Short-term movement is notable.
+
+Possible action:
+Monitor for continuation; no immediate action required.
+
+Not financial advice."""
+
+    message = ai_agent_groq.sanitize_alert_message(raw_message)
+
+    assert "Risk level: High\nRisk reason:" in message
+    assert message.find("Risk level: High") < message.find("Risk reason:")
     assert message.count("Not financial advice.") == 1
 
 

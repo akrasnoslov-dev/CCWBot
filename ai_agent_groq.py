@@ -27,6 +27,8 @@ _RAW_DIAGNOSTIC_LINE_RE = re.compile(
     r"(?i)\b(move|change24h|change7d|threshold|interval|previous|current|price)\s*="
 )
 _NOT_FINANCIAL_ADVICE = "Not financial advice."
+_DIRECT_ADVICE_RE = re.compile(r"(?i)\b(buy(?:ing)? now|sell(?:ing)? now)\b")
+_RISK_REASON_MAX_CHARS = 180
 
 
 def get_groq_client() -> AsyncOpenAI:
@@ -79,7 +81,8 @@ def build_fallback_alert_message(
         f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
         f"24h trend: {change_24h:+.2f}%\n"
         f"{weekly_trend_line}"
-        "Risk level: Medium\n\n"
+        "Risk level: Medium\n"
+        "Risk reason: The short-term BTC move is notable while broader context remains uncertain.\n\n"
         "Context:\n"
         "Short-term movement is notable while broader market context remains uncertain. "
         "Recent news does not appear to be a clear driver.\n\n"
@@ -94,10 +97,15 @@ def _is_structured_alert_message(message: str) -> bool:
         "Since last check:",
         "24h trend:",
         "Risk level:",
+        "Risk reason:",
         "Context:",
         "Possible action:",
     ]
-    return "\n" in message and all(marker in message for marker in required_markers)
+    return (
+        "\n" in message
+        and all(marker in message for marker in required_markers)
+        and message.find("Risk level:") < message.find("Risk reason:")
+    )
 
 
 def _format_related_news_section(news_relevance: str, related_news: list[dict] | None) -> str:
@@ -175,7 +183,7 @@ def _extract_related_news_from_ids(
 
 
 def _sanitize_telegram_message(telegram_message: str) -> str:
-    removed_prefixes = ("Data:", "News:")
+    removed_prefixes = ("Data:", "News:", "Debug:")
     kept_lines: list[str] = []
     dropping_debug_block = False
     for line in telegram_message.splitlines():
@@ -204,15 +212,84 @@ def _sanitize_telegram_message(telegram_message: str) -> str:
     return cleaned.rstrip() + f"\n\n{_NOT_FINANCIAL_ADVICE}"
 
 
+def _fallback_risk_reason(
+    price_change_percent: float | None = None,
+    change_24h: float | None = None,
+    news_relevance: str = "",
+) -> str:
+    news_relevance = news_relevance.strip()
+    if news_relevance in {"relevant", "partly_relevant"}:
+        return "Related news may affect short-term BTC sentiment."
+    if price_change_percent is not None and abs(price_change_percent) >= 1:
+        return "The short-term BTC move is elevated compared with normal monitoring noise."
+    if change_24h is not None and abs(change_24h) >= 2:
+        return "The 24h BTC trend is elevated, so short-term risk may be higher."
+    return "The risk level reflects the BTC move, 24h trend, and available news context."
+
+
+def _sanitize_risk_reason(reason: str, fallback_reason: str) -> str:
+    cleaned = " ".join(str(reason or "").split())
+    cleaned = _DIRECT_ADVICE_RE.sub("review risk", cleaned)
+    cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
+    if not cleaned:
+        cleaned = fallback_reason
+    first_sentence = re.match(r"^(.+?[.!?])(?:\s|$)", cleaned)
+    if first_sentence:
+        cleaned = first_sentence.group(1)
+    if len(cleaned) > _RISK_REASON_MAX_CHARS:
+        cleaned = cleaned[: _RISK_REASON_MAX_CHARS - 1].rstrip(" ,;:") + "."
+    return cleaned.rstrip(".!?") + "."
+
+
+def _ensure_risk_reason_after_level(message: str, risk_reason: str) -> str:
+    lines = message.splitlines()
+    if not any(line.strip().startswith("Risk level:") for line in lines):
+        return message
+
+    cleaned_reason = _sanitize_risk_reason(
+        risk_reason,
+        "The risk level reflects the BTC move, 24h trend, and available news context.",
+    )
+    without_existing_reason = [
+        line for line in lines if not line.strip().startswith("Risk reason:")
+    ]
+    risk_level_index = next(
+        index
+        for index, line in enumerate(without_existing_reason)
+        if line.strip().startswith("Risk level:")
+    )
+    without_existing_reason.insert(risk_level_index + 1, f"Risk reason: {cleaned_reason}")
+    return "\n".join(without_existing_reason).strip()
+
+
 def sanitize_alert_message(telegram_message: str) -> str:
     """Public sanitizer for alert messages loaded from AI output or cache."""
-    return _sanitize_telegram_message(telegram_message)
+    sanitized = _sanitize_telegram_message(telegram_message)
+    with_risk_reason = _ensure_risk_reason_after_level(
+        sanitized,
+        "The risk level reflects the BTC move, 24h trend, and available news context.",
+    )
+    return _sanitize_telegram_message(with_risk_reason)
 
 
-def _build_alert_message_with_related_news(structured: dict) -> str:
+def _build_alert_message_with_related_news(
+    structured: dict,
+    price_change_percent: float,
+    change_24h: float,
+) -> str:
+    fallback_reason = _fallback_risk_reason(
+        price_change_percent,
+        change_24h,
+        str(structured.get("news_relevance", "")).strip(),
+    )
     telegram_message = _sanitize_telegram_message(
         str(structured.get("telegram_message", "")).strip()
     )
+    telegram_message = _ensure_risk_reason_after_level(
+        telegram_message,
+        str(structured.get("risk_reason", "")).strip() or fallback_reason,
+    )
+    telegram_message = _sanitize_telegram_message(telegram_message)
     related_news_section = _format_related_news_section(
         str(structured.get("news_relevance", "")).strip(), structured.get("related_news")
     )
@@ -294,15 +371,26 @@ def _build_alert_prompt(
     interval_text = check_interval_seconds if check_interval_seconds is not None else "unknown"
     return f"""
 Return only minified JSON with fields severity, short_term_trend, weekly_trend,
-news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids,
-telegram_message.
-Values: severity/risk_level low|medium|high; trends up|down|flat|unclear;
+news_relevance, risk_level, risk_reason, market_interpretation, possible_actions,
+related_news_ids, telegram_message.
+Values: severity/risk_level low|medium|high; risk_reason one short sentence;
+trends up|down|flat|unclear;
 news_relevance relevant|partly_relevant|not_relevant|unknown.
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
+Risk level guidance:
+- Low: small price movement, calm 24h trend, no clearly relevant news.
+- Medium: moderate price movement, uncertain 24h trend, or relevant news that may affect sentiment.
+- High: strong price movement, sharp 24h trend, or clearly exceptional news/risk.
+High should be rare.
+If both the short-term movement and 24h trend are small, do not use High unless the news context clearly indicates exceptional risk.
+If using High despite small price movement, risk_reason must explicitly explain why.
 related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
+telegram_message must include both:
+Risk level: Low|Medium|High
+Risk reason: <short reason>
 Use this exact style and labels:
 🚨 BTC movement alert
 
@@ -310,6 +398,7 @@ Price: $...
 Since last check: ...% in ... sec
 24h trend: ...%
 {trend_7d_instruction}Risk level: Low|Medium|High
+Risk reason: <one short sentence explaining the level>
 
 Context:
 <1-2 short cautious sentences, including whether recent news appears relevant to this move>
@@ -413,7 +502,11 @@ async def create_ai_alert_payload(
         structured.get("related_news_ids"),
         indexed_news_items,
     )
-    plain_message = _build_alert_message_with_related_news(structured)
+    plain_message = _build_alert_message_with_related_news(
+        structured,
+        price_change_percent,
+        change_24h,
+    )
     if not _is_structured_alert_message(plain_message):
         plain_message = build_fallback_alert_message(
             previous_price,
