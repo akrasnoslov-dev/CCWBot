@@ -3,6 +3,7 @@ import logging
 import time
 
 import httpx
+
 from config import PRICE_CACHE_TTL_SECONDS
 
 
@@ -144,9 +145,7 @@ async def _get_with_retry(
         )
         return stale_payload
 
-    raise CoinGeckoRateLimitError(
-        "CoinGecko rate limit reached and no stale cache is available"
-    )
+    raise CoinGeckoRateLimitError("CoinGecko rate limit reached and no stale cache is available")
 
 
 def _sync_btc_price_cache(
@@ -172,21 +171,15 @@ def warm_up_price_cache() -> None:
                 row = get_price_state(session, symbol)
                 if row is None or row.last_price is None:
                     continue
-                change_24h = (
-                    row.last_24h_change if row.last_24h_change is not None else 0.0
-                )
-                _set_cached_price(
-                    symbol, float(row.last_price), float(change_24h), cached_at=0
-                )
+                change_24h = row.last_24h_change if row.last_24h_change is not None else 0.0
+                _set_cached_price(symbol, float(row.last_price), float(change_24h), cached_at=0)
                 warmed_symbols.append(symbol)
     else:
         state = load_state()
         last_price = state.get("last_price")
         if last_price is not None:
             change_24h = state.get("last_24h_change") or 0.0
-            _set_cached_price(
-                DEFAULT_SYMBOL, float(last_price), float(change_24h), cached_at=0
-            )
+            _set_cached_price(DEFAULT_SYMBOL, float(last_price), float(change_24h), cached_at=0)
             warmed_symbols.append(DEFAULT_SYMBOL)
 
     if warmed_symbols:
@@ -344,11 +337,7 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
 
         logger.warning(
             "TON fallback via names=Toncoin failed. returned_keys=%s",
-            (
-                list(name_data.keys())
-                if isinstance(name_data, dict)
-                else type(name_data).__name__
-            ),
+            (list(name_data.keys()) if isinstance(name_data, dict) else type(name_data).__name__),
         )
         return None
 

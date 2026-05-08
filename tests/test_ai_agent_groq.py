@@ -1,12 +1,6 @@
 import asyncio
-from pathlib import Path
-import sys
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 
 import ai_agent_groq
-
 
 ALERT_ARGS = {
     "previous_price": 100000.0,
@@ -14,7 +8,9 @@ ALERT_ARGS = {
     "price_change_percent": 2.5,
     "change_24h": 3.1,
     "change_7d": 5.2,
-    "news_items": [{"title": "ETF inflows rise", "source": "Example News", "link": "https://example.com/etf"}],
+    "news_items": [
+        {"title": "ETF inflows rise", "source": "Example News", "link": "https://example.com/etf"}
+    ],
     "alert_threshold_percent": 2.0,
     "check_interval_seconds": 300,
 }
@@ -35,6 +31,46 @@ Possible action:
 Monitor for continuation; no immediate action required.
 
 Not financial advice."""
+
+
+def test_parse_json_valid():
+    assert ai_agent_groq._parse_json('{"risk_level":"medium"}') == {"risk_level": "medium"}
+
+
+def test_parse_json_with_markdown_fence():
+    assert ai_agent_groq._parse_json('```json\n{"risk_level":"medium"}\n```') == {
+        "risk_level": "medium"
+    }
+
+
+def test_parse_json_empty_returns_none():
+    assert ai_agent_groq._parse_json("") is None
+
+
+def test_build_fallback_alert_message_contains_required_fields():
+    message = ai_agent_groq.build_fallback_alert_message(
+        previous_price=100000.0,
+        current_price=102500.0,
+        price_change_percent=2.5,
+        change_24h=3.1,
+        change_7d=5.2,
+        alert_threshold_percent=2.0,
+        check_interval_seconds=300,
+    )
+
+    assert "Price: $102,500.00" in message
+    assert "Since last check: +2.50% in 300 sec" in message
+    assert "24h trend: +3.10%" in message
+    assert "7d trend: +5.20%" in message
+    assert "Not financial advice." in message
+
+
+def test_is_structured_alert_message_returns_true_for_valid():
+    assert ai_agent_groq._is_structured_alert_message(VALID_TELEGRAM_MESSAGE) is True
+
+
+def test_is_structured_alert_message_returns_false_for_plain_text():
+    assert ai_agent_groq._is_structured_alert_message("BTC moved quickly.") is False
 
 
 def test_create_ai_alert_message_returns_string(monkeypatch):

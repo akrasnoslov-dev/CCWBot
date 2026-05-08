@@ -1,8 +1,7 @@
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 from config import AUTOMATIC_CHECK_INTERVAL_SECONDS, PRICE_MOVE_ALERT_PERCENT
 from database import get_or_create_app_settings, update_app_settings
 from storage import load_state, save_state
-
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
 DEFAULT_BTC_ALERT_THRESHOLD_PERCENT = 2.0
 DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS = 300
@@ -17,9 +16,7 @@ def get_state_alert_settings(state: dict) -> dict:
             )
         ),
         "automatic_check_interval_seconds": int(
-            state.get(
-                "automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS
-            )
+            state.get("automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS)
         ),
     }
 
@@ -33,9 +30,7 @@ def get_db_alert_settings() -> dict:
         )
     return {
         "price_move_alert_percent": settings["btc_alert_threshold_percent"],
-        "automatic_check_interval_seconds": settings[
-            "automatic_check_interval_seconds"
-        ],
+        "automatic_check_interval_seconds": settings["automatic_check_interval_seconds"],
     }
 
 

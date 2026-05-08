@@ -1,3 +1,4 @@
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from database import (
     cleanup_seen_news,
     make_news_key,
@@ -5,8 +6,6 @@ from database import (
     was_news_seen,
 )
 from news_service import fetch_crypto_news
-
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 
 def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:

@@ -19,21 +19,9 @@ def build_price_keyboard() -> InlineKeyboardMarkup:
 def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton(
-                    "Current settings", callback_data="settings:current"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "Set threshold", callback_data="settings:threshold_menu"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "Set check interval", callback_data="settings:interval_menu"
-                )
-            ],
+            [InlineKeyboardButton("Current settings", callback_data="settings:current")],
+            [InlineKeyboardButton("Set threshold", callback_data="settings:threshold_menu")],
+            [InlineKeyboardButton("Set check interval", callback_data="settings:interval_menu")],
         ]
     )
 
@@ -52,16 +40,8 @@ def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("60 sec", callback_data="settings:set_interval:60")],
-            [
-                InlineKeyboardButton(
-                    "300 sec", callback_data="settings:set_interval:300"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "600 sec", callback_data="settings:set_interval:600"
-                )
-            ],
+            [InlineKeyboardButton("300 sec", callback_data="settings:set_interval:300")],
+            [InlineKeyboardButton("600 sec", callback_data="settings:set_interval:600")],
         ]
     )
 

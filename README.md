@@ -81,6 +81,12 @@ Then fill `.env` and run:
 python main.py
 ```
 
+## Development
+```bash
+ruff check .
+python -m pytest tests/ -v
+```
+
 ## Project structure
 - `main.py` starts the Telegram bot and wires handlers/jobs.
 - `bot/` contains Telegram handlers, keyboards, scheduled jobs, permissions, reports, and runtime settings helpers.

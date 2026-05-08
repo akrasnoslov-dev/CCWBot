@@ -5,6 +5,9 @@ from hashlib import sha256
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+from telegram.constants import ParseMode
+from telegram.ext import Application, ContextTypes
+
 from ai_agent_groq import (
     GROQ_MODEL,
     build_fallback_alert_message,
@@ -16,6 +19,10 @@ from alert_rules import (
     is_cooldown_active,
     should_send_alert,
 )
+from bot.news import fetch_news_context, remember_news_context
+from bot.reports import send_scheduled_weekly_report
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.settings import get_db_alert_settings, get_state_alert_settings
 from config import (
     ALERT_COOLDOWN_MINUTES,
     ENABLE_STRONG_SIGNAL_ALERTS,
@@ -28,11 +35,11 @@ from config import (
     WEEKLY_REPORT_HOUR,
 )
 from database import (
+    cleanup_seen_news,
     get_active_users_with_chat_ids,
     get_event_ai_analysis,
     get_or_create_market_event,
     get_price_state,
-    cleanup_seen_news,
     make_news_key,
     save_alert,
     save_event_ai_analysis,
@@ -44,13 +51,6 @@ from price_service import (
     get_btc_market_data,
 )
 from storage import load_state, save_state
-from telegram.constants import ParseMode
-from telegram.ext import Application, ContextTypes
-
-from bot.news import fetch_news_context, remember_news_context
-from bot.reports import send_scheduled_weekly_report
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot.settings import get_db_alert_settings, get_state_alert_settings
 
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
@@ -379,9 +379,7 @@ async def _deliver_btc_market_event_alert(
     plain_text = str(alert_payload.get("plain_text", ""))
     delivered = False
     for recipient in recipients:
-        sent, error_message = await _send_alert_to_recipient(
-            app, recipient, alert_payload
-        )
+        sent, error_message = await _send_alert_to_recipient(app, recipient, alert_payload)
         _record_alert_delivery(
             recipient=recipient,
             plain_text=plain_text,
@@ -423,9 +421,7 @@ def schedule_weekly_report(app: Application) -> None:
         days=(weekday,),
         name=WEEKLY_REPORT_JOB_NAME,
     )
-    log(
-        f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC"
-    )
+    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
 
 
 def schedule_strong_signal_job(app: Application) -> None:
@@ -441,9 +437,7 @@ def schedule_strong_signal_job(app: Application) -> None:
         first=15,
         name=STRONG_SIGNAL_JOB_NAME,
     )
-    log(
-        f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds."
-    )
+    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
 
 
 def schedule_seen_news_cleanup(app: Application) -> None:
@@ -466,9 +460,7 @@ async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         with DB_SESSION_LOCAL() as session:
-            deleted_count = cleanup_seen_news(
-                session, keep_latest=SEEN_NEWS_KEEP_LATEST
-            )
+            deleted_count = cleanup_seen_news(session, keep_latest=SEEN_NEWS_KEEP_LATEST)
         log(f"Seen news cleanup removed {deleted_count} rows.")
     except Exception as error:
         log(f"Seen news cleanup error: {error}")
@@ -529,9 +521,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             log(f"Initial BTC price saved: ${current_price:,.2f}")
             return
 
-        price_change_percent = calculate_price_change_percent(
-            previous_price, current_price
-        )
+        price_change_percent = calculate_price_change_percent(previous_price, current_price)
         if DB_ENABLED and DB_SESSION_LOCAL:
             alert_settings = get_db_alert_settings()
         else:
@@ -598,9 +588,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         last_price=current_price,
                         last_24h_change=change_24h,
                         last_checked_at=datetime.now(timezone.utc),
-                        last_alert_at=(
-                            datetime.now(timezone.utc) if delivered else None
-                        ),
+                        last_alert_at=(datetime.now(timezone.utc) if delivered else None),
                     )
             else:
                 if delivered:
@@ -643,7 +631,5 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
         remember_news_context(news_items)
         state["last_strong_signal_alert_at"] = now.isoformat()
         state["last_strong_signal_strength"] = strength
-        state["last_strong_signal_direction"] = str(
-            result.get("direction", "unclear")
-        ).lower()
+        state["last_strong_signal_direction"] = str(result.get("direction", "unclear")).lower()
         save_state(state)

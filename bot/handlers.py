@@ -1,8 +1,5 @@
 import time
 
-from database import get_price_state
-from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
-from storage import load_state
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -28,7 +25,9 @@ from bot.settings import (
     save_interval_setting,
     save_threshold_setting,
 )
-
+from database import get_price_state
+from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
+from storage import load_state
 
 PRICE_RATE_LIMIT_SECONDS = 10
 _user_last_price_call: dict[int, float] = {}
@@ -67,9 +66,7 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
-    await update.message.reply_text(
-        "Reports menu 📊", reply_markup=build_reports_keyboard()
-    )
+    await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
 
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,21 +80,15 @@ async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
     if not is_admin_update(update):
-        await update.message.reply_text(
-            "Sorry, only the bot admin can access settings."
-        )
+        await update.message.reply_text("Sorry, only the bot admin can access settings.")
         return
-    await update.message.reply_text(
-        "Settings menu ⚙️", reply_markup=build_settings_keyboard()
-    )
+    await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
 
 
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
     if not is_admin_update(update):
-        await update.message.reply_text(
-            "Sorry, only the bot admin can change settings."
-        )
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
         await update.message.reply_text(
@@ -116,17 +107,13 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     save_threshold_setting(threshold)
-    await update.message.reply_text(
-        f"Price movement threshold updated to {threshold}% ✅"
-    )
+    await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
 
 
 async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
     if not is_admin_update(update):
-        await update.message.reply_text(
-            "Sorry, only the bot admin can change settings."
-        )
+        await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
         await update.message.reply_text(
@@ -158,10 +145,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = time.monotonic()
         if user_id_value is not None:
             last_call_at = _user_last_price_call.get(user_id_value)
-            if (
-                last_call_at is not None
-                and now - last_call_at < PRICE_RATE_LIMIT_SECONDS
-            ):
+            if last_call_at is not None and now - last_call_at < PRICE_RATE_LIMIT_SECONDS:
                 await update.message.reply_text(
                     "⏳ Please wait a few seconds before requesting again."
                 )
@@ -175,8 +159,9 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         requested_symbol = context.args[0].lower()
         if requested_symbol not in COIN_SYMBOL_TO_ID:
+            supported_symbols = build_supported_symbols_message()
             await update.message.reply_text(
-                f"Unsupported symbol '{requested_symbol}'.\nSupported symbols: {build_supported_symbols_message()}"
+                f"Unsupported symbol '{requested_symbol}'.\nSupported symbols: {supported_symbols}"
             )
             return
         await send_price_message(update.message, requested_symbol)
@@ -185,9 +170,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update.message, update.effective_chat.id if update.effective_chat else None
         )
     except ValueError as error:
-        await update.message.reply_text(
-            f"Price data is temporarily unavailable: {error}"
-        )
+        await update.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
         log(f"Price error: {error}")
@@ -240,9 +223,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query.from_user.id if query.from_user else None
         ):
             await query.answer("Sorry, only the bot admin can change settings.")
-            await query.message.reply_text(
-                "Sorry, only the bot admin can change settings."
-            )
+            await query.message.reply_text("Sorry, only the bot admin can change settings.")
             return
 
         await query.answer()
@@ -265,7 +246,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "Current alert settings ⚙️\n\n"
                 f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
-                f"Automatic BTC check interval: {alert_settings['automatic_check_interval_seconds']} seconds"
+                "Automatic BTC check interval: "
+                f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
         if data == "settings:threshold_menu":
@@ -281,16 +263,15 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("settings:set_threshold:"):
             threshold = float(data.rsplit(":", maxsplit=1)[1])
             save_threshold_setting(threshold)
-            await query.message.reply_text(
-                f"Price movement threshold updated to {threshold}% ✅"
-            )
+            await query.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
             save_interval_setting(interval)
             schedule_automatic_btc_check(context.application, interval)
             await query.message.reply_text(
-                f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
+                f"Automatic BTC check interval updated to {interval} seconds ✅ "
+                "Applied immediately."
             )
             return
     except CoinGeckoRateLimitError:
@@ -298,9 +279,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query.message, query.message.chat_id if query.message else None
         )
     except ValueError as error:
-        await query.message.reply_text(
-            f"Price data is temporarily unavailable: {error}"
-        )
+        await query.message.reply_text(f"Price data is temporarily unavailable: {error}")
     except Exception as error:
         log(f"Callback handling error: {error}")
         await query.message.reply_text("Sorry, something went wrong.")

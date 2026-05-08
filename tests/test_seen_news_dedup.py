@@ -1,8 +1,4 @@
 from pathlib import Path
-import sys
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -32,13 +28,13 @@ from database import (
     update_app_settings,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 def build_session():
     engine = create_engine("sqlite:///:memory:", future=True)
     Base.metadata.create_all(bind=engine)
-    SessionLocal = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, future=True
-    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     return SessionLocal()
 
 
@@ -195,9 +191,7 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
         assert first.id == second.id
         assert session.query(EventAiAnalysis).count() == 1
         assert (
-            get_event_ai_analysis(
-                session, market_event_id=market_event.id, input_hash="abc123"
-            )
+            get_event_ai_analysis(session, market_event_id=market_event.id, input_hash="abc123")
             == first
         )
     finally:
@@ -388,7 +382,8 @@ def test_legacy_app_settings_table_migrates_to_global_columns():
                     "(setting_key, setting_value, created_at, updated_at) "
                     "VALUES "
                     "('btc_alert_threshold_percent', '1.5', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
-                    "('automatic_check_interval_seconds', '600', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    "('automatic_check_interval_seconds', '600', "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 )
             )
         engine.dispose()

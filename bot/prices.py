@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
 
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from database import get_price_state, update_price_state
 from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, get_coin_price
 from storage import load_state, save_state
-
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
@@ -40,16 +39,16 @@ async def send_price_message(target, symbol: str) -> None:
             save_state(state)
 
     await target.reply_text(
-        f"{resolved_symbol.upper()} price\n\nCurrent USD price: ${coin_price:,.2f}\n24h change: {change_24h:.2f}%"
+        f"{resolved_symbol.upper()} price\n\n"
+        f"Current USD price: ${coin_price:,.2f}\n"
+        f"24h change: {change_24h:.2f}%"
     )
 
 
 async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
     log("CoinGecko rate limit reached during manual price request.")
     if chat_id is None:
-        await target.reply_text(
-            "CoinGecko rate limit reached. Please wait a bit and try again."
-        )
+        await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
         return
 
     now_ts = datetime.now(timezone.utc).timestamp()
@@ -61,6 +60,4 @@ async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
         return
 
     _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT[chat_id] = now_ts
-    await target.reply_text(
-        "CoinGecko rate limit reached. Please wait a bit and try again."
-    )
+    await target.reply_text("CoinGecko rate limit reached. Please wait a bit and try again.")
