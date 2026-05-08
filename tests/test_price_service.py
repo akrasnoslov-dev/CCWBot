@@ -71,6 +71,19 @@ async def test_get_coin_price_cache_expires(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_btc_market_data_does_not_request_unreliable_simple_price_7d(monkeypatch):
+    get_with_retry = AsyncMock(return_value={"bitcoin": {"usd": 51000.0, "usd_24h_change": 2.0}})
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_btc_market_data()
+
+    assert result == (51000.0, 2.0, None)
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_params["include_24hr_change"] == "true"
+    assert "include_7d_change" not in requested_params
+
+
+@pytest.mark.asyncio
 async def test_get_coin_price_unsupported_symbol_raises_value_error():
     with pytest.raises(ValueError, match="Unsupported coin symbol"):
         await price_service.get_coin_price("doge")

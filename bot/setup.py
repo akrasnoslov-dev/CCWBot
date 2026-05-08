@@ -1,8 +1,12 @@
+import logging
+
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat
 from telegram.ext import Application
 
 from bot.runtime import log
 from config import TELEGRAM_ADMIN_USER_ID
+
+logger = logging.getLogger(__name__)
 
 
 async def setup_bot_commands(app: Application) -> None:
@@ -29,4 +33,4 @@ async def setup_bot_commands(app: Application) -> None:
                 "Skipping admin-only command scope setup."
             )
 
-    log("Telegram command menu has been updated.")
+    logger.debug("Telegram command menu configured.")

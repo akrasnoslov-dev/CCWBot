@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
@@ -13,6 +14,7 @@ from ai_agent_groq import (
     build_fallback_alert_message,
     classify_strong_signal,
     create_ai_alert_payload,
+    sanitize_alert_message,
 )
 from alert_rules import (
     calculate_price_change_percent,
@@ -51,6 +53,8 @@ from price_service import (
     get_btc_market_data,
 )
 from storage import load_state, save_state
+
+logger = logging.getLogger(__name__)
 
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
@@ -337,6 +341,15 @@ async def _send_alert_to_recipient(
     return True, None
 
 
+def _sanitize_alert_payload(alert_payload: dict) -> dict:
+    plain_text = str(alert_payload.get("plain_text", ""))
+    sanitized_plain_text = sanitize_alert_message(plain_text)
+    html_text = alert_payload.get("html_text")
+    if sanitized_plain_text != plain_text:
+        html_text = None
+    return {"plain_text": sanitized_plain_text, "html_text": html_text}
+
+
 async def _record_alert_delivery(
     *,
     recipient: AlertRecipient,
@@ -371,6 +384,7 @@ async def _deliver_btc_market_event_alert(
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
 ) -> bool:
+    alert_payload = _sanitize_alert_payload(alert_payload)
     recipients = await get_alert_recipients(symbol="BTC", event_type="price_movement")
     if not recipients:
         log("No configured recipients for BTC price movement alert.")
@@ -378,6 +392,7 @@ async def _deliver_btc_market_event_alert(
 
     plain_text = str(alert_payload.get("plain_text", ""))
     delivered = False
+    sent_count = 0
     for recipient in recipients:
         sent, error_message = await _send_alert_to_recipient(app, recipient, alert_payload)
         await _record_alert_delivery(
@@ -390,8 +405,10 @@ async def _deliver_btc_market_event_alert(
         )
         if sent:
             delivered = True
+            sent_count += 1
         else:
             log(f"Alert delivery failed for chat {recipient.chat_id}: {error_message}")
+    log(f"BTC alert sent to {sent_count}/{len(recipients)} recipients.")
     return delivered
 
 
@@ -480,7 +497,7 @@ def _parse_state_alert_at(value: str | None) -> datetime | None:
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
-    log("Running automatic BTC check...")
+    logger.debug("Running automatic BTC check.")
     try:
         db_active = DB_ENABLED and DB_SESSION_LOCAL
         state = load_state() if not db_active else {}
@@ -523,6 +540,15 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             return
 
         price_change_percent = calculate_price_change_percent(previous_price, current_price)
+        logger.debug(
+            "BTC movement calculated: previous=%.2f current=%.2f move=%.4f%% "
+            "change24h=%.4f%% change7d=%s",
+            previous_price,
+            current_price,
+            price_change_percent,
+            change_24h,
+            change_7d,
+        )
         if DB_ENABLED and DB_SESSION_LOCAL:
             alert_settings = await get_db_alert_settings()
         else:

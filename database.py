@@ -252,6 +252,7 @@ def _run_upgrade(database_url: str) -> None:
     config.set_main_option("script_location", str(project_root / "alembic"))
     config.set_main_option("sqlalchemy.url", database_url)
     config.attributes["database_url"] = database_url
+    config.attributes["configure_logger"] = False
     command.upgrade(config, "head")
 
 
