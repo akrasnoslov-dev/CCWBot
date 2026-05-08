@@ -22,6 +22,9 @@ class SessionFactoryRef:
     def set(self, factory) -> None:
         self._factory = factory
 
+    def clear(self) -> None:
+        self._factory = None
+
     def __bool__(self) -> bool:
         return self._factory is not None
 
@@ -46,3 +49,15 @@ async def initialize_database() -> None:
     log("Database configured. Using PostgreSQL state.")
     DB_ENGINE, session_local = await init_db(DATABASE_URL)
     DB_SESSION_LOCAL.set(session_local)
+
+
+async def close_database() -> None:
+    """Dispose database resources created during startup."""
+    global DB_ENGINE
+    if DB_ENGINE is None:
+        return
+
+    await DB_ENGINE.dispose()
+    DB_ENGINE = None
+    DB_SESSION_LOCAL.clear()
+    log("Database resources closed.")

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 import sys
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
@@ -24,7 +25,7 @@ from bot.handlers import (
     user_id,
     weekly_report,
 )
-from bot.runtime import initialize_database, log
+from bot.runtime import close_database, initialize_database, log
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
 from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -44,6 +45,12 @@ def configure_logging() -> None:
     )
     logging.getLogger("alembic").setLevel(logging.WARNING)
     logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
+
+
+def get_stop_signals() -> tuple[signal.Signals, ...] | None:
+    if sys.platform == "win32":
+        return None
+    return (signal.SIGINT, signal.SIGTERM)
 
 
 def register_handlers(app: Application) -> None:
@@ -89,8 +96,11 @@ def main():
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     try:
-        app.run_polling(close_loop=True)
+        app.run_polling(close_loop=False, stop_signals=get_stop_signals())
     finally:
+        log("Shutting down bot.")
+        if not loop.is_closed():
+            loop.run_until_complete(close_database())
         if not loop.is_closed():
             loop.close()
 
