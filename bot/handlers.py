@@ -1,3 +1,5 @@
+import time
+
 from database import get_price_state
 from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
 from storage import load_state
@@ -26,6 +28,10 @@ from bot.settings import (
     save_interval_setting,
     save_threshold_setting,
 )
+
+
+PRICE_RATE_LIMIT_SECONDS = 10
+_user_last_price_call: dict[int, float] = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,6 +154,20 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sync_user_from_update(update)
     try:
+        user_id_value = update.effective_user.id if update.effective_user else None
+        now = time.monotonic()
+        if user_id_value is not None:
+            last_call_at = _user_last_price_call.get(user_id_value)
+            if (
+                last_call_at is not None
+                and now - last_call_at < PRICE_RATE_LIMIT_SECONDS
+            ):
+                await update.message.reply_text(
+                    "⏳ Please wait a few seconds before requesting again."
+                )
+                return
+            _user_last_price_call[user_id_value] = now
+
         if not context.args:
             await update.message.reply_text(
                 "Choose a coin symbol:", reply_markup=build_price_keyboard()

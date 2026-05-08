@@ -5,6 +5,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from bot.alerts import (
     schedule_automatic_btc_check,
+    schedule_seen_news_cleanup,
     schedule_strong_signal_job,
     schedule_weekly_report,
 )
@@ -68,6 +69,7 @@ def main():
     )
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)
+    schedule_seen_news_cleanup(app)
 
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands

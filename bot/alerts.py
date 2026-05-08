@@ -11,10 +11,16 @@ from ai_agent_groq import (
     classify_strong_signal,
     create_ai_alert_payload,
 )
-from alert_rules import calculate_price_change_percent, should_send_alert
+from alert_rules import (
+    calculate_price_change_percent,
+    is_cooldown_active,
+    should_send_alert,
+)
 from config import (
+    ALERT_COOLDOWN_MINUTES,
     ENABLE_STRONG_SIGNAL_ALERTS,
     ENABLE_WEEKLY_REPORT,
+    SEEN_NEWS_KEEP_LATEST,
     STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
     STRONG_SIGNAL_COOLDOWN_HOURS,
     TELEGRAM_CHAT_ID,
@@ -26,6 +32,7 @@ from database import (
     get_event_ai_analysis,
     get_or_create_market_event,
     get_price_state,
+    cleanup_seen_news,
     make_news_key,
     save_alert,
     save_event_ai_analysis,
@@ -48,6 +55,7 @@ from bot.settings import get_db_alert_settings, get_state_alert_settings
 AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
 STRONG_SIGNAL_JOB_NAME = "strong_signal"
+SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
 WEEKDAY_MAP = {
     "monday": 0,
     "tuesday": 1,
@@ -438,19 +446,62 @@ def schedule_strong_signal_job(app: Application) -> None:
     )
 
 
+def schedule_seen_news_cleanup(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(SEEN_NEWS_CLEANUP_JOB_NAME):
+        job.schedule_removal()
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        log("Seen news cleanup scheduling is disabled because database storage is off.")
+        return
+
+    app.job_queue.run_daily(
+        cleanup_seen_news_job,
+        time=time(hour=3, minute=0, second=0),
+        name=SEEN_NEWS_CLEANUP_JOB_NAME,
+    )
+    log(f"Seen news cleanup scheduled daily; keeping latest {SEEN_NEWS_KEEP_LATEST}.")
+
+
+async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return
+    try:
+        with DB_SESSION_LOCAL() as session:
+            deleted_count = cleanup_seen_news(
+                session, keep_latest=SEEN_NEWS_KEEP_LATEST
+            )
+        log(f"Seen news cleanup removed {deleted_count} rows.")
+    except Exception as error:
+        log(f"Seen news cleanup error: {error}")
+
+
+def _parse_state_alert_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
     log("Running automatic BTC check...")
     try:
         state = load_state() if not DB_ENABLED else {}
         previous_price = None
+        last_alert_at = None
         db_row = None
         if DB_ENABLED and DB_SESSION_LOCAL:
             with DB_SESSION_LOCAL() as session:
                 db_row = get_price_state(session, DEFAULT_SYMBOL)
                 previous_price = db_row.last_price if db_row else None
+                last_alert_at = db_row.last_alert_at if db_row else None
         else:
             previous_price = state.get("last_price")
+            last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
         current_price, change_24h, change_7d = await get_btc_market_data()
         checked_at = datetime.now(timezone.utc).isoformat()
 
@@ -497,6 +548,22 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             price_change_percent=price_change_percent,
             threshold_percent=alert_settings["price_move_alert_percent"],
         ):
+            if is_cooldown_active(last_alert_at, ALERT_COOLDOWN_MINUTES):
+                log("BTC movement alert skipped because cooldown is active.")
+                if DB_ENABLED and DB_SESSION_LOCAL:
+                    with DB_SESSION_LOCAL() as session:
+                        update_price_state(
+                            session,
+                            symbol=DEFAULT_SYMBOL,
+                            last_price=current_price,
+                            last_24h_change=change_24h,
+                            last_checked_at=datetime.now(timezone.utc),
+                            last_alert_at=last_alert_at,
+                        )
+                else:
+                    save_state(state)
+                return
+
             news_items = fetch_news_context(limit=5)
             market_event_id, _ = _get_or_create_btc_market_event(
                 previous_price=previous_price,
