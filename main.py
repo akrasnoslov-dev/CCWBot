@@ -55,6 +55,9 @@ def register_handlers(app: Application) -> None:
 def main():
     configure_event_loop()
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -67,13 +70,13 @@ def main():
     if not TELEGRAM_ADMIN_USER_ID:
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
 
-    asyncio.run(initialize_database())
-    asyncio.run(warm_up_price_cache())
+    loop.run_until_complete(initialize_database())
+    loop.run_until_complete(warm_up_price_cache())
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     register_handlers(app)
 
-    runtime_settings = asyncio.run(get_runtime_alert_settings())
+    runtime_settings = loop.run_until_complete(get_runtime_alert_settings())
     schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)
@@ -81,7 +84,11 @@ def main():
 
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
-    app.run_polling()
+    try:
+        app.run_polling(close_loop=True)
+    finally:
+        if not loop.is_closed():
+            loop.close()
 
 
 if __name__ == "__main__":
