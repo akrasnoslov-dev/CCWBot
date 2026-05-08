@@ -1,4 +1,4 @@
-from config import TELEGRAM_ADMIN_USER_ID
+from config import TELEGRAM_ADMIN_USER_ID, parse_telegram_user_id
 from database import get_or_create_user, get_user_role
 from telegram import Update
 
@@ -11,7 +11,7 @@ def is_admin_user(user_id: int | str | None) -> bool:
     if DB_ENABLED and DB_SESSION_LOCAL:
         with DB_SESSION_LOCAL() as session:
             return get_user_role(session, int(user_id)) == "admin"
-    return str(user_id) == str(TELEGRAM_ADMIN_USER_ID)
+    return parse_telegram_user_id(user_id) == parse_telegram_user_id(TELEGRAM_ADMIN_USER_ID)
 
 
 def is_admin_update(update: Update) -> bool:

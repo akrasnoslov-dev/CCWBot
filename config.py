@@ -43,21 +43,21 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_telegram_user_id(value: int | str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return None
+
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Chat ID that receives automatic BTC alerts and scheduled reports.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-_admin_user_id_raw = os.getenv("TELEGRAM_ADMIN_USER_ID")
-if _admin_user_id_raw and _admin_user_id_raw.strip():
-    _admin_user_id_raw = _admin_user_id_raw.strip()
-    # User ID allowed to run admin-only commands (/settings, /status, etc.).
-    TELEGRAM_ADMIN_USER_ID = (
-        int(_admin_user_id_raw)
-        if _admin_user_id_raw.lstrip("-").isdigit()
-        else _admin_user_id_raw
-    )
-else:
-    TELEGRAM_ADMIN_USER_ID = None
+# User ID allowed to run admin-only commands (/settings, /status, etc.).
+TELEGRAM_ADMIN_USER_ID = parse_telegram_user_id(os.getenv("TELEGRAM_ADMIN_USER_ID"))
 
 # Movement threshold (in percentage points) required to send an automatic BTC alert.
 PRICE_MOVE_ALERT_PERCENT = _get_float_env("PRICE_MOVE_ALERT_PERCENT", 2, minimum=0)
