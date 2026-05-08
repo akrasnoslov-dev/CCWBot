@@ -16,18 +16,31 @@ from openai import AsyncOpenAI
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 logger = logging.getLogger(__name__)
 
-groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+_groq_client: AsyncOpenAI | None = None
 
 SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
 _RAW_DIAGNOSTIC_LINE_RE = re.compile(
     r"(?i)\b(move|change24h|change7d|threshold|interval|previous|current|price)\s*="
 )
 _NOT_FINANCIAL_ADVICE = "Not financial advice."
+
+
+def get_groq_client() -> AsyncOpenAI:
+    """Create the Groq client only when an AI call is actually needed."""
+    global _groq_client
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
+    if _groq_client is None:
+        _groq_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+    return _groq_client
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
@@ -321,7 +334,8 @@ def _build_news_text(news_items: list[dict] | None) -> str:
 
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
-    response = await groq_client.chat.completions.create(
+    client = get_groq_client()
+    response = await client.chat.completions.create(
         model=GROQ_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -378,7 +392,11 @@ async def create_ai_alert_payload(
         check_interval_seconds,
         news_text,
     )
-    structured = await _ask_json(prompt)
+    try:
+        structured = await _ask_json(prompt)
+    except Exception as error:
+        logger.warning("AI alert generation failed; using fallback alert message. error=%s", error)
+        structured = None
     if not structured or not structured.get("telegram_message"):
         plain_message = build_fallback_alert_message(
             previous_price,

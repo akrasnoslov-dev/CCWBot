@@ -81,6 +81,24 @@ def test_build_fallback_alert_message_omits_missing_7d_trend():
     assert "unknown" not in message.lower()
 
 
+def test_create_ai_alert_payload_uses_fallback_without_groq_api_key(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(ai_agent_groq, "_groq_client", None)
+    expected_fallback = ai_agent_groq.build_fallback_alert_message(
+        ALERT_ARGS["previous_price"],
+        ALERT_ARGS["current_price"],
+        ALERT_ARGS["price_change_percent"],
+        ALERT_ARGS["change_24h"],
+        ALERT_ARGS["change_7d"],
+        ALERT_ARGS["alert_threshold_percent"],
+        ALERT_ARGS["check_interval_seconds"],
+    )
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+
+    assert result == {"plain_text": expected_fallback, "html_text": None}
+
+
 def test_is_structured_alert_message_returns_true_for_valid():
     assert ai_agent_groq._is_structured_alert_message(VALID_TELEGRAM_MESSAGE) is True
 
