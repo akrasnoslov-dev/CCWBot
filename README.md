@@ -58,6 +58,7 @@ Common runtime values:
 - `PRICE_MOVE_ALERT_PERCENT`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `PRICE_CACHE_TTL_SECONDS`
+- `HEALTH_PORT` (default `8080`)
 - `ALERT_COOLDOWN_MINUTES` (legacy; currently not used in alert decision)
 
 Optional report/signal values:
@@ -87,6 +88,24 @@ python main.py
 ruff check .
 python -m pytest tests/ -v
 ```
+
+## Health check
+CCWBot exposes a lightweight HTTP health endpoint while the bot process is running:
+```bash
+curl http://localhost:8080/health
+```
+
+Example response:
+```json
+{
+  "status": "ok",
+  "last_btc_check_at": "2026-05-08T12:00:00+00:00",
+  "uptime_seconds": 42
+}
+```
+
+Set `HEALTH_PORT` to change the port. Docker Compose publishes `8080:8080` and uses
+`/health` for the bot container healthcheck, which also works for local or VPS monitoring.
 
 ## Project structure
 - `main.py` starts the Telegram bot and wires handlers/jobs.

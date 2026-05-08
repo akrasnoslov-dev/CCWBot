@@ -68,6 +68,8 @@ SEEN_NEWS_KEEP_LATEST = _get_int_env("SEEN_NEWS_KEEP_LATEST", 500, minimum=1)
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
 # Automatic BTC check cadence in seconds.
 AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 300, minimum=1)
+# Lightweight HTTP health endpoint port.
+HEALTH_PORT = _get_int_env("HEALTH_PORT", 8080, minimum=1)
 
 ENABLE_WEEKLY_REPORT = _get_bool_env("ENABLE_WEEKLY_REPORT", default=False)
 WEEKLY_REPORT_DAY = os.getenv("WEEKLY_REPORT_DAY", "sunday").strip().lower()
