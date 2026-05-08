@@ -13,9 +13,7 @@ def should_send_alert(price_change_percent: float, threshold_percent: float) -> 
     return abs(price_change_percent) >= threshold_percent
 
 
-def is_cooldown_active(
-    last_alert_at: datetime | None, cooldown_minutes: int
-) -> bool:
+def is_cooldown_active(last_alert_at: datetime | None, cooldown_minutes: int) -> bool:
     """Return True while a previous alert is still inside the cooldown window."""
     if last_alert_at is None:
         return False

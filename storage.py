@@ -10,7 +10,7 @@ def load_state() -> dict:
     If the file does not exist yet, return default state keys used by the bot.
     """
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as file:
+        with open(STATE_FILE, encoding="utf-8") as file:
             return json.load(file)
     except FileNotFoundError:
         return {

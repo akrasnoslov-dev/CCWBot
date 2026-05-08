@@ -1,15 +1,15 @@
+from telegram.ext import ContextTypes
+
 from ai_agent_groq import (
     build_fallback_alert_message,
     create_daily_report,
     create_weekly_report,
 )
+from bot.news import fetch_news_context, remember_news_context
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from config import TELEGRAM_CHAT_ID
 from database import save_alert
 from price_service import get_btc_market_data
-from telegram.ext import ContextTypes
-
-from bot.news import fetch_news_context, remember_news_context
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 
 async def send_daily_report_message(target) -> None:
@@ -37,7 +37,8 @@ async def send_daily_report_message(target) -> None:
     except Exception as error:
         log(f"Daily report generation failed: {error}")
         await target.reply_text(
-            "Daily report unavailable. Monitor risk and avoid impulsive action.\nNot financial advice."
+            "Daily report unavailable. Monitor risk and avoid impulsive action.\n"
+            "Not financial advice."
         )
 
 
@@ -62,8 +63,11 @@ async def send_weekly_report_message(target) -> None:
             return
         trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
         await target.reply_text(
-            f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
-            "Risk level: Medium\nPossible action: consider waiting for clearer confirmation.\nNot financial advice."
+            f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n"
+            f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
+            "Risk level: Medium\n"
+            "Possible action: consider waiting for clearer confirmation.\n"
+            "Not financial advice."
         )
     except Exception as error:
         log(f"Weekly report generation failed: {error}")
@@ -78,12 +82,13 @@ async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
         if not message:
             trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
             message = (
-                f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
-                "Risk level: Medium\nPossible action: monitor risk and avoid impulsive action.\nNot financial advice."
+                f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n"
+                f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
+                "Risk level: Medium\n"
+                "Possible action: monitor risk and avoid impulsive action.\n"
+                "Not financial advice."
             )
-        await context.application.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID, text=message
-        )
+        await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         remember_news_context(news_items)
     except Exception as error:
         log(f"Scheduled weekly report failed: {error}")

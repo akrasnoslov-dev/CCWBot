@@ -1,10 +1,8 @@
 import asyncio
 import time
-from pathlib import Path
-import sys
+from unittest.mock import AsyncMock
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+import pytest
 
 import price_service
 
@@ -36,54 +34,120 @@ def clear_price_caches() -> None:
     price_service._BTC_MARKET_CACHE = None
 
 
-def test_get_with_retry_returns_stale_cache_after_429_retries():
+@pytest.fixture(autouse=True)
+def clean_price_caches():
     clear_price_caches()
-    try:
-        price_service._set_cached_price("btc", 50000.0, 1.5, cached_at=0)
-        client = FakeClient(
-            [
-                FakeResponse(429),
-                FakeResponse(429),
-                FakeResponse(429),
-            ]
-        )
+    yield
+    clear_price_caches()
 
-        payload = asyncio.run(
-            price_service._get_with_retry(
-                client,
-                "https://api.coingecko.com/api/v3/simple/price",
-                {
-                    "ids": "bitcoin",
-                    "vs_currencies": "usd",
-                    "include_24hr_change": "true",
-                },
-                max_retries=2,
-                base_delay=0,
+
+@pytest.mark.asyncio
+async def test_get_coin_price_returns_cached_value(monkeypatch):
+    price_service._set_cached_price("btc", 50000.0, 1.5)
+    get_with_retry = AsyncMock(side_effect=AssertionError("HTTP should not be called"))
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_price("btc")
+
+    assert result == (50000.0, 1.5, "btc")
+    get_with_retry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_coin_price_cache_expires(monkeypatch):
+    price_service._set_cached_price(
+        "btc",
+        50000.0,
+        1.5,
+        cached_at=time.time() - price_service.PRICE_CACHE_TTL_SECONDS - 1,
+    )
+    get_with_retry = AsyncMock(return_value={"bitcoin": {"usd": 51000.0, "usd_24h_change": 2.0}})
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_price("btc")
+
+    assert result == (51000.0, 2.0, "btc")
+    get_with_retry.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_coin_price_unsupported_symbol_raises_value_error():
+    with pytest.raises(ValueError, match="Unsupported coin symbol"):
+        await price_service.get_coin_price("doge")
+
+
+@pytest.mark.asyncio
+async def test_get_coin_price_429_triggers_retry(monkeypatch):
+    monkeypatch.setattr(price_service.asyncio, "sleep", AsyncMock())
+
+    class FakeAsyncClient:
+        def __init__(self):
+            self.client = FakeClient(
+                [
+                    FakeResponse(429),
+                    FakeResponse(
+                        200,
+                        {"bitcoin": {"usd": 52000.0, "usd_24h_change": 2.5}},
+                    ),
+                ]
             )
-        )
 
-        assert client.calls == 3
-        assert payload == {
-            "bitcoin": {
-                "usd": 50000.0,
-                "usd_24h_change": 1.5,
-            }
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    fake_client_context = FakeAsyncClient()
+    monkeypatch.setattr(price_service.httpx, "AsyncClient", lambda: fake_client_context)
+
+    result = await price_service.get_coin_price("btc")
+
+    assert result == (52000.0, 2.5, "btc")
+    assert fake_client_context.client.calls == 2
+    price_service.asyncio.sleep.assert_awaited_once_with(5)
+
+
+def test_get_with_retry_returns_stale_cache_after_429_retries():
+    price_service._set_cached_price("btc", 50000.0, 1.5, cached_at=0)
+    client = FakeClient(
+        [
+            FakeResponse(429),
+            FakeResponse(429),
+            FakeResponse(429),
+        ]
+    )
+
+    payload = asyncio.run(
+        price_service._get_with_retry(
+            client,
+            "https://api.coingecko.com/api/v3/simple/price",
+            {
+                "ids": "bitcoin",
+                "vs_currencies": "usd",
+                "include_24hr_change": "true",
+            },
+            max_retries=2,
+            base_delay=0,
+        )
+    )
+
+    assert client.calls == 3
+    assert payload == {
+        "bitcoin": {
+            "usd": 50000.0,
+            "usd_24h_change": 1.5,
         }
-        assert price_service._PRICE_CACHE["btc"][2] == 0
-    finally:
-        clear_price_caches()
+    }
+    assert price_service._PRICE_CACHE["btc"][2] == 0
 
 
 def test_btc_market_cache_hit_syncs_regular_btc_cache():
-    clear_price_caches()
-    try:
-        cached_at = time.time()
-        price_service._BTC_MARKET_CACHE = (60000.0, 2.5, 4.0, cached_at)
-        price_service._set_cached_price("btc", 59000.0, -1.0)
+    cached_at = time.time()
+    price_service._BTC_MARKET_CACHE = (60000.0, 2.5, 4.0, cached_at)
+    price_service._set_cached_price("btc", 59000.0, -1.0)
 
-        result = asyncio.run(price_service.get_btc_market_data())
+    result = asyncio.run(price_service.get_btc_market_data())
 
-        assert result == (60000.0, 2.5, 4.0)
-        assert price_service._PRICE_CACHE["btc"] == (60000.0, 2.5, cached_at)
-    finally:
-        clear_price_caches()
+    assert result == (60000.0, 2.5, 4.0)
+    assert price_service._PRICE_CACHE["btc"] == (60000.0, 2.5, cached_at)

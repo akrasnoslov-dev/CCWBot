@@ -1,8 +1,8 @@
-from config import TELEGRAM_ADMIN_USER_ID
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat
 from telegram.ext import Application
 
 from bot.runtime import log
+from config import TELEGRAM_ADMIN_USER_ID
 
 
 async def setup_bot_commands(app: Application) -> None:
@@ -11,9 +11,7 @@ async def setup_bot_commands(app: Application) -> None:
         BotCommand("price", "Check crypto prices"),
         BotCommand("reports", "Open BTC reports menu"),
     ]
-    await app.bot.set_my_commands(
-        default_commands, scope=BotCommandScopeAllPrivateChats()
-    )
+    await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
 
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
@@ -27,7 +25,8 @@ async def setup_bot_commands(app: Application) -> None:
             )
         except (TypeError, ValueError):
             log(
-                "TELEGRAM_ADMIN_USER_ID is not a numeric ID. Skipping admin-only command scope setup."
+                "TELEGRAM_ADMIN_USER_ID is not a numeric ID. "
+                "Skipping admin-only command scope setup."
             )
 
     log("Telegram command menu has been updated.")

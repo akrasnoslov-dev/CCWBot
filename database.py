@@ -94,9 +94,7 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(64), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
@@ -111,9 +109,7 @@ class UserSettings(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     price_move_alert_percent: Mapped[float] = mapped_column(Float)
     automatic_check_interval_seconds: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
@@ -127,9 +123,7 @@ class AppSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     btc_alert_threshold_percent: Mapped[float] = mapped_column(Float)
     automatic_check_interval_seconds: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
@@ -142,12 +136,8 @@ class PriceState(Base):
     symbol: Mapped[str] = mapped_column(String(32), index=True)
     last_price: Mapped[float] = mapped_column(Float)
     last_24h_change: Mapped[float] = mapped_column(Float)
-    last_checked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_alert_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
@@ -177,9 +167,7 @@ class Alert(Base):
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class MarketEvent(Base):
@@ -196,13 +184,9 @@ class MarketEvent(Base):
     last_24h_change: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_7d_change: Mapped[float | None] = mapped_column(Float, nullable=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    ai_analyses: Mapped[list[EventAiAnalysis]] = relationship(
-        back_populates="market_event"
-    )
+    ai_analyses: Mapped[list[EventAiAnalysis]] = relationship(back_populates="market_event")
 
 
 class EventAiAnalysis(Base):
@@ -216,9 +200,7 @@ class EventAiAnalysis(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    market_event_id: Mapped[int] = mapped_column(
-        ForeignKey("market_events.id"), index=True
-    )
+    market_event_id: Mapped[int] = mapped_column(ForeignKey("market_events.id"), index=True)
     provider: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(255))
     input_hash: Mapped[str] = mapped_column(String(128), index=True)
@@ -231,9 +213,7 @@ class EventAiAnalysis(Base):
     estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(64), default="completed", index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
 
@@ -241,9 +221,7 @@ class EventAiAnalysis(Base):
 def init_db(database_url: str):
     """Create SQLAlchemy engine/session factory and initialise tables."""
     engine = create_engine(database_url, future=True)
-    SessionLocal = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, future=True
-    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     _migrate_legacy_app_settings_table(engine)
     Base.metadata.create_all(bind=engine)
     _migrate_alert_delivery_columns(engine)
@@ -274,9 +252,7 @@ def _migrate_alert_delivery_columns(engine) -> None:
 
     with engine.begin() as connection:
         for column_name, sql_type in missing_columns:
-            connection.execute(
-                text(f"ALTER TABLE alerts ADD COLUMN {column_name} {sql_type}")
-            )
+            connection.execute(text(f"ALTER TABLE alerts ADD COLUMN {column_name} {sql_type}"))
 
 
 def get_or_create_user(
@@ -361,8 +337,7 @@ def _migrate_legacy_app_settings_table(engine) -> None:
 
     if not legacy_columns.issubset(columns):
         raise RuntimeError(
-            "app_settings table exists but does not contain the required global "
-            "settings columns."
+            "app_settings table exists but does not contain the required global settings columns."
         )
 
     with engine.begin() as connection:
@@ -375,9 +350,7 @@ def _migrate_legacy_app_settings_table(engine) -> None:
                 ")"
             )
         ).mappings()
-        legacy_values = {
-            str(row["setting_key"]): str(row["setting_value"]) for row in legacy_rows
-        }
+        legacy_values = {str(row["setting_key"]): str(row["setting_value"]) for row in legacy_rows}
         threshold = float(legacy_values.get("btc_alert_threshold_percent", "2"))
         interval = int(legacy_values.get("automatic_check_interval_seconds", "300"))
         now = utc_now()
@@ -433,9 +406,7 @@ def get_or_create_app_settings(
     )
     return {
         "btc_alert_threshold_percent": float(settings.btc_alert_threshold_percent),
-        "automatic_check_interval_seconds": int(
-            settings.automatic_check_interval_seconds
-        ),
+        "automatic_check_interval_seconds": int(settings.automatic_check_interval_seconds),
     }
 
 
@@ -782,8 +753,4 @@ def get_recent_market_events(
     query = session.query(MarketEvent)
     if symbol:
         query = query.filter_by(symbol=symbol.upper())
-    return (
-        query.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc())
-        .limit(limit)
-        .all()
-    )
+    return query.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc()).limit(limit).all()

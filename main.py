@@ -1,6 +1,5 @@
 import logging
 
-from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from bot.alerts import (
@@ -24,8 +23,9 @@ from bot.handlers import (
     weekly_report,
 )
 from bot.runtime import log
-from bot.setup import setup_bot_commands
 from bot.settings import get_runtime_alert_settings
+from bot.setup import setup_bot_commands
+from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from price_service import warm_up_price_cache
 
 
@@ -64,9 +64,7 @@ def main():
     register_handlers(app)
 
     runtime_settings = get_runtime_alert_settings()
-    schedule_automatic_btc_check(
-        app, runtime_settings["automatic_check_interval_seconds"]
-    )
+    schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)
     schedule_seen_news_cleanup(app)
