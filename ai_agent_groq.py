@@ -486,15 +486,21 @@ Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
 Risk level guidance:
 - Low: small price movement, calm 24h trend, no clearly relevant news.
-- Medium: moderate price movement, uncertain 24h trend, or relevant news that may affect sentiment.
+- Medium: moderate price movement, uncertain 24h trend, or relevant news
+  that may affect sentiment.
 - High: strong price movement, sharp 24h trend, or clearly exceptional news/risk.
 High should be rare.
-If both the short-term movement and 24h trend are small, do not use High unless the news context clearly indicates exceptional risk.
+If both the short-term movement and 24h trend are small, do not use High
+unless the news context clearly indicates exceptional risk.
 If using High despite small price movement, risk_reason must explicitly explain why.
 risk_reason must explain why this risk_level was chosen over lower or higher levels.
-risk_reason must cite concrete alert factors: short-term move size, 24h trend, threshold crossing when relevant, and news only when news_relevance is relevant or partly_relevant.
-risk_reason must not use vague boilerplate such as "based on market data and news" or "current conditions".
-risk_reason must not mention news as a risk driver when news_relevance is not_relevant or unknown.
+risk_reason must cite concrete alert factors: short-term move size, 24h trend,
+threshold crossing when relevant, and news only when news_relevance is
+relevant or partly_relevant.
+risk_reason must not use vague boilerplate such as "based on market data and
+news" or "current conditions".
+risk_reason must not mention news as a risk driver when news_relevance is
+not_relevant or unknown.
 related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
