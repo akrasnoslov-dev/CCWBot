@@ -290,7 +290,7 @@ def get_or_create_user(
 ):
     """Create or update a user row for current Telegram interaction."""
     user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
-    role = "admin" if admin_user_id is not None and str(telegram_user_id) == str(admin_user_id) else "user"
+    role = "admin" if _same_telegram_user_id(telegram_user_id, admin_user_id) else "user"
     if user is None:
         user = User(
             telegram_user_id=telegram_user_id,
@@ -311,6 +311,15 @@ def get_or_create_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+def _same_telegram_user_id(left: int | str | None, right: int | str | None) -> bool:
+    if left is None or right is None:
+        return False
+    try:
+        return int(str(left).strip()) == int(str(right).strip())
+    except ValueError:
+        return False
 
 
 def get_user_role(session, telegram_user_id: int) -> str | None:

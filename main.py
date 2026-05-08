@@ -1,3 +1,5 @@
+import logging
+
 from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
@@ -42,6 +44,11 @@ def register_handlers(app: Application) -> None:
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN is missing. Check your .env file.")
     if not TELEGRAM_CHAT_ID:

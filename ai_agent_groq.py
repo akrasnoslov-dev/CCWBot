@@ -6,7 +6,9 @@ All prompts explicitly avoid direct financial advice.
 """
 
 import json
+import logging
 import os
+import re
 from html import escape
 
 from dotenv import load_dotenv
@@ -15,7 +17,9 @@ from openai import AsyncOpenAI
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+logger = logging.getLogger(__name__)
 
 groq_client = AsyncOpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
@@ -25,15 +29,17 @@ SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
 def _parse_json(raw_content: str | None) -> dict | None:
     """Parse and validate top-level JSON object responses from the model."""
     if not raw_content:
-        print("AI parsing failed: empty response.")
+        logger.error("AI parsing failed: empty response.")
         return None
+    raw_content = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+    raw_content = re.sub(r"\s*```$", "", raw_content)
     try:
         parsed = json.loads(raw_content)
     except json.JSONDecodeError as error:
-        print(f"AI parsing failed: invalid JSON ({error}).")
+        logger.error("AI parsing failed: invalid JSON (%s).", error)
         return None
     if not isinstance(parsed, dict):
-        print("AI parsing failed: top-level JSON is not an object.")
+        logger.error("AI parsing failed: top-level JSON is not an object.")
         return None
     return parsed
 
@@ -261,7 +267,7 @@ News:\n{news_text}
 """
     structured = await _ask_json(prompt)
     if not structured or not structured.get("telegram_message"):
-        print("AI alert fallback used due to parsing/validation failure.")
+        logger.warning("AI alert fallback used due to parsing/validation failure.")
         return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
     structured["related_news"] = _extract_related_news_from_ids(
         str(structured.get("news_relevance", "")).strip(),
@@ -270,7 +276,7 @@ News:\n{news_text}
     )
     telegram_message = _build_alert_message_with_related_news(structured)
     if not _is_structured_alert_message(telegram_message):
-        print("AI alert fallback used due to non-structured telegram_message.")
+        logger.warning("AI alert fallback used due to non-structured telegram_message.")
         return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
     return telegram_message
 
@@ -365,7 +371,7 @@ News:\n{news_text}
         return None
     required = {"risk_level", "market_interpretation", "possible_actions", "telegram_message"}
     if required - set(result.keys()):
-        print("Daily report validation failed: missing required fields.")
+        logger.error("Daily report validation failed: missing required fields.")
         return None
     return result
 
@@ -401,7 +407,7 @@ News:\n{news_text}
         return None
     required = {"risk_level", "weekly_interpretation", "possible_actions", "telegram_message"}
     if required - set(result.keys()):
-        print("Weekly report validation failed: missing required fields.")
+        logger.error("Weekly report validation failed: missing required fields.")
         return None
     return result
 
@@ -421,6 +427,6 @@ News:\n{news_text}
         return None
     required = {"signal_strength", "direction", "risk_level", "should_alert", "reason", "possible_actions", "telegram_message"}
     if required - set(result.keys()):
-        print("Strong-signal validation failed: missing required fields.")
+        logger.error("Strong-signal validation failed: missing required fields.")
         return None
     return result
