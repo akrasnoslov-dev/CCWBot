@@ -235,6 +235,11 @@ async def _get_or_create_event_ai_analysis(
     news_items: list[dict],
     alert_settings: dict,
 ) -> tuple[dict, int | None]:
+    """Create or reuse the single AI analysis for one BTC market event.
+
+    The LLM call stays here, before recipient delivery, so one market event
+    produces one analysis that can be sent to many active users.
+    """
     input_hash = _build_alert_ai_input_hash(
         symbol=DEFAULT_SYMBOL,
         event_type="price_movement",
@@ -377,6 +382,38 @@ async def _record_alert_delivery(
         )
 
 
+async def _save_btc_price_state(
+    *,
+    state: dict,
+    current_price: float,
+    change_24h: float,
+    checked_at: str,
+    last_alert_at: datetime | None = None,
+) -> None:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            await update_price_state(
+                session,
+                symbol=DEFAULT_SYMBOL,
+                last_price=current_price,
+                last_24h_change=change_24h,
+                last_checked_at=datetime.now(timezone.utc),
+                last_alert_at=last_alert_at,
+            )
+        return
+
+    state.update(
+        {
+            "last_price": current_price,
+            "last_24h_change": change_24h,
+            "last_checked_at": checked_at,
+        }
+    )
+    if last_alert_at is not None:
+        state["last_alert_at"] = checked_at
+    save_state(state)
+
+
 async def _deliver_btc_market_event_alert(
     app: Application,
     *,
@@ -384,6 +421,7 @@ async def _deliver_btc_market_event_alert(
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
 ) -> bool:
+    """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _sanitize_alert_payload(alert_payload)
     recipients = await get_alert_recipients(symbol="BTC", event_type="price_movement")
     if not recipients:
@@ -516,26 +554,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         checked_at = datetime.now(timezone.utc).isoformat()
 
         if previous_price is None:
-            if DB_ENABLED and DB_SESSION_LOCAL:
-                async with DB_SESSION_LOCAL() as session:
-                    await update_price_state(
-                        session,
-                        symbol=DEFAULT_SYMBOL,
-                        last_price=current_price,
-                        last_24h_change=change_24h,
-                        last_checked_at=datetime.now(timezone.utc),
-                        last_alert_at=db_row.last_alert_at if db_row else None,
-                    )
-            else:
-                state.update(
-                    {
-                        "last_price": current_price,
-                        "last_24h_change": change_24h,
-                        "last_checked_at": checked_at,
-                        "last_alert_at": state.get("last_alert_at"),
-                    }
-                )
-                save_state(state)
+            await _save_btc_price_state(
+                state=state,
+                current_price=current_price,
+                change_24h=change_24h,
+                checked_at=checked_at,
+                last_alert_at=db_row.last_alert_at if db_row else None,
+            )
             log(f"Initial BTC price saved: ${current_price:,.2f}")
             return
 
@@ -567,18 +592,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         ):
             if is_cooldown_active(last_alert_at, ALERT_COOLDOWN_MINUTES):
                 log("BTC movement alert skipped because cooldown is active.")
-                if DB_ENABLED and DB_SESSION_LOCAL:
-                    async with DB_SESSION_LOCAL() as session:
-                        await update_price_state(
-                            session,
-                            symbol=DEFAULT_SYMBOL,
-                            last_price=current_price,
-                            last_24h_change=change_24h,
-                            last_checked_at=datetime.now(timezone.utc),
-                            last_alert_at=last_alert_at,
-                        )
-                else:
-                    save_state(state)
+                await _save_btc_price_state(
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    checked_at=checked_at,
+                    last_alert_at=last_alert_at,
+                )
                 return
 
             news_items = await fetch_news_context(limit=5)
@@ -607,19 +627,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             if delivered:
                 await remember_news_context(news_items)
-            if DB_ENABLED and DB_SESSION_LOCAL:
-                async with DB_SESSION_LOCAL() as session:
-                    await update_price_state(
-                        session,
-                        symbol=DEFAULT_SYMBOL,
-                        last_price=current_price,
-                        last_24h_change=change_24h,
-                        last_checked_at=datetime.now(timezone.utc),
-                        last_alert_at=(datetime.now(timezone.utc) if delivered else None),
-                    )
-            else:
-                if delivered:
-                    state["last_alert_at"] = checked_at
+            await _save_btc_price_state(
+                state=state,
+                current_price=current_price,
+                change_24h=change_24h,
+                checked_at=checked_at,
+                last_alert_at=(datetime.now(timezone.utc) if delivered else None),
+            )
             log("Alert sent." if delivered else "Alert was not delivered.")
         if not db_active:
             save_state(state)
