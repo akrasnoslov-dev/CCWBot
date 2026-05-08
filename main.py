@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
+import time
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
@@ -28,7 +29,8 @@ from bot.handlers import (
 from bot.runtime import close_database, initialize_database, log
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
-from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import HEALTH_PORT, TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from health import start_health_server, stop_health_server
 from price_service import warm_up_price_cache
 
 
@@ -72,6 +74,8 @@ def register_handlers(app: Application) -> None:
 def main():
     configure_logging()
 
+    started_at = time.monotonic()
+    health_runner = None
     loop = create_event_loop()
     asyncio.set_event_loop(loop)
     if not TELEGRAM_BOT_TOKEN:
@@ -93,12 +97,18 @@ def main():
     schedule_strong_signal_job(app)
     schedule_seen_news_cleanup(app)
 
+    health_runner = loop.run_until_complete(
+        start_health_server(HEALTH_PORT, started_at=started_at)
+    )
+    log(f"Health server is running on port {HEALTH_PORT}.")
     log("Bot is running. Automatic BTC checks are enabled.")
     app.post_init = setup_bot_commands
     try:
         app.run_polling(close_loop=False, stop_signals=get_stop_signals())
     finally:
         log("Shutting down bot.")
+        if not loop.is_closed():
+            loop.run_until_complete(stop_health_server(health_runner))
         if not loop.is_closed():
             loop.run_until_complete(close_database())
         if not loop.is_closed():
