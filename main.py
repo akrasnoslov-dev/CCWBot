@@ -25,6 +25,7 @@ from bot.handlers import (
 from bot.runtime import log
 from bot.setup import setup_bot_commands
 from bot.settings import get_runtime_alert_settings
+from price_service import warm_up_price_cache
 
 
 def register_handlers(app: Application) -> None:
@@ -55,6 +56,8 @@ def main():
         raise ValueError("TELEGRAM_CHAT_ID is missing. Check your .env file.")
     if not TELEGRAM_ADMIN_USER_ID:
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
+
+    warm_up_price_cache()
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     register_handlers(app)

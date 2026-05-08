@@ -1,5 +1,6 @@
-import time
+import asyncio
 import logging
+import time
 
 import httpx
 from config import PRICE_CACHE_TTL_SECONDS
@@ -22,6 +23,7 @@ DEFAULT_SYMBOL = "btc"
 _PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
 _BTC_MARKET_CACHE: tuple[float, float, float | None, float] | None = None
 logger = logging.getLogger(__name__)
+_COIN_ID_TO_SYMBOL = {coin_id: symbol for symbol, coin_id in COIN_SYMBOL_TO_ID.items()}
 
 
 def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None:
@@ -37,12 +39,161 @@ def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None
     if time.time() - cached_at <= PRICE_CACHE_TTL_SECONDS:
         return price, change_24h, normalized_symbol
 
-    _PRICE_CACHE.pop(normalized_symbol, None)
     return None
 
 
-def _set_cached_price(normalized_symbol: str, price: float, change_24h: float) -> None:
-    _PRICE_CACHE[normalized_symbol] = (price, change_24h, time.time())
+def _set_cached_price(
+    normalized_symbol: str,
+    price: float,
+    change_24h: float,
+    cached_at: float | None = None,
+) -> None:
+    _PRICE_CACHE[normalized_symbol] = (
+        price,
+        change_24h,
+        time.time() if cached_at is None else cached_at,
+    )
+
+
+def _coingecko_bool(params: dict, key: str) -> bool:
+    return str(params.get(key, "")).lower() == "true"
+
+
+def _get_stale_cached_price(normalized_symbol: str) -> tuple[float, float] | None:
+    cached = _PRICE_CACHE.get(normalized_symbol)
+    if not cached:
+        return None
+    price, change_24h, _ = cached
+    return price, change_24h
+
+
+def _build_stale_price_payload(params: dict) -> dict | None:
+    """Build a CoinGecko-like payload from expired in-memory cache entries."""
+    requested_symbols: list[str] = []
+    ids = str(params.get("ids") or "")
+    if ids:
+        requested_symbols.extend(
+            _COIN_ID_TO_SYMBOL[coin_id.strip()]
+            for coin_id in ids.split(",")
+            if coin_id.strip() in _COIN_ID_TO_SYMBOL
+        )
+
+    symbols = str(params.get("symbols") or "")
+    if symbols:
+        requested_symbols.extend(
+            symbol.strip().lower()
+            for symbol in symbols.split(",")
+            if symbol.strip().lower() in COIN_SYMBOL_TO_ID
+        )
+
+    names = str(params.get("names") or "").lower()
+    if "toncoin" in names:
+        requested_symbols.append("ton")
+
+    payload: dict[str, dict[str, float]] = {}
+    include_7d_change = _coingecko_bool(params, "include_7d_change")
+    for symbol in dict.fromkeys(requested_symbols):
+        stale_price = _get_stale_cached_price(symbol)
+        if stale_price is None:
+            continue
+
+        price, change_24h = stale_price
+        coin_data: dict[str, float] = {"usd": price}
+        if _coingecko_bool(params, "include_24hr_change"):
+            coin_data["usd_24h_change"] = change_24h
+        if symbol == "btc" and include_7d_change and _BTC_MARKET_CACHE is not None:
+            _, _, change_7d, _ = _BTC_MARKET_CACHE
+            if change_7d is not None:
+                coin_data["usd_7d_change"] = change_7d
+        payload[COIN_SYMBOL_TO_ID[symbol]] = coin_data
+
+    return payload or None
+
+
+async def _get_with_retry(
+    client,
+    url,
+    params,
+    max_retries: int = 3,
+    base_delay: int = 5,
+) -> dict:
+    """Fetch CoinGecko data, retrying 429s and falling back to stale cache."""
+    last_status_code = None
+    for attempt in range(max_retries + 1):
+        response = await client.get(url, params=params, timeout=10)
+        last_status_code = response.status_code
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response.json()
+
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt)
+            logger.warning(
+                "CoinGecko returned 429. Retrying after %s seconds. attempt=%s max_retries=%s",
+                delay,
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(delay)
+
+    stale_payload = _build_stale_price_payload(params)
+    if stale_payload is not None:
+        logger.warning(
+            "CoinGecko returned %s after retries. Returning stale cached price data.",
+            last_status_code,
+        )
+        return stale_payload
+
+    raise CoinGeckoRateLimitError(
+        "CoinGecko rate limit reached and no stale cache is available"
+    )
+
+
+def _sync_btc_price_cache(
+    price: float,
+    change_24h: float,
+    cached_at: float | None = None,
+) -> None:
+    cached = _PRICE_CACHE.get("btc")
+    if cached is None or cached[0] != price or cached[1] != change_24h:
+        _set_cached_price("btc", price, change_24h, cached_at)
+
+
+def warm_up_price_cache() -> None:
+    """Populate price cache from persisted runtime state on startup."""
+    from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
+    from database import get_price_state
+    from storage import load_state
+
+    warmed_symbols: list[str] = []
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        with DB_SESSION_LOCAL() as session:
+            for symbol in COIN_SYMBOL_TO_ID:
+                row = get_price_state(session, symbol)
+                if row is None or row.last_price is None:
+                    continue
+                change_24h = (
+                    row.last_24h_change if row.last_24h_change is not None else 0.0
+                )
+                _set_cached_price(
+                    symbol, float(row.last_price), float(change_24h), cached_at=0
+                )
+                warmed_symbols.append(symbol)
+    else:
+        state = load_state()
+        last_price = state.get("last_price")
+        if last_price is not None:
+            change_24h = state.get("last_24h_change") or 0.0
+            _set_cached_price(
+                DEFAULT_SYMBOL, float(last_price), float(change_24h), cached_at=0
+            )
+            warmed_symbols.append(DEFAULT_SYMBOL)
+
+    if warmed_symbols:
+        logger.info(
+            "Warmed price cache from persisted state for symbols: %s",
+            ", ".join(sorted(warmed_symbols)),
+        )
 
 
 async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, str]:
@@ -70,11 +221,7 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
     }
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params, timeout=10)
-        if response.status_code == 429:
-            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-        response.raise_for_status()
-        data = response.json()
+        data = await _get_with_retry(client, url, params)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
@@ -119,6 +266,7 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     if _BTC_MARKET_CACHE is not None:
         price, change_24h, change_7d, cached_at = _BTC_MARKET_CACHE
         if time.time() - cached_at <= PRICE_CACHE_TTL_SECONDS:
+            _sync_btc_price_cache(price, change_24h, cached_at)
             return price, change_24h, change_7d
 
     url = "https://api.coingecko.com/api/v3/simple/price"
@@ -130,11 +278,7 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     }
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params, timeout=10)
-        if response.status_code == 429:
-            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-        response.raise_for_status()
-        data = response.json()
+        data = await _get_with_retry(client, url, params)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
@@ -149,8 +293,9 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     change_7d_raw = coin_data.get("usd_7d_change")
     change_7d = float(change_7d_raw) if change_7d_raw is not None else None
 
-    _set_cached_price("btc", price, change_24h)
-    _BTC_MARKET_CACHE = (price, change_24h, change_7d, time.time())
+    cached_at = time.time()
+    _sync_btc_price_cache(price, change_24h, cached_at)
+    _BTC_MARKET_CACHE = (price, change_24h, change_7d, cached_at)
     return price, change_24h, change_7d
 
 
@@ -160,7 +305,6 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
     This keeps TON support stable without expanding supported symbols or APIs.
     """
     url = "https://api.coingecko.com/api/v3/simple/price"
-    timeout = 10
 
     async with httpx.AsyncClient() as client:
         # First fallback: symbol-based lookup.
@@ -169,11 +313,7 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
             "vs_currencies": "usd",
             "include_24hr_change": "true",
         }
-        symbol_response = await client.get(url, params=symbol_params, timeout=timeout)
-        if symbol_response.status_code == 429:
-            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-        symbol_response.raise_for_status()
-        symbol_data = symbol_response.json()
+        symbol_data = await _get_with_retry(client, url, symbol_params)
 
         symbol_coin_data = _extract_ton_coin_data_from_simple_price(symbol_data)
         if isinstance(symbol_coin_data, dict):
@@ -182,7 +322,11 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
 
         logger.warning(
             "TON fallback via symbols=ton failed. returned_keys=%s",
-            list(symbol_data.keys()) if isinstance(symbol_data, dict) else type(symbol_data).__name__,
+            (
+                list(symbol_data.keys())
+                if isinstance(symbol_data, dict)
+                else type(symbol_data).__name__
+            ),
         )
 
         # Second fallback: name-based lookup.
@@ -191,11 +335,7 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
             "vs_currencies": "usd",
             "include_24hr_change": "true",
         }
-        name_response = await client.get(url, params=name_params, timeout=timeout)
-        if name_response.status_code == 429:
-            raise CoinGeckoRateLimitError("CoinGecko rate limit reached")
-        name_response.raise_for_status()
-        name_data = name_response.json()
+        name_data = await _get_with_retry(client, url, name_params)
 
         name_coin_data = _extract_ton_coin_data_from_simple_price(name_data)
         if isinstance(name_coin_data, dict):
@@ -204,7 +344,11 @@ async def _fetch_ton_fallback_coin_data() -> dict | None:
 
         logger.warning(
             "TON fallback via names=Toncoin failed. returned_keys=%s",
-            list(name_data.keys()) if isinstance(name_data, dict) else type(name_data).__name__,
+            (
+                list(name_data.keys())
+                if isinstance(name_data, dict)
+                else type(name_data).__name__
+            ),
         )
         return None
 
