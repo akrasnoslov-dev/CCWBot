@@ -15,15 +15,15 @@ from price_service import get_btc_market_data
 async def send_daily_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_news_context(limit=5, prefer_unseen=True)
+        news_items = await fetch_news_context(limit=5, prefer_unseen=True)
         report = await create_daily_report(price, change_24h, news_items)
         if report and report.get("telegram_message"):
             message = str(report["telegram_message"])
             await target.reply_text(message)
-            remember_news_context(news_items)
+            await remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
-                with DB_SESSION_LOCAL() as session:
-                    save_alert(
+                async with DB_SESSION_LOCAL() as session:
+                    await save_alert(
                         session,
                         symbol="BTC",
                         alert_type="daily_report",
@@ -45,15 +45,15 @@ async def send_daily_report_message(target) -> None:
 async def send_weekly_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_news_context(limit=6, prefer_unseen=True)
+        news_items = await fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         if report and report.get("telegram_message"):
             message = str(report["telegram_message"])
             await target.reply_text(message)
-            remember_news_context(news_items)
+            await remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
-                with DB_SESSION_LOCAL() as session:
-                    save_alert(
+                async with DB_SESSION_LOCAL() as session:
+                    await save_alert(
                         session,
                         symbol="BTC",
                         alert_type="weekly_report",
@@ -76,7 +76,7 @@ async def send_weekly_report_message(target) -> None:
 async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
     try:
         price, change_24h, change_7d = await get_btc_market_data()
-        news_items = fetch_news_context(limit=6, prefer_unseen=True)
+        news_items = await fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         message = report.get("telegram_message") if report else None
         if not message:
@@ -89,6 +89,6 @@ async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
                 "Not financial advice."
             )
         await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        remember_news_context(news_items)
+        await remember_news_context(news_items)
     except Exception as error:
         log(f"Scheduled weekly report failed: {error}")

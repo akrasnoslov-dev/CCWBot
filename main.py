@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
@@ -22,7 +23,7 @@ from bot.handlers import (
     user_id,
     weekly_report,
 )
-from bot.runtime import log
+from bot.runtime import initialize_database, log
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
 from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -58,12 +59,13 @@ def main():
     if not TELEGRAM_ADMIN_USER_ID:
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
 
-    warm_up_price_cache()
+    asyncio.run(initialize_database())
+    asyncio.run(warm_up_price_cache())
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     register_handlers(app)
 
-    runtime_settings = get_runtime_alert_settings()
+    runtime_settings = asyncio.run(get_runtime_alert_settings())
     schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)

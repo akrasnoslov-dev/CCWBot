@@ -8,16 +8,18 @@ from database import (
 from news_service import fetch_crypto_news
 
 
-def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
+async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
     """Fetch RSS news and use seen_news for dedupe when PostgreSQL is active."""
     fetch_limit = max(limit * 3, limit)
     news_items = fetch_crypto_news(limit=fetch_limit)
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         return news_items[:limit]
 
-    with DB_SESSION_LOCAL() as session:
+    async with DB_SESSION_LOCAL() as session:
         unseen_items = [
-            item for item in news_items if not was_news_seen(session, make_news_key(item))
+            item
+            for item in news_items
+            if not await was_news_seen(session, make_news_key(item))
         ]
 
     if unseen_items:
@@ -27,11 +29,11 @@ def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
     return news_items[:limit]
 
 
-def remember_news_context(news_items: list[dict]) -> None:
+async def remember_news_context(news_items: list[dict]) -> None:
     """Mark news items as seen in PostgreSQL after they were used by the bot."""
     if not (DB_ENABLED and DB_SESSION_LOCAL and news_items):
         return
 
-    with DB_SESSION_LOCAL() as session:
-        mark_news_items_seen(session, news_items)
-        cleanup_seen_news(session, keep_latest=200)
+    async with DB_SESSION_LOCAL() as session:
+        await mark_news_items_seen(session, news_items)
+        await cleanup_seen_news(session, keep_latest=200)

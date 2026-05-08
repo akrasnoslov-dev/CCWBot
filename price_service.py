@@ -158,7 +158,7 @@ def _sync_btc_price_cache(
         _set_cached_price("btc", price, change_24h, cached_at)
 
 
-def warm_up_price_cache() -> None:
+async def warm_up_price_cache() -> None:
     """Populate price cache from persisted runtime state on startup."""
     from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
     from database import get_price_state
@@ -166,9 +166,9 @@ def warm_up_price_cache() -> None:
 
     warmed_symbols: list[str] = []
     if DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
+        async with DB_SESSION_LOCAL() as session:
             for symbol in COIN_SYMBOL_TO_ID:
-                row = get_price_state(session, symbol)
+                row = await get_price_state(session, symbol)
                 if row is None or row.last_price is None:
                     continue
                 change_24h = row.last_24h_change if row.last_24h_change is not None else 0.0

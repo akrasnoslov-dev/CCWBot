@@ -21,9 +21,9 @@ def get_state_alert_settings(state: dict) -> dict:
     }
 
 
-def get_db_alert_settings() -> dict:
-    with DB_SESSION_LOCAL() as session:
-        settings = get_or_create_app_settings(
+async def get_db_alert_settings() -> dict:
+    async with DB_SESSION_LOCAL() as session:
+        settings = await get_or_create_app_settings(
             session,
             default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
             default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
@@ -34,16 +34,16 @@ def get_db_alert_settings() -> dict:
     }
 
 
-def get_runtime_alert_settings() -> dict:
+async def get_runtime_alert_settings() -> dict:
     if DB_ENABLED and DB_SESSION_LOCAL:
-        return get_db_alert_settings()
+        return await get_db_alert_settings()
     return get_state_alert_settings(load_state())
 
 
-def save_threshold_setting(threshold: float) -> None:
+async def save_threshold_setting(threshold: float) -> None:
     if DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
-            update_app_settings(
+        async with DB_SESSION_LOCAL() as session:
+            await update_app_settings(
                 session,
                 threshold=threshold,
                 default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
@@ -56,10 +56,10 @@ def save_threshold_setting(threshold: float) -> None:
     save_state(state)
 
 
-def save_interval_setting(interval: int) -> None:
+async def save_interval_setting(interval: int) -> None:
     if DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
-            update_app_settings(
+        async with DB_SESSION_LOCAL() as session:
+            await update_app_settings(
                 session,
                 interval_seconds=interval,
                 default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,

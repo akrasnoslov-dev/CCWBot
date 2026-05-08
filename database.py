@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from hashlib import sha256
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import (
@@ -16,17 +18,20 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    create_engine,
-    inspect,
-    text,
+    func,
+    select,
 )
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
     relationship,
-    sessionmaker,
 )
 
 
@@ -218,45 +223,49 @@ class EventAiAnalysis(Base):
     market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
 
 
-def init_db(database_url: str):
-    """Create SQLAlchemy engine/session factory and initialise tables."""
-    engine = create_engine(database_url, future=True)
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-    _migrate_legacy_app_settings_table(engine)
-    Base.metadata.create_all(bind=engine)
-    _migrate_alert_delivery_columns(engine)
-    return engine, SessionLocal
+async def init_db(database_url: str):
+    """Create SQLAlchemy async engine/session factory and run migrations."""
+    await run_async_upgrade(database_url)
+    engine = create_async_engine(database_url, future=True)
+    session_local = async_sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+    return engine, session_local
 
 
-def _migrate_alert_delivery_columns(engine) -> None:
-    """Add nullable delivery metadata columns to existing alerts tables."""
-    inspector = inspect(engine)
-    if "alerts" not in inspector.get_table_names():
-        return
-
-    columns = {column["name"] for column in inspector.get_columns("alerts")}
-    column_sql = {
-        "market_event_id": "INTEGER",
-        "event_ai_analysis_id": "INTEGER",
-        "user_id": "INTEGER",
-        "status": "VARCHAR(64)",
-        "error_message": "TEXT",
-    }
-    missing_columns = [
-        (column_name, sql_type)
-        for column_name, sql_type in column_sql.items()
-        if column_name not in columns
-    ]
-    if not missing_columns:
-        return
-
-    with engine.begin() as connection:
-        for column_name, sql_type in missing_columns:
-            connection.execute(text(f"ALTER TABLE alerts ADD COLUMN {column_name} {sql_type}"))
+async def run_async_upgrade(database_url: str) -> None:
+    """Run Alembic migrations without blocking the active event loop."""
+    await asyncio.to_thread(_run_upgrade, database_url)
 
 
-def get_or_create_user(
-    session,
+def _run_upgrade(database_url: str) -> None:
+    from alembic.config import Config
+
+    from alembic import command
+
+    project_root = Path(__file__).resolve().parent
+    config = Config(str(project_root / "alembic.ini"))
+    config.set_main_option("script_location", str(project_root / "alembic"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    config.attributes["database_url"] = database_url
+    command.upgrade(config, "head")
+
+
+def _same_telegram_user_id(left: int | str | None, right: int | str | None) -> bool:
+    if left is None or right is None:
+        return False
+    try:
+        return int(str(left).strip()) == int(str(right).strip())
+    except ValueError:
+        return False
+
+
+async def get_or_create_user(
+    session: AsyncSession,
     *,
     telegram_user_id: int,
     telegram_chat_id: int,
@@ -265,7 +274,9 @@ def get_or_create_user(
     admin_user_id: int | str | None,
 ):
     """Create or update a user row for current Telegram interaction."""
-    user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
+    user = await session.scalar(
+        select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
+    )
     role = "admin" if _same_telegram_user_id(telegram_user_id, admin_user_id) else "user"
     if user is None:
         user = User(
@@ -284,99 +295,41 @@ def get_or_create_user(
         user.role = role
         user.is_active = True
         user.updated_at = utc_now()
-    session.commit()
-    session.refresh(user)
+    await session.commit()
+    await session.refresh(user)
     return user
 
 
-def _same_telegram_user_id(left: int | str | None, right: int | str | None) -> bool:
-    if left is None or right is None:
-        return False
-    try:
-        return int(str(left).strip()) == int(str(right).strip())
-    except ValueError:
-        return False
-
-
-def get_user_role(session, telegram_user_id: int) -> str | None:
-    user = session.query(User).filter_by(telegram_user_id=telegram_user_id).first()
+async def get_user_role(session: AsyncSession, telegram_user_id: int) -> str | None:
+    user = await session.scalar(
+        select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
+    )
     return user.role if user else None
 
 
-def get_active_users_with_chat_ids(session) -> list[User]:
+async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
     """Return active users that can receive automatic Telegram alerts."""
-    return (
-        session.query(User)
-        .filter(User.telegram_chat_id.isnot(None))
-        .filter(User.is_active.is_(True))
+    result = await session.scalars(
+        select(User)
+        .where(User.telegram_chat_id.isnot(None))
+        .where(User.is_active.is_(True))
         .order_by(User.id.asc())
-        .all()
     )
+    return list(result.all())
 
 
-def _migrate_legacy_app_settings_table(engine) -> None:
-    """Replace the early key/value app_settings table with explicit columns.
-
-    This keeps existing development databases usable without Alembic while new
-    databases get the concrete global settings model from SQLAlchemy metadata.
-    """
-    inspector = inspect(engine)
-    if "app_settings" not in inspector.get_table_names():
-        return
-
-    columns = {column["name"] for column in inspector.get_columns("app_settings")}
-    legacy_columns = {"setting_key", "setting_value"}
-    required_columns = {
-        "btc_alert_threshold_percent",
-        "automatic_check_interval_seconds",
-    }
-    missing_columns = required_columns - columns
-
-    if not missing_columns:
-        return
-
-    if not legacy_columns.issubset(columns):
-        raise RuntimeError(
-            "app_settings table exists but does not contain the required global settings columns."
-        )
-
-    with engine.begin() as connection:
-        legacy_rows = connection.execute(
-            text(
-                "SELECT setting_key, setting_value FROM app_settings "
-                "WHERE setting_key IN ("
-                "'btc_alert_threshold_percent', "
-                "'automatic_check_interval_seconds'"
-                ")"
-            )
-        ).mappings()
-        legacy_values = {str(row["setting_key"]): str(row["setting_value"]) for row in legacy_rows}
-        threshold = float(legacy_values.get("btc_alert_threshold_percent", "2"))
-        interval = int(legacy_values.get("automatic_check_interval_seconds", "300"))
-        now = utc_now()
-
-        connection.execute(text("DROP TABLE app_settings"))
-        AppSettings.__table__.create(bind=connection)
-        connection.execute(
-            AppSettings.__table__.insert().values(
-                btc_alert_threshold_percent=threshold,
-                automatic_check_interval_seconds=interval,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-
-
-def _get_app_settings_row(session, *, default_threshold: float, default_interval: int):
-    settings = session.query(AppSettings).order_by(AppSettings.id.asc()).first()
+async def _get_app_settings_row(
+    session: AsyncSession, *, default_threshold: float, default_interval: int
+):
+    settings = await session.scalar(select(AppSettings).order_by(AppSettings.id.asc()).limit(1))
     if settings is None:
         settings = AppSettings(
             btc_alert_threshold_percent=default_threshold,
             automatic_check_interval_seconds=default_interval,
         )
         session.add(settings)
-        session.commit()
-        session.refresh(settings)
+        await session.commit()
+        await session.refresh(settings)
         return settings
 
     changed = False
@@ -388,18 +341,18 @@ def _get_app_settings_row(session, *, default_threshold: float, default_interval
         changed = True
     if changed:
         settings.updated_at = utc_now()
-        session.commit()
-        session.refresh(settings)
+        await session.commit()
+        await session.refresh(settings)
     return settings
 
 
-def get_or_create_app_settings(
-    session,
+async def get_or_create_app_settings(
+    session: AsyncSession,
     *,
     default_threshold: float,
     default_interval: int,
 ) -> dict:
-    settings = _get_app_settings_row(
+    settings = await _get_app_settings_row(
         session,
         default_threshold=default_threshold,
         default_interval=default_interval,
@@ -410,15 +363,15 @@ def get_or_create_app_settings(
     }
 
 
-def update_app_settings(
-    session,
+async def update_app_settings(
+    session: AsyncSession,
     *,
     default_threshold: float,
     default_interval: int,
     threshold: float | None = None,
     interval_seconds: int | None = None,
 ) -> dict:
-    settings = _get_app_settings_row(
+    settings = await _get_app_settings_row(
         session,
         default_threshold=default_threshold,
         default_interval=default_interval,
@@ -428,23 +381,25 @@ def update_app_settings(
     if interval_seconds is not None:
         settings.automatic_check_interval_seconds = interval_seconds
     settings.updated_at = utc_now()
-    session.commit()
-    session.refresh(settings)
-    return get_or_create_app_settings(
+    await session.commit()
+    await session.refresh(settings)
+    return await get_or_create_app_settings(
         session,
         default_threshold=default_threshold,
         default_interval=default_interval,
     )
 
 
-def get_or_create_user_settings(
-    session,
+async def get_or_create_user_settings(
+    session: AsyncSession,
     *,
     user_id: int,
     default_threshold: float,
     default_interval: int,
 ):
-    settings = session.query(UserSettings).filter_by(user_id=user_id).first()
+    settings = await session.scalar(
+        select(UserSettings).where(UserSettings.user_id == user_id).limit(1)
+    )
     if settings is None:
         settings = UserSettings(
             user_id=user_id,
@@ -452,19 +407,21 @@ def get_or_create_user_settings(
             automatic_check_interval_seconds=default_interval,
         )
         session.add(settings)
-        session.commit()
-        session.refresh(settings)
+        await session.commit()
+        await session.refresh(settings)
     return settings
 
 
-def update_user_settings(
-    session,
+async def update_user_settings(
+    session: AsyncSession,
     *,
     user_id: int,
     threshold: float | None = None,
     interval_seconds: int | None = None,
 ):
-    settings = session.query(UserSettings).filter_by(user_id=user_id).first()
+    settings = await session.scalar(
+        select(UserSettings).where(UserSettings.user_id == user_id).limit(1)
+    )
     if settings is None:
         raise ValueError("User settings row not found.")
     if threshold is not None:
@@ -472,17 +429,19 @@ def update_user_settings(
     if interval_seconds is not None:
         settings.automatic_check_interval_seconds = interval_seconds
     settings.updated_at = utc_now()
-    session.commit()
-    session.refresh(settings)
+    await session.commit()
+    await session.refresh(settings)
     return settings
 
 
-def get_price_state(session, symbol: str):
-    return session.query(PriceState).filter_by(symbol=symbol.upper()).first()
+async def get_price_state(session: AsyncSession, symbol: str):
+    return await session.scalar(
+        select(PriceState).where(PriceState.symbol == symbol.upper()).limit(1)
+    )
 
 
-def update_price_state(
-    session,
+async def update_price_state(
+    session: AsyncSession,
     *,
     symbol: str,
     last_price: float,
@@ -490,7 +449,7 @@ def update_price_state(
     last_checked_at: datetime | None,
     last_alert_at: datetime | None = None,
 ):
-    row = get_price_state(session, symbol)
+    row = await get_price_state(session, symbol)
     if row is None:
         row = PriceState(
             symbol=symbol.upper(),
@@ -507,25 +466,26 @@ def update_price_state(
         if last_alert_at is not None:
             row.last_alert_at = last_alert_at
     row.updated_at = utc_now()
-    session.commit()
-    session.refresh(row)
+    await session.commit()
+    await session.refresh(row)
     return row
 
 
-def was_news_seen(session, news_key: str) -> bool:
+async def was_news_seen(session: AsyncSession, news_key: str) -> bool:
     """Return True when a news key already exists in seen_news."""
     if not news_key:
         return False
-    return session.query(SeenNews).filter_by(news_key=news_key).first() is not None
+    row = await session.scalar(select(SeenNews.id).where(SeenNews.news_key == news_key).limit(1))
+    return row is not None
 
 
-def mark_news_seen(session, news_item: dict):
+async def mark_news_seen(session: AsyncSession, news_item: dict):
     """Store one news item in seen_news if it has not been stored before."""
     news_key = make_news_key(news_item)
     if not news_key:
         return None
 
-    existing = session.query(SeenNews).filter_by(news_key=news_key).first()
+    existing = await session.scalar(select(SeenNews).where(SeenNews.news_key == news_key).limit(1))
     if existing:
         return existing
 
@@ -537,20 +497,20 @@ def mark_news_seen(session, news_item: dict):
     )
     session.add(row)
     try:
-        session.commit()
+        await session.commit()
     except IntegrityError:
-        session.rollback()
-        return session.query(SeenNews).filter_by(news_key=news_key).first()
-    session.refresh(row)
+        await session.rollback()
+        return await session.scalar(select(SeenNews).where(SeenNews.news_key == news_key).limit(1))
+    await session.refresh(row)
     return row
 
 
-def mark_news_items_seen(session, news_items: list[dict]) -> list[SeenNews]:
+async def mark_news_items_seen(session: AsyncSession, news_items: list[dict]) -> list[SeenNews]:
     """Store multiple news items while skipping duplicates."""
     rows = []
     for item in news_items:
         news_key = make_news_key(item)
-        if not news_key or was_news_seen(session, news_key):
+        if not news_key or await was_news_seen(session, news_key):
             continue
         row = SeenNews(
             news_key=news_key,
@@ -565,50 +525,46 @@ def mark_news_items_seen(session, news_items: list[dict]) -> list[SeenNews]:
         return []
 
     try:
-        session.commit()
+        await session.commit()
     except IntegrityError:
-        session.rollback()
+        await session.rollback()
         stored_rows = []
         for item in news_items:
-            row = mark_news_seen(session, item)
+            row = await mark_news_seen(session, item)
             if row:
                 stored_rows.append(row)
         return stored_rows
 
     for row in rows:
-        session.refresh(row)
+        await session.refresh(row)
     return rows
 
 
-def get_recent_seen_news(session, limit: int = 100) -> list[SeenNews]:
+async def get_recent_seen_news(session: AsyncSession, limit: int = 100) -> list[SeenNews]:
     """Return recent seen news rows, newest first."""
-    return (
-        session.query(SeenNews)
-        .order_by(SeenNews.seen_at.desc(), SeenNews.id.desc())
-        .limit(limit)
-        .all()
+    result = await session.scalars(
+        select(SeenNews).order_by(SeenNews.seen_at.desc(), SeenNews.id.desc()).limit(limit)
     )
+    return list(result.all())
 
 
-def cleanup_seen_news(session, keep_latest: int = 100) -> int:
+async def cleanup_seen_news(session: AsyncSession, keep_latest: int = 100) -> int:
     """Keep only the latest seen_news rows and return how many were deleted."""
     if keep_latest < 1:
         raise ValueError("keep_latest must be at least 1.")
 
-    rows_to_delete = (
-        session.query(SeenNews)
-        .order_by(SeenNews.seen_at.desc(), SeenNews.id.desc())
-        .offset(keep_latest)
-        .all()
+    result = await session.scalars(
+        select(SeenNews).order_by(SeenNews.seen_at.desc(), SeenNews.id.desc()).offset(keep_latest)
     )
+    rows_to_delete = list(result.all())
     for row in rows_to_delete:
-        session.delete(row)
-    session.commit()
+        await session.delete(row)
+    await session.commit()
     return len(rows_to_delete)
 
 
-def save_alert(
-    session,
+async def save_alert(
+    session: AsyncSession,
     *,
     symbol: str,
     alert_type: str,
@@ -632,13 +588,13 @@ def save_alert(
         error_message=error_message,
     )
     session.add(alert)
-    session.commit()
-    session.refresh(alert)
+    await session.commit()
+    await session.refresh(alert)
     return alert
 
 
-def get_or_create_market_event(
-    session,
+async def get_or_create_market_event(
+    session: AsyncSession,
     *,
     symbol: str,
     event_type: str,
@@ -651,7 +607,9 @@ def get_or_create_market_event(
     detected_at: datetime | None = None,
 ) -> MarketEvent:
     """Return the market event for event_key, creating it when needed."""
-    existing = session.query(MarketEvent).filter_by(event_key=event_key).first()
+    existing = await session.scalar(
+        select(MarketEvent).where(MarketEvent.event_key == event_key).limit(1)
+    )
     if existing:
         return existing
 
@@ -668,27 +626,30 @@ def get_or_create_market_event(
     )
     session.add(market_event)
     try:
-        session.commit()
+        await session.commit()
     except IntegrityError:
-        session.rollback()
-        return session.query(MarketEvent).filter_by(event_key=event_key).first()
-    session.refresh(market_event)
+        await session.rollback()
+        return await session.scalar(
+            select(MarketEvent).where(MarketEvent.event_key == event_key).limit(1)
+        )
+    await session.refresh(market_event)
     return market_event
 
 
-def get_event_ai_analysis(
-    session, *, market_event_id: int, input_hash: str
+async def get_event_ai_analysis(
+    session: AsyncSession, *, market_event_id: int, input_hash: str
 ) -> EventAiAnalysis | None:
     """Return an existing AI analysis for the event/input pair if present."""
-    return (
-        session.query(EventAiAnalysis)
-        .filter_by(market_event_id=market_event_id, input_hash=input_hash)
-        .first()
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.market_event_id == market_event_id)
+        .where(EventAiAnalysis.input_hash == input_hash)
+        .limit(1)
     )
 
 
-def save_event_ai_analysis(
-    session,
+async def save_event_ai_analysis(
+    session: AsyncSession,
     *,
     market_event_id: int,
     provider: str,
@@ -705,7 +666,7 @@ def save_event_ai_analysis(
     error_message: str | None = None,
 ) -> EventAiAnalysis:
     """Save one AI analysis row for a market event."""
-    existing = get_event_ai_analysis(
+    existing = await get_event_ai_analysis(
         session, market_event_id=market_event_id, input_hash=input_hash
     )
     if existing:
@@ -728,29 +689,32 @@ def save_event_ai_analysis(
     )
     session.add(analysis)
     try:
-        session.commit()
+        await session.commit()
     except IntegrityError:
-        session.rollback()
-        return get_event_ai_analysis(
+        await session.rollback()
+        return await get_event_ai_analysis(
             session, market_event_id=market_event_id, input_hash=input_hash
         )
-    session.refresh(analysis)
+    await session.refresh(analysis)
     return analysis
 
 
-def count_market_events(session, symbol: str | None = None) -> int:
+async def count_market_events(session: AsyncSession, symbol: str | None = None) -> int:
     """Return the number of stored market events, optionally for one symbol."""
-    query = session.query(MarketEvent)
+    statement = select(func.count()).select_from(MarketEvent)
     if symbol:
-        query = query.filter_by(symbol=symbol.upper())
-    return query.count()
+        statement = statement.where(MarketEvent.symbol == symbol.upper())
+    return int(await session.scalar(statement) or 0)
 
 
-def get_recent_market_events(
-    session, *, symbol: str | None = None, limit: int = 20
+async def get_recent_market_events(
+    session: AsyncSession, *, symbol: str | None = None, limit: int = 20
 ) -> list[MarketEvent]:
     """Return recent market events, newest first."""
-    query = session.query(MarketEvent)
+    statement = select(MarketEvent)
     if symbol:
-        query = query.filter_by(symbol=symbol.upper())
-    return query.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc()).limit(limit).all()
+        statement = statement.where(MarketEvent.symbol == symbol.upper())
+    result = await session.scalars(
+        statement.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc()).limit(limit)
+    )
+    return list(result.all())

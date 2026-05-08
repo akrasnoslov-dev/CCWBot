@@ -159,7 +159,7 @@ def _build_alert_ai_input_hash(
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
+async def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
     """Resolve recipients for automatic alerts.
 
     Automatic alerts are still BTC-only. This boundary exists so future
@@ -171,8 +171,8 @@ def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
     if DB_ENABLED and DB_SESSION_LOCAL:
         recipients = []
         seen_chat_ids = set()
-        with DB_SESSION_LOCAL() as session:
-            for user in get_active_users_with_chat_ids(session):
+        async with DB_SESSION_LOCAL() as session:
+            for user in await get_active_users_with_chat_ids(session):
                 if user.telegram_chat_id is None:
                     continue
                 chat_id = int(user.telegram_chat_id)
@@ -187,7 +187,7 @@ def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
     return []
 
 
-def _get_or_create_btc_market_event(
+async def _get_or_create_btc_market_event(
     *,
     previous_price: float,
     current_price: float,
@@ -204,8 +204,8 @@ def _get_or_create_btc_market_event(
         current_price=current_price,
         price_change_percent=price_change_percent,
     )
-    with DB_SESSION_LOCAL() as session:
-        market_event = get_or_create_market_event(
+    async with DB_SESSION_LOCAL() as session:
+        market_event = await get_or_create_market_event(
             session,
             symbol=DEFAULT_SYMBOL,
             event_type="price_movement",
@@ -245,8 +245,8 @@ async def _get_or_create_event_ai_analysis(
     )
 
     if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        with DB_SESSION_LOCAL() as session:
-            existing_analysis = get_event_ai_analysis(
+        async with DB_SESSION_LOCAL() as session:
+            existing_analysis = await get_event_ai_analysis(
                 session,
                 market_event_id=market_event_id,
                 input_hash=input_hash,
@@ -297,8 +297,8 @@ async def _get_or_create_event_ai_analysis(
 
     event_ai_analysis_id = None
     if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        with DB_SESSION_LOCAL() as session:
-            analysis = save_event_ai_analysis(
+        async with DB_SESSION_LOCAL() as session:
+            analysis = await save_event_ai_analysis(
                 session,
                 market_event_id=market_event_id,
                 provider=provider,
@@ -337,7 +337,7 @@ async def _send_alert_to_recipient(
     return True, None
 
 
-def _record_alert_delivery(
+async def _record_alert_delivery(
     *,
     recipient: AlertRecipient,
     plain_text: str,
@@ -349,8 +349,8 @@ def _record_alert_delivery(
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
 
-    with DB_SESSION_LOCAL() as session:
-        save_alert(
+    async with DB_SESSION_LOCAL() as session:
+        await save_alert(
             session,
             symbol="BTC",
             alert_type="price_movement",
@@ -371,7 +371,7 @@ async def _deliver_btc_market_event_alert(
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
 ) -> bool:
-    recipients = get_alert_recipients(symbol="BTC", event_type="price_movement")
+    recipients = await get_alert_recipients(symbol="BTC", event_type="price_movement")
     if not recipients:
         log("No configured recipients for BTC price movement alert.")
         return False
@@ -380,7 +380,7 @@ async def _deliver_btc_market_event_alert(
     delivered = False
     for recipient in recipients:
         sent, error_message = await _send_alert_to_recipient(app, recipient, alert_payload)
-        _record_alert_delivery(
+        await _record_alert_delivery(
             recipient=recipient,
             plain_text=plain_text,
             status="sent" if sent else "failed",
@@ -459,8 +459,8 @@ async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     try:
-        with DB_SESSION_LOCAL() as session:
-            deleted_count = cleanup_seen_news(session, keep_latest=SEEN_NEWS_KEEP_LATEST)
+        async with DB_SESSION_LOCAL() as session:
+            deleted_count = await cleanup_seen_news(session, keep_latest=SEEN_NEWS_KEEP_LATEST)
         log(f"Seen news cleanup removed {deleted_count} rows.")
     except Exception as error:
         log(f"Seen news cleanup error: {error}")
@@ -482,13 +482,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
     log("Running automatic BTC check...")
     try:
-        state = load_state() if not DB_ENABLED else {}
+        db_active = DB_ENABLED and DB_SESSION_LOCAL
+        state = load_state() if not db_active else {}
         previous_price = None
         last_alert_at = None
         db_row = None
         if DB_ENABLED and DB_SESSION_LOCAL:
-            with DB_SESSION_LOCAL() as session:
-                db_row = get_price_state(session, DEFAULT_SYMBOL)
+            async with DB_SESSION_LOCAL() as session:
+                db_row = await get_price_state(session, DEFAULT_SYMBOL)
                 previous_price = db_row.last_price if db_row else None
                 last_alert_at = db_row.last_alert_at if db_row else None
         else:
@@ -499,8 +500,8 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
         if previous_price is None:
             if DB_ENABLED and DB_SESSION_LOCAL:
-                with DB_SESSION_LOCAL() as session:
-                    update_price_state(
+                async with DB_SESSION_LOCAL() as session:
+                    await update_price_state(
                         session,
                         symbol=DEFAULT_SYMBOL,
                         last_price=current_price,
@@ -523,7 +524,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
         price_change_percent = calculate_price_change_percent(previous_price, current_price)
         if DB_ENABLED and DB_SESSION_LOCAL:
-            alert_settings = get_db_alert_settings()
+            alert_settings = await get_db_alert_settings()
         else:
             state.update(
                 {
@@ -541,8 +542,8 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             if is_cooldown_active(last_alert_at, ALERT_COOLDOWN_MINUTES):
                 log("BTC movement alert skipped because cooldown is active.")
                 if DB_ENABLED and DB_SESSION_LOCAL:
-                    with DB_SESSION_LOCAL() as session:
-                        update_price_state(
+                    async with DB_SESSION_LOCAL() as session:
+                        await update_price_state(
                             session,
                             symbol=DEFAULT_SYMBOL,
                             last_price=current_price,
@@ -554,8 +555,8 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     save_state(state)
                 return
 
-            news_items = fetch_news_context(limit=5)
-            market_event_id, _ = _get_or_create_btc_market_event(
+            news_items = await fetch_news_context(limit=5)
+            market_event_id, _ = await _get_or_create_btc_market_event(
                 previous_price=previous_price,
                 current_price=current_price,
                 price_change_percent=price_change_percent,
@@ -579,10 +580,10 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 event_ai_analysis_id=event_ai_analysis_id,
             )
             if delivered:
-                remember_news_context(news_items)
+                await remember_news_context(news_items)
             if DB_ENABLED and DB_SESSION_LOCAL:
-                with DB_SESSION_LOCAL() as session:
-                    update_price_state(
+                async with DB_SESSION_LOCAL() as session:
+                    await update_price_state(
                         session,
                         symbol=DEFAULT_SYMBOL,
                         last_price=current_price,
@@ -594,7 +595,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 if delivered:
                     state["last_alert_at"] = checked_at
             log("Alert sent." if delivered else "Alert was not delivered.")
-        if not DB_ENABLED:
+        if not db_active:
             save_state(state)
     except CoinGeckoRateLimitError:
         log("CoinGecko returned 429 during automatic BTC check. Skipping this cycle.")
@@ -618,7 +619,7 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
             pass
 
     price, change_24h, change_7d = await get_btc_market_data()
-    news_items = fetch_news_context(limit=6)
+    news_items = await fetch_news_context(limit=6)
     result = await classify_strong_signal(price, change_24h, change_7d, news_items)
     if not result:
         return
@@ -628,7 +629,7 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
         await context.application.bot.send_message(
             chat_id=TELEGRAM_CHAT_ID, text=str(result.get("telegram_message"))
         )
-        remember_news_context(news_items)
+        await remember_news_context(news_items)
         state["last_strong_signal_alert_at"] = now.isoformat()
         state["last_strong_signal_strength"] = strength
         state["last_strong_signal_direction"] = str(result.get("direction", "unclear")).lower()
