@@ -23,7 +23,7 @@ Since last check: +2.50% in 300 sec
 24h trend: +3.10%
 7d trend: +5.20%
 Risk level: Medium
-Risk reason: Related news may affect short-term BTC sentiment.
+Risk reason: Medium because the short-term move is notable and related news may affect sentiment, though the broader trend is not extreme.
 
 Context:
 Short-term movement is notable. Recent news appears partly relevant.
@@ -64,6 +64,7 @@ def test_build_fallback_alert_message_contains_required_fields():
     assert "24h trend: +3.10%" in message
     assert "7d trend: +5.20%" in message
     assert "Risk level: Medium\nRisk reason:" in message
+    assert "stronger 24h trend" in message
     assert "Not financial advice." in message
 
 
@@ -113,7 +114,10 @@ def test_create_ai_alert_message_returns_string(monkeypatch):
     async def fake_ask_json(prompt):
         return {
             "news_relevance": "partly_relevant",
-            "risk_reason": "Related news may affect short-term BTC sentiment.",
+            "risk_reason": (
+                "Medium because the short-term move is notable and related news may affect "
+                "sentiment, though the broader trend is not extreme."
+            ),
             "related_news_ids": [1],
             "telegram_message": VALID_TELEGRAM_MESSAGE,
         }
@@ -130,7 +134,10 @@ def test_create_ai_alert_payload_returns_dict_with_plain_text(monkeypatch):
     async def fake_ask_json(prompt):
         return {
             "news_relevance": "partly_relevant",
-            "risk_reason": "Related news may affect short-term BTC sentiment.",
+            "risk_reason": (
+                "Medium because the short-term move is notable and related news may affect "
+                "sentiment, though the broader trend is not extreme."
+            ),
             "related_news_ids": [1],
             "telegram_message": VALID_TELEGRAM_MESSAGE,
         }
@@ -207,8 +214,89 @@ Not financial advice."""
     message = ai_agent_groq.sanitize_alert_message(raw_message)
 
     assert "Risk level: High\nRisk reason:" in message
+    assert "stronger 24h trend" in message
     assert message.find("Risk level: High") < message.find("Risk reason:")
     assert message.count("Not financial advice.") == 1
+
+
+def test_fallback_risk_reason_for_small_move_uses_threshold_without_news():
+    reason = ai_agent_groq._build_fallback_risk_reason(
+        price_change_percent=0.0511,
+        change_24h=0.0461,
+        alert_threshold_percent=0.05,
+        news_relevance="not_relevant",
+        has_related_news=False,
+    )
+
+    assert reason == "The move crossed the alert threshold, but the 24h trend remains mild."
+    assert "news" not in reason.lower()
+
+
+def test_generic_or_news_inconsistent_risk_reason_is_replaced(monkeypatch):
+    async def fake_ask_json(prompt):
+        return {
+            "news_relevance": "not_relevant",
+            "risk_reason": "Based on market data and news.",
+            "related_news_ids": [],
+            "telegram_message": """BTC movement alert
+
+Price: $100,051.10
+Since last check: +0.05% in 60 sec
+24h trend: +0.05%
+Risk level: Medium
+Risk reason: The risk level reflects the BTC move, 24h trend, and available news context.
+
+Context:
+The move is small, and recent news does not appear to be a clear driver.
+
+Possible action:
+Monitor for continuation; no immediate action required.
+
+Not financial advice.""",
+        }
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+    args = {
+        **ALERT_ARGS,
+        "current_price": 100051.1,
+        "price_change_percent": 0.0511,
+        "change_24h": 0.0461,
+        "change_7d": None,
+        "news_items": [],
+        "alert_threshold_percent": 0.05,
+        "check_interval_seconds": 60,
+    }
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**args))
+    message = result["plain_text"]
+
+    assert "Risk reason: The move crossed the alert threshold, but the 24h trend remains mild." in message
+    assert "Related news:" not in message
+    assert "available news context" not in message
+    assert "based on market data and news" not in message.lower()
+    assert message.count("Not financial advice.") == 1
+
+
+def test_related_news_reason_is_allowed_only_when_related_news_is_included(monkeypatch):
+    async def fake_ask_json(prompt):
+        return {
+            "news_relevance": "partly_relevant",
+            "risk_reason": (
+                "Medium because the short-term move is notable and related news may affect "
+                "sentiment, though the broader trend is not extreme."
+            ),
+            "related_news_ids": [1],
+            "telegram_message": VALID_TELEGRAM_MESSAGE,
+        }
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+    message = result["plain_text"]
+
+    assert "Risk reason: Medium because the short-term move is notable" in message
+    assert "related news may affect sentiment" in message
+    assert "Related news:" in message
 
 
 def test_alert_message_and_payload_use_fallback_when_model_response_is_invalid(monkeypatch):

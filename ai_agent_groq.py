@@ -29,6 +29,16 @@ _RAW_DIAGNOSTIC_LINE_RE = re.compile(
 _NOT_FINANCIAL_ADVICE = "Not financial advice."
 _DIRECT_ADVICE_RE = re.compile(r"(?i)\b(buy(?:ing)? now|sell(?:ing)? now)\b")
 _RISK_REASON_MAX_CHARS = 180
+_RISK_REASON_GENERIC_RE = re.compile(
+    r"(?i)\b("
+    r"risk level reflects|"
+    r"based on market data and news|"
+    r"risk is based on current conditions|"
+    r"available news context|"
+    r"current market conditions"
+    r")\b"
+)
+_RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|driver)\b")
 
 
 def get_groq_client() -> AsyncOpenAI:
@@ -75,6 +85,13 @@ def build_fallback_alert_message(
     """Deterministic fallback used when structured AI output cannot be trusted."""
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
     weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
+    risk_reason = _build_fallback_risk_reason(
+        price_change_percent=price_change_percent,
+        change_24h=change_24h,
+        alert_threshold_percent=alert_threshold_percent,
+        news_relevance="not_relevant",
+        has_related_news=False,
+    )
     return (
         "🚨 BTC movement alert\n\n"
         f"Price: ${current_price:,.2f}\n"
@@ -82,7 +99,7 @@ def build_fallback_alert_message(
         f"24h trend: {change_24h:+.2f}%\n"
         f"{weekly_trend_line}"
         "Risk level: Medium\n"
-        "Risk reason: The short-term BTC move is notable while broader context remains uncertain.\n\n"
+        f"Risk reason: {risk_reason}\n\n"
         "Context:\n"
         "Short-term movement is notable while broader market context remains uncertain. "
         "Recent news does not appear to be a clear driver.\n\n"
@@ -212,26 +229,79 @@ def _sanitize_telegram_message(telegram_message: str) -> str:
     return cleaned.rstrip() + f"\n\n{_NOT_FINANCIAL_ADVICE}"
 
 
-def _fallback_risk_reason(
+def _build_fallback_risk_reason(
+    *,
     price_change_percent: float | None = None,
     change_24h: float | None = None,
+    alert_threshold_percent: float | None = None,
     news_relevance: str = "",
+    has_related_news: bool = False,
 ) -> str:
+    """Build a specific risk reason from alert facts without replacing AI scoring."""
     news_relevance = news_relevance.strip()
-    if news_relevance in {"relevant", "partly_relevant"}:
-        return "Related news may affect short-term BTC sentiment."
-    if price_change_percent is not None and abs(price_change_percent) >= 1:
-        return "The short-term BTC move is elevated compared with normal monitoring noise."
-    if change_24h is not None and abs(change_24h) >= 2:
-        return "The 24h BTC trend is elevated, so short-term risk may be higher."
-    return "The risk level reflects the BTC move, 24h trend, and available news context."
+    abs_move = abs(price_change_percent) if price_change_percent is not None else None
+    abs_24h = abs(change_24h) if change_24h is not None else None
+    abs_threshold = abs(alert_threshold_percent) if alert_threshold_percent is not None else None
+    crossed_threshold = (
+        abs_move is not None and abs_threshold is not None and abs_move >= abs_threshold
+    )
+
+    if abs_24h is not None and abs_24h >= 2:
+        reason = (
+            "The short-term move happened alongside a stronger 24h trend, "
+            "increasing volatility risk."
+        )
+    elif abs_move is not None and abs_move >= 1:
+        reason = "The short-term move is notable, while the 24h trend remains relatively mild."
+    elif abs_move is not None and abs_24h is not None and abs_move < 1 and abs_24h < 1:
+        if crossed_threshold:
+            reason = "The move crossed the alert threshold, but the 24h trend remains mild."
+        else:
+            reason = "The short-term move is small and the 24h trend remains mild."
+    elif crossed_threshold:
+        reason = "The move crossed the alert threshold while the broader trend remains contained."
+    else:
+        reason = "The short-term move is limited and the 24h trend is not showing sharp volatility."
+
+    if news_relevance in {"relevant", "partly_relevant"} and has_related_news:
+        reason = reason.rstrip(".") + ", and related news may also affect short-term sentiment."
+    return reason
 
 
-def _sanitize_risk_reason(reason: str, fallback_reason: str) -> str:
+def _extract_percent_from_message(message: str, label: str) -> float | None:
+    pattern = rf"(?im)^{re.escape(label)}:\s*([+-]?\d+(?:\.\d+)?)%"
+    match = re.search(pattern, message)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _risk_reason_mentions_news(reason: str) -> bool:
+    return bool(_RISK_REASON_NEWS_RE.search(reason))
+
+
+def _is_generic_risk_reason(reason: str) -> bool:
+    stripped = " ".join(str(reason or "").split()).strip()
+    return len(stripped) < 25 or bool(_RISK_REASON_GENERIC_RE.search(stripped))
+
+
+def _sanitize_risk_reason(
+    reason: str,
+    fallback_reason: str,
+    *,
+    can_mention_news: bool = False,
+) -> str:
     cleaned = " ".join(str(reason or "").split())
     cleaned = _DIRECT_ADVICE_RE.sub("review risk", cleaned)
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
-    if not cleaned:
+    if (
+        not cleaned
+        or _is_generic_risk_reason(cleaned)
+        or (_risk_reason_mentions_news(cleaned) and not can_mention_news)
+    ):
         cleaned = fallback_reason
     first_sentence = re.match(r"^(.+?[.!?])(?:\s|$)", cleaned)
     if first_sentence:
@@ -241,14 +311,40 @@ def _sanitize_risk_reason(reason: str, fallback_reason: str) -> str:
     return cleaned.rstrip(".!?") + "."
 
 
-def _ensure_risk_reason_after_level(message: str, risk_reason: str) -> str:
+def _fallback_risk_reason_from_message(message: str) -> str:
+    has_related_news = "Related news:" in message
+    return _build_fallback_risk_reason(
+        price_change_percent=_extract_percent_from_message(message, "Since last check"),
+        change_24h=_extract_percent_from_message(message, "24h trend"),
+        alert_threshold_percent=None,
+        news_relevance="partly_relevant" if has_related_news else "not_relevant",
+        has_related_news=has_related_news,
+    )
+
+
+def _ensure_risk_reason_after_level(
+    message: str,
+    risk_reason: str,
+    fallback_reason: str | None = None,
+    *,
+    can_mention_news: bool = False,
+) -> str:
     lines = message.splitlines()
     if not any(line.strip().startswith("Risk level:") for line in lines):
         return message
 
+    existing_reason = next(
+        (
+            line.split(":", 1)[1].strip()
+            for line in lines
+            if line.strip().startswith("Risk reason:") and ":" in line
+        ),
+        "",
+    )
     cleaned_reason = _sanitize_risk_reason(
-        risk_reason,
-        "The risk level reflects the BTC move, 24h trend, and available news context.",
+        risk_reason or existing_reason,
+        fallback_reason or _fallback_risk_reason_from_message(message),
+        can_mention_news=can_mention_news,
     )
     without_existing_reason = [
         line for line in lines if not line.strip().startswith("Risk reason:")
@@ -265,9 +361,12 @@ def _ensure_risk_reason_after_level(message: str, risk_reason: str) -> str:
 def sanitize_alert_message(telegram_message: str) -> str:
     """Public sanitizer for alert messages loaded from AI output or cache."""
     sanitized = _sanitize_telegram_message(telegram_message)
+    can_mention_news = "Related news:" in sanitized
     with_risk_reason = _ensure_risk_reason_after_level(
         sanitized,
-        "The risk level reflects the BTC move, 24h trend, and available news context.",
+        "",
+        _fallback_risk_reason_from_message(sanitized),
+        can_mention_news=can_mention_news,
     )
     return _sanitize_telegram_message(with_risk_reason)
 
@@ -276,11 +375,19 @@ def _build_alert_message_with_related_news(
     structured: dict,
     price_change_percent: float,
     change_24h: float,
+    alert_threshold_percent: float | None,
 ) -> str:
-    fallback_reason = _fallback_risk_reason(
-        price_change_percent,
-        change_24h,
-        str(structured.get("news_relevance", "")).strip(),
+    news_relevance = str(structured.get("news_relevance", "")).strip()
+    related_news_section = _format_related_news_section(
+        news_relevance, structured.get("related_news")
+    )
+    can_mention_news = bool(related_news_section)
+    fallback_reason = _build_fallback_risk_reason(
+        price_change_percent=price_change_percent,
+        change_24h=change_24h,
+        alert_threshold_percent=alert_threshold_percent,
+        news_relevance=news_relevance,
+        has_related_news=can_mention_news,
     )
     telegram_message = _sanitize_telegram_message(
         str(structured.get("telegram_message", "")).strip()
@@ -288,11 +395,10 @@ def _build_alert_message_with_related_news(
     telegram_message = _ensure_risk_reason_after_level(
         telegram_message,
         str(structured.get("risk_reason", "")).strip() or fallback_reason,
+        fallback_reason,
+        can_mention_news=can_mention_news,
     )
     telegram_message = _sanitize_telegram_message(telegram_message)
-    related_news_section = _format_related_news_section(
-        str(structured.get("news_relevance", "")).strip(), structured.get("related_news")
-    )
     if not related_news_section:
         return telegram_message
     if "Related news:" in telegram_message:
@@ -373,7 +479,7 @@ def _build_alert_prompt(
 Return only minified JSON with fields severity, short_term_trend, weekly_trend,
 news_relevance, risk_level, risk_reason, market_interpretation, possible_actions,
 related_news_ids, telegram_message.
-Values: severity/risk_level low|medium|high; risk_reason one short sentence;
+Values: severity/risk_level low|medium|high; risk_reason one specific sentence;
 trends up|down|flat|unclear;
 news_relevance relevant|partly_relevant|not_relevant|unknown.
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
@@ -385,6 +491,10 @@ Risk level guidance:
 High should be rare.
 If both the short-term movement and 24h trend are small, do not use High unless the news context clearly indicates exceptional risk.
 If using High despite small price movement, risk_reason must explicitly explain why.
+risk_reason must explain why this risk_level was chosen over lower or higher levels.
+risk_reason must cite concrete alert factors: short-term move size, 24h trend, threshold crossing when relevant, and news only when news_relevance is relevant or partly_relevant.
+risk_reason must not use vague boilerplate such as "based on market data and news" or "current conditions".
+risk_reason must not mention news as a risk driver when news_relevance is not_relevant or unknown.
 related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
@@ -506,6 +616,7 @@ async def create_ai_alert_payload(
         structured,
         price_change_percent,
         change_24h,
+        alert_threshold_percent,
     )
     if not _is_structured_alert_message(plain_message):
         plain_message = build_fallback_alert_message(
