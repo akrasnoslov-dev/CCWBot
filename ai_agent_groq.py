@@ -217,6 +217,44 @@ def build_html_alert_message(plain_message: str, related_news_links: list[dict])
     return "\n".join(escaped_lines[: header_index + 1] + html_lines + escaped_lines[end_index:])
 
 
+def _build_alert_prompt(
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    alert_threshold_percent: float | None,
+    check_interval_seconds: int | None,
+    news_text: str,
+) -> str:
+    return f"""
+Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids, telegram_message.
+Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
+Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
+telegram_message must be multi-line, section-based, and never a dense paragraph.
+related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
+Set related_news_ids to [] when news_relevance is not_relevant or unknown.
+Use this exact style and labels:
+🚨 BTC movement alert
+
+Price: $...
+Since last check: ...% in ... sec
+24h trend: ...%
+7d trend: ...% or unknown
+Risk level: Low|Medium|High
+
+Context:
+<1-2 short cautious sentences, including one short sentence about whether recent news appears relevant to this move>
+
+Possible action:
+<1 short cautious sentence>
+
+Not financial advice.
+Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}, threshold={alert_threshold_percent if alert_threshold_percent is not None else 'unknown'}%, interval={check_interval_seconds if check_interval_seconds is not None else 'unknown'} sec.
+News:\n{news_text}
+"""
+
+
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
     response = await groq_client.chat.completions.create(
@@ -238,47 +276,17 @@ async def create_ai_alert_message(
     check_interval_seconds: int | None = None,
 ) -> str:
     """Create BTC alert message from structured model output with safe fallback."""
-    news_text, indexed_news_items = _build_news_listing_with_ids(news_items)
-    prompt = f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids, telegram_message.
-Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
-Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
-telegram_message must be multi-line, section-based, and never a dense paragraph.
-related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
-Set related_news_ids to [] when news_relevance is not_relevant or unknown.
-Use this exact style and labels:
-🚨 BTC movement alert
-
-Price: $...
-Since last check: ...% in ... sec
-24h trend: ...%
-7d trend: ...% or unknown
-Risk level: Low|Medium|High
-
-Context:
-<1-2 short cautious sentences, including one short sentence about whether recent news appears relevant to this move>
-
-Possible action:
-<1 short cautious sentence>
-
-Not financial advice.
-Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}, threshold={alert_threshold_percent if alert_threshold_percent is not None else 'unknown'}%, interval={check_interval_seconds if check_interval_seconds is not None else 'unknown'} sec.
-News:\n{news_text}
-"""
-    structured = await _ask_json(prompt)
-    if not structured or not structured.get("telegram_message"):
-        logger.warning("AI alert fallback used due to parsing/validation failure.")
-        return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
-    structured["related_news"] = _extract_related_news_from_ids(
-        str(structured.get("news_relevance", "")).strip(),
-        structured.get("related_news_ids"),
-        indexed_news_items,
+    result = await create_ai_alert_payload(
+        previous_price,
+        current_price,
+        price_change_percent,
+        change_24h,
+        change_7d,
+        news_items,
+        alert_threshold_percent,
+        check_interval_seconds,
     )
-    telegram_message = _build_alert_message_with_related_news(structured)
-    if not _is_structured_alert_message(telegram_message):
-        logger.warning("AI alert fallback used due to non-structured telegram_message.")
-        return build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
-    return telegram_message
+    return result["plain_text"]
 
 
 async def create_ai_alert_payload(
@@ -293,32 +301,16 @@ async def create_ai_alert_payload(
 ) -> dict:
     """Create alert payload with plain text and optional HTML variant for Telegram."""
     news_text, indexed_news_items = _build_news_listing_with_ids(news_items)
-    prompt = f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend, news_relevance, risk_level, market_interpretation, possible_actions, related_news_ids, telegram_message.
-Values: severity/risk_level low|medium|high; trends up|down|flat|unclear; news_relevance relevant|partly_relevant|not_relevant|unknown.
-Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
-telegram_message must be multi-line, section-based, and never a dense paragraph.
-related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
-Set related_news_ids to [] when news_relevance is not_relevant or unknown.
-Use this exact style and labels:
-🚨 BTC movement alert
-
-Price: $...
-Since last check: ...% in ... sec
-24h trend: ...%
-7d trend: ...% or unknown
-Risk level: Low|Medium|High
-
-Context:
-<1-2 short cautious sentences, including one short sentence about whether recent news appears relevant to this move>
-
-Possible action:
-<1 short cautious sentence>
-
-Not financial advice.
-Data: previous={previous_price:.2f}, current={current_price:.2f}, move={price_change_percent:.4f}%, change24h={change_24h:.4f}%, change7d={change_7d if change_7d is not None else 'unknown'}, threshold={alert_threshold_percent if alert_threshold_percent is not None else 'unknown'}%, interval={check_interval_seconds if check_interval_seconds is not None else 'unknown'} sec.
-News:\n{news_text}
-"""
+    prompt = _build_alert_prompt(
+        previous_price,
+        current_price,
+        price_change_percent,
+        change_24h,
+        change_7d,
+        alert_threshold_percent,
+        check_interval_seconds,
+        news_text,
+    )
     structured = await _ask_json(prompt)
     if not structured or not structured.get("telegram_message"):
         plain_message = build_fallback_alert_message(previous_price, current_price, price_change_percent, change_24h, change_7d, alert_threshold_percent, check_interval_seconds)
