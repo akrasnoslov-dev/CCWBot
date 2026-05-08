@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
@@ -30,6 +31,11 @@ from config import TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from price_service import warm_up_price_cache
 
 
+def configure_event_loop() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
 def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
@@ -47,6 +53,8 @@ def register_handlers(app: Application) -> None:
 
 
 def main():
+    configure_event_loop()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
