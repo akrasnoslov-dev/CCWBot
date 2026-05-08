@@ -1,7 +1,9 @@
+import asyncio
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+import pytest
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.alerts import (
     AlertRecipient,
@@ -31,11 +33,17 @@ from database import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def build_session():
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(bind=engine)
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-    return SessionLocal()
+async def build_session():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    SessionLocal = async_sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+    return engine, SessionLocal()
 
 
 def test_link_key_normalizes_tracking_params():
@@ -66,10 +74,11 @@ def test_missing_link_fallback_uses_source_and_title():
     assert first.startswith("source_title:")
 
 
-def test_seen_news_insert_skips_duplicate_keys():
-    session = build_session()
+@pytest.mark.asyncio
+async def test_seen_news_insert_skips_duplicate_keys():
+    engine, session = await build_session()
     try:
-        mark_news_items_seen(
+        await mark_news_items_seen(
             session,
             [
                 {
@@ -85,15 +94,17 @@ def test_seen_news_insert_skips_duplicate_keys():
             ],
         )
 
-        assert session.query(SeenNews).count() == 1
+        assert await session.scalar(select(func.count()).select_from(SeenNews)) == 1
     finally:
-        session.close()
+        await session.close()
+        await engine.dispose()
 
 
-def test_app_settings_defaults_and_updates_are_global():
-    session = build_session()
+@pytest.mark.asyncio
+async def test_app_settings_defaults_and_updates_are_global():
+    engine, session = await build_session()
     try:
-        defaults = get_or_create_app_settings(
+        defaults = await get_or_create_app_settings(
             session,
             default_threshold=2,
             default_interval=300,
@@ -103,7 +114,7 @@ def test_app_settings_defaults_and_updates_are_global():
             "automatic_check_interval_seconds": 300,
         }
 
-        updated = update_app_settings(
+        updated = await update_app_settings(
             session,
             default_threshold=2,
             default_interval=300,
@@ -115,20 +126,22 @@ def test_app_settings_defaults_and_updates_are_global():
             "automatic_check_interval_seconds": 600,
         }
 
-        reloaded = get_or_create_app_settings(
+        reloaded = await get_or_create_app_settings(
             session,
             default_threshold=2,
             default_interval=300,
         )
         assert reloaded == updated
     finally:
-        session.close()
+        await session.close()
+        await engine.dispose()
 
 
-def test_market_event_helpers_create_and_reuse_event_key():
-    session = build_session()
+@pytest.mark.asyncio
+async def test_market_event_helpers_create_and_reuse_event_key():
+    engine, session = await build_session()
     try:
-        first = get_or_create_market_event(
+        first = await get_or_create_market_event(
             session,
             symbol="btc",
             event_type="price_movement",
@@ -139,7 +152,7 @@ def test_market_event_helpers_create_and_reuse_event_key():
             last_24h_change=2.4,
             last_7d_change=6.1,
         )
-        second = get_or_create_market_event(
+        second = await get_or_create_market_event(
             session,
             symbol="BTC",
             event_type="price_movement",
@@ -150,17 +163,19 @@ def test_market_event_helpers_create_and_reuse_event_key():
 
         assert first.id == second.id
         assert first.symbol == "BTC"
-        assert session.query(MarketEvent).count() == 1
-        assert count_market_events(session, symbol="btc") == 1
-        assert get_recent_market_events(session, symbol="BTC", limit=1) == [first]
+        assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 1
+        assert await count_market_events(session, symbol="btc") == 1
+        assert await get_recent_market_events(session, symbol="BTC", limit=1) == [first]
     finally:
-        session.close()
+        await session.close()
+        await engine.dispose()
 
 
-def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
-    session = build_session()
+@pytest.mark.asyncio
+async def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
+    engine, session = await build_session()
     try:
-        market_event = get_or_create_market_event(
+        market_event = await get_or_create_market_event(
             session,
             symbol="BTC",
             event_type="price_movement",
@@ -169,7 +184,7 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
             price_change_percent=3.17,
         )
 
-        first = save_event_ai_analysis(
+        first = await save_event_ai_analysis(
             session,
             market_event_id=market_event.id,
             provider="groq",
@@ -179,7 +194,7 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
             plain_text="BTC moved quickly. Not financial advice.",
             status="completed",
         )
-        second = save_event_ai_analysis(
+        second = await save_event_ai_analysis(
             session,
             market_event_id=market_event.id,
             provider="groq",
@@ -189,17 +204,21 @@ def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
         )
 
         assert first.id == second.id
-        assert session.query(EventAiAnalysis).count() == 1
+        assert await session.scalar(select(func.count()).select_from(EventAiAnalysis)) == 1
         assert (
-            get_event_ai_analysis(session, market_event_id=market_event.id, input_hash="abc123")
+            await get_event_ai_analysis(
+                session, market_event_id=market_event.id, input_hash="abc123"
+            )
             == first
         )
     finally:
-        session.close()
+        await session.close()
+        await engine.dispose()
 
 
-def test_active_alert_recipients_use_active_users_with_chat_ids():
-    session = build_session()
+@pytest.mark.asyncio
+async def test_active_alert_recipients_use_active_users_with_chat_ids():
+    engine, session = await build_session()
     try:
         session.add_all(
             [
@@ -229,48 +248,53 @@ def test_active_alert_recipients_use_active_users_with_chat_ids():
                 ),
             ]
         )
-        session.commit()
+        await session.commit()
 
-        recipients = get_active_users_with_chat_ids(session)
+        recipients = await get_active_users_with_chat_ids(session)
 
         assert [recipient.telegram_chat_id for recipient in recipients] == [2001, 2002]
         assert [recipient.role for recipient in recipients] == ["admin", "user"]
     finally:
-        session.close()
+        await session.close()
+        await engine.dispose()
 
 
-def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
+@pytest.mark.asyncio
+async def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
     class UserRow:
         def __init__(self, user_id, telegram_chat_id):
             self.id = user_id
             self.telegram_chat_id = telegram_chat_id
 
     class SessionContext:
-        def __enter__(self):
+        async def __aenter__(self):
             return object()
 
-        def __exit__(self, exc_type, exc_value, traceback):
+        async def __aexit__(self, exc_type, exc_value, traceback):
             return False
+
+    async def fake_get_active_users_with_chat_ids(session):
+        return [
+            UserRow(1, 2001),
+            UserRow(2, 2002),
+            UserRow(3, 2001),
+        ]
 
     monkeypatch.setattr("bot.alerts.DB_ENABLED", True)
     monkeypatch.setattr("bot.alerts.DB_SESSION_LOCAL", lambda: SessionContext())
     monkeypatch.setattr(
         "bot.alerts.get_active_users_with_chat_ids",
-        lambda session: [
-            UserRow(1, 2001),
-            UserRow(2, 2002),
-            UserRow(3, 2001),
-        ],
+        fake_get_active_users_with_chat_ids,
     )
 
-    recipients = get_alert_recipients(symbol="BTC", event_type="price_movement")
+    recipients = await get_alert_recipients(symbol="BTC", event_type="price_movement")
 
     assert recipients == [
         AlertRecipient(chat_id=2001, user_id=1),
         AlertRecipient(chat_id=2002, user_id=2),
     ]
-    assert get_alert_recipients(symbol="ETH", event_type="price_movement") == []
-    assert get_alert_recipients(symbol="BTC", event_type="daily_report") == []
+    assert await get_alert_recipients(symbol="ETH", event_type="price_movement") == []
+    assert await get_alert_recipients(symbol="BTC", event_type="daily_report") == []
 
 
 def test_price_movement_event_key_is_stable_for_same_movement():
@@ -357,15 +381,16 @@ def test_alert_ai_input_hash_uses_stable_news_identity():
     assert len(first) == 64
 
 
-def test_legacy_app_settings_table_migrates_to_global_columns():
+@pytest.mark.asyncio
+async def test_legacy_app_settings_table_migrates_to_global_columns():
     db_path = PROJECT_ROOT / "legacy_app_settings_test.sqlite"
     if db_path.exists():
         db_path.unlink()
     try:
-        database_url = f"sqlite:///{db_path.as_posix()}"
-        engine = create_engine(database_url, future=True)
-        with engine.begin() as connection:
-            connection.execute(
+        database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+        engine = create_async_engine(database_url, future=True)
+        async with engine.begin() as connection:
+            await connection.execute(
                 text(
                     "CREATE TABLE app_settings ("
                     "id INTEGER PRIMARY KEY, "
@@ -376,7 +401,7 @@ def test_legacy_app_settings_table_migrates_to_global_columns():
                     ")"
                 )
             )
-            connection.execute(
+            await connection.execute(
                 text(
                     "INSERT INTO app_settings "
                     "(setting_key, setting_value, created_at, updated_at) "
@@ -386,12 +411,12 @@ def test_legacy_app_settings_table_migrates_to_global_columns():
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 )
             )
-        engine.dispose()
+        await engine.dispose()
 
-        migrated_engine, SessionLocal = init_db(database_url)
+        migrated_engine, SessionLocal = await init_db(database_url)
         session = SessionLocal()
         try:
-            migrated = get_or_create_app_settings(
+            migrated = await get_or_create_app_settings(
                 session,
                 default_threshold=2,
                 default_interval=300,
@@ -401,8 +426,8 @@ def test_legacy_app_settings_table_migrates_to_global_columns():
                 "automatic_check_interval_seconds": 600,
             }
         finally:
-            session.close()
-            migrated_engine.dispose()
+            await session.close()
+            await migrated_engine.dispose()
     finally:
         if db_path.exists():
             db_path.unlink()
@@ -411,11 +436,11 @@ def test_legacy_app_settings_table_migrates_to_global_columns():
 if __name__ == "__main__":
     test_link_key_normalizes_tracking_params()
     test_missing_link_fallback_uses_source_and_title()
-    test_seen_news_insert_skips_duplicate_keys()
-    test_app_settings_defaults_and_updates_are_global()
-    test_market_event_helpers_create_and_reuse_event_key()
-    test_event_ai_analysis_helpers_save_and_reuse_input_hash()
+    asyncio.run(test_seen_news_insert_skips_duplicate_keys())
+    asyncio.run(test_app_settings_defaults_and_updates_are_global())
+    asyncio.run(test_market_event_helpers_create_and_reuse_event_key())
+    asyncio.run(test_event_ai_analysis_helpers_save_and_reuse_input_hash())
     test_price_movement_event_key_is_stable_for_same_movement()
     test_alert_ai_input_hash_uses_stable_news_identity()
-    test_legacy_app_settings_table_migrates_to_global_columns()
+    asyncio.run(test_legacy_app_settings_table_migrates_to_global_columns())
     print("seen_news dedup tests passed")

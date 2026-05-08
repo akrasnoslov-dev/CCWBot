@@ -7,3 +7,6 @@ ignore = ["B008"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", ".venv", "pytest-cache-files-*"]

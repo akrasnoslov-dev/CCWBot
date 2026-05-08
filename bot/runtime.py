@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 
 from config import DATABASE_URL
 from database import init_db
@@ -11,10 +12,36 @@ def log(message: str) -> None:
 
 # Optional DB bootstrap: PostgreSQL stores runtime state when configured.
 DB_ENABLED = bool(DATABASE_URL)
-DB_SESSION_LOCAL = None
 
-if DB_ENABLED:
+
+class SessionFactoryRef:
+    def __init__(self) -> None:
+        self._factory = None
+
+    def set(self, factory) -> None:
+        self._factory = factory
+
+    def __bool__(self) -> bool:
+        return self._factory is not None
+
+    def __call__(self, *args: Any, **kwargs: Any):
+        if self._factory is None:
+            raise RuntimeError("Database session factory has not been initialized.")
+        return self._factory(*args, **kwargs)
+
+
+DB_SESSION_LOCAL = SessionFactoryRef()
+DB_ENGINE = None
+
+
+async def initialize_database() -> None:
+    global DB_ENGINE
+    if not DB_ENABLED:
+        log("DATABASE_URL is not configured. Using local JSON state.")
+        return
+    if DB_SESSION_LOCAL:
+        return
+
     log("Database configured. Using PostgreSQL state.")
-    _, DB_SESSION_LOCAL = init_db(DATABASE_URL)
-else:
-    log("DATABASE_URL is not configured. Using local JSON state.")
+    DB_ENGINE, session_local = await init_db(DATABASE_URL)
+    DB_SESSION_LOCAL.set(session_local)

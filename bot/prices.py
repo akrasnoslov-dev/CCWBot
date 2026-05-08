@@ -18,9 +18,9 @@ async def send_price_message(target, symbol: str) -> None:
     checked_at = datetime.now(timezone.utc).isoformat()
 
     if resolved_symbol == DEFAULT_SYMBOL and DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
-            existing = get_price_state(session, DEFAULT_SYMBOL)
-            update_price_state(
+        async with DB_SESSION_LOCAL() as session:
+            existing = await get_price_state(session, DEFAULT_SYMBOL)
+            await update_price_state(
                 session,
                 symbol=DEFAULT_SYMBOL,
                 last_price=coin_price,

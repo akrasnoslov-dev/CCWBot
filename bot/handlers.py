@@ -34,8 +34,8 @@ _user_last_price_call: dict[int, float] = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    is_admin = is_admin_update(update)
+    await sync_user_from_update(update)
+    is_admin = await is_admin_update(update)
     message = (
         "Hi! I’m CCWBot 🚀\n\n"
         "I monitor crypto prices and send automatic BTC alerts.\n\n"
@@ -49,45 +49,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
     user_id_value = update.effective_user.id if update.effective_user else "unknown"
     await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
 
 
 async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
     await send_daily_report_message(update.message)
 
 
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
     await send_weekly_report_message(update.message)
 
 
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
     await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
 
 
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    if not is_admin_update(update):
+    await sync_user_from_update(update)
+    if not await is_admin_update(update):
         await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
         return
     await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
 
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    if not is_admin_update(update):
+    await sync_user_from_update(update)
+    if not await is_admin_update(update):
         await update.message.reply_text("Sorry, only the bot admin can access settings.")
         return
     await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
 
 
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    if not is_admin_update(update):
+    await sync_user_from_update(update)
+    if not await is_admin_update(update):
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
@@ -106,13 +106,13 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Threshold must be greater than 0.")
         return
 
-    save_threshold_setting(threshold)
+    await save_threshold_setting(threshold)
     await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
 
 
 async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    if not is_admin_update(update):
+    await sync_user_from_update(update)
+    if not await is_admin_update(update):
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
     if not context.args:
@@ -131,7 +131,7 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Interval must be greater than 0.")
         return
 
-    save_interval_setting(interval)
+    await save_interval_setting(interval)
     schedule_automatic_btc_check(context.application, interval)
     await update.message.reply_text(
         f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
@@ -139,7 +139,7 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
     try:
         user_id_value = update.effective_user.id if update.effective_user else None
         now = time.monotonic()
@@ -177,13 +177,13 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sync_user_from_update(update)
-    if not is_admin_update(update):
+    await sync_user_from_update(update)
+    if not await is_admin_update(update):
         await update.message.reply_text("Sorry, only the bot admin can view status.")
         return
     if DB_ENABLED and DB_SESSION_LOCAL:
-        with DB_SESSION_LOCAL() as session:
-            btc_state = get_price_state(session, DEFAULT_SYMBOL)
+        async with DB_SESSION_LOCAL() as session:
+            btc_state = await get_price_state(session, DEFAULT_SYMBOL)
         if btc_state is None:
             await update.message.reply_text(
                 "Status: running ✅\n\nNo BTC price has been saved yet."
@@ -216,10 +216,10 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data or ""
-    sync_user_from_update(update)
+    await sync_user_from_update(update)
 
     try:
-        if data.startswith("settings:") and not is_admin_user(
+        if data.startswith("settings:") and not await is_admin_user(
             query.from_user.id if query.from_user else None
         ):
             await query.answer("Sorry, only the bot admin can change settings.")
@@ -239,7 +239,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data == "settings:current":
             if DB_ENABLED and DB_SESSION_LOCAL:
-                alert_settings = get_db_alert_settings()
+                alert_settings = await get_db_alert_settings()
             else:
                 state = load_state()
                 alert_settings = get_state_alert_settings(state)
@@ -262,12 +262,12 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data.startswith("settings:set_threshold:"):
             threshold = float(data.rsplit(":", maxsplit=1)[1])
-            save_threshold_setting(threshold)
+            await save_threshold_setting(threshold)
             await query.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
-            save_interval_setting(interval)
+            await save_interval_setting(interval)
             schedule_automatic_btc_check(context.application, interval)
             await query.message.reply_text(
                 f"Automatic BTC check interval updated to {interval} seconds ✅ "

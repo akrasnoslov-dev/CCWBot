@@ -78,6 +78,7 @@ cp .env.example .env
 
 Then fill `.env` and run:
 ```bash
+alembic upgrade head
 python main.py
 ```
 
@@ -112,6 +113,21 @@ Use `/userid` in a private chat with the bot.
 - Non-DB mode keeps using the local `state.json` fallback and existing local behaviour.
 - You can inspect these tables with DBeaver when PostgreSQL is running.
 
+## Database migrations
+CCWBot uses Alembic for PostgreSQL schema changes.
+
+For local database setup or after pulling schema changes, run:
+```bash
+alembic upgrade head
+```
+
+The bot also runs migrations during database startup, and the Docker Compose bot service runs:
+```bash
+alembic upgrade head && python main.py
+```
+
+If an existing PostgreSQL volume was created before Alembic, the initial migration upgrades the known legacy `app_settings` and `alerts` layouts in place. No volume recreation is expected for this migration.
+
 ## Current limitations
 - Automatic monitoring targets BTC only.
 - JSON fallback is local-file persistence (single-instance oriented).
@@ -133,6 +149,7 @@ Use `/userid` in a private chat with the bot.
 3. Add `DATABASE_URL` to your `.env` (see `.env.example`).
 4. Run the bot:
    ```bash
+   alembic upgrade head
    python main.py
    ```
 
