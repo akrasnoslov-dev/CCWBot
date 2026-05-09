@@ -47,6 +47,8 @@ def configure_logging() -> None:
     )
     logging.getLogger("alembic").setLevel(logging.WARNING)
     logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
+    logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def get_stop_signals() -> tuple[signal.Signals, ...] | None:
