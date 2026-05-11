@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from telegram import InlineKeyboardMarkup, Message, Update
+from telegram.error import NetworkError, TimedOut
 
 from bot.keyboards import build_watchlist_keyboard
 from bot.permissions import is_admin_update, sync_user_from_update
@@ -51,6 +52,24 @@ def _format_frequency(seconds: int) -> str:
 
 def _subscription_by_symbol(subscriptions) -> dict[str, bool]:
     return {row.symbol: bool(row.is_enabled) for row in subscriptions}
+
+
+async def _safe_reply_text(message: Message, text: str, **kwargs) -> bool:
+    try:
+        await message.reply_text(text, **kwargs)
+    except (TimedOut, NetworkError) as error:
+        log(f"Telegram reply failed for Premium/watchlist command: {type(error).__name__}")
+        return False
+    return True
+
+
+async def _safe_edit_message_text(query, *, text: str, reply_markup: InlineKeyboardMarkup) -> bool:
+    try:
+        await query.edit_message_text(text=text, reply_markup=reply_markup)
+    except (TimedOut, NetworkError) as error:
+        log(f"Telegram watchlist edit failed: {type(error).__name__}")
+        return False
+    return True
 
 
 def build_watchlist_message(user, subscriptions, now: datetime | None = None) -> tuple[str, list]:
@@ -127,7 +146,7 @@ def build_subscribe_message() -> str:
 
 
 async def _reply_db_required(message: Message) -> None:
-    await message.reply_text("Watchlist storage is temporarily unavailable.")
+    await _safe_reply_text(message, "Watchlist storage is temporarily unavailable.")
 
 
 async def _load_current_user(update: Update):
@@ -150,7 +169,7 @@ async def _load_current_user(update: Update):
 
 async def send_watchlist_message(message: Message, user, subscriptions) -> None:
     text, reply_markup = build_watchlist_render(user, subscriptions)
-    await message.reply_text(text, reply_markup=reply_markup)
+    await _safe_reply_text(message, text, reply_markup=reply_markup)
 
 
 def build_watchlist_render(
@@ -172,7 +191,7 @@ def build_watchlist_render(
 
 async def edit_watchlist_message(query, user, subscriptions) -> None:
     text, reply_markup = build_watchlist_render(user, subscriptions)
-    await query.edit_message_text(text=text, reply_markup=reply_markup)
+    await _safe_edit_message_text(query, text=text, reply_markup=reply_markup)
 
 
 async def watchlist_command(update: Update) -> None:
@@ -188,12 +207,12 @@ async def myplan_command(update: Update) -> None:
     if user is None:
         await _reply_db_required(update.message)
         return
-    await update.message.reply_text(build_plan_message(user))
+    await _safe_reply_text(update.message, build_plan_message(user))
 
 
 async def subscribe_command(update: Update) -> None:
     await sync_user_from_update(update)
-    await update.message.reply_text(build_subscribe_message())
+    await _safe_reply_text(update.message, build_subscribe_message())
 
 
 async def handle_watchlist_callback(update: Update, data: str) -> bool:
@@ -277,22 +296,22 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
 async def grant_premium_command(update: Update, args: list[str]) -> None:
     await sync_user_from_update(update)
     if not await is_admin_update(update):
-        await update.message.reply_text("Sorry, only the bot admin can grant Premium.")
+        await _safe_reply_text(update.message, "Sorry, only the bot admin can grant Premium.")
         return
     if len(args) != 2:
-        await update.message.reply_text("Usage: /grantpremium <telegram_user_id> <days>")
+        await _safe_reply_text(update.message, "Usage: /grantpremium <telegram_user_id> <days>")
         return
     try:
         telegram_user_id = int(args[0])
         days = int(args[1])
     except ValueError:
-        await update.message.reply_text("User ID and days must be whole numbers.")
+        await _safe_reply_text(update.message, "User ID and days must be whole numbers.")
         return
     if days <= 0:
-        await update.message.reply_text("Days must be greater than 0.")
+        await _safe_reply_text(update.message, "Days must be greater than 0.")
         return
     if not (DB_ENABLED and DB_SESSION_LOCAL):
-        await update.message.reply_text("Premium storage is temporarily unavailable.")
+        await _safe_reply_text(update.message, "Premium storage is temporarily unavailable.")
         return
     try:
         async with DB_SESSION_LOCAL() as session:
@@ -302,10 +321,14 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
                 days=days,
             )
     except ValueError:
-        await update.message.reply_text("User was not found. Ask them to start the bot first.")
+        await _safe_reply_text(
+            update.message,
+            "User was not found. Ask them to start the bot first.",
+        )
         return
     log(f"Granted Premium to telegram_user_id={telegram_user_id} for {days} days.")
-    await update.message.reply_text(
+    await _safe_reply_text(
+        update.message,
         f"Premium granted until {_format_date(subscription.active_until)}."
     )
 
@@ -313,24 +336,27 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
 async def revoke_premium_command(update: Update, args: list[str]) -> None:
     await sync_user_from_update(update)
     if not await is_admin_update(update):
-        await update.message.reply_text("Sorry, only the bot admin can revoke Premium.")
+        await _safe_reply_text(update.message, "Sorry, only the bot admin can revoke Premium.")
         return
     if len(args) != 1:
-        await update.message.reply_text("Usage: /revokepremium <telegram_user_id>")
+        await _safe_reply_text(update.message, "Usage: /revokepremium <telegram_user_id>")
         return
     try:
         telegram_user_id = int(args[0])
     except ValueError:
-        await update.message.reply_text("User ID must be a whole number.")
+        await _safe_reply_text(update.message, "User ID must be a whole number.")
         return
     if not (DB_ENABLED and DB_SESSION_LOCAL):
-        await update.message.reply_text("Premium storage is temporarily unavailable.")
+        await _safe_reply_text(update.message, "Premium storage is temporarily unavailable.")
         return
     try:
         async with DB_SESSION_LOCAL() as session:
             await revoke_user_premium(session, telegram_user_id=telegram_user_id)
     except ValueError:
-        await update.message.reply_text("User was not found. Ask them to start the bot first.")
+        await _safe_reply_text(
+            update.message,
+            "User was not found. Ask them to start the bot first.",
+        )
         return
     log(f"Revoked Premium for telegram_user_id={telegram_user_id}.")
-    await update.message.reply_text("Premium revoked. Saved coin choices were preserved.")
+    await _safe_reply_text(update.message, "Premium revoked. Saved coin choices were preserved.")

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from telegram.error import TimedOut
 
 from bot.keyboards import build_price_keyboard
 from bot.setup import setup_bot_commands
@@ -14,6 +15,7 @@ from bot.watchlist import (
     build_watchlist_render,
     grant_premium_command,
     handle_watchlist_callback,
+    myplan_command,
     revoke_premium_command,
 )
 from database import (
@@ -272,6 +274,11 @@ class FakeMessage:
         self.replies.append((text, kwargs))
 
 
+class TimeoutMessage:
+    async def reply_text(self, text, **kwargs):
+        raise TimedOut("Timed out")
+
+
 class FakeQuery:
     def __init__(self, telegram_user_id):
         self.from_user = SimpleNamespace(id=telegram_user_id)
@@ -379,3 +386,14 @@ async def test_frequency_callback_for_free_user_does_not_send_new_message(monkey
     finally:
         await session.close()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_myplan_reply_timeout_is_handled(monkeypatch):
+    async def fake_load_current_user(update):
+        return make_user(), []
+
+    monkeypatch.setattr("bot.watchlist._load_current_user", fake_load_current_user)
+    update = SimpleNamespace(message=TimeoutMessage())
+
+    await myplan_command(update)
