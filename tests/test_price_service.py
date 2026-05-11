@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from unittest.mock import AsyncMock
 
@@ -165,6 +166,21 @@ async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
     result = await price_service.get_coin_market_data_batch(["btc", "eth"])
 
     assert result == {"btc": {"price": 60000.0, "change_24h": 0.0, "change_7d": None}}
+
+
+@pytest.mark.asyncio
+async def test_ton_batch_fallback_success_does_not_log_warning(monkeypatch, caplog):
+    get_with_retry = AsyncMock(return_value={})
+    ton_fallback = AsyncMock(return_value={"usd": 5.0, "usd_24h_change": 1.5})
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+    monkeypatch.setattr(price_service, "_fetch_ton_fallback_coin_data", ton_fallback)
+    caplog.set_level(logging.WARNING, logger=price_service.__name__)
+
+    result = await price_service.get_coin_market_data_batch(["ton"])
+
+    assert result == {"ton": {"price": 5.0, "change_24h": 1.5, "change_7d": None}}
+    ton_fallback.assert_awaited_once()
+    assert not caplog.records
 
 
 def test_get_with_retry_returns_stale_cache_after_429_retries():

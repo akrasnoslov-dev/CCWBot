@@ -275,7 +275,7 @@ async def get_coin_market_data_batch(
     for symbol, coin_id in zip(normalized_symbols, coin_ids, strict=True):
         coin_data = data.get(coin_id)
         if coin_data is None and symbol == "ton":
-            logger.warning(
+            logger.info(
                 "CoinGecko batch response missing TON id. Attempting TON fallback. "
                 "expected_id=%s returned_keys=%s",
                 coin_id,

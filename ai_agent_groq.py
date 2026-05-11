@@ -5,12 +5,14 @@ When parsing/validation fails, callers fall back to deterministic templates.
 All prompts explicitly avoid direct financial advice.
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
 from html import escape
 
+import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
@@ -41,6 +43,41 @@ _RISK_REASON_GENERIC_RE = re.compile(
 _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|driver)\b")
 
 
+class AIGroqRateLimitError(RuntimeError):
+    """Raised when Groq refuses a request because the account is rate limited."""
+
+
+def _groq_json_mode_enabled() -> bool:
+    return os.getenv("GROQ_JSON_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _groq_json_mode_retry_plain_enabled() -> bool:
+    return os.getenv("GROQ_JSON_MODE_RETRY_PLAIN", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_groq_json_validation_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return (
+        "json_validate_failed" in message
+        or "validate json" in message
+        or "json validation" in message
+    )
+
+
+def _is_groq_rate_limit_error(error: Exception) -> bool:
+    status_code = getattr(error, "status_code", None)
+    response = getattr(error, "response", None)
+    if status_code == 429 or getattr(response, "status_code", None) == 429:
+        return True
+    message = str(error).lower()
+    return "429" in message or "rate limit" in message or "tokens per day" in message
+
+
 def get_groq_client() -> AsyncOpenAI:
     """Create the Groq client only when an AI call is actually needed."""
     global _groq_client
@@ -51,6 +88,8 @@ def get_groq_client() -> AsyncOpenAI:
         _groq_client = AsyncOpenAI(
             api_key=api_key,
             base_url="https://api.groq.com/openai/v1",
+            timeout=httpx.Timeout(20.0, connect=10.0),
+            max_retries=0,
         )
     return _groq_client
 
@@ -111,6 +150,36 @@ def build_fallback_alert_message(
         "Monitor for continuation; no immediate action required.\n\n"
         "Not financial advice."
     )
+
+
+def _build_fallback_alert_payload(
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    alert_threshold_percent: float | None,
+    check_interval_seconds: int | None,
+    symbol: str,
+    coin_name: str,
+    *,
+    rate_limited: bool = False,
+) -> dict:
+    plain_message = build_fallback_alert_message(
+        previous_price,
+        current_price,
+        price_change_percent,
+        change_24h,
+        change_7d,
+        alert_threshold_percent,
+        check_interval_seconds,
+        symbol,
+        coin_name,
+    )
+    payload = {"plain_text": plain_message, "html_text": None}
+    if rate_limited:
+        payload["rate_limited"] = True
+    return payload
 
 
 def _is_structured_alert_message(message: str) -> bool:
@@ -414,6 +483,117 @@ def _build_alert_message_with_related_news(
     )
 
 
+def _sanitize_ai_sentence(value: str, fallback: str, *, max_chars: int = 180) -> str:
+    cleaned = " ".join(str(value or "").split())
+    cleaned = _DIRECT_ADVICE_RE.sub("review risk", cleaned)
+    cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
+    if not cleaned:
+        cleaned = fallback
+    first_sentence = re.match(r"^(.+?[.!?])(?:\s|$)", cleaned)
+    if first_sentence:
+        cleaned = first_sentence.group(1)
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[: max_chars - 1].rstrip(" ,;:") + "."
+    return cleaned.rstrip(".!?") + "."
+
+
+def _normalize_alert_structured_fields(structured: dict) -> dict | None:
+    required_fields = {
+        "news_relevance",
+        "risk_level",
+        "risk_reason",
+        "context_sentence",
+        "possible_action",
+        "related_news_ids",
+    }
+    if not required_fields.issubset(structured):
+        return None
+
+    news_relevance = str(structured.get("news_relevance", "")).strip().lower()
+    if news_relevance not in {"relevant", "partly_relevant", "not_relevant", "unknown"}:
+        return None
+
+    risk_level_input = str(structured.get("risk_level", "")).strip().lower()
+    risk_level_by_value = {"low": "Low", "medium": "Medium", "high": "High"}
+    risk_level = risk_level_by_value.get(risk_level_input)
+    if risk_level is None:
+        return None
+
+    related_news_ids = structured.get("related_news_ids")
+    if not isinstance(related_news_ids, list):
+        return None
+
+    return {
+        **structured,
+        "news_relevance": news_relevance,
+        "risk_level": risk_level,
+        "related_news_ids": related_news_ids,
+    }
+
+
+def _build_deterministic_ai_alert_message(
+    structured: dict,
+    previous_price: float,
+    current_price: float,
+    price_change_percent: float,
+    change_24h: float,
+    change_7d: float | None,
+    alert_threshold_percent: float | None,
+    check_interval_seconds: int | None,
+    symbol: str,
+    coin_name: str,
+) -> str:
+    related_news_section = _format_related_news_section(
+        str(structured.get("news_relevance", "")).strip(),
+        structured.get("related_news"),
+    )
+    can_mention_news = bool(related_news_section)
+    fallback_reason = _build_fallback_risk_reason(
+        price_change_percent=price_change_percent,
+        change_24h=change_24h,
+        alert_threshold_percent=alert_threshold_percent,
+        news_relevance=str(structured.get("news_relevance", "")).strip(),
+        has_related_news=can_mention_news,
+    )
+    risk_reason = _sanitize_risk_reason(
+        str(structured.get("risk_reason", "")),
+        fallback_reason,
+        can_mention_news=can_mention_news,
+    )
+    context_sentence = _sanitize_ai_sentence(
+        str(structured.get("context_sentence", "")),
+        (
+            f"Short-term {coin_name} movement is notable while broader market context "
+            "remains uncertain."
+        ),
+        max_chars=220,
+    )
+    possible_action = _sanitize_ai_sentence(
+        str(structured.get("possible_action", "")),
+        "Monitor for continuation; no immediate action required.",
+        max_chars=160,
+    )
+    interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
+    weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
+    related_news_text = f"\n\n{related_news_section}" if related_news_section else ""
+    message = (
+        f"🚨 {symbol.upper()} movement alert\n\n"
+        f"Price: ${current_price:,.2f}\n"
+        f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
+        f"24h trend: {change_24h:+.2f}%\n"
+        f"{weekly_trend_line}"
+        f"Risk level: {structured['risk_level']}\n"
+        f"Risk reason: {risk_reason}\n\n"
+        "Context:\n"
+        f"{context_sentence}"
+        f"{related_news_text}\n\n"
+        "Possible action:\n"
+        f"{possible_action}\n\n"
+        "Not financial advice."
+    )
+    return _sanitize_telegram_message(message)
+
+
 def _extract_related_news_with_links(
     news_relevance: str, related_news: list[dict] | None
 ) -> list[dict]:
@@ -483,14 +663,21 @@ def _build_alert_prompt(
     threshold_text = alert_threshold_percent if alert_threshold_percent is not None else "unknown"
     interval_text = check_interval_seconds if check_interval_seconds is not None else "unknown"
     return f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend,
-news_relevance, risk_level, risk_reason, market_interpretation, possible_actions,
-related_news_ids, telegram_message.
-Values: severity/risk_level low|medium|high; risk_reason one specific sentence;
-trends up|down|flat|unclear;
-news_relevance relevant|partly_relevant|not_relevant|unknown.
+Return one valid JSON object only.
+Do not use Markdown.
+Do not wrap in code fences.
+Do not include text before or after JSON.
+All string values must be valid JSON strings.
+
+Required JSON fields:
+- news_relevance: "relevant", "partly_relevant", "not_relevant", or "unknown"
+- risk_level: "Low", "Medium", or "High"
+- risk_reason: one short specific sentence
+- context_sentence: one short cautious sentence
+- possible_action: one short cautious sentence
+- related_news_ids: an array with up to 2 numeric IDs from the News list
+
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
-telegram_message must be multi-line, section-based, and never a dense paragraph.
 Risk level guidance:
 - Low: small price movement, calm 24h trend, no clearly relevant news.
 - Medium: moderate price movement, uncertain 24h trend, or relevant news
@@ -509,7 +696,57 @@ risk_reason must not use vague boilerplate such as "based on market data and
 news" or "current conditions".
 risk_reason must not mention news as a risk driver when news_relevance is
 not_relevant or unknown.
-related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
+Set related_news_ids to [] when news_relevance is not_relevant or unknown.
+Do not include raw Data or News blocks in any field.
+
+Alert data:
+- Symbol: {display_symbol}
+- Coin name: {coin_name}
+- Previous price: ${previous_price:.2f}
+- Current price: ${current_price:.2f}
+- Since last check: {price_change_percent:.4f}%
+- 24h trend: {change_24h:.4f}%
+- 7d trend: {change_7d_text}
+- Alert threshold: {threshold_text}%
+- Check interval: {interval_text} sec
+
+News:
+{news_text}
+"""
+    return f"""
+Return one valid JSON object only.
+Do not use Markdown.
+Do not wrap in code fences.
+Do not include text before or after JSON.
+All string values must be valid JSON strings.
+
+Required JSON fields:
+- news_relevance: "relevant", "partly_relevant", "not_relevant", or "unknown"
+- risk_level: "Low", "Medium", or "High"
+- risk_reason: one short specific sentence
+- context_sentence: one short cautious sentence
+- possible_action: one short cautious sentence
+- related_news_ids: an array with up to 2 numeric IDs from the News list
+
+Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
+Risk level guidance:
+- Low: small price movement, calm 24h trend, no clearly relevant news.
+- Medium: moderate price movement, uncertain 24h trend, or relevant news
+  that may affect sentiment.
+- High: strong price movement, sharp 24h trend, or clearly exceptional news/risk.
+High should be rare.
+If both the short-term movement and 24h trend are small, do not use High
+unless the news context clearly indicates exceptional risk.
+If using High despite small price movement, risk_reason must explicitly explain why.
+risk_reason must explain why this risk_level was chosen over lower or higher levels.
+Consider {coin_name}'s coin-specific volatility when explaining risk.
+risk_reason must cite concrete alert factors: short-term move size, 24h trend,
+threshold crossing when relevant, and news only when news_relevance is
+relevant or partly_relevant.
+risk_reason must not use vague boilerplate such as "based on market data and
+news" or "current conditions".
+risk_reason must not mention news as a risk driver when news_relevance is
+not_relevant or unknown.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
 telegram_message must include both:
@@ -531,10 +768,20 @@ Possible action:
 <1 short cautious sentence>
 
 Not financial advice.
-Data: previous={previous_price:.2f}, current={current_price:.2f},
-move={price_change_percent:.4f}%, change24h={change_24h:.4f}%,
-change7d={change_7d_text}, threshold={threshold_text}%, interval={interval_text} sec.
-News:\n{news_text}
+
+Alert data:
+- Symbol: {display_symbol}
+- Coin name: {coin_name}
+- Previous price: ${previous_price:.2f}
+- Current price: ${current_price:.2f}
+- Since last check: {price_change_percent:.4f}%
+- 24h trend: {change_24h:.4f}%
+- 7d trend: {change_7d_text}
+- Alert threshold: {threshold_text}%
+- Check interval: {interval_text} sec
+
+News:
+{news_text}
 """
 
 
@@ -548,14 +795,44 @@ def _build_news_text(news_items: list[dict] | None) -> str:
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
     client = get_groq_client()
-    response = await client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
+    request_kwargs = {
+        "model": GROQ_MODEL,
+        "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        temperature=0.2,
-    )
+        "temperature": 0.0,
+        "max_tokens": 450,
+    }
+    json_mode_enabled = _groq_json_mode_enabled()
+    if json_mode_enabled:
+        request_kwargs["response_format"] = {"type": "json_object"}
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**request_kwargs),
+            timeout=15,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        if not json_mode_enabled or not _is_groq_json_validation_error(error):
+            raise
+        if not _groq_json_mode_retry_plain_enabled():
+            logger.warning("Groq JSON mode failed; using deterministic fallback.")
+            return None
+        logger.warning("Groq JSON mode failed; retrying once without response_format.")
+        retry_kwargs = dict(request_kwargs)
+        retry_kwargs.pop("response_format", None)
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(**retry_kwargs),
+                timeout=15,
+            )
+        except Exception as retry_error:
+            if _is_groq_rate_limit_error(retry_error):
+                raise AIGroqRateLimitError(str(retry_error)) from retry_error
+            raise
     return _parse_json(response.choices[0].message.content)
 
 
@@ -615,11 +892,29 @@ async def create_ai_alert_payload(
     )
     try:
         structured = await _ask_json(prompt)
+    except AIGroqRateLimitError as error:
+        logger.warning(
+            "AI alert generation rate limited; using fallback alert message. error=%s",
+            error,
+        )
+        return _build_fallback_alert_payload(
+            previous_price,
+            current_price,
+            price_change_percent,
+            change_24h,
+            change_7d,
+            alert_threshold_percent,
+            check_interval_seconds,
+            symbol,
+            coin_name,
+            rate_limited=True,
+        )
     except Exception as error:
         logger.warning("AI alert generation failed; using fallback alert message. error=%s", error)
         structured = None
-    if not structured or not structured.get("telegram_message"):
-        plain_message = build_fallback_alert_message(
+    structured = _normalize_alert_structured_fields(structured or {})
+    if not structured:
+        return _build_fallback_alert_payload(
             previous_price,
             current_price,
             price_change_percent,
@@ -630,20 +925,25 @@ async def create_ai_alert_payload(
             symbol,
             coin_name,
         )
-        return {"plain_text": plain_message, "html_text": None}
     structured["related_news"] = _extract_related_news_from_ids(
         str(structured.get("news_relevance", "")).strip(),
         structured.get("related_news_ids"),
         indexed_news_items,
     )
-    plain_message = _build_alert_message_with_related_news(
+    plain_message = _build_deterministic_ai_alert_message(
         structured,
+        previous_price,
+        current_price,
         price_change_percent,
         change_24h,
+        change_7d,
         alert_threshold_percent,
+        check_interval_seconds,
+        symbol,
+        coin_name,
     )
     if not _is_structured_alert_message(plain_message):
-        plain_message = build_fallback_alert_message(
+        return _build_fallback_alert_payload(
             previous_price,
             current_price,
             price_change_percent,
@@ -654,7 +954,6 @@ async def create_ai_alert_payload(
             symbol,
             coin_name,
         )
-        return {"plain_text": plain_message, "html_text": None}
     related_news_links = _extract_related_news_with_links(
         str(structured.get("news_relevance", "")).strip(),
         structured.get("related_news"),

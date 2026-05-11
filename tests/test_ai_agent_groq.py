@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import ai_agent_groq
 
@@ -39,6 +40,21 @@ Monitor for continuation; no immediate action required.
 
 Not financial advice."""
 VALID_TELEGRAM_MESSAGE = VALID_TELEGRAM_MESSAGE.format(risk_reason=VALID_RISK_REASON)
+
+
+def valid_compact_alert_response(**overrides):
+    response = {
+        "news_relevance": "partly_relevant",
+        "risk_level": "Medium",
+        "risk_reason": VALID_RISK_REASON,
+        "context_sentence": (
+            "Short-term movement is notable and recent news appears partly relevant."
+        ),
+        "possible_action": "Monitor for continuation; no immediate action required.",
+        "related_news_ids": [1],
+    }
+    response.update(overrides)
+    return response
 
 
 def test_parse_json_valid():
@@ -126,6 +142,253 @@ def test_create_ai_alert_payload_uses_fallback_without_groq_api_key(monkeypatch)
     assert result == {"plain_text": expected_fallback, "html_text": None}
 
 
+def test_ask_json_mode_success_returns_parsed_payload(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("GROQ_JSON_MODE", "true")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result == {"risk_level": "Medium"}
+    assert captured_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_ask_json_requests_json_object_and_returns_none_for_invalid_json(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"telegram_message": "unterminated')
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("GROQ_JSON_MODE", "true")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result is None
+    assert captured_kwargs["temperature"] == 0.0
+    assert captured_kwargs["max_tokens"] == 450
+    assert captured_kwargs["response_format"] == {"type": "json_object"}
+
+
+def test_ask_json_omits_response_format_when_json_mode_disabled(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("GROQ_JSON_MODE", "false")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result == {"risk_level": "Medium"}
+    assert "response_format" not in captured_kwargs
+
+
+def test_ask_json_validation_failure_retries_without_response_format(monkeypatch):
+    request_kwargs = []
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            request_kwargs.append(kwargs)
+            if len(request_kwargs) == 1:
+                raise RuntimeError("Failed to validate JSON. Please adjust your prompt.")
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("GROQ_JSON_MODE", "true")
+    monkeypatch.setenv("GROQ_JSON_MODE_RETRY_PLAIN", "true")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result == {"risk_level": "Medium"}
+    assert request_kwargs[0]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in request_kwargs[1]
+
+
+def test_ask_json_validation_failure_returns_none_when_plain_retry_disabled(monkeypatch):
+    request_kwargs = []
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            request_kwargs.append(kwargs)
+            raise RuntimeError("Failed to validate JSON. Please adjust your prompt.")
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setenv("GROQ_JSON_MODE", "true")
+    monkeypatch.setenv("GROQ_JSON_MODE_RETRY_PLAIN", "false")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result is None
+    assert len(request_kwargs) == 1
+
+
+def test_ask_json_uses_hard_15_second_timeout(monkeypatch):
+    captured_timeout = None
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
+            )
+
+    async def fake_wait_for(awaitable, timeout):
+        nonlocal captured_timeout
+        captured_timeout = timeout
+        return await awaitable
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    monkeypatch.setattr(ai_agent_groq.asyncio, "wait_for", fake_wait_for)
+
+    result = asyncio.run(ai_agent_groq._ask_json("prompt"))
+
+    assert result == {"risk_level": "Medium"}
+    assert captured_timeout == 15
+
+
+def test_create_ai_alert_payload_uses_fallback_when_json_mode_fails(monkeypatch):
+    async def fake_ask_json(prompt):
+        return None
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+    expected_fallback = ai_agent_groq.build_fallback_alert_message(
+        ALERT_ARGS["previous_price"],
+        ALERT_ARGS["current_price"],
+        ALERT_ARGS["price_change_percent"],
+        ALERT_ARGS["change_24h"],
+        ALERT_ARGS["change_7d"],
+        ALERT_ARGS["alert_threshold_percent"],
+        ALERT_ARGS["check_interval_seconds"],
+    )
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+
+    assert result == {"plain_text": expected_fallback, "html_text": None}
+
+
+def test_compact_json_success_builds_valid_telegram_alert(monkeypatch):
+    async def fake_ask_json(prompt):
+        return valid_compact_alert_response()
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+    message = result["plain_text"]
+
+    assert "BTC movement alert" in message
+    assert "Price: $102,500.00" in message
+    assert "Since last check: +2.50% in 300 sec" in message
+    assert "24h trend: +3.10%" in message
+    assert "7d trend: +5.20%" in message
+    assert "Risk level: Medium" in message
+    assert "Risk reason: Medium because the short-term move is notable" in message
+    assert "Context:" in message
+    assert "Possible action:" in message
+    assert "Related news:" in message
+    assert "Not financial advice." in message
+    assert "telegram_message" not in message
+
+
+def test_create_ai_alert_payload_uses_fallback_when_groq_times_out(monkeypatch):
+    async def fake_ask_json(prompt):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+    expected_fallback = ai_agent_groq.build_fallback_alert_message(
+        ALERT_ARGS["previous_price"],
+        ALERT_ARGS["current_price"],
+        ALERT_ARGS["price_change_percent"],
+        ALERT_ARGS["change_24h"],
+        ALERT_ARGS["change_7d"],
+        ALERT_ARGS["alert_threshold_percent"],
+        ALERT_ARGS["check_interval_seconds"],
+    )
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+
+    assert result == {"plain_text": expected_fallback, "html_text": None}
+
+
+def test_create_ai_alert_payload_marks_groq_rate_limit_fallback(monkeypatch):
+    async def fake_ask_json(prompt):
+        raise ai_agent_groq.AIGroqRateLimitError("Rate limit reached: 429 tokens per day")
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+
+    result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
+
+    assert result["rate_limited"] is True
+    assert "BTC movement alert" in result["plain_text"]
+    assert result["html_text"] is None
+
+
+def test_alert_prompt_is_simplified_and_keeps_market_context():
+    news_text, _ = ai_agent_groq._build_news_listing_with_ids(ALERT_ARGS["news_items"])
+
+    prompt = ai_agent_groq._build_alert_prompt(
+        ALERT_ARGS["previous_price"],
+        ALERT_ARGS["current_price"],
+        ALERT_ARGS["price_change_percent"],
+        ALERT_ARGS["change_24h"],
+        ALERT_ARGS["change_7d"],
+        ALERT_ARGS["alert_threshold_percent"],
+        ALERT_ARGS["check_interval_seconds"],
+        news_text,
+        symbol="BTC",
+        coin_name="Bitcoin",
+    )
+
+    assert "Return one valid JSON object only." in prompt
+    assert "news_relevance" in prompt
+    assert "risk_level" in prompt
+    assert "risk_reason" in prompt
+    assert "context_sentence" in prompt
+    assert "possible_action" in prompt
+    assert "related_news_ids" in prompt
+    assert "telegram_message" not in prompt
+    assert "severity" not in prompt
+    assert "short_term_trend" not in prompt
+    assert "weekly_trend" not in prompt
+    assert "market_interpretation" not in prompt
+    assert "possible_actions" not in prompt
+    assert "Symbol: BTC" in prompt
+    assert "Since last check: 2.5000%" in prompt
+    assert "24h trend: 3.1000%" in prompt
+    assert "7d trend: 5.2000%" in prompt
+    assert "Alert threshold: 2.0%" in prompt
+    assert "Check interval: 300 sec" in prompt
+    assert "[1] ETF inflows rise | Example News | https://example.com/etf" in prompt
+
+
 def test_is_structured_alert_message_returns_true_for_valid():
     assert ai_agent_groq._is_structured_alert_message(VALID_TELEGRAM_MESSAGE) is True
 
@@ -136,12 +399,7 @@ def test_is_structured_alert_message_returns_false_for_plain_text():
 
 def test_create_ai_alert_message_returns_string(monkeypatch):
     async def fake_ask_json(prompt):
-        return {
-            "news_relevance": "partly_relevant",
-            "risk_reason": VALID_RISK_REASON,
-            "related_news_ids": [1],
-            "telegram_message": VALID_TELEGRAM_MESSAGE,
-        }
+        return valid_compact_alert_response()
 
     monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
 
@@ -153,12 +411,7 @@ def test_create_ai_alert_message_returns_string(monkeypatch):
 
 def test_create_ai_alert_payload_returns_dict_with_plain_text(monkeypatch):
     async def fake_ask_json(prompt):
-        return {
-            "news_relevance": "partly_relevant",
-            "risk_reason": VALID_RISK_REASON,
-            "related_news_ids": [1],
-            "telegram_message": VALID_TELEGRAM_MESSAGE,
-        }
+        return valid_compact_alert_response()
 
     monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
 
@@ -251,26 +504,14 @@ def test_fallback_risk_reason_for_small_move_uses_threshold_without_news():
 
 def test_generic_or_news_inconsistent_risk_reason_is_replaced(monkeypatch):
     async def fake_ask_json(prompt):
-        return {
-            "news_relevance": "not_relevant",
-            "risk_reason": "Based on market data and news.",
-            "related_news_ids": [],
-            "telegram_message": """BTC movement alert
-
-Price: $100,051.10
-Since last check: +0.05% in 60 sec
-24h trend: +0.05%
-Risk level: Medium
-Risk reason: The risk level reflects the BTC move, 24h trend, and available news context.
-
-Context:
-The move is small, and recent news does not appear to be a clear driver.
-
-Possible action:
-Monitor for continuation; no immediate action required.
-
-Not financial advice.""",
-        }
+        return valid_compact_alert_response(
+            news_relevance="not_relevant",
+            risk_reason="Based on market data and news.",
+            related_news_ids=[],
+            context_sentence=(
+                "The move is small, and recent news does not appear to be a clear driver."
+            ),
+        )
 
     monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
     args = {
@@ -299,12 +540,7 @@ Not financial advice.""",
 
 def test_related_news_reason_is_allowed_only_when_related_news_is_included(monkeypatch):
     async def fake_ask_json(prompt):
-        return {
-            "news_relevance": "partly_relevant",
-            "risk_reason": VALID_RISK_REASON,
-            "related_news_ids": [1],
-            "telegram_message": VALID_TELEGRAM_MESSAGE,
-        }
+        return valid_compact_alert_response()
 
     monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
 

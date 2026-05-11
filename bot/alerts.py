@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
+from time import perf_counter
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
@@ -363,6 +364,7 @@ async def _get_or_create_event_ai_analysis(
     change_7d: float | None,
     news_items: list[dict],
     alert_settings: dict,
+    force_fallback: bool = False,
 ) -> tuple[dict, int | None]:
     """Create or reuse the single AI analysis for one market event.
 
@@ -421,24 +423,10 @@ async def _get_or_create_event_ai_analysis(
     provider = "groq"
     model = GROQ_MODEL
     error_message = None
-    try:
-        alert_payload = await create_ai_alert_payload(
-            previous_price,
-            current_price,
-            price_change_percent,
-            change_24h,
-            change_7d,
-            news_items,
-            alert_threshold_percent=alert_settings["price_move_alert_percent"],
-            check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
-            symbol=normalize_symbol(symbol).upper(),
-            coin_name=_coin_name(symbol),
-        )
-    except Exception as error:
-        log(f"AI alert generation failed: {error}")
+    if force_fallback:
         provider = "fallback"
         model = "deterministic"
-        error_message = str(error)
+        error_message = "AI disabled for this automatic check cycle."
         plain_message = build_fallback_alert_message(
             previous_price=previous_price,
             current_price=current_price,
@@ -451,6 +439,41 @@ async def _get_or_create_event_ai_analysis(
             coin_name=_coin_name(symbol),
         )
         alert_payload = {"plain_text": plain_message, "html_text": None}
+    else:
+        try:
+            alert_payload = await create_ai_alert_payload(
+                previous_price,
+                current_price,
+                price_change_percent,
+                change_24h,
+                change_7d,
+                news_items,
+                alert_threshold_percent=alert_settings["price_move_alert_percent"],
+                check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                symbol=normalize_symbol(symbol).upper(),
+                coin_name=_coin_name(symbol),
+            )
+        except Exception as error:
+            log(f"AI alert generation failed: {error}")
+            provider = "fallback"
+            model = "deterministic"
+            error_message = str(error)
+            plain_message = build_fallback_alert_message(
+                previous_price=previous_price,
+                current_price=current_price,
+                price_change_percent=price_change_percent,
+                change_24h=change_24h,
+                change_7d=change_7d,
+                alert_threshold_percent=alert_settings["price_move_alert_percent"],
+                check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                symbol=normalize_symbol(symbol).upper(),
+                coin_name=_coin_name(symbol),
+            )
+            alert_payload = {"plain_text": plain_message, "html_text": None}
+    if alert_payload.get("rate_limited"):
+        provider = "fallback"
+        model = "deterministic"
+        error_message = "Groq rate limit reached."
 
     event_ai_analysis_id = None
     if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
@@ -571,11 +594,16 @@ async def _deliver_market_event_alert(
     alert_payload: dict,
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
+    recipients: list[AlertRecipient] | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _sanitize_alert_payload(alert_payload)
     normalized_symbol = normalize_symbol(symbol)
-    recipients = await get_alert_recipients(symbol=normalized_symbol, event_type="price_movement")
+    if recipients is None:
+        recipients = await get_alert_recipients(
+            symbol=normalized_symbol,
+            event_type="price_movement",
+        )
     if not recipients:
         log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
         return False
@@ -642,6 +670,7 @@ def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> Non
         interval=interval_seconds,
         first=5,
         name=AUTOMATIC_BTC_CHECK_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
     )
     log(f"Automatic price check interval: {interval_seconds} seconds")
 
@@ -719,6 +748,7 @@ def _parse_state_alert_at(value: str | None) -> datetime | None:
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
+    cycle_started_at = perf_counter()
     logger.debug("Running automatic price check.")
     try:
         db_active = DB_ENABLED and DB_SESSION_LOCAL
@@ -743,6 +773,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         raw_news_items: list[dict] | None = None
         used_news_items: list[dict] = []
         delivered_symbols = 0
+        ai_disabled_for_cycle = False
         for symbol in symbols_to_check:
             symbol_data = market_data.get(symbol)
             if not symbol_data:
@@ -791,6 +822,25 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 price_change_percent=price_change_percent,
                 threshold_percent=alert_settings["price_move_alert_percent"],
             ):
+                recipients = await get_alert_recipients(
+                    symbol=symbol,
+                    event_type="price_movement",
+                    now=now,
+                )
+                if not recipients:
+                    log(
+                        f"No eligible recipients for {symbol.upper()} price movement alert. "
+                        "Skipping AI analysis."
+                    )
+                    await _save_price_state(
+                        symbol=symbol,
+                        state=state,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        checked_at=checked_at,
+                        last_alert_at=None,
+                    )
+                    continue
                 if raw_news_items is None:
                     raw_news_items = await fetch_news_context(limit=12)
                 news_items = filter_news_for_symbol(symbol, raw_news_items)
@@ -803,6 +853,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     change_24h=change_24h,
                     change_7d=change_7d if isinstance(change_7d, float) else None,
                 )
+                ai_started_at = perf_counter()
                 alert_payload, event_ai_analysis_id = await _get_or_create_event_ai_analysis(
                     symbol=symbol,
                     market_event_id=market_event_id,
@@ -813,13 +864,23 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     change_7d=change_7d if isinstance(change_7d, float) else None,
                     news_items=news_items,
                     alert_settings=alert_settings,
+                    force_fallback=ai_disabled_for_cycle,
                 )
+                logger.info(
+                    "%s AI analysis resolved in %.2f seconds.",
+                    symbol.upper(),
+                    perf_counter() - ai_started_at,
+                )
+                if alert_payload.get("rate_limited") and not ai_disabled_for_cycle:
+                    ai_disabled_for_cycle = True
+                    log("AI disabled for this cycle because Groq rate limit was reached.")
                 delivered = await _deliver_market_event_alert(
                     app,
                     symbol=symbol,
                     alert_payload=alert_payload,
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
+                    recipients=recipients,
                 )
                 if delivered:
                     delivered_symbols += 1
@@ -847,6 +908,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
         log(f"Automatic check HTTP error: {error}")
     except Exception as error:
         log(f"Automatic check error: {error}")
+    finally:
+        logger.info(
+            "Automatic price check cycle completed in %.2f seconds.",
+            perf_counter() - cycle_started_at,
+        )
 
 
 async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
