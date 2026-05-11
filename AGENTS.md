@@ -131,6 +131,27 @@ Do not auto-merge PRs, delete user work, or include generated/cache files.
 
 Never commit `.env`, `state.json`, `.venv`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`, `*.sqlite`, or database volumes.
 
+
+## Subagents policy
+Use subagents proactively for every task when their role matches the requested work.
+
+Default placement: all subagents live under `agents/*.toml`.
+
+Autoconnect rules:
+- `db_migration_guardian`: run for any task that can touch DB models, SQLAlchemy/Alembic migrations, or persistence contracts.
+- `market_pipeline_agent`: run for alert pipeline/event-analysis-delivery logic and CoinGecko/news/market data flow changes.
+- `telegram_stars_payments_agent`: run for Premium, subscriptions, Telegram Stars, grants/revokes, and billing state tasks.
+- `architecture_guardian`: run as blocking reviewer for cross-cutting refactors, risky architecture changes, or tasks affecting multiple modules.
+
+Mandatory combination:
+- For production-impacting changes, use at least one domain subagent plus `architecture_guardian`.
+
+Priority:
+1. `architecture_guardian` (blocking)
+2. Domain-specific subagent (`db_migration_guardian` / `market_pipeline_agent` / `telegram_stars_payments_agent`)
+
+If no subagent is relevant, explicitly state why in the PR description.
+
 ## PR follow-through
 After creating a PR, monitor CI when possible.
 
