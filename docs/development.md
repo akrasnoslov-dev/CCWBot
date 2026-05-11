@@ -29,4 +29,13 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
 - Local `state.json` is a fallback only and must not be committed.
 - Automatic alerts remain BTC-only.
-- Manual `/price` checks support `btc`, `eth`, `ton`, and `usdt`.
+- Manual `/price` checks support `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`,
+  `ton`, `link`, and `trx`. `usdt` is not supported.
+- `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
+  `DATABASE_URL` is configured.
+- `/subscribe` is a placeholder only. Real Telegram Stars purchase handling is not implemented
+  yet.
+- `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
+  admin-only manual Premium controls.
+- Automatic alerts remain BTC-only; saved non-BTC watchlist choices are for future delivery
+  work.

@@ -6,11 +6,14 @@ fallbacks.
 
 ## Features
 
-- Manual `/price` checks for `btc`, `eth`, `ton`, and `usdt`.
+- Manual `/price` checks for `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`, `ton`,
+  `link`, and `trx`.
 - Automatic BTC-only movement alerts delivered to all active users with chat IDs.
 - One BTC market event creates or reuses one AI analysis, then sends it to many recipients.
+- Premium-aware `/watchlist`, `/myplan`, and `/subscribe` foundation commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- Admin-only `/settings`, `/status`, and `/chatid` commands.
+- Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
+  commands.
 - Hidden `/userid` utility command.
 - Related news links from `news_service.py` data.
 - Health endpoint for runtime checks.
@@ -20,8 +23,10 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 ## Current Limitations
 
 - Automatic monitoring is BTC-only.
-- No per-user subscriptions yet.
+- Premium state and watchlist preferences are stored, but multi-coin automatic delivery is not
+  wired yet.
 - No multi-coin automatic alerts yet.
+- No Telegram Stars payment processing yet.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
 - Local `state.json` fallback is single-instance oriented.
 
@@ -29,7 +34,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 
 - `main.py` wires startup, handlers, scheduled jobs, health server, and shutdown.
 - `bot/` contains Telegram handlers, alerts, reports, permissions, keyboards, setup, and runtime helpers.
-- `database.py` defines async SQLAlchemy models and migration startup.
+- `database.py` defines async SQLAlchemy models, Premium/watchlist persistence, and migration
+  startup.
 - `alembic/` contains database migrations.
 - `price_service.py` wraps CoinGecko calls, caching, retry, and stale fallback handling.
 - `news_service.py` fetches RSS news used by news context helpers.
@@ -95,6 +101,16 @@ alembic upgrade head
 
 Docker Compose runs Alembic migrations before starting the bot service. Do not add migrations
 unless a task explicitly changes the database schema.
+
+The Premium foundation stores:
+
+- `users.alert_frequency_seconds`
+- `user_coin_subscriptions` with one lowercase symbol row per user and coin
+- `user_premium_subscriptions` for current Premium entitlement state
+
+Premium access is based primarily on `active_until > now`. Manual admin grants use
+`/grantpremium <telegram_user_id> <days>`, and revokes use `/revokepremium <telegram_user_id>`.
+Revoking Premium preserves saved coin choices.
 
 ## Docker Compose
 

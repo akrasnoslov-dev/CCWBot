@@ -1,19 +1,58 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from supported_coins import PREMIUM_ALERT_FREQUENCY_SECONDS, SUPPORTED_SYMBOLS
+
 
 def build_price_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
+    buttons = [
+        InlineKeyboardButton(symbol.upper(), callback_data=f"price:{symbol}")
+        for symbol in SUPPORTED_SYMBOLS
+    ]
+    rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    return InlineKeyboardMarkup(rows)
+
+
+def build_watchlist_keyboard(
+    *,
+    rows: list[tuple[str, bool, bool]],
+    premium_active: bool,
+    current_frequency_seconds: int,
+) -> InlineKeyboardMarkup:
+    keyboard = []
+    for symbol, enabled, unlocked in rows:
+        marker = "Disable" if enabled and unlocked else "Enable"
+        if not unlocked:
+            marker = "Locked"
+        callback_value = "false" if enabled else "true"
+        keyboard.append(
             [
-                InlineKeyboardButton("BTC", callback_data="price:btc"),
-                InlineKeyboardButton("ETH", callback_data="price:eth"),
-            ],
-            [
-                InlineKeyboardButton("TON", callback_data="price:ton"),
-                InlineKeyboardButton("USDT", callback_data="price:usdt"),
-            ],
+                InlineKeyboardButton(
+                    f"{symbol.upper()} {marker}",
+                    callback_data=f"watchlist:set:{symbol}:{callback_value}",
+                )
+            ]
+        )
+
+    if premium_active:
+        frequency_buttons = [
+            InlineKeyboardButton(
+                _frequency_label(frequency, selected=frequency == current_frequency_seconds),
+                callback_data=f"watchlist:frequency:{frequency}",
+            )
+            for frequency in PREMIUM_ALERT_FREQUENCY_SECONDS
         ]
-    )
+        keyboard.append(frequency_buttons)
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _frequency_label(seconds: int, *, selected: bool) -> str:
+    label_by_seconds = {
+        3600: "1h",
+        21600: "6h",
+        86400: "24h",
+    }
+    prefix = "* " if selected else ""
+    return f"{prefix}{label_by_seconds.get(seconds, str(seconds))}"
 
 
 def build_settings_keyboard() -> InlineKeyboardMarkup:

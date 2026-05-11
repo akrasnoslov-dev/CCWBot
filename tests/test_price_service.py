@@ -86,7 +86,22 @@ async def test_get_btc_market_data_does_not_request_unreliable_simple_price_7d(m
 @pytest.mark.asyncio
 async def test_get_coin_price_unsupported_symbol_raises_value_error():
     with pytest.raises(ValueError, match="Unsupported coin symbol"):
-        await price_service.get_coin_price("doge")
+        await price_service.get_coin_price("usdt")
+
+
+def test_coin_mapping_is_supported_top_10_without_usdt():
+    assert price_service.COIN_SYMBOL_TO_ID == {
+        "btc": "bitcoin",
+        "eth": "ethereum",
+        "sol": "solana",
+        "xrp": "ripple",
+        "bnb": "binancecoin",
+        "doge": "dogecoin",
+        "ada": "cardano",
+        "ton": "toncoin",
+        "link": "chainlink",
+        "trx": "tron",
+    }
 
 
 @pytest.mark.asyncio

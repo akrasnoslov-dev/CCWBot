@@ -16,14 +16,19 @@ from bot.handlers import (
     button_router,
     chat_id,
     daily_report,
+    grant_premium,
+    myplan,
     price,
     reports,
+    revoke_premium,
     set_interval,
     set_threshold,
     settings,
     start,
     status,
+    subscribe,
     user_id,
+    watchlist,
     weekly_report,
 )
 from bot.runtime import close_database, initialize_database, log
@@ -60,6 +65,9 @@ def get_stop_signals() -> tuple[signal.Signals, ...] | None:
 def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
+    app.add_handler(CommandHandler("watchlist", watchlist))
+    app.add_handler(CommandHandler("myplan", myplan))
+    app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("userid", user_id))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
@@ -70,6 +78,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("setthreshold", set_threshold))
     app.add_handler(CommandHandler("setcooldown", set_interval))
     app.add_handler(CommandHandler("setinterval", set_interval))
+    app.add_handler(CommandHandler("grantpremium", grant_premium))
+    app.add_handler(CommandHandler("revokepremium", revoke_premium))
     app.add_handler(CallbackQueryHandler(button_router))
 
 

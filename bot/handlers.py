@@ -27,6 +27,14 @@ from bot.settings import (
     save_interval_setting,
     save_threshold_setting,
 )
+from bot.watchlist import (
+    grant_premium_command,
+    handle_watchlist_callback,
+    myplan_command,
+    revoke_premium_command,
+    subscribe_command,
+    watchlist_command,
+)
 from database import get_price_state
 from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
 from storage import load_state
@@ -95,6 +103,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "I monitor crypto prices and send automatic BTC alerts.\n\n"
         "Use:\n"
         "/price - check crypto prices"
+        "\n/watchlist - manage alert coins"
+        "\n/myplan - show your plan"
         "\n/reports - BTC reports menu"
     )
     if is_admin:
@@ -125,6 +135,35 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await sync_user_from_update(update)
     await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
+
+
+@log_request("/watchlist")
+async def watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await watchlist_command(update)
+
+
+@log_request("/myplan")
+async def myplan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await myplan_command(update)
+
+
+@log_request("/subscribe")
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await subscribe_command(update)
+
+
+@log_request("/grantpremium")
+async def grant_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+    await grant_premium_command(update, context.args)
+
+
+@log_request("/revokepremium")
+async def revoke_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+    await revoke_premium_command(update, context.args)
 
 
 @log_request("/chatid")
@@ -302,6 +341,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("price:"):
             await send_price_message(query.message, data.split(":", maxsplit=1)[1])
             return
+        if data.startswith("watchlist:"):
+            handled = await handle_watchlist_callback(update, data)
+            if handled:
+                return
         if data == "reports:daily":
             await send_daily_report_message(query.message)
             return
