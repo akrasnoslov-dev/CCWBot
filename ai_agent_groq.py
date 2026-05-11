@@ -43,6 +43,15 @@ _RISK_REASON_GENERIC_RE = re.compile(
 _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|driver)\b")
 
 
+def _groq_json_mode_enabled() -> bool:
+    return os.getenv("GROQ_JSON_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _is_groq_json_validation_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "validate json" in message or "json validation" in message
+
+
 def get_groq_client() -> AsyncOpenAI:
     """Create the Groq client only when an AI call is actually needed."""
     global _groq_client
@@ -487,12 +496,20 @@ def _build_alert_prompt(
     threshold_text = alert_threshold_percent if alert_threshold_percent is not None else "unknown"
     interval_text = check_interval_seconds if check_interval_seconds is not None else "unknown"
     return f"""
-Return only minified JSON with fields severity, short_term_trend, weekly_trend,
-news_relevance, risk_level, risk_reason, market_interpretation, possible_actions,
-related_news_ids, telegram_message.
-Values: severity/risk_level low|medium|high; risk_reason one specific sentence;
-trends up|down|flat|unclear;
-news_relevance relevant|partly_relevant|not_relevant|unknown.
+Return one valid JSON object only.
+Do not use Markdown.
+Do not wrap in code fences.
+Do not include text before or after JSON.
+All string values must be valid JSON strings.
+Escape newlines inside telegram_message as \\n.
+
+Required JSON fields:
+- news_relevance: "relevant", "partly_relevant", "not_relevant", or "unknown"
+- risk_level: "Low", "Medium", or "High"
+- risk_reason: one short specific sentence
+- related_news_ids: an array with up to 2 numeric IDs from the News list
+- telegram_message: one formatted alert message string
+
 Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
 telegram_message must be multi-line, section-based, and never a dense paragraph.
 Risk level guidance:
@@ -513,7 +530,6 @@ risk_reason must not use vague boilerplate such as "based on market data and
 news" or "current conditions".
 risk_reason must not mention news as a risk driver when news_relevance is
 not_relevant or unknown.
-related_news_ids must be an array containing up to 2 numeric IDs from the provided News list.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
 Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
 telegram_message must include both:
@@ -535,10 +551,20 @@ Possible action:
 <1 short cautious sentence>
 
 Not financial advice.
-Data: previous={previous_price:.2f}, current={current_price:.2f},
-move={price_change_percent:.4f}%, change24h={change_24h:.4f}%,
-change7d={change_7d_text}, threshold={threshold_text}%, interval={interval_text} sec.
-News:\n{news_text}
+
+Alert data:
+- Symbol: {display_symbol}
+- Coin name: {coin_name}
+- Previous price: ${previous_price:.2f}
+- Current price: ${current_price:.2f}
+- Since last check: {price_change_percent:.4f}%
+- 24h trend: {change_24h:.4f}%
+- 7d trend: {change_7d_text}
+- Alert threshold: {threshold_text}%
+- Check interval: {interval_text} sec
+
+News:
+{news_text}
 """
 
 
@@ -552,19 +578,34 @@ def _build_news_text(news_items: list[dict] | None) -> str:
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
     client = get_groq_client()
-    response = await asyncio.wait_for(
-        client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.1,
-            max_tokens=900,
-            response_format={"type": "json_object"},
-        ),
-        timeout=25,
-    )
+    request_kwargs = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 900,
+    }
+    json_mode_enabled = _groq_json_mode_enabled()
+    if json_mode_enabled:
+        request_kwargs["response_format"] = {"type": "json_object"}
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**request_kwargs),
+            timeout=25,
+        )
+    except Exception as error:
+        if not json_mode_enabled or not _is_groq_json_validation_error(error):
+            raise
+        logger.warning("Groq JSON mode failed; retrying once without response_format.")
+        retry_kwargs = dict(request_kwargs)
+        retry_kwargs.pop("response_format", None)
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**retry_kwargs),
+            timeout=25,
+        )
     return _parse_json(response.choices[0].message.content)
 
 
