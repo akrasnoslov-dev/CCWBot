@@ -191,6 +191,7 @@ class AppSettings(Base):
 
 class PriceState(Base):
     __tablename__ = "price_state"
+    __table_args__ = (UniqueConstraint("symbol", name="uq_price_state_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
@@ -216,6 +217,14 @@ class SeenNews(Base):
 
 class Alert(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "symbol",
+            "market_event_id",
+            name="uq_alerts_user_symbol_market_event",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
@@ -379,6 +388,21 @@ async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
     """Return active users that can receive automatic Telegram alerts."""
     result = await session.scalars(
         select(User)
+        .where(User.telegram_chat_id.isnot(None))
+        .where(User.is_active.is_(True))
+        .order_by(User.id.asc())
+    )
+    return list(result.all())
+
+
+async def get_active_users_with_alert_preferences(session: AsyncSession) -> list[User]:
+    """Return active users with watchlist and Premium data loaded."""
+    result = await session.scalars(
+        select(User)
+        .options(
+            selectinload(User.coin_subscriptions),
+            selectinload(User.premium_subscription),
+        )
         .where(User.telegram_chat_id.isnot(None))
         .where(User.is_active.is_(True))
         .order_by(User.id.asc())
@@ -867,6 +891,116 @@ async def save_alert(
     return alert
 
 
+async def get_last_sent_alert_at(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+) -> datetime | None:
+    """Return latest sent delivery time for a user+symbol frequency window."""
+    return await session.scalar(
+        select(func.max(Alert.created_at))
+        .where(Alert.user_id == user_id)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.status == "sent")
+    )
+
+
+async def get_alert_delivery(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    market_event_id: int,
+) -> Alert | None:
+    return await session.scalar(
+        select(Alert)
+        .where(Alert.user_id == user_id)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.market_event_id == market_event_id)
+        .limit(1)
+    )
+
+
+async def reserve_alert_delivery(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    alert_type: str,
+    sent_to_chat_id: int,
+    market_event_id: int,
+    event_ai_analysis_id: int | None,
+    message: str,
+) -> tuple[Alert, bool]:
+    """Reserve one delivery identity before sending.
+
+    Returns (alert, created_or_retryable). Existing sent/pending rows are not
+    retryable; failed rows are moved back to pending for another attempt.
+    """
+    existing = await get_alert_delivery(
+        session,
+        user_id=user_id,
+        symbol=symbol,
+        market_event_id=market_event_id,
+    )
+    if existing:
+        if existing.status in {"sent", "pending"}:
+            return existing, False
+        existing.status = "pending"
+        existing.error_message = None
+        existing.message = message
+        existing.sent_to_chat_id = sent_to_chat_id
+        existing.event_ai_analysis_id = event_ai_analysis_id
+        await session.commit()
+        await session.refresh(existing)
+        return existing, True
+
+    alert = Alert(
+        symbol=symbol.upper(),
+        alert_type=alert_type,
+        message=message,
+        sent_to_chat_id=sent_to_chat_id,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        user_id=user_id,
+        status="pending",
+    )
+    session.add(alert)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await get_alert_delivery(
+            session,
+            user_id=user_id,
+            symbol=symbol,
+            market_event_id=market_event_id,
+        )
+        if existing is None:
+            raise
+        return existing, existing.status == "failed"
+    await session.refresh(alert)
+    return alert, True
+
+
+async def update_alert_delivery_status(
+    session: AsyncSession,
+    *,
+    alert_id: int,
+    status: str,
+    error_message: str | None = None,
+) -> Alert | None:
+    alert = await session.get(Alert, alert_id)
+    if alert is None:
+        return None
+    alert.status = status
+    alert.error_message = error_message
+    await session.commit()
+    await session.refresh(alert)
+    return alert
+
+
 async def get_or_create_market_event(
     session: AsyncSession,
     *,
@@ -918,6 +1052,22 @@ async def get_event_ai_analysis(
         select(EventAiAnalysis)
         .where(EventAiAnalysis.market_event_id == market_event_id)
         .where(EventAiAnalysis.input_hash == input_hash)
+        .limit(1)
+    )
+
+
+async def get_latest_success_event_ai_analysis(
+    session: AsyncSession,
+    *,
+    market_event_id: int,
+) -> EventAiAnalysis | None:
+    """Return any successful saved analysis for a market event."""
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.market_event_id == market_event_id)
+        .where(EventAiAnalysis.status.in_(["success", "completed"]))
+        .where(EventAiAnalysis.plain_text.isnot(None))
+        .order_by(EventAiAnalysis.id.asc())
         .limit(1)
     )
 

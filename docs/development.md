@@ -28,14 +28,16 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
 - Docker Compose starts PostgreSQL and the bot, and the bot runs Alembic migrations on startup.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
 - Local `state.json` is a fallback only and must not be committed.
-- Automatic alerts remain BTC-only.
+- Automatic alerts use global multi-coin polling. BTC is free; enabled non-BTC watchlist
+  alerts require active Premium.
 - Manual `/price` checks support `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`,
   `ton`, `link`, and `trx`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
 - `/subscribe` is a placeholder only. Real Telegram Stars purchase handling is not implemented
-  yet.
+  yet and remains planned for a later payment PR.
 - `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
   admin-only manual Premium controls.
-- Automatic alerts remain BTC-only; saved non-BTC watchlist choices are for future delivery
-  work.
+- Automatic alert threshold remains one global admin-controlled value for all coins.
+- Saved non-BTC watchlist choices remain stored when Premium expires, but non-BTC deliveries
+  are blocked until Premium is active again.

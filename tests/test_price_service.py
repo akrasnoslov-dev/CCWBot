@@ -136,6 +136,37 @@ async def test_get_coin_price_429_triggers_retry(monkeypatch):
     price_service.asyncio.sleep.assert_awaited_once_with(5)
 
 
+@pytest.mark.asyncio
+async def test_get_coin_market_data_batch_builds_supported_ids(monkeypatch):
+    get_with_retry = AsyncMock(
+        return_value={
+            "bitcoin": {"usd": 60000.0, "usd_24h_change": 1.2},
+            "ethereum": {"usd": 3000.0, "usd_24h_change": -0.5},
+        }
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_market_data_batch(["btc", "eth"])
+
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_params["ids"] == "bitcoin,ethereum"
+    assert "tether" not in requested_params["ids"]
+    assert result == {
+        "btc": {"price": 60000.0, "change_24h": 1.2, "change_7d": None},
+        "eth": {"price": 3000.0, "change_24h": -0.5, "change_7d": None},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
+    get_with_retry = AsyncMock(return_value={"bitcoin": {"usd": 60000.0}})
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_market_data_batch(["btc", "eth"])
+
+    assert result == {"btc": {"price": 60000.0, "change_24h": 0.0, "change_7d": None}}
+
+
 def test_get_with_retry_returns_stale_cache_after_429_retries():
     price_service._set_cached_price("btc", 50000.0, 1.5, cached_at=0)
     client = FakeClient(

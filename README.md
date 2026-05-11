@@ -1,15 +1,16 @@
 # CCWBot
 
 CCWBot is a Python Telegram crypto watcher bot. It provides manual crypto price checks,
-BTC reports, and automatic BTC movement alerts with Groq-backed AI context and deterministic
+BTC reports, and automatic movement alerts with Groq-backed AI context and deterministic
 fallbacks.
 
 ## Features
 
 - Manual `/price` checks for `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`, `ton`,
   `link`, and `trx`.
-- Automatic BTC-only movement alerts delivered to all active users with chat IDs.
-- One BTC market event creates or reuses one AI analysis, then sends it to many recipients.
+- Automatic movement alerts use global polling: BTC is free, while enabled non-BTC watchlist
+  alerts require active Premium.
+- One coin market event creates or reuses one AI analysis, then sends it to many recipients.
 - Premium-aware `/watchlist`, `/myplan`, and `/subscribe` foundation commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
@@ -22,10 +23,9 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 
 ## Current Limitations
 
-- Automatic monitoring is BTC-only.
-- Premium state and watchlist preferences are stored, but multi-coin automatic delivery is not
-  wired yet.
-- No multi-coin automatic alerts yet.
+- Automatic monitoring uses one global admin-controlled threshold for all supported coins.
+- Premium payment is not implemented yet; manual admin grants/revokes are the current testing
+  path.
 - No Telegram Stars payment processing yet.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
 - Local `state.json` fallback is single-instance oriented.
@@ -169,7 +169,7 @@ CI runs Ruff and the test suite on pull requests.
 ## Roadmap
 
 - Per-user subscriptions.
-- Multi-coin automatic alerts.
+- Telegram Stars payment flow.
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).
