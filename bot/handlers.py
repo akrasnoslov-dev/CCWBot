@@ -336,15 +336,15 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("Sorry, only the bot admin can change settings.")
             return
 
+        if data.startswith("watchlist:"):
+            handled = await handle_watchlist_callback(update, data)
+            if handled:
+                return
         await query.answer()
 
         if data.startswith("price:"):
             await send_price_message(query.message, data.split(":", maxsplit=1)[1])
             return
-        if data.startswith("watchlist:"):
-            handled = await handle_watchlist_callback(update, data)
-            if handled:
-                return
         if data == "reports:daily":
             await send_daily_report_message(query.message)
             return

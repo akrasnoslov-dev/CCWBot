@@ -1,6 +1,6 @@
 """premium watchlist foundation
 
-Revision ID: 0003_premium_watchlist_foundation
+Revision ID: 0003_premium_watchlist
 Revises: 0002_async_sqlalchemy_runtime
 Create Date: 2026-05-11 00:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0003_premium_watchlist_foundation"
+revision: str = "0003_premium_watchlist"
 down_revision: str | Sequence[str] | None = "0002_async_sqlalchemy_runtime"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -114,4 +114,3 @@ def downgrade() -> None:
         op.drop_table("user_coin_subscriptions")
     if "users" in tables and "alert_frequency_seconds" in _column_names("users"):
         op.drop_column("users", "alert_frequency_seconds")
-

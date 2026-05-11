@@ -4,16 +4,19 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from bot.watchlist import build_plan_message, build_watchlist_message
 from database import (
     Base,
     User,
     UserCoinSubscription,
     ensure_default_coin_subscriptions,
+    get_user_by_telegram_user_id,
     grant_user_premium,
     revoke_user_premium,
     set_user_alert_frequency,
     set_user_coin_subscription,
 )
+from premium import is_user_premium_active
 
 
 async def build_session():
@@ -128,6 +131,73 @@ async def test_grant_extends_from_max_now_or_existing_active_until():
         )
         assert second.id == first.id
         assert second.active_until == as_naive_utc(now + timedelta(days=15))
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_grant_uses_telegram_user_id_not_internal_user_id():
+    engine, session = await build_session()
+    try:
+        first_user = await create_user(session, telegram_user_id=1)
+        target_user = await create_user(session, telegram_user_id=7287293904)
+        now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+
+        subscription = await grant_user_premium(
+            session,
+            telegram_user_id=7287293904,
+            days=30,
+            now=now,
+        )
+
+        assert subscription.user_id == target_user.id
+        assert subscription.user_id != first_user.id
+        reloaded = await get_user_by_telegram_user_id(
+            session,
+            7287293904,
+            include_plan=True,
+        )
+        assert is_user_premium_active(reloaded.premium_subscription, now)
+        assert "Plan: Premium" in build_plan_message(reloaded, now)
+        subscriptions = await ensure_default_coin_subscriptions(session, user_id=target_user.id)
+        _, rows = build_watchlist_message(reloaded, subscriptions, now)
+        assert ("eth", False, True) in rows
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_grant_unknown_telegram_user_id_does_not_create_user():
+    engine, session = await build_session()
+    try:
+        with pytest.raises(ValueError, match="User not found"):
+            await grant_user_premium(
+                session,
+                telegram_user_id=7287293904,
+                days=30,
+                now=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            )
+
+        assert await session.scalar(select(User).where(User.telegram_user_id == 7287293904)) is None
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_revoke_unknown_telegram_user_id_does_not_create_user():
+    engine, session = await build_session()
+    try:
+        with pytest.raises(ValueError, match="User not found"):
+            await revoke_user_premium(
+                session,
+                telegram_user_id=7287293904,
+                now=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            )
+
+        assert await session.scalar(select(User).where(User.telegram_user_id == 7287293904)) is None
     finally:
         await session.close()
         await engine.dispose()

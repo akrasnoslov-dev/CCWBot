@@ -18,25 +18,29 @@ def build_watchlist_keyboard(
     premium_active: bool,
     current_frequency_seconds: int,
 ) -> InlineKeyboardMarkup:
-    keyboard = []
+    coin_buttons = []
     for symbol, enabled, unlocked in rows:
-        marker = "Disable" if enabled and unlocked else "Enable"
+        marker = "✅" if enabled and unlocked else "⬜"
         if not unlocked:
-            marker = "Locked"
+            marker = "🔒"
         callback_value = "false" if enabled else "true"
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    f"{symbol.upper()} {marker}",
-                    callback_data=f"watchlist:set:{symbol}:{callback_value}",
-                )
-            ]
+        coin_buttons.append(
+            InlineKeyboardButton(
+                f"{marker} {symbol.upper()}",
+                callback_data=f"watchlist:set:{symbol}:{callback_value}",
+            )
         )
+    keyboard = [
+        coin_buttons[index : index + 3] for index in range(0, len(coin_buttons), 3)
+    ]
 
     if premium_active:
         frequency_buttons = [
             InlineKeyboardButton(
-                _frequency_label(frequency, selected=frequency == current_frequency_seconds),
+                _frequency_label(
+                    frequency,
+                    selected=frequency == current_frequency_seconds,
+                ),
                 callback_data=f"watchlist:frequency:{frequency}",
             )
             for frequency in PREMIUM_ALERT_FREQUENCY_SECONDS
@@ -51,7 +55,7 @@ def _frequency_label(seconds: int, *, selected: bool) -> str:
         21600: "6h",
         86400: "24h",
     }
-    prefix = "* " if selected else ""
+    prefix = "✅ " if selected else "⬜ "
     return f"{prefix}{label_by_seconds.get(seconds, str(seconds))}"
 
 

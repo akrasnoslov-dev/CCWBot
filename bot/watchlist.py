@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from telegram import Message, Update
+from telegram import InlineKeyboardMarkup, Message, Update
 
 from bot.keyboards import build_watchlist_keyboard
 from bot.permissions import is_admin_update, sync_user_from_update
@@ -60,45 +60,35 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
     had_premium = plan is not None and getattr(plan, "active_until", None) is not None
     enabled_by_symbol = _subscription_by_symbol(subscriptions)
 
-    lines = ["Alert watchlist", ""]
     keyboard_rows = []
     for symbol in SUPPORTED_SYMBOLS:
         enabled = enabled_by_symbol.get(symbol, is_symbol_free(symbol))
         unlocked = is_coin_unlocked_for_user(user, symbol, now)
-        if enabled and unlocked:
-            marker = "[x]"
-        elif unlocked:
-            marker = "[ ]"
-        else:
-            marker = "[locked]"
-
-        if is_symbol_free(symbol):
-            suffix = " - Free" if (premium_active or not enabled) else ""
-        elif unlocked:
-            suffix = " - Premium"
-        elif had_premium:
-            suffix = " - Premium expired"
-        else:
-            suffix = " - Premium"
-        lines.append(f"{marker} {symbol.upper()}{suffix}")
         keyboard_rows.append((symbol, enabled, unlocked))
 
-    lines.append("")
-    lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
-
+    lines = ["📡 Alert watchlist", ""]
     if premium_active:
+        lines.append("Select coins for automatic alerts.")
         lines.append("")
-        lines.append("Premium coins are unlocked.")
+        lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
+        lines.append("")
+        lines.append(f"Premium active until: {_format_date(getattr(plan, 'active_until', None))}")
     elif had_premium:
-        lines.append("")
         expired_on = _format_date(getattr(plan, "active_until", None))
-        lines.append(f"Your Premium expired on: {expired_on}")
+        lines.append(f"Your Premium expired on: {expired_on}.")
+        lines.append("Your premium coin choices are saved, but locked until renewal.")
+        lines.append("")
+        lines.append("Frequency: Every 4 hours for BTC")
+        lines.append("")
         lines.append("Use /subscribe to renew.")
     else:
-        lines.append("")
+        lines.append("BTC alerts are free.")
         lines.append(
             f"Premium unlocks automatic alerts for {premium_symbols_display()}."
         )
+        lines.append("")
+        lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
+        lines.append("")
         lines.append("Use /subscribe to upgrade.")
     return "\n".join(lines), keyboard_rows
 
@@ -159,16 +149,30 @@ async def _load_current_user(update: Update):
 
 
 async def send_watchlist_message(message: Message, user, subscriptions) -> None:
-    now = datetime.now(timezone.utc)
+    text, reply_markup = build_watchlist_render(user, subscriptions)
+    await message.reply_text(text, reply_markup=reply_markup)
+
+
+def build_watchlist_render(
+    user,
+    subscriptions,
+    now: datetime | None = None,
+) -> tuple[str, InlineKeyboardMarkup]:
+    now = now or datetime.now(timezone.utc)
     text, rows = build_watchlist_message(user, subscriptions, now)
-    await message.reply_text(
+    return (
         text,
-        reply_markup=build_watchlist_keyboard(
+        build_watchlist_keyboard(
             rows=rows,
             premium_active=is_user_premium_active(get_user_plan(user), now),
             current_frequency_seconds=get_effective_frequency_seconds(user, now),
         ),
     )
+
+
+async def edit_watchlist_message(query, user, subscriptions) -> None:
+    text, reply_markup = build_watchlist_render(user, subscriptions)
+    await query.edit_message_text(text=text, reply_markup=reply_markup)
 
 
 async def watchlist_command(update: Update) -> None:
@@ -197,7 +201,7 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
     if not query or not query.message:
         return True
     if not (DB_ENABLED and DB_SESSION_LOCAL):
-        await query.message.reply_text("Watchlist storage is temporarily unavailable.")
+        await query.answer("Watchlist storage is unavailable.", show_alert=True)
         return True
     if not query.from_user:
         return True
@@ -217,10 +221,10 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             now = datetime.now(timezone.utc)
             if symbol not in SUPPORTED_COINS:
-                await query.message.reply_text("Unsupported symbol.")
+                await query.answer("Unsupported symbol.", show_alert=True)
                 return True
             if not is_coin_unlocked_for_user(user, symbol, now):
-                await query.message.reply_text("This coin is locked. Use /subscribe to upgrade.")
+                await query.answer("Premium required. Use /subscribe.", show_alert=False)
                 return True
             await set_user_coin_subscription(
                 session,
@@ -229,17 +233,18 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 is_enabled=desired_enabled,
             )
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await send_watchlist_message(query.message, user, subscriptions)
+            await query.answer("Updated.")
+            await edit_watchlist_message(query, user, subscriptions)
         return True
 
     if len(parts) == 3 and parts[:2] == ["watchlist", "frequency"]:
         try:
             frequency_seconds = int(parts[2])
         except ValueError:
-            await query.message.reply_text("Unsupported alert frequency.")
+            await query.answer("Unsupported frequency.", show_alert=True)
             return True
         if frequency_seconds not in PREMIUM_ALERT_FREQUENCY_SECONDS:
-            await query.message.reply_text("Unsupported alert frequency.")
+            await query.answer("Unsupported frequency.", show_alert=True)
             return True
         async with DB_SESSION_LOCAL() as session:
             user = await get_user_by_telegram_user_id(
@@ -250,7 +255,7 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
             if user is None:
                 return True
             if not is_user_premium_active(get_user_plan(user), datetime.now(timezone.utc)):
-                await query.message.reply_text("Frequency choices are available with Premium.")
+                await query.answer("Premium required. Use /subscribe.", show_alert=False)
                 return True
             await set_user_alert_frequency(
                 session,
@@ -263,7 +268,8 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 include_plan=True,
             )
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await send_watchlist_message(query.message, user, subscriptions)
+            await query.answer("Frequency updated.")
+            await edit_watchlist_message(query, user, subscriptions)
         return True
     return False
 
