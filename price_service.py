@@ -5,19 +5,17 @@ import time
 import httpx
 
 from config import PRICE_CACHE_TTL_SECONDS
+from supported_coins import SUPPORTED_COINS
 
 
 class CoinGeckoRateLimitError(Exception):
     """Raised when CoinGecko returns HTTP 429."""
 
 
-# Keep this mapping intentionally small and explicit.
-# Only these symbols are supported in command handlers and callbacks.
+# Keep this mapping intentionally explicit. Only these symbols are supported in
+# command handlers and callbacks.
 COIN_SYMBOL_TO_ID = {
-    "btc": "bitcoin",
-    "eth": "ethereum",
-    "ton": "toncoin",
-    "usdt": "tether",
+    symbol: str(metadata["coingecko_id"]) for symbol, metadata in SUPPORTED_COINS.items()
 }
 
 DEFAULT_SYMBOL = "btc"

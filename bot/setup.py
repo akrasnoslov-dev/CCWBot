@@ -13,6 +13,9 @@ async def setup_bot_commands(app: Application) -> None:
     default_commands = [
         BotCommand("start", "Show bot intro"),
         BotCommand("price", "Check crypto prices"),
+        BotCommand("watchlist", "Manage alert watchlist"),
+        BotCommand("myplan", "Show your plan"),
+        BotCommand("subscribe", "Premium info"),
         BotCommand("reports", "Open BTC reports menu"),
     ]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
@@ -21,6 +24,8 @@ async def setup_bot_commands(app: Application) -> None:
         admin_commands = default_commands + [
             BotCommand("settings", "Open settings menu"),
             BotCommand("status", "Show bot status"),
+            BotCommand("grantpremium", "Grant Premium manually"),
+            BotCommand("revokepremium", "Revoke Premium manually"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)

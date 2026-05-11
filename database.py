@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -32,6 +33,14 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
+    selectinload,
+)
+
+from supported_coins import (
+    PREMIUM_ALERT_FREQUENCY_SECONDS,
+    SUPPORTED_SYMBOLS,
+    is_symbol_free,
+    normalize_symbol,
 )
 
 
@@ -99,12 +108,17 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(64), default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    alert_frequency_seconds: Mapped[int] = mapped_column(Integer, default=14400)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
     settings: Mapped[list[UserSettings]] = relationship(back_populates="user")
+    coin_subscriptions: Mapped[list[UserCoinSubscription]] = relationship(back_populates="user")
+    premium_subscription: Mapped[UserPremiumSubscription | None] = relationship(
+        back_populates="user", uselist=False
+    )
 
 
 class UserSettings(Base):
@@ -120,6 +134,47 @@ class UserSettings(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="settings")
+
+
+class UserCoinSubscription(Base):
+    __tablename__ = "user_coin_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "symbol", name="uq_user_coin_subscriptions_user_symbol"),
+        CheckConstraint("symbol = lower(symbol)", name="ck_user_coin_subscriptions_symbol_lower"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped[User] = relationship(back_populates="coin_subscriptions")
+
+
+class UserPremiumSubscription(Base):
+    __tablename__ = "user_premium_subscriptions"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_premium_subscriptions_user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    plan: Mapped[str] = mapped_column(String(64), default="premium")
+    status: Mapped[str] = mapped_column(String(64), default="inactive", index=True)
+    active_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped[User] = relationship(back_populates="premium_subscription")
 
 
 class AppSettings(Base):
@@ -308,6 +363,18 @@ async def get_user_role(session: AsyncSession, telegram_user_id: int) -> str | N
     return user.role if user else None
 
 
+async def get_user_by_telegram_user_id(
+    session: AsyncSession,
+    telegram_user_id: int,
+    *,
+    include_plan: bool = False,
+) -> User | None:
+    statement = select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
+    if include_plan:
+        statement = statement.options(selectinload(User.premium_subscription))
+    return await session.scalar(statement)
+
+
 async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
     """Return active users that can receive automatic Telegram alerts."""
     result = await session.scalars(
@@ -317,6 +384,212 @@ async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
         .order_by(User.id.asc())
     )
     return list(result.all())
+
+
+async def ensure_default_coin_subscriptions(
+    session: AsyncSession,
+    *,
+    user_id: int,
+) -> list[UserCoinSubscription]:
+    """Ensure one subscription row per supported symbol for a user."""
+    existing_rows = list(
+        (
+            await session.scalars(
+                select(UserCoinSubscription).where(UserCoinSubscription.user_id == user_id)
+            )
+        ).all()
+    )
+    existing_symbols = {row.symbol for row in existing_rows}
+    rows_to_add = []
+    for symbol in SUPPORTED_SYMBOLS:
+        if symbol in existing_symbols:
+            continue
+        rows_to_add.append(
+            UserCoinSubscription(
+                user_id=user_id,
+                symbol=symbol,
+                is_enabled=is_symbol_free(symbol),
+            )
+        )
+    if rows_to_add:
+        session.add_all(rows_to_add)
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+        existing_rows = list(
+            (
+                await session.scalars(
+                    select(UserCoinSubscription).where(UserCoinSubscription.user_id == user_id)
+                )
+            ).all()
+        )
+    return sorted(existing_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
+
+
+async def set_user_coin_subscription(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    is_enabled: bool,
+) -> UserCoinSubscription:
+    normalized_symbol = normalize_symbol(symbol)
+    if normalized_symbol not in SUPPORTED_SYMBOLS:
+        raise ValueError("Unsupported coin symbol.")
+    row = await session.scalar(
+        select(UserCoinSubscription)
+        .where(UserCoinSubscription.user_id == user_id)
+        .where(UserCoinSubscription.symbol == normalized_symbol)
+        .limit(1)
+    )
+    if row is None:
+        row = UserCoinSubscription(
+            user_id=user_id,
+            symbol=normalized_symbol,
+            is_enabled=is_enabled,
+        )
+        session.add(row)
+    else:
+        row.is_enabled = is_enabled
+        row.updated_at = utc_now()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        row = await session.scalar(
+            select(UserCoinSubscription)
+            .where(UserCoinSubscription.user_id == user_id)
+            .where(UserCoinSubscription.symbol == normalized_symbol)
+            .limit(1)
+        )
+        if row is None:
+            raise
+        row.is_enabled = is_enabled
+        row.updated_at = utc_now()
+        await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def set_user_alert_frequency(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    frequency_seconds: int,
+) -> User:
+    if frequency_seconds not in PREMIUM_ALERT_FREQUENCY_SECONDS:
+        raise ValueError("Unsupported alert frequency.")
+    user = await session.get(User, user_id)
+    if user is None:
+        raise ValueError("User not found.")
+    user.alert_frequency_seconds = int(frequency_seconds)
+    user.updated_at = utc_now()
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def get_user_premium_subscription(
+    session: AsyncSession,
+    *,
+    user_id: int,
+) -> UserPremiumSubscription | None:
+    return await session.scalar(
+        select(UserPremiumSubscription)
+        .where(UserPremiumSubscription.user_id == user_id)
+        .limit(1)
+    )
+
+
+async def grant_user_premium(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    days: int,
+    now: datetime | None = None,
+) -> UserPremiumSubscription:
+    if days <= 0:
+        raise ValueError("Premium grant days must be greater than 0.")
+    user = await get_user_by_telegram_user_id(session, telegram_user_id)
+    if user is None:
+        raise ValueError("User not found.")
+
+    now = now or utc_now()
+    subscription = await get_user_premium_subscription(session, user_id=user.id)
+    if subscription is None:
+        active_from = now
+        subscription = UserPremiumSubscription(
+            user_id=user.id,
+            plan="premium",
+            status="active",
+            active_until=active_from + timedelta(days=days),
+            started_at=now,
+            cancelled_at=None,
+            provider="manual",
+        )
+        session.add(subscription)
+    else:
+        active_until = subscription.active_until
+        if active_until is not None and active_until.tzinfo is None:
+            active_until = active_until.replace(tzinfo=timezone.utc)
+        active_from = max(now, active_until or now)
+        subscription.plan = "premium"
+        subscription.status = "active"
+        subscription.active_until = active_from + timedelta(days=days)
+        subscription.started_at = subscription.started_at or now
+        subscription.cancelled_at = None
+        subscription.provider = "manual"
+        subscription.updated_at = now
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        return await grant_user_premium(
+            session,
+            telegram_user_id=telegram_user_id,
+            days=days,
+            now=now,
+        )
+    await session.refresh(subscription)
+    return subscription
+
+
+async def revoke_user_premium(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    now: datetime | None = None,
+) -> UserPremiumSubscription:
+    user = await get_user_by_telegram_user_id(session, telegram_user_id)
+    if user is None:
+        raise ValueError("User not found.")
+    now = now or utc_now()
+    subscription = await get_user_premium_subscription(session, user_id=user.id)
+    if subscription is None:
+        subscription = UserPremiumSubscription(
+            user_id=user.id,
+            plan="premium",
+            status="revoked",
+            active_until=now,
+            started_at=None,
+            cancelled_at=now,
+            provider="manual",
+        )
+        session.add(subscription)
+    else:
+        subscription.status = "revoked"
+        subscription.active_until = now
+        subscription.cancelled_at = now
+        subscription.provider = "manual"
+        subscription.updated_at = now
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        return await revoke_user_premium(session, telegram_user_id=telegram_user_id, now=now)
+    await session.refresh(subscription)
+    return subscription
 
 
 async def _get_app_settings_row(
