@@ -75,6 +75,23 @@ def test_build_fallback_alert_message_contains_required_fields():
     assert "Not financial advice." in message
 
 
+def test_build_fallback_alert_message_is_symbol_aware():
+    message = ai_agent_groq.build_fallback_alert_message(
+        previous_price=2900.0,
+        current_price=3000.0,
+        price_change_percent=3.45,
+        change_24h=2.0,
+        alert_threshold_percent=2.0,
+        check_interval_seconds=300,
+        symbol="ETH",
+        coin_name="Ethereum",
+    )
+
+    assert "ETH movement alert" in message
+    assert "BTC movement alert" not in message
+    assert "Ethereum movement" in message
+
+
 def test_build_fallback_alert_message_omits_missing_7d_trend():
     message = ai_agent_groq.build_fallback_alert_message(
         previous_price=100000.0,

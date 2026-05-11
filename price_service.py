@@ -239,6 +239,79 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
     return price, change_24h, normalized_symbol
 
 
+async def get_coin_market_data_batch(
+    symbols: list[str] | tuple[str, ...] | set[str],
+) -> dict[str, dict[str, float | None]]:
+    """Fetch market data for supported symbols with one CoinGecko request.
+
+    Missing symbols are logged and skipped so one partial CoinGecko response
+    does not fail the whole automatic monitoring cycle.
+    """
+    global _BTC_MARKET_CACHE
+
+    normalized_symbols = list(dict.fromkeys(symbol.strip().lower() for symbol in symbols))
+    unsupported = [symbol for symbol in normalized_symbols if symbol not in COIN_SYMBOL_TO_ID]
+    if unsupported:
+        supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
+        raise ValueError(f"Unsupported coin symbol(s) {unsupported}. Supported: {supported}")
+    if not normalized_symbols:
+        return {}
+
+    coin_ids = [COIN_SYMBOL_TO_ID[symbol] for symbol in normalized_symbols]
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": ",".join(coin_ids),
+        "vs_currencies": "usd",
+        "include_24hr_change": "true",
+    }
+
+    async with httpx.AsyncClient() as client:
+        data = await _get_with_retry(client, url, params)
+
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected CoinGecko response format.")
+
+    result: dict[str, dict[str, float | None]] = {}
+    for symbol, coin_id in zip(normalized_symbols, coin_ids, strict=True):
+        coin_data = data.get(coin_id)
+        if coin_data is None and symbol == "ton":
+            logger.warning(
+                "CoinGecko batch response missing TON id. Attempting TON fallback. "
+                "expected_id=%s returned_keys=%s",
+                coin_id,
+                list(data.keys()),
+            )
+            coin_data = await _fetch_ton_fallback_coin_data()
+        if not isinstance(coin_data, dict):
+            logger.warning(
+                "CoinGecko batch response missing data for %s. Skipping symbol.",
+                symbol.upper(),
+            )
+            continue
+        price = coin_data.get("usd")
+        if price is None:
+            logger.warning(
+                "CoinGecko batch response missing USD price for %s. Skipping symbol.",
+                symbol.upper(),
+            )
+            continue
+        change_24h = coin_data.get("usd_24h_change")
+        price_value = float(price)
+        change_24h_value = float(change_24h) if change_24h is not None else 0.0
+        _set_cached_price(symbol, price_value, change_24h_value)
+        if symbol == "btc":
+            cached_at = time.time()
+            _BTC_MARKET_CACHE = (price_value, change_24h_value, None, cached_at)
+            _sync_btc_price_cache(price_value, change_24h_value, cached_at)
+        result[symbol] = {
+            "price": price_value,
+            "change_24h": change_24h_value,
+            "change_7d": None,
+        }
+
+    return result
+
+
 async def get_btc_price() -> tuple[float, float]:
     """Backward-compatible helper for BTC-specific callers."""
     price, change_24h, _ = await get_coin_price("btc")

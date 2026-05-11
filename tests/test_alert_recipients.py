@@ -15,21 +15,33 @@ class FakeSession:
 
 @pytest.mark.asyncio
 async def test_get_alert_recipients_deduplicates_active_db_users(monkeypatch):
-    async def fake_get_active_users_with_chat_ids(_session):
+    async def fake_get_active_users_with_alert_preferences(_session):
         return [
-            SimpleNamespace(id=1, telegram_chat_id=100),
-            SimpleNamespace(id=2, telegram_chat_id=100),
-            SimpleNamespace(id=3, telegram_chat_id=200),
-            SimpleNamespace(id=4, telegram_chat_id=None),
+            SimpleNamespace(id=1, telegram_chat_id=100, premium_subscription=None),
+            SimpleNamespace(id=2, telegram_chat_id=100, premium_subscription=None),
+            SimpleNamespace(id=3, telegram_chat_id=200, premium_subscription=None),
+            SimpleNamespace(id=4, telegram_chat_id=None, premium_subscription=None),
         ]
+
+    async def fake_ensure_default_coin_subscriptions(_session, *, user_id):
+        return [SimpleNamespace(symbol="btc", is_enabled=True)]
+
+    async def fake_get_last_sent_alert_at(_session, *, user_id, symbol):
+        return None
 
     monkeypatch.setattr(alerts, "DB_ENABLED", True)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: FakeSession())
     monkeypatch.setattr(
         alerts,
-        "get_active_users_with_chat_ids",
-        fake_get_active_users_with_chat_ids,
+        "get_active_users_with_alert_preferences",
+        fake_get_active_users_with_alert_preferences,
     )
+    monkeypatch.setattr(
+        alerts,
+        "ensure_default_coin_subscriptions",
+        fake_ensure_default_coin_subscriptions,
+    )
+    monkeypatch.setattr(alerts, "get_last_sent_alert_at", fake_get_last_sent_alert_at)
 
     recipients = await alerts.get_alert_recipients("BTC", "price_movement")
 

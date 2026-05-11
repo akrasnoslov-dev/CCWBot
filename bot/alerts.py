@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
@@ -18,7 +19,6 @@ from ai_agent_groq import (
 )
 from alert_rules import (
     calculate_price_change_percent,
-    is_cooldown_active,
     should_send_alert,
 )
 from bot.news import fetch_news_context, remember_news_context
@@ -26,7 +26,6 @@ from bot.reports import send_scheduled_weekly_report
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.settings import get_db_alert_settings, get_state_alert_settings
 from config import (
-    ALERT_COOLDOWN_MINUTES,
     ENABLE_STRONG_SIGNAL_ALERTS,
     ENABLE_WEEKLY_REPORT,
     SEEN_NEWS_KEEP_LATEST,
@@ -38,21 +37,29 @@ from config import (
 )
 from database import (
     cleanup_seen_news,
-    get_active_users_with_chat_ids,
+    ensure_default_coin_subscriptions,
+    get_active_users_with_alert_preferences,
     get_event_ai_analysis,
+    get_last_sent_alert_at,
+    get_latest_success_event_ai_analysis,
     get_or_create_market_event,
     get_price_state,
     make_news_key,
+    reserve_alert_delivery,
     save_alert,
     save_event_ai_analysis,
+    update_alert_delivery_status,
     update_price_state,
 )
+from premium import can_deliver_now, is_coin_unlocked_for_user
 from price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
     get_btc_market_data,
+    get_coin_market_data_batch,
 )
 from storage import load_state, save_state
+from supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +82,40 @@ WEEKDAY_MAP = {
 class AlertRecipient:
     chat_id: int
     user_id: int | None = None
+
+
+COIN_ALIASES = {
+    "btc": ("btc", "bitcoin"),
+    "eth": ("eth", "ethereum", "ether"),
+    "sol": ("sol", "solana"),
+    "xrp": ("xrp", "ripple"),
+    "bnb": ("bnb", "binance coin", "binancecoin"),
+    "doge": ("doge", "dogecoin"),
+    "ada": ("ada", "cardano"),
+    "ton": ("ton", "toncoin", "the open network"),
+    "link": ("link", "chainlink"),
+    "trx": ("trx", "tron"),
+}
+MARKET_WIDE_NEWS_TERMS = (
+    "crypto market",
+    "cryptocurrency market",
+    "digital asset",
+    "digital assets",
+    "market-wide",
+    "regulation",
+    "regulatory",
+    "sec",
+    "fed",
+    "federal reserve",
+    "interest rate",
+    "rates",
+    "macro",
+    "inflation",
+    "exchange",
+    "hack",
+    "etf",
+    "dominance",
+)
 
 
 def _stable_float(value: float | None, digits: int) -> float | None:
@@ -108,7 +149,7 @@ def _build_price_movement_event_key(
     current_price: float,
     price_change_percent: float,
 ) -> str:
-    """Build one key for one observed BTC price movement.
+    """Build one key for one observed price movement.
 
     Prices are rounded to cents and movement to 4 decimals so retries for the
     same check reuse the event, while genuinely different movements do not
@@ -122,7 +163,56 @@ def _build_price_movement_event_key(
         "price_change_percent": _stable_float(price_change_percent, 4),
     }
     encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
-    return f"btc:price_movement:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
+    normalized_symbol = normalize_symbol(symbol)
+    return f"{normalized_symbol}:price_movement:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
+
+
+def _coin_name(symbol: str) -> str:
+    return str(SUPPORTED_COINS[normalize_symbol(symbol)]["name"])
+
+
+def classify_news_relevance(symbol: str, news_item: dict) -> str:
+    """Classify RSS item relevance before it reaches the LLM."""
+    normalized_symbol = normalize_symbol(symbol)
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    aliases = COIN_ALIASES.get(normalized_symbol, (normalized_symbol,))
+    for alias in aliases:
+        if re_search_word(alias.lower(), text):
+            return "direct"
+    if any(term in text for term in MARKET_WIDE_NEWS_TERMS):
+        if normalized_symbol != "btc" and re_search_word("bitcoin", text):
+            broader_terms = ("crypto", "market", "dominance", "etf", "macro", "regulation")
+            if not any(term in text for term in broader_terms):
+                return "irrelevant"
+        return "market_wide"
+    return "irrelevant"
+
+
+def re_search_word(term: str, text: str) -> bool:
+    escaped = re.escape(term)
+    if re.fullmatch(r"[a-z0-9]+", term):
+        return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
+    return term in text
+
+
+def filter_news_for_symbol(
+    symbol: str,
+    news_items: list[dict],
+    *,
+    max_direct: int = 3,
+    max_market_wide: int = 2,
+) -> list[dict]:
+    direct: list[dict] = []
+    market_wide: list[dict] = []
+    for item in news_items:
+        relevance = classify_news_relevance(symbol, item)
+        if relevance == "direct" and len(direct) < max_direct:
+            direct.append(item)
+        elif relevance == "market_wide" and len(market_wide) < max_market_wide:
+            market_wide.append(item)
+    return direct + market_wide
 
 
 def _build_alert_ai_input_hash(
@@ -163,21 +253,58 @@ def _build_alert_ai_input_hash(
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-async def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipient]:
-    """Resolve recipients for automatic alerts.
+async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
+    """Resolve globally needed symbols from active eligible watchlists."""
+    now = now or datetime.now(timezone.utc)
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return [DEFAULT_SYMBOL] if TELEGRAM_CHAT_ID else []
 
-    Automatic alerts are still BTC-only. This boundary exists so future
-    subscription logic can expand recipients without changing event analysis.
-    """
-    if symbol.upper() != "BTC" or event_type != "price_movement":
+    async with DB_SESSION_LOCAL() as session:
+        users = await get_active_users_with_alert_preferences(session)
+        enabled_symbols: set[str] = set()
+        for user in users:
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+            subscription_by_symbol = {row.symbol: row for row in subscriptions}
+            for symbol in SUPPORTED_SYMBOLS:
+                row = subscription_by_symbol.get(symbol)
+                if row is None or not row.is_enabled:
+                    continue
+                if not is_coin_unlocked_for_user(user, symbol, now):
+                    continue
+                enabled_symbols.add(symbol)
+    return [symbol for symbol in SUPPORTED_SYMBOLS if symbol in enabled_symbols]
+
+
+async def get_alert_recipients(
+    symbol: str,
+    event_type: str,
+    *,
+    now: datetime | None = None,
+) -> list[AlertRecipient]:
+    """Resolve eligible recipients once for one market event."""
+    normalized_symbol = normalize_symbol(symbol)
+    if event_type != "price_movement" or normalized_symbol not in SUPPORTED_COINS:
         return []
 
     if DB_ENABLED and DB_SESSION_LOCAL:
+        now = now or datetime.now(timezone.utc)
         recipients = []
         seen_chat_ids = set()
         async with DB_SESSION_LOCAL() as session:
-            for user in await get_active_users_with_chat_ids(session):
+            for user in await get_active_users_with_alert_preferences(session):
                 if user.telegram_chat_id is None:
+                    continue
+                subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+                subscription_by_symbol = {row.symbol: row for row in subscriptions}
+                subscription = subscription_by_symbol.get(normalized_symbol)
+                if subscription is None or not subscription.is_enabled:
+                    continue
+                last_sent_at = await get_last_sent_alert_at(
+                    session,
+                    user_id=user.id,
+                    symbol=normalized_symbol,
+                )
+                if not can_deliver_now(user, normalized_symbol, now, last_sent_at):
                     continue
                 chat_id = int(user.telegram_chat_id)
                 if chat_id in seen_chat_ids:
@@ -186,13 +313,14 @@ async def get_alert_recipients(symbol: str, event_type: str) -> list[AlertRecipi
                 recipients.append(AlertRecipient(chat_id=chat_id, user_id=user.id))
         return recipients
 
-    if TELEGRAM_CHAT_ID:
+    if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
 
 
-async def _get_or_create_btc_market_event(
+async def _get_or_create_price_movement_market_event(
     *,
+    symbol: str,
     previous_price: float,
     current_price: float,
     price_change_percent: float,
@@ -203,7 +331,7 @@ async def _get_or_create_btc_market_event(
         return None, None
 
     event_key = _build_price_movement_event_key(
-        symbol=DEFAULT_SYMBOL,
+        symbol=symbol,
         previous_price=previous_price,
         current_price=current_price,
         price_change_percent=price_change_percent,
@@ -211,7 +339,7 @@ async def _get_or_create_btc_market_event(
     async with DB_SESSION_LOCAL() as session:
         market_event = await get_or_create_market_event(
             session,
-            symbol=DEFAULT_SYMBOL,
+            symbol=normalize_symbol(symbol),
             event_type="price_movement",
             event_key=event_key,
             price=current_price,
@@ -226,6 +354,7 @@ async def _get_or_create_btc_market_event(
 
 async def _get_or_create_event_ai_analysis(
     *,
+    symbol: str,
     market_event_id: int | None,
     previous_price: float,
     current_price: float,
@@ -235,13 +364,13 @@ async def _get_or_create_event_ai_analysis(
     news_items: list[dict],
     alert_settings: dict,
 ) -> tuple[dict, int | None]:
-    """Create or reuse the single AI analysis for one BTC market event.
+    """Create or reuse the single AI analysis for one market event.
 
     The LLM call stays here, before recipient delivery, so one market event
     produces one analysis that can be sent to many active users.
     """
     input_hash = _build_alert_ai_input_hash(
-        symbol=DEFAULT_SYMBOL,
+        symbol=symbol,
         event_type="price_movement",
         previous_price=previous_price,
         current_price=current_price,
@@ -255,6 +384,20 @@ async def _get_or_create_event_ai_analysis(
 
     if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
         async with DB_SESSION_LOCAL() as session:
+            saved_analysis = await get_latest_success_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+            )
+            if saved_analysis and saved_analysis.plain_text:
+                display_symbol = normalize_symbol(symbol).upper()
+                log(f"Reusing saved AI analysis for {display_symbol} market event.")
+                return (
+                    {
+                        "plain_text": saved_analysis.plain_text,
+                        "html_text": saved_analysis.html_text,
+                    },
+                    saved_analysis.id,
+                )
             existing_analysis = await get_event_ai_analysis(
                 session,
                 market_event_id=market_event_id,
@@ -265,7 +408,8 @@ async def _get_or_create_event_ai_analysis(
                 and existing_analysis.status in {"success", "completed"}
                 and existing_analysis.plain_text
             ):
-                log("Reusing saved AI analysis for BTC market event.")
+                display_symbol = normalize_symbol(symbol).upper()
+                log(f"Reusing saved AI analysis for {display_symbol} market event.")
                 return (
                     {
                         "plain_text": existing_analysis.plain_text,
@@ -287,6 +431,8 @@ async def _get_or_create_event_ai_analysis(
             news_items,
             alert_threshold_percent=alert_settings["price_move_alert_percent"],
             check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+            symbol=normalize_symbol(symbol).upper(),
+            coin_name=_coin_name(symbol),
         )
     except Exception as error:
         log(f"AI alert generation failed: {error}")
@@ -301,6 +447,8 @@ async def _get_or_create_event_ai_analysis(
             change_7d=change_7d,
             alert_threshold_percent=alert_settings["price_move_alert_percent"],
             check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+            symbol=normalize_symbol(symbol).upper(),
+            coin_name=_coin_name(symbol),
         )
         alert_payload = {"plain_text": plain_message, "html_text": None}
 
@@ -357,6 +505,7 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
 
 async def _record_alert_delivery(
     *,
+    symbol: str,
     recipient: AlertRecipient,
     plain_text: str,
     status: str,
@@ -370,7 +519,7 @@ async def _record_alert_delivery(
     async with DB_SESSION_LOCAL() as session:
         await save_alert(
             session,
-            symbol="BTC",
+            symbol=symbol,
             alert_type="price_movement",
             message=plain_text,
             sent_to_chat_id=recipient.chat_id,
@@ -382,8 +531,9 @@ async def _record_alert_delivery(
         )
 
 
-async def _save_btc_price_state(
+async def _save_price_state(
     *,
+    symbol: str,
     state: dict,
     current_price: float,
     change_24h: float,
@@ -394,7 +544,7 @@ async def _save_btc_price_state(
         async with DB_SESSION_LOCAL() as session:
             await update_price_state(
                 session,
-                symbol=DEFAULT_SYMBOL,
+                symbol=symbol,
                 last_price=current_price,
                 last_24h_change=change_24h,
                 last_checked_at=datetime.now(timezone.utc),
@@ -414,39 +564,73 @@ async def _save_btc_price_state(
     save_state(state)
 
 
-async def _deliver_btc_market_event_alert(
+async def _deliver_market_event_alert(
     app: Application,
     *,
+    symbol: str,
     alert_payload: dict,
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _sanitize_alert_payload(alert_payload)
-    recipients = await get_alert_recipients(symbol="BTC", event_type="price_movement")
+    normalized_symbol = normalize_symbol(symbol)
+    recipients = await get_alert_recipients(symbol=normalized_symbol, event_type="price_movement")
     if not recipients:
-        log("No configured recipients for BTC price movement alert.")
+        log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
         return False
 
     plain_text = str(alert_payload.get("plain_text", ""))
     delivered = False
     sent_count = 0
+    skipped_count = 0
     for recipient in recipients:
+        if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None and market_event_id:
+            async with DB_SESSION_LOCAL() as session:
+                alert_row, should_send = await reserve_alert_delivery(
+                    session,
+                    user_id=recipient.user_id,
+                    symbol=normalized_symbol,
+                    alert_type="price_movement",
+                    sent_to_chat_id=recipient.chat_id,
+                    market_event_id=market_event_id,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                    message=plain_text,
+                )
+                alert_id = alert_row.id
+            if not should_send:
+                skipped_count += 1
+                continue
+        else:
+            alert_id = None
         sent, error_message = await _send_alert_to_recipient(app, recipient, alert_payload)
-        await _record_alert_delivery(
-            recipient=recipient,
-            plain_text=plain_text,
-            status="sent" if sent else "failed",
-            market_event_id=market_event_id,
-            event_ai_analysis_id=event_ai_analysis_id,
-            error_message=error_message,
-        )
+        if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                await update_alert_delivery_status(
+                    session,
+                    alert_id=alert_id,
+                    status="sent" if sent else "failed",
+                    error_message=error_message,
+                )
+        else:
+            await _record_alert_delivery(
+                symbol=normalized_symbol,
+                recipient=recipient,
+                plain_text=plain_text,
+                status="sent" if sent else "failed",
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                error_message=error_message,
+            )
         if sent:
             delivered = True
             sent_count += 1
         else:
             log(f"Alert delivery failed for chat {recipient.chat_id}: {error_message}")
-    log(f"BTC alert sent to {sent_count}/{len(recipients)} recipients.")
+    log(
+        f"{normalized_symbol.upper()} alert sent to {sent_count}/{len(recipients)} "
+        f"eligible recipients; skipped duplicates={skipped_count}."
+    )
     return delivered
 
 
@@ -459,7 +643,7 @@ def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> Non
         first=5,
         name=AUTOMATIC_BTC_CHECK_JOB_NAME,
     )
-    log(f"Automatic BTC check interval: {interval_seconds} seconds")
+    log(f"Automatic price check interval: {interval_seconds} seconds")
 
 
 def schedule_weekly_report(app: Application) -> None:
@@ -535,110 +719,130 @@ def _parse_state_alert_at(value: str | None) -> datetime | None:
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
-    logger.debug("Running automatic BTC check.")
+    logger.debug("Running automatic price check.")
     try:
         db_active = DB_ENABLED and DB_SESSION_LOCAL
-        state = load_state() if not db_active else {}
-        previous_price = None
-        last_alert_at = None
-        db_row = None
-        if DB_ENABLED and DB_SESSION_LOCAL:
-            async with DB_SESSION_LOCAL() as session:
-                db_row = await get_price_state(session, DEFAULT_SYMBOL)
-                previous_price = db_row.last_price if db_row else None
-                last_alert_at = db_row.last_alert_at if db_row else None
-        else:
-            previous_price = state.get("last_price")
-            last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
-        current_price, change_24h, change_7d = await get_btc_market_data()
-        checked_at = datetime.now(timezone.utc).isoformat()
-
-        if previous_price is None:
-            await _save_btc_price_state(
-                state=state,
-                current_price=current_price,
-                change_24h=change_24h,
-                checked_at=checked_at,
-                last_alert_at=db_row.last_alert_at if db_row else None,
-            )
-            log(f"Initial BTC price saved: ${current_price:,.2f}")
+        now = datetime.now(timezone.utc)
+        symbols_to_check = await resolve_symbols_to_check(now)
+        if not symbols_to_check:
+            logger.debug("Automatic price check skipped because no eligible symbols are enabled.")
             return
 
-        price_change_percent = calculate_price_change_percent(previous_price, current_price)
-        logger.debug(
-            "BTC movement calculated: previous=%.2f current=%.2f move=%.4f%% "
-            "change24h=%.4f%% change7d=%s",
-            previous_price,
-            current_price,
-            price_change_percent,
-            change_24h,
-            change_7d,
-        )
+        state = load_state() if not db_active else {}
+        market_data = await get_coin_market_data_batch(symbols_to_check)
+        if not market_data:
+            log("Automatic price check skipped because CoinGecko returned no usable symbol data.")
+            return
+        checked_at = datetime.now(timezone.utc).isoformat()
+
         if DB_ENABLED and DB_SESSION_LOCAL:
             alert_settings = await get_db_alert_settings()
         else:
-            state.update(
-                {
-                    "last_price": current_price,
-                    "last_24h_change": change_24h,
-                    "last_checked_at": checked_at,
-                }
-            )
             alert_settings = get_state_alert_settings(state)
 
-        if should_send_alert(
-            price_change_percent=price_change_percent,
-            threshold_percent=alert_settings["price_move_alert_percent"],
-        ):
-            if is_cooldown_active(last_alert_at, ALERT_COOLDOWN_MINUTES):
-                log("BTC movement alert skipped because cooldown is active.")
-                await _save_btc_price_state(
+        raw_news_items: list[dict] | None = None
+        used_news_items: list[dict] = []
+        delivered_symbols = 0
+        for symbol in symbols_to_check:
+            symbol_data = market_data.get(symbol)
+            if not symbol_data:
+                continue
+            current_price = float(symbol_data["price"])
+            change_24h = float(symbol_data.get("change_24h") or 0.0)
+            change_7d = symbol_data.get("change_7d")
+            previous_price = None
+            last_alert_at = None
+            db_row = None
+            if DB_ENABLED and DB_SESSION_LOCAL:
+                async with DB_SESSION_LOCAL() as session:
+                    db_row = await get_price_state(session, symbol)
+                    previous_price = db_row.last_price if db_row else None
+                    last_alert_at = db_row.last_alert_at if db_row else None
+            else:
+                previous_price = state.get("last_price") if symbol == DEFAULT_SYMBOL else None
+                last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
+
+            if previous_price is None:
+                await _save_price_state(
+                    symbol=symbol,
                     state=state,
                     current_price=current_price,
                     change_24h=change_24h,
                     checked_at=checked_at,
                     last_alert_at=last_alert_at,
                 )
-                return
+                log(f"Initial {symbol.upper()} price saved: ${current_price:,.2f}")
+                continue
 
-            news_items = await fetch_news_context(limit=5)
-            market_event_id, _ = await _get_or_create_btc_market_event(
-                previous_price=previous_price,
-                current_price=current_price,
+            price_change_percent = calculate_price_change_percent(previous_price, current_price)
+            logger.debug(
+                "%s movement calculated: previous=%.2f current=%.2f move=%.4f%% "
+                "change24h=%.4f%% change7d=%s",
+                symbol.upper(),
+                previous_price,
+                current_price,
+                price_change_percent,
+                change_24h,
+                change_7d,
+            )
+
+            delivered = False
+            if should_send_alert(
                 price_change_percent=price_change_percent,
-                change_24h=change_24h,
-                change_7d=change_7d,
-            )
-            alert_payload, event_ai_analysis_id = await _get_or_create_event_ai_analysis(
-                market_event_id=market_event_id,
-                previous_price=previous_price,
-                current_price=current_price,
-                price_change_percent=price_change_percent,
-                change_24h=change_24h,
-                change_7d=change_7d,
-                news_items=news_items,
-                alert_settings=alert_settings,
-            )
-            delivered = await _deliver_btc_market_event_alert(
-                app,
-                alert_payload=alert_payload,
-                market_event_id=market_event_id,
-                event_ai_analysis_id=event_ai_analysis_id,
-            )
-            if delivered:
-                await remember_news_context(news_items)
-            await _save_btc_price_state(
+                threshold_percent=alert_settings["price_move_alert_percent"],
+            ):
+                if raw_news_items is None:
+                    raw_news_items = await fetch_news_context(limit=12)
+                news_items = filter_news_for_symbol(symbol, raw_news_items)
+                used_news_items.extend(news_items)
+                market_event_id, _ = await _get_or_create_price_movement_market_event(
+                    symbol=symbol,
+                    previous_price=previous_price,
+                    current_price=current_price,
+                    price_change_percent=price_change_percent,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                )
+                alert_payload, event_ai_analysis_id = await _get_or_create_event_ai_analysis(
+                    symbol=symbol,
+                    market_event_id=market_event_id,
+                    previous_price=previous_price,
+                    current_price=current_price,
+                    price_change_percent=price_change_percent,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                    news_items=news_items,
+                    alert_settings=alert_settings,
+                )
+                delivered = await _deliver_market_event_alert(
+                    app,
+                    symbol=symbol,
+                    alert_payload=alert_payload,
+                    market_event_id=market_event_id,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                )
+                if delivered:
+                    delivered_symbols += 1
+            await _save_price_state(
+                symbol=symbol,
                 state=state,
                 current_price=current_price,
                 change_24h=change_24h,
                 checked_at=checked_at,
                 last_alert_at=(datetime.now(timezone.utc) if delivered else None),
             )
-            log("Alert sent." if delivered else "Alert was not delivered.")
+        if used_news_items:
+            deduped_news = list({make_news_key(item): item for item in used_news_items}.values())
+            await remember_news_context(deduped_news)
         if not db_active:
             save_state(state)
+        checked_symbols_text = ", ".join(symbol.upper() for symbol in symbols_to_check)
+        log(
+            f"Automatic price check completed for symbols: {checked_symbols_text}; "
+            f"delivered alerts for {delivered_symbols} symbol(s)."
+        )
     except CoinGeckoRateLimitError:
-        log("CoinGecko returned 429 during automatic BTC check. Skipping this cycle.")
+        log("CoinGecko returned 429 during automatic price check. Skipping this cycle.")
     except httpx.HTTPStatusError as error:
         log(f"Automatic check HTTP error: {error}")
     except Exception as error:

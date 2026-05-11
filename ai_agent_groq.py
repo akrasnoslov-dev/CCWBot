@@ -81,10 +81,13 @@ def build_fallback_alert_message(
     change_7d: float | None = None,
     alert_threshold_percent: float | None = None,
     check_interval_seconds: int | None = None,
+    symbol: str = "BTC",
+    coin_name: str = "Bitcoin",
 ) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
     weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
+    display_symbol = symbol.upper()
     risk_reason = _build_fallback_risk_reason(
         price_change_percent=price_change_percent,
         change_24h=change_24h,
@@ -93,7 +96,7 @@ def build_fallback_alert_message(
         has_related_news=False,
     )
     return (
-        "🚨 BTC movement alert\n\n"
+        f"🚨 {display_symbol} movement alert\n\n"
         f"Price: ${current_price:,.2f}\n"
         f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
         f"24h trend: {change_24h:+.2f}%\n"
@@ -101,7 +104,8 @@ def build_fallback_alert_message(
         "Risk level: Medium\n"
         f"Risk reason: {risk_reason}\n\n"
         "Context:\n"
-        "Short-term movement is notable while broader market context remains uncertain. "
+        f"Short-term {coin_name} movement is notable while broader market context "
+        "remains uncertain. "
         "Recent news does not appear to be a clear driver.\n\n"
         "Possible action:\n"
         "Monitor for continuation; no immediate action required.\n\n"
@@ -466,7 +470,10 @@ def _build_alert_prompt(
     alert_threshold_percent: float | None,
     check_interval_seconds: int | None,
     news_text: str,
+    symbol: str = "BTC",
+    coin_name: str = "Bitcoin",
 ) -> str:
+    display_symbol = symbol.upper()
     change_7d_text = f"{change_7d:.4f}%" if change_7d is not None else "unavailable"
     trend_7d_instruction = "7d trend: ...%\n" if change_7d is not None else ""
     trend_7d_rule = (
@@ -494,6 +501,7 @@ If both the short-term movement and 24h trend are small, do not use High
 unless the news context clearly indicates exceptional risk.
 If using High despite small price movement, risk_reason must explicitly explain why.
 risk_reason must explain why this risk_level was chosen over lower or higher levels.
+Consider {coin_name}'s coin-specific volatility when explaining risk.
 risk_reason must cite concrete alert factors: short-term move size, 24h trend,
 threshold crossing when relevant, and news only when news_relevance is
 relevant or partly_relevant.
@@ -508,7 +516,7 @@ telegram_message must include both:
 Risk level: Low|Medium|High
 Risk reason: <short reason>
 Use this exact style and labels:
-🚨 BTC movement alert
+🚨 {display_symbol} movement alert
 
 Price: $...
 Since last check: ...% in ... sec
@@ -560,8 +568,10 @@ async def create_ai_alert_message(
     news_items: list[dict] | None = None,
     alert_threshold_percent: float | None = None,
     check_interval_seconds: int | None = None,
+    symbol: str = "BTC",
+    coin_name: str = "Bitcoin",
 ) -> str:
-    """Create BTC alert message from structured model output with safe fallback."""
+    """Create a symbol-aware alert message from structured model output."""
     result = await create_ai_alert_payload(
         previous_price,
         current_price,
@@ -571,6 +581,8 @@ async def create_ai_alert_message(
         news_items,
         alert_threshold_percent,
         check_interval_seconds,
+        symbol,
+        coin_name,
     )
     return result["plain_text"]
 
@@ -584,6 +596,8 @@ async def create_ai_alert_payload(
     news_items: list[dict] | None = None,
     alert_threshold_percent: float | None = None,
     check_interval_seconds: int | None = None,
+    symbol: str = "BTC",
+    coin_name: str = "Bitcoin",
 ) -> dict:
     """Create alert payload with plain text and optional HTML variant for Telegram."""
     news_text, indexed_news_items = _build_news_listing_with_ids(news_items)
@@ -596,6 +610,8 @@ async def create_ai_alert_payload(
         alert_threshold_percent,
         check_interval_seconds,
         news_text,
+        symbol,
+        coin_name,
     )
     try:
         structured = await _ask_json(prompt)
@@ -611,6 +627,8 @@ async def create_ai_alert_payload(
             change_7d,
             alert_threshold_percent,
             check_interval_seconds,
+            symbol,
+            coin_name,
         )
         return {"plain_text": plain_message, "html_text": None}
     structured["related_news"] = _extract_related_news_from_ids(
@@ -633,6 +651,8 @@ async def create_ai_alert_payload(
             change_7d,
             alert_threshold_percent,
             check_interval_seconds,
+            symbol,
+            coin_name,
         )
         return {"plain_text": plain_message, "html_text": None}
     related_news_links = _extract_related_news_with_links(
