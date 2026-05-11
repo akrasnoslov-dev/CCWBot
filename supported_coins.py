@@ -17,7 +17,7 @@ SUPPORTED_COINS = {
 
 SUPPORTED_SYMBOLS = tuple(SUPPORTED_COINS.keys())
 FREE_ALERT_FREQUENCY_SECONDS = 14400
-PREMIUM_ALERT_FREQUENCY_SECONDS = (60, 3600, 21600, 86400)
+PREMIUM_ALERT_FREQUENCY_SECONDS = (3600, 21600, 86400)
 DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS = 21600
 
 
@@ -35,6 +35,5 @@ def is_symbol_free(symbol: str) -> bool:
 
 
 def premium_symbols_display() -> str:
-    return ", ".join(
-        symbol.upper() for symbol in SUPPORTED_SYMBOLS if not is_symbol_free(symbol)
-    )
+    return ", ".join(symbol.upper() for symbol in SUPPORTED_SYMBOLS if not is_symbol_free(symbol))
+
