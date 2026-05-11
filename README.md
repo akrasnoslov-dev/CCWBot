@@ -11,7 +11,7 @@ fallbacks.
 - Automatic movement alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
-- Premium-aware `/watchlist`, `/myplan`, and `/subscribe` foundation commands.
+- Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
   commands.
@@ -24,9 +24,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 ## Current Limitations
 
 - Automatic monitoring uses one global admin-controlled threshold for all supported coins.
-- Premium payment is not implemented yet; manual admin grants/revokes are the current testing
-  path.
-- No Telegram Stars payment processing yet.
+- Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
+  entitlement naturally expires when `active_until <= now`.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
 - Local `state.json` fallback is single-instance oriented.
 
@@ -75,6 +74,7 @@ Common configuration:
 - `ENABLE_STRONG_SIGNAL_ALERTS`
 - `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`
 - `STRONG_SIGNAL_COOLDOWN_HOURS`
+- `PREMIUM_MONTHLY_STARS`
 
 ## Local Development Setup
 
@@ -109,10 +109,27 @@ The Premium foundation stores:
 - `users.alert_frequency_seconds`
 - `user_coin_subscriptions` with one lowercase symbol row per user and coin
 - `user_premium_subscriptions` for current Premium entitlement state
+- `payments` with one row per processed Telegram Stars payment
+
+`/subscribe` starts a recurring Telegram Stars Premium subscription. The default price is
+configured by `PREMIUM_MONTHLY_STARS=199`, uses Telegram Stars currency `XTR`, and uses a
+30-day subscription period (`2592000` seconds). Premium unlocks automatic alerts for enabled
+non-BTC watchlist coins. BTC automatic alerts and manual `/price` checks remain free.
+
+After payment, non-BTC coins are not enabled automatically; users choose coins manually in
+`/watchlist`. Saved non-BTC choices remain stored when Premium expires and become effective
+again after renewal.
 
 Premium access is based primarily on `active_until > now`. Manual admin grants use
 `/grantpremium <telegram_user_id> <days>`, and revokes use `/revokepremium <telegram_user_id>`.
 Revoking Premium preserves saved coin choices.
+
+Premium payments are received as Telegram Stars on the bot's Stars balance. Withdrawal to TON
+wallet is handled separately by the bot owner through Telegram/Fragment. CCWBot does not store
+wallets and does not perform payouts. Exact withdrawal availability, limits, exchange rate,
+fees, and regional restrictions are controlled by Telegram/Fragment and may change. There is no
+`/starsbalance`; check the bot's Stars balance manually through Telegram/BotFather/Telegram UI
+when available.
 
 ## Docker Compose
 

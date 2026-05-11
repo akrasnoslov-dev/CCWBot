@@ -6,6 +6,7 @@ from telegram import InlineKeyboardMarkup, Message, Update
 from telegram.error import NetworkError, TimedOut
 
 from bot.keyboards import build_watchlist_keyboard
+from bot.payments import build_subscribe_message as _build_subscribe_message
 from bot.permissions import is_admin_update, sync_user_from_update
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from database import (
@@ -137,12 +138,7 @@ def build_plan_message(user, now: datetime | None = None) -> str:
 
 
 def build_subscribe_message() -> str:
-    return (
-        f"Premium will unlock automatic alerts for {premium_symbols_display()}.\n\n"
-        "BTC alerts remain free.\n"
-        "Manual /price remains free for all supported coins.\n\n"
-        "Real Telegram Stars purchase will be implemented later."
-    )
+    return _build_subscribe_message()
 
 
 def _current_telegram_user_id(update: Update) -> int | None:
@@ -222,11 +218,6 @@ async def myplan_command(update: Update) -> None:
         await _reply_db_required(update.message)
         return
     await _safe_reply_text(update.message, build_plan_message(user))
-
-
-async def subscribe_command(update: Update) -> None:
-    await sync_user_from_update(update)
-    await _safe_reply_text(update.message, build_subscribe_message())
 
 
 async def handle_watchlist_callback(update: Update, data: str) -> bool:

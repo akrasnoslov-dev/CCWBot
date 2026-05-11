@@ -15,7 +15,7 @@ async def setup_bot_commands(app: Application) -> None:
         BotCommand("price", "Check crypto prices"),
         BotCommand("watchlist", "Manage alert watchlist"),
         BotCommand("myplan", "Show your plan"),
-        BotCommand("subscribe", "Premium info"),
+        BotCommand("subscribe", "Subscribe with Telegram Stars"),
         BotCommand("reports", "Open BTC reports menu"),
     ]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())

@@ -13,6 +13,7 @@ from bot.keyboards import (
     build_settings_keyboard,
     build_threshold_keyboard,
 )
+from bot.payments import send_subscribe_invoice
 from bot.permissions import is_admin_update, is_admin_user, sync_user_from_update
 from bot.prices import (
     build_supported_symbols_message,
@@ -32,7 +33,6 @@ from bot.watchlist import (
     handle_watchlist_callback,
     myplan_command,
     revoke_premium_command,
-    subscribe_command,
     watchlist_command,
 )
 from database import get_price_state
@@ -149,7 +149,7 @@ async def myplan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/subscribe")
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await subscribe_command(update)
+    await send_subscribe_invoice(update, context)
 
 
 @log_request("/grantpremium")

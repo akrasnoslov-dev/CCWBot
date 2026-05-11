@@ -34,10 +34,22 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
   `ton`, `link`, and `trx`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
-- `/subscribe` is a placeholder only. Real Telegram Stars purchase handling is not implemented
-  yet and remains planned for a later payment PR.
+- `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
+  The price is `PREMIUM_MONTHLY_STARS` (default `199`), currency is `XTR`, and the period is
+  30 days / `2592000` seconds.
+- Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
+  `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
+  them in `/watchlist`.
 - `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
-  admin-only manual Premium controls.
+  admin-only manual Premium controls for testing and support.
 - Automatic alert threshold remains one global admin-controlled value for all coins.
 - Saved non-BTC watchlist choices remain stored when Premium expires, but non-BTC deliveries
   are blocked until Premium is active again.
+- Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
+  outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
+  wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal
+  availability, limits, exchange rate, fees, and regional restrictions are controlled by
+  Telegram/Fragment and may change.
+- Explicit subscription cancellation/refund events are not automated in this PR. Entitlement
+  remains based on `user_premium_subscriptions.active_until > now` and naturally expires when
+  renewals stop.

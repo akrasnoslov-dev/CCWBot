@@ -43,6 +43,10 @@ from supported_coins import (
     normalize_symbol,
 )
 
+TELEGRAM_STARS_PROVIDER = "telegram_stars"
+PREMIUM_PAYMENT_STATUS_PAID = "paid"
+PREMIUM_PAYMENT_PERIOD_DAYS = 30
+
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
@@ -119,6 +123,7 @@ class User(Base):
     premium_subscription: Mapped[UserPremiumSubscription | None] = relationship(
         back_populates="user", uselist=False
     )
+    payments: Mapped[list[Payment]] = relationship(back_populates="user")
 
 
 class UserSettings(Base):
@@ -175,6 +180,31 @@ class UserPremiumSubscription(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="premium_subscription")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_payment_id", name="uq_payments_provider_payment_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True)
+    provider_payment_id: Mapped[str] = mapped_column(String(255))
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(16), index=True)
+    payload: Mapped[str] = mapped_column(String(255), index=True)
+    status: Mapped[str] = mapped_column(String(64), default=PREMIUM_PAYMENT_STATUS_PAID, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped[User] = relationship(back_populates="payments")
 
 
 class AppSettings(Base):
@@ -524,6 +554,136 @@ async def get_user_premium_subscription(
         .where(UserPremiumSubscription.user_id == user_id)
         .limit(1)
     )
+
+
+async def get_payment_by_provider_id(
+    session: AsyncSession,
+    *,
+    provider: str,
+    provider_payment_id: str,
+) -> Payment | None:
+    return await session.scalar(
+        select(Payment)
+        .where(Payment.provider == provider)
+        .where(Payment.provider_payment_id == provider_payment_id)
+        .limit(1)
+    )
+
+
+def _normalize_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+async def activate_premium_from_telegram_stars_payment(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    provider_payment_id: str,
+    telegram_payment_charge_id: str | None,
+    provider_payment_charge_id: str | None,
+    amount: int,
+    currency: str,
+    payload: str,
+    provider_subscription_id: str | None = None,
+    now: datetime | None = None,
+) -> tuple[Payment, UserPremiumSubscription, bool]:
+    """Record one Stars payment and extend Premium once for that payment id."""
+    existing_payment = await get_payment_by_provider_id(
+        session,
+        provider=TELEGRAM_STARS_PROVIDER,
+        provider_payment_id=provider_payment_id,
+    )
+    if existing_payment is not None:
+        subscription = await get_user_premium_subscription(
+            session,
+            user_id=existing_payment.user_id,
+        )
+        return existing_payment, subscription, False
+
+    user = await get_user_by_telegram_user_id(session, telegram_user_id)
+    if user is None:
+        raise ValueError("User not found.")
+
+    now = now or utc_now()
+    payment = Payment(
+        user_id=user.id,
+        provider=TELEGRAM_STARS_PROVIDER,
+        provider_payment_id=provider_payment_id,
+        provider_subscription_id=provider_subscription_id,
+        telegram_payment_charge_id=telegram_payment_charge_id,
+        provider_payment_charge_id=provider_payment_charge_id,
+        amount=int(amount),
+        currency=currency,
+        payload=payload,
+        status=PREMIUM_PAYMENT_STATUS_PAID,
+    )
+    session.add(payment)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        existing_payment = await get_payment_by_provider_id(
+            session,
+            provider=TELEGRAM_STARS_PROVIDER,
+            provider_payment_id=provider_payment_id,
+        )
+        if existing_payment is None:
+            raise
+        subscription = await get_user_premium_subscription(
+            session,
+            user_id=existing_payment.user_id,
+        )
+        return existing_payment, subscription, False
+
+    subscription = await get_user_premium_subscription(session, user_id=user.id)
+    active_until = _normalize_utc(getattr(subscription, "active_until", None))
+    active_from = max(now, active_until or now)
+    if subscription is None:
+        subscription = UserPremiumSubscription(
+            user_id=user.id,
+            plan="premium",
+            status="active",
+            active_until=active_from + timedelta(days=PREMIUM_PAYMENT_PERIOD_DAYS),
+            started_at=now,
+            cancelled_at=None,
+            provider=TELEGRAM_STARS_PROVIDER,
+            provider_subscription_id=provider_subscription_id,
+            last_payment_id=str(payment.id),
+        )
+        session.add(subscription)
+    else:
+        subscription.plan = "premium"
+        subscription.status = "active"
+        subscription.active_until = active_from + timedelta(days=PREMIUM_PAYMENT_PERIOD_DAYS)
+        subscription.started_at = subscription.started_at or now
+        subscription.cancelled_at = None
+        subscription.provider = TELEGRAM_STARS_PROVIDER
+        subscription.provider_subscription_id = provider_subscription_id
+        subscription.last_payment_id = str(payment.id)
+        subscription.updated_at = now
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing_payment = await get_payment_by_provider_id(
+            session,
+            provider=TELEGRAM_STARS_PROVIDER,
+            provider_payment_id=provider_payment_id,
+        )
+        if existing_payment is None:
+            raise
+        subscription = await get_user_premium_subscription(
+            session,
+            user_id=existing_payment.user_id,
+        )
+        return existing_payment, subscription, False
+    await session.refresh(payment)
+    await session.refresh(subscription)
+    return payment, subscription, True
 
 
 async def grant_user_premium(
