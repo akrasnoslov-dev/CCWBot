@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
@@ -328,3 +329,110 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
             assert await session.scalar(select(func.count()).select_from(Alert)) == 2
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_deliver_market_event_alert_respects_empty_recipient_list(monkeypatch):
+    get_recipients = AsyncMock(side_effect=AssertionError("recipients should not be queried"))
+    monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
+
+    delivered = await alerts._deliver_market_event_alert(
+        SimpleNamespace(bot=SimpleNamespace()),
+        symbol="btc",
+        alert_payload={"plain_text": "BTC movement alert\n\nNot financial advice."},
+        market_event_id=123,
+        event_ai_analysis_id=456,
+        recipients=[],
+    )
+
+    assert delivered is False
+    get_recipients.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
+    save_price_state = AsyncMock()
+    get_recipients = AsyncMock(return_value=[])
+    fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
+    create_market_event = AsyncMock(
+        side_effect=AssertionError("market event should not be created")
+    )
+    create_ai_analysis = AsyncMock(side_effect=AssertionError("AI should not be called"))
+    deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["btc"]))
+    monkeypatch.setattr(
+        alerts,
+        "get_coin_market_data_batch",
+        AsyncMock(return_value={"btc": {"price": 103.0, "change_24h": 1.0, "change_7d": None}}),
+    )
+    monkeypatch.setattr(alerts, "load_state", lambda: {"last_price": 100.0})
+    monkeypatch.setattr(alerts, "save_state", lambda state: None)
+    monkeypatch.setattr(
+        alerts,
+        "get_state_alert_settings",
+        lambda state: {"price_move_alert_percent": 2.0},
+    )
+    monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
+    monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
+    monkeypatch.setattr(alerts, "_get_or_create_price_movement_market_event", create_market_event)
+    monkeypatch.setattr(alerts, "_get_or_create_event_ai_analysis", create_ai_analysis)
+    monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
+    monkeypatch.setattr(alerts, "_save_price_state", save_price_state)
+
+    await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+    get_recipients.assert_awaited_once()
+    fetch_news.assert_not_awaited()
+    create_market_event.assert_not_awaited()
+    create_ai_analysis.assert_not_awaited()
+    deliver_alert.assert_not_awaited()
+    save_price_state.assert_awaited_once()
+    assert save_price_state.await_args.kwargs["last_alert_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipients(monkeypatch):
+    recipients = [
+        alerts.AlertRecipient(chat_id=2001, user_id=1),
+        alerts.AlertRecipient(chat_id=2002, user_id=2),
+    ]
+    create_ai_analysis = AsyncMock(
+        return_value=({"plain_text": "BTC movement alert\n\nNot financial advice."}, 456)
+    )
+    deliver_alert = AsyncMock(return_value=True)
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["btc"]))
+    monkeypatch.setattr(
+        alerts,
+        "get_coin_market_data_batch",
+        AsyncMock(return_value={"btc": {"price": 103.0, "change_24h": 1.0, "change_7d": None}}),
+    )
+    monkeypatch.setattr(alerts, "load_state", lambda: {"last_price": 100.0})
+    monkeypatch.setattr(alerts, "save_state", lambda state: None)
+    monkeypatch.setattr(
+        alerts,
+        "get_state_alert_settings",
+        lambda state: {"price_move_alert_percent": 2.0},
+    )
+    monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=recipients))
+    monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        alerts,
+        "_get_or_create_price_movement_market_event",
+        AsyncMock(return_value=(123, "btc:event")),
+    )
+    monkeypatch.setattr(alerts, "_get_or_create_event_ai_analysis", create_ai_analysis)
+    monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
+    monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
+    monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
+
+    await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+    create_ai_analysis.assert_awaited_once()
+    deliver_alert.assert_awaited_once()
+    assert deliver_alert.await_args.kwargs["recipients"] == recipients

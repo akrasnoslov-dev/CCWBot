@@ -571,11 +571,16 @@ async def _deliver_market_event_alert(
     alert_payload: dict,
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
+    recipients: list[AlertRecipient] | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _sanitize_alert_payload(alert_payload)
     normalized_symbol = normalize_symbol(symbol)
-    recipients = await get_alert_recipients(symbol=normalized_symbol, event_type="price_movement")
+    if recipients is None:
+        recipients = await get_alert_recipients(
+            symbol=normalized_symbol,
+            event_type="price_movement",
+        )
     if not recipients:
         log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
         return False
@@ -791,6 +796,25 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 price_change_percent=price_change_percent,
                 threshold_percent=alert_settings["price_move_alert_percent"],
             ):
+                recipients = await get_alert_recipients(
+                    symbol=symbol,
+                    event_type="price_movement",
+                    now=now,
+                )
+                if not recipients:
+                    log(
+                        f"No eligible recipients for {symbol.upper()} price movement alert. "
+                        "Skipping AI analysis."
+                    )
+                    await _save_price_state(
+                        symbol=symbol,
+                        state=state,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        checked_at=checked_at,
+                        last_alert_at=None,
+                    )
+                    continue
                 if raw_news_items is None:
                     raw_news_items = await fetch_news_context(limit=12)
                 news_items = filter_news_for_symbol(symbol, raw_news_items)
@@ -820,6 +844,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_payload=alert_payload,
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
+                    recipients=recipients,
                 )
                 if delivered:
                     delivered_symbols += 1

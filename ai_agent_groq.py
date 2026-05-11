@@ -5,12 +5,14 @@ When parsing/validation fails, callers fall back to deterministic templates.
 All prompts explicitly avoid direct financial advice.
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
 from html import escape
 
+import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
@@ -51,6 +53,8 @@ def get_groq_client() -> AsyncOpenAI:
         _groq_client = AsyncOpenAI(
             api_key=api_key,
             base_url="https://api.groq.com/openai/v1",
+            timeout=httpx.Timeout(20.0, connect=10.0),
+            max_retries=1,
         )
     return _groq_client
 
@@ -548,13 +552,18 @@ def _build_news_text(news_items: list[dict] | None) -> str:
 async def _ask_json(prompt: str) -> dict | None:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
     client = get_groq_client()
-    response = await client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
+    response = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=900,
+            response_format={"type": "json_object"},
+        ),
+        timeout=25,
     )
     return _parse_json(response.choices[0].message.content)
 
