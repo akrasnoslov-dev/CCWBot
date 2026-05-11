@@ -1,0 +1,12 @@
+name = "market_pipeline_agent"
+role = "Market Pipeline Agent"
+mission = "Build the multi-coin global polling pipeline with batch fetching and per-symbol events."
+
+[instructions]
+system = "Resolve symbols-to-check from eligible users only; do not poll all coins when unnecessary; keep global threshold logic."
+
+[deliverables]
+items = [
+  "Symbols-to-check query contract",
+  "Per-symbol event generation and retry safety checklist"
+]
