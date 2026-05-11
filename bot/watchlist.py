@@ -145,6 +145,20 @@ def build_subscribe_message() -> str:
     )
 
 
+def _current_telegram_user_id(update: Update) -> int | None:
+    return update.effective_user.id if update.effective_user else None
+
+
+def _parse_target_telegram_user_id(update: Update, value: str) -> int | None:
+    normalized_value = value.strip().lower()
+    if normalized_value in {"me", "self"}:
+        return _current_telegram_user_id(update)
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 async def _reply_db_required(message: Message) -> None:
     await _safe_reply_text(message, "Watchlist storage is temporarily unavailable.")
 
@@ -299,13 +313,16 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
         await _safe_reply_text(update.message, "Sorry, only the bot admin can grant Premium.")
         return
     if len(args) != 2:
-        await _safe_reply_text(update.message, "Usage: /grantpremium <telegram_user_id> <days>")
+        await _safe_reply_text(update.message, "Usage: /grantpremium <telegram_user_id|me> <days>")
+        return
+    telegram_user_id = _parse_target_telegram_user_id(update, args[0])
+    if telegram_user_id is None:
+        await _safe_reply_text(update.message, "User ID must be a whole number or me.")
         return
     try:
-        telegram_user_id = int(args[0])
         days = int(args[1])
     except ValueError:
-        await _safe_reply_text(update.message, "User ID and days must be whole numbers.")
+        await _safe_reply_text(update.message, "Days must be a whole number.")
         return
     if days <= 0:
         await _safe_reply_text(update.message, "Days must be greater than 0.")
@@ -329,7 +346,9 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
     log(f"Granted Premium to telegram_user_id={telegram_user_id} for {days} days.")
     await _safe_reply_text(
         update.message,
-        f"Premium granted until {_format_date(subscription.active_until)}."
+        "Premium granted "
+        f"to Telegram user ID {telegram_user_id} "
+        f"until {_format_date(subscription.active_until)}."
     )
 
 
@@ -339,12 +358,11 @@ async def revoke_premium_command(update: Update, args: list[str]) -> None:
         await _safe_reply_text(update.message, "Sorry, only the bot admin can revoke Premium.")
         return
     if len(args) != 1:
-        await _safe_reply_text(update.message, "Usage: /revokepremium <telegram_user_id>")
+        await _safe_reply_text(update.message, "Usage: /revokepremium <telegram_user_id|me>")
         return
-    try:
-        telegram_user_id = int(args[0])
-    except ValueError:
-        await _safe_reply_text(update.message, "User ID must be a whole number.")
+    telegram_user_id = _parse_target_telegram_user_id(update, args[0])
+    if telegram_user_id is None:
+        await _safe_reply_text(update.message, "User ID must be a whole number or me.")
         return
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         await _safe_reply_text(update.message, "Premium storage is temporarily unavailable.")
@@ -359,4 +377,8 @@ async def revoke_premium_command(update: Update, args: list[str]) -> None:
         )
         return
     log(f"Revoked Premium for telegram_user_id={telegram_user_id}.")
-    await _safe_reply_text(update.message, "Premium revoked. Saved coin choices were preserved.")
+    await _safe_reply_text(
+        update.message,
+        f"Premium revoked for Telegram user ID {telegram_user_id}. "
+        "Saved coin choices were preserved.",
+    )

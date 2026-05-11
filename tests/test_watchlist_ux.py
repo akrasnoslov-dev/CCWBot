@@ -217,6 +217,65 @@ async def test_grant_and_revoke_premium_deny_non_admin(monkeypatch):
     ]
 
 
+@pytest.mark.asyncio
+async def test_grant_premium_me_uses_current_admin_telegram_user_id(monkeypatch):
+    replies = []
+
+    class FakeMessage:
+        async def reply_text(self, text, **kwargs):
+            replies.append(text)
+
+    async def fake_grant_user_premium(session, *, telegram_user_id, days):
+        assert telegram_user_id == 278890596
+        assert days == 30
+        return SimpleNamespace(active_until=datetime(2026, 6, 10, tzinfo=timezone.utc))
+
+    monkeypatch.setattr("bot.watchlist.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.watchlist.is_admin_update", AsyncTrue())
+    monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
+    monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(None))
+    monkeypatch.setattr("bot.watchlist.grant_user_premium", fake_grant_user_premium)
+    update = SimpleNamespace(
+        message=FakeMessage(),
+        effective_user=SimpleNamespace(id=278890596),
+    )
+
+    await grant_premium_command(update, ["me", "30"])
+
+    assert replies == [
+        "Premium granted to Telegram user ID 278890596 until 2026-06-10."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_revoke_premium_me_uses_current_admin_telegram_user_id(monkeypatch):
+    replies = []
+
+    class FakeMessage:
+        async def reply_text(self, text, **kwargs):
+            replies.append(text)
+
+    async def fake_revoke_user_premium(session, *, telegram_user_id):
+        assert telegram_user_id == 278890596
+        return SimpleNamespace(active_until=datetime(2026, 5, 11, tzinfo=timezone.utc))
+
+    monkeypatch.setattr("bot.watchlist.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.watchlist.is_admin_update", AsyncTrue())
+    monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
+    monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(None))
+    monkeypatch.setattr("bot.watchlist.revoke_user_premium", fake_revoke_user_premium)
+    update = SimpleNamespace(
+        message=FakeMessage(),
+        effective_user=SimpleNamespace(id=278890596),
+    )
+
+    await revoke_premium_command(update, ["me"])
+
+    assert replies == [
+        "Premium revoked for Telegram user ID 278890596. Saved coin choices were preserved."
+    ]
+
+
 class AsyncNoop:
     async def __call__(self, *args, **kwargs):
         return None
@@ -225,6 +284,11 @@ class AsyncNoop:
 class AsyncFalse:
     async def __call__(self, *args, **kwargs):
         return False
+
+
+class AsyncTrue:
+    async def __call__(self, *args, **kwargs):
+        return True
 
 
 async def build_session():
