@@ -6,12 +6,15 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-    command: sh -c "alembic upgrade head && python main.py"
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ccwbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/ccwbot
+    command: sh -c "alembic upgrade head && exec python main.py"
     ports:
-      - "8080:8080"
+      - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5).read()"]
+      test: ["CMD-SHELL", "python -c \"import json, os, urllib.request; url='http://localhost:%s/health' % os.getenv('HEALTH_PORT', '8080'); data=json.loads(urllib.request.urlopen(url, timeout=5).read()); raise SystemExit(0 if data.get('status') == 'ok' else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -23,9 +26,12 @@ services:
     environment:
       POSTGRES_DB: ccwbot
       POSTGRES_USER: ccwbot
-      POSTGRES_PASSWORD: ccwbot_password
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ccwbot -d ccwbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - ccwbot_postgres_data:/var/lib/postgresql/data
 

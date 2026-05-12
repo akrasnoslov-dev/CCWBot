@@ -1,3 +1,5 @@
+import asyncio
+
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from database import (
     cleanup_seen_news,
@@ -11,7 +13,7 @@ from news_service import fetch_crypto_news
 async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
     """Fetch RSS news and use seen_news for dedupe when PostgreSQL is active."""
     fetch_limit = max(limit * 3, limit)
-    news_items = fetch_crypto_news(limit=fetch_limit)
+    news_items = await asyncio.to_thread(fetch_crypto_news, limit=fetch_limit)
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         return news_items[:limit]
 

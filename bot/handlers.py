@@ -40,6 +40,7 @@ from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitE
 from storage import load_state
 
 PRICE_RATE_LIMIT_SECONDS = 10
+PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 _user_last_price_call: dict[int, float] = {}
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,10 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id_value = update.effective_user.id if update.effective_user else None
         now = time.monotonic()
         if user_id_value is not None:
+            stale_before = now - PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS
+            for cached_user_id, last_seen_at in list(_user_last_price_call.items()):
+                if last_seen_at < stale_before:
+                    _user_last_price_call.pop(cached_user_id, None)
             last_call_at = _user_last_price_call.get(user_id_value)
             if last_call_at is not None and now - last_call_at < PRICE_RATE_LIMIT_SECONDS:
                 await update.message.reply_text(
@@ -276,7 +281,8 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update.message, update.effective_chat.id if update.effective_chat else None
         )
     except ValueError as error:
-        await update.message.reply_text(f"Price data is temporarily unavailable: {error}")
+        logger.warning("Manual price lookup failed: %s", error)
+        await update.message.reply_text("Price data is temporarily unavailable.")
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
         log(f"Price error: {error}")
@@ -393,7 +399,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query.message, query.message.chat_id if query.message else None
         )
     except ValueError as error:
-        await query.message.reply_text(f"Price data is temporarily unavailable: {error}")
+        logger.warning("Callback price lookup failed: %s", error)
+        await query.message.reply_text("Price data is temporarily unavailable.")
     except Exception as error:
         log(f"Callback handling error: {error}")
         await query.message.reply_text("Sorry, something went wrong.")

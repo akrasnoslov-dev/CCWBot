@@ -1,24 +1,22 @@
 # AGENTS.md
 
 ## Project
-You are working on CCWBot / CryptoCurrencyWatcherBot (`akrasnoslov-dev/CCWBot`).
+CCWBot / CryptoCurrencyWatcherBot (`akrasnoslov-dev/CCWBot`).
 
 Stack: Python Telegram Bot API, Groq/OpenAI-compatible LLM, CoinGecko, RSS/news, PostgreSQL, async SQLAlchemy + asyncpg, Alembic, Docker Compose, CI, `/health`.
 
-Core rule:
+Core invariant:
 
 ```text
 1 coin market event = 1 AI analysis = many alert deliveries
 ```
 
-Preserve this rule.
+Never put LLM/Groq calls inside a recipient loop.
 
-## Product rules
-Do not change product behaviour unless explicitly asked.
-
-Current rules:
+## Product Rules
+- Do not change product behaviour unless explicitly asked.
 - Automatic alerts are BTC-only unless explicitly expanded.
-- Manual `/price` supports configured supported coins.
+- Manual `/price` supports configured supported coins and remains free.
 - `/reports`, `/dailyreport`, `/weeklyreport` are available to all users.
 - `/settings` is admin-only.
 - `/status` is admin-only if present.
@@ -26,34 +24,29 @@ Current rules:
 - Normal users must not change global settings.
 - Global alert threshold is admin-controlled.
 - Keep alert language cautious.
-- Never write direct financial advice like “buy now” or “sell now”.
-- Include “Not financial advice.” where applicable.
+- Never write direct financial advice like "buy now" or "sell now".
+- Include "Not financial advice." where applicable.
 - Related news must use real title/source/link from `news_service.py`.
 
-## Alert architecture
-Never put LLM/Groq calls inside a recipient loop.
-
-Alert flow:
+## Alert Flow
 1. Create/reuse one market event.
 2. Create/reuse one AI analysis.
 3. Resolve eligible recipients.
 4. Send the same sanitized analysis to recipients.
 5. Store one delivery record per recipient.
 
-Never implement “1 user = 1 LLM call” for the same event.
+Never implement "1 user = 1 LLM call" for the same event.
 
-## Coins and price data
-- Use consistent lowercase internal symbols and uppercase display symbols.
+## Coins and Data
+- Use lowercase internal symbols and uppercase display symbols.
 - Keep CoinGecko ID mapping explicit.
 - Prefer batch CoinGecko calls for multiple coins.
 - Handle CoinGecko 429/rate limits carefully.
 - Do not add coins unless requested.
 
 ## Database
-Use PostgreSQL, async SQLAlchemy, asyncpg, and Alembic.
-
-Rules:
 - Runtime DB paths must be async.
+- Use PostgreSQL, async SQLAlchemy, asyncpg, and Alembic.
 - Do not add sync DB calls to async paths.
 - Do not casually create extra DB engines.
 - Avoid asyncpg cross-event-loop issues.
@@ -65,42 +58,60 @@ Rules:
 - Keep admin-only commands protected.
 - Keep messages concise and clear.
 - Do not expose raw JSON, stack traces, DB internals, or debug fields.
-
-Never leak diagnostic text in Telegram messages, including `Data:`, `News:`, `Debug:`, `move=`, `change24h=`, `change7d=`, `threshold=`, `interval=`, `previous=`, `current=`.
+- Never leak diagnostic labels in Telegram messages, including `Data:`, `News:`, `Debug:`, `move=`, `change24h=`, `change7d=`, `threshold=`, `interval=`, `previous=`, `current=`.
 
 ## Logging
-Use Python logging, not `print`.
+- Use Python logging, not `print`.
+- Keep useful INFO logs: database configured, bot started, health server started, automatic interval, command handled/denied, alert delivery summary, clean shutdown.
+- Move repetitive/internal logs to DEBUG.
+- Reduce noisy third-party INFO logs from `httpx` and APScheduler if needed.
+- Never log tokens, API keys, `DATABASE_URL`, raw `.env` values, or private Telegram text.
 
-Keep useful INFO logs: database configured, bot started, health server started, automatic interval, command handled/denied, alert delivery summary, clean shutdown.
+## Health
+`/health` is for monitoring only. Return safe JSON with `status`, `uptime_seconds`, and available state such as `last_btc_check_at`. If state lookup fails, return a degraded response without secrets, stack traces, or raw exceptions.
 
-Move repetitive/internal logs to DEBUG. Reduce noisy third-party INFO logs from `httpx` and APScheduler if needed. Never log tokens, API keys, `DATABASE_URL`, raw `.env` values, or private Telegram text.
-
-## Health check
-`/health` is for monitoring only.
-
-It should return JSON with `status`, `uptime_seconds`, and available state such as `last_btc_check_at`. If state lookup fails, return a safe degraded response. Never expose secrets, stack traces, or raw exceptions.
-
-## Premium and payments
-If working on Premium/Telegram Stars:
+## Premium and Payments
 - BTC remains free unless explicitly changed.
 - Manual `/price` remains free unless explicitly changed.
 - Premium unlocks automatic non-BTC alerts.
 - Store subscription/payment state in PostgreSQL.
 - Keep price configurable where practical.
-- Add admin/manual premium grant/revoke if useful for testing.
+- Add admin/manual premium grant/revoke only when useful for testing.
 - Do not auto-enable non-BTC coins after purchase unless requested.
 - If Premium expires, keep non-BTC choices in DB, block non-BTC deliveries, and restore them after renewal.
 - If Telegram Stars recurring support is unclear, investigate and document it before implementing.
 
-## Code style
-Keep changes focused and safe. Prefer small helpers, clear names, explicit boundaries, and behaviour tests.
+## Available Agents
+All agents live in `agents/*.toml`.
 
-Avoid unrelated rewrites, risky file moves, and unused abstractions. Do not rename `ai_agent_groq.py` unless explicitly requested. `python main.py` and Docker Compose startup must keep working.
+- `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
+- `security_review_agent`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
+- `code_quality_agent`: maintainability, async boundaries, error handling, logging levels, and focused refactors.
+- `test_ci_agent`: regression coverage, validation commands, and CI confidence.
+- `product_policy_agent`: Telegram command access, alert wording, premium/free UX, and product-rule consistency.
+- `market_pipeline_agent`: CoinGecko/news/LLM payloads, event detection, delivery flow, and rate-limit handling.
+- `db_migration_guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
+- `telegram_stars_payments_agent`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
+- `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
 
-## Documentation
-Update docs when setup, config, commands, dependencies, architecture, or behaviour changes.
+## Agent Workflow
+- Use relevant agents proactively for every task.
+- For production-impacting changes, use `architecture_guardian` plus at least one domain agent.
+- Use `security_review_agent`, `code_quality_agent`, and `test_ci_agent` for broad repository reviews.
+- Use `db_migration_guardian` for persistence/schema changes.
+- Use `market_pipeline_agent` for price, news, alert, and delivery changes.
+- Use `telegram_stars_payments_agent` for Premium, subscriptions, grants/revokes, and billing state.
+- Use `product_policy_agent` for command behavior, menus/help, and user-visible copy.
+- Use `devops_release_agent` for Docker, CI, config, health, dependencies, and deployment docs.
+- If no agent is relevant, state why in the PR description.
 
-Relevant files: `README.md`, `docs/development.md`, `.env.example`, PR description.
+## Safe Changes
+- Keep changes focused and safe.
+- Prefer small helpers, clear names, explicit boundaries, and behaviour tests.
+- Avoid unrelated rewrites, risky file moves, unused abstractions, and product changes.
+- Do not rename `ai_agent_groq.py` unless explicitly requested.
+- `python main.py` and Docker Compose startup must keep working.
+- Update docs when setup, config, commands, dependencies, architecture, or behaviour changes.
 
 ## Verification
 Default checks:
@@ -109,12 +120,12 @@ Default checks:
 python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
 ruff check .
 python -m pytest tests/ -v
-docker compose config
+docker compose config >/dev/null
 ```
 
-If Docker Compose changes, run `docker compose config`. Do not claim manual Telegram/runtime verification unless it was actually performed.
+If Docker Compose changes, run `docker compose config >/dev/null`. Do not publish Compose config output from a real `.env`, and do not claim manual Telegram/runtime verification unless it was actually performed.
 
-## Git and PR workflow
+## Git and PR Workflow
 Never commit directly to `main`.
 
 For every task:
@@ -125,55 +136,19 @@ For every task:
 5. Push.
 6. Create a GitHub PR against `main`.
 
-A task is not complete until a GitHub PR exists, or you clearly explain why it could not be created.
-
 Do not auto-merge PRs, delete user work, or include generated/cache files.
 
 Never commit `.env`, `state.json`, `.venv`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`, `*.sqlite`, or database volumes.
 
-
-## Subagents policy
-Use subagents proactively for every task when their role matches the requested work.
-
-Default placement: all subagents live under `agents/*.toml`.
-
-Autoconnect rules:
-- `db_migration_guardian`: run for any task that can touch DB models, SQLAlchemy/Alembic migrations, or persistence contracts.
-- `market_pipeline_agent`: run for alert pipeline/event-analysis-delivery logic and CoinGecko/news/market data flow changes.
-- `telegram_stars_payments_agent`: run for Premium, subscriptions, Telegram Stars, grants/revokes, and billing state tasks.
-- `architecture_guardian`: run as blocking reviewer for cross-cutting refactors, risky architecture changes, or tasks affecting multiple modules.
-
-Mandatory combination:
-- For production-impacting changes, use at least one domain subagent plus `architecture_guardian`.
-
-Priority:
-1. `architecture_guardian` (blocking)
-2. Domain-specific subagent (`db_migration_guardian` / `market_pipeline_agent` / `telegram_stars_payments_agent`)
-
-If no subagent is relevant, explicitly state why in the PR description.
-
-## PR follow-through
-After creating a PR, monitor CI when possible.
-
-If CI fails:
-1. Inspect failing logs.
-2. Identify the minimal fix.
-3. Fix the same branch.
-4. Run relevant checks.
-5. Push the fix.
-6. Wait for CI again.
-
-Repeat until CI is green or user input is required. Do not merge PRs. Do not change unrelated behaviour while fixing CI.
-
-## PR description
+## PR Description
 Every PR must include summary, files changed, behaviour confirmation, database/schema confirmation, verification performed, manual verification status, protected files changed and why, and known limitations/follow-ups.
 
 For sensitive changes, also confirm alert scope, recipient delivery behaviour, LLM call placement, payment/subscription impact, and no secrets exposed.
 
-## Protected files
+## Protected Files
 Treat these carefully: `docker-compose.yml`, `.env.example`, `requirements.txt`, `requirements-dev.txt`, `README.md`.
 
-Modify only when required and explain why. `docker-compose.yml` must keep top-level `services:`. Never place `postgres:` at top level.
+Modify protected files only when required and explain why. `docker-compose.yml` must keep top-level `services:`. Never place `postgres:` at top level.
 
-## When unsure
+## When Unsure
 Prefer the smallest safe change. If a task is too large, split it into focused PRs. If requirements conflict, stop and explain. If external service support is unclear, investigate before implementing.

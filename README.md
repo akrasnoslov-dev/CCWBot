@@ -60,6 +60,7 @@ Required:
 Common configuration:
 
 - `DATABASE_URL`
+- `POSTGRES_PASSWORD`
 - `GROQ_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
@@ -104,6 +105,10 @@ alembic upgrade head
 Docker Compose runs Alembic migrations before starting the bot service. Do not add migrations
 unless a task explicitly changes the database schema.
 
+Migration `0007_unique_telegram_user_id` adds uniqueness for `users.telegram_user_id`. It
+intentionally stops if duplicate Telegram users already exist; merge duplicate user rows before
+running that migration.
+
 The Premium foundation stores:
 
 - `users.alert_frequency_seconds`
@@ -144,10 +149,25 @@ health endpoint and depends on the PostgreSQL health check.
 Useful commands:
 
 ```bash
-docker compose config
+cp .env.example .env
+docker compose config >/dev/null
 docker compose up --build
 docker compose down
 ```
+
+Compose overrides `DATABASE_URL` inside the bot container so it connects to the `postgres`
+service. Keep `POSTGRES_PASSWORD` set in `.env`, and do not publish `docker compose config`
+output from a real `.env` because Compose can expand secrets.
+
+Full startup smoke test:
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose down
+```
+
+Both `bot` and `postgres` should show healthy before considering the Compose startup verified.
 
 ## Health Check
 
@@ -177,10 +197,24 @@ Run these before opening a pull request:
 python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
 ruff check .
 python -m pytest tests/ -v
-docker compose config
+docker compose config >/dev/null
 ```
 
-CI runs Ruff and the test suite on pull requests.
+CI runs Ruff, compile checks, the test suite, and Compose validation on pull requests.
+
+## Manual Telegram Smoke Test
+
+After deploy, verify with a private chat:
+
+1. Send `/start` as the configured `TELEGRAM_ADMIN_USER_ID`; admin-only commands should appear.
+2. Send `/settings` and `/status` as admin; both should work.
+3. Send `/settings` from a normal user; it should be denied.
+4. Send `/userid`; it should work manually but stay hidden from command menus.
+5. Send `/price btc`; it should return a concise BTC price or a generic temporary-unavailable message.
+6. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels.
+7. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
+
+Do not paste bot logs, `.env`, Compose config output, or private Telegram text into PRs.
 
 ## Troubleshooting
 

@@ -26,5 +26,13 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Compile
+        run: python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
+
       - name: Test
         run: python -m pytest tests/ -v
+
+      - name: Validate Docker Compose
+        run: |
+          cp .env.example .env
+          docker compose config >/dev/null

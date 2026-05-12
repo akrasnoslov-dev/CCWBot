@@ -17,16 +17,21 @@ Run the same lightweight checks before opening a pull request:
 python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
 ruff check .
 python -m pytest tests/ -v
-docker compose config
+docker compose config >/dev/null
 ```
 
 These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
+Use dummy values from `.env.example` for Compose validation. Do not publish
+`docker compose config` output generated from a real `.env`, because Compose can expand secrets.
 
 ## Runtime Notes
 
 - `python main.py` remains the local bot entry point.
 - Docker Compose starts PostgreSQL and the bot, and the bot runs Alembic migrations on startup.
+- Docker Compose overrides `DATABASE_URL` for the bot container to use the `postgres` service.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
+- Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
+  exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
 - Automatic alerts use global multi-coin polling. BTC is free; enabled non-BTC watchlist
   alerts require active Premium.
