@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     STARS_CURRENCY,
+    _coerce_datetime,
     build_premium_invoice_payload,
     build_subscribe_message,
     send_subscribe_invoice,
@@ -23,6 +24,8 @@ from database import (
     User,
     activate_premium_from_telegram_stars_payment,
     ensure_default_coin_subscriptions,
+    grant_user_premium,
+    revoke_user_premium,
     set_user_coin_subscription,
 )
 from premium import is_user_premium_active
@@ -140,6 +143,114 @@ async def test_subscribe_creates_recurring_stars_invoice_link(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_subscribe_creates_invoice_for_expired_premium_user(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await grant_user_premium(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            days=1,
+            now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        message = FakeMessage()
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=SimpleNamespace(id=2001),
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
+        assert message.replies[0][0] == build_subscribe_message()
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await grant_user_premium(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            days=30,
+            now=datetime.now(timezone.utc),
+        )
+        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        message = FakeMessage()
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=SimpleNamespace(id=2001),
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
+        assert "paid access is active until" in message.replies[0][0]
+        assert (
+            "Recurring payment status is managed in Telegram Stars settings"
+            in message.replies[0][0]
+        )
+        assert "Paying again adds another month" in message.replies[0][0]
+        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
+            "https://t.me/"
+        )
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_allows_invoice_after_premium_revoke(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await grant_user_premium(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            days=30,
+            now=datetime.now(timezone.utc),
+        )
+        await revoke_user_premium(session, telegram_user_id=user.telegram_user_id)
+        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        message = FakeMessage()
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=SimpleNamespace(id=2001),
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
+        assert message.replies[0][0] == build_subscribe_message()
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_pre_checkout_validation_accepts_valid_query(monkeypatch):
     engine, session = await build_session()
     try:
@@ -215,6 +326,9 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
                 invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
                 telegram_payment_charge_id="tg-charge-1",
                 provider_payment_charge_id="provider-charge-1",
+                is_recurring=True,
+                is_first_recurring=True,
+                subscription_expiration_date=datetime(2026, 6, 10, tzinfo=timezone.utc),
             )
         )
         await successful_payment_handler(
@@ -231,11 +345,19 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
             ("Premium activated ✅\nUse /watchlist to choose your coins.", {})
         ]
         assert is_user_premium_active(reloaded.premium_subscription, now)
-        assert "Plan: Premium" in build_plan_message(reloaded, now)
+        plan_message = build_plan_message(reloaded, now)
+        assert "Plan: Premium" in plan_message
+        assert "Paid access until:" in plan_message
+        assert "Recurring subscription: not tracked by CCWBot" in plan_message
         subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
         _, rows = build_watchlist_message(reloaded, subscriptions, now)
         assert ("eth", True, True) in rows
         assert ("sol", False, True) in rows
+        stored_payment = await session.scalar(select(Payment).limit(1))
+        assert stored_payment.is_recurring is True
+        assert stored_payment.is_first_recurring is True
+        assert stored_payment.subscription_expiration_date == datetime(2026, 6, 10)
+        assert stored_payment.provider_subscription_id is None
     finally:
         await session.close()
         await engine.dispose()
@@ -302,6 +424,43 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
 
 
 @pytest.mark.asyncio
+async def test_successful_payment_metadata_accepts_unix_expiration_timestamp(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=199,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-ts",
+                provider_payment_charge_id="provider-charge-ts",
+                is_recurring=False,
+                is_first_recurring=False,
+                subscription_expiration_date=1_778_976_000,
+            )
+        )
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            ),
+            SimpleNamespace(),
+        )
+
+        stored_payment = await session.scalar(select(Payment).limit(1))
+        assert stored_payment.is_recurring is False
+        assert stored_payment.is_first_recurring is False
+        assert stored_payment.subscription_expiration_date == datetime(2026, 5, 17)
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_successful_payment_unknown_user_does_not_create_user(monkeypatch):
     engine, session = await build_session()
     try:
@@ -353,3 +512,15 @@ def test_payment_schema_has_no_ton_wallet_storage():
 
     assert "wallet" not in " ".join(column_names).lower()
     assert "ton" not in " ".join(column_names).lower()
+
+
+def test_payment_schema_has_recurring_metadata_columns():
+    columns = Payment.__table__.columns
+
+    assert columns["is_recurring"].nullable is True
+    assert columns["is_first_recurring"].nullable is True
+    assert columns["subscription_expiration_date"].nullable is True
+
+
+def test_coerce_datetime_treats_zero_as_missing_metadata():
+    assert _coerce_datetime(0) is None

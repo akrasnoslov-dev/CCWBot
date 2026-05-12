@@ -195,6 +195,11 @@ class Payment(Base):
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_recurring: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_first_recurring: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    subscription_expiration_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     amount: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(16), index=True)
     payload: Mapped[str] = mapped_column(String(255), index=True)
@@ -589,6 +594,9 @@ async def activate_premium_from_telegram_stars_payment(
     currency: str,
     payload: str,
     provider_subscription_id: str | None = None,
+    is_recurring: bool | None = None,
+    is_first_recurring: bool | None = None,
+    subscription_expiration_date: datetime | None = None,
     now: datetime | None = None,
 ) -> tuple[Payment, UserPremiumSubscription, bool]:
     """Record one Stars payment and extend Premium once for that payment id."""
@@ -616,6 +624,9 @@ async def activate_premium_from_telegram_stars_payment(
         provider_subscription_id=provider_subscription_id,
         telegram_payment_charge_id=telegram_payment_charge_id,
         provider_payment_charge_id=provider_payment_charge_id,
+        is_recurring=is_recurring,
+        is_first_recurring=is_first_recurring,
+        subscription_expiration_date=_normalize_utc(subscription_expiration_date),
         amount=int(amount),
         currency=currency,
         payload=payload,

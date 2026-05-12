@@ -36,7 +36,12 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
   `DATABASE_URL` is configured.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
   The price is `PREMIUM_MONTHLY_STARS` (default `199`), currency is `XTR`, and the period is
-  30 days / `2592000` seconds.
+  30 days / `2592000` seconds. Active Premium means paid access exists until `active_until`;
+  it does not prove the Telegram recurring subscription is still active. CCWBot does not
+  reliably track Telegram recurring subscription active/cancelled status, so users manage
+  recurring payments in Telegram Stars settings. `/subscribe` can still create another invoice
+  for users with active paid access, and a new payment extends access from the current paid
+  access date.
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
   them in `/watchlist`.

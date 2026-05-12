@@ -159,7 +159,10 @@ async def test_grant_uses_telegram_user_id_not_internal_user_id():
             include_plan=True,
         )
         assert is_user_premium_active(reloaded.premium_subscription, now)
-        assert "Plan: Premium" in build_plan_message(reloaded, now)
+        plan_message = build_plan_message(reloaded, now)
+        assert "Plan: Premium" in plan_message
+        assert "Paid access until:" in plan_message
+        assert "Recurring subscription: not tracked by CCWBot" in plan_message
         subscriptions = await ensure_default_coin_subscriptions(session, user_id=target_user.id)
         _, rows = build_watchlist_message(reloaded, subscriptions, now)
         assert ("eth", False, True) in rows

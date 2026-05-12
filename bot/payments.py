@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Update
 from telegram.error import NetworkError, TimedOut
@@ -15,6 +17,7 @@ from database import (
     activate_premium_from_telegram_stars_payment,
     get_user_by_telegram_user_id,
 )
+from premium import is_user_premium_active
 from supported_coins import premium_symbols_display
 
 logger = logging.getLogger(__name__)
@@ -44,15 +47,71 @@ def build_premium_prices(price_stars: int = PREMIUM_MONTHLY_STARS) -> list[Label
     return [LabeledPrice("Premium monthly", int(price_stars))]
 
 
-def build_subscribe_message(price_stars: int = PREMIUM_MONTHLY_STARS) -> str:
-    return (
-        "CCWBot Premium\n\n"
-        f"Price: {price_stars} Stars / month.\n"
-        "BTC alerts remain free.\n"
-        "Manual /price remains free for all supported coins.\n"
-        f"Premium unlocks automatic alerts for {premium_symbols_display()}.\n\n"
-        "After payment, use /watchlist to choose your coins."
+def build_subscribe_message(
+    price_stars: int = PREMIUM_MONTHLY_STARS,
+    *,
+    active_until: datetime | None = None,
+) -> str:
+    lines = [
+        "CCWBot Premium",
+        "",
+        f"Price: {price_stars} Stars / month.",
+    ]
+    if active_until is not None:
+        lines.extend(
+            [
+                f"Your paid access is active until {_format_date(active_until)}.",
+                (
+                    "Recurring payment status is managed in Telegram Stars settings "
+                    "and is not tracked by CCWBot."
+                ),
+                "Paying again adds another month to paid access.",
+            ]
+        )
+    lines.extend(
+        [
+            "BTC alerts remain free.",
+            "Manual /price remains free for all supported coins.",
+            f"Premium unlocks automatic alerts for {premium_symbols_display()}.",
+            "",
+            "After payment, use /watchlist to choose your coins.",
+        ]
     )
+    return "\n".join(lines)
+
+
+def _format_date(active_until: datetime) -> str:
+    if isinstance(active_until, datetime):
+        if active_until.tzinfo is None:
+            active_until = active_until.replace(tzinfo=timezone.utc)
+        return active_until.astimezone(timezone.utc).date().isoformat()
+    return "your current expiry date"
+
+
+def _get_payment_attr(payment: Any, name: str) -> Any:
+    value = getattr(payment, name, None)
+    if value is not None:
+        return value
+    api_kwargs = getattr(payment, "api_kwargs", None) or {}
+    if isinstance(api_kwargs, dict):
+        return api_kwargs.get(name)
+    return None
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    try:
+        timestamp = int(value)
+    except (TypeError, ValueError, OSError):
+        return None
+    if timestamp <= 0:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
 
 async def _safe_reply_text(message, text: str, **kwargs) -> bool:
@@ -72,6 +131,16 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         await _safe_reply_text(update.message, "Premium payments are temporarily unavailable.")
         return
 
+    active_until = None
+    async with DB_SESSION_LOCAL() as session:
+        user = await get_user_by_telegram_user_id(
+            session,
+            update.effective_user.id,
+            include_plan=True,
+        )
+        if user is not None and is_user_premium_active(user.premium_subscription):
+            active_until = user.premium_subscription.active_until
+
     payload = build_premium_invoice_payload(update.effective_user.id)
     invoice_link = await context.bot.create_invoice_link(
         title=PREMIUM_INVOICE_TITLE,
@@ -86,7 +155,7 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
     )
     await _safe_reply_text(
         update.message,
-        build_subscribe_message(),
+        build_subscribe_message(active_until=active_until),
         reply_markup=keyboard,
     )
 
@@ -154,7 +223,12 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 amount=payment.total_amount,
                 currency=payment.currency,
                 payload=payment.invoice_payload,
-                provider_subscription_id=None,
+                provider_subscription_id=_get_payment_attr(payment, "provider_subscription_id"),
+                is_recurring=_get_payment_attr(payment, "is_recurring"),
+                is_first_recurring=_get_payment_attr(payment, "is_first_recurring"),
+                subscription_expiration_date=_coerce_datetime(
+                    _get_payment_attr(payment, "subscription_expiration_date")
+                ),
             )
         except ValueError:
             logger.warning(
