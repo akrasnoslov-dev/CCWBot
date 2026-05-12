@@ -92,7 +92,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append("")
         lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
         lines.append("")
-        lines.append(f"Premium active until: {_format_date(getattr(plan, 'active_until', None))}")
+        lines.append(f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}")
     elif had_premium:
         expired_on = _format_date(getattr(plan, "active_until", None))
         lines.append(f"Your Premium expired on: {expired_on}.")
@@ -119,7 +119,7 @@ def build_plan_message(user, now: datetime | None = None) -> str:
     if is_user_premium_active(plan, now):
         return (
             "Plan: Premium\n"
-            f"Active until: {_format_date(getattr(plan, 'active_until', None))}\n"
+            f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}\n"
             "Premium coins unlocked."
         )
     if plan is not None and getattr(plan, "active_until", None) is not None:

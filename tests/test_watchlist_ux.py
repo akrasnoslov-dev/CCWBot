@@ -86,7 +86,7 @@ def test_watchlist_premium_user_sees_enabled_non_btc_and_frequency():
 
     assert "Select coins for automatic alerts." in text
     assert "Frequency: Every 6 hours" in text
-    assert "Premium active until: 2026-05-12" in text
+    assert "Paid access until: 2026-05-12" in text
     assert ("eth", True, True) in rows
     assert ("sol", False, True) in rows
 
@@ -119,10 +119,12 @@ def test_plan_messages_for_free_premium_and_expired():
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
     assert "Plan: Free" in build_plan_message(make_user(), now)
     assert "Premium: not active" in build_plan_message(make_user(), now)
-    assert "Plan: Premium" in build_plan_message(
+    premium = build_plan_message(
         make_user(active_until=now + timedelta(days=1)),
         now,
     )
+    assert "Plan: Premium" in premium
+    assert "Paid access until: 2026-05-12" in premium
     expired = build_plan_message(make_user(active_until=now - timedelta(days=1)), now)
     assert "Premium expired on: 2026-05-10" in expired
     assert "Your premium coin choices are saved." in expired

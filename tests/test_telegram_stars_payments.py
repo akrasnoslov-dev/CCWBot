@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     STARS_CURRENCY,
+    _coerce_datetime,
     build_premium_invoice_payload,
     build_subscribe_message,
     send_subscribe_invoice,
@@ -175,7 +176,7 @@ async def test_subscribe_creates_invoice_for_expired_premium_user(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_subscribe_blocks_active_premium_user(monkeypatch):
+async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
     engine, session = await build_session()
     try:
         user = await create_user(session)
@@ -200,10 +201,12 @@ async def test_subscribe_blocks_active_premium_user(monkeypatch):
             SimpleNamespace(bot=bot),
         )
 
-        assert bot.invoice_calls == []
-        assert "You already have Premium active until" in message.replies[0][0]
-        assert "Telegram Stars settings" in message.replies[0][0]
-        assert "reply_markup" not in message.replies[0][1]
+        assert len(bot.invoice_calls) == 1
+        assert "You already have paid access until" in message.replies[0][0]
+        assert "Paying again adds another month to your paid access." in message.replies[0][0]
+        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
+            "https://t.me/"
+        )
     finally:
         await session.close()
         await engine.dispose()
@@ -338,7 +341,9 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
             ("Premium activated ✅\nUse /watchlist to choose your coins.", {})
         ]
         assert is_user_premium_active(reloaded.premium_subscription, now)
-        assert "Plan: Premium" in build_plan_message(reloaded, now)
+        plan_message = build_plan_message(reloaded, now)
+        assert "Plan: Premium" in plan_message
+        assert "Paid access until:" in plan_message
         subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
         _, rows = build_watchlist_message(reloaded, subscriptions, now)
         assert ("eth", True, True) in rows
@@ -510,3 +515,7 @@ def test_payment_schema_has_recurring_metadata_columns():
     assert columns["is_recurring"].nullable is True
     assert columns["is_first_recurring"].nullable is True
     assert columns["subscription_expiration_date"].nullable is True
+
+
+def test_coerce_datetime_treats_zero_as_missing_metadata():
+    assert _coerce_datetime(0) is None

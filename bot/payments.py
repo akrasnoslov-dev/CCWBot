@@ -47,26 +47,41 @@ def build_premium_prices(price_stars: int = PREMIUM_MONTHLY_STARS) -> list[Label
     return [LabeledPrice("Premium monthly", int(price_stars))]
 
 
-def build_subscribe_message(price_stars: int = PREMIUM_MONTHLY_STARS) -> str:
-    return (
-        "CCWBot Premium\n\n"
-        f"Price: {price_stars} Stars / month.\n"
-        "BTC alerts remain free.\n"
-        "Manual /price remains free for all supported coins.\n"
-        f"Premium unlocks automatic alerts for {premium_symbols_display()}.\n\n"
-        "After payment, use /watchlist to choose your coins."
+def build_subscribe_message(
+    price_stars: int = PREMIUM_MONTHLY_STARS,
+    *,
+    active_until: datetime | None = None,
+) -> str:
+    lines = [
+        "CCWBot Premium",
+        "",
+        f"Price: {price_stars} Stars / month.",
+    ]
+    if active_until is not None:
+        lines.extend(
+            [
+                f"You already have paid access until {_format_date(active_until)}.",
+                "Paying again adds another month to your paid access.",
+            ]
+        )
+    lines.extend(
+        [
+            "BTC alerts remain free.",
+            "Manual /price remains free for all supported coins.",
+            f"Premium unlocks automatic alerts for {premium_symbols_display()}.",
+            "",
+            "After payment, use /watchlist to choose your coins.",
+        ]
     )
+    return "\n".join(lines)
 
 
-def build_already_premium_message(active_until) -> str:
+def _format_date(active_until: datetime) -> str:
     if isinstance(active_until, datetime):
-        active_until_text = active_until.date().isoformat()
-    else:
-        active_until_text = "your current expiry date"
-    return (
-        f"You already have Premium active until {active_until_text}.\n\n"
-        "Manage or cancel recurring payments in Telegram Stars settings."
-    )
+        if active_until.tzinfo is None:
+            active_until = active_until.replace(tzinfo=timezone.utc)
+        return active_until.astimezone(timezone.utc).date().isoformat()
+    return "your current expiry date"
 
 
 def _get_payment_attr(payment: Any, name: str) -> Any:
@@ -87,9 +102,12 @@ def _coerce_datetime(value: Any) -> datetime | None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
     try:
-        return datetime.fromtimestamp(int(value), tz=timezone.utc)
+        timestamp = int(value)
     except (TypeError, ValueError, OSError):
         return None
+    if timestamp <= 0:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
 
 async def _safe_reply_text(message, text: str, **kwargs) -> bool:
@@ -109,6 +127,7 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         await _safe_reply_text(update.message, "Premium payments are temporarily unavailable.")
         return
 
+    active_until = None
     async with DB_SESSION_LOCAL() as session:
         user = await get_user_by_telegram_user_id(
             session,
@@ -116,11 +135,7 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
             include_plan=True,
         )
         if user is not None and is_user_premium_active(user.premium_subscription):
-            await _safe_reply_text(
-                update.message,
-                build_already_premium_message(user.premium_subscription.active_until),
-            )
-            return
+            active_until = user.premium_subscription.active_until
 
     payload = build_premium_invoice_payload(update.effective_user.id)
     invoice_link = await context.bot.create_invoice_link(
@@ -136,7 +151,7 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
     )
     await _safe_reply_text(
         update.message,
-        build_subscribe_message(),
+        build_subscribe_message(active_until=active_until),
         reply_markup=keyboard,
     )
 
