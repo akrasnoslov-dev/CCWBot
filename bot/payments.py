@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, Update
 from telegram.error import NetworkError, TimedOut
@@ -15,6 +17,7 @@ from database import (
     activate_premium_from_telegram_stars_payment,
     get_user_by_telegram_user_id,
 )
+from premium import is_user_premium_active
 from supported_coins import premium_symbols_display
 
 logger = logging.getLogger(__name__)
@@ -55,6 +58,40 @@ def build_subscribe_message(price_stars: int = PREMIUM_MONTHLY_STARS) -> str:
     )
 
 
+def build_already_premium_message(active_until) -> str:
+    if isinstance(active_until, datetime):
+        active_until_text = active_until.date().isoformat()
+    else:
+        active_until_text = "your current expiry date"
+    return (
+        f"You already have Premium active until {active_until_text}.\n\n"
+        "Manage or cancel recurring payments in Telegram Stars settings."
+    )
+
+
+def _get_payment_attr(payment: Any, name: str) -> Any:
+    value = getattr(payment, name, None)
+    if value is not None:
+        return value
+    api_kwargs = getattr(payment, "api_kwargs", None) or {}
+    if isinstance(api_kwargs, dict):
+        return api_kwargs.get(name)
+    return None
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
 async def _safe_reply_text(message, text: str, **kwargs) -> bool:
     try:
         await message.reply_text(text, **kwargs)
@@ -71,6 +108,19 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         await _safe_reply_text(update.message, "Premium payments are temporarily unavailable.")
         return
+
+    async with DB_SESSION_LOCAL() as session:
+        user = await get_user_by_telegram_user_id(
+            session,
+            update.effective_user.id,
+            include_plan=True,
+        )
+        if user is not None and is_user_premium_active(user.premium_subscription):
+            await _safe_reply_text(
+                update.message,
+                build_already_premium_message(user.premium_subscription.active_until),
+            )
+            return
 
     payload = build_premium_invoice_payload(update.effective_user.id)
     invoice_link = await context.bot.create_invoice_link(
@@ -154,7 +204,12 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 amount=payment.total_amount,
                 currency=payment.currency,
                 payload=payment.invoice_payload,
-                provider_subscription_id=None,
+                provider_subscription_id=_get_payment_attr(payment, "provider_subscription_id"),
+                is_recurring=_get_payment_attr(payment, "is_recurring"),
+                is_first_recurring=_get_payment_attr(payment, "is_first_recurring"),
+                subscription_expiration_date=_coerce_datetime(
+                    _get_payment_attr(payment, "subscription_expiration_date")
+                ),
             )
         except ValueError:
             logger.warning(

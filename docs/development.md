@@ -36,7 +36,8 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
   `DATABASE_URL` is configured.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
   The price is `PREMIUM_MONTHLY_STARS` (default `199`), currency is `XTR`, and the period is
-  30 days / `2592000` seconds.
+  30 days / `2592000` seconds. If a user already has active Premium, `/subscribe` does not
+  create another invoice; users manage or cancel recurring payments in Telegram Stars settings.
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
   them in `/watchlist`.

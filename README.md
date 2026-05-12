@@ -113,8 +113,11 @@ The Premium foundation stores:
 
 `/subscribe` starts a recurring Telegram Stars Premium subscription. The default price is
 configured by `PREMIUM_MONTHLY_STARS=199`, uses Telegram Stars currency `XTR`, and uses a
-30-day subscription period (`2592000` seconds). Premium unlocks automatic alerts for enabled
-non-BTC watchlist coins. BTC automatic alerts and manual `/price` checks remain free.
+30-day subscription period (`2592000` seconds). CCWBot only creates a subscription invoice
+when the user does not already have active Premium. If Premium is already active, `/subscribe`
+does not create another payment link and tells the user to manage recurring payments in
+Telegram Stars settings. Premium unlocks automatic alerts for enabled non-BTC watchlist coins.
+BTC automatic alerts and manual `/price` checks remain free.
 
 After payment, non-BTC coins are not enabled automatically; users choose coins manually in
 `/watchlist`. Saved non-BTC choices remain stored when Premium expires and become effective
