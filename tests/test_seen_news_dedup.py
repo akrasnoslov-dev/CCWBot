@@ -266,6 +266,9 @@ async def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
             self.id = user_id
             self.telegram_chat_id = telegram_chat_id
             self.premium_subscription = None
+            self.coin_subscriptions = [
+                type("Subscription", (), {"symbol": "btc", "is_enabled": True})()
+            ]
 
     class SessionContext:
         async def __aenter__(self):
@@ -281,9 +284,6 @@ async def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
             UserRow(3, 2001),
         ]
 
-    async def fake_ensure_default_coin_subscriptions(session, *, user_id):
-        return [type("Subscription", (), {"symbol": "btc", "is_enabled": True})()]
-
     async def fake_get_last_sent_alert_at(session, *, user_id, symbol):
         return None
 
@@ -292,10 +292,6 @@ async def test_get_alert_recipients_deduplicates_active_user_chats(monkeypatch):
     monkeypatch.setattr(
         "bot.alerts.get_active_users_with_alert_preferences",
         fake_get_active_users_with_alert_preferences,
-    )
-    monkeypatch.setattr(
-        "bot.alerts.ensure_default_coin_subscriptions",
-        fake_ensure_default_coin_subscriptions,
     )
     monkeypatch.setattr("bot.alerts.get_last_sent_alert_at", fake_get_last_sent_alert_at)
 

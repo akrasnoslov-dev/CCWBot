@@ -1,3 +1,5 @@
+import time
+
 from telegram.ext import ContextTypes
 
 from ai_agent_groq import (
@@ -12,6 +14,10 @@ from config import TELEGRAM_CHAT_ID
 from database import save_alert
 from price_service import get_btc_market_data
 
+REPORT_COOLDOWN_SECONDS = 60
+REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
+_last_report_call: dict[tuple[int, str], float] = {}
+
 
 def _target_chat_id(target) -> int | None:
     chat_id = getattr(target, "chat_id", None)
@@ -22,7 +28,27 @@ def _target_chat_id(target) -> int | None:
     return int(chat_id) if chat_id is not None else None
 
 
+def _is_report_rate_limited(chat_id: int | None, report_type: str) -> bool:
+    if chat_id is None:
+        return False
+    now = time.monotonic()
+    stale_before = now - REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS
+    for key, last_seen_at in list(_last_report_call.items()):
+        if last_seen_at < stale_before:
+            _last_report_call.pop(key, None)
+    key = (chat_id, report_type)
+    last_call_at = _last_report_call.get(key)
+    if last_call_at is not None and now - last_call_at < REPORT_COOLDOWN_SECONDS:
+        return True
+    _last_report_call[key] = now
+    return False
+
+
 async def send_daily_report_message(target) -> None:
+    chat_id = _target_chat_id(target)
+    if _is_report_rate_limited(chat_id, "daily"):
+        await target.reply_text("Please wait a minute before requesting another daily report.")
+        return
     try:
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = await fetch_news_context(limit=5, prefer_unseen=True)
@@ -31,7 +57,6 @@ async def send_daily_report_message(target) -> None:
             message = sanitize_alert_message(str(report["telegram_message"]))
             await target.reply_text(message)
             await remember_news_context(news_items)
-            chat_id = _target_chat_id(target)
             if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await save_alert(
@@ -56,6 +81,10 @@ async def send_daily_report_message(target) -> None:
 
 
 async def send_weekly_report_message(target) -> None:
+    chat_id = _target_chat_id(target)
+    if _is_report_rate_limited(chat_id, "weekly"):
+        await target.reply_text("Please wait a minute before requesting another weekly report.")
+        return
     try:
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = await fetch_news_context(limit=6, prefer_unseen=True)
@@ -64,7 +93,6 @@ async def send_weekly_report_message(target) -> None:
             message = sanitize_alert_message(str(report["telegram_message"]))
             await target.reply_text(message)
             await remember_news_context(news_items)
-            chat_id = _target_chat_id(target)
             if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await save_alert(

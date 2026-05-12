@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -5,11 +6,13 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     STARS_CURRENCY,
     _coerce_datetime,
+    _last_subscribe_call,
     build_premium_invoice_payload,
     build_subscribe_message,
     send_subscribe_invoice,
@@ -42,6 +45,24 @@ async def build_session():
         expire_on_commit=False,
     )
     return engine, SessionLocal()
+
+
+async def build_session_factory_for_concurrency():
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    SessionLocal = async_sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+    return engine, SessionLocal
 
 
 async def create_user(session, telegram_user_id=1001):
@@ -105,6 +126,13 @@ class FakePreCheckoutQuery:
 
     async def answer(self, **kwargs):
         self.answers.append(kwargs)
+
+
+@pytest.fixture(autouse=True)
+def clear_payment_cooldowns():
+    _last_subscribe_call.clear()
+    yield
+    _last_subscribe_call.clear()
 
 
 @pytest.mark.asyncio
@@ -245,6 +273,40 @@ async def test_subscribe_allows_invoice_after_premium_revoke(monkeypatch):
 
         assert len(bot.invoice_calls) == 1
         assert message.replies[0][0] == build_subscribe_message()
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_invoice_is_rate_limited_per_user(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        first_message = FakeMessage()
+        second_message = FakeMessage()
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=1001),
+            effective_chat=SimpleNamespace(id=2001),
+        )
+
+        await send_subscribe_invoice(
+            SimpleNamespace(message=first_message, **update.__dict__),
+            SimpleNamespace(bot=bot),
+        )
+        await send_subscribe_invoice(
+            SimpleNamespace(message=second_message, **update.__dict__),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
+        assert second_message.replies == [
+            ("Please wait a few seconds before requesting another payment link.", {})
+        ]
     finally:
         await session.close()
         await engine.dispose()
@@ -420,6 +482,46 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
         assert await session.scalar(select(func.count()).select_from(Payment)) == 2
     finally:
         await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_distinct_payments_extend_without_lost_update():
+    engine, SessionLocal = await build_session_factory_for_concurrency()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session)
+            telegram_user_id = user.telegram_user_id
+
+        async def activate(payment_id):
+            async with SessionLocal() as session:
+                return await activate_premium_from_telegram_stars_payment(
+                    session,
+                    telegram_user_id=telegram_user_id,
+                    provider_payment_id=payment_id,
+                    telegram_payment_charge_id=payment_id,
+                    provider_payment_charge_id=f"provider-{payment_id}",
+                    amount=199,
+                    currency="XTR",
+                    payload=build_premium_invoice_payload(telegram_user_id),
+                    now=now,
+                )
+
+        results = await asyncio.gather(
+            activate("tg-charge-concurrent-1"),
+            activate("tg-charge-concurrent-2"),
+        )
+
+        assert [created for _, _, created in results] == [True, True]
+        async with SessionLocal() as session:
+            reloaded = await session.get(User, user.id)
+            await session.refresh(reloaded, ["premium_subscription"])
+            assert reloaded.premium_subscription.active_until == (
+                now.replace(tzinfo=None) + timedelta(days=60)
+            )
+            assert await session.scalar(select(func.count()).select_from(Payment)) == 2
+    finally:
         await engine.dispose()
 
 

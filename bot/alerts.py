@@ -38,7 +38,6 @@ from config import (
 )
 from database import (
     cleanup_seen_news,
-    ensure_default_coin_subscriptions,
     get_active_users_with_alert_preferences,
     get_event_ai_analysis,
     get_last_sent_alert_at,
@@ -168,6 +167,33 @@ def _build_price_movement_event_key(
     return f"{normalized_symbol}:price_movement:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
 
 
+def _build_strong_signal_event_key(
+    *,
+    price: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+) -> str:
+    key_parts = {
+        "symbol": "BTC",
+        "event_type": "strong_signal",
+        "price": _stable_float(price, 2),
+        "change_24h": _stable_float(change_24h, 4),
+        "change_7d": _stable_float(change_7d, 4),
+        "news": [
+            {
+                "key": make_news_key(item),
+                "title": str(item.get("title") or ""),
+                "source": str(item.get("source") or ""),
+                "link": _stable_news_link(str(item.get("link") or "")),
+            }
+            for item in news_items
+        ],
+    }
+    encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
+    return f"btc:strong_signal:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
+
+
 def _coin_name(symbol: str) -> str:
     return str(SUPPORTED_COINS[normalize_symbol(symbol)]["name"])
 
@@ -254,6 +280,40 @@ def _build_alert_ai_input_hash(
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _build_strong_signal_ai_input_hash(
+    *,
+    price: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+) -> str:
+    payload = {
+        "symbol": "BTC",
+        "event_type": "strong_signal",
+        "price": _stable_float(price, 2),
+        "change_24h": _stable_float(change_24h, 4),
+        "change_7d": _stable_float(change_7d, 4),
+        "news": [
+            {
+                "key": make_news_key(item),
+                "title": str(item.get("title") or ""),
+                "source": str(item.get("source") or ""),
+                "link": _stable_news_link(str(item.get("link") or "")),
+            }
+            for item in news_items
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _enabled_subscription_by_symbol(user) -> dict[str, bool]:
+    return {
+        normalize_symbol(row.symbol): bool(row.is_enabled)
+        for row in getattr(user, "coin_subscriptions", [])
+    }
+
+
 async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
     """Resolve globally needed symbols from active eligible watchlists."""
     now = now or datetime.now(timezone.utc)
@@ -264,11 +324,9 @@ async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
         users = await get_active_users_with_alert_preferences(session)
         enabled_symbols: set[str] = set()
         for user in users:
-            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            subscription_by_symbol = {row.symbol: row for row in subscriptions}
+            enabled_by_symbol = _enabled_subscription_by_symbol(user)
             for symbol in SUPPORTED_SYMBOLS:
-                row = subscription_by_symbol.get(symbol)
-                if row is None or not row.is_enabled:
+                if not enabled_by_symbol.get(symbol, False):
                     continue
                 if not is_coin_unlocked_for_user(user, symbol, now):
                     continue
@@ -284,7 +342,12 @@ async def get_alert_recipients(
 ) -> list[AlertRecipient]:
     """Resolve eligible recipients once for one market event."""
     normalized_symbol = normalize_symbol(symbol)
-    if event_type != "price_movement" or normalized_symbol not in SUPPORTED_COINS:
+    if (
+        event_type not in {"price_movement", "strong_signal"}
+        or normalized_symbol not in SUPPORTED_COINS
+    ):
+        return []
+    if event_type == "strong_signal" and normalized_symbol != DEFAULT_SYMBOL:
         return []
 
     if DB_ENABLED and DB_SESSION_LOCAL:
@@ -295,10 +358,8 @@ async def get_alert_recipients(
             for user in await get_active_users_with_alert_preferences(session):
                 if user.telegram_chat_id is None:
                     continue
-                subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-                subscription_by_symbol = {row.symbol: row for row in subscriptions}
-                subscription = subscription_by_symbol.get(normalized_symbol)
-                if subscription is None or not subscription.is_enabled:
+                enabled_by_symbol = _enabled_subscription_by_symbol(user)
+                if not enabled_by_symbol.get(normalized_symbol, False):
                     continue
                 last_sent_at = await get_last_sent_alert_at(
                     session,
@@ -317,6 +378,126 @@ async def get_alert_recipients(
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
+
+
+async def _get_or_create_strong_signal_market_event(
+    *,
+    price: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+) -> tuple[int | None, str | None]:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None, None
+
+    event_key = _build_strong_signal_event_key(
+        price=price,
+        change_24h=change_24h,
+        change_7d=change_7d,
+        news_items=news_items,
+    )
+    async with DB_SESSION_LOCAL() as session:
+        market_event = await get_or_create_market_event(
+            session,
+            symbol=DEFAULT_SYMBOL,
+            event_type="strong_signal",
+            event_key=event_key,
+            price=price,
+            previous_price=None,
+            price_change_percent=change_24h,
+            last_24h_change=change_24h,
+            last_7d_change=change_7d,
+            detected_at=datetime.now(timezone.utc),
+        )
+        return market_event.id, event_key
+
+
+async def _get_or_create_strong_signal_ai_analysis(
+    *,
+    market_event_id: int | None,
+    price: float,
+    change_24h: float,
+    change_7d: float | None,
+    news_items: list[dict],
+) -> tuple[dict | None, int | None, str | None, str | None]:
+    input_hash = _build_strong_signal_ai_input_hash(
+        price=price,
+        change_24h=change_24h,
+        change_7d=change_7d,
+        news_items=news_items,
+    )
+
+    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
+        async with DB_SESSION_LOCAL() as session:
+            saved_analysis = await get_latest_success_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+            )
+            if saved_analysis and saved_analysis.plain_text:
+                log("Reusing saved AI analysis for BTC strong-signal event.")
+                return (
+                    {
+                        "plain_text": saved_analysis.plain_text,
+                        "html_text": saved_analysis.html_text,
+                    },
+                    saved_analysis.id,
+                    "medium",
+                    "unclear",
+                )
+            existing_analysis = await get_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+                input_hash=input_hash,
+            )
+            if (
+                existing_analysis
+                and existing_analysis.status == "success"
+                and existing_analysis.plain_text
+            ):
+                log("Reusing saved AI analysis for BTC strong-signal event.")
+                return (
+                    {
+                        "plain_text": existing_analysis.plain_text,
+                        "html_text": existing_analysis.html_text,
+                    },
+                    existing_analysis.id,
+                    "medium",
+                    "unclear",
+                )
+
+    result = await classify_strong_signal(price, change_24h, change_7d, news_items)
+    if not result:
+        return None, None, None, None
+
+    strength = str(result.get("signal_strength", "")).lower()
+    if result.get("should_alert") is not True or strength not in {"medium", "strong"}:
+        return None, None, strength, str(result.get("direction", "unclear")).lower()
+
+    message = sanitize_alert_message(str(result.get("telegram_message") or ""))
+    if not message:
+        return None, None, strength, str(result.get("direction", "unclear")).lower()
+
+    event_ai_analysis_id = None
+    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
+        async with DB_SESSION_LOCAL() as session:
+            analysis = await save_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+                provider="groq",
+                model=GROQ_MODEL,
+                input_hash=input_hash,
+                analysis_text=message,
+                plain_text=message,
+                html_text=None,
+                status="success",
+            )
+            event_ai_analysis_id = analysis.id if analysis else None
+    return (
+        {"plain_text": message, "html_text": None},
+        event_ai_analysis_id,
+        strength,
+        str(result.get("direction", "unclear")).lower(),
+    )
 
 
 async def _get_or_create_price_movement_market_event(
@@ -529,6 +710,7 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
 async def _record_alert_delivery(
     *,
     symbol: str,
+    alert_type: str,
     recipient: AlertRecipient,
     plain_text: str,
     status: str,
@@ -543,7 +725,7 @@ async def _record_alert_delivery(
         await save_alert(
             session,
             symbol=symbol,
-            alert_type="price_movement",
+            alert_type=alert_type,
             message=plain_text,
             sent_to_chat_id=recipient.chat_id,
             market_event_id=market_event_id,
@@ -595,6 +777,7 @@ async def _deliver_market_event_alert(
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
     recipients: list[AlertRecipient] | None = None,
+    event_type: str = "price_movement",
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _sanitize_alert_payload(alert_payload)
@@ -602,7 +785,7 @@ async def _deliver_market_event_alert(
     if recipients is None:
         recipients = await get_alert_recipients(
             symbol=normalized_symbol,
-            event_type="price_movement",
+            event_type=event_type,
         )
     if not recipients:
         log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
@@ -619,7 +802,7 @@ async def _deliver_market_event_alert(
                     session,
                     user_id=recipient.user_id,
                     symbol=normalized_symbol,
-                    alert_type="price_movement",
+                    alert_type=event_type,
                     sent_to_chat_id=recipient.chat_id,
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
@@ -643,6 +826,7 @@ async def _deliver_market_event_alert(
         else:
             await _record_alert_delivery(
                 symbol=normalized_symbol,
+                alert_type=event_type,
                 recipient=recipient,
                 plain_text=plain_text,
                 status="sent" if sent else "failed",
@@ -704,6 +888,7 @@ def schedule_strong_signal_job(app: Application) -> None:
         interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
         first=15,
         name=STRONG_SIGNAL_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
     )
     log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
 
@@ -916,6 +1101,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
+    recipients = await get_alert_recipients(
+        symbol=DEFAULT_SYMBOL,
+        event_type="strong_signal",
+    )
+    if not recipients:
+        log("No eligible recipients for BTC strong-signal alert. Skipping AI analysis.")
+        return
+
     state = load_state()
     now = datetime.now(timezone.utc)
     last_alert_at = state.get("last_strong_signal_alert_at")
@@ -930,20 +1123,36 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
 
     price, change_24h, change_7d = await get_btc_market_data()
     news_items = await fetch_news_context(limit=6)
-    result = await classify_strong_signal(price, change_24h, change_7d, news_items)
-    if not result:
+    market_event_id, _ = await _get_or_create_strong_signal_market_event(
+        price=price,
+        change_24h=change_24h,
+        change_7d=change_7d,
+        news_items=news_items,
+    )
+    alert_payload, event_ai_analysis_id, strength, direction = (
+        await _get_or_create_strong_signal_ai_analysis(
+            market_event_id=market_event_id,
+            price=price,
+            change_24h=change_24h,
+            change_7d=change_7d,
+            news_items=news_items,
+        )
+    )
+    if not alert_payload:
         return
 
-    strength = str(result.get("signal_strength", "")).lower()
-    if result.get("should_alert") is True and strength in {"medium", "strong"}:
-        message = sanitize_alert_message(str(result.get("telegram_message") or ""))
-        if not message:
-            return
-        await context.application.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID, text=message
-        )
+    delivered = await _deliver_market_event_alert(
+        context.application,
+        symbol=DEFAULT_SYMBOL,
+        alert_payload=alert_payload,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        recipients=recipients,
+        event_type="strong_signal",
+    )
+    if delivered:
         await remember_news_context(news_items)
         state["last_strong_signal_alert_at"] = now.isoformat()
         state["last_strong_signal_strength"] = strength
-        state["last_strong_signal_direction"] = str(result.get("direction", "unclear")).lower()
+        state["last_strong_signal_direction"] = direction
         save_state(state)
