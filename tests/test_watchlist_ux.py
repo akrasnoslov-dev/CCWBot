@@ -125,6 +125,8 @@ def test_plan_messages_for_free_premium_and_expired():
     )
     assert "Plan: Premium" in premium
     assert "Paid access until: 2026-05-12" in premium
+    assert "Recurring subscription: not tracked by CCWBot" in premium
+    assert "Recurring payments can be managed in Telegram Stars settings." in premium
     expired = build_plan_message(make_user(active_until=now - timedelta(days=1)), now)
     assert "Premium expired on: 2026-05-10" in expired
     assert "Your premium coin choices are saved." in expired

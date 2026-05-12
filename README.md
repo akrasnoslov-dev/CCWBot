@@ -116,9 +116,10 @@ configured by `PREMIUM_MONTHLY_STARS=199`, uses Telegram Stars currency `XTR`, a
 30-day subscription period (`2592000` seconds). Premium unlocks automatic alerts for enabled
 non-BTC watchlist coins. BTC automatic alerts and manual `/price` checks remain free.
 Active Premium means paid access is available until `active_until`; it does not prove the user
-still has an active recurring Telegram subscription. `/subscribe` can still create a payment
-link for users with active paid access, and a new payment extends access from the current paid
-access date.
+still has an active recurring Telegram subscription. CCWBot does not reliably track Telegram
+recurring subscription active/cancelled status, so users manage recurring payments in Telegram
+Stars settings. `/subscribe` can still create a payment link for users with active paid access,
+and a new payment extends access from the current paid access date.
 
 After payment, non-BTC coins are not enabled automatically; users choose coins manually in
 `/watchlist`. Saved non-BTC choices remain stored when Premium expires and become effective

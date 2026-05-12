@@ -120,6 +120,8 @@ def build_plan_message(user, now: datetime | None = None) -> str:
         return (
             "Plan: Premium\n"
             f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}\n"
+            "Recurring subscription: not tracked by CCWBot\n"
+            "Recurring payments can be managed in Telegram Stars settings.\n"
             "Premium coins unlocked."
         )
     if plan is not None and getattr(plan, "active_until", None) is not None:

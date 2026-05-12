@@ -60,8 +60,12 @@ def build_subscribe_message(
     if active_until is not None:
         lines.extend(
             [
-                f"You already have paid access until {_format_date(active_until)}.",
-                "Paying again adds another month to your paid access.",
+                f"Your paid access is active until {_format_date(active_until)}.",
+                (
+                    "Recurring payment status is managed in Telegram Stars settings "
+                    "and is not tracked by CCWBot."
+                ),
+                "Paying again adds another month to paid access.",
             ]
         )
     lines.extend(

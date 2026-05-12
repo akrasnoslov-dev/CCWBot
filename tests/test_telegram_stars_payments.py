@@ -202,8 +202,12 @@ async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
         )
 
         assert len(bot.invoice_calls) == 1
-        assert "You already have paid access until" in message.replies[0][0]
-        assert "Paying again adds another month to your paid access." in message.replies[0][0]
+        assert "paid access is active until" in message.replies[0][0]
+        assert (
+            "Recurring payment status is managed in Telegram Stars settings"
+            in message.replies[0][0]
+        )
+        assert "Paying again adds another month" in message.replies[0][0]
         assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
             "https://t.me/"
         )
@@ -344,6 +348,7 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
         plan_message = build_plan_message(reloaded, now)
         assert "Plan: Premium" in plan_message
         assert "Paid access until:" in plan_message
+        assert "Recurring subscription: not tracked by CCWBot" in plan_message
         subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
         _, rows = build_watchlist_message(reloaded, subscriptions, now)
         assert ("eth", True, True) in rows
