@@ -128,12 +128,14 @@ def test_plan_messages_for_free_premium_and_expired():
     assert "Your premium coin choices are saved." in expired
 
 
-def test_subscribe_placeholder_mentions_pr3_not_payment_flow():
+def test_subscribe_message_mentions_stars_payment_flow():
     text = build_subscribe_message()
 
+    assert "CCWBot Premium" in text
+    assert "199 Stars / month" in text
     assert "BTC alerts remain free." in text
     assert "Manual /price remains free for all supported coins." in text
-    assert "Real Telegram Stars purchase will be implemented later." in text
+    assert "After payment, use /watchlist to choose your coins." in text
 
 
 def test_price_keyboard_uses_supported_top_10_without_usdt():

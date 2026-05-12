@@ -86,3 +86,6 @@ STRONG_SIGNAL_COOLDOWN_HOURS = _get_int_env("STRONG_SIGNAL_COOLDOWN_HOURS", 6, m
 
 # Optional PostgreSQL connection string. If missing, JSON state remains active.
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Telegram Stars price for monthly Premium subscriptions.
+PREMIUM_MONTHLY_STARS = _get_int_env("PREMIUM_MONTHLY_STARS", 199, minimum=1)

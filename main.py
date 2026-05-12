@@ -4,7 +4,14 @@ import signal
 import sys
 import time
 
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    PreCheckoutQueryHandler,
+    filters,
+)
 
 from bot.alerts import (
     schedule_automatic_btc_check,
@@ -31,6 +38,7 @@ from bot.handlers import (
     watchlist,
     weekly_report,
 )
+from bot.payments import pre_checkout_handler, successful_payment_handler
 from bot.runtime import close_database, initialize_database, log
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
@@ -80,6 +88,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CommandHandler("grantpremium", grant_premium))
     app.add_handler(CommandHandler("revokepremium", revoke_premium))
+    app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
     app.add_handler(CallbackQueryHandler(button_router))
 
 
