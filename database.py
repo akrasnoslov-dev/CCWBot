@@ -46,6 +46,7 @@ from supported_coins import (
 TELEGRAM_STARS_PROVIDER = "telegram_stars"
 PREMIUM_PAYMENT_STATUS_PAID = "paid"
 PREMIUM_PAYMENT_PERIOD_DAYS = 30
+_payment_activation_locks: dict[int, asyncio.Lock] = {}
 
 
 class Base(DeclarativeBase):
@@ -379,6 +380,7 @@ async def get_or_create_user(
         select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     )
     role = "admin" if _same_telegram_user_id(telegram_user_id, admin_user_id) else "user"
+    created = user is None
     if user is None:
         user = User(
             telegram_user_id=telegram_user_id,
@@ -413,6 +415,8 @@ async def get_or_create_user(
         user.updated_at = utc_now()
         await session.commit()
     await session.refresh(user)
+    if created:
+        await ensure_default_coin_subscriptions(session, user_id=user.id)
     return user
 
 
@@ -616,6 +620,41 @@ async def activate_premium_from_telegram_stars_payment(
     now: datetime | None = None,
 ) -> tuple[Payment, UserPremiumSubscription, bool]:
     """Record one Stars payment and extend Premium once for that payment id."""
+    lock = _payment_activation_locks.setdefault(int(telegram_user_id), asyncio.Lock())
+    async with lock:
+        return await _activate_premium_from_telegram_stars_payment_locked(
+            session,
+            telegram_user_id=telegram_user_id,
+            provider_payment_id=provider_payment_id,
+            telegram_payment_charge_id=telegram_payment_charge_id,
+            provider_payment_charge_id=provider_payment_charge_id,
+            amount=amount,
+            currency=currency,
+            payload=payload,
+            provider_subscription_id=provider_subscription_id,
+            is_recurring=is_recurring,
+            is_first_recurring=is_first_recurring,
+            subscription_expiration_date=subscription_expiration_date,
+            now=now,
+        )
+
+
+async def _activate_premium_from_telegram_stars_payment_locked(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    provider_payment_id: str,
+    telegram_payment_charge_id: str | None,
+    provider_payment_charge_id: str | None,
+    amount: int,
+    currency: str,
+    payload: str,
+    provider_subscription_id: str | None = None,
+    is_recurring: bool | None = None,
+    is_first_recurring: bool | None = None,
+    subscription_expiration_date: datetime | None = None,
+    now: datetime | None = None,
+) -> tuple[Payment, UserPremiumSubscription, bool]:
     existing_payment = await get_payment_by_provider_id(
         session,
         provider=TELEGRAM_STARS_PROVIDER,
@@ -628,7 +667,12 @@ async def activate_premium_from_telegram_stars_payment(
         )
         return existing_payment, subscription, False
 
-    user = await get_user_by_telegram_user_id(session, telegram_user_id)
+    user = await session.scalar(
+        select(User)
+        .where(User.telegram_user_id == telegram_user_id)
+        .with_for_update()
+        .limit(1)
+    )
     if user is None:
         raise ValueError("User not found.")
 
@@ -666,7 +710,12 @@ async def activate_premium_from_telegram_stars_payment(
         )
         return existing_payment, subscription, False
 
-    subscription = await get_user_premium_subscription(session, user_id=user.id)
+    subscription = await session.scalar(
+        select(UserPremiumSubscription)
+        .where(UserPremiumSubscription.user_id == user.id)
+        .with_for_update()
+        .limit(1)
+    )
     active_until = _normalize_utc(getattr(subscription, "active_until", None))
     active_from = max(now, active_until or now)
     if subscription is None:

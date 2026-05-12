@@ -10,7 +10,9 @@ import bot.alerts as alerts
 from database import (
     Alert,
     Base,
+    EventAiAnalysis,
     User,
+    UserCoinSubscription,
     ensure_default_coin_subscriptions,
     get_or_create_market_event,
     grant_user_premium,
@@ -115,6 +117,40 @@ async def test_resolve_symbols_includes_btc_when_active_user_enabled(monkeypatch
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
 
         assert await alerts.resolve_symbols_to_check(now) == ["btc"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_symbols_to_check_does_not_create_default_subscriptions(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            user = User(
+                telegram_user_id=1001,
+                telegram_chat_id=2001,
+                username="user1001",
+                first_name="User",
+                role="user",
+                is_active=True,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            session.add(
+                UserCoinSubscription(user_id=user.id, symbol="btc", is_enabled=True)
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        assert await alerts.resolve_symbols_to_check(now) == ["btc"]
+        async with SessionLocal() as session:
+            assert (
+                await session.scalar(select(func.count()).select_from(UserCoinSubscription))
+            ) == 1
     finally:
         await engine.dispose()
 
@@ -332,6 +368,85 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monkeypatch):
+    sent_messages = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            sent_messages.append((chat_id, text, parse_mode))
+
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            await create_user(session, 1001, 2001)
+            await create_user(session, 1002, 2002)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts, "load_state", lambda: {})
+        saved_state = {}
+        monkeypatch.setattr(alerts, "save_state", lambda state: saved_state.update(state))
+        monkeypatch.setattr(
+            alerts,
+            "datetime",
+            SimpleNamespace(
+                now=lambda tz=None: now,
+                fromisoformat=datetime.fromisoformat,
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_btc_market_data",
+            AsyncMock(return_value=(100000.0, 5.0, 8.0)),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "fetch_news_context",
+            AsyncMock(
+                return_value=[
+                    {
+                        "title": "Bitcoin demand rises",
+                        "source": "Example",
+                        "link": "https://example.test/news",
+                    }
+                ]
+            ),
+        )
+        classify = AsyncMock(
+            return_value={
+                "should_alert": True,
+                "signal_strength": "strong",
+                "direction": "bullish",
+                "telegram_message": "BTC strong signal\n\nNot financial advice.",
+            }
+        )
+        monkeypatch.setattr(alerts, "classify_strong_signal", classify)
+        monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
+
+        await alerts.strong_signal_check(
+            SimpleNamespace(application=SimpleNamespace(bot=FakeBot()))
+        )
+
+        classify.assert_awaited_once()
+        assert sent_messages == [
+            (2001, "BTC strong signal\n\nNot financial advice.", None),
+            (2002, "BTC strong signal\n\nNot financial advice.", None),
+        ]
+        assert saved_state["last_strong_signal_strength"] == "strong"
+        assert saved_state["last_strong_signal_direction"] == "bullish"
+        async with SessionLocal() as session:
+            assert await session.scalar(select(func.count()).select_from(EventAiAnalysis)) == 1
+            assert await session.scalar(select(func.count()).select_from(Alert)) == 2
+            assert {
+                row.event_ai_analysis_id
+                for row in (await session.scalars(select(Alert))).all()
+            } == {1}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_deliver_market_event_alert_respects_empty_recipient_list(monkeypatch):
     get_recipients = AsyncMock(side_effect=AssertionError("recipients should not be queried"))
     monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
@@ -362,6 +477,28 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
     alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
 
     assert captured_kwargs["interval"] == 60
+    assert captured_kwargs["job_kwargs"] == {
+        "max_instances": 1,
+        "coalesce": True,
+        "misfire_grace_time": 15,
+    }
+
+
+def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeJobQueue:
+        def get_jobs_by_name(self, name):
+            return []
+
+        def run_repeating(self, callback, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr(alerts, "ENABLE_STRONG_SIGNAL_ALERTS", True)
+
+    alerts.schedule_strong_signal_job(SimpleNamespace(job_queue=FakeJobQueue()))
+
+    assert captured_kwargs["interval"] == alerts.STRONG_SIGNAL_CHECK_INTERVAL_SECONDS
     assert captured_kwargs["job_kwargs"] == {
         "max_instances": 1,
         "coalesce": True,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +28,9 @@ PREMIUM_INVOICE_TITLE = "CCWBot Premium"
 PREMIUM_INVOICE_DESCRIPTION = "Monthly Premium for automatic non-BTC crypto alerts."
 PREMIUM_PAYLOAD_PREFIX = "ccwbot-premium-v1"
 STARS_CURRENCY = "XTR"
+SUBSCRIBE_COOLDOWN_SECONDS = 20
+SUBSCRIBE_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
+_last_subscribe_call: dict[int, float] = {}
 
 
 @dataclass(frozen=True)
@@ -123,9 +127,28 @@ async def _safe_reply_text(message, text: str, **kwargs) -> bool:
     return True
 
 
+def _is_subscribe_rate_limited(telegram_user_id: int) -> bool:
+    now = time.monotonic()
+    stale_before = now - SUBSCRIBE_RATE_LIMIT_PRUNE_AFTER_SECONDS
+    for cached_user_id, last_seen_at in list(_last_subscribe_call.items()):
+        if last_seen_at < stale_before:
+            _last_subscribe_call.pop(cached_user_id, None)
+    last_call_at = _last_subscribe_call.get(telegram_user_id)
+    if last_call_at is not None and now - last_call_at < SUBSCRIBE_COOLDOWN_SECONDS:
+        return True
+    _last_subscribe_call[telegram_user_id] = now
+    return False
+
+
 async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await sync_user_from_update(update)
     if not update.message or not update.effective_user:
+        return
+    if _is_subscribe_rate_limited(update.effective_user.id):
+        await _safe_reply_text(
+            update.message,
+            "Please wait a few seconds before requesting another payment link.",
+        )
         return
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         await _safe_reply_text(update.message, "Premium payments are temporarily unavailable.")
