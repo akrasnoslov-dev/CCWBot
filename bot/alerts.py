@@ -936,8 +936,11 @@ async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
 
     strength = str(result.get("signal_strength", "")).lower()
     if result.get("should_alert") is True and strength in {"medium", "strong"}:
+        message = sanitize_alert_message(str(result.get("telegram_message") or ""))
+        if not message:
+            return
         await context.application.bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID, text=str(result.get("telegram_message"))
+            chat_id=TELEGRAM_CHAT_ID, text=message
         )
         await remember_news_context(news_items)
         state["last_strong_signal_alert_at"] = now.isoformat()

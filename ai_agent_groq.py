@@ -210,9 +210,12 @@ def _format_related_news_section(news_relevance: str, related_news: list[dict] |
             continue
         title = str(item.get("title", "")).strip()
         source = str(item.get("source", "")).strip()
+        link = str(item.get("link", "")).strip()
         if not title:
             continue
-        lines.append(f"- {title} - {source}" if source else f"- {title}")
+        detail_parts = [part for part in (source, link) if part]
+        detail_text = f" - {' - '.join(detail_parts)}" if detail_parts else ""
+        lines.append(f"- {title}{detail_text}")
 
     if not lines:
         return ""

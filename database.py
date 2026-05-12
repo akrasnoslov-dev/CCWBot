@@ -104,6 +104,7 @@ def make_news_key(news_item: dict) -> str:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("telegram_user_id", name="uq_users_telegram_user_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
@@ -395,7 +396,22 @@ async def get_or_create_user(
         user.role = role
         user.is_active = True
         user.updated_at = utc_now()
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        user = await session.scalar(
+            select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
+        )
+        if user is None:
+            raise
+        user.telegram_chat_id = telegram_chat_id
+        user.username = username
+        user.first_name = first_name
+        user.role = role
+        user.is_active = True
+        user.updated_at = utc_now()
+        await session.commit()
     await session.refresh(user)
     return user
 

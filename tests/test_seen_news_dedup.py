@@ -445,6 +445,60 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
             db_path.unlink()
 
 
+@pytest.mark.asyncio
+async def test_unique_telegram_user_migration_refuses_existing_duplicates():
+    db_path = PROJECT_ROOT / "duplicate_users_migration_test.sqlite"
+    if db_path.exists():
+        db_path.unlink()
+    try:
+        database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+        engine = create_async_engine(database_url, future=True)
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "CREATE TABLE alembic_version ("
+                    "version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO alembic_version (version_num) "
+                    "VALUES ('0006_payment_recurring_metadata')"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE TABLE users ("
+                    "id INTEGER PRIMARY KEY, "
+                    "telegram_user_id BIGINT NOT NULL, "
+                    "telegram_chat_id BIGINT NOT NULL, "
+                    "username VARCHAR(255), "
+                    "first_name VARCHAR(255), "
+                    "role VARCHAR(64) NOT NULL, "
+                    "is_active BOOLEAN NOT NULL, "
+                    "alert_frequency_seconds INTEGER NOT NULL DEFAULT 14400, "
+                    "created_at DATETIME, "
+                    "updated_at DATETIME)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id, telegram_user_id, telegram_chat_id, role, is_active) "
+                    "VALUES "
+                    "(1, 1001, 2001, 'user', 1), "
+                    "(2, 1001, 2002, 'admin', 1)"
+                )
+            )
+        await engine.dispose()
+
+        with pytest.raises(RuntimeError, match="duplicate users exist"):
+            await init_db(database_url)
+    finally:
+        if db_path.exists():
+            db_path.unlink()
+
+
 if __name__ == "__main__":
     test_link_key_normalizes_tracking_params()
     test_missing_link_fallback_uses_source_and_title()

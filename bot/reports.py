@@ -4,6 +4,7 @@ from ai_agent_groq import (
     build_fallback_alert_message,
     create_daily_report,
     create_weekly_report,
+    sanitize_alert_message,
 )
 from bot.news import fetch_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
@@ -12,27 +13,39 @@ from database import save_alert
 from price_service import get_btc_market_data
 
 
+def _target_chat_id(target) -> int | None:
+    chat_id = getattr(target, "chat_id", None)
+    if chat_id is not None:
+        return int(chat_id)
+    chat = getattr(target, "chat", None)
+    chat_id = getattr(chat, "id", None)
+    return int(chat_id) if chat_id is not None else None
+
+
 async def send_daily_report_message(target) -> None:
     try:
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = await fetch_news_context(limit=5, prefer_unseen=True)
         report = await create_daily_report(price, change_24h, news_items)
         if report and report.get("telegram_message"):
-            message = str(report["telegram_message"])
+            message = sanitize_alert_message(str(report["telegram_message"]))
             await target.reply_text(message)
             await remember_news_context(news_items)
-            if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
+            chat_id = _target_chat_id(target)
+            if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await save_alert(
                         session,
                         symbol="BTC",
                         alert_type="daily_report",
                         message=message,
-                        sent_to_chat_id=int(TELEGRAM_CHAT_ID),
+                        sent_to_chat_id=chat_id,
                     )
             return
         await target.reply_text(
-            build_fallback_alert_message(price, price, 0.0, change_24h, change_7d)
+            sanitize_alert_message(
+                build_fallback_alert_message(price, price, 0.0, change_24h, change_7d)
+            )
         )
     except Exception as error:
         log(f"Daily report generation failed: {error}")
@@ -48,27 +61,29 @@ async def send_weekly_report_message(target) -> None:
         news_items = await fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
         if report and report.get("telegram_message"):
-            message = str(report["telegram_message"])
+            message = sanitize_alert_message(str(report["telegram_message"]))
             await target.reply_text(message)
             await remember_news_context(news_items)
-            if DB_ENABLED and DB_SESSION_LOCAL and TELEGRAM_CHAT_ID:
+            chat_id = _target_chat_id(target)
+            if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await save_alert(
                         session,
                         symbol="BTC",
                         alert_type="weekly_report",
                         message=message,
-                        sent_to_chat_id=int(TELEGRAM_CHAT_ID),
+                        sent_to_chat_id=chat_id,
                     )
             return
         trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
-        await target.reply_text(
-            f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n"
+        message = (
+            f"BTC weekly report\n\nPrice: ${price:,.2f}\n"
             f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
             "Risk level: Medium\n"
             "Possible action: consider waiting for clearer confirmation.\n"
             "Not financial advice."
         )
+        await target.reply_text(sanitize_alert_message(message))
     except Exception as error:
         log(f"Weekly report generation failed: {error}")
 
@@ -82,12 +97,13 @@ async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
         if not message:
             trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
             message = (
-                f"📊 BTC weekly report\n\nPrice: ${price:,.2f}\n"
+                f"BTC weekly report\n\nPrice: ${price:,.2f}\n"
                 f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
                 "Risk level: Medium\n"
                 "Possible action: monitor risk and avoid impulsive action.\n"
                 "Not financial advice."
             )
+        message = sanitize_alert_message(str(message))
         await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         await remember_news_context(news_items)
     except Exception as error:
