@@ -68,6 +68,7 @@ def log_request(action_name: str):
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
             started_at = time.perf_counter()
             try:
+                await sync_user_from_update(update)
                 result = await handler(update, context)
             except Exception:
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
@@ -97,7 +98,6 @@ def log_request(action_name: str):
 
 @log_request("/start")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     is_admin = await is_admin_update(update)
     message = (
         "Hi! I’m CCWBot 🚀\n\n"
@@ -115,26 +115,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/userid")
 async def user_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     user_id_value = update.effective_user.id if update.effective_user else "unknown"
     await update.message.reply_text(f"Your Telegram user ID is: {user_id_value}")
 
 
 @log_request("/dailyreport")
 async def daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     await send_daily_report_message(update.message)
 
 
 @log_request("/weeklyreport")
 async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     await send_weekly_report_message(update.message)
 
 
 @log_request("/reports")
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
 
 
@@ -169,7 +165,6 @@ async def revoke_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/chatid")
 async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
@@ -179,7 +174,6 @@ async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/settings")
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can access settings.")
@@ -189,7 +183,6 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/setthreshold")
 async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
@@ -216,7 +209,6 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/setinterval")
 async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
@@ -246,7 +238,6 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/price")
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     try:
         user_id_value = update.effective_user.id if update.effective_user else None
         now = time.monotonic()
@@ -290,7 +281,6 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/status")
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can view status.")
@@ -331,7 +321,6 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data or ""
-    await sync_user_from_update(update)
 
     try:
         if data.startswith("settings:") and not await is_admin_user(

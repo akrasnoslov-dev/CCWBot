@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -62,3 +62,27 @@ async def test_sync_user_from_update_does_not_store_group_chat(monkeypatch):
     await permissions.sync_user_from_update(update)
 
     get_or_create_user.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_user_from_update_passes_optional_username(monkeypatch):
+    get_or_create_user = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1001, username=None, first_name="NoUsername"),
+        effective_chat=SimpleNamespace(id=2001, type="private"),
+    )
+    monkeypatch.setattr(permissions, "TELEGRAM_ADMIN_USER_ID", 9999)
+    monkeypatch.setattr(permissions, "DB_ENABLED", True)
+    monkeypatch.setattr(permissions, "DB_SESSION_LOCAL", lambda: SessionContext())
+    monkeypatch.setattr(permissions, "get_or_create_user", get_or_create_user)
+
+    await permissions.sync_user_from_update(update)
+
+    get_or_create_user.assert_awaited_once_with(
+        ANY,
+        telegram_user_id=1001,
+        telegram_chat_id=2001,
+        username=None,
+        first_name="NoUsername",
+        admin_user_id=9999,
+    )

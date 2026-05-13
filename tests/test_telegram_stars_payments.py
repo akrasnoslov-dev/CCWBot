@@ -140,7 +140,6 @@ async def test_subscribe_creates_recurring_stars_invoice_link(monkeypatch):
     engine, session = await build_session()
     try:
         await create_user(session)
-        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
         monkeypatch.setattr("bot.payments.DB_ENABLED", True)
         monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
         bot = FakeBot()
@@ -181,7 +180,6 @@ async def test_subscribe_creates_invoice_for_expired_premium_user(monkeypatch):
             days=1,
             now=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
-        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
         monkeypatch.setattr("bot.payments.DB_ENABLED", True)
         monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
         bot = FakeBot()
@@ -214,7 +212,6 @@ async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
             days=30,
             now=datetime.now(timezone.utc),
         )
-        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
         monkeypatch.setattr("bot.payments.DB_ENABLED", True)
         monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
         bot = FakeBot()
@@ -256,7 +253,6 @@ async def test_subscribe_allows_invoice_after_premium_revoke(monkeypatch):
             now=datetime.now(timezone.utc),
         )
         await revoke_user_premium(session, telegram_user_id=user.telegram_user_id)
-        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
         monkeypatch.setattr("bot.payments.DB_ENABLED", True)
         monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
         bot = FakeBot()
@@ -283,7 +279,6 @@ async def test_subscribe_invoice_is_rate_limited_per_user(monkeypatch):
     engine, session = await build_session()
     try:
         await create_user(session)
-        monkeypatch.setattr("bot.payments.sync_user_from_update", AsyncNoop())
         monkeypatch.setattr("bot.payments.DB_ENABLED", True)
         monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
         bot = FakeBot()

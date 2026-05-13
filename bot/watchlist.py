@@ -7,7 +7,7 @@ from telegram.error import NetworkError, TimedOut
 
 from bot.keyboards import build_watchlist_keyboard
 from bot.payments import build_subscribe_message as _build_subscribe_message
-from bot.permissions import is_admin_update, sync_user_from_update
+from bot.permissions import is_admin_update
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from database import (
     ensure_default_coin_subscriptions,
@@ -162,7 +162,6 @@ async def _reply_db_required(message: Message) -> None:
 
 
 async def _load_current_user(update: Update):
-    await sync_user_from_update(update)
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         return None, None
     if not update.effective_user:
@@ -301,7 +300,6 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
 
 
 async def grant_premium_command(update: Update, args: list[str]) -> None:
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         await _safe_reply_text(update.message, "Sorry, only the bot admin can grant Premium.")
         return
@@ -346,7 +344,6 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
 
 
 async def revoke_premium_command(update: Update, args: list[str]) -> None:
-    await sync_user_from_update(update)
     if not await is_admin_update(update):
         await _safe_reply_text(update.message, "Sorry, only the bot admin can revoke Premium.")
         return
