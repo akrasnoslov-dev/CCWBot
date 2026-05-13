@@ -52,6 +52,7 @@ Never implement "1 user = 1 LLM call" for the same event.
 - Avoid asyncpg cross-event-loop issues.
 - Use Alembic for schema changes.
 - Do not change schema unless required.
+- Every new database table and column must include a clear English DB comment.
 - Never log secrets or connection strings.
 
 ## Telegram UX
