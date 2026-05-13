@@ -375,7 +375,7 @@ async def get_or_create_user(
     first_name: str | None,
     admin_user_id: int | str | None,
 ):
-    """Create or update a user row for current Telegram interaction."""
+    """Create or update profile fields for the current Telegram interaction."""
     user = await session.scalar(
         select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     )
@@ -395,8 +395,8 @@ async def get_or_create_user(
         user.telegram_chat_id = telegram_chat_id
         user.username = username
         user.first_name = first_name
-        user.role = role
-        user.is_active = True
+        if role == "admin":
+            user.role = role
         user.updated_at = utc_now()
     try:
         await session.commit()
@@ -410,8 +410,8 @@ async def get_or_create_user(
         user.telegram_chat_id = telegram_chat_id
         user.username = username
         user.first_name = first_name
-        user.role = role
-        user.is_active = True
+        if role == "admin":
+            user.role = role
         user.updated_at = utc_now()
         await session.commit()
     await session.refresh(user)

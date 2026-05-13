@@ -10,7 +10,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, U
 from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
-from bot.permissions import sync_user_from_update
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from config import PREMIUM_MONTHLY_STARS
 from database import (
@@ -141,7 +140,6 @@ def _is_subscribe_rate_limited(telegram_user_id: int) -> bool:
 
 
 async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await sync_user_from_update(update)
     if not update.message or not update.effective_user:
         return
     if _is_subscribe_rate_limited(update.effective_user.id):

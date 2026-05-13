@@ -211,7 +211,6 @@ async def test_grant_and_revoke_premium_deny_non_admin(monkeypatch):
             replies.append(text)
 
     update = SimpleNamespace(message=FakeMessage(), effective_user=SimpleNamespace(id=1001))
-    monkeypatch.setattr("bot.watchlist.sync_user_from_update", AsyncNoop())
     monkeypatch.setattr("bot.watchlist.is_admin_update", AsyncFalse())
 
     await grant_premium_command(update, ["1002", "30"])
@@ -236,7 +235,6 @@ async def test_grant_premium_me_uses_current_admin_telegram_user_id(monkeypatch)
         assert days == 30
         return SimpleNamespace(active_until=datetime(2026, 6, 10, tzinfo=timezone.utc))
 
-    monkeypatch.setattr("bot.watchlist.sync_user_from_update", AsyncNoop())
     monkeypatch.setattr("bot.watchlist.is_admin_update", AsyncTrue())
     monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
     monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(None))
@@ -265,7 +263,6 @@ async def test_revoke_premium_me_uses_current_admin_telegram_user_id(monkeypatch
         assert telegram_user_id == 278890596
         return SimpleNamespace(active_until=datetime(2026, 5, 11, tzinfo=timezone.utc))
 
-    monkeypatch.setattr("bot.watchlist.sync_user_from_update", AsyncNoop())
     monkeypatch.setattr("bot.watchlist.is_admin_update", AsyncTrue())
     monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
     monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(None))
