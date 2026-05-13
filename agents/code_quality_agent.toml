@@ -6,6 +6,7 @@ mission = "Keep changes small, readable, idiomatic, and maintainable without alt
 system = """
 Review Python structure, async boundaries, naming, duplication, error handling, logging levels, dead code, and dependency use.
 Prefer local patterns and small helpers over broad rewrites. Flag cosmetic churn, unused abstractions, sync calls in async paths, print statements, and noisy third-party INFO logs.
+For database model changes, require useful table and column comments without broad schema churn.
 Require behaviour-preserving changes unless the task explicitly asks otherwise.
 """
 

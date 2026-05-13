@@ -105,19 +105,45 @@ def make_news_key(news_item: dict) -> str:
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("telegram_user_id", name="uq_users_telegram_user_id"),)
+    __table_args__ = (
+        UniqueConstraint("telegram_user_id", name="uq_users_telegram_user_id"),
+        {"comment": "Telegram users known to the bot and their delivery profile."},
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    role: Mapped[str] = mapped_column(String(64), default="user")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    alert_frequency_seconds: Mapped[int] = mapped_column(Integer, default=14400)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal user row id.")
+    telegram_user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        index=True,
+        comment="Telegram user id that identifies the person using the bot.",
+    )
+    telegram_chat_id: Mapped[int] = mapped_column(
+        BigInteger,
+        index=True,
+        comment="Telegram chat id where the bot sends messages for this user.",
+    )
+    username: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Latest Telegram username seen for the user."
+    )
+    first_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Latest Telegram first name seen for the user."
+    )
+    role: Mapped[str] = mapped_column(
+        String(64), default="user", comment="Bot authorization role such as user or admin."
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, comment="Whether the user may receive automatic bot messages."
+    )
+    alert_frequency_seconds: Mapped[int] = mapped_column(
+        Integer, default=14400, comment="User's selected minimum interval between alert deliveries."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this user row was created."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this user row was last updated.",
     )
 
     settings: Mapped[list[UserSettings]] = relationship(back_populates="user")
@@ -130,14 +156,26 @@ class User(Base):
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
+    __table_args__ = {"comment": "Legacy per-user alert settings retained for compatibility."}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    price_move_alert_percent: Mapped[float] = mapped_column(Float)
-    automatic_check_interval_seconds: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal settings row id.")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, comment="User these legacy settings belong to."
+    )
+    price_move_alert_percent: Mapped[float] = mapped_column(
+        Float, comment="Legacy per-user price movement threshold percent."
+    )
+    automatic_check_interval_seconds: Mapped[int] = mapped_column(
+        Integer, comment="Legacy per-user automatic price check interval in seconds."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this settings row was created."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this settings row was last updated.",
     )
 
     user: Mapped[User] = relationship(back_populates="settings")
@@ -148,15 +186,27 @@ class UserCoinSubscription(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "symbol", name="uq_user_coin_subscriptions_user_symbol"),
         CheckConstraint("symbol = lower(symbol)", name="ck_user_coin_subscriptions_symbol_lower"),
+        {"comment": "Per-user watchlist choices for automatic coin alerts."},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal watchlist row id.")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, comment="User who owns this coin alert choice."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Lowercase coin symbol controlled by this watchlist row."
+    )
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Whether automatic alerts are enabled for this coin."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this watchlist row was created."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this watchlist row was last updated.",
     )
 
     user: Mapped[User] = relationship(back_populates="coin_subscriptions")
@@ -164,21 +214,52 @@ class UserCoinSubscription(Base):
 
 class UserPremiumSubscription(Base):
     __tablename__ = "user_premium_subscriptions"
-    __table_args__ = (UniqueConstraint("user_id", name="uq_user_premium_subscriptions_user_id"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_premium_subscriptions_user_id"),
+        {"comment": "Source of truth for each user's bot Premium entitlement."},
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    plan: Mapped[str] = mapped_column(String(64), default="premium")
-    status: Mapped[str] = mapped_column(String(64), default="inactive", index=True)
-    active_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    last_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal Premium row id.")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, comment="User whose Premium entitlement this records."
+    )
+    plan: Mapped[str] = mapped_column(
+        String(64), default="premium", comment="Premium plan name granted to the user."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default="inactive",
+        index=True,
+        comment="Current Premium lifecycle status for operator visibility.",
+    )
+    active_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Source of truth for bot Premium access; active only while this is in the future.",
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="When Premium access first started."
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="When Premium access was revoked or ended."
+    )
+    provider: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Payment or grant source that last set this entitlement."
+    )
+    provider_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Provider subscription identifier when one is supplied."
+    )
+    last_payment_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Latest provider payment id used to extend Premium."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this Premium row was created."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this Premium row was last updated.",
     )
 
     user: Mapped[User] = relationship(back_populates="premium_subscription")
@@ -188,27 +269,78 @@ class Payment(Base):
     __tablename__ = "payments"
     __table_args__ = (
         UniqueConstraint("provider", "provider_payment_id", name="uq_payments_provider_payment_id"),
+        {"comment": "Payment events processed for Premium entitlement activation."},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    provider: Mapped[str] = mapped_column(String(64), index=True)
-    provider_payment_id: Mapped[str] = mapped_column(String(255))
-    provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    provider_payment_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    is_recurring: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    is_first_recurring: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    subscription_expiration_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal payment row id.")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        index=True,
+        comment="User whose Premium access this payment affects.",
     )
-    amount: Mapped[int] = mapped_column(Integer)
-    currency: Mapped[str] = mapped_column(String(16), index=True)
-    payload: Mapped[str] = mapped_column(String(255), index=True)
-    status: Mapped[str] = mapped_column(String(64), default=PREMIUM_PAYMENT_STATUS_PAID, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    provider: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Payment provider namespace, such as telegram_stars."
+    )
+    provider_payment_id: Mapped[str] = mapped_column(
+        String(255),
+        comment=(
+            "Bot idempotency key for this provider payment; Telegram Stars uses the Telegram "
+            "charge id."
+        ),
+    )
+    provider_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Provider subscription id if Telegram supplies one."
+    )
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Telegram's own charge id from successful_payment."
+    )
+    provider_payment_charge_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Underlying payment provider charge id passed through by Telegram.",
+    )
+    is_recurring: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+        comment="Telegram metadata indicating whether the payment is recurring.",
+    )
+    is_first_recurring: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+        comment="Telegram metadata indicating the first payment in a recurring sequence.",
+    )
+    subscription_expiration_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Provider/Telegram subscription metadata; not the source of truth for Premium access."
+        ),
+    )
+    amount: Mapped[int] = mapped_column(
+        Integer, comment="Payment amount in the provider currency unit."
+    )
+    currency: Mapped[str] = mapped_column(
+        String(16), index=True, comment="Payment currency code received from Telegram."
+    )
+    payload: Mapped[str] = mapped_column(
+        String(255),
+        index=True,
+        comment="Validated invoice payload tying payment to a Telegram user.",
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default=PREMIUM_PAYMENT_STATUS_PAID,
+        index=True,
+        comment="Stored processing status for this payment event.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this payment row was created."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this payment row was last updated.",
     )
 
     user: Mapped[User] = relationship(back_populates="payments")
@@ -216,40 +348,79 @@ class Payment(Base):
 
 class AppSettings(Base):
     __tablename__ = "app_settings"
+    __table_args__ = {"comment": "Global bot settings controlled by admins."}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    btc_alert_threshold_percent: Mapped[float] = mapped_column(Float)
-    automatic_check_interval_seconds: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal settings row id.")
+    btc_alert_threshold_percent: Mapped[float] = mapped_column(
+        Float, comment="Global BTC movement percent that triggers automatic alerts."
+    )
+    automatic_check_interval_seconds: Mapped[int] = mapped_column(
+        Integer, comment="Global automatic market check interval in seconds."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When this global settings row was created.",
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this global settings row was last updated.",
     )
 
 
 class PriceState(Base):
     __tablename__ = "price_state"
-    __table_args__ = (UniqueConstraint("symbol", name="uq_price_state_symbol"),)
+    __table_args__ = (
+        UniqueConstraint("symbol", name="uq_price_state_symbol"),
+        {"comment": "Latest stored market snapshot used to detect price movements."},
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    last_price: Mapped[float] = mapped_column(Float)
-    last_24h_change: Mapped[float] = mapped_column(Float)
-    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal price state row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol for this market state."
+    )
+    last_price: Mapped[float] = mapped_column(
+        Float, comment="Most recent market price stored for movement detection."
+    )
+    last_24h_change: Mapped[float] = mapped_column(
+        Float, comment="Most recent 24 hour percentage change from market data."
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="When market data was last checked."
+    )
+    last_alert_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="When an automatic alert was last sent."
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this market state row was last updated.",
     )
 
 
 class SeenNews(Base):
     __tablename__ = "seen_news"
+    __table_args__ = {"comment": "RSS/news items already processed for deduplication."}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    news_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
-    title: Mapped[str] = mapped_column(String(1000))
-    link: Mapped[str] = mapped_column(String(2000))
-    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal news row id.")
+    news_key: Mapped[str] = mapped_column(
+        String(500), unique=True, index=True, comment="Stable deduplication key for the news item."
+    )
+    title: Mapped[str] = mapped_column(
+        String(1000), comment="News title shown or analyzed by the bot."
+    )
+    link: Mapped[str] = mapped_column(String(2000), comment="Canonical link for the news item.")
+    source: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Publisher or feed source for the news item."
+    )
+    seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When the news item was first stored."
+    )
 
 
 class Alert(Base):
@@ -261,36 +432,85 @@ class Alert(Base):
             "market_event_id",
             name="uq_alerts_user_symbol_market_event",
         ),
+        {"comment": "One delivery record per recipient for a market alert."},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    alert_type: Mapped[str] = mapped_column(String(64), index=True)
-    message: Mapped[str] = mapped_column(Text)
-    sent_to_chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    market_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    event_ai_analysis_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal alert delivery row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol for this delivered alert."
+    )
+    alert_type: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Alert category such as price movement."
+    )
+    message: Mapped[str] = mapped_column(Text, comment="Sanitized Telegram message sent or queued.")
+    sent_to_chat_id: Mapped[int] = mapped_column(
+        BigInteger, index=True, comment="Telegram chat id targeted by this delivery."
+    )
+    market_event_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Market event this delivery belongs to."
+    )
+    event_ai_analysis_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="AI analysis reused for this delivery."
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Recipient user row for this delivery."
+    )
+    status: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Delivery state such as pending, sent, or failed."
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Failure detail for a failed delivery, if any."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this delivery row was created."
+    )
 
 
 class MarketEvent(Base):
     __tablename__ = "market_events"
-    __table_args__ = (UniqueConstraint("event_key", name="uq_market_events_event_key"),)
+    __table_args__ = (
+        UniqueConstraint("event_key", name="uq_market_events_event_key"),
+        {"comment": "Deduplicated market movements that can trigger many deliveries."},
+    )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    event_type: Mapped[str] = mapped_column(String(64), index=True)
-    event_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    price: Mapped[float] = mapped_column(Float)
-    previous_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    price_change_percent: Mapped[float] = mapped_column(Float)
-    last_24h_change: Mapped[float | None] = mapped_column(Float, nullable=True)
-    last_7d_change: Mapped[float | None] = mapped_column(Float, nullable=True)
-    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal market event row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol for the market event."
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Type of market condition that was detected."
+    )
+    event_key: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        comment="Stable idempotency key for this market event.",
+    )
+    price: Mapped[float] = mapped_column(Float, comment="Current price captured for the event.")
+    previous_price: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Previous stored price used to calculate movement."
+    )
+    price_change_percent: Mapped[float] = mapped_column(
+        Float, comment="Percentage move from previous price to current price."
+    )
+    last_24h_change: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="24 hour percentage change at detection time."
+    )
+    last_7d_change: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="7 day percentage change at detection time."
+    )
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), comment="When the market event was detected."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When this market event row was created.",
+    )
 
     ai_analyses: Mapped[list[EventAiAnalysis]] = relationship(back_populates="market_event")
 
@@ -303,23 +523,57 @@ class EventAiAnalysis(Base):
             "input_hash",
             name="uq_event_ai_analyses_market_event_input_hash",
         ),
+        {"comment": "One reusable AI analysis for a market event and exact input payload."},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    market_event_id: Mapped[int] = mapped_column(ForeignKey("market_events.id"), index=True)
-    provider: Mapped[str] = mapped_column(String(64))
-    model: Mapped[str] = mapped_column(String(255))
-    input_hash: Mapped[str] = mapped_column(String(128), index=True)
-    analysis_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    plain_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    html_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(String(64), default="completed", index=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal AI analysis row id."
+    )
+    market_event_id: Mapped[int] = mapped_column(
+        ForeignKey("market_events.id"), index=True, comment="Market event analyzed by the LLM."
+    )
+    provider: Mapped[str] = mapped_column(
+        String(64), comment="LLM provider used for this analysis."
+    )
+    model: Mapped[str] = mapped_column(
+        String(255), comment="LLM model name used for this analysis."
+    )
+    input_hash: Mapped[str] = mapped_column(
+        String(128), index=True, comment="Hash of the exact AI input used for idempotency."
+    )
+    analysis_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw or legacy analysis text returned by the AI."
+    )
+    plain_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Plain Telegram-safe analysis text for delivery."
+    )
+    html_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="HTML-formatted analysis text when available."
+    )
+    prompt_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Prompt token count reported by the LLM provider."
+    )
+    completion_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Completion token count reported by the LLM provider."
+    )
+    total_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Total token count reported by the LLM provider."
+    )
+    estimated_cost: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Estimated provider cost for this analysis."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default="completed",
+        index=True,
+        comment="Analysis state such as completed or failed.",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Failure detail when analysis generation fails."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this AI analysis row was created."
+    )
 
     market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
 
