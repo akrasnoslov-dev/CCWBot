@@ -21,6 +21,8 @@ services:
 
   postgres:
     image: postgres:16
+    ports:
+      - "5433:5432"
     container_name: ccwbot-postgres
     restart: unless-stopped
     environment:
