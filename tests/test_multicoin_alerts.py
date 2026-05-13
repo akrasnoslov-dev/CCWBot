@@ -429,10 +429,16 @@ async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monke
         )
 
         classify.assert_awaited_once()
-        assert sent_messages == [
-            (2001, "BTC strong signal\n\nNot financial advice.", None),
-            (2002, "BTC strong signal\n\nNot financial advice.", None),
-        ]
+        assert len(sent_messages) == 2
+        assert [chat_id for chat_id, _, _ in sent_messages] == [2001, 2002]
+        for _, message, parse_mode in sent_messages:
+            assert parse_mode is None
+            assert message.startswith("🔥 Extreme - BTC strong signal\nType: Strong signal")
+            assert "BTC strong signal" in message
+            assert "Risk level:" not in message
+            assert "Signals:\n" in message
+            assert "Strong signal classification" in message
+            assert message.endswith("Not financial advice.")
         assert saved_state["last_strong_signal_strength"] == "strong"
         assert saved_state["last_strong_signal_direction"] == "bullish"
         async with SessionLocal() as session:
