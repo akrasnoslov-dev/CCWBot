@@ -179,6 +179,27 @@ locally.
 Normal work should be opened as pull requests against `dev`. Only open pull requests against
 `main` for an explicit production release or `dev` -> `main` merge.
 
+## Production Safety Rules
+
+- Never work directly in `main` locally; use `dev` or a focused branch based on `dev`.
+- Production runs `main` only.
+- Keep deploys reproducible through Git and Docker Compose only.
+- Never commit `.env` files, secrets, database dumps, or local state files.
+- Never use the production Telegram bot token locally.
+- Never manually edit tracked production files on the VPS.
+- Test database migrations locally before production.
+- Verify a current backup before destructive database operations.
+- After deploy, always check containers, bot logs, and basic Telegram functionality.
+
+## Operational Deploy Checklist
+
+1. Verify the release branch and VPS environment.
+2. Pull the latest `main` on the VPS.
+3. Run `docker compose up -d --build`.
+4. Check container health with `docker compose ps`.
+5. Check bot logs with `docker compose logs -f`.
+6. Verify bot functionality in Telegram.
+
 Production tracked files should not be edited manually on the VPS. Deploy production changes
 through Git only:
 
@@ -187,6 +208,7 @@ cd /opt/CCWBot
 git checkout main
 git pull
 docker compose up -d --build
+docker compose ps
 docker compose logs -f
 ```
 
