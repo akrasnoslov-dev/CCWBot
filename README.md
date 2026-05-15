@@ -52,6 +52,7 @@ Copy `.env.example` to `.env` and fill real values locally. Do not commit `.env`
 
 Required:
 
+- `ENVIRONMENT`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - `TELEGRAM_ADMIN_USER_ID`
@@ -158,6 +159,20 @@ docker compose down
 Compose overrides `DATABASE_URL` inside the bot container so it connects to the `postgres`
 service. Keep `POSTGRES_PASSWORD` set in `.env`, and do not publish `docker compose config`
 output from a real `.env` because Compose can expand secrets.
+
+## Development And Production Environments
+
+Use the same environment variable names in every environment. Local development should use a
+dev Telegram bot token in `.env` with `ENVIRONMENT=development`. The production VPS should use
+its own production `.env` with `ENVIRONMENT=production` and the production Telegram bot token.
+Both files set `TELEGRAM_BOT_TOKEN`; do not add separate dev/prod token variable names.
+
+Do not commit `.env`, `.env.local`, `.env.production`, database dumps, backup folders, or local
+state files. `.env.example` contains placeholders only and is safe to copy.
+
+When using Telegram polling, never run the same Telegram bot token in two places at the same
+time. Stop the local dev bot before starting another process that uses the same token, and keep
+the VPS production token separate from local development.
 
 Full startup smoke test:
 

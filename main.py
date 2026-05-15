@@ -42,7 +42,13 @@ from bot.payments import pre_checkout_handler, successful_payment_handler
 from bot.runtime import close_database, initialize_database, log
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
-from config import HEALTH_PORT, TELEGRAM_ADMIN_USER_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import (
+    ENVIRONMENT,
+    HEALTH_PORT,
+    TELEGRAM_ADMIN_USER_ID,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
+)
 from health import start_health_server, stop_health_server
 from price_service import warm_up_price_cache
 
@@ -106,6 +112,8 @@ def main():
         raise ValueError("TELEGRAM_CHAT_ID is missing. Check your .env file.")
     if not TELEGRAM_ADMIN_USER_ID:
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
+
+    log(f"Environment: {ENVIRONMENT}.")
 
     loop.run_until_complete(initialize_database())
     loop.run_until_complete(warm_up_price_cache())

@@ -1,4 +1,6 @@
 .env
+.env.local
+.env.production
 .git
 .venv
 __pycache__/
@@ -6,10 +8,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 pytest-cache-files-*/
+*.dump
 *.db
 *.sqlite
 *.sqlite3
 *.db-journal
 state.json
+backups/
 pgdata/
 postgres-data/
