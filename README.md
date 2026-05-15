@@ -160,17 +160,38 @@ output from a real `.env` because Compose can expand secrets.
 
 ## Development And Production Environments
 
-Use the same environment variable names in every environment. Local development should use a
-dev Telegram bot token in `.env` with `ENVIRONMENT=development`. The production VPS should use
-its own production `.env` with `ENVIRONMENT=production` and the production Telegram bot token.
-Both files set `TELEGRAM_BOT_TOKEN`; do not add separate dev/prod token variable names.
+Local development runs from `dev` or a feature branch based on `dev`. Production runs from
+`main` on the Hetzner VPS at `/opt/CCWBot`.
+
+Use the same environment variable names in every environment. Local development uses a
+development Telegram bot token and local Docker PostgreSQL. Production uses a separate
+production Telegram bot token and server Docker PostgreSQL. Both files set
+`TELEGRAM_BOT_TOKEN`; do not add separate dev/prod token variable names.
 
 Do not commit `.env`, `.env.local`, `.env.production`, database dumps, backup folders, or local
 state files. `.env.example` contains placeholders only and is safe to copy.
 
 When using Telegram polling, never run the same Telegram bot token in two places at the same
 time. Stop the local dev bot before starting another process that uses the same token, and keep
-the VPS production token separate from local development.
+the VPS production token separate from local development. Never use the production bot token
+locally.
+
+Normal work should be opened as pull requests against `dev`. Only open pull requests against
+`main` for an explicit production release or `dev` -> `main` merge.
+
+Production tracked files should not be edited manually on the VPS. Deploy production changes
+through Git only:
+
+```bash
+cd /opt/CCWBot
+git checkout main
+git pull
+docker compose up -d --build
+docker compose logs -f
+```
+
+Never overwrite the production `.env`. Test migrations locally before production, and create
+and verify backups before destructive database operations.
 
 Full startup smoke test:
 
