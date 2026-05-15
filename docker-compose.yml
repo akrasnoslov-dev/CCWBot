@@ -2,7 +2,7 @@ services:
   bot:
     build: .
     container_name: ccwbot
-    restart: unless-stopped
+    restart: always
     env_file:
       - .env
     depends_on:
@@ -24,7 +24,7 @@ services:
     ports:
       - "5433:5432"
     container_name: ccwbot-postgres
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_DB: ccwbot
       POSTGRES_USER: ccwbot
