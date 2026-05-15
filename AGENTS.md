@@ -53,6 +53,7 @@ Never implement "1 user = 1 LLM call" for the same event.
 - Use Alembic for schema changes.
 - Do not change schema unless required.
 - Every new database table and column must include a clear English DB comment.
+- Handle database migrations carefully and test them locally before production.
 - Never log secrets or connection strings.
 
 ## Telegram UX
@@ -126,16 +127,38 @@ docker compose config >/dev/null
 
 If Docker Compose changes, run `docker compose config >/dev/null`. Do not publish Compose config output from a real `.env`, and do not claim manual Telegram/runtime verification unless it was actually performed.
 
+## Branching and Deployment Workflow
+- `dev` is the default branch for local development, Codex tasks, and feature work.
+- Start work from `dev` or from a focused feature branch based on `dev`.
+- Codex should continue creating Pull Requests automatically for normal tasks.
+- Default PR target/base branch is `dev`, not `main`.
+- Open PRs against `dev` by default. Only open PRs against `main` when explicitly asked for a production release or `dev` -> `main` merge.
+- `main` is production/stable and must stay deployable.
+- The production VPS runs only `main` from `/opt/CCWBot`.
+- After `dev` is validated, merge `dev` into `main`, then update the VPS.
+
+Production server update flow:
+
+```bash
+cd /opt/CCWBot
+git checkout main
+git pull
+docker compose up -d --build
+docker compose logs -f
+```
+
+Never commit `.env` files or real secrets.
+
 ## Git and PR Workflow
 Never commit directly to `main`.
 
 For every task:
-1. Create a focused branch from `main`.
+1. Create a focused branch from `dev`.
 2. Make only relevant changes.
 3. Run verification.
 4. Commit.
 5. Push.
-6. Create a GitHub PR against `main`.
+6. Create a GitHub PR against `dev` unless explicitly asked to release production or merge `dev` into `main`.
 
 Do not auto-merge PRs, delete user work, or include generated/cache files.
 
