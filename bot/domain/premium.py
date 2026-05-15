@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from supported_coins import (
+from bot.domain.supported_coins import (
     DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS,
     FREE_ALERT_FREQUENCY_SECONDS,
     PREMIUM_ALERT_FREQUENCY_SECONDS,

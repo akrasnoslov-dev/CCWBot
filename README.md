@@ -16,7 +16,7 @@ fallbacks.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
   commands.
 - Hidden `/userid` utility command.
-- Related news links from `news_service.py` data.
+- Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
 
 Alert and report text is informational and keeps `Not financial advice.` guidance.
@@ -29,17 +29,15 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
 - Local `state.json` fallback is single-instance oriented.
 
-## Architecture Overview
+## Project Structure
 
-- `main.py` wires startup, handlers, scheduled jobs, health server, and shutdown.
-- `bot/` contains Telegram handlers, alerts, reports, permissions, keyboards, setup, and runtime helpers.
-- `database.py` defines async SQLAlchemy models, Premium/watchlist persistence, and migration
-  startup.
+- `main.py` remains the local and Docker entry point.
+- `bot/` contains Telegram handlers, scheduled alert/report jobs, runtime setup, and `/health`.
+- `bot/alerting/` contains alert rule and severity helpers.
+- `bot/db/` contains async SQLAlchemy models, persistence helpers, and migration startup.
+- `bot/domain/` contains pure domain rules such as supported coins and Premium entitlement.
+- `bot/services/` contains external service integrations for CoinGecko, RSS news, and Groq.
 - `alembic/` contains database migrations.
-- `price_service.py` wraps CoinGecko calls, caching, retry, and stale fallback handling.
-- `news_service.py` fetches RSS news used by news context helpers.
-- `ai_agent_groq.py` builds Groq prompts, validates JSON, sanitizes alert text, and creates fallback messages.
-- `health.py` serves `/health`.
 - `tests/` contains unit tests that avoid real Telegram, Groq, CoinGecko, and PostgreSQL calls.
 
 PostgreSQL is the primary runtime store when `DATABASE_URL` is configured. The bot uses async
@@ -209,7 +207,7 @@ internal error details.
 Run these before opening a pull request:
 
 ```bash
-python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
+python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
 ruff check .
 python -m pytest tests/ -v
 docker compose config >/dev/null

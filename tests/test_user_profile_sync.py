@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from database import Base, User, get_or_create_user
+from bot.db.database import Base, User, get_or_create_user
 
 
 async def build_session():

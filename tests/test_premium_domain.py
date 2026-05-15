@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from premium import (
+from bot.domain.premium import (
     can_deliver_now,
     get_effective_frequency_seconds,
     is_coin_unlocked_for_user,
     is_user_premium_active,
 )
-from supported_coins import is_symbol_free
+from bot.domain.supported_coins import is_symbol_free
 
 
 def make_user(active_until=None, frequency=21600):

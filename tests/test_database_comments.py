@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from database import Base, init_db
+from bot.db.database import Base, init_db
 
 
 def _load_comments_migration():

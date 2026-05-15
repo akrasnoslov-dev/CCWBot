@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
-from database import (
+from bot.db.database import (
     Alert,
     Base,
     EventAiAnalysis,

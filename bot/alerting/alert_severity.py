@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from supported_coins import normalize_symbol
+from bot.domain.supported_coins import normalize_symbol
 
 
 class AlertSeverity(str, Enum):

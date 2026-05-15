@@ -6,9 +6,9 @@ from typing import Any
 
 from aiohttp import web
 
+from bot.db.database import get_price_state
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
-from database import get_price_state
-from storage import load_state
+from bot.storage import load_state
 
 
 def _isoformat_timestamp(value: datetime | str | None) -> str | None:

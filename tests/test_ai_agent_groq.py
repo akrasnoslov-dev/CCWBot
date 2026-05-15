@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-import ai_agent_groq
+import bot.services.ai_agent_groq as ai_agent_groq
 
 ALERT_ARGS = {
     "previous_price": 100000.0,

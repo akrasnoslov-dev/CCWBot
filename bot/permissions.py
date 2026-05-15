@@ -1,8 +1,8 @@
 from telegram import Update
 
+from bot.config import TELEGRAM_ADMIN_USER_ID, parse_telegram_user_id
+from bot.db.database import get_or_create_user, get_user_role
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
-from config import TELEGRAM_ADMIN_USER_ID, parse_telegram_user_id
-from database import get_or_create_user, get_user_role
 
 
 async def is_admin_user(user_id: int | str | None) -> bool:

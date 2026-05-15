@@ -4,8 +4,8 @@ import time
 
 import httpx
 
-from config import PRICE_CACHE_TTL_SECONDS
-from supported_coins import SUPPORTED_COINS
+from bot.config import PRICE_CACHE_TTL_SECONDS
+from bot.domain.supported_coins import SUPPORTED_COINS
 
 
 class CoinGeckoRateLimitError(Exception):
@@ -153,9 +153,9 @@ def _sync_btc_price_cache(
 
 async def warm_up_price_cache() -> None:
     """Populate price cache from persisted runtime state on startup."""
+    from bot.db.database import get_price_state
     from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
-    from database import get_price_state
-    from storage import load_state
+    from bot.storage import load_state
 
     warmed_symbols: list[str] = []
     if DB_ENABLED and DB_SESSION_LOCAL:

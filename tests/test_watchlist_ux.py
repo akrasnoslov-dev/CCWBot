@@ -6,6 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram.error import TimedOut
 
+from bot.db.database import (
+    Base,
+    User,
+    UserCoinSubscription,
+    ensure_default_coin_subscriptions,
+    grant_user_premium,
+)
 from bot.keyboards import build_price_keyboard
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
@@ -17,13 +24,6 @@ from bot.watchlist import (
     handle_watchlist_callback,
     myplan_command,
     revoke_premium_command,
-)
-from database import (
-    Base,
-    User,
-    UserCoinSubscription,
-    ensure_default_coin_subscriptions,
-    grant_user_premium,
 )
 
 

@@ -10,15 +10,15 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, U
 from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from config import PREMIUM_MONTHLY_STARS
-from database import (
+from bot.config import PREMIUM_MONTHLY_STARS
+from bot.db.database import (
     TELEGRAM_STARS_PROVIDER,
     activate_premium_from_telegram_stars_payment,
     get_user_by_telegram_user_id,
 )
-from premium import is_user_premium_active
-from supported_coins import premium_symbols_display
+from bot.domain.premium import is_user_premium_active
+from bot.domain.supported_coins import premium_symbols_display
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 logger = logging.getLogger(__name__)
 

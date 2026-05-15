@@ -36,7 +36,7 @@ from sqlalchemy.orm import (
     selectinload,
 )
 
-from supported_coins import (
+from bot.domain.supported_coins import (
     PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_SYMBOLS,
     is_symbol_free,
@@ -602,13 +602,13 @@ def _run_upgrade(database_url: str) -> None:
 
     from alembic import command
 
-    project_root = Path(__file__).resolve().parent
-    config = Config(str(project_root / "alembic.ini"))
-    config.set_main_option("script_location", str(project_root / "alembic"))
-    config.set_main_option("sqlalchemy.url", database_url)
-    config.attributes["database_url"] = database_url
-    config.attributes["configure_logger"] = False
-    command.upgrade(config, "head")
+    project_root = Path(__file__).resolve().parents[2]
+    alembic_config = Config(str(project_root / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(project_root / "alembic"))
+    alembic_config.set_main_option("sqlalchemy.url", database_url)
+    alembic_config.attributes["database_url"] = database_url
+    alembic_config.attributes["configure_logger"] = False
+    command.upgrade(alembic_config, "head")
 
 
 def _same_telegram_user_id(left: int | str | None, right: int | str | None) -> bool:

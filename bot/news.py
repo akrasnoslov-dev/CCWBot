@@ -1,13 +1,13 @@
 import asyncio
 
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from database import (
+from bot.db.database import (
     cleanup_seen_news,
     make_news_key,
     mark_news_items_seen,
     was_news_seen,
 )
-from news_service import fetch_crypto_news
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.services.news_service import fetch_crypto_news
 
 
 async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:

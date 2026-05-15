@@ -8,6 +8,18 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from bot.config import PREMIUM_MONTHLY_STARS
+from bot.db.database import (
+    Base,
+    Payment,
+    User,
+    activate_premium_from_telegram_stars_payment,
+    ensure_default_coin_subscriptions,
+    grant_user_premium,
+    revoke_user_premium,
+    set_user_coin_subscription,
+)
+from bot.domain.premium import is_user_premium_active
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     STARS_CURRENCY,
@@ -20,18 +32,6 @@ from bot.payments import (
     validate_pre_checkout_query,
 )
 from bot.watchlist import build_plan_message, build_watchlist_message
-from config import PREMIUM_MONTHLY_STARS
-from database import (
-    Base,
-    Payment,
-    User,
-    activate_premium_from_telegram_stars_payment,
-    ensure_default_coin_subscriptions,
-    grant_user_premium,
-    revoke_user_premium,
-    set_user_coin_subscription,
-)
-from premium import is_user_premium_active
 
 
 async def build_session():
@@ -596,7 +596,7 @@ def test_premium_monthly_stars_default_config():
 
 
 def test_premium_monthly_stars_invalid_config_falls_back(monkeypatch):
-    import config
+    import bot.config as config
 
     monkeypatch.setenv("PREMIUM_MONTHLY_STARS", "not-a-number")
     reloaded = importlib.reload(config)

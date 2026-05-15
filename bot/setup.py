@@ -3,8 +3,8 @@ import logging
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeChat
 from telegram.ext import Application
 
+from bot.config import TELEGRAM_ADMIN_USER_ID
 from bot.runtime import log
-from config import TELEGRAM_ADMIN_USER_ID
 
 logger = logging.getLogger(__name__)
 

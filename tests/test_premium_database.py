@@ -4,8 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from bot.watchlist import build_plan_message, build_watchlist_message
-from database import (
+from bot.db.database import (
     Base,
     User,
     UserCoinSubscription,
@@ -16,7 +15,8 @@ from database import (
     set_user_alert_frequency,
     set_user_coin_subscription,
 )
-from premium import is_user_premium_active
+from bot.domain.premium import is_user_premium_active
+from bot.watchlist import build_plan_message, build_watchlist_message
 
 
 async def build_session():
