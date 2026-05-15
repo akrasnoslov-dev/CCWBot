@@ -12,6 +12,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _get_environment() -> str:
+    value = os.getenv("ENVIRONMENT", "development").strip().lower()
+    if value in {"development", "production"}:
+        return value
+    return "custom" if value else "development"
+
+
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -51,6 +58,8 @@ def parse_telegram_user_id(value: int | str | None) -> int | None:
     except ValueError:
         return None
 
+
+ENVIRONMENT = _get_environment()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Chat ID that receives automatic BTC alerts and scheduled reports.
