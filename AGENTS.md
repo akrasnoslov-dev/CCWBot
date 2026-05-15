@@ -143,6 +143,18 @@ If Docker Compose changes, run `docker compose config >/dev/null`. Do not publis
 - Test migrations locally before production.
 - Create and verify backups before destructive database operations.
 
+## Production Safety Rules
+- Never work directly in `main` locally. Use `dev` or a focused branch based on `dev`.
+- Production runs `main` only; `dev` and feature branches are not deployed to the VPS.
+- Keep production deploys reproducible through Git and Docker Compose only.
+- Never commit `.env` files, real secrets, database dumps, or local state files.
+- Never use the production Telegram bot token locally.
+- Never manually edit tracked production files on the VPS; commit changes and deploy from Git.
+- Never overwrite the production `.env`.
+- Test database migrations locally before production.
+- Verify a current backup before destructive database operations.
+- After every deploy, check `docker compose ps`, bot logs, and basic Telegram functionality.
+
 ## Branching and PR Workflow
 - `dev` is the default branch for local development, Codex tasks, and feature work.
 - Start work from `dev` or from a focused feature branch based on `dev`.
@@ -180,8 +192,18 @@ cd /opt/CCWBot
 git checkout main
 git pull
 docker compose up -d --build
+docker compose ps
 docker compose logs -f
 ```
+
+Operational deploy checklist:
+
+1. Verify the local release branch and VPS environment are correct.
+2. Pull the latest `main` on the VPS.
+3. Run `docker compose up -d --build`.
+4. Check container health with `docker compose ps`.
+5. Check bot logs with `docker compose logs -f`.
+6. Verify basic bot functionality in Telegram.
 
 ## PR Description
 Every PR must include summary, files changed, behaviour confirmation, database/schema confirmation, verification performed, manual verification status, protected files changed and why, and known limitations/follow-ups.
