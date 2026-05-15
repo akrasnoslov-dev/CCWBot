@@ -11,7 +11,7 @@ from bot.alerts import (
     _build_price_movement_event_key,
     get_alert_recipients,
 )
-from database import (
+from bot.db.database import (
     Base,
     EventAiAnalysis,
     MarketEvent,

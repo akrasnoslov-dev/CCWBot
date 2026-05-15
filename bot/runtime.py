@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-from config import DATABASE_URL
-from database import init_db
+from bot.config import DATABASE_URL
+from bot.db.database import init_db
 
 logger = logging.getLogger(__name__)
 

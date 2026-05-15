@@ -19,6 +19,13 @@ from bot.alerts import (
     schedule_strong_signal_job,
     schedule_weekly_report,
 )
+from bot.config import (
+    ENVIRONMENT,
+    HEALTH_PORT,
+    TELEGRAM_ADMIN_USER_ID,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
+)
 from bot.handlers import (
     button_router,
     chat_id,
@@ -38,19 +45,12 @@ from bot.handlers import (
     watchlist,
     weekly_report,
 )
+from bot.health import start_health_server, stop_health_server
 from bot.payments import pre_checkout_handler, successful_payment_handler
 from bot.runtime import close_database, initialize_database, log
+from bot.services.price_service import warm_up_price_cache
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
-from config import (
-    ENVIRONMENT,
-    HEALTH_PORT,
-    TELEGRAM_ADMIN_USER_ID,
-    TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_ID,
-)
-from health import start_health_server, stop_health_server
-from price_service import warm_up_price_cache
 
 
 def create_event_loop() -> asyncio.AbstractEventLoop:

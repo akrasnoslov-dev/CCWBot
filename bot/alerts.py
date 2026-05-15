@@ -11,18 +11,11 @@ import httpx
 from telegram.constants import ParseMode
 from telegram.ext import Application, ContextTypes
 
-from ai_agent_groq import (
-    GROQ_MODEL,
-    build_fallback_alert_message,
-    classify_strong_signal,
-    create_ai_alert_payload,
-    sanitize_alert_message,
-)
-from alert_rules import (
+from bot.alerting.alert_rules import (
     calculate_price_change_percent,
     should_send_alert,
 )
-from alert_severity import (
+from bot.alerting.alert_severity import (
     AlertSeverity,
     AlertType,
     SeverityEvaluation,
@@ -32,11 +25,7 @@ from alert_severity import (
     evaluate_alert_severity,
     render_severity_heading,
 )
-from bot.news import fetch_news_context, remember_news_context
-from bot.reports import send_scheduled_weekly_report
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot.settings import get_db_alert_settings, get_state_alert_settings
-from config import (
+from bot.config import (
     ENABLE_STRONG_SIGNAL_ALERTS,
     ENABLE_WEEKLY_REPORT,
     SEEN_NEWS_KEEP_LATEST,
@@ -46,7 +35,7 @@ from config import (
     WEEKLY_REPORT_DAY,
     WEEKLY_REPORT_HOUR,
 )
-from database import (
+from bot.db.database import (
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
     get_event_ai_analysis,
@@ -61,15 +50,26 @@ from database import (
     update_alert_delivery_status,
     update_price_state,
 )
-from premium import can_deliver_now, is_coin_unlocked_for_user
-from price_service import (
+from bot.domain.premium import can_deliver_now, is_coin_unlocked_for_user
+from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
+from bot.news import fetch_news_context, remember_news_context
+from bot.reports import send_scheduled_weekly_report
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.services.ai_agent_groq import (
+    GROQ_MODEL,
+    build_fallback_alert_message,
+    classify_strong_signal,
+    create_ai_alert_payload,
+    sanitize_alert_message,
+)
+from bot.services.price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
     get_btc_market_data,
     get_coin_market_data_batch,
 )
-from storage import load_state, save_state
-from supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
+from bot.settings import get_db_alert_settings, get_state_alert_settings
+from bot.storage import load_state, save_state
 
 logger = logging.getLogger(__name__)
 

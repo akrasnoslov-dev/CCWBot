@@ -2,17 +2,17 @@ import time
 
 from telegram.ext import ContextTypes
 
-from ai_agent_groq import (
+from bot.config import TELEGRAM_CHAT_ID
+from bot.db.database import save_alert
+from bot.news import fetch_news_context, remember_news_context
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.services.ai_agent_groq import (
     build_fallback_alert_message,
     create_daily_report,
     create_weekly_report,
     sanitize_alert_message,
 )
-from bot.news import fetch_news_context, remember_news_context
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from config import TELEGRAM_CHAT_ID
-from database import save_alert
-from price_service import get_btc_market_data
+from bot.services.price_service import get_btc_market_data
 
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import price_service
+import bot.services.price_service as price_service
 
 
 class FakeResponse:

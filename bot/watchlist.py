@@ -5,11 +5,7 @@ from datetime import datetime, timezone
 from telegram import InlineKeyboardMarkup, Message, Update
 from telegram.error import NetworkError, TimedOut
 
-from bot.keyboards import build_watchlist_keyboard
-from bot.payments import build_subscribe_message as _build_subscribe_message
-from bot.permissions import is_admin_update
-from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from database import (
+from bot.db.database import (
     ensure_default_coin_subscriptions,
     get_user_by_telegram_user_id,
     grant_user_premium,
@@ -17,13 +13,13 @@ from database import (
     set_user_alert_frequency,
     set_user_coin_subscription,
 )
-from premium import (
+from bot.domain.premium import (
     get_effective_frequency_seconds,
     get_user_plan,
     is_coin_unlocked_for_user,
     is_user_premium_active,
 )
-from supported_coins import (
+from bot.domain.supported_coins import (
     FREE_ALERT_FREQUENCY_SECONDS,
     PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_COINS,
@@ -31,6 +27,10 @@ from supported_coins import (
     is_symbol_free,
     premium_symbols_display,
 )
+from bot.keyboards import build_watchlist_keyboard
+from bot.payments import build_subscribe_message as _build_subscribe_message
+from bot.permissions import is_admin_update
+from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 
 def _format_date(value: datetime | None) -> str:

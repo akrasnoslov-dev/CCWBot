@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-import health
+import bot.health as health
 
 
 @pytest.mark.asyncio

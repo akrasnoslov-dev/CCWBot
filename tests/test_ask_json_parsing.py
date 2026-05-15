@@ -1,4 +1,4 @@
-from ai_agent_groq import _parse_json
+from bot.services.ai_agent_groq import _parse_json
 
 
 def test_clean_json_parses_correctly():

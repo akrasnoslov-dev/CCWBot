@@ -14,7 +14,7 @@ test, and type-check tooling.
 Run the same lightweight checks before opening a pull request:
 
 ```bash
-python -m py_compile main.py config.py database.py storage.py alert_rules.py price_service.py news_service.py ai_agent_groq.py health.py
+python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
 ruff check .
 python -m pytest tests/ -v
 docker compose config >/dev/null

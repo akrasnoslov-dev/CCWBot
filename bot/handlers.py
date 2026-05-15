@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_btc_check
+from bot.db.database import get_price_state
 from bot.keyboards import (
     build_interval_keyboard,
     build_price_keyboard,
@@ -22,12 +23,14 @@ from bot.prices import (
 )
 from bot.reports import send_daily_report_message, send_weekly_report_message
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.services.price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
 from bot.settings import (
     get_db_alert_settings,
     get_state_alert_settings,
     save_interval_setting,
     save_threshold_setting,
 )
+from bot.storage import load_state
 from bot.watchlist import (
     grant_premium_command,
     handle_watchlist_callback,
@@ -35,9 +38,6 @@ from bot.watchlist import (
     revoke_premium_command,
     watchlist_command,
 )
-from database import get_price_state
-from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
-from storage import load_state
 
 PRICE_RATE_LIMIT_SECONDS = 10
 PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600

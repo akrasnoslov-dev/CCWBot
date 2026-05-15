@@ -1,4 +1,4 @@
-from alert_severity import (
+from bot.alerting.alert_severity import (
     AlertSeverity,
     AlertType,
     SeverityEvaluation,

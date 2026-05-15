@@ -1,6 +1,6 @@
 import feedparser
 
-from database import make_news_key
+from bot.db.database import make_news_key
 
 # Existing curated RSS feeds used by the bot for context in AI summaries.
 RSS_FEEDS = [

@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 
+from bot.db.database import get_price_state, update_price_state
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from database import get_price_state, update_price_state
-from price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, get_coin_price
-from storage import load_state, save_state
+from bot.services.price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, get_coin_price
+from bot.storage import load_state, save_state
 
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
 _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}

@@ -1,6 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from supported_coins import PREMIUM_ALERT_FREQUENCY_SECONDS, SUPPORTED_SYMBOLS
+from bot.domain.supported_coins import PREMIUM_ALERT_FREQUENCY_SECONDS, SUPPORTED_SYMBOLS
 
 
 def build_price_keyboard() -> InlineKeyboardMarkup:

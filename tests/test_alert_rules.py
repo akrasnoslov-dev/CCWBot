@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from alert_rules import calculate_price_change_percent, is_cooldown_active, should_send_alert
+from bot.alerting.alert_rules import (
+    calculate_price_change_percent,
+    is_cooldown_active,
+    should_send_alert,
+)
 
 
 def test_should_send_alert_above_threshold():
