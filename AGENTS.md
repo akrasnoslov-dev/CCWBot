@@ -54,6 +54,7 @@ Never implement "1 user = 1 LLM call" for the same event.
 - Do not change schema unless required.
 - Every new database table and column must include a clear English DB comment.
 - Handle database migrations carefully and test them locally before production.
+- Create and verify backups before destructive database operations.
 - Never log secrets or connection strings.
 
 ## Telegram UX
@@ -127,15 +128,50 @@ docker compose config >/dev/null
 
 If Docker Compose changes, run `docker compose config >/dev/null`. Do not publish Compose config output from a real `.env`, and do not claim manual Telegram/runtime verification unless it was actually performed.
 
-## Branching and Deployment Workflow
+## Environments
+- Local development runs on the developer PC from `dev` or a feature branch based on `dev`.
+- Production runs on the Hetzner VPS from `main` only.
+- Production project path is `/opt/CCWBot`.
+- Local development uses a development Telegram bot token in the local `.env`.
+- Production uses a separate production Telegram bot token in the VPS `.env`.
+- Local development uses local Docker PostgreSQL.
+- Production uses server Docker PostgreSQL.
+- `.env` files are environment-local and must never be committed.
+- Never use the production bot token locally.
+- Never overwrite the production `.env`.
+- Never edit tracked production files manually on the VPS. Production tracked-file changes must come through Git.
+- Test migrations locally before production.
+- Create and verify backups before destructive database operations.
+
+## Branching and PR Workflow
 - `dev` is the default branch for local development, Codex tasks, and feature work.
 - Start work from `dev` or from a focused feature branch based on `dev`.
+- Never commit directly to `main`.
 - Codex should continue creating Pull Requests automatically for normal tasks.
 - Default PR target/base branch is `dev`, not `main`.
-- Open PRs against `dev` by default. Only open PRs against `main` when explicitly asked for a production release or `dev` -> `main` merge.
+- Open PRs against `dev` by default.
+- Only open PRs against `main` when explicitly asked for a production release or a `dev` -> `main` merge.
 - `main` is production/stable and must stay deployable.
-- The production VPS runs only `main` from `/opt/CCWBot`.
-- After `dev` is validated, merge `dev` into `main`, then update the VPS.
+- Do not auto-merge PRs, delete user work, or include generated/cache files.
+
+## Git and PR Workflow
+
+For every task:
+1. Create a focused branch from `dev`.
+2. Make only relevant changes.
+3. Run verification.
+4. Commit.
+5. Push.
+6. Create a GitHub PR against `dev` unless explicitly asked to release production or merge `dev` into `main`.
+
+Never commit `.env`, `state.json`, `.venv`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`, `*.sqlite`, or database volumes.
+
+## Production Deployment Workflow
+- Production updates happen through Git only.
+- After `dev` is validated, merge `dev` into `main`, then update the VPS from `main`.
+- Do not edit tracked files directly under `/opt/CCWBot` on the VPS.
+- Do not overwrite the production `.env`; update it manually only when the deployment explicitly requires an environment variable change.
+- For migrations, test locally first and confirm a current backup exists before running against production.
 
 Production server update flow:
 
@@ -146,23 +182,6 @@ git pull
 docker compose up -d --build
 docker compose logs -f
 ```
-
-Never commit `.env` files or real secrets.
-
-## Git and PR Workflow
-Never commit directly to `main`.
-
-For every task:
-1. Create a focused branch from `dev`.
-2. Make only relevant changes.
-3. Run verification.
-4. Commit.
-5. Push.
-6. Create a GitHub PR against `dev` unless explicitly asked to release production or merge `dev` into `main`.
-
-Do not auto-merge PRs, delete user work, or include generated/cache files.
-
-Never commit `.env`, `state.json`, `.venv`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`, `*.sqlite`, or database volumes.
 
 ## PR Description
 Every PR must include summary, files changed, behaviour confirmation, database/schema confirmation, verification performed, manual verification status, protected files changed and why, and known limitations/follow-ups.
