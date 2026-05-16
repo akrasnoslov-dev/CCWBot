@@ -198,11 +198,12 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "grantpremium" not in default_commands
     assert "revokepremium" not in default_commands
     assert "userid" not in default_commands
-    assert "grantpremium" in admin_commands
-    assert "revokepremium" in admin_commands
-    assert "error_logging_on" in admin_commands
-    assert "error_logging_off" in admin_commands
-    assert "error_logging_status" in admin_commands
+    assert "admin" in admin_commands
+    assert "grantpremium" not in admin_commands
+    assert "revokepremium" not in admin_commands
+    assert "error_logging_on" not in admin_commands
+    assert "error_logging_off" not in admin_commands
+    assert "error_logging_status" not in admin_commands
 
 
 @pytest.mark.asyncio

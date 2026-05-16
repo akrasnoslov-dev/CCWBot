@@ -25,11 +25,6 @@ async def setup_bot_commands(app: Application) -> None:
         admin_commands = default_commands + [
             BotCommand("admin", "Open admin menu"),
             BotCommand("status", "Show bot status"),
-            BotCommand("grantpremium", "Grant Premium manually"),
-            BotCommand("revokepremium", "Revoke Premium manually"),
-            BotCommand("error_logging_on", "Enable warning/error file logging"),
-            BotCommand("error_logging_off", "Disable warning/error file logging"),
-            BotCommand("error_logging_status", "Show warning/error logging status"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)

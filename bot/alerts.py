@@ -133,6 +133,45 @@ MARKET_WIDE_NEWS_TERMS = (
     "etf",
     "dominance",
 )
+MATERIAL_NEWS_TERMS = (
+    "approval",
+    "approved",
+    "rejection",
+    "rejected",
+    "etf flow",
+    "etf inflow",
+    "etf outflow",
+    "law passed",
+    "bill passed",
+    "regulation passed",
+    "enforcement action",
+    "lawsuit",
+    "settlement",
+    "major exchange",
+    "outage",
+    "hack",
+    "bankruptcy",
+    "exploit",
+    "liquidation cascade",
+    "central bank",
+    "government statement",
+    "institutional adoption",
+    "institutional exit",
+)
+GENERIC_NEWS_TERMS = (
+    "analysis",
+    "analyst",
+    "bear trap",
+    "euphoria",
+    "prediction",
+    "price target",
+    "could",
+    "may",
+    "might",
+    "sentiment",
+    "speculation",
+    "commentary",
+)
 
 
 def _stable_float(value: float | None, digits: int) -> float | None:
@@ -233,6 +272,20 @@ def classify_news_relevance(symbol: str, news_item: dict) -> str:
                 return "irrelevant"
         return "market_wide"
     return "irrelevant"
+
+
+def is_material_news_item(news_item: dict) -> bool:
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    return any(term in text for term in MATERIAL_NEWS_TERMS)
+
+
+def is_generic_news_item(news_item: dict) -> bool:
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    return any(term in text for term in GENERIC_NEWS_TERMS)
 
 
 def re_search_word(term: str, text: str) -> bool:
@@ -721,12 +774,17 @@ async def _get_or_create_event_ai_analysis(
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
     direct_count = 0
     market_wide_count = 0
+    material_count = 0
     for item in news_items:
         relevance = classify_news_relevance(symbol, item)
+        if is_material_news_item(item):
+            material_count += 1
         if relevance == "direct":
             direct_count += 1
         elif relevance == "market_wide":
             market_wide_count += 1
+    if material_count == 0:
+        return "weak" if direct_count or market_wide_count else "none"
     if direct_count >= 2 or (direct_count >= 1 and market_wide_count >= 2):
         return "very_relevant"
     if direct_count >= 1 or market_wide_count >= 2:
@@ -859,6 +917,8 @@ def _remove_user_facing_risk_level(plain_text: str) -> str:
         if stripped.startswith("Risk reason:"):
             risk_reason = stripped.split(":", 1)[1].strip()
             continue
+        if stripped.startswith("Coin:"):
+            continue
         if stripped == "Not financial advice.":
             continue
         cleaned_lines.append(line)
@@ -892,7 +952,7 @@ def _apply_severity_header(
     body = _remove_user_facing_risk_level(plain_text)
     display_symbol = normalize_symbol(symbol).upper()
     header = (
-        f"{severity_label_text(severity.severity)} - "
+        f"{severity_icon_text(severity.severity)} {severity_label_text(severity.severity)} - "
         f"{display_symbol} {alert_title_action(severity.primary_alert_type)}\n\n"
         f"{_coin_display_line(symbol)}"
     )
@@ -908,6 +968,14 @@ def severity_label_text(severity: AlertSeverity) -> str:
         AlertSeverity.WATCH: "Medium",
         AlertSeverity.HIGH: "High",
     }[severity]
+
+
+def severity_icon_text(severity: AlertSeverity) -> str:
+    if severity is AlertSeverity.INFO:
+        return "\U0001f7e2"
+    if severity is AlertSeverity.WATCH:
+        return "\U0001f7e1"
+    return "\U0001f534"
 
 
 async def _send_alert_to_recipient(

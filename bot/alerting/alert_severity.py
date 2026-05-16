@@ -229,7 +229,7 @@ def evaluate_alert_decision(
     if trend_high_triggered or (price_triggered and trend_medium_triggered and news_triggered):
         ceiling = AlertSeverity.HIGH
     elif alert_type is AlertType.NEWS:
-        ceiling = AlertSeverity.WATCH
+        ceiling = AlertSeverity.WATCH if relevance == "very_relevant" else AlertSeverity.INFO
     else:
         ceiling = AlertSeverity.WATCH
 

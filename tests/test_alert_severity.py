@@ -158,6 +158,40 @@ def test_combined_and_news_only_decisions_are_typed():
     assert news_only.backend_severity_ceiling is AlertSeverity.WATCH
 
 
+def test_news_only_with_near_zero_move_defaults_low():
+    decision = evaluate_alert_decision(
+        symbol="btc",
+        movement_percent=0.0,
+        change_24h=-1.02,
+        thresholds=AlertThresholds(
+            movement_percent=1.0,
+            trend_24h_medium_percent=3.0,
+            trend_24h_high_percent=5.0,
+        ),
+        news_relevance="relevant",
+    )
+
+    assert decision.alert_type == AlertType.NEWS
+    assert decision.backend_severity_ceiling is AlertSeverity.INFO
+
+
+def test_weak_generic_news_does_not_trigger_alert():
+    decision = evaluate_alert_decision(
+        symbol="btc",
+        movement_percent=0.0,
+        change_24h=-1.02,
+        thresholds=AlertThresholds(
+            movement_percent=1.0,
+            trend_24h_medium_percent=3.0,
+            trend_24h_high_percent=5.0,
+        ),
+        news_relevance="weak",
+    )
+
+    assert decision.should_alert is False
+    assert decision.alert_type is None
+
+
 def test_weekly_trend_change_alert_type():
     result = evaluate_alert_severity(
         SeverityInput(
@@ -227,12 +261,13 @@ def test_formatted_alert_shows_severity_title_type_and_coin():
         alert_type=AlertType.PRICE_MOVEMENT,
     )
 
-    assert message.startswith("High - TON movement alert")
+    assert message.startswith("🔴 High - TON movement alert")
     assert "\nType:" not in message
     assert "\nCoin: TON / Toncoin\n" in message
+    assert message.count("Coin:") == 1
 
 
-def test_price_movement_alerts_use_plain_severity_labels():
+def test_price_movement_alerts_include_severity_icons():
     info = _format_message(
         symbol="ton",
         severity=AlertSeverity.INFO,
@@ -250,9 +285,9 @@ def test_price_movement_alerts_use_plain_severity_labels():
         alert_type=AlertType.PRICE_MOVEMENT,
     )
 
-    assert info.startswith("Low - TON movement alert")
-    assert watch.startswith("Medium - XRP movement alert")
-    assert high.startswith("High - BTC movement alert")
+    assert info.startswith("🟢 Low - TON movement alert")
+    assert watch.startswith("🟡 Medium - XRP movement alert")
+    assert high.startswith("🔴 High - BTC movement alert")
 
 
 def test_extreme_volatility_spike_uses_fire_icon():
@@ -263,7 +298,7 @@ def test_extreme_volatility_spike_uses_fire_icon():
         signals=("Volatility spike detected",),
     )
 
-    assert message.startswith("High - BTC volatility spike")
+    assert message.startswith("🔴 High - BTC volatility spike")
     assert "\nType:" not in message
 
 
@@ -275,7 +310,7 @@ def test_all_supported_alert_types_use_same_header_model():
             alert_type=alert_type,
         )
 
-        assert message.startswith(f"High - ETH {alert_title_action(alert_type)}")
+        assert message.startswith(f"🔴 High - ETH {alert_title_action(alert_type)}")
         assert "\nType:" not in message
         assert "\nCoin: ETH / Ethereum\n" in message
         assert "Risk level:" not in message

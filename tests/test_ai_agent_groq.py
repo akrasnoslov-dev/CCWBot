@@ -310,6 +310,8 @@ def test_compact_json_success_builds_valid_telegram_alert(monkeypatch):
     assert "Medium because the short-term move is notable" in message
     assert "Possible actions:" in message
     assert "Related news:" in message
+    assert "Coin:" not in message
+    assert "Since last check" not in message
     assert "Not financial advice." in message
     assert "telegram_message" not in message
 
@@ -377,12 +379,44 @@ def test_alert_prompt_is_simplified_and_keeps_market_context():
     assert "market_interpretation" not in prompt
     assert "possible_actions" not in prompt
     assert "Symbol: BTC" in prompt
-    assert "Since last check: 2.5000%" in prompt
+    assert "5m move: 2.5000%" in prompt
     assert "24h trend: 3.1000%" in prompt
     assert "7d trend: 5.2000%" in prompt
-    assert "Alert threshold: 2.0%" in prompt
-    assert "Check interval: 300 sec" in prompt
+    assert "Movement threshold: 2.0%" in prompt
+    assert "Since last check" not in prompt
+    assert "Check interval" not in prompt
     assert "[1] ETF inflows rise | Example News | https://example.com/etf" in prompt
+
+
+def test_specific_possible_actions_replace_generic_strategy_wording(monkeypatch):
+    async def fake_ask_json(prompt):
+        return valid_compact_alert_response(
+            news_relevance="relevant",
+            risk_level="Low",
+            risk_reason="Recent BTC news is mixed, but price has not reacted strongly yet.",
+            possible_action=(
+                "Consider reviewing your investment strategy in light of recent market "
+                "developments."
+            ),
+        )
+
+    monkeypatch.setattr(ai_agent_groq, "_ask_json", fake_ask_json)
+    result = asyncio.run(
+        ai_agent_groq.create_ai_alert_payload(
+            **{
+                **ALERT_ARGS,
+                "price_change_percent": 0.0,
+                "change_24h": -1.02,
+                "alert_threshold_percent": 1.0,
+                "check_interval_seconds": 3600,
+            }
+        )
+    )
+    message = result["plain_text"]
+
+    assert "investment strategy" not in message
+    assert "No immediate portfolio action is suggested by price data alone." in message
+    assert "Watch whether the coin reacts over the next alert window." in message
 
 
 def test_is_structured_alert_message_returns_true_for_valid():

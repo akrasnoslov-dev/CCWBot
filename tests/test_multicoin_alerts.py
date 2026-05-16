@@ -433,7 +433,7 @@ async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monke
         assert [chat_id for chat_id, _, _ in sent_messages] == [2001, 2002]
         for _, message, parse_mode in sent_messages:
             assert parse_mode is None
-            assert message.startswith("High - BTC strong signal")
+            assert message.startswith("🔴 High - BTC strong signal")
             assert "BTC strong signal" in message
             assert "Risk level:" not in message
             assert "Signals:\n" not in message
@@ -510,6 +510,30 @@ def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):
         "coalesce": True,
         "misfire_grace_time": 15,
     }
+
+
+def test_generic_sentiment_news_is_weak_not_material():
+    news = [
+        {
+            "title": "Bitcoin analyst says euphoria may create a bear trap",
+            "source": "Example",
+            "link": "https://example.test/analysis",
+        }
+    ]
+
+    assert alerts._classify_news_context("btc", news) == "weak"
+
+
+def test_material_news_is_relevant():
+    news = [
+        {
+            "title": "SEC approves major Bitcoin ETF flow disclosure rule",
+            "source": "Example",
+            "link": "https://example.test/etf",
+        }
+    ]
+
+    assert alerts._classify_news_context("btc", news) == "relevant"
 
 
 @pytest.mark.asyncio
