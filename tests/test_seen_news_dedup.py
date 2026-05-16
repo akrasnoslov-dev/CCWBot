@@ -112,6 +112,7 @@ async def test_app_settings_defaults_and_updates_are_global():
         assert defaults == {
             "btc_alert_threshold_percent": 2.0,
             "automatic_check_interval_seconds": 300,
+            "error_file_logging_enabled": False,
         }
 
         updated = await update_app_settings(
@@ -120,10 +121,12 @@ async def test_app_settings_defaults_and_updates_are_global():
             default_interval=300,
             threshold=1.0,
             interval_seconds=600,
+            error_file_logging_enabled=True,
         )
         assert updated == {
             "btc_alert_threshold_percent": 1.0,
             "automatic_check_interval_seconds": 600,
+            "error_file_logging_enabled": True,
         }
 
         reloaded = await get_or_create_app_settings(
@@ -432,6 +435,7 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
             assert migrated == {
                 "btc_alert_threshold_percent": 1.5,
                 "automatic_check_interval_seconds": 600,
+                "error_file_logging_enabled": False,
             }
         finally:
             await session.close()

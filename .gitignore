@@ -16,3 +16,5 @@ state.json
 backups/
 pgdata/
 postgres-data/
+logs/*.log
+logs/*.log.*

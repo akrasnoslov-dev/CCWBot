@@ -7,6 +7,11 @@ from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_btc_check
 from bot.db.database import get_price_state
+from bot.error_logging import (
+    disable_error_file_logging,
+    enable_error_file_logging,
+    is_error_file_logging_enabled,
+)
 from bot.keyboards import (
     build_interval_keyboard,
     build_price_keyboard,
@@ -26,7 +31,9 @@ from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, CoinGeckoRateLimitError
 from bot.settings import (
     get_db_alert_settings,
+    get_runtime_error_file_logging_enabled,
     get_state_alert_settings,
+    save_error_file_logging_enabled,
     save_interval_setting,
     save_threshold_setting,
 )
@@ -79,6 +86,7 @@ def log_request(action_name: str):
                     _telegram_user_id(update),
                     role,
                     duration_ms,
+                    exc_info=True,
                 )
                 raise
 
@@ -161,6 +169,44 @@ async def revoke_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin_update(update):
         _mark_denied(context)
     await revoke_premium_command(update, context.args)
+
+
+@log_request("/error_logging_on")
+async def error_logging_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can change error logging.")
+        return
+
+    await save_error_file_logging_enabled(True)
+    log_file = enable_error_file_logging()
+    await update.message.reply_text(f"Warning/error file logging enabled.\nPath: {log_file}")
+
+
+@log_request("/error_logging_off")
+async def error_logging_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can change error logging.")
+        return
+
+    await save_error_file_logging_enabled(False)
+    disable_error_file_logging()
+    await update.message.reply_text("Warning/error file logging disabled.")
+
+
+@log_request("/error_logging_status")
+async def error_logging_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can view error logging status.")
+        return
+
+    persisted_enabled = await get_runtime_error_file_logging_enabled()
+    active_enabled = is_error_file_logging_enabled()
+    state = "enabled" if persisted_enabled else "disabled"
+    active = "active" if active_enabled else "inactive"
+    await update.message.reply_text(f"Warning/error file logging: {state} ({active}).")
 
 
 @log_request("/chatid")
@@ -276,7 +322,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Price data is temporarily unavailable.")
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
-        log(f"Price error: {error}")
+        logger.exception("Price command failed: %s", error)
 
 
 @log_request("/status")
@@ -391,5 +437,5 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning("Callback price lookup failed: %s", error)
         await query.message.reply_text("Price data is temporarily unavailable.")
     except Exception as error:
-        log(f"Callback handling error: {error}")
+        logger.exception("Callback handling failed: %s", error)
         await query.message.reply_text("Sorry, something went wrong.")

@@ -357,6 +357,11 @@ class AppSettings(Base):
     automatic_check_interval_seconds: Mapped[int] = mapped_column(
         Integer, comment="Global automatic market check interval in seconds."
     )
+    error_file_logging_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether admins enabled persistent WARNING and ERROR file logging.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
@@ -1114,6 +1119,7 @@ async def _get_app_settings_row(
         settings = AppSettings(
             btc_alert_threshold_percent=default_threshold,
             automatic_check_interval_seconds=default_interval,
+            error_file_logging_enabled=False,
         )
         session.add(settings)
         await session.commit()
@@ -1126,6 +1132,9 @@ async def _get_app_settings_row(
         changed = True
     if settings.automatic_check_interval_seconds is None:
         settings.automatic_check_interval_seconds = default_interval
+        changed = True
+    if settings.error_file_logging_enabled is None:
+        settings.error_file_logging_enabled = False
         changed = True
     if changed:
         settings.updated_at = utc_now()
@@ -1148,6 +1157,7 @@ async def get_or_create_app_settings(
     return {
         "btc_alert_threshold_percent": float(settings.btc_alert_threshold_percent),
         "automatic_check_interval_seconds": int(settings.automatic_check_interval_seconds),
+        "error_file_logging_enabled": bool(settings.error_file_logging_enabled),
     }
 
 
@@ -1158,6 +1168,7 @@ async def update_app_settings(
     default_interval: int,
     threshold: float | None = None,
     interval_seconds: int | None = None,
+    error_file_logging_enabled: bool | None = None,
 ) -> dict:
     settings = await _get_app_settings_row(
         session,
@@ -1168,6 +1179,8 @@ async def update_app_settings(
         settings.btc_alert_threshold_percent = threshold
     if interval_seconds is not None:
         settings.automatic_check_interval_seconds = interval_seconds
+    if error_file_logging_enabled is not None:
+        settings.error_file_logging_enabled = error_file_logging_enabled
     settings.updated_at = utc_now()
     await session.commit()
     await session.refresh(settings)
