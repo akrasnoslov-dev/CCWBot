@@ -7,6 +7,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+logs/*.log
+logs/*.log.*
 pytest-cache-files-*/
 *.dump
 *.db

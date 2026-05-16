@@ -26,10 +26,14 @@ from bot.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
+from bot.error_logging import apply_persisted_error_file_logging_state
 from bot.handlers import (
     button_router,
     chat_id,
     daily_report,
+    error_logging_off,
+    error_logging_on,
+    error_logging_status,
     grant_premium,
     myplan,
     price,
@@ -94,6 +98,9 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CommandHandler("grantpremium", grant_premium))
     app.add_handler(CommandHandler("revokepremium", revoke_premium))
+    app.add_handler(CommandHandler("error_logging_on", error_logging_on))
+    app.add_handler(CommandHandler("error_logging_off", error_logging_off))
+    app.add_handler(CommandHandler("error_logging_status", error_logging_status))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
     app.add_handler(CallbackQueryHandler(button_router))
@@ -116,6 +123,7 @@ def main():
     log(f"Environment: {ENVIRONMENT}.")
 
     loop.run_until_complete(initialize_database())
+    loop.run_until_complete(apply_persisted_error_file_logging_state())
     loop.run_until_complete(warm_up_price_cache())
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()

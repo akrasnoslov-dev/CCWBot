@@ -68,6 +68,7 @@ Common configuration:
 - `ALERT_COOLDOWN_MINUTES`
 - `PRICE_CACHE_TTL_SECONDS`
 - `HEALTH_PORT`
+- `ERROR_LOG_FILE`
 - `ENABLE_WEEKLY_REPORT`
 - `WEEKLY_REPORT_DAY`
 - `WEEKLY_REPORT_HOUR`
@@ -157,6 +158,32 @@ docker compose down
 Compose overrides `DATABASE_URL` inside the bot container so it connects to the `postgres`
 service. Keep `POSTGRES_PASSWORD` set in `.env`, and do not publish `docker compose config`
 output from a real `.env` because Compose can expand secrets.
+
+## Warning/Error File Logs
+
+Console logging stays enabled by default. Admins can additionally persist `WARNING`, `ERROR`,
+and `CRITICAL` logs to a rotating file without restarting the bot:
+
+```text
+/error_logging_on
+/error_logging_off
+/error_logging_status
+```
+
+The toggle is stored in `app_settings`, so it survives bot/container restarts. The log path is
+configured by `ERROR_LOG_FILE`; the default is `logs/ccwbot-warnings-errors.log`, and Docker
+uses `/app/logs/ccwbot-warnings-errors.log` with `./logs:/app/logs` mounted so files survive
+container recreation. Rotation keeps 10 MB plus 5 backups.
+
+On the VPS:
+
+```bash
+cd /opt/CCWBot
+tail -n 100 logs/ccwbot-warnings-errors.log
+```
+
+Do not share logs publicly. Review them for secrets, private Telegram text, and operational
+details before sending them to anyone.
 
 ## Development And Production Environments
 
