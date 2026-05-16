@@ -6,6 +6,7 @@ Notes about key IDs:
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -98,3 +99,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Telegram Stars price for monthly Premium subscriptions.
 PREMIUM_MONTHLY_STARS = _get_int_env("PREMIUM_MONTHLY_STARS", 199, minimum=1)
+
+# Optional warning/error file logging target. Runtime toggle is stored separately.
+ERROR_LOG_FILE = Path(os.getenv("ERROR_LOG_FILE", "logs/ccwbot-warnings-errors.log"))

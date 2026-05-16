@@ -21,6 +21,10 @@ def get_state_alert_settings(state: dict) -> dict:
     }
 
 
+def get_state_error_file_logging_enabled(state: dict) -> bool:
+    return bool(state.get("error_file_logging_enabled", False))
+
+
 async def get_db_alert_settings() -> dict:
     async with DB_SESSION_LOCAL() as session:
         settings = await get_or_create_app_settings(
@@ -34,10 +38,42 @@ async def get_db_alert_settings() -> dict:
     }
 
 
+async def get_db_error_file_logging_enabled() -> bool:
+    async with DB_SESSION_LOCAL() as session:
+        settings = await get_or_create_app_settings(
+            session,
+            default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+            default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
+        )
+    return bool(settings["error_file_logging_enabled"])
+
+
 async def get_runtime_alert_settings() -> dict:
     if DB_ENABLED and DB_SESSION_LOCAL:
         return await get_db_alert_settings()
     return get_state_alert_settings(load_state())
+
+
+async def get_runtime_error_file_logging_enabled() -> bool:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        return await get_db_error_file_logging_enabled()
+    return get_state_error_file_logging_enabled(load_state())
+
+
+async def save_error_file_logging_enabled(enabled: bool) -> None:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            await update_app_settings(
+                session,
+                error_file_logging_enabled=enabled,
+                default_threshold=DEFAULT_BTC_ALERT_THRESHOLD_PERCENT,
+                default_interval=DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
+            )
+        return
+
+    state = load_state()
+    state["error_file_logging_enabled"] = enabled
+    save_state(state)
 
 
 async def save_threshold_setting(threshold: float) -> None:

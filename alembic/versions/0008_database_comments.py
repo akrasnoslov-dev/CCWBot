@@ -8,6 +8,8 @@ Create Date: 2026-05-13
 
 from __future__ import annotations
 
+import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0008_database_comments"
@@ -110,6 +112,9 @@ COLUMN_COMMENTS = {
             "Global BTC movement percent that triggers automatic alerts."
         ),
         "automatic_check_interval_seconds": "Global automatic market check interval in seconds.",
+        "error_file_logging_enabled": (
+            "Whether admins enabled persistent WARNING and ERROR file logging."
+        ),
         "created_at": "When this global settings row was created.",
         "updated_at": "When this global settings row was last updated.",
     },
@@ -180,6 +185,10 @@ def _is_postgresql() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+def _column_names(table_name: str) -> set[str]:
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns(table_name)}
+
+
 def _apply_comments(*, remove: bool) -> None:
     if not _is_postgresql():
         return
@@ -191,7 +200,10 @@ def _apply_comments(*, remove: bool) -> None:
             op.create_table_comment(table_name, table_comment, existing_comment=None)
 
     for table_name, columns in COLUMN_COMMENTS.items():
+        existing_columns = _column_names(table_name)
         for column_name, column_comment in columns.items():
+            if column_name not in existing_columns:
+                continue
             op.alter_column(
                 table_name,
                 column_name,
