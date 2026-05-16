@@ -122,8 +122,27 @@ def build_fallback_alert_message(
     check_interval_seconds: int | None = None,
     symbol: str = "BTC",
     coin_name: str = "Bitcoin",
+    alert_type_label: str = "basic price",
+    window_seconds: int | None = None,
+    peak_movement_percent: float | None = None,
 ) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
+    display_symbol = symbol.upper()
+    window_label = _format_window_label(window_seconds or check_interval_seconds)
+    peak_line = (
+        f"Peak intrahour move: {peak_movement_percent:+.2f}%\n"
+        if peak_movement_percent is not None
+        else ""
+    )
+    return (
+        f"{display_symbol} {alert_type_label} alert\n\n"
+        f"Price: ${current_price:,.2f}\n"
+        f"{window_label} move: {price_change_percent:+.2f}%\n"
+        f"{peak_line}"
+        f"24h trend: {change_24h:+.2f}%\n"
+        "\nAI analysis is temporarily unavailable. This is a basic price alert.\n"
+        "Not financial advice."
+    )
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
     weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
     display_symbol = symbol.upper()
@@ -150,6 +169,20 @@ def build_fallback_alert_message(
         "Monitor for continuation; no immediate action required.\n\n"
         "Not financial advice."
     )
+
+
+def _format_window_label(seconds: int | None) -> str:
+    if seconds == 3600:
+        return "1h"
+    if seconds == 21600:
+        return "6h"
+    if seconds == 86400:
+        return "24h"
+    if seconds and seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds and seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return "Window"
 
 
 def _build_fallback_alert_payload(
@@ -183,7 +216,13 @@ def _build_fallback_alert_payload(
 
 
 def _is_structured_alert_message(message: str) -> bool:
-    required_markers = [
+    current_markers = [
+        "move:",
+        "24h trend:",
+        "Why this alert:",
+        "Possible actions:",
+    ]
+    legacy_markers = [
         "Since last check:",
         "24h trend:",
         "Risk level:",
@@ -191,10 +230,9 @@ def _is_structured_alert_message(message: str) -> bool:
         "Context:",
         "Possible action:",
     ]
-    return (
-        "\n" in message
-        and all(marker in message for marker in required_markers)
-        and message.find("Risk level:") < message.find("Risk reason:")
+    return "\n" in message and (
+        all(marker in message for marker in current_markers)
+        or all(marker in message for marker in legacy_markers)
     )
 
 
@@ -576,6 +614,22 @@ def _build_deterministic_ai_alert_message(
         "Monitor for continuation; no immediate action required.",
         max_chars=160,
     )
+    window_label = _format_window_label(check_interval_seconds)
+    news_text = related_news_section or "News relevance:\nNo clearly relevant news found."
+    message = (
+        f"{structured['risk_level']} - {symbol.upper()} market alert\n\n"
+        f"Coin: {symbol.upper()} / {coin_name}\n"
+        f"Price: ${current_price:,.2f}\n"
+        f"{window_label} move: {price_change_percent:+.2f}%\n"
+        f"24h trend: {change_24h:+.2f}%\n\n"
+        "Why this alert:\n"
+        f"{risk_reason}\n\n"
+        f"{news_text}\n\n"
+        "Possible actions:\n"
+        f"- {possible_action}\n\n"
+        "Not financial advice."
+    )
+    return _sanitize_telegram_message(message)
     interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
     weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
     related_news_text = f"\n\n{related_news_section}" if related_news_section else ""

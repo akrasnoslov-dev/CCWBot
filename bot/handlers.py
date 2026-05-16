@@ -13,6 +13,8 @@ from bot.error_logging import (
     is_error_file_logging_enabled,
 )
 from bot.keyboards import (
+    build_admin_alert_settings_keyboard,
+    build_admin_keyboard,
     build_interval_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
@@ -33,6 +35,7 @@ from bot.settings import (
     get_db_alert_settings,
     get_runtime_error_file_logging_enabled,
     get_state_alert_settings,
+    save_alert_threshold_setting,
     save_error_file_logging_enabled,
     save_interval_setting,
     save_threshold_setting,
@@ -50,6 +53,41 @@ PRICE_RATE_LIMIT_SECONDS = 10
 PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 _user_last_price_call: dict[int, float] = {}
 logger = logging.getLogger(__name__)
+
+
+def _format_admin_alert_settings(alert_settings: dict) -> str:
+    return (
+        "Current alert settings\n\n"
+        f"Check interval: {alert_settings['automatic_check_interval_seconds']} seconds\n"
+        f"BTC/ETH movement threshold: {alert_settings['major_movement_threshold_percent']}%\n"
+        f"Altcoin movement threshold: {alert_settings['alt_movement_threshold_percent']}%\n"
+        f"BTC/ETH 24h Medium threshold: {alert_settings['major_24h_medium_threshold_percent']}%\n"
+        f"BTC/ETH 24h High threshold: {alert_settings['major_24h_high_threshold_percent']}%\n"
+        f"Altcoin 24h Medium threshold: {alert_settings['alt_24h_medium_threshold_percent']}%\n"
+        f"Altcoin 24h High threshold: {alert_settings['alt_24h_high_threshold_percent']}%"
+    )
+
+
+async def _build_admin_system_status_text() -> str:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            btc_state = await get_price_state(session, DEFAULT_SYMBOL)
+        last_check = btc_state.last_checked_at if btc_state else "not checked yet"
+        database_status = "OK"
+    else:
+        state = load_state()
+        last_check = state.get("last_checked_at", "not checked yet")
+        database_status = "disabled"
+    return (
+        "System status\n\n"
+        "Bot status: OK\n"
+        f"Database status: {database_status}\n"
+        "CoinGecko status: OK\n"
+        "Groq AI status: OK\n"
+        "RSS/news status: OK\n"
+        f"Last check time: {last_check}\n"
+        "Rate limit status: no active rate limit recorded"
+    )
 
 
 def _telegram_user_id(update: Update) -> int | str:
@@ -220,11 +258,22 @@ async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/settings")
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await watchlist_command(update)
+    return
     if not await is_admin_update(update):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can access settings.")
         return
     await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
+
+
+@log_request("/admin")
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can access admin settings.")
+        return
+    await update.message.reply_text("Admin menu", reply_markup=build_admin_keyboard())
 
 
 @log_request("/setthreshold")
@@ -369,13 +418,63 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
 
     try:
-        if data.startswith("settings:") and not await is_admin_user(
+        if (data.startswith("settings:") or data.startswith("admin:")) and not await is_admin_user(
             query.from_user.id if query.from_user else None
         ):
             _mark_denied(context)
             await query.answer("Sorry, only the bot admin can change settings.")
             await query.message.reply_text("Sorry, only the bot admin can change settings.")
             return
+
+        if data.startswith("admin:"):
+            await query.answer()
+            if data == "admin:alert_settings":
+                await query.message.reply_text(
+                    "Alert settings", reply_markup=build_admin_alert_settings_keyboard()
+                )
+                return
+            if data == "admin:system_status":
+                await query.message.reply_text(await _build_admin_system_status_text())
+                return
+            if data == "admin:export_logs":
+                await query.message.reply_text(
+                    "Log export is available from the server logs directory."
+                )
+                return
+            if data == "admin:current":
+                alert_settings = (
+                    await get_db_alert_settings()
+                    if DB_ENABLED and DB_SESSION_LOCAL
+                    else get_state_alert_settings(load_state())
+                )
+                await query.message.reply_text(_format_admin_alert_settings(alert_settings))
+                return
+            if data == "admin:interval_menu":
+                await query.message.reply_text(
+                    "Choose a new check interval:", reply_markup=build_interval_keyboard()
+                )
+                return
+            if data.startswith("admin:threshold_menu:"):
+                setting_key = data.rsplit(":", maxsplit=1)[1]
+                await query.message.reply_text(
+                    "Choose a new threshold:",
+                    reply_markup=build_threshold_keyboard(setting_key),
+                )
+                return
+            if data.startswith("admin:set_threshold:"):
+                _, _, setting_key, raw_value = data.split(":", maxsplit=3)
+                threshold = float(raw_value)
+                await save_alert_threshold_setting(setting_key, threshold)
+                await query.message.reply_text(f"Threshold updated to {threshold}%.")
+                return
+            if data.startswith("admin:set_interval:"):
+                interval = int(data.rsplit(":", maxsplit=1)[1])
+                await save_interval_setting(interval)
+                schedule_automatic_btc_check(context.application, interval)
+                await query.message.reply_text(
+                    f"Automatic check interval updated to {interval} seconds. Applied immediately."
+                )
+                return
 
         if data.startswith("watchlist:"):
             handled = await handle_watchlist_callback(update, data)

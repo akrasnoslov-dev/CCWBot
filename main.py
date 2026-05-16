@@ -28,6 +28,7 @@ from bot.config import (
 )
 from bot.error_logging import apply_persisted_error_file_logging_state
 from bot.handlers import (
+    admin,
     button_router,
     chat_id,
     daily_report,
@@ -90,6 +91,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
+    app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("reports", reports))
     app.add_handler(CommandHandler("dailyreport", daily_report))
     app.add_handler(CommandHandler("weeklyreport", weekly_report))

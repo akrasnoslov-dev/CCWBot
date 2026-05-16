@@ -83,11 +83,10 @@ def test_build_fallback_alert_message_contains_required_fields():
     )
 
     assert "Price: $102,500.00" in message
-    assert "Since last check: +2.50% in 300 sec" in message
+    assert "5m move: +2.50%" in message
     assert "24h trend: +3.10%" in message
-    assert "7d trend: +5.20%" in message
-    assert "Risk level: Medium\nRisk reason:" in message
-    assert "stronger 24h trend" in message
+    assert "AI analysis is temporarily unavailable." in message
+    assert "Possible actions:" not in message
     assert "Not financial advice." in message
 
 
@@ -103,9 +102,8 @@ def test_build_fallback_alert_message_is_symbol_aware():
         coin_name="Ethereum",
     )
 
-    assert "ETH movement alert" in message
-    assert "BTC movement alert" not in message
-    assert "Ethereum movement" in message
+    assert "ETH basic price alert" in message
+    assert "BTC basic price alert" not in message
 
 
 def test_build_fallback_alert_message_omits_missing_7d_trend():
@@ -304,15 +302,13 @@ def test_compact_json_success_builds_valid_telegram_alert(monkeypatch):
     result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
     message = result["plain_text"]
 
-    assert "BTC movement alert" in message
+    assert "BTC market alert" in message
     assert "Price: $102,500.00" in message
-    assert "Since last check: +2.50% in 300 sec" in message
+    assert "5m move: +2.50%" in message
     assert "24h trend: +3.10%" in message
-    assert "7d trend: +5.20%" in message
-    assert "Risk level: Medium" in message
-    assert "Risk reason: Medium because the short-term move is notable" in message
-    assert "Context:" in message
-    assert "Possible action:" in message
+    assert "Why this alert:" in message
+    assert "Medium because the short-term move is notable" in message
+    assert "Possible actions:" in message
     assert "Related news:" in message
     assert "Not financial advice." in message
     assert "telegram_message" not in message
@@ -347,7 +343,7 @@ def test_create_ai_alert_payload_marks_groq_rate_limit_fallback(monkeypatch):
     result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
 
     assert result["rate_limited"] is True
-    assert "BTC movement alert" in result["plain_text"]
+    assert "BTC basic price alert" in result["plain_text"]
     assert result["html_text"] is None
 
 
@@ -529,7 +525,7 @@ def test_generic_or_news_inconsistent_risk_reason_is_replaced(monkeypatch):
     message = result["plain_text"]
 
     assert (
-        "Risk reason: The move crossed the alert threshold, but the 24h trend remains mild."
+        "The move crossed the alert threshold, but the 24h trend remains mild."
         in message
     )
     assert "Related news:" not in message
@@ -547,7 +543,7 @@ def test_related_news_reason_is_allowed_only_when_related_news_is_included(monke
     result = asyncio.run(ai_agent_groq.create_ai_alert_payload(**ALERT_ARGS))
     message = result["plain_text"]
 
-    assert "Risk reason: Medium because the short-term move is notable" in message
+    assert "Medium because the short-term move is notable" in message
     assert "related news may affect sentiment" in message
     assert "Related news:" in message
 

@@ -62,19 +62,51 @@ def _frequency_label(seconds: int, *, selected: bool) -> str:
 def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Current settings", callback_data="settings:current")],
-            [InlineKeyboardButton("Set threshold", callback_data="settings:threshold_menu")],
-            [InlineKeyboardButton("Set check interval", callback_data="settings:interval_menu")],
+            [InlineKeyboardButton("Subscribed coins", callback_data="watchlist:open")],
+            [InlineKeyboardButton("Alert frequency", callback_data="watchlist:open")],
         ]
     )
 
 
-def build_threshold_keyboard() -> InlineKeyboardMarkup:
+def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("0.5%", callback_data="settings:set_threshold:0.5")],
-            [InlineKeyboardButton("1.0%", callback_data="settings:set_threshold:1.0")],
-            [InlineKeyboardButton("2.0%", callback_data="settings:set_threshold:2.0")],
+            [InlineKeyboardButton("Alert settings", callback_data="admin:alert_settings")],
+            [InlineKeyboardButton("System status", callback_data="admin:system_status")],
+            [InlineKeyboardButton("Export logs", callback_data="admin:export_logs")],
+        ]
+    )
+
+
+def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Current settings", callback_data="admin:current")],
+            [InlineKeyboardButton("Check interval", callback_data="admin:interval_menu")],
+            [_admin_threshold_button("BTC/ETH movement", "major_movement_threshold_percent")],
+            [_admin_threshold_button("Altcoin movement", "alt_movement_threshold_percent")],
+            [_admin_threshold_button("BTC/ETH 24h Medium", "major_24h_medium_threshold_percent")],
+            [_admin_threshold_button("BTC/ETH 24h High", "major_24h_high_threshold_percent")],
+            [_admin_threshold_button("Altcoin 24h Medium", "alt_24h_medium_threshold_percent")],
+            [_admin_threshold_button("Altcoin 24h High", "alt_24h_high_threshold_percent")],
+        ]
+    )
+
+
+def _admin_threshold_button(label: str, setting_key: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(label, callback_data=f"admin:threshold_menu:{setting_key}")
+
+
+def build_threshold_keyboard(
+    setting_key: str = "major_movement_threshold_percent",
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("1.0%", callback_data=f"admin:set_threshold:{setting_key}:1.0")],
+            [InlineKeyboardButton("2.0%", callback_data=f"admin:set_threshold:{setting_key}:2.0")],
+            [InlineKeyboardButton("3.0%", callback_data=f"admin:set_threshold:{setting_key}:3.0")],
+            [InlineKeyboardButton("5.0%", callback_data=f"admin:set_threshold:{setting_key}:5.0")],
+            [InlineKeyboardButton("8.0%", callback_data=f"admin:set_threshold:{setting_key}:8.0")],
         ]
     )
 
@@ -82,9 +114,9 @@ def build_threshold_keyboard() -> InlineKeyboardMarkup:
 def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("60 sec", callback_data="settings:set_interval:60")],
-            [InlineKeyboardButton("300 sec", callback_data="settings:set_interval:300")],
-            [InlineKeyboardButton("600 sec", callback_data="settings:set_interval:600")],
+            [InlineKeyboardButton("60 sec", callback_data="admin:set_interval:60")],
+            [InlineKeyboardButton("300 sec", callback_data="admin:set_interval:300")],
+            [InlineKeyboardButton("600 sec", callback_data="admin:set_interval:600")],
         ]
     )
 

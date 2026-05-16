@@ -17,6 +17,9 @@ class AlertSeverity(str, Enum):
 
 class AlertType(str, Enum):
     PRICE_MOVEMENT = "price_movement"
+    TREND_24H = "24h_trend"
+    NEWS = "news"
+    COMBINED = "combined"
     STRONG_SIGNAL = "strong_signal"
     CHANGE_24H_THRESHOLD = "24h_change_threshold"
     VOLATILITY_SPIKE = "volatility_spike"
@@ -40,6 +43,9 @@ ALERT_SEVERITY_LABELS = {
 
 ALERT_TYPE_LABELS = {
     AlertType.PRICE_MOVEMENT: "Price movement",
+    AlertType.TREND_24H: "24h trend",
+    AlertType.NEWS: "News",
+    AlertType.COMBINED: "Combined",
     AlertType.STRONG_SIGNAL: "Strong signal",
     AlertType.CHANGE_24H_THRESHOLD: "24h threshold crossed",
     AlertType.VOLATILITY_SPIKE: "Volatility spike",
@@ -80,6 +86,22 @@ class SeverityEvaluation:
     signals: tuple[str, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class AlertThresholds:
+    movement_percent: float
+    trend_24h_medium_percent: float
+    trend_24h_high_percent: float
+
+
+@dataclass(frozen=True)
+class AlertDecision:
+    should_alert: bool
+    alert_type: AlertType | None
+    backend_severity_ceiling: AlertSeverity
+    trigger_reason: str
+    signals: tuple[str, ...] = field(default_factory=tuple)
+
+
 def severity_icon(severity: AlertSeverity) -> str:
     return ALERT_SEVERITY_ICONS[severity]
 
@@ -107,6 +129,12 @@ def alert_title_action(alert_type: AlertType | str) -> str:
         return "market alert"
     if normalized is AlertType.PRICE_MOVEMENT:
         return "movement alert"
+    if normalized is AlertType.TREND_24H:
+        return "24h trend alert"
+    if normalized is AlertType.NEWS:
+        return "news alert"
+    if normalized is AlertType.COMBINED:
+        return "combined alert"
     if normalized is AlertType.STRONG_SIGNAL:
         return "strong signal"
     if normalized is AlertType.CHANGE_24H_THRESHOLD:
@@ -118,6 +146,109 @@ def alert_title_action(alert_type: AlertType | str) -> str:
     if normalized is AlertType.NEWS_SPIKE:
         return "news spike"
     return "market alert"
+
+
+def thresholds_for_symbol(settings: dict, symbol: str) -> AlertThresholds:
+    normalized_symbol = normalize_symbol(symbol)
+    is_major = normalized_symbol in {"btc", "eth"}
+    return AlertThresholds(
+        movement_percent=float(
+            settings.get(
+                (
+                    "major_movement_threshold_percent"
+                    if is_major
+                    else "alt_movement_threshold_percent"
+                ),
+                1.0 if is_major else 2.0,
+            )
+        ),
+        trend_24h_medium_percent=float(
+            settings.get(
+                "major_24h_medium_threshold_percent"
+                if is_major
+                else "alt_24h_medium_threshold_percent",
+                3.0 if is_major else 5.0,
+            )
+        ),
+        trend_24h_high_percent=float(
+            settings.get(
+                "major_24h_high_threshold_percent"
+                if is_major
+                else "alt_24h_high_threshold_percent",
+                5.0 if is_major else 8.0,
+            )
+        ),
+    )
+
+
+def evaluate_alert_decision(
+    *,
+    symbol: str,
+    movement_percent: float,
+    change_24h: float,
+    thresholds: AlertThresholds,
+    news_relevance: str = "none",
+    peak_intrawindow_movement_percent: float | None = None,
+) -> AlertDecision:
+    """Decide whether an automatic alert is valid before asking the LLM."""
+    abs_move = abs(float(movement_percent))
+    abs_24h = abs(float(change_24h or 0.0))
+    abs_peak = abs(float(peak_intrawindow_movement_percent or 0.0))
+    relevance = (news_relevance or "none").strip().lower()
+
+    price_triggered = (
+        abs_move >= thresholds.movement_percent or abs_peak >= thresholds.movement_percent
+    )
+    trend_medium_triggered = abs_24h >= thresholds.trend_24h_medium_percent
+    trend_high_triggered = abs_24h >= thresholds.trend_24h_high_percent
+    news_triggered = relevance in {"relevant", "very_relevant"}
+
+    signals: list[str] = []
+    if price_triggered:
+        if abs_move >= thresholds.movement_percent:
+            signals.append("User-window movement threshold crossed")
+        elif abs_peak >= thresholds.movement_percent:
+            signals.append("Intrawindow movement threshold crossed")
+    if trend_medium_triggered:
+        signals.append("24h trend threshold crossed")
+    if news_triggered:
+        signals.append("Clearly relevant news found")
+
+    if not signals:
+        return AlertDecision(False, None, AlertSeverity.INFO, "No alert threshold crossed", ())
+
+    if news_triggered and (price_triggered or trend_medium_triggered):
+        alert_type = AlertType.COMBINED
+    elif price_triggered:
+        alert_type = AlertType.PRICE_MOVEMENT
+    elif trend_medium_triggered:
+        alert_type = AlertType.TREND_24H
+    else:
+        alert_type = AlertType.NEWS
+
+    if trend_high_triggered or (price_triggered and trend_medium_triggered and news_triggered):
+        ceiling = AlertSeverity.HIGH
+    elif alert_type is AlertType.NEWS:
+        ceiling = AlertSeverity.WATCH
+    else:
+        ceiling = AlertSeverity.WATCH
+
+    if alert_type is AlertType.PRICE_MOVEMENT:
+        reason = (
+            f"The movement crossed the configured threshold of "
+            f"{thresholds.movement_percent:.1f}%."
+        )
+    elif alert_type is AlertType.TREND_24H:
+        reason = (
+            f"The 24h trend crossed the medium threshold of "
+            f"{thresholds.trend_24h_medium_percent:.1f}%."
+        )
+    elif alert_type is AlertType.NEWS:
+        reason = "Clearly relevant news was found while price movement stayed below threshold."
+    else:
+        reason = "Price or trend signals align with clearly relevant news."
+
+    return AlertDecision(True, alert_type, ceiling, reason, tuple(signals))
 
 
 def evaluate_alert_severity(data: SeverityInput) -> SeverityEvaluation:

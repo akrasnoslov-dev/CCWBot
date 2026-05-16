@@ -14,6 +14,7 @@ async def setup_bot_commands(app: Application) -> None:
         BotCommand("start", "Show bot intro"),
         BotCommand("price", "Check crypto prices"),
         BotCommand("watchlist", "Manage alert watchlist"),
+        BotCommand("settings", "Manage your alert settings"),
         BotCommand("myplan", "Show your plan"),
         BotCommand("subscribe", "Subscribe with Telegram Stars"),
         BotCommand("reports", "Open BTC reports menu"),
@@ -22,7 +23,7 @@ async def setup_bot_commands(app: Application) -> None:
 
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
-            BotCommand("settings", "Open settings menu"),
+            BotCommand("admin", "Open admin menu"),
             BotCommand("status", "Show bot status"),
             BotCommand("grantpremium", "Grant Premium manually"),
             BotCommand("revokepremium", "Revoke Premium manually"),
