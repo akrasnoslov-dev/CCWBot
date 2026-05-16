@@ -18,7 +18,6 @@ from bot.keyboards import (
     build_interval_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
-    build_settings_keyboard,
     build_threshold_keyboard,
 )
 from bot.payments import send_subscribe_invoice
@@ -46,6 +45,7 @@ from bot.watchlist import (
     handle_watchlist_callback,
     myplan_command,
     revoke_premium_command,
+    settings_command,
     watchlist_command,
 )
 
@@ -146,16 +146,15 @@ def log_request(action_name: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = await is_admin_update(update)
     message = (
-        "Hi! I’m CCWBot 🚀\n\n"
-        "I monitor crypto prices and send automatic BTC alerts.\n\n"
+        "CCWBot\n\n"
+        "I monitor crypto prices and alert settings.\n\n"
         "Use:\n"
         "/price - check crypto prices"
-        "\n/watchlist - manage alert coins"
-        "\n/myplan - show your plan"
-        "\n/reports - BTC reports menu"
+        "\n/settings - manage alert settings"
+        "\n/status - show bot status"
     )
     if is_admin:
-        message += "\n/settings - open settings menu\n/status - show bot status"
+        message += "\n/admin - open admin menu"
     await update.message.reply_text(message)
 
 
@@ -258,13 +257,7 @@ async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/settings")
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await watchlist_command(update)
-    return
-    if not await is_admin_update(update):
-        _mark_denied(context)
-        await update.message.reply_text("Sorry, only the bot admin can access settings.")
-        return
-    await update.message.reply_text("Settings menu ⚙️", reply_markup=build_settings_keyboard())
+    await settings_command(update)
 
 
 @log_request("/admin")
@@ -376,10 +369,6 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/status")
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_update(update):
-        _mark_denied(context)
-        await update.message.reply_text("Sorry, only the bot admin can view status.")
-        return
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
             btc_state = await get_price_state(session, DEFAULT_SYMBOL)

@@ -11,20 +11,16 @@ logger = logging.getLogger(__name__)
 
 async def setup_bot_commands(app: Application) -> None:
     default_commands = [
-        BotCommand("start", "Show bot intro"),
+        BotCommand("start", "Open bot menu"),
         BotCommand("price", "Check crypto prices"),
-        BotCommand("watchlist", "Manage alert watchlist"),
-        BotCommand("settings", "Manage your alert settings"),
-        BotCommand("myplan", "Show your plan"),
-        BotCommand("subscribe", "Subscribe with Telegram Stars"),
-        BotCommand("reports", "Open BTC reports menu"),
+        BotCommand("settings", "Manage alert settings"),
+        BotCommand("status", "Show bot status"),
     ]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
 
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
             BotCommand("admin", "Open admin menu"),
-            BotCommand("status", "Show bot status"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)
