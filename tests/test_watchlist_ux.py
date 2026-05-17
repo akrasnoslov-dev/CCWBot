@@ -18,6 +18,7 @@ from bot.setup import setup_bot_commands
 from bot.watchlist import (
     build_plan_message,
     build_subscribe_message,
+    build_user_settings_message,
     build_watchlist_message,
     build_watchlist_render,
     grant_premium_command,
@@ -64,6 +65,20 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert "Use /subscribe to upgrade." in text
     assert ("btc", True, True) in rows
     assert ("eth", False, False) in rows
+
+
+def test_user_settings_free_user_only_shows_btc_and_frequency():
+    text, rows = build_user_settings_message(
+        make_user(frequency=3600),
+        make_subscriptions(),
+        datetime(2026, 5, 11, tzinfo=timezone.utc),
+    )
+
+    assert text.startswith("Alert settings")
+    assert "Subscribed coins: BTC" in text
+    assert "Alert frequency: Every 4 hours" in text
+    assert [symbol for symbol, _, _ in rows] == ["btc"]
+    assert "Premium" not in text
 
 
 def test_watchlist_free_user_can_have_btc_disabled_in_keyboard_state():
@@ -195,14 +210,21 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
 
     default_commands = [command.command for command in calls[0][0]]
     admin_commands = [command.command for command in calls[1][0]]
+    assert default_commands == ["start", "price", "settings", "status"]
+    assert admin_commands == ["start", "price", "settings", "status", "admin"]
+    assert "watchlist" not in default_commands
+    assert "watchlist" not in admin_commands
+    assert "alerts" not in default_commands
+    assert "alerts" not in admin_commands
     assert "grantpremium" not in default_commands
     assert "revokepremium" not in default_commands
     assert "userid" not in default_commands
-    assert "grantpremium" in admin_commands
-    assert "revokepremium" in admin_commands
-    assert "error_logging_on" in admin_commands
-    assert "error_logging_off" in admin_commands
-    assert "error_logging_status" in admin_commands
+    assert "admin" in admin_commands
+    assert "grantpremium" not in admin_commands
+    assert "revokepremium" not in admin_commands
+    assert "error_logging_on" not in admin_commands
+    assert "error_logging_off" not in admin_commands
+    assert "error_logging_status" not in admin_commands
 
 
 @pytest.mark.asyncio

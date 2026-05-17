@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
 from time import perf_counter
@@ -11,19 +11,17 @@ import httpx
 from telegram.constants import ParseMode
 from telegram.ext import Application, ContextTypes
 
-from bot.alerting.alert_rules import (
-    calculate_price_change_percent,
-    should_send_alert,
-)
+from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
+    AlertDecision,
     AlertSeverity,
     AlertType,
     SeverityEvaluation,
     SeverityInput,
     alert_title_action,
-    alert_type_label,
+    evaluate_alert_decision,
     evaluate_alert_severity,
-    render_severity_heading,
+    thresholds_for_symbol,
 )
 from bot.config import (
     ENABLE_STRONG_SIGNAL_ALERTS,
@@ -42,15 +40,22 @@ from bot.db.database import (
     get_last_sent_alert_at,
     get_latest_success_event_ai_analysis,
     get_or_create_market_event,
+    get_price_snapshots_since,
     get_price_state,
+    get_reference_price_snapshot,
     make_news_key,
     reserve_alert_delivery,
     save_alert,
     save_event_ai_analysis,
+    save_price_snapshot,
     update_alert_delivery_status,
     update_price_state,
 )
-from bot.domain.premium import can_deliver_now, is_coin_unlocked_for_user
+from bot.domain.premium import (
+    can_deliver_now,
+    get_effective_frequency_seconds,
+    is_coin_unlocked_for_user,
+)
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 from bot.news import fetch_news_context, remember_news_context
 from bot.reports import send_scheduled_weekly_report
@@ -93,6 +98,7 @@ WEEKDAY_MAP = {
 class AlertRecipient:
     chat_id: int
     user_id: int | None = None
+    alert_frequency_seconds: int | None = field(default=None, compare=False)
 
 
 COIN_ALIASES = {
@@ -126,6 +132,45 @@ MARKET_WIDE_NEWS_TERMS = (
     "hack",
     "etf",
     "dominance",
+)
+MATERIAL_NEWS_TERMS = (
+    "approval",
+    "approved",
+    "rejection",
+    "rejected",
+    "etf flow",
+    "etf inflow",
+    "etf outflow",
+    "law passed",
+    "bill passed",
+    "regulation passed",
+    "enforcement action",
+    "lawsuit",
+    "settlement",
+    "major exchange",
+    "outage",
+    "hack",
+    "bankruptcy",
+    "exploit",
+    "liquidation cascade",
+    "central bank",
+    "government statement",
+    "institutional adoption",
+    "institutional exit",
+)
+GENERIC_NEWS_TERMS = (
+    "analysis",
+    "analyst",
+    "bear trap",
+    "euphoria",
+    "prediction",
+    "price target",
+    "could",
+    "may",
+    "might",
+    "sentiment",
+    "speculation",
+    "commentary",
 )
 
 
@@ -227,6 +272,20 @@ def classify_news_relevance(symbol: str, news_item: dict) -> str:
                 return "irrelevant"
         return "market_wide"
     return "irrelevant"
+
+
+def is_material_news_item(news_item: dict) -> bool:
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    return any(term in text for term in MATERIAL_NEWS_TERMS)
+
+
+def is_generic_news_item(news_item: dict) -> bool:
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    return any(term in text for term in GENERIC_NEWS_TERMS)
 
 
 def re_search_word(term: str, text: str) -> bool:
@@ -351,6 +410,7 @@ async def get_alert_recipients(
     event_type: str,
     *,
     now: datetime | None = None,
+    bypass_frequency: bool = False,
 ) -> list[AlertRecipient]:
     """Resolve eligible recipients once for one market event."""
     normalized_symbol = normalize_symbol(symbol)
@@ -375,13 +435,21 @@ async def get_alert_recipients(
                     user_id=user.id,
                     symbol=normalized_symbol,
                 )
-                if not can_deliver_now(user, normalized_symbol, now, last_sent_at):
+                if not bypass_frequency and not can_deliver_now(
+                    user, normalized_symbol, now, last_sent_at
+                ):
                     continue
                 chat_id = int(user.telegram_chat_id)
                 if chat_id in seen_chat_ids:
                     continue
                 seen_chat_ids.add(chat_id)
-                recipients.append(AlertRecipient(chat_id=chat_id, user_id=user.id))
+                recipients.append(
+                    AlertRecipient(
+                        chat_id=chat_id,
+                        user_id=user.id,
+                        alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                    )
+                )
         return recipients
 
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
@@ -557,6 +625,10 @@ async def _get_or_create_event_ai_analysis(
     change_7d: float | None,
     news_items: list[dict],
     alert_settings: dict,
+    alert_threshold_percent: float | None = None,
+    window_seconds: int | None = None,
+    peak_movement_percent: float | None = None,
+    alert_type_label_text: str | None = None,
     force_fallback: bool = False,
 ) -> tuple[dict, int | None]:
     """Create or reuse the single AI analysis for one market event.
@@ -573,8 +645,10 @@ async def _get_or_create_event_ai_analysis(
         change_24h=change_24h,
         change_7d=change_7d,
         news_items=news_items,
-        alert_threshold_percent=alert_settings["price_move_alert_percent"],
-        check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+        alert_threshold_percent=alert_threshold_percent
+        or alert_settings["price_move_alert_percent"],
+        check_interval_seconds=window_seconds
+        or alert_settings["automatic_check_interval_seconds"],
     )
 
     if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
@@ -627,9 +701,13 @@ async def _get_or_create_event_ai_analysis(
             change_24h=change_24h,
             change_7d=change_7d,
             alert_threshold_percent=alert_settings["price_move_alert_percent"],
-            check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+            check_interval_seconds=window_seconds
+            or alert_settings["automatic_check_interval_seconds"],
             symbol=normalize_symbol(symbol).upper(),
             coin_name=_coin_name(symbol),
+            alert_type_label=alert_type_label_text or "basic price",
+            window_seconds=window_seconds,
+            peak_movement_percent=peak_movement_percent,
         )
         alert_payload = {"plain_text": plain_message, "html_text": None}
     else:
@@ -641,8 +719,10 @@ async def _get_or_create_event_ai_analysis(
                 change_24h,
                 change_7d,
                 news_items,
-                alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                alert_threshold_percent=alert_threshold_percent
+                or alert_settings["price_move_alert_percent"],
+                check_interval_seconds=window_seconds
+                or alert_settings["automatic_check_interval_seconds"],
                 symbol=normalize_symbol(symbol).upper(),
                 coin_name=_coin_name(symbol),
             )
@@ -658,9 +738,13 @@ async def _get_or_create_event_ai_analysis(
                 change_24h=change_24h,
                 change_7d=change_7d,
                 alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                check_interval_seconds=alert_settings["automatic_check_interval_seconds"],
+                check_interval_seconds=window_seconds
+                or alert_settings["automatic_check_interval_seconds"],
                 symbol=normalize_symbol(symbol).upper(),
                 coin_name=_coin_name(symbol),
+                alert_type_label=alert_type_label_text or "basic price",
+                window_seconds=window_seconds,
+                peak_movement_percent=peak_movement_percent,
             )
             alert_payload = {"plain_text": plain_message, "html_text": None}
     if alert_payload.get("rate_limited"):
@@ -690,12 +774,17 @@ async def _get_or_create_event_ai_analysis(
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
     direct_count = 0
     market_wide_count = 0
+    material_count = 0
     for item in news_items:
         relevance = classify_news_relevance(symbol, item)
+        if is_material_news_item(item):
+            material_count += 1
         if relevance == "direct":
             direct_count += 1
         elif relevance == "market_wide":
             market_wide_count += 1
+    if material_count == 0:
+        return "weak" if direct_count or market_wide_count else "none"
     if direct_count >= 2 or (direct_count >= 1 and market_wide_count >= 2):
         return "very_relevant"
     if direct_count >= 1 or market_wide_count >= 2:
@@ -707,6 +796,96 @@ def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
 
 def _market_condition_can_alert(evaluation: SeverityEvaluation) -> bool:
     return evaluation.severity in {AlertSeverity.HIGH, AlertSeverity.EXTREME}
+
+
+def _window_label(seconds: int) -> str:
+    if seconds == 3600:
+        return "1h"
+    if seconds == 21600:
+        return "6h"
+    if seconds == 86400:
+        return "24h"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def _severity_from_decision(decision: AlertDecision) -> SeverityEvaluation:
+    severity = decision.backend_severity_ceiling
+    alert_type = decision.alert_type or AlertType.PRICE_MOVEMENT
+    return SeverityEvaluation(
+        severity=severity,
+        primary_alert_type=alert_type,
+        signals=decision.signals,
+    )
+
+
+def _format_thresholds_for_storage(thresholds) -> str:
+    return json.dumps(
+        {
+            "movement_percent": thresholds.movement_percent,
+            "trend_24h_medium_percent": thresholds.trend_24h_medium_percent,
+            "trend_24h_high_percent": thresholds.trend_24h_high_percent,
+        },
+        sort_keys=True,
+    )
+
+
+def _format_numeric_context_for_storage(
+    *,
+    current_price: float,
+    previous_price: float,
+    window_seconds: int,
+    movement_percent: float,
+    peak_movement_percent: float | None,
+    change_24h: float,
+) -> str:
+    return json.dumps(
+        {
+            "current_price": current_price,
+            "previous_price": previous_price,
+            "window_seconds": window_seconds,
+            "movement_percent": movement_percent,
+            "peak_intrawindow_movement_percent": peak_movement_percent,
+            "change_24h": change_24h,
+        },
+        sort_keys=True,
+    )
+
+
+async def _resolve_window_market_context(
+    *,
+    symbol: str,
+    current_price: float,
+    fallback_previous_price: float,
+    window_seconds: int,
+    now: datetime,
+) -> tuple[float, float | None]:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return fallback_previous_price, None
+    since = now - timedelta(seconds=window_seconds)
+    async with DB_SESSION_LOCAL() as session:
+        reference = await get_reference_price_snapshot(
+            session,
+            symbol=symbol,
+            at_or_before=since,
+        )
+        snapshots = await get_price_snapshots_since(session, symbol=symbol, since=since)
+    previous_price = float(reference.price) if reference else fallback_previous_price
+    peak = None
+    if snapshots:
+        moves = [
+            abs(calculate_price_change_percent(previous_price, float(snapshot.price)))
+            for snapshot in snapshots
+            if previous_price
+        ]
+        if moves:
+            peak = max(moves)
+    if peak is None and previous_price:
+        peak = abs(calculate_price_change_percent(previous_price, current_price))
+    return previous_price, peak
 
 
 def _strip_existing_alert_title(plain_text: str) -> str:
@@ -737,6 +916,8 @@ def _remove_user_facing_risk_level(plain_text: str) -> str:
             continue
         if stripped.startswith("Risk reason:"):
             risk_reason = stripped.split(":", 1)[1].strip()
+            continue
+        if stripped.startswith("Coin:"):
             continue
         if stripped == "Not financial advice.":
             continue
@@ -770,16 +951,31 @@ def _apply_severity_header(
     plain_text = sanitize_alert_message(str(alert_payload.get("plain_text", "")))
     body = _remove_user_facing_risk_level(plain_text)
     display_symbol = normalize_symbol(symbol).upper()
-    signal_lines = "\n".join(f"- {signal}" for signal in severity.signals[:4])
-    signals_section = f"\n\nSignals:\n{signal_lines}" if signal_lines else ""
     header = (
-        f"{render_severity_heading(severity.severity)} - "
-        f"{display_symbol} {alert_title_action(severity.primary_alert_type)}\n"
-        f"Type: {alert_type_label(severity.primary_alert_type)}\n"
+        f"{severity_icon_text(severity.severity)} {severity_label_text(severity.severity)} - "
+        f"{display_symbol} {alert_title_action(severity.primary_alert_type)}\n\n"
         f"{_coin_display_line(symbol)}"
     )
-    updated_plain_text = sanitize_alert_message(f"{header}\n\n{body}{signals_section}")
+    updated_plain_text = sanitize_alert_message(f"{header}\n{body}")
     return {"plain_text": updated_plain_text, "html_text": None}
+
+
+def severity_label_text(severity: AlertSeverity) -> str:
+    if severity is AlertSeverity.EXTREME:
+        return "High"
+    return {
+        AlertSeverity.INFO: "Low",
+        AlertSeverity.WATCH: "Medium",
+        AlertSeverity.HIGH: "High",
+    }[severity]
+
+
+def severity_icon_text(severity: AlertSeverity) -> str:
+    if severity is AlertSeverity.INFO:
+        return "\U0001f7e2"
+    if severity is AlertSeverity.WATCH:
+        return "\U0001f7e1"
+    return "\U0001f534"
 
 
 async def _send_alert_to_recipient(
@@ -824,6 +1020,12 @@ async def _record_alert_delivery(
     market_event_id: int | None,
     event_ai_analysis_id: int | None,
     error_message: str | None = None,
+    trigger_reason: str | None = None,
+    numeric_context: str | None = None,
+    thresholds_used: str | None = None,
+    llm_severity: str | None = None,
+    llm_reasoning_summary: str | None = None,
+    fallback_mode: bool = False,
 ) -> None:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
@@ -840,6 +1042,12 @@ async def _record_alert_delivery(
             user_id=recipient.user_id,
             status=status,
             error_message=error_message,
+            trigger_reason=trigger_reason,
+            numeric_context=numeric_context,
+            thresholds_used=thresholds_used,
+            llm_severity=llm_severity,
+            llm_reasoning_summary=llm_reasoning_summary,
+            fallback_mode=fallback_mode,
         )
 
 
@@ -854,12 +1062,22 @@ async def _save_price_state(
 ) -> None:
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
+            checked_dt = datetime.fromisoformat(checked_at)
+            if checked_dt.tzinfo is None:
+                checked_dt = checked_dt.replace(tzinfo=timezone.utc)
+            await save_price_snapshot(
+                session,
+                symbol=symbol,
+                price=current_price,
+                change_24h=change_24h,
+                checked_at=checked_dt,
+            )
             await update_price_state(
                 session,
                 symbol=symbol,
                 last_price=current_price,
                 last_24h_change=change_24h,
-                last_checked_at=datetime.now(timezone.utc),
+                last_checked_at=checked_dt,
                 last_alert_at=last_alert_at,
             )
         return
@@ -886,6 +1104,9 @@ async def _deliver_market_event_alert(
     recipients: list[AlertRecipient] | None = None,
     event_type: str = "price_movement",
     severity: SeverityEvaluation | None = None,
+    trigger_reason: str | None = None,
+    numeric_context: str | None = None,
+    thresholds_used: str | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     alert_payload = _apply_severity_header(alert_payload, symbol=symbol, severity=severity)
@@ -916,6 +1137,12 @@ async def _deliver_market_event_alert(
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
                     message=plain_text,
+                    trigger_reason=trigger_reason,
+                    numeric_context=numeric_context,
+                    thresholds_used=thresholds_used,
+                    llm_severity=severity_label_text(severity.severity) if severity else None,
+                    llm_reasoning_summary=trigger_reason,
+                    fallback_mode="AI analysis is temporarily unavailable" in plain_text,
                 )
                 alert_id = alert_row.id
             if not should_send:
@@ -942,6 +1169,12 @@ async def _deliver_market_event_alert(
                 market_event_id=market_event_id,
                 event_ai_analysis_id=event_ai_analysis_id,
                 error_message=error_message,
+                trigger_reason=trigger_reason,
+                numeric_context=numeric_context,
+                thresholds_used=thresholds_used,
+                llm_severity=severity_label_text(severity.severity) if severity else None,
+                llm_reasoning_summary=trigger_reason,
+                fallback_mode="AI analysis is temporarily unavailable" in plain_text,
             )
         if sent:
             delivered = True
@@ -1076,20 +1309,15 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             change_24h = float(symbol_data.get("change_24h") or 0.0)
             change_7d = symbol_data.get("change_7d")
             previous_price = None
-            previous_24h_change = None
             last_alert_at = None
             db_row = None
             if DB_ENABLED and DB_SESSION_LOCAL:
                 async with DB_SESSION_LOCAL() as session:
                     db_row = await get_price_state(session, symbol)
                     previous_price = db_row.last_price if db_row else None
-                    previous_24h_change = db_row.last_24h_change if db_row else None
                     last_alert_at = db_row.last_alert_at if db_row else None
             else:
                 previous_price = state.get("last_price") if symbol == DEFAULT_SYMBOL else None
-                previous_24h_change = (
-                    state.get("last_24h_change") if symbol == DEFAULT_SYMBOL else None
-                )
                 last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
 
             if previous_price is None:
@@ -1104,12 +1332,46 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 log(f"Initial {symbol.upper()} price saved: ${current_price:,.2f}")
                 continue
 
-            price_change_percent = calculate_price_change_percent(previous_price, current_price)
+            candidate_recipients = await get_alert_recipients(
+                symbol=symbol,
+                event_type=AlertType.PRICE_MOVEMENT.value,
+                now=now,
+                bypass_frequency=True,
+            )
+            if not candidate_recipients:
+                log(f"No subscribed recipients for {symbol.upper()} automatic alerts.")
+                await _save_price_state(
+                    symbol=symbol,
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    checked_at=checked_at,
+                    last_alert_at=None,
+                )
+                continue
+            window_seconds = min(
+                (
+                    recipient.alert_frequency_seconds
+                    for recipient in candidate_recipients
+                    if recipient.alert_frequency_seconds
+                ),
+                default=int(alert_settings.get("automatic_check_interval_seconds", 300)),
+            )
+            window_previous_price, peak_movement_percent = await _resolve_window_market_context(
+                symbol=symbol,
+                current_price=current_price,
+                fallback_previous_price=previous_price,
+                window_seconds=window_seconds,
+                now=now,
+            )
+            price_change_percent = calculate_price_change_percent(
+                window_previous_price, current_price
+            )
             logger.debug(
                 "%s movement calculated: previous=%.2f current=%.2f move=%.4f%% "
                 "change24h=%.4f%% change7d=%s",
                 symbol.upper(),
-                previous_price,
+                window_previous_price,
                 current_price,
                 price_change_percent,
                 change_24h,
@@ -1117,29 +1379,27 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
 
             delivered = False
-            initial_severity = evaluate_alert_severity(
-                SeverityInput(
-                    symbol=symbol,
-                    price_change_percent=price_change_percent,
-                    change_24h=change_24h,
-                    change_7d=change_7d if isinstance(change_7d, float) else None,
-                    previous_24h_change=(
-                        float(previous_24h_change)
-                        if previous_24h_change is not None
-                        else None
-                    ),
-                    alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                )
+            thresholds = thresholds_for_symbol(alert_settings, symbol)
+            if raw_news_items is None:
+                raw_news_items = await fetch_news_context(limit=12)
+            news_items = filter_news_for_symbol(symbol, raw_news_items)
+            news_relevance = _classify_news_context(symbol, news_items)
+            decision = evaluate_alert_decision(
+                symbol=symbol,
+                movement_percent=price_change_percent,
+                change_24h=change_24h,
+                thresholds=thresholds,
+                news_relevance=news_relevance,
+                peak_intrawindow_movement_percent=peak_movement_percent,
             )
-            if _market_condition_can_alert(initial_severity) or should_send_alert(
-                price_change_percent=price_change_percent,
-                threshold_percent=alert_settings["price_move_alert_percent"],
-            ):
-                event_type = initial_severity.primary_alert_type.value
+            delivered = False
+            if decision.should_alert and decision.alert_type is not None:
+                event_type = decision.alert_type.value
                 recipients = await get_alert_recipients(
                     symbol=symbol,
                     event_type=event_type,
                     now=now,
+                    bypass_frequency=decision.backend_severity_ceiling is AlertSeverity.HIGH,
                 )
                 if not recipients:
                     log(
@@ -1155,30 +1415,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         last_alert_at=None,
                     )
                     continue
-                if raw_news_items is None:
-                    raw_news_items = await fetch_news_context(limit=12)
-                news_items = filter_news_for_symbol(symbol, raw_news_items)
                 used_news_items.extend(news_items)
-                severity = evaluate_alert_severity(
-                    SeverityInput(
-                        symbol=symbol,
-                        price_change_percent=price_change_percent,
-                        change_24h=change_24h,
-                        change_7d=change_7d if isinstance(change_7d, float) else None,
-                        previous_24h_change=(
-                            float(previous_24h_change)
-                            if previous_24h_change is not None
-                            else None
-                        ),
-                        alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                        news_relevance=_classify_news_context(symbol, news_items),
-                    )
-                )
-                event_type = severity.primary_alert_type.value
+                severity = _severity_from_decision(decision)
                 market_event_id, _ = await _get_or_create_price_movement_market_event(
                     symbol=symbol,
                     event_type=event_type,
-                    previous_price=previous_price,
+                    previous_price=window_previous_price,
                     current_price=current_price,
                     price_change_percent=price_change_percent,
                     change_24h=change_24h,
@@ -1189,13 +1431,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     symbol=symbol,
                     event_type=event_type,
                     market_event_id=market_event_id,
-                    previous_price=previous_price,
+                    previous_price=window_previous_price,
                     current_price=current_price,
                     price_change_percent=price_change_percent,
                     change_24h=change_24h,
                     change_7d=change_7d if isinstance(change_7d, float) else None,
                     news_items=news_items,
                     alert_settings=alert_settings,
+                    alert_threshold_percent=thresholds.movement_percent,
+                    window_seconds=window_seconds,
+                    peak_movement_percent=peak_movement_percent,
+                    alert_type_label_text=alert_title_action(event_type),
                     force_fallback=ai_disabled_for_cycle,
                 )
                 logger.info(
@@ -1215,6 +1461,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     recipients=recipients,
                     event_type=event_type,
                     severity=severity,
+                    trigger_reason=decision.trigger_reason,
+                    numeric_context=_format_numeric_context_for_storage(
+                        current_price=current_price,
+                        previous_price=window_previous_price,
+                        window_seconds=window_seconds,
+                        movement_percent=price_change_percent,
+                        peak_movement_percent=peak_movement_percent,
+                        change_24h=change_24h,
+                    ),
+                    thresholds_used=_format_thresholds_for_storage(thresholds),
                 )
                 if delivered:
                     delivered_symbols += 1

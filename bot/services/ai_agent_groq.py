@@ -122,34 +122,41 @@ def build_fallback_alert_message(
     check_interval_seconds: int | None = None,
     symbol: str = "BTC",
     coin_name: str = "Bitcoin",
+    alert_type_label: str = "basic price",
+    window_seconds: int | None = None,
+    peak_movement_percent: float | None = None,
 ) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
-    interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
-    weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
     display_symbol = symbol.upper()
-    risk_reason = _build_fallback_risk_reason(
-        price_change_percent=price_change_percent,
-        change_24h=change_24h,
-        alert_threshold_percent=alert_threshold_percent,
-        news_relevance="not_relevant",
-        has_related_news=False,
+    window_label = _format_window_label(window_seconds or check_interval_seconds)
+    peak_line = (
+        f"Peak intrahour move: {peak_movement_percent:+.2f}%\n"
+        if peak_movement_percent is not None
+        else ""
     )
     return (
-        f"🚨 {display_symbol} movement alert\n\n"
+        f"{display_symbol} {alert_type_label} alert\n\n"
         f"Price: ${current_price:,.2f}\n"
-        f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
+        f"{window_label} move: {price_change_percent:+.2f}%\n"
+        f"{peak_line}"
         f"24h trend: {change_24h:+.2f}%\n"
-        f"{weekly_trend_line}"
-        "Risk level: Medium\n"
-        f"Risk reason: {risk_reason}\n\n"
-        "Context:\n"
-        f"Short-term {coin_name} movement is notable while broader market context "
-        "remains uncertain. "
-        "Recent news does not appear to be a clear driver.\n\n"
-        "Possible action:\n"
-        "Monitor for continuation; no immediate action required.\n\n"
+        "\nAI analysis is temporarily unavailable. This is a basic price alert.\n"
         "Not financial advice."
     )
+
+
+def _format_window_label(seconds: int | None) -> str:
+    if seconds == 3600:
+        return "1h"
+    if seconds == 21600:
+        return "6h"
+    if seconds == 86400:
+        return "24h"
+    if seconds and seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds and seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return "Window"
 
 
 def _build_fallback_alert_payload(
@@ -183,7 +190,13 @@ def _build_fallback_alert_payload(
 
 
 def _is_structured_alert_message(message: str) -> bool:
-    required_markers = [
+    current_markers = [
+        "move:",
+        "24h trend:",
+        "Why this alert:",
+        "Possible actions:",
+    ]
+    legacy_markers = [
         "Since last check:",
         "24h trend:",
         "Risk level:",
@@ -191,10 +204,9 @@ def _is_structured_alert_message(message: str) -> bool:
         "Context:",
         "Possible action:",
     ]
-    return (
-        "\n" in message
-        and all(marker in message for marker in required_markers)
-        and message.find("Risk level:") < message.find("Risk reason:")
+    return "\n" in message and (
+        all(marker in message for marker in current_markers)
+        or all(marker in message for marker in legacy_markers)
     )
 
 
@@ -500,6 +512,33 @@ def _sanitize_ai_sentence(value: str, fallback: str, *, max_chars: int = 180) ->
     return cleaned.rstrip(".!?") + "."
 
 
+def _build_specific_possible_actions(
+    *,
+    price_change_percent: float,
+    change_24h: float,
+    alert_threshold_percent: float | None,
+    news_relevance: str,
+) -> list[str]:
+    abs_move = abs(price_change_percent)
+    abs_24h = abs(change_24h)
+    threshold = abs(alert_threshold_percent or 0.0)
+    relevant_news = news_relevance in {"relevant", "partly_relevant"}
+    if relevant_news and (threshold <= 0 or abs_move < threshold) and abs_24h < 2.0:
+        return [
+            "No immediate portfolio action is suggested by price data alone.",
+            "Watch whether the coin reacts over the next alert window.",
+        ]
+    if abs_move >= threshold > 0 or abs_24h >= 3.0:
+        return [
+            "Monitor whether volatility continues over the next few hours.",
+            "Check whether this move changes your target allocation.",
+        ]
+    return [
+        "No immediate portfolio action is suggested by price data alone.",
+        "Review exposure only if you already planned to rebalance.",
+    ]
+
+
 def _normalize_alert_structured_fields(structured: dict) -> dict | None:
     required_fields = {
         "news_relevance",
@@ -571,27 +610,25 @@ def _build_deterministic_ai_alert_message(
         ),
         max_chars=220,
     )
-    possible_action = _sanitize_ai_sentence(
-        str(structured.get("possible_action", "")),
-        "Monitor for continuation; no immediate action required.",
-        max_chars=160,
+    possible_actions = _build_specific_possible_actions(
+        price_change_percent=price_change_percent,
+        change_24h=change_24h,
+        alert_threshold_percent=alert_threshold_percent,
+        news_relevance=str(structured.get("news_relevance", "")).strip(),
     )
-    interval_text = f" in {check_interval_seconds} sec" if check_interval_seconds else ""
-    weekly_trend_line = f"7d trend: {change_7d:+.2f}%\n" if change_7d is not None else ""
-    related_news_text = f"\n\n{related_news_section}" if related_news_section else ""
+    window_label = _format_window_label(check_interval_seconds)
+    news_text = related_news_section or "News relevance:\nNo clearly relevant news found."
     message = (
-        f"🚨 {symbol.upper()} movement alert\n\n"
+        f"{structured['risk_level']} - {symbol.upper()} market alert\n\n"
         f"Price: ${current_price:,.2f}\n"
-        f"Since last check: {price_change_percent:+.2f}%{interval_text}\n"
-        f"24h trend: {change_24h:+.2f}%\n"
-        f"{weekly_trend_line}"
-        f"Risk level: {structured['risk_level']}\n"
-        f"Risk reason: {risk_reason}\n\n"
-        "Context:\n"
-        f"{context_sentence}"
-        f"{related_news_text}\n\n"
-        "Possible action:\n"
-        f"{possible_action}\n\n"
+        f"{window_label} move: {price_change_percent:+.2f}%\n"
+        f"24h trend: {change_24h:+.2f}%\n\n"
+        "Why this alert:\n"
+        f"{risk_reason} {context_sentence}\n\n"
+        f"{news_text}\n\n"
+        "Possible actions:\n"
+        f"- {possible_actions[0]}\n"
+        f"- {possible_actions[1]}\n\n"
         "Not financial advice."
     )
     return _sanitize_telegram_message(message)
@@ -658,13 +695,8 @@ def _build_alert_prompt(
 ) -> str:
     display_symbol = symbol.upper()
     change_7d_text = f"{change_7d:.4f}%" if change_7d is not None else "unavailable"
-    trend_7d_instruction = "7d trend: ...%\n" if change_7d is not None else ""
-    trend_7d_rule = (
-        "Include the 7d trend line only when the provided 7d value is available. "
-        "When it is unavailable, omit the entire 7d trend line. Never write '7d trend: unknown'."
-    )
     threshold_text = alert_threshold_percent if alert_threshold_percent is not None else "unknown"
-    interval_text = check_interval_seconds if check_interval_seconds is not None else "unknown"
+    window_label = _format_window_label(check_interval_seconds)
     return f"""
 Return one valid JSON object only.
 Do not use Markdown.
@@ -680,108 +712,27 @@ Required JSON fields:
 - possible_action: one short cautious sentence
 - related_news_ids: an array with up to 2 numeric IDs from the News list
 
-Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
-Risk level guidance:
-- Low: small price movement, calm 24h trend, no clearly relevant news.
-- Medium: moderate price movement, uncertain 24h trend, or relevant news
-  that may affect sentiment.
-- High: strong price movement, sharp 24h trend, or clearly exceptional news/risk.
+Do not give direct buy/sell/short advice or guaranteed-outcome language.
 High should be rare.
-If both the short-term movement and 24h trend are small, do not use High
-unless the news context clearly indicates exceptional risk.
-If using High despite small price movement, risk_reason must explicitly explain why.
-risk_reason must explain why this risk_level was chosen over lower or higher levels.
-Consider {coin_name}'s coin-specific volatility when explaining risk.
-risk_reason must cite concrete alert factors: short-term move size, 24h trend,
-threshold crossing when relevant, and news only when news_relevance is
-relevant or partly_relevant.
-risk_reason must not use vague boilerplate such as "based on market data and
-news" or "current conditions".
-risk_reason must not mention news as a risk driver when news_relevance is
-not_relevant or unknown.
+News-only alerts should be Low unless the news is clearly material.
+Never use Medium only because news may affect sentiment.
+If the user-window move is near 0 and the 24h trend is mild, use Low or not_relevant.
+risk_reason must cite concrete alert factors: {window_label} move, 24h trend,
+threshold crossing, and material news only when relevant.
+Do not mention internal polling, check interval, raw Data blocks, or debug labels.
 Set related_news_ids to [] when news_relevance is not_relevant or unknown.
-Do not include raw Data or News blocks in any field.
+Possible action must be specific and cautious, such as watching reaction over the next
+alert window or checking target allocation. Do not use generic investment-strategy wording.
 
 Alert data:
 - Symbol: {display_symbol}
 - Coin name: {coin_name}
-- Previous price: ${previous_price:.2f}
+- Previous user-window price: ${previous_price:.2f}
 - Current price: ${current_price:.2f}
-- Since last check: {price_change_percent:.4f}%
+- {window_label} move: {price_change_percent:.4f}%
 - 24h trend: {change_24h:.4f}%
 - 7d trend: {change_7d_text}
-- Alert threshold: {threshold_text}%
-- Check interval: {interval_text} sec
-
-News:
-{news_text}
-"""
-    return f"""
-Return one valid JSON object only.
-Do not use Markdown.
-Do not wrap in code fences.
-Do not include text before or after JSON.
-All string values must be valid JSON strings.
-
-Required JSON fields:
-- news_relevance: "relevant", "partly_relevant", "not_relevant", or "unknown"
-- risk_level: "Low", "Medium", or "High"
-- risk_reason: one short specific sentence
-- context_sentence: one short cautious sentence
-- possible_action: one short cautious sentence
-- related_news_ids: an array with up to 2 numeric IDs from the News list
-
-Do not give direct buy/sell advice. Never say 'buy now' or 'sell now'.
-Risk level guidance:
-- Low: small price movement, calm 24h trend, no clearly relevant news.
-- Medium: moderate price movement, uncertain 24h trend, or relevant news
-  that may affect sentiment.
-- High: strong price movement, sharp 24h trend, or clearly exceptional news/risk.
-High should be rare.
-If both the short-term movement and 24h trend are small, do not use High
-unless the news context clearly indicates exceptional risk.
-If using High despite small price movement, risk_reason must explicitly explain why.
-risk_reason must explain why this risk_level was chosen over lower or higher levels.
-Consider {coin_name}'s coin-specific volatility when explaining risk.
-risk_reason must cite concrete alert factors: short-term move size, 24h trend,
-threshold crossing when relevant, and news only when news_relevance is
-relevant or partly_relevant.
-risk_reason must not use vague boilerplate such as "based on market data and
-news" or "current conditions".
-risk_reason must not mention news as a risk driver when news_relevance is
-not_relevant or unknown.
-Set related_news_ids to [] when news_relevance is not_relevant or unknown.
-Do not include raw Data or News blocks in telegram_message. {trend_7d_rule}
-telegram_message must include both:
-Risk level: Low|Medium|High
-Risk reason: <short reason>
-Use this exact style and labels:
-🚨 {display_symbol} movement alert
-
-Price: $...
-Since last check: ...% in ... sec
-24h trend: ...%
-{trend_7d_instruction}Risk level: Low|Medium|High
-Risk reason: <one short sentence explaining the level>
-
-Context:
-<1-2 short cautious sentences, including whether recent news appears relevant to this move>
-
-Possible action:
-<1 short cautious sentence>
-
-Not financial advice.
-
-Alert data:
-- Symbol: {display_symbol}
-- Coin name: {coin_name}
-- Previous price: ${previous_price:.2f}
-- Current price: ${current_price:.2f}
-- Since last check: {price_change_percent:.4f}%
-- 24h trend: {change_24h:.4f}%
-- 7d trend: {change_7d_text}
-- Alert threshold: {threshold_text}%
-- Check interval: {interval_text} sec
+- Movement threshold: {threshold_text}%
 
 News:
 {news_text}
