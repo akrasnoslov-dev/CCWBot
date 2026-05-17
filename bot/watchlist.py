@@ -200,17 +200,76 @@ def build_watchlist_render(
     )
 
 
-async def edit_watchlist_message(query, user, subscriptions) -> None:
-    text, reply_markup = build_watchlist_render(user, subscriptions)
+def build_user_settings_message(
+    user,
+    subscriptions,
+    now: datetime | None = None,
+) -> tuple[str, list]:
+    now = now or datetime.now(timezone.utc)
+    premium_active = is_user_premium_active(get_user_plan(user), now)
+    enabled_by_symbol = _subscription_by_symbol(subscriptions)
+    symbols = SUPPORTED_SYMBOLS if premium_active else ("btc",)
+
+    rows = []
+    enabled_symbols = []
+    for symbol in symbols:
+        enabled = enabled_by_symbol.get(symbol, is_symbol_free(symbol))
+        unlocked = is_coin_unlocked_for_user(user, symbol, now)
+        rows.append((symbol, enabled, unlocked))
+        if enabled and unlocked:
+            enabled_symbols.append(symbol.upper())
+
+    subscribed_text = ", ".join(enabled_symbols) if enabled_symbols else "None"
+    lines = [
+        "Alert settings",
+        "",
+        f"Subscribed coins: {subscribed_text}",
+        f"Alert frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+    ]
+    return "\n".join(lines), rows
+
+
+def build_user_settings_render(
+    user,
+    subscriptions,
+    now: datetime | None = None,
+) -> tuple[str, InlineKeyboardMarkup]:
+    now = now or datetime.now(timezone.utc)
+    text, rows = build_user_settings_message(user, subscriptions, now)
+    return (
+        text,
+        build_watchlist_keyboard(
+            rows=rows,
+            premium_active=is_user_premium_active(get_user_plan(user), now),
+            current_frequency_seconds=get_effective_frequency_seconds(user, now),
+        ),
+    )
+
+
+async def send_user_settings_message(message: Message, user, subscriptions) -> None:
+    text, reply_markup = build_user_settings_render(user, subscriptions)
+    await _safe_reply_text(message, text, reply_markup=reply_markup)
+
+
+async def edit_user_settings_message(query, user, subscriptions) -> None:
+    text, reply_markup = build_user_settings_render(user, subscriptions)
     await _safe_edit_message_text(query, text=text, reply_markup=reply_markup)
 
 
+async def edit_watchlist_message(query, user, subscriptions) -> None:
+    await edit_user_settings_message(query, user, subscriptions)
+
+
 async def watchlist_command(update: Update) -> None:
+    await settings_command(update)
+
+
+async def settings_command(update: Update) -> None:
     user, subscriptions = await _load_current_user(update)
     if user is None or subscriptions is None:
         await _reply_db_required(update.message)
         return
-    await send_watchlist_message(update.message, user, subscriptions)
+    await send_user_settings_message(update.message, user, subscriptions)
 
 
 async def myplan_command(update: Update) -> None:

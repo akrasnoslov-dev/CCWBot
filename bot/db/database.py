@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -354,6 +355,36 @@ class AppSettings(Base):
     btc_alert_threshold_percent: Mapped[float] = mapped_column(
         Float, comment="Global BTC movement percent that triggers automatic alerts."
     )
+    major_movement_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=1.0,
+        comment="Admin-controlled movement percent threshold for BTC and ETH alerts.",
+    )
+    alt_movement_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=2.0,
+        comment="Admin-controlled movement percent threshold for non-BTC and non-ETH alerts.",
+    )
+    major_24h_medium_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=3.0,
+        comment="Admin-controlled 24 hour medium trend threshold for BTC and ETH alerts.",
+    )
+    major_24h_high_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=5.0,
+        comment="Admin-controlled 24 hour high trend threshold for BTC and ETH alerts.",
+    )
+    alt_24h_medium_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=5.0,
+        comment="Admin-controlled 24 hour medium trend threshold for altcoin alerts.",
+    )
+    alt_24h_high_threshold_percent: Mapped[float] = mapped_column(
+        Float,
+        default=8.0,
+        comment="Admin-controlled 24 hour high trend threshold for altcoin alerts.",
+    )
     automatic_check_interval_seconds: Mapped[int] = mapped_column(
         Integer, comment="Global automatic market check interval in seconds."
     )
@@ -405,6 +436,30 @@ class PriceState(Base):
         default=utc_now,
         onupdate=utc_now,
         comment="When this market state row was last updated.",
+    )
+
+
+class PriceSnapshot(Base):
+    __tablename__ = "price_snapshots"
+    __table_args__ = (
+        Index("ix_price_snapshots_symbol_checked_at", "symbol", "checked_at"),
+        {"comment": "Historical market snapshots used for user-frequency alert windows."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal price snapshot row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol for this market snapshot."
+    )
+    price: Mapped[float] = mapped_column(
+        Float, comment="Market price captured at this snapshot time."
+    )
+    change_24h: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="24 hour percentage change captured with this snapshot."
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True, comment="When this market snapshot was captured."
     )
 
 
@@ -467,6 +522,26 @@ class Alert(Base):
     )
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Failure detail for a failed delivery, if any."
+    )
+    trigger_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Concise reason that triggered this delivered alert."
+    )
+    numeric_context: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON numeric market context used for this alert decision."
+    )
+    thresholds_used: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON alert thresholds used for this alert decision."
+    )
+    llm_severity: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Severity selected or accepted for this alert."
+    )
+    llm_reasoning_summary: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Short reasoning summary from the LLM or backend fallback."
+    )
+    fallback_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether this delivery used a deterministic fallback instead of AI analysis.",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When this delivery row was created."
@@ -1118,6 +1193,12 @@ async def _get_app_settings_row(
     if settings is None:
         settings = AppSettings(
             btc_alert_threshold_percent=default_threshold,
+            major_movement_threshold_percent=1.0,
+            alt_movement_threshold_percent=2.0,
+            major_24h_medium_threshold_percent=3.0,
+            major_24h_high_threshold_percent=5.0,
+            alt_24h_medium_threshold_percent=5.0,
+            alt_24h_high_threshold_percent=8.0,
             automatic_check_interval_seconds=default_interval,
             error_file_logging_enabled=False,
         )
@@ -1133,6 +1214,18 @@ async def _get_app_settings_row(
     if settings.automatic_check_interval_seconds is None:
         settings.automatic_check_interval_seconds = default_interval
         changed = True
+    threshold_defaults = {
+        "major_movement_threshold_percent": 1.0,
+        "alt_movement_threshold_percent": 2.0,
+        "major_24h_medium_threshold_percent": 3.0,
+        "major_24h_high_threshold_percent": 5.0,
+        "alt_24h_medium_threshold_percent": 5.0,
+        "alt_24h_high_threshold_percent": 8.0,
+    }
+    for name, default_value in threshold_defaults.items():
+        if getattr(settings, name, None) is None:
+            setattr(settings, name, default_value)
+            changed = True
     if settings.error_file_logging_enabled is None:
         settings.error_file_logging_enabled = False
         changed = True
@@ -1158,6 +1251,12 @@ async def get_or_create_app_settings(
         "btc_alert_threshold_percent": float(settings.btc_alert_threshold_percent),
         "automatic_check_interval_seconds": int(settings.automatic_check_interval_seconds),
         "error_file_logging_enabled": bool(settings.error_file_logging_enabled),
+        "major_movement_threshold_percent": float(settings.major_movement_threshold_percent),
+        "alt_movement_threshold_percent": float(settings.alt_movement_threshold_percent),
+        "major_24h_medium_threshold_percent": float(settings.major_24h_medium_threshold_percent),
+        "major_24h_high_threshold_percent": float(settings.major_24h_high_threshold_percent),
+        "alt_24h_medium_threshold_percent": float(settings.alt_24h_medium_threshold_percent),
+        "alt_24h_high_threshold_percent": float(settings.alt_24h_high_threshold_percent),
     }
 
 
@@ -1169,6 +1268,7 @@ async def update_app_settings(
     threshold: float | None = None,
     interval_seconds: int | None = None,
     error_file_logging_enabled: bool | None = None,
+    threshold_updates: dict[str, float] | None = None,
 ) -> dict:
     settings = await _get_app_settings_row(
         session,
@@ -1181,6 +1281,9 @@ async def update_app_settings(
         settings.automatic_check_interval_seconds = interval_seconds
     if error_file_logging_enabled is not None:
         settings.error_file_logging_enabled = error_file_logging_enabled
+    for name, value in (threshold_updates or {}).items():
+        if hasattr(settings, name):
+            setattr(settings, name, float(value))
     settings.updated_at = utc_now()
     await session.commit()
     await session.refresh(settings)
@@ -1270,6 +1373,56 @@ async def update_price_state(
     await session.commit()
     await session.refresh(row)
     return row
+
+
+async def save_price_snapshot(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    price: float,
+    change_24h: float | None,
+    checked_at: datetime,
+) -> PriceSnapshot:
+    row = PriceSnapshot(
+        symbol=symbol.upper(),
+        price=price,
+        change_24h=change_24h,
+        checked_at=checked_at,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def get_reference_price_snapshot(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    at_or_before: datetime,
+) -> PriceSnapshot | None:
+    return await session.scalar(
+        select(PriceSnapshot)
+        .where(PriceSnapshot.symbol == symbol.upper())
+        .where(PriceSnapshot.checked_at <= at_or_before)
+        .order_by(PriceSnapshot.checked_at.desc(), PriceSnapshot.id.desc())
+        .limit(1)
+    )
+
+
+async def get_price_snapshots_since(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    since: datetime,
+) -> list[PriceSnapshot]:
+    rows = await session.scalars(
+        select(PriceSnapshot)
+        .where(PriceSnapshot.symbol == symbol.upper())
+        .where(PriceSnapshot.checked_at >= since)
+        .order_by(PriceSnapshot.checked_at.asc(), PriceSnapshot.id.asc())
+    )
+    return list(rows.all())
 
 
 async def was_news_seen(session: AsyncSession, news_key: str) -> bool:
@@ -1376,6 +1529,12 @@ async def save_alert(
     user_id: int | None = None,
     status: str | None = None,
     error_message: str | None = None,
+    trigger_reason: str | None = None,
+    numeric_context: str | None = None,
+    thresholds_used: str | None = None,
+    llm_severity: str | None = None,
+    llm_reasoning_summary: str | None = None,
+    fallback_mode: bool = False,
 ):
     alert = Alert(
         symbol=symbol.upper(),
@@ -1387,6 +1546,12 @@ async def save_alert(
         user_id=user_id,
         status=status,
         error_message=error_message,
+        trigger_reason=trigger_reason,
+        numeric_context=numeric_context,
+        thresholds_used=thresholds_used,
+        llm_severity=llm_severity,
+        llm_reasoning_summary=llm_reasoning_summary,
+        fallback_mode=fallback_mode,
     )
     session.add(alert)
     await session.commit()
@@ -1435,6 +1600,12 @@ async def reserve_alert_delivery(
     market_event_id: int,
     event_ai_analysis_id: int | None,
     message: str,
+    trigger_reason: str | None = None,
+    numeric_context: str | None = None,
+    thresholds_used: str | None = None,
+    llm_severity: str | None = None,
+    llm_reasoning_summary: str | None = None,
+    fallback_mode: bool = False,
 ) -> tuple[Alert, bool]:
     """Reserve one delivery identity before sending.
 
@@ -1455,6 +1626,12 @@ async def reserve_alert_delivery(
         existing.message = message
         existing.sent_to_chat_id = sent_to_chat_id
         existing.event_ai_analysis_id = event_ai_analysis_id
+        existing.trigger_reason = trigger_reason
+        existing.numeric_context = numeric_context
+        existing.thresholds_used = thresholds_used
+        existing.llm_severity = llm_severity
+        existing.llm_reasoning_summary = llm_reasoning_summary
+        existing.fallback_mode = fallback_mode
         await session.commit()
         await session.refresh(existing)
         return existing, True
@@ -1468,6 +1645,12 @@ async def reserve_alert_delivery(
         event_ai_analysis_id=event_ai_analysis_id,
         user_id=user_id,
         status="pending",
+        trigger_reason=trigger_reason,
+        numeric_context=numeric_context,
+        thresholds_used=thresholds_used,
+        llm_severity=llm_severity,
+        llm_reasoning_summary=llm_reasoning_summary,
+        fallback_mode=fallback_mode,
     )
     session.add(alert)
     try:

@@ -109,11 +109,13 @@ async def test_app_settings_defaults_and_updates_are_global():
             default_threshold=2,
             default_interval=300,
         )
-        assert defaults == {
+        assert defaults.items() >= {
             "btc_alert_threshold_percent": 2.0,
             "automatic_check_interval_seconds": 300,
             "error_file_logging_enabled": False,
-        }
+        }.items()
+        assert defaults["major_movement_threshold_percent"] == 1.0
+        assert defaults["alt_movement_threshold_percent"] == 2.0
 
         updated = await update_app_settings(
             session,
@@ -123,11 +125,11 @@ async def test_app_settings_defaults_and_updates_are_global():
             interval_seconds=600,
             error_file_logging_enabled=True,
         )
-        assert updated == {
+        assert updated.items() >= {
             "btc_alert_threshold_percent": 1.0,
             "automatic_check_interval_seconds": 600,
             "error_file_logging_enabled": True,
-        }
+        }.items()
 
         reloaded = await get_or_create_app_settings(
             session,
@@ -432,11 +434,11 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
                 default_threshold=2,
                 default_interval=300,
             )
-            assert migrated == {
+            assert migrated.items() >= {
                 "btc_alert_threshold_percent": 1.5,
                 "automatic_check_interval_seconds": 600,
                 "error_file_logging_enabled": False,
-            }
+            }.items()
         finally:
             await session.close()
             await migrated_engine.dispose()

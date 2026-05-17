@@ -26,6 +26,7 @@ TABLE_COMMENTS = {
     "payments": "Payment events processed for Premium entitlement activation.",
     "app_settings": "Global bot settings controlled by admins.",
     "price_state": "Latest stored market snapshot used to detect price movements.",
+    "price_snapshots": "Historical market snapshots used for user-frequency alert windows.",
     "seen_news": "RSS/news items already processed for deduplication.",
     "alerts": "One delivery record per recipient for a market alert.",
     "market_events": "Deduplicated market movements that can trigger many deliveries.",
@@ -111,6 +112,24 @@ COLUMN_COMMENTS = {
         "btc_alert_threshold_percent": (
             "Global BTC movement percent that triggers automatic alerts."
         ),
+        "major_movement_threshold_percent": (
+            "Admin-controlled movement percent threshold for BTC and ETH alerts."
+        ),
+        "alt_movement_threshold_percent": (
+            "Admin-controlled movement percent threshold for non-BTC and non-ETH alerts."
+        ),
+        "major_24h_medium_threshold_percent": (
+            "Admin-controlled 24 hour medium trend threshold for BTC and ETH alerts."
+        ),
+        "major_24h_high_threshold_percent": (
+            "Admin-controlled 24 hour high trend threshold for BTC and ETH alerts."
+        ),
+        "alt_24h_medium_threshold_percent": (
+            "Admin-controlled 24 hour medium trend threshold for altcoin alerts."
+        ),
+        "alt_24h_high_threshold_percent": (
+            "Admin-controlled 24 hour high trend threshold for altcoin alerts."
+        ),
         "automatic_check_interval_seconds": "Global automatic market check interval in seconds.",
         "error_file_logging_enabled": (
             "Whether admins enabled persistent WARNING and ERROR file logging."
@@ -126,6 +145,13 @@ COLUMN_COMMENTS = {
         "last_checked_at": "When market data was last checked.",
         "last_alert_at": "When an automatic alert was last sent.",
         "updated_at": "When this market state row was last updated.",
+    },
+    "price_snapshots": {
+        "id": "Internal price snapshot row id.",
+        "symbol": "Uppercase coin symbol for this market snapshot.",
+        "price": "Market price captured at this snapshot time.",
+        "change_24h": "24 hour percentage change captured with this snapshot.",
+        "checked_at": "When this market snapshot was captured.",
     },
     "seen_news": {
         "id": "Internal news row id.",
@@ -146,6 +172,14 @@ COLUMN_COMMENTS = {
         "user_id": "Recipient user row for this delivery.",
         "status": "Delivery state such as pending, sent, or failed.",
         "error_message": "Failure detail for a failed delivery, if any.",
+        "trigger_reason": "Concise reason that triggered this delivered alert.",
+        "numeric_context": "JSON numeric market context used for this alert decision.",
+        "thresholds_used": "JSON alert thresholds used for this alert decision.",
+        "llm_severity": "Severity selected or accepted for this alert.",
+        "llm_reasoning_summary": "Short reasoning summary from the LLM or backend fallback.",
+        "fallback_mode": (
+            "Whether this delivery used a deterministic fallback instead of AI analysis."
+        ),
         "created_at": "When this delivery row was created.",
     },
     "market_events": {
