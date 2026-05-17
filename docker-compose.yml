@@ -12,7 +12,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://ccwbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/ccwbot
     command: sh -c "alembic upgrade head && exec python main.py"
     ports:
-      - "${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
+      - "127.0.0.1:${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
       - ./logs:/app/logs
     healthcheck:
@@ -24,7 +24,7 @@ services:
   postgres:
     image: postgres:16
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     container_name: ccwbot-postgres
     restart: always
     environment:

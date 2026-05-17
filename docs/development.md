@@ -29,6 +29,9 @@ Use dummy values from `.env.example` for Compose validation. Do not publish
 - `python main.py` remains the local bot entry point.
 - Docker Compose starts PostgreSQL and the bot, and the bot runs Alembic migrations on startup.
 - Docker Compose overrides `DATABASE_URL` for the bot container to use the `postgres` service.
+- Docker Compose binds the bot health port and PostgreSQL host port to `127.0.0.1` only.
+  This keeps internal services off the public internet while preserving host-local checks and
+  SSH-tunnel database access.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.

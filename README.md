@@ -144,7 +144,7 @@ when available.
 ## Docker Compose
 
 Docker Compose defines both the bot and PostgreSQL services. The bot service publishes the
-health endpoint and depends on the PostgreSQL health check.
+health endpoint on localhost only and depends on the PostgreSQL health check.
 
 Useful commands:
 
@@ -158,6 +158,29 @@ docker compose down
 Compose overrides `DATABASE_URL` inside the bot container so it connects to the `postgres`
 service. Keep `POSTGRES_PASSWORD` set in `.env`, and do not publish `docker compose config`
 output from a real `.env` because Compose can expand secrets.
+
+### Production Network Exposure
+
+Production uses Telegram polling, so no public webhook or bot HTTP endpoint is required.
+Compose binds the bot health endpoint to `127.0.0.1:${HEALTH_PORT:-8080}` only. It is available
+from the VPS itself for local checks and container health checks, but it should not be reachable
+directly from the public internet.
+
+PostgreSQL is intentionally not publicly exposed. Compose binds it to `127.0.0.1:5433` on the
+VPS and keeps in-container traffic on Docker service networking. The bot container must connect
+to PostgreSQL with the `postgres:5432` service address, not `localhost` or host networking.
+
+Remote database access should happen only through an SSH tunnel. Expected DBeaver setup:
+
+- SSH tunnel host: the VPS hostname or IP
+- SSH tunnel user/key: your VPS SSH credentials
+- Database host: `localhost`
+- Database port: `5433`
+- Database name/user: `ccwbot`
+- Password: the environment-local `POSTGRES_PASSWORD`
+
+After production updates, `docker ps` should show loopback bindings such as
+`127.0.0.1:8080->8080/tcp` and `127.0.0.1:5433->5432/tcp`, not `0.0.0.0` bindings.
 
 ## Warning/Error File Logs
 
@@ -258,6 +281,8 @@ The bot starts a lightweight HTTP endpoint:
 
 - `GET /health`
 - Port is configured with `HEALTH_PORT` (default `8080`)
+- Docker Compose publishes it only on `127.0.0.1` for local VPS monitoring; Telegram uses
+  polling, not webhooks.
 
 Example:
 
