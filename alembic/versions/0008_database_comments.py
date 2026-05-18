@@ -23,6 +23,9 @@ TABLE_COMMENTS = {
     "user_settings": "Legacy per-user alert settings retained for compatibility.",
     "user_coin_subscriptions": "Per-user watchlist choices for automatic coin alerts.",
     "user_premium_subscriptions": "Source of truth for each user's bot Premium entitlement.",
+    "user_symbol_alert_state": (
+        "Per-user per-symbol alert timestamps used by automatic monitoring."
+    ),
     "payments": "Payment events processed for Premium entitlement activation.",
     "app_settings": "Global bot settings controlled by admins.",
     "price_state": "Latest stored market snapshot used to detect price movements.",
@@ -81,6 +84,32 @@ COLUMN_COMMENTS = {
         "last_payment_id": "Latest provider payment id used to extend Premium.",
         "created_at": "When this Premium row was created.",
         "updated_at": "When this Premium row was last updated.",
+    },
+    "user_symbol_alert_state": {
+        "id": "Internal state row id.",
+        "user_id": "User this per-symbol alert state belongs to.",
+        "symbol": "Lowercase coin symbol for this alert state.",
+        "last_market_update_time": (
+            "When a Market Update was last successfully sent for this user and symbol."
+        ),
+        "last_important_alert_time": (
+            "When an Important Alert was last successfully sent for this user and symbol."
+        ),
+        "last_critical_alert_time": (
+            "When a Critical Alert was last successfully sent for this user and symbol."
+        ),
+        "last_notification_type": (
+            "Latest user-facing notification type sent for this user and symbol."
+        ),
+        "last_notification_severity": (
+            "Latest normalized notification severity for this user and symbol."
+        ),
+        "last_notification_direction": "Latest notification direction for this user and symbol.",
+        "last_cumulative_movement_percent": (
+            "Latest cumulative movement percent stored for suppression decisions."
+        ),
+        "created_at": "When this state row was created.",
+        "updated_at": "When this state row was last updated.",
     },
     "payments": {
         "id": "Internal payment row id.",
@@ -153,7 +182,10 @@ COLUMN_COMMENTS = {
         "symbol": "Uppercase coin symbol for this market snapshot.",
         "price": "Market price captured at this snapshot time.",
         "change_24h": "24 hour percentage change captured with this snapshot.",
+        "change_7d": "7 day percentage change captured with this snapshot.",
+        "source": "Market data provider for this snapshot.",
         "checked_at": "When this market snapshot was captured.",
+        "created_at": "When this snapshot row was created.",
     },
     "seen_news": {
         "id": "Internal news row id.",
@@ -175,6 +207,7 @@ COLUMN_COMMENTS = {
         "status": "Delivery state such as pending, sent, or failed.",
         "error_message": "Failure detail for a failed delivery, if any.",
         "trigger_reason": "Concise reason that triggered this delivered alert.",
+        "trigger_source": "Machine-readable signal source for this alert.",
         "numeric_context": "JSON numeric market context used for this alert decision.",
         "thresholds_used": "JSON alert thresholds used for this alert decision.",
         "llm_severity": "Severity selected or accepted for this alert.",

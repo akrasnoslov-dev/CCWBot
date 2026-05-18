@@ -104,6 +104,21 @@ def make_news_key(news_item: dict) -> str:
     return ""
 
 
+def normalize_stored_severity(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    normalized = {
+        "info": "low",
+        "watch": "medium",
+        "moderate": "medium",
+        "critical": "extreme",
+    }.get(normalized, normalized)
+    if normalized not in {"low", "medium", "high", "extreme"}:
+        return "low"
+    return normalized
+
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
@@ -274,6 +289,67 @@ class UserPremiumSubscription(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="premium_subscription")
+
+
+class UserSymbolAlertState(Base):
+    __tablename__ = "user_symbol_alert_state"
+    __table_args__ = (
+        UniqueConstraint("user_id", "symbol", name="uq_user_symbol_alert_state_user_symbol"),
+        CheckConstraint("symbol = lower(symbol)", name="ck_user_symbol_alert_state_symbol_lower"),
+        {"comment": "Per-user per-symbol alert timestamps used by automatic monitoring."},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal state row id.")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, comment="User this per-symbol alert state belongs to."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Lowercase coin symbol for this alert state."
+    )
+    last_market_update_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When a Market Update was last successfully sent for this user and symbol.",
+    )
+    last_important_alert_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When an Important Alert was last successfully sent for this user and symbol.",
+    )
+    last_critical_alert_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When a Critical Alert was last successfully sent for this user and symbol.",
+    )
+    last_notification_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Latest user-facing notification type sent for this user and symbol.",
+    )
+    last_notification_severity: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Latest normalized notification severity for this user and symbol.",
+    )
+    last_notification_direction: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Latest notification direction for this user and symbol.",
+    )
+    last_cumulative_movement_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Latest cumulative movement percent stored for suppression decisions.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this state row was created."
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this state row was last updated.",
+    )
 
 
 class Payment(Base):
@@ -468,8 +544,17 @@ class PriceSnapshot(Base):
     change_24h: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="24 hour percentage change captured with this snapshot."
     )
+    change_7d: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="7 day percentage change captured with this snapshot."
+    )
+    source: Mapped[str] = mapped_column(
+        String(64), default="coingecko", comment="Market data provider for this snapshot."
+    )
     checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), index=True, comment="When this market snapshot was captured."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this snapshot row was created."
     )
 
 
@@ -535,6 +620,9 @@ class Alert(Base):
     )
     trigger_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Concise reason that triggered this delivered alert."
+    )
+    trigger_source: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Machine-readable signal source for this alert."
     )
     numeric_context: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="JSON numeric market context used for this alert decision."
@@ -1478,12 +1566,17 @@ async def save_price_snapshot(
     price: float,
     change_24h: float | None,
     checked_at: datetime,
+    change_7d: float | None = None,
+    source: str = "coingecko",
 ) -> PriceSnapshot:
     row = PriceSnapshot(
         symbol=symbol.upper(),
         price=price,
         change_24h=change_24h,
+        change_7d=change_7d,
+        source=source,
         checked_at=checked_at,
+        created_at=checked_at,
     )
     session.add(row)
     await session.commit()
@@ -1519,6 +1612,64 @@ async def get_price_snapshots_since(
         .order_by(PriceSnapshot.checked_at.asc(), PriceSnapshot.id.asc())
     )
     return list(rows.all())
+
+
+async def get_user_symbol_alert_state(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+) -> UserSymbolAlertState | None:
+    """Return per-user per-symbol alert state, if it exists."""
+    return await session.scalar(
+        select(UserSymbolAlertState)
+        .where(UserSymbolAlertState.user_id == user_id)
+        .where(UserSymbolAlertState.symbol == normalize_symbol(symbol))
+        .limit(1)
+    )
+
+
+async def upsert_user_symbol_alert_state(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    last_market_update_time: datetime | None = None,
+    last_important_alert_time: datetime | None = None,
+    last_critical_alert_time: datetime | None = None,
+    last_notification_type: str | None = None,
+    last_notification_severity: str | None = None,
+    last_notification_direction: str | None = None,
+    last_cumulative_movement_percent: float | None = None,
+) -> UserSymbolAlertState:
+    """Create or update per-user per-symbol alert state."""
+    normalized_symbol = normalize_symbol(symbol)
+    row = await get_user_symbol_alert_state(
+        session,
+        user_id=user_id,
+        symbol=normalized_symbol,
+    )
+    if row is None:
+        row = UserSymbolAlertState(user_id=user_id, symbol=normalized_symbol)
+        session.add(row)
+    if last_market_update_time is not None:
+        row.last_market_update_time = last_market_update_time
+    if last_important_alert_time is not None:
+        row.last_important_alert_time = last_important_alert_time
+    if last_critical_alert_time is not None:
+        row.last_critical_alert_time = last_critical_alert_time
+    if last_notification_type is not None:
+        row.last_notification_type = last_notification_type
+    if last_notification_severity is not None:
+        row.last_notification_severity = normalize_stored_severity(last_notification_severity)
+    if last_notification_direction is not None:
+        row.last_notification_direction = last_notification_direction
+    if last_cumulative_movement_percent is not None:
+        row.last_cumulative_movement_percent = last_cumulative_movement_percent
+    row.updated_at = utc_now()
+    await session.commit()
+    await session.refresh(row)
+    return row
 
 
 async def was_news_seen(session: AsyncSession, news_key: str) -> bool:
@@ -1626,6 +1777,7 @@ async def save_alert(
     status: str | None = None,
     error_message: str | None = None,
     trigger_reason: str | None = None,
+    trigger_source: str | None = None,
     numeric_context: str | None = None,
     thresholds_used: str | None = None,
     llm_severity: str | None = None,
@@ -1643,9 +1795,10 @@ async def save_alert(
         status=status,
         error_message=error_message,
         trigger_reason=trigger_reason,
+        trigger_source=trigger_source,
         numeric_context=numeric_context,
         thresholds_used=thresholds_used,
-        llm_severity=llm_severity,
+        llm_severity=normalize_stored_severity(llm_severity),
         llm_reasoning_summary=llm_reasoning_summary,
         fallback_mode=fallback_mode,
     )
@@ -1660,14 +1813,39 @@ async def get_last_sent_alert_at(
     *,
     user_id: int,
     symbol: str,
+    alert_type: str | None = None,
 ) -> datetime | None:
     """Return latest sent delivery time for a user+symbol frequency window."""
-    return await session.scalar(
+    statement = (
         select(func.max(Alert.created_at))
         .where(Alert.user_id == user_id)
         .where(Alert.symbol == symbol.upper())
         .where(Alert.status == "sent")
     )
+    if alert_type is not None:
+        statement = statement.where(Alert.alert_type == alert_type)
+    return await session.scalar(statement)
+
+
+async def get_last_sent_alert(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    alert_type: str | None = None,
+) -> Alert | None:
+    """Return latest sent delivery row for a user and symbol."""
+    statement = (
+        select(Alert)
+        .where(Alert.user_id == user_id)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.status == "sent")
+        .order_by(Alert.created_at.desc(), Alert.id.desc())
+        .limit(1)
+    )
+    if alert_type is not None:
+        statement = statement.where(Alert.alert_type == alert_type)
+    return await session.scalar(statement)
 
 
 async def get_alert_delivery(
@@ -1697,6 +1875,7 @@ async def reserve_alert_delivery(
     event_ai_analysis_id: int | None,
     message: str,
     trigger_reason: str | None = None,
+    trigger_source: str | None = None,
     numeric_context: str | None = None,
     thresholds_used: str | None = None,
     llm_severity: str | None = None,
@@ -1723,9 +1902,10 @@ async def reserve_alert_delivery(
         existing.sent_to_chat_id = sent_to_chat_id
         existing.event_ai_analysis_id = event_ai_analysis_id
         existing.trigger_reason = trigger_reason
+        existing.trigger_source = trigger_source
         existing.numeric_context = numeric_context
         existing.thresholds_used = thresholds_used
-        existing.llm_severity = llm_severity
+        existing.llm_severity = normalize_stored_severity(llm_severity)
         existing.llm_reasoning_summary = llm_reasoning_summary
         existing.fallback_mode = fallback_mode
         await session.commit()
@@ -1742,9 +1922,10 @@ async def reserve_alert_delivery(
         user_id=user_id,
         status="pending",
         trigger_reason=trigger_reason,
+        trigger_source=trigger_source,
         numeric_context=numeric_context,
         thresholds_used=thresholds_used,
-        llm_severity=llm_severity,
+        llm_severity=normalize_stored_severity(llm_severity),
         llm_reasoning_summary=llm_reasoning_summary,
         fallback_mode=fallback_mode,
     )

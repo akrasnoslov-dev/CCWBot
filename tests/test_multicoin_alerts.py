@@ -586,9 +586,7 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         alerts.AlertRecipient(chat_id=2001, user_id=1),
         alerts.AlertRecipient(chat_id=2002, user_id=2),
     ]
-    create_ai_analysis = AsyncMock(
-        return_value=({"plain_text": "BTC movement alert\n\nNot financial advice."}, 456)
-    )
+    save_product_analysis = AsyncMock(return_value=456)
     deliver_alert = AsyncMock(return_value=True)
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
@@ -613,33 +611,27 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         "_get_or_create_price_movement_market_event",
         AsyncMock(return_value=(123, "btc:event")),
     )
-    monkeypatch.setattr(alerts, "_get_or_create_event_ai_analysis", create_ai_analysis)
+    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    create_ai_analysis.assert_awaited_once()
-    deliver_alert.assert_awaited_once()
-    assert deliver_alert.await_args.kwargs["recipients"] == recipients
+    save_product_analysis.assert_awaited_once()
+    important_calls = [
+        call
+        for call in deliver_alert.await_args_list
+        if call.kwargs["event_type"] == "important_alert"
+    ]
+    assert len(important_calls) == 1
+    assert important_calls[0].kwargs["recipients"] == recipients
 
 
 @pytest.mark.asyncio
-async def test_automatic_price_check_disables_ai_after_rate_limit_for_cycle(monkeypatch):
+async def test_automatic_price_check_uses_product_analysis_for_each_event_group(monkeypatch):
     recipient = alerts.AlertRecipient(chat_id=2001, user_id=1)
-    create_ai_analysis = AsyncMock(
-        side_effect=[
-            (
-                {
-                    "plain_text": "BTC movement alert\n\nNot financial advice.",
-                    "rate_limited": True,
-                },
-                1,
-            ),
-            ({"plain_text": "BTC fallback alert\n\nNot financial advice."}, 2),
-        ]
-    )
+    save_product_analysis = AsyncMock(side_effect=[1, 2])
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
@@ -666,13 +658,11 @@ async def test_automatic_price_check_disables_ai_after_rate_limit_for_cycle(monk
         "_get_or_create_price_movement_market_event",
         AsyncMock(side_effect=[(123, "btc:event:1"), (124, "btc:event:2")]),
     )
-    monkeypatch.setattr(alerts, "_get_or_create_event_ai_analysis", create_ai_analysis)
+    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", AsyncMock(return_value=True))
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    assert create_ai_analysis.await_count == 2
-    assert create_ai_analysis.await_args_list[0].kwargs["force_fallback"] is False
-    assert create_ai_analysis.await_args_list[1].kwargs["force_fallback"] is True
+    assert save_product_analysis.await_count == 2
