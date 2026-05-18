@@ -134,6 +134,16 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, comment="Whether the user may receive automatic bot messages."
     )
+    bot_blocked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether Telegram reported that this user blocked the bot.",
+    )
+    blocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When Telegram first reported that this user blocked the bot.",
+    )
     alert_frequency_seconds: Mapped[int] = mapped_column(
         Integer, default=14400, comment="User's selected minimum interval between alert deliveries."
     )
@@ -779,6 +789,7 @@ async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
         select(User)
         .where(User.telegram_chat_id.isnot(None))
         .where(User.is_active.is_(True))
+        .where(User.bot_blocked.is_(False))
         .order_by(User.id.asc())
     )
     return list(result.all())
@@ -794,9 +805,94 @@ async def get_active_users_with_alert_preferences(session: AsyncSession) -> list
         )
         .where(User.telegram_chat_id.isnot(None))
         .where(User.is_active.is_(True))
+        .where(User.bot_blocked.is_(False))
         .order_by(User.id.asc())
     )
     return list(result.all())
+
+
+async def get_user_by_telegram_chat_id(session: AsyncSession, telegram_chat_id: int) -> User | None:
+    """Return one user row for a Telegram chat id, if known."""
+    return await session.scalar(
+        select(User)
+        .where(User.telegram_chat_id == telegram_chat_id)
+        .order_by(User.id.asc())
+        .limit(1)
+    )
+
+
+async def is_telegram_chat_delivery_enabled(session: AsyncSession, telegram_chat_id: int) -> bool:
+    """Return whether a known chat can receive automatic bot messages."""
+    user = await get_user_by_telegram_chat_id(session, telegram_chat_id)
+    if user is None:
+        return True
+    return bool(user.is_active and not user.bot_blocked)
+
+
+async def mark_user_bot_blocked(
+    session: AsyncSession,
+    *,
+    user_id: int | None = None,
+    telegram_chat_id: int | None = None,
+    blocked_at: datetime | None = None,
+) -> tuple[User | None, bool]:
+    """Mark a user inactive after Telegram reports that the bot was blocked."""
+    user = None
+    if user_id is not None:
+        user = await session.get(User, user_id)
+    if user is None and telegram_chat_id is not None:
+        user = await get_user_by_telegram_chat_id(session, telegram_chat_id)
+    if user is None:
+        return None, False
+
+    changed = False
+    if user.is_active:
+        user.is_active = False
+        changed = True
+    if not user.bot_blocked:
+        user.bot_blocked = True
+        changed = True
+    if user.blocked_at is None:
+        user.blocked_at = blocked_at or utc_now()
+        changed = True
+    if changed:
+        user.updated_at = utc_now()
+        await session.commit()
+        await session.refresh(user)
+    return user, changed
+
+
+async def backfill_blocked_users_from_alerts(session: AsyncSession) -> tuple[int, int]:
+    """Disable users with historical failed Telegram blocked-user delivery records."""
+    result = await session.execute(
+        select(Alert.user_id, Alert.sent_to_chat_id, Alert.created_at)
+        .where(Alert.error_message.isnot(None))
+        .where(func.lower(Alert.error_message).contains("bot was blocked by the user"))
+        .order_by(Alert.created_at.asc(), Alert.id.asc())
+    )
+    rows = list(result.all())
+    updated_user_ids: set[int] = set()
+    seen_user_ids: set[int] = set()
+
+    for user_id, sent_to_chat_id, created_at in rows:
+        user = None
+        if user_id is not None:
+            user = await session.get(User, user_id)
+        if user is None and sent_to_chat_id is not None:
+            user = await get_user_by_telegram_chat_id(session, int(sent_to_chat_id))
+        if user is None or user.id in seen_user_ids:
+            continue
+        seen_user_ids.add(user.id)
+        _, changed = await mark_user_bot_blocked(
+            session,
+            user_id=user.id,
+            telegram_chat_id=int(sent_to_chat_id) if sent_to_chat_id is not None else None,
+            blocked_at=created_at,
+        )
+        if changed:
+            updated_user_ids.add(user.id)
+
+    return len(rows), len(updated_user_ids)
 
 
 async def ensure_default_coin_subscriptions(
