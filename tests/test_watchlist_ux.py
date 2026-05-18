@@ -13,6 +13,7 @@ from bot.db.database import (
     ensure_default_coin_subscriptions,
     grant_user_premium,
 )
+from bot.handlers import start
 from bot.keyboards import build_price_keyboard
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
@@ -67,7 +68,7 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert ("eth", False, False) in rows
 
 
-def test_user_settings_free_user_only_shows_btc_and_frequency():
+def test_user_settings_free_user_shows_btc_frequency_and_upgrade_path():
     text, rows = build_user_settings_message(
         make_user(frequency=3600),
         make_subscriptions(),
@@ -77,8 +78,36 @@ def test_user_settings_free_user_only_shows_btc_and_frequency():
     assert text.startswith("Alert settings")
     assert "Subscribed coins: BTC" in text
     assert "Alert frequency: Every 4 hours" in text
+    assert "Plan: Free" in text
+    assert "Upgrade: /subscribe" in text
     assert [symbol for symbol, _, _ in rows] == ["btc"]
-    assert "Premium" not in text
+
+
+def test_user_settings_premium_user_shows_plan_and_management_path():
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    text, rows = build_user_settings_message(
+        make_user(active_until=now + timedelta(days=1), frequency=3600),
+        make_subscriptions(eth=True, sol=True, ton=True),
+        now,
+    )
+
+    assert "Subscribed coins: BTC, ETH, SOL, TON" in text
+    assert "Alert frequency: Every 1 hour" in text
+    assert "Plan: Premium" in text
+    assert "Paid access until: 2026-05-12" in text
+    assert "Manage subscription: /myplan" in text
+    assert [symbol for symbol, _, _ in rows] == [
+        "btc",
+        "eth",
+        "sol",
+        "xrp",
+        "bnb",
+        "doge",
+        "ada",
+        "ton",
+        "link",
+        "trx",
+    ]
 
 
 def test_watchlist_free_user_can_have_btc_disabled_in_keyboard_state():
@@ -210,8 +239,23 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
 
     default_commands = [command.command for command in calls[0][0]]
     admin_commands = [command.command for command in calls[1][0]]
-    assert default_commands == ["start", "price", "settings", "status"]
-    assert admin_commands == ["start", "price", "settings", "status", "admin"]
+    assert default_commands == [
+        "start",
+        "price",
+        "settings",
+        "myplan",
+        "subscribe",
+        "status",
+    ]
+    assert admin_commands == [
+        "start",
+        "price",
+        "settings",
+        "myplan",
+        "subscribe",
+        "status",
+        "admin",
+    ]
     assert "watchlist" not in default_commands
     assert "watchlist" not in admin_commands
     assert "alerts" not in default_commands
@@ -225,6 +269,44 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "error_logging_on" not in admin_commands
     assert "error_logging_off" not in admin_commands
     assert "error_logging_status" not in admin_commands
+
+
+@pytest.mark.asyncio
+async def test_start_text_mentions_subscription_commands_for_regular_users(monkeypatch):
+    message = FakeMessage()
+    update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=1001))
+    context = SimpleNamespace(user_data={})
+
+    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.handlers.is_admin_update", AsyncFalse())
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
+
+    await start(update, context)
+
+    text = message.replies[0][0]
+    assert "/price - check crypto prices" in text
+    assert "/settings - manage alert settings" in text
+    assert "/myplan - show subscription plan" in text
+    assert "/subscribe - subscribe with Telegram Stars" in text
+    assert "/status - show bot status" in text
+    assert "/admin" not in text
+
+
+@pytest.mark.asyncio
+async def test_start_text_mentions_admin_command_for_admins(monkeypatch):
+    message = FakeMessage()
+    update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=1001))
+    context = SimpleNamespace(user_data={})
+
+    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.handlers.is_admin_update", AsyncTrue())
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncTrue())
+
+    await start(update, context)
+
+    text = message.replies[0][0]
+    assert "/subscribe - subscribe with Telegram Stars" in text
+    assert "/admin - open admin menu" in text
 
 
 @pytest.mark.asyncio

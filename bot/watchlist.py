@@ -206,7 +206,8 @@ def build_user_settings_message(
     now: datetime | None = None,
 ) -> tuple[str, list]:
     now = now or datetime.now(timezone.utc)
-    premium_active = is_user_premium_active(get_user_plan(user), now)
+    plan = get_user_plan(user)
+    premium_active = is_user_premium_active(plan, now)
     enabled_by_symbol = _subscription_by_symbol(subscriptions)
     symbols = SUPPORTED_SYMBOLS if premium_active else ("btc",)
 
@@ -225,7 +226,22 @@ def build_user_settings_message(
         "",
         f"Subscribed coins: {subscribed_text}",
         f"Alert frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+        "",
     ]
+    if premium_active:
+        lines.extend(
+            [
+                "Plan: Premium",
+                f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}",
+                "Manage subscription: /myplan",
+            ]
+        )
+    else:
+        lines.append("Plan: Free")
+        active_until = getattr(plan, "active_until", None) if plan is not None else None
+        if active_until is not None:
+            lines.append(f"Premium expired on: {_format_date(active_until)}")
+        lines.append("Upgrade: /subscribe")
     return "\n".join(lines), rows
 
 
