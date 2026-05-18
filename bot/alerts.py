@@ -44,6 +44,7 @@ from bot.db.database import (
     get_price_state,
     get_reference_price_snapshot,
     make_news_key,
+    mark_user_bot_blocked,
     reserve_alert_delivery,
     save_alert,
     save_event_ai_analysis,
@@ -75,6 +76,7 @@ from bot.services.price_service import (
 )
 from bot.settings import get_db_alert_settings, get_state_alert_settings
 from bot.storage import load_state, save_state
+from bot.telegram_errors import is_bot_blocked_error
 
 logger = logging.getLogger(__name__)
 
@@ -992,6 +994,8 @@ async def _send_alert_to_recipient(
                     parse_mode=ParseMode.HTML,
                 )
             except Exception as error:
+                if is_bot_blocked_error(error):
+                    raise
                 log(f"HTML alert send failed; falling back to plain text: {error}")
                 await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
         else:
@@ -999,6 +1003,27 @@ async def _send_alert_to_recipient(
     except Exception as error:
         return False, str(error)
     return True, None
+
+
+async def _disable_recipient_if_bot_blocked(
+    recipient: AlertRecipient,
+    error_message: str | None,
+) -> None:
+    if not is_bot_blocked_error(error_message):
+        return
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return
+    async with DB_SESSION_LOCAL() as session:
+        user, _ = await mark_user_bot_blocked(
+            session,
+            user_id=recipient.user_id,
+            telegram_chat_id=recipient.chat_id,
+        )
+        if user is not None:
+            log(
+                f"User {user.telegram_user_id} / chat_id {recipient.chat_id} disabled because "
+                "Telegram returned bot blocked error."
+            )
 
 
 def _sanitize_alert_payload(alert_payload: dict) -> dict:
@@ -1180,6 +1205,7 @@ async def _deliver_market_event_alert(
             delivered = True
             sent_count += 1
         else:
+            await _disable_recipient_if_bot_blocked(recipient, error_message)
             log(f"Alert delivery failed for chat {recipient.chat_id}: {error_message}")
     log(
         f"{normalized_symbol.upper()} alert sent to {sent_count}/{len(recipients)} "
