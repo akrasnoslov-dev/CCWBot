@@ -42,6 +42,8 @@ COLUMN_COMMENTS = {
         "first_name": "Latest Telegram first name seen for the user.",
         "role": "Bot authorization role such as user or admin.",
         "is_active": "Whether the user may receive automatic bot messages.",
+        "bot_blocked": "Whether Telegram reported that this user blocked the bot.",
+        "blocked_at": "When Telegram first reported that this user blocked the bot.",
         "alert_frequency_seconds": "User's selected minimum interval between alert deliveries.",
         "created_at": "When this user row was created.",
         "updated_at": "When this user row was last updated.",

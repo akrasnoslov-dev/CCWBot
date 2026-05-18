@@ -3,7 +3,11 @@ import time
 from telegram.ext import ContextTypes
 
 from bot.config import TELEGRAM_CHAT_ID
-from bot.db.database import save_alert
+from bot.db.database import (
+    is_telegram_chat_delivery_enabled,
+    mark_user_bot_blocked,
+    save_alert,
+)
 from bot.news import fetch_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
@@ -13,6 +17,7 @@ from bot.services.ai_agent_groq import (
     sanitize_alert_message,
 )
 from bot.services.price_service import get_btc_market_data
+from bot.telegram_errors import is_bot_blocked_error
 
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
@@ -118,6 +123,15 @@ async def send_weekly_report_message(target) -> None:
 
 async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
     try:
+        chat_id = int(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID is not None else None
+        if chat_id is None:
+            log("Scheduled weekly report skipped because TELEGRAM_CHAT_ID is not configured.")
+            return
+        if DB_ENABLED and DB_SESSION_LOCAL:
+            async with DB_SESSION_LOCAL() as session:
+                if not await is_telegram_chat_delivery_enabled(session, chat_id):
+                    log(f"Scheduled weekly report skipped for inactive chat_id {chat_id}.")
+                    return
         price, change_24h, change_7d = await get_btc_market_data()
         news_items = await fetch_news_context(limit=6, prefer_unseen=True)
         report = await create_weekly_report(price, change_24h, change_7d, news_items)
@@ -132,7 +146,20 @@ async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
                 "Not financial advice."
             )
         message = sanitize_alert_message(str(message))
-        await context.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        await context.application.bot.send_message(chat_id=chat_id, text=message)
         await remember_news_context(news_items)
     except Exception as error:
+        if is_bot_blocked_error(error) and DB_ENABLED and DB_SESSION_LOCAL:
+            async with DB_SESSION_LOCAL() as session:
+                chat_id = int(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID is not None else None
+                user, _ = await mark_user_bot_blocked(
+                    session,
+                    telegram_chat_id=chat_id,
+                )
+                if user is not None:
+                    log(
+                        f"User {user.telegram_user_id} / chat_id {user.telegram_chat_id} "
+                        "disabled because "
+                        "Telegram returned bot blocked error."
+                    )
         log(f"Scheduled weekly report failed: {error}")
