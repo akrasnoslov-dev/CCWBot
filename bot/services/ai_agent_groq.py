@@ -556,7 +556,16 @@ def _normalize_alert_structured_fields(structured: dict) -> dict | None:
         return None
 
     risk_level_input = str(structured.get("risk_level", "")).strip().lower()
-    risk_level_by_value = {"low": "Low", "medium": "Medium", "high": "High"}
+    risk_level_by_value = {
+        "info": "low",
+        "watch": "medium",
+        "moderate": "medium",
+        "critical": "extreme",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "extreme": "extreme",
+    }
     risk_level = risk_level_by_value.get(risk_level_input)
     if risk_level is None:
         return None
@@ -706,14 +715,14 @@ All string values must be valid JSON strings.
 
 Required JSON fields:
 - news_relevance: "relevant", "partly_relevant", "not_relevant", or "unknown"
-- risk_level: "Low", "Medium", or "High"
+- risk_level: "low", "medium", "high", or "extreme"
 - risk_reason: one short specific sentence
 - context_sentence: one short cautious sentence
 - possible_action: one short cautious sentence
 - related_news_ids: an array with up to 2 numeric IDs from the News list
 
 Do not give direct buy/sell/short advice or guaranteed-outcome language.
-High should be rare.
+High should be rare. Extreme should be used only for clearly abnormal market shocks.
 News-only alerts should be Low unless the news is clearly material.
 Never use Medium only because news may affect sentiment.
 If the user-window move is near 0 and the 24h trend is mild, use Low or not_relevant.

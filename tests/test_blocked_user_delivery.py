@@ -13,6 +13,7 @@ from bot.db.database import (
     backfill_blocked_users_from_alerts,
     ensure_default_coin_subscriptions,
     get_or_create_market_event,
+    get_user_symbol_alert_state,
     save_alert,
 )
 
@@ -97,6 +98,43 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
 
 
 @pytest.mark.asyncio
+async def test_chat_not_found_disables_user_and_keeps_failed_alert(monkeypatch):
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            raise RuntimeError("Bad Request: chat not found")
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:chat-not-found-live")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC alert\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            event_type="market_update",
+        )
+
+        assert delivered is False
+        async with SessionLocal() as session:
+            reloaded = await session.get(User, user.id)
+            alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
+            assert reloaded.is_active is False
+            assert reloaded.bot_blocked is True
+            assert alert.status == "failed"
+            assert "chat not found" in alert.error_message.lower()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_blocked_user_is_skipped_in_future_alert_delivery(monkeypatch):
     sent_messages = []
 
@@ -162,6 +200,75 @@ async def test_transient_delivery_error_does_not_disable_user(monkeypatch):
             assert reloaded.blocked_at is None
             assert alert.status == "failed"
             assert alert.error_message == "Timed out while sending Telegram message"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_market_update_does_not_persist_last_market_update_time(monkeypatch):
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            raise RuntimeError("Timed out while sending Telegram message")
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:failed-market-update")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC update\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            event_type="market_update",
+            numeric_context='{"notification_direction":"neutral"}',
+        )
+
+        assert delivered is False
+        async with SessionLocal() as session:
+            state = await get_user_symbol_alert_state(session, user_id=user.id, symbol="btc")
+            assert state is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_successful_market_update_persists_last_market_update_time(monkeypatch):
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            return None
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:sent-market-update")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC update\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            event_type="market_update",
+            numeric_context='{"notification_direction":"neutral"}',
+        )
+
+        assert delivered is True
+        async with SessionLocal() as session:
+            state = await get_user_symbol_alert_state(session, user_id=user.id, symbol="btc")
+            assert state is not None
+            assert state.last_market_update_time is not None
     finally:
         await engine.dispose()
 
