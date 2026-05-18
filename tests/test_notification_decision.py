@@ -1,0 +1,519 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from bot import alerts
+from bot.alerting.notification_decision import (
+    NotificationSeverity,
+    NotificationType,
+    SignalContext,
+    TriggerSource,
+    decide_notification,
+    notification_icon,
+)
+from bot.db.database import (
+    get_user_symbol_alert_state,
+    init_db,
+    normalize_stored_severity,
+    upsert_user_symbol_alert_state,
+)
+
+
+def _context(**overrides):
+    data = {
+        "symbol": "btc",
+        "current_price": 78200.0,
+        "latest_5m_change_percent": 0.1,
+        "change_since_last_market_update_percent": 0.2,
+        "user_period_change_percent": 0.2,
+        "one_hour_change_percent": 0.2,
+        "four_hour_change_percent": 0.5,
+        "twenty_four_hour_change_percent": -0.8,
+        "user_alert_frequency_seconds": 3600,
+        "scheduled_market_update_due": False,
+        "fast_movement_threshold_percent": 1.0,
+        "cumulative_movement_threshold_percent": 1.0,
+        "extreme_movement_threshold_percent": 5.0,
+    }
+    data.update(overrides)
+    return SignalContext(**data)
+
+
+def test_market_update_is_sent_on_frequency_when_market_is_calm():
+    decision = decide_notification(_context(scheduled_market_update_due=True))
+
+    assert decision.notification_type is NotificationType.MARKET_UPDATE
+    assert decision.severity is NotificationSeverity.LOW
+    assert decision.should_send is True
+    assert decision.trigger_source is TriggerSource.SCHEDULED_MARKET_UPDATE
+
+
+def test_fast_5m_movement_creates_important_alert():
+    decision = decide_notification(_context(latest_5m_change_percent=-1.25))
+
+    assert decision.notification_type is NotificationType.IMPORTANT_ALERT
+    assert decision.trigger_source is TriggerSource.FAST_MOVEMENT
+
+
+def test_extreme_5m_movement_creates_critical_alert():
+    decision = decide_notification(_context(latest_5m_change_percent=-5.8))
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.severity is NotificationSeverity.EXTREME
+
+
+def test_gradual_decline_creates_important_alert_without_fast_move():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=-0.3,
+            change_since_last_market_update_percent=-2.1,
+            user_period_change_percent=-2.1,
+            twenty_four_hour_change_percent=-3.4,
+        )
+    )
+
+    assert decision.notification_type is NotificationType.IMPORTANT_ALERT
+    assert decision.trigger_source in {
+        TriggerSource.CUMULATIVE_MOVEMENT,
+        TriggerSource.COMBINED_SIGNAL,
+    }
+
+
+def test_important_alert_suppression_prevents_repeated_same_direction_alert():
+    decision = decide_notification(
+        _context(
+            change_since_last_market_update_percent=-1.4,
+            user_period_change_percent=-1.4,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=20),
+            last_notification_type="important_alert",
+            last_notification_severity="medium",
+            last_notification_direction="down",
+            suppression_context={"previous_cumulative_movement_percent": -1.3},
+        )
+    )
+
+    assert decision.should_send is False
+    assert decision.should_suppress is True
+
+
+def test_severity_escalation_bypasses_suppression():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=-3.0,
+            change_since_last_market_update_percent=-3.0,
+            user_period_change_percent=-3.0,
+            twenty_four_hour_change_percent=-4.0,
+            relevant_news_items=[{"title": "Bitcoin ETF outflow accelerates"}],
+            news_relevance_score="relevant",
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=20),
+            last_notification_type="important_alert",
+            last_notification_severity="medium",
+            last_notification_direction="down",
+            suppression_context={"previous_cumulative_movement_percent": -1.3},
+        )
+    )
+
+    assert decision.should_send is True
+    assert decision.severity in {NotificationSeverity.HIGH, NotificationSeverity.EXTREME}
+
+
+def test_24h_trend_alone_does_not_spam_unscheduled_alerts():
+    decision = decide_notification(_context(twenty_four_hour_change_percent=-6.0))
+
+    assert decision.notification_type is NotificationType.NO_ALERT
+    assert decision.should_send is False
+
+
+def test_relevant_news_without_price_reaction_is_not_high():
+    decision = decide_notification(
+        _context(
+            relevant_news_items=[{"title": "Bitcoin ETF flow update"}],
+            news_relevance_score="relevant",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.IMPORTANT_ALERT
+    assert decision.severity in {NotificationSeverity.LOW, NotificationSeverity.MEDIUM}
+
+
+def test_relevant_news_with_price_movement_becomes_important_or_critical():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=-2.5,
+            change_since_last_market_update_percent=-2.8,
+            relevant_news_items=[{"title": "Bitcoin liquidation cascade hits market"}],
+            news_relevance_score="very_relevant",
+        )
+    )
+
+    assert decision.notification_type in {
+        NotificationType.IMPORTANT_ALERT,
+        NotificationType.CRITICAL_ALERT,
+    }
+    assert decision.trigger_source in {TriggerSource.COMBINED_SIGNAL, TriggerSource.NEWS}
+
+
+def test_negative_threshold_wording_uses_absolute_values():
+    decision = decide_notification(_context(latest_5m_change_percent=-1.25))
+
+    assert "moved down by 1.25%" in decision.reasoning_summary
+    assert "1.0% movement threshold" in decision.reasoning_summary
+
+
+def test_market_update_is_not_blocked_by_important_alert_cooldown():
+    decision = decide_notification(
+        _context(
+            scheduled_market_update_due=True,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=20),
+            last_notification_type="important_alert",
+            last_notification_severity="medium",
+            last_notification_direction="down",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.MARKET_UPDATE
+    assert decision.should_send is True
+
+
+def test_market_update_calm_period_weak_24h_is_medium_not_high():
+    decision = decide_notification(
+        _context(
+            scheduled_market_update_due=True,
+            user_period_change_percent=0.17,
+            change_since_last_market_update_percent=0.17,
+            twenty_four_hour_change_percent=-5.87,
+        )
+    )
+
+    assert decision.notification_type is NotificationType.MARKET_UPDATE
+    assert decision.severity is NotificationSeverity.MEDIUM
+
+
+def test_market_update_calm_period_mild_24h_is_low():
+    decision = decide_notification(
+        _context(
+            scheduled_market_update_due=True,
+            user_period_change_percent=-0.25,
+            change_since_last_market_update_percent=-0.25,
+            twenty_four_hour_change_percent=-2.48,
+        )
+    )
+
+    assert decision.notification_type is NotificationType.MARKET_UPDATE
+    assert decision.severity is NotificationSeverity.LOW
+
+
+def test_market_update_meaningful_period_same_direction_can_be_high():
+    decision = decide_notification(
+        _context(
+            scheduled_market_update_due=True,
+            user_period_change_percent=3.11,
+            change_since_last_market_update_percent=3.11,
+            twenty_four_hour_change_percent=3.31,
+            fast_movement_threshold_percent=5.0,
+            cumulative_movement_threshold_percent=5.0,
+            extreme_movement_threshold_percent=10.0,
+        )
+    )
+
+    assert decision.notification_type is NotificationType.MARKET_UPDATE
+    assert decision.severity in {NotificationSeverity.MEDIUM, NotificationSeverity.HIGH}
+
+
+def test_icons_match_notification_type_and_direction():
+    assert (
+        notification_icon(
+            NotificationType.IMPORTANT_ALERT,
+            "down",
+            NotificationSeverity.MEDIUM,
+            TriggerSource.FAST_MOVEMENT,
+        )
+        == "📉"
+    )
+    assert (
+        notification_icon(
+            NotificationType.IMPORTANT_ALERT,
+            "up",
+            NotificationSeverity.MEDIUM,
+            TriggerSource.FAST_MOVEMENT,
+        )
+        == "📈"
+    )
+    assert (
+        notification_icon(
+            NotificationType.CRITICAL_ALERT,
+            "down",
+            NotificationSeverity.EXTREME,
+            TriggerSource.FAST_MOVEMENT,
+        )
+        == "🚨"
+    )
+
+
+def test_market_update_payload_is_per_symbol_not_grouped():
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            user_period_change_percent=0.33,
+            twenty_four_hour_change_percent=-1.55,
+            news_relevance_score="none",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=alerts.NotificationType.MARKET_UPDATE,
+            severity=alerts.NotificationSeverity.LOW,
+            direction=alerts.NotificationDirection.NEUTRAL,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=alerts.TriggerSource.SCHEDULED_MARKET_UPDATE,
+            reasoning_summary="No significant short-term movement detected.",
+            possible_action="No urgent action needed. Continue monitoring.",
+            icon="📊",
+        ),
+    )
+
+    message = payload["plain_text"]
+    assert message.startswith("📊 Market Update - BTC")
+    assert "ETH:" not in message
+
+
+def test_calm_market_update_does_not_claim_meaningful_movement():
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            user_period_change_percent=0.33,
+            twenty_four_hour_change_percent=-1.0,
+            news_relevance_score="none",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=alerts.NotificationType.MARKET_UPDATE,
+            severity=alerts.NotificationSeverity.LOW,
+            direction=alerts.NotificationDirection.NEUTRAL,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=alerts.TriggerSource.SCHEDULED_MARKET_UPDATE,
+            reasoning_summary="No significant short-term movement detected.",
+            possible_action="No urgent action needed. Continue monitoring.",
+            icon="📊",
+        ),
+    )
+
+    assert "meaningful movement" not in payload["plain_text"]
+    assert "No significant short-term movement detected." in payload["plain_text"]
+
+
+def test_conflicting_period_and_24h_direction_uses_mixed_timeframe_wording():
+    summary = alerts._summary_sentence(
+        "DOGE",
+        alerts.NotificationDirection.DOWN,
+        alerts.NotificationType.MARKET_UPDATE,
+        period_change_percent=0.17,
+        change_24h=-5.87,
+        period_label="1h",
+    )
+
+    assert summary == "DOGE is stable over the last 1h, but remains weak on the 24h trend."
+    assert "is weakening" not in summary
+
+
+def test_market_update_slightly_lower_with_mild_negative_24h_wording():
+    summary = alerts._summary_sentence(
+        "BTC",
+        alerts.NotificationDirection.DOWN,
+        alerts.NotificationType.MARKET_UPDATE,
+        period_change_percent=-0.55,
+        change_24h=-2.17,
+        period_label="selected period",
+    )
+
+    assert summary == (
+        "BTC is slightly lower over the selected period, while the 24h trend "
+        "remains mildly negative."
+    )
+
+
+def test_market_update_recovery_but_negative_24h_wording():
+    summary = alerts._summary_sentence(
+        "ETH",
+        alerts.NotificationDirection.DOWN,
+        alerts.NotificationType.MARKET_UPDATE,
+        period_change_percent=0.46,
+        change_24h=-2.66,
+        period_label="selected period",
+    )
+
+    assert summary == (
+        "ETH recovered slightly over the selected period, but the 24h trend "
+        "remains mildly negative."
+    )
+
+
+def test_market_update_meaningful_period_and_positive_24h_wording():
+    summary = alerts._summary_sentence(
+        "TON",
+        alerts.NotificationDirection.UP,
+        alerts.NotificationType.MARKET_UPDATE,
+        period_change_percent=3.11,
+        change_24h=3.31,
+        period_label="selected period",
+    )
+
+    assert summary == (
+        "TON strengthened meaningfully over the selected period and remains "
+        "positive on the 24h trend."
+    )
+
+
+def test_market_update_calm_period_and_mild_negative_24h_wording():
+    summary = alerts._summary_sentence(
+        "BNB",
+        alerts.NotificationDirection.DOWN,
+        alerts.NotificationType.MARKET_UPDATE,
+        period_change_percent=-0.25,
+        change_24h=-2.48,
+        period_label="selected period",
+    )
+
+    assert summary == (
+        "BNB is stable over the last selected period, but remains mildly negative "
+        "on the 24h trend."
+    )
+
+
+def test_weak_news_is_hidden_from_user_message():
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            user_period_change_percent=0.2,
+            twenty_four_hour_change_percent=-0.5,
+            relevant_news_items=[{"title": "Weak related headline", "source": "Example"}],
+            news_relevance_score="weak",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=alerts.NotificationType.MARKET_UPDATE,
+            severity=alerts.NotificationSeverity.LOW,
+            direction=alerts.NotificationDirection.NEUTRAL,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=alerts.TriggerSource.SCHEDULED_MARKET_UPDATE,
+            reasoning_summary="The market is calm over the selected period.",
+            possible_action="No urgent action needed. Continue monitoring.",
+            icon="📊",
+        ),
+    )
+
+    assert "Weak related headline" not in payload["plain_text"]
+    assert "No major relevant news found." in payload["plain_text"]
+
+
+def test_medium_or_high_news_is_shown_to_user():
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            user_period_change_percent=1.2,
+            twenty_four_hour_change_percent=-2.0,
+            relevant_news_items=[{"title": "Material BTC headline", "source": "Example"}],
+            news_relevance_score="relevant",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=alerts.NotificationType.IMPORTANT_ALERT,
+            severity=alerts.NotificationSeverity.MEDIUM,
+            direction=alerts.NotificationDirection.DOWN,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=alerts.TriggerSource.NEWS,
+            reasoning_summary="Relevant market news appeared.",
+            possible_action="Monitor whether price starts reacting.",
+            icon="📰",
+        ),
+    )
+
+    assert "Material BTC headline" in payload["plain_text"]
+
+
+def test_llm_severity_is_normalized_to_allowed_values():
+    assert normalize_stored_severity("info") == "low"
+    assert normalize_stored_severity("watch") == "medium"
+    assert normalize_stored_severity("moderate") == "medium"
+    assert normalize_stored_severity("critical") == "extreme"
+
+
+def test_new_user_facing_alert_types_are_limited_to_product_model():
+    assert alerts.PRODUCT_ALERT_TYPES == {"market_update", "important_alert", "critical_alert"}
+
+
+def test_recent_important_alert_suppresses_market_update_same_symbol():
+    recent = SimpleNamespace(
+        alert_type="important_alert",
+        status="sent",
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+    )
+
+    assert alerts._should_skip_market_update_after_recent_event_alert(
+        notification_type=alerts.NotificationType.MARKET_UPDATE,
+        recent_event_alert=recent,
+        now=datetime.now(timezone.utc),
+    )
+
+
+def test_recent_critical_alert_suppresses_market_update_same_symbol():
+    recent = SimpleNamespace(
+        alert_type="critical_alert",
+        status="sent",
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+    )
+
+    assert alerts._should_skip_market_update_after_recent_event_alert(
+        notification_type=alerts.NotificationType.MARKET_UPDATE,
+        recent_event_alert=recent,
+        now=datetime.now(timezone.utc),
+    )
+
+
+def test_failed_important_alert_does_not_suppress_market_update():
+    recent = SimpleNamespace(
+        alert_type="important_alert",
+        status="failed",
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+    )
+
+    assert not alerts._should_skip_market_update_after_recent_event_alert(
+        notification_type=alerts.NotificationType.MARKET_UPDATE,
+        recent_event_alert=recent,
+        now=datetime.now(timezone.utc),
+    )
+
+
+@pytest.mark.asyncio
+async def test_last_market_update_time_persists_after_restart(tmp_path):
+    db_path = tmp_path / "market_update.sqlite"
+    engine, session_local = await init_db(f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    update_time = datetime.now(timezone.utc)
+    async with session_local() as session:
+        await upsert_user_symbol_alert_state(
+            session,
+            user_id=1,
+            symbol="btc",
+            last_market_update_time=update_time,
+        )
+
+    async with session_local() as restarted_session:
+        row = await get_user_symbol_alert_state(
+            restarted_session,
+            user_id=1,
+            symbol="btc",
+        )
+
+    assert row is not None
+    assert row.last_market_update_time is not None
+    await engine.dispose()
