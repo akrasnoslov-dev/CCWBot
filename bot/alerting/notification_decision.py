@@ -122,13 +122,6 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     cumulative_trigger = cumulative_abs >= cumulative_threshold
     period_trigger = period_abs >= cumulative_threshold
     extreme_trigger = fast_abs >= extreme_threshold or cumulative_abs >= extreme_threshold
-    price_confirmed_for_news = (
-        fast_trigger
-        or cumulative_trigger
-        or period_trigger
-        or abs(_value(context.one_hour_change_percent)) >= cumulative_threshold
-        or trend_abs >= trend_confirmation_threshold
-    )
     combined_trigger = (
         (fast_trigger or cumulative_trigger or period_trigger)
         and (has_relevant_news or trend_abs >= trend_confirmation_threshold)
@@ -209,7 +202,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             _movement_reason("over the last update window", period, cumulative_threshold),
             "Watch whether the move continues or fades.",
         )
-    elif news_trigger and price_confirmed_for_news:
+    elif news_trigger:
         severity = (
             NotificationSeverity.MEDIUM
             if news_score == "very_relevant" or trend_abs >= 2.0

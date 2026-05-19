@@ -310,7 +310,7 @@ def test_medium_news_without_price_reaction_does_not_send_important_alert():
     assert decision.should_send is False
 
 
-def test_strong_non_shock_news_without_price_reaction_does_not_alert():
+def test_strong_non_shock_news_without_price_reaction_can_send_important_alert():
     decision = decide_notification(
         _context(
             relevant_news_items=[{"title": "Bitcoin ETF outflow accelerates"}],
@@ -326,8 +326,8 @@ def test_strong_non_shock_news_without_price_reaction_does_not_alert():
         )
     )
 
-    assert decision.notification_type is NotificationType.NO_ALERT
-    assert decision.should_send is False
+    assert decision.notification_type is NotificationType.IMPORTANT_ALERT
+    assert decision.trigger_source is TriggerSource.NEWS
 
 
 def test_strong_non_shock_news_with_flat_price_does_not_send_critical():
