@@ -116,18 +116,26 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     threshold = abs(context.fast_movement_threshold_percent)
     cumulative_threshold = abs(context.cumulative_movement_threshold_percent)
     extreme_threshold = abs(context.extreme_movement_threshold_percent)
+    trend_confirmation_threshold = max(cumulative_threshold * 1.5, 2.0)
 
     fast_trigger = fast_abs >= threshold
     cumulative_trigger = cumulative_abs >= cumulative_threshold
     period_trigger = period_abs >= cumulative_threshold
     extreme_trigger = fast_abs >= extreme_threshold or cumulative_abs >= extreme_threshold
+    price_confirmed_for_news = (
+        fast_trigger
+        or cumulative_trigger
+        or period_trigger
+        or abs(_value(context.one_hour_change_percent)) >= cumulative_threshold
+        or trend_abs >= trend_confirmation_threshold
+    )
     combined_trigger = (
         (fast_trigger or cumulative_trigger or period_trigger)
-        and (has_relevant_news or trend_abs >= max(cumulative_threshold * 1.5, 2.0))
+        and (has_relevant_news or trend_abs >= trend_confirmation_threshold)
     )
     news_trigger = has_strong_news
 
-    if _contains_market_shock(context.relevant_news_items):
+    if _contains_market_shock(context.news_candidates, context.relevant_news_items):
         decision = _decision(
             NotificationType.CRITICAL_ALERT,
             NotificationSeverity.EXTREME,
@@ -201,7 +209,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             _movement_reason("over the last update window", period, cumulative_threshold),
             "Watch whether the move continues or fades.",
         )
-    elif news_trigger:
+    elif news_trigger and price_confirmed_for_news:
         severity = (
             NotificationSeverity.MEDIUM
             if news_score == "very_relevant" or trend_abs >= 2.0
@@ -419,7 +427,8 @@ def _should_suppress_event_alert(
     if previous_severity and SEVERITY_RANK[decision.severity] > SEVERITY_RANK[previous_severity]:
         return False
     if context.suppression_context.get("new_highly_relevant_news") is True or (
-        _has_strong_news(context) and _contains_market_shock(context.relevant_news_items)
+        _has_strong_news(context)
+        and _contains_market_shock(context.news_candidates, context.relevant_news_items)
     ):
         return False
     if _price_extended_materially_from_last_alert(context, decision):
@@ -489,21 +498,66 @@ def _severity_from_string(value: str | None) -> NotificationSeverity | None:
         return None
 
 
-def _contains_market_shock(news_items: list[dict[str, Any]]) -> bool:
-    shock_terms = (
-        "exchange collapse",
-        "bankruptcy",
-        "major hack",
-        "exploit",
-        "liquidation cascade",
-        "systemic",
-        "halted withdrawals",
-    )
-    for item in news_items:
+def _contains_market_shock(
+    news_candidates: list[dict[str, Any]],
+    fallback_news_items: list[dict[str, Any]] | None = None,
+) -> bool:
+    candidates = news_candidates or fallback_news_items or []
+    for item in candidates:
+        relevance = str(item.get("relevance") or "").lower()
+        if relevance and relevance not in {"strong", "very_relevant", "high"}:
+            continue
         text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-        if any(term in text for term in shock_terms):
+        if _is_true_market_shock_text(text):
             return True
     return False
+
+
+def _is_true_market_shock_text(text: str) -> bool:
+    company_legal_terms = (
+        "sued",
+        "lawsuit",
+        "transfers from",
+        "pre-bankruptcy transfer",
+        "revenue",
+        "earnings",
+        "hosting business",
+        "treasury",
+    )
+    if any(term in text for term in company_legal_terms) and not any(
+        term in text
+        for term in (
+            "market-wide",
+            "systemic",
+            "withdrawal freeze",
+            "halted withdrawals",
+            "exchange collapse",
+            "stablecoin depeg",
+        )
+    ):
+        return False
+    systemic_patterns = (
+        ("exchange", "collapse"),
+        ("exchange", "insolven"),
+        ("withdrawal", "freeze"),
+        ("halted withdrawals",),
+        ("major hack",),
+        ("major exploit",),
+        ("stablecoin", "depeg"),
+        ("stablecoin", "collapse"),
+        ("liquidation cascade",),
+        ("forced selling",),
+        ("bitcoin network", "security"),
+        ("bitcoin", "double spend"),
+        ("custody", "failure"),
+        ("sec", "ban"),
+        ("fed", "shock"),
+        ("regulatory", "ban"),
+        ("etf", "rejected"),
+        ("etf", "approved"),
+        ("etf", "delayed"),
+    )
+    return any(all(term in text for term in pattern) for pattern in systemic_patterns)
 
 
 def _aware_utc(value: datetime) -> datetime:

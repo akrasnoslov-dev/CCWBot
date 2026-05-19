@@ -310,7 +310,7 @@ def test_medium_news_without_price_reaction_does_not_send_important_alert():
     assert decision.should_send is False
 
 
-def test_strong_news_without_price_reaction_can_send_important_alert():
+def test_strong_non_shock_news_without_price_reaction_does_not_alert():
     decision = decide_notification(
         _context(
             relevant_news_items=[{"title": "Bitcoin ETF outflow accelerates"}],
@@ -326,8 +326,111 @@ def test_strong_news_without_price_reaction_can_send_important_alert():
         )
     )
 
-    assert decision.notification_type is NotificationType.IMPORTANT_ALERT
-    assert decision.severity in {NotificationSeverity.LOW, NotificationSeverity.MEDIUM}
+    assert decision.notification_type is NotificationType.NO_ALERT
+    assert decision.should_send is False
+
+
+def test_strong_non_shock_news_with_flat_price_does_not_send_critical():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=-0.04,
+            change_since_last_market_update_percent=-0.02,
+            user_period_change_percent=-0.30,
+            one_hour_change_percent=-0.30,
+            twenty_four_hour_change_percent=0.03,
+            relevant_news_items=[
+                {
+                    "title": (
+                        "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers "
+                        "from Prime Trust"
+                    )
+                }
+            ],
+            news_candidates=[
+                {
+                    "title": (
+                        "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers "
+                        "from Prime Trust"
+                    ),
+                    "relevance": "weak",
+                }
+            ],
+            news_relevance_score="weak",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.NO_ALERT
+    assert decision.should_send is False
+    assert decision.reasoning_summary != "Major market-shock news was detected."
+
+
+def test_true_exchange_withdrawal_freeze_news_can_trigger_critical():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=0.1,
+            user_period_change_percent=0.1,
+            one_hour_change_percent=0.1,
+            twenty_four_hour_change_percent=0.2,
+            relevant_news_items=[
+                {"title": "Major crypto exchange halted withdrawals amid insolvency fears"}
+            ],
+            news_candidates=[
+                {
+                    "title": "Major crypto exchange halted withdrawals amid insolvency fears",
+                    "relevance": "strong",
+                }
+            ],
+            news_relevance_score="strong",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.trigger_source is TriggerSource.NEWS
+
+
+def test_major_hack_news_can_trigger_critical():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=0.1,
+            user_period_change_percent=0.1,
+            relevant_news_items=[
+                {"title": "Major hack hits large crypto bridge as exploit drains funds"}
+            ],
+            news_candidates=[
+                {
+                    "title": "Major hack hits large crypto bridge as exploit drains funds",
+                    "relevance": "strong",
+                }
+            ],
+            news_relevance_score="strong",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.trigger_source is TriggerSource.NEWS
+
+
+def test_major_btc_etf_rejection_news_can_trigger_critical():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=0.1,
+            user_period_change_percent=0.1,
+            relevant_news_items=[{"title": "SEC rejected spot Bitcoin ETF applications"}],
+            news_candidates=[
+                {
+                    "title": "SEC rejected spot Bitcoin ETF applications",
+                    "relevance": "strong",
+                }
+            ],
+            news_relevance_score="strong",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.trigger_source is TriggerSource.NEWS
 
 
 def test_relevant_news_with_price_movement_becomes_important_or_critical():
@@ -695,6 +798,54 @@ def test_important_no_news_uses_news_context_not_related_news():
     assert "5m change" not in message
 
 
+def test_runtime_swan_false_positive_message_shape_is_not_sharp_or_user_visible_news():
+    context = alerts.SignalContext(
+        symbol="btc",
+        current_price=76743.0,
+        latest_5m_change_percent=-0.0416,
+        change_since_last_market_update_percent=-0.0234,
+        user_period_change_percent=-0.30,
+        one_hour_change_percent=-0.2962,
+        twenty_four_hour_change_percent=0.0267,
+        news_candidates=[
+            {
+                "reason": "Weak BTC mention without clear market catalyst",
+                "relevance": "weak",
+                "title": (
+                    "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers "
+                    "from Prime Trust"
+                ),
+                "url": "https://example.test/swan",
+                "source": "Cointelegraph.com News",
+            }
+        ],
+        news_relevance_score="weak",
+        user_alert_frequency_seconds=3600,
+    )
+    decision = alerts.NotificationDecision(
+        notification_type=alerts.NotificationType.IMPORTANT_ALERT,
+        severity=alerts.NotificationSeverity.LOW,
+        direction=alerts.NotificationDirection.DOWN,
+        should_send=True,
+        should_suppress=False,
+        trigger_source=alerts.TriggerSource.NEWS,
+        reasoning_summary=(
+            "Relevant market news appeared without a strong confirmed price reaction."
+        ),
+        possible_action="Monitor whether price starts reacting during the next update window.",
+        icon="ðŸ“°",
+    )
+
+    message = alerts._build_product_notification_payload(context, decision)["plain_text"]
+
+    assert "5m change" not in message
+    assert "dropped sharply" not in message
+    assert "jumped sharply" not in message
+    assert "gaining momentum" not in message
+    assert "Swan Bitcoin sued" not in message
+    assert "Related news:" not in message
+
+
 def test_product_message_grammar_does_not_include_bad_prepositions():
     decision = decide_notification(
         _context(
@@ -720,6 +871,22 @@ def test_summary_does_not_gain_momentum_when_one_hour_move_is_negative():
 
     assert "gaining momentum" not in summary
     assert "moving down" in summary
+
+
+def test_news_triggered_flat_summary_does_not_claim_sharp_move():
+    summary = alerts._summary_sentence(
+        "BTC",
+        alerts.NotificationDirection.DOWN,
+        alerts.NotificationType.CRITICAL_ALERT,
+        trigger_source=alerts.TriggerSource.NEWS,
+        alert_move_percent=-0.30,
+        one_hour_change_percent=-0.30,
+    )
+
+    assert "dropped sharply" not in summary
+    assert "jumped sharply" not in summary
+    assert "gaining momentum" not in summary
+    assert summary == "BTC has relevant market news, while price remains mostly stable."
 
 
 def test_news_candidates_are_stored_in_numeric_context():

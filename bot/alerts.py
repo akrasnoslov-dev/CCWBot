@@ -190,6 +190,16 @@ GENERIC_NEWS_TERMS = (
     "speculation",
     "commentary",
 )
+COMPANY_BACKGROUND_NEWS_TERMS = (
+    "sued",
+    "lawsuit",
+    "pre-bankruptcy transfer",
+    "transfers from",
+    "revenue",
+    "earnings",
+    "hosting business",
+    "treasury",
+)
 
 
 def _stable_float(value: float | None, digits: int) -> float | None:
@@ -908,6 +918,8 @@ def _classify_btc_news_candidate(
     title = str(item.get("title") or "")
     summary = str(item.get("summary") or "")
     text = f" {title} {summary} ".lower()
+    if any(term in text for term in COMPANY_BACKGROUND_NEWS_TERMS):
+        return "weak"
     if _btc_is_secondary_context(text):
         return "weak"
     if raw_relevance == "market_wide" and not _btc_market_wide_is_material(text):
