@@ -190,6 +190,16 @@ GENERIC_NEWS_TERMS = (
     "speculation",
     "commentary",
 )
+COMPANY_BACKGROUND_NEWS_TERMS = (
+    "sued",
+    "lawsuit",
+    "pre-bankruptcy transfer",
+    "transfers from",
+    "revenue",
+    "earnings",
+    "hosting business",
+    "treasury",
+)
 
 
 def _stable_float(value: float | None, digits: int) -> float | None:
@@ -824,6 +834,7 @@ async def _save_product_notification_analysis(
             signal_context.twenty_four_hour_change_percent, 4
         ),
         "news": [make_news_key(item) for item in signal_context.relevant_news_items],
+        "news_candidates": signal_context.news_candidates,
     }
     input_hash = sha256(
         json.dumps(input_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -844,26 +855,165 @@ async def _save_product_notification_analysis(
 
 
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
-    direct_count = 0
-    market_wide_count = 0
-    material_count = 0
-    for item in news_items:
-        relevance = classify_news_relevance(symbol, item)
-        if is_material_news_item(item):
-            material_count += 1
-        if relevance == "direct":
-            direct_count += 1
-        elif relevance == "market_wide":
-            market_wide_count += 1
-    if material_count == 0:
-        return "weak" if direct_count or market_wide_count else "none"
-    if direct_count >= 2 or (direct_count >= 1 and market_wide_count >= 2):
-        return "very_relevant"
-    if direct_count >= 1 or market_wide_count >= 2:
-        return "relevant"
-    if market_wide_count == 1:
+    candidates = _build_news_candidates(symbol, news_items)
+    if any(item["relevance"] == "strong" for item in candidates):
+        return "strong"
+    if any(item["relevance"] == "medium" for item in candidates):
+        return "medium"
+    if candidates:
         return "weak"
     return "none"
+
+
+def _build_news_candidates(symbol: str, news_items: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    normalized_symbol = normalize_symbol(symbol)
+    for item in news_items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        source = str(item.get("source") or "").strip()
+        url = str(item.get("url") or item.get("link") or "").strip()
+        raw_relevance = classify_news_relevance(symbol, item)
+        if raw_relevance == "irrelevant":
+            continue
+        material = is_material_news_item(item)
+        generic = is_generic_news_item(item)
+        if normalized_symbol == DEFAULT_SYMBOL:
+            relevance = _classify_btc_news_candidate(item, raw_relevance, material, generic)
+            reason = _news_relevance_reason(normalized_symbol, relevance, raw_relevance)
+        elif _coin_is_secondary_context(normalized_symbol, item):
+            relevance = "weak"
+            reason = "Secondary coin mention in broader crypto context"
+        elif raw_relevance == "direct" and material:
+            relevance = "strong"
+            reason = f"{normalized_symbol.upper()}-specific material market context"
+        elif raw_relevance == "direct" and not generic:
+            relevance = "medium"
+            reason = f"{normalized_symbol.upper()}-specific market context"
+        elif material:
+            relevance = "medium"
+            reason = "Market-wide material crypto context"
+        else:
+            relevance = "weak"
+            reason = "Broad crypto market context"
+        candidates.append(
+            {
+                "title": title,
+                "url": url,
+                "source": source,
+                "relevance": relevance,
+                "reason": reason,
+            }
+        )
+    return candidates
+
+
+def _classify_btc_news_candidate(
+    item: dict,
+    raw_relevance: str,
+    material: bool,
+    generic: bool,
+) -> str:
+    title = str(item.get("title") or "")
+    summary = str(item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    if any(term in text for term in COMPANY_BACKGROUND_NEWS_TERMS):
+        return "weak"
+    if _btc_is_secondary_context(text):
+        return "weak"
+    if raw_relevance == "market_wide" and not _btc_market_wide_is_material(text):
+        return "weak"
+    if _btc_has_strong_market_focus(text):
+        return "strong" if material else "medium"
+    if raw_relevance == "direct" and material and not generic:
+        return "medium"
+    return "weak"
+
+
+def _btc_is_secondary_context(text: str) -> bool:
+    secondary_patterns = (
+        ("soluna", "revenue"),
+        ("hosting business", "bitcoin mining"),
+        ("xrp", "solana", "bitcoin outflow"),
+        ("xrp", "solana", "bitcoin outflows"),
+    )
+    return any(all(term in text for term in pattern) for pattern in secondary_patterns)
+
+
+def _btc_market_wide_is_material(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "bitcoin etf",
+            "btc etf",
+            "bitcoin fund flow",
+            "bitcoin fund flows",
+            "bitcoin inflow",
+            "bitcoin inflows",
+            "bitcoin outflow",
+            "bitcoin outflows",
+            "bitcoin regulation",
+            "bitcoin policy",
+            "bitcoin reserve",
+            "bitcoin dominance",
+        )
+    )
+
+
+def _btc_has_strong_market_focus(text: str) -> bool:
+    if any(
+        term in text
+        for term in (
+            "bitcoin price",
+            "btc price",
+            "bitcoin support",
+            "bitcoin resistance",
+            "bitcoin etf",
+            "btc etf",
+            "bitcoin fund",
+            "bitcoin funds",
+            "bitcoin outflow",
+            "bitcoin outflows",
+            "bitcoin inflow",
+            "bitcoin inflows",
+            "bitcoin regulation",
+            "bitcoin policy",
+            "bitcoin hashrate",
+            "bitcoin hash rate",
+        )
+    ):
+        return True
+    return "bitcoin mining" in text and any(
+        term in text for term in ("hashrate", "hash rate", "difficulty", "market impact")
+    )
+
+
+def _coin_is_secondary_context(symbol: str, item: dict) -> bool:
+    title = str(item.get("title") or "")
+    summary = str(item.get("summary") or "")
+    text = f" {title} {summary} ".lower()
+    if symbol == "sol" and "xrp" in text and "solana" in text and "bitcoin" in text:
+        return False
+    return False
+
+
+def _news_relevance_reason(symbol: str, relevance: str, raw_relevance: str) -> str:
+    if relevance == "strong":
+        return f"{symbol.upper()}-specific material market context"
+    if relevance == "medium":
+        return f"{symbol.upper()}-specific market context"
+    if raw_relevance == "direct":
+        return f"Weak {symbol.upper()} mention without clear market catalyst"
+    return "Broad crypto market context"
+
+
+def _useful_news_candidates(candidates: list[dict] | None) -> list[dict]:
+    return [
+        item
+        for item in candidates or []
+        if str(item.get("relevance") or "").strip().lower() in {"medium", "strong"}
+    ]
 
 
 def _market_condition_can_alert(evaluation: SeverityEvaluation) -> bool:
@@ -944,6 +1094,7 @@ def _format_signal_context_for_storage(
             "four_hour_change_percent": context.four_hour_change_percent,
             "twenty_four_hour_change_percent": context.twenty_four_hour_change_percent,
             "news_relevance_score": context.news_relevance_score,
+            "news_candidates": context.news_candidates,
             "last_notification_type": context.last_notification_type,
             "last_notification_severity": context.last_notification_severity,
             "last_notification_direction": context.last_notification_direction,
@@ -1141,44 +1292,60 @@ def _build_product_notification_payload(
 ) -> dict:
     symbol = normalize_symbol(context.symbol).upper()
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
+    alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
         symbol,
         decision.direction,
         decision.notification_type,
+        trigger_source=decision.trigger_source,
+        alert_move_percent=alert_move,
+        one_hour_change_percent=context.one_hour_change_percent,
         period_change_percent=context.user_period_change_percent,
         change_24h=context.twenty_four_hour_change_percent,
         period_label=period_label,
     )
+    visible_news = _visible_news_candidates_for_message(context, decision)
     news_section = ""
-    if context.relevant_news_items and _is_user_visible_news(context.news_relevance_score):
+    if visible_news and _is_user_visible_news(context.news_relevance_score):
         lines = []
-        for item in context.relevant_news_items[:2]:
+        for item in visible_news[:2]:
             title = str(item.get("title") or "").strip()
             source = str(item.get("source") or "").strip()
-            link = str(item.get("link") or "").strip()
+            link = str(item.get("url") or item.get("link") or "").strip()
             if not title:
                 continue
             detail = f" - {source}" if source else ""
-            if link:
-                detail = f"{detail} - {link}"
             lines.append(f"- {title}{detail}")
+            if link:
+                lines.append(f"  {link}")
         if lines:
-            news_section = "\nNews:\n" + "\n".join(lines) + "\n"
-    elif context.relevant_news_items and not _is_user_visible_news(context.news_relevance_score):
-        logger.info("weak_news_hidden_from_user_message")
-        if decision.notification_type is NotificationType.MARKET_UPDATE:
-            news_section = "\nNews:\nNo major relevant news found.\n"
-    elif decision.notification_type is NotificationType.MARKET_UPDATE:
-        news_section = "\nNews:\nNo major relevant news found.\n"
+            news_section = "\nRelated news:\n" + "\n".join(lines) + "\n"
+    elif decision.notification_type in {
+        NotificationType.IMPORTANT_ALERT,
+        NotificationType.CRITICAL_ALERT,
+    }:
+        if context.news_candidates:
+            logger.info("weak_news_hidden_from_user_message")
+        news_section = "\nNews context:\nNo clear news catalyst found.\n"
+
+    if decision.notification_type is NotificationType.MARKET_UPDATE:
+        movement_lines = (
+            f"Move: {_format_percent(context.user_period_change_percent)} over the last "
+            f"{period_label}\n"
+            f"24h change: {_format_percent(context.twenty_four_hour_change_percent)}"
+        )
+    else:
+        movement_lines = (
+            f"Alert move: {_format_percent(alert_move)}\n"
+            f"1h move: {_format_percent(context.one_hour_change_percent)}\n"
+            f"24h change: {_format_percent(context.twenty_four_hour_change_percent)}"
+        )
 
     message = (
         f"{decision.icon} {_notification_type_label(decision.notification_type)} - {symbol}\n\n"
         f"{summary}\n\n"
         f"Price: ${context.current_price:,.2f}\n"
-        f"5m change: {_format_percent(context.latest_5m_change_percent)}\n"
-        f"Period change: {_format_percent(context.user_period_change_percent)} over "
-        f"{period_label}\n"
-        f"24h change: {_format_percent(context.twenty_four_hour_change_percent)}\n\n"
+        f"{movement_lines}\n\n"
         "Why this matters:\n"
         f"{decision.reasoning_summary}\n"
         f"{news_section}\n"
@@ -1189,11 +1356,49 @@ def _build_product_notification_payload(
     return {"plain_text": sanitize_alert_message(message), "html_text": None}
 
 
+def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
+    if decision.trigger_source is TriggerSource.FAST_MOVEMENT:
+        return context.latest_5m_change_percent
+    if decision.trigger_source is TriggerSource.CUMULATIVE_MOVEMENT:
+        return context.change_since_last_market_update_percent
+    if decision.trigger_source is TriggerSource.USER_PERIOD_MOVEMENT:
+        return context.user_period_change_percent
+    if decision.notification_type is NotificationType.CRITICAL_ALERT:
+        values = [
+            context.latest_5m_change_percent,
+            context.change_since_last_market_update_percent,
+            context.user_period_change_percent,
+            context.one_hour_change_percent,
+            context.four_hour_change_percent,
+        ]
+        return max(
+            (value for value in values if value is not None),
+            key=lambda value: abs(value),
+            default=None,
+        )
+    return context.user_period_change_percent
+
+
+def _visible_news_candidates_for_message(
+    context: SignalContext,
+    decision: NotificationDecision,
+) -> list[dict]:
+    candidates = _useful_news_candidates(context.news_candidates)
+    if decision.notification_type is NotificationType.MARKET_UPDATE:
+        return candidates
+    return [
+        item
+        for item in candidates
+        if str(item.get("relevance") or "").strip().lower() == "strong"
+    ]
+
+
 def _is_user_visible_news(news_relevance_score: str | None) -> bool:
     return (news_relevance_score or "").strip().lower() in {
         "relevant",
         "very_relevant",
         "medium",
+        "strong",
         "high",
     }
 
@@ -1203,11 +1408,16 @@ def _summary_sentence(
     direction: NotificationDirection,
     notification_type: NotificationType,
     *,
+    trigger_source: TriggerSource | None = None,
+    alert_move_percent: float | None = None,
+    one_hour_change_percent: float | None = None,
     period_change_percent: float | None = None,
     change_24h: float | None = None,
-    period_label: str = "selected period",
+    period_label: str = "update window",
 ) -> str:
     period = period_change_percent or 0.0
+    one_hour = one_hour_change_percent if one_hour_change_percent is not None else period
+    alert_move = alert_move_percent if alert_move_percent is not None else period
     trend = change_24h or 0.0
     if notification_type is NotificationType.MARKET_UPDATE:
         summary = _market_update_timeframe_summary(
@@ -1223,12 +1433,25 @@ def _summary_sentence(
             trend,
         )
         return summary
+    if trigger_source is TriggerSource.NEWS:
+        if abs(one_hour) < 1.0 and abs(alert_move) < 1.0:
+            return f"{symbol} has relevant market news, while price remains mostly stable."
+        return f"{symbol} has relevant market news, but price has not reacted strongly yet."
     if notification_type is NotificationType.CRITICAL_ALERT:
-        action = "jumped sharply" if direction is NotificationDirection.UP else "dropped sharply"
+        visible_move = one_hour if abs(one_hour) >= 0.3 else alert_move
+        if visible_move > 0:
+            action = "jumped sharply"
+        elif visible_move < 0:
+            action = "dropped sharply"
+        elif direction is NotificationDirection.UP:
+            action = "jumped sharply"
+        else:
+            action = "dropped sharply"
         return f"{symbol} {action}."
-    if direction is NotificationDirection.UP:
+    visible_move = one_hour if abs(one_hour) >= 0.3 else alert_move
+    if visible_move > 0:
         return f"{symbol} is gaining momentum."
-    if direction is NotificationDirection.DOWN:
+    if visible_move < 0:
         return f"{symbol} is moving down faster than usual."
     return f"{symbol} market conditions changed."
 
@@ -1256,44 +1479,44 @@ def _market_update_timeframe_summary(
         logger.info("mixed_timeframe_wording_selected symbol=%s", symbol)
         if period_direction == "up":
             period_text = (
-                f"{symbol} recovered slightly over the selected period"
+                f"{symbol} recovered slightly over the last {period_label}"
                 if period_abs < 1.0
-                else f"{symbol} strengthened over the selected period"
+                else f"{symbol} strengthened over the last {period_label}"
             )
         else:
             period_text = (
-                f"{symbol} is slightly lower over the selected period"
+                f"{symbol} is slightly lower over the last {period_label}"
                 if period_abs < 1.0
-                else f"{symbol} weakened over the selected period"
+                else f"{symbol} weakened over the last {period_label}"
             )
         return f"{period_text}, but the 24h trend remains {trend_strength}."
 
     if period_direction == "up":
         if period_abs >= 3.0 and trend_direction == "up":
             return (
-                f"{symbol} strengthened meaningfully over the selected period and remains "
+                f"{symbol} strengthened meaningfully over the last {period_label} and remains "
                 "positive on the 24h trend."
             )
         if period_abs < 1.0:
-            return f"{symbol} recovered slightly over the selected period."
-        return f"{symbol} strengthened over the selected period."
+            return f"{symbol} recovered slightly over the last {period_label}."
+        return f"{symbol} strengthened over the last {period_label}."
 
     if period_direction == "down":
         if period_abs >= 3.0 and trend_direction == "down":
             return (
-                f"{symbol} weakened meaningfully over the selected period and remains "
+                f"{symbol} weakened meaningfully over the last {period_label} and remains "
                 f"{trend_strength} on the 24h trend."
             )
         if period_abs < 1.0:
             if trend_direction == "down":
                 return (
-                    f"{symbol} is slightly lower over the selected period, while the 24h "
+                    f"{symbol} is slightly lower over the last {period_label}, while the 24h "
                     f"trend remains {trend_strength}."
                 )
-            return f"{symbol} is slightly lower over the selected period."
-        return f"{symbol} weakened over the selected period."
+            return f"{symbol} is slightly lower over the last {period_label}."
+        return f"{symbol} weakened over the last {period_label}."
 
-    return f"{symbol} is relatively calm over the selected period."
+    return f"{symbol} is relatively calm over the last {period_label}."
 
 
 def _movement_direction(value: float, *, calm_threshold: float) -> str:
@@ -1738,8 +1961,10 @@ async def _persist_successful_product_alert_state(
         kwargs["last_market_update_time"] = now
     elif event_type == NotificationType.IMPORTANT_ALERT.value:
         kwargs["last_important_alert_time"] = now
+        kwargs["last_market_update_time"] = now
     elif event_type == NotificationType.CRITICAL_ALERT.value:
         kwargs["last_critical_alert_time"] = now
+        kwargs["last_market_update_time"] = now
     else:
         return
     async with DB_SESSION_LOCAL() as session:
@@ -1749,6 +1974,17 @@ async def _persist_successful_product_alert_state(
             "last_market_update_time_persisted user_id=%s symbol=%s value=%s",
             recipient.user_id,
             normalized_symbol.upper(),
+            now.isoformat(),
+        )
+    elif event_type in {
+        NotificationType.IMPORTANT_ALERT.value,
+        NotificationType.CRITICAL_ALERT.value,
+    }:
+        logger.debug(
+            "alert_baseline_updated_after_send user_id=%s symbol=%s alert_type=%s value=%s",
+            recipient.user_id,
+            normalized_symbol.upper(),
+            event_type,
             now.isoformat(),
         )
 
@@ -1762,6 +1998,16 @@ def _direction_from_numeric_context(numeric_context: str | None) -> str | None:
         return None
     direction = payload.get("notification_direction")
     return str(direction) if direction else None
+
+
+def _numeric_context_payload(numeric_context: str | None) -> dict:
+    if not numeric_context:
+        return {}
+    try:
+        payload = json.loads(numeric_context)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _should_skip_market_update_after_recent_event_alert(
@@ -1788,6 +2034,59 @@ def _should_skip_market_update_after_recent_event_alert(
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
     return (now - created_at).total_seconds() <= window_seconds
+
+
+def _should_skip_near_duplicate_market_update(
+    *,
+    notification_type: NotificationType,
+    previous_alert,
+    context: SignalContext,
+    decision: NotificationDecision,
+    now: datetime,
+    frequency_seconds: int,
+) -> bool:
+    if notification_type is not NotificationType.MARKET_UPDATE:
+        return False
+    if previous_alert is None or getattr(previous_alert, "status", "sent") != "sent":
+        return False
+    created_at = getattr(previous_alert, "created_at", None)
+    if created_at is None:
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    max_quiet_seconds = max(int(frequency_seconds), 1) * 6
+    if (now - created_at).total_seconds() > max_quiet_seconds:
+        return False
+
+    previous = _numeric_context_payload(getattr(previous_alert, "numeric_context", None))
+    if previous.get("notification_type") != NotificationType.MARKET_UPDATE.value:
+        return False
+    if previous.get("notification_direction") != decision.direction.value:
+        return False
+    if previous.get("notification_severity") != decision.severity.value:
+        return False
+    previous_score = str(previous.get("news_relevance_score") or "none").lower()
+    current_score = str(context.news_relevance_score or "none").lower()
+    if _useful_news_candidates(context.news_candidates):
+        return False
+    if previous_score != current_score and current_score not in {"none", "weak"}:
+        return False
+    previous_period = previous.get("user_period_change_percent")
+    try:
+        previous_period_float = float(previous_period)
+    except (TypeError, ValueError):
+        return False
+    current_period = float(context.user_period_change_percent or 0.0)
+    if abs(current_period - previous_period_float) > 0.3:
+        return False
+    logger.debug(
+        "near_duplicate_market_update reason=same_direction_severity_small_delta "
+        "previous_period=%.4f current_period=%.4f news_score=%s",
+        previous_period_float,
+        current_period,
+        current_score,
+    )
+    return True
 
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
@@ -1906,7 +2205,15 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             if raw_news_items is None:
                 raw_news_items = await fetch_news_context(limit=12)
             news_items = filter_news_for_symbol(symbol, raw_news_items)
+            news_candidates = _build_news_candidates(symbol, news_items)
             news_relevance = _classify_news_context(symbol, news_items)
+            logger.debug(
+                "news_candidates_selected symbol=%s count=%s useful_count=%s score=%s",
+                symbol.upper(),
+                len(news_candidates),
+                len(_useful_news_candidates(news_candidates)),
+                news_relevance,
+            )
 
             grouped_notifications: dict[
                 tuple[str, str, str, str | None, int],
@@ -1919,6 +2226,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 last_notification = None
                 symbol_alert_state = None
                 recent_event_alert = None
+                last_market_update_alert = None
+                important = None
+                critical = None
                 if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None:
                     async with DB_SESSION_LOCAL() as session:
                         last_notification = await get_last_sent_alert(
@@ -1947,6 +2257,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                             [alert for alert in (important, critical) if alert is not None],
                             key=lambda alert: alert.created_at,
                             default=None,
+                        )
+                        last_market_update_alert = await get_last_sent_alert(
+                            session,
+                            user_id=recipient.user_id,
+                            symbol=symbol,
+                            alert_type=NotificationType.MARKET_UPDATE.value,
                         )
                 last_market_update_time = (
                     symbol_alert_state.last_market_update_time if symbol_alert_state else None
@@ -1996,6 +2312,15 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 )
                 if last_market_update_time is None:
                     cumulative_change_percent = user_period_change_percent
+                logger.debug(
+                    "important_alert_baseline_used user_id=%s symbol=%s baseline_time=%s "
+                    "window_seconds=%s cumulative_change=%.4f",
+                    recipient.user_id,
+                    symbol.upper(),
+                    last_market_update_time.isoformat() if last_market_update_time else None,
+                    update_window_seconds,
+                    cumulative_change_percent,
+                )
                 context_object = SignalContext(
                     symbol=symbol,
                     current_price=current_price,
@@ -2006,17 +2331,32 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     four_hour_change_percent=four_hour_change_percent,
                     twenty_four_hour_change_percent=change_24h,
                     relevant_news_items=news_items,
+                    news_candidates=news_candidates,
                     news_relevance_score=news_relevance,
                     last_notification_time=(
-                        last_notification.created_at if last_notification else None
+                        recent_event_alert.created_at
+                        if recent_event_alert is not None
+                        else last_notification.created_at
+                        if last_notification
+                        else None
                     ),
                     last_notification_type=(
-                        last_notification.alert_type if last_notification else None
+                        recent_event_alert.alert_type
+                        if recent_event_alert is not None
+                        else last_notification.alert_type
+                        if last_notification
+                        else None
                     ),
                     last_notification_severity=(
-                        last_notification.llm_severity if last_notification else None
+                        recent_event_alert.llm_severity
+                        if recent_event_alert is not None
+                        else last_notification.llm_severity
+                        if last_notification
+                        else None
                     ),
-                    last_notification_direction=_last_alert_direction(last_notification),
+                    last_notification_direction=_last_alert_direction(
+                        recent_event_alert if recent_event_alert is not None else last_notification
+                    ),
                     last_market_update_time=last_market_update_time,
                     user_alert_frequency_seconds=frequency_seconds,
                     scheduled_market_update_due=scheduled_due,
@@ -2027,10 +2367,33 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         thresholds.trend_24h_high_percent,
                     ),
                     suppression_context={
-                        "previous_cumulative_movement_percent": cumulative_change_percent
+                        "previous_cumulative_movement_percent": (
+                            symbol_alert_state.last_cumulative_movement_percent
+                            if symbol_alert_state
+                            else _numeric_context_value(
+                                getattr(recent_event_alert, "numeric_context", None),
+                                "change_since_last_market_update_percent",
+                            )
+                        ),
+                        "last_event_alert_price": _numeric_context_value(
+                            getattr(recent_event_alert, "numeric_context", None),
+                            "current_price",
+                        ),
                     },
                 )
                 notification_decision = decide_notification(context_object)
+                logger.debug(
+                    "cooldown_decision user_id=%s symbol=%s alert_type=%s direction=%s "
+                    "severity=%s should_send=%s suppressed=%s last_event_at=%s",
+                    recipient.user_id,
+                    symbol.upper(),
+                    notification_decision.notification_type.value,
+                    notification_decision.direction.value,
+                    notification_decision.severity.value,
+                    notification_decision.should_send,
+                    notification_decision.should_suppress,
+                    recent_event_alert.created_at.isoformat() if recent_event_alert else None,
+                )
                 if notification_decision.notification_type is NotificationType.MARKET_UPDATE:
                     logger.info(
                         "market_update_severity_adjusted symbol=%s severity=%s "
@@ -2084,6 +2447,20 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         recipient.user_id,
                         symbol.upper(),
                         recent_event_alert.alert_type,
+                    )
+                    continue
+                if _should_skip_near_duplicate_market_update(
+                    notification_type=notification_decision.notification_type,
+                    previous_alert=last_market_update_alert,
+                    context=context_object,
+                    decision=notification_decision,
+                    now=now,
+                    frequency_seconds=frequency_seconds,
+                ):
+                    logger.debug(
+                        "market_update_near_duplicate_suppressed user_id=%s symbol=%s",
+                        recipient.user_id,
+                        symbol.upper(),
                     )
                     continue
                 if not notification_decision.should_send:
