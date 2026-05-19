@@ -207,6 +207,26 @@ def test_weekly_trend_change_alert_type():
     assert "Weekly trend direction is changing" in result.signals
 
 
+def test_missing_weekly_trend_does_not_block_severity_evaluation():
+    result = evaluate_alert_severity(
+        SeverityInput(
+            symbol="eth",
+            price_change_percent=-1.2,
+            change_24h=-2.5,
+            change_7d=None,
+            alert_threshold_percent=2.0,
+        )
+    )
+
+    assert result.primary_alert_type is not AlertType.WEEKLY_TREND_CHANGE
+    assert result.severity in {
+        AlertSeverity.INFO,
+        AlertSeverity.WATCH,
+        AlertSeverity.HIGH,
+        AlertSeverity.EXTREME,
+    }
+
+
 def _format_message(
     *,
     symbol: str,

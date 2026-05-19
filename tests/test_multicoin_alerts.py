@@ -122,6 +122,35 @@ async def test_resolve_symbols_includes_btc_when_active_user_enabled(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_resolve_symbols_scope_is_free_btc_and_premium_watchlist(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            free_user = await create_user(session, 1001, 2001)
+            premium_user = await create_user(session, 1002, 2002)
+            await set_user_coin_subscription(
+                session, user_id=free_user.id, symbol="eth", is_enabled=True
+            )
+            await grant_user_premium(
+                session,
+                telegram_user_id=premium_user.telegram_user_id,
+                days=10,
+                now=now,
+            )
+            await set_user_coin_subscription(
+                session, user_id=premium_user.id, symbol="sol", is_enabled=True
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        assert await alerts.resolve_symbols_to_check(now) == ["btc", "sol"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_resolve_symbols_to_check_does_not_create_default_subscriptions(monkeypatch):
     engine, SessionLocal = await build_session_factory()
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
@@ -480,14 +509,32 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
         def run_repeating(self, callback, **kwargs):
             captured_kwargs.update(kwargs)
 
-    alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
+    alerts.schedule_automatic_market_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
 
     assert captured_kwargs["interval"] == 60
+    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
     assert captured_kwargs["job_kwargs"] == {
         "max_instances": 1,
         "coalesce": True,
         "misfire_grace_time": 15,
     }
+
+
+def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
+    captured_kwargs = {}
+
+    class FakeJobQueue:
+        def get_jobs_by_name(self, name):
+            captured_kwargs["removed_name"] = name
+            return []
+
+        def run_repeating(self, callback, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
+
+    assert captured_kwargs["removed_name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
+    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
 
 
 def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -9,6 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from telegram.constants import ParseMode
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, ContextTypes
 
 from bot.alerting.alert_rules import calculate_price_change_percent
@@ -97,10 +99,13 @@ PRODUCT_ALERT_TYPES = {
     NotificationType.CRITICAL_ALERT.value,
 }
 DELIVERABLE_ALERT_TYPES = {alert_type.value for alert_type in AlertType} | PRODUCT_ALERT_TYPES
-AUTOMATIC_BTC_CHECK_JOB_NAME = "automatic_btc_check"
+AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
+AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
 STRONG_SIGNAL_JOB_NAME = "strong_signal"
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
+TELEGRAM_DELIVERY_MAX_ATTEMPTS = 3
+TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS = (30, 120)
 WEEKDAY_MAP = {
     "monday": 0,
     "tuesday": 1,
@@ -1553,6 +1558,13 @@ def _notification_severity_to_alert_severity(severity: NotificationSeverity) -> 
 async def _send_alert_to_recipient(
     app: Application, recipient: AlertRecipient, alert_payload: dict
 ) -> tuple[bool, str | None]:
+    sent, error_message, _ = await _send_alert_to_recipient_once(app, recipient, alert_payload)
+    return sent, error_message
+
+
+async def _send_alert_to_recipient_once(
+    app: Application, recipient: AlertRecipient, alert_payload: dict
+) -> tuple[bool, str | None, BaseException | None]:
     logger.info("alert_delivery_path_used chat_id=%s", recipient.chat_id)
     html_text = alert_payload.get("html_text")
     plain_text = str(alert_payload.get("plain_text", ""))
@@ -1572,8 +1584,106 @@ async def _send_alert_to_recipient(
         else:
             await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
     except Exception as error:
-        return False, str(error)
-    return True, None
+        return False, str(error), error
+    return True, None, None
+
+
+def _is_permanent_telegram_delivery_error(error: BaseException | str | None) -> bool:
+    if error is None:
+        return False
+    if isinstance(error, (BadRequest, Forbidden)):
+        return True
+    return is_bot_blocked_error(error)
+
+
+def _is_transient_telegram_delivery_error(error: BaseException | str | None) -> bool:
+    if error is None or _is_permanent_telegram_delivery_error(error):
+        return False
+    if isinstance(error, (RetryAfter, TimedOut, NetworkError)):
+        return True
+    message = " ".join(str(error).lower().split())
+    transient_terms = (
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "connection reset",
+        "connection aborted",
+        "network is unreachable",
+        "bad gateway",
+        "service unavailable",
+        "gateway timeout",
+        "internal server error",
+        "too many requests",
+        "retry after",
+    )
+    return any(term in message for term in transient_terms)
+
+
+def _retry_after_seconds(error: BaseException | str | None) -> int | None:
+    retry_after = getattr(error, "retry_after", None)
+    if retry_after is None:
+        return None
+    try:
+        return max(int(retry_after), 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _delivery_retry_delay_seconds(error: BaseException | str | None, attempt_number: int) -> int:
+    telegram_delay = _retry_after_seconds(error)
+    if telegram_delay is not None:
+        return telegram_delay
+    index = max(attempt_number - 1, 0)
+    if index >= len(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS):
+        return int(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS[-1])
+    return int(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS[index])
+
+
+async def _send_alert_to_recipient_with_retry(
+    app: Application,
+    recipient: AlertRecipient,
+    alert_payload: dict,
+    *,
+    alert_id: int | None = None,
+) -> tuple[bool, str | None]:
+    last_error: str | None = None
+    for attempt in range(1, TELEGRAM_DELIVERY_MAX_ATTEMPTS + 1):
+        sent, error_message, error = await _send_alert_to_recipient_once(
+            app, recipient, alert_payload
+        )
+        if sent:
+            return True, None
+        last_error = error_message
+        classification_error = error if error is not None else error_message
+        if not _is_transient_telegram_delivery_error(classification_error):
+            return False, error_message
+        if attempt >= TELEGRAM_DELIVERY_MAX_ATTEMPTS:
+            return False, error_message
+
+        delay_seconds = _delivery_retry_delay_seconds(classification_error, attempt)
+        next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+        if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                await update_alert_delivery_status(
+                    session,
+                    alert_id=alert_id,
+                    status="retry_pending",
+                    error_message=error_message,
+                    retry_count=attempt,
+                    last_error=error_message,
+                    next_retry_at=next_retry_at,
+                )
+        logger.info(
+            "temporary_telegram_delivery_failure_retrying user_id=%s chat_id=%s attempt=%s "
+            "next_retry_seconds=%s error=%r",
+            recipient.user_id,
+            recipient.chat_id,
+            attempt,
+            delay_seconds,
+            error_message,
+        )
+        await asyncio.sleep(delay_seconds)
+    return False, last_error
 
 
 async def _disable_recipient_if_bot_blocked(
@@ -1777,7 +1887,12 @@ async def _deliver_market_event_alert(
                 continue
         else:
             alert_id = None
-        sent, error_message = await _send_alert_to_recipient(app, recipient, alert_payload)
+        sent, error_message = await _send_alert_to_recipient_with_retry(
+            app,
+            recipient,
+            alert_payload,
+            alert_id=alert_id,
+        )
         if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
             async with DB_SESSION_LOCAL() as session:
                 await update_alert_delivery_status(
@@ -1785,6 +1900,15 @@ async def _deliver_market_event_alert(
                     alert_id=alert_id,
                     status="sent" if sent else "failed",
                     error_message=error_message,
+                    retry_count=(
+                        None
+                        if sent
+                        else TELEGRAM_DELIVERY_MAX_ATTEMPTS
+                        if _is_transient_telegram_delivery_error(error_message)
+                        else 1
+                    ),
+                    last_error=error_message,
+                    final_failed_at=None if sent else datetime.now(timezone.utc),
                 )
         else:
             await _record_alert_delivery(
@@ -1824,17 +1948,22 @@ async def _deliver_market_event_alert(
     return delivered
 
 
-def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
-    for job in app.job_queue.get_jobs_by_name(AUTOMATIC_BTC_CHECK_JOB_NAME):
+def schedule_automatic_market_check(app: Application, interval_seconds: int) -> None:
+    for job in app.job_queue.get_jobs_by_name(AUTOMATIC_MARKET_CHECK_JOB_NAME):
         job.schedule_removal()
     app.job_queue.run_repeating(
         automatic_price_check,
         interval=interval_seconds,
         first=5,
-        name=AUTOMATIC_BTC_CHECK_JOB_NAME,
+        name=AUTOMATIC_MARKET_CHECK_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
     )
-    log(f"Automatic price check interval: {interval_seconds} seconds")
+    log(f"Automatic market check interval: {interval_seconds} seconds")
+
+
+def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
+    """Compatibility wrapper for older imports; schedules the market-wide check."""
+    schedule_automatic_market_check(app, interval_seconds)
 
 
 def schedule_weekly_report(app: Application) -> None:
@@ -2008,32 +2137,6 @@ def _numeric_context_payload(numeric_context: str | None) -> dict:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
-
-
-def _should_skip_market_update_after_recent_event_alert(
-    *,
-    notification_type: NotificationType,
-    recent_event_alert,
-    now: datetime,
-    window_seconds: int = 3600,
-) -> bool:
-    if notification_type is not NotificationType.MARKET_UPDATE:
-        return False
-    if recent_event_alert is None:
-        return False
-    if getattr(recent_event_alert, "status", "sent") != "sent":
-        return False
-    if getattr(recent_event_alert, "alert_type", None) not in {
-        NotificationType.IMPORTANT_ALERT.value,
-        NotificationType.CRITICAL_ALERT.value,
-    }:
-        return False
-    created_at = getattr(recent_event_alert, "created_at", None)
-    if created_at is None:
-        return False
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    return (now - created_at).total_seconds() <= window_seconds
 
 
 def _should_skip_near_duplicate_market_update(
@@ -2434,21 +2537,6 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         symbol.upper(),
                         notification_decision.notification_type.value,
                     )
-                if (
-                    _should_skip_market_update_after_recent_event_alert(
-                        notification_type=notification_decision.notification_type,
-                        recent_event_alert=recent_event_alert,
-                        now=now,
-                    )
-                ):
-                    logger.info(
-                        "market_update_skipped_after_recent_event_alert "
-                        "user_id=%s symbol=%s recent_alert_type=%s",
-                        recipient.user_id,
-                        symbol.upper(),
-                        recent_event_alert.alert_type,
-                    )
-                    continue
                 if _should_skip_near_duplicate_market_update(
                     notification_type=notification_decision.notification_type,
                     previous_alert=last_market_update_alert,

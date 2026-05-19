@@ -457,12 +457,13 @@ def test_negative_threshold_wording_uses_absolute_values():
     assert "1.0% movement threshold" in decision.reasoning_summary
 
 
-def test_market_update_is_not_blocked_by_important_alert_cooldown():
+@pytest.mark.parametrize("recent_type", ["important_alert", "critical_alert"])
+def test_market_update_is_not_blocked_by_recent_event_alert_cooldown(recent_type):
     decision = decide_notification(
         _context(
             scheduled_market_update_due=True,
             last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=20),
-            last_notification_type="important_alert",
+            last_notification_type=recent_type,
             last_notification_severity="medium",
             last_notification_direction="down",
         )
@@ -1059,48 +1060,6 @@ def test_llm_severity_is_normalized_to_allowed_values():
 
 def test_new_user_facing_alert_types_are_limited_to_product_model():
     assert alerts.PRODUCT_ALERT_TYPES == {"market_update", "important_alert", "critical_alert"}
-
-
-def test_recent_important_alert_suppresses_market_update_same_symbol():
-    recent = SimpleNamespace(
-        alert_type="important_alert",
-        status="sent",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
-
-
-def test_recent_critical_alert_suppresses_market_update_same_symbol():
-    recent = SimpleNamespace(
-        alert_type="critical_alert",
-        status="sent",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
-
-
-def test_failed_important_alert_does_not_suppress_market_update():
-    recent = SimpleNamespace(
-        alert_type="important_alert",
-        status="failed",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert not alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
 
 
 @pytest.mark.asyncio

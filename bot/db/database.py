@@ -618,6 +618,24 @@ class Alert(Base):
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Failure detail for a failed delivery, if any."
     )
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="Number of Telegram delivery attempts already made for this alert.",
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Most recent Telegram delivery error for this alert."
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the next Telegram delivery retry is due, if retryable.",
+    )
+    final_failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When Telegram delivery retries were exhausted or marked permanent.",
+    )
     trigger_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Concise reason that triggered this delivered alert."
     )
@@ -1894,10 +1912,16 @@ async def reserve_alert_delivery(
         market_event_id=market_event_id,
     )
     if existing:
-        if existing.status in {"sent", "pending"}:
+        if existing.status in {"sent", "pending", "retry_pending"}:
+            return existing, False
+        if existing.final_failed_at is not None:
             return existing, False
         existing.status = "pending"
         existing.error_message = None
+        existing.retry_count = 0
+        existing.last_error = None
+        existing.next_retry_at = None
+        existing.final_failed_at = None
         existing.message = message
         existing.sent_to_chat_id = sent_to_chat_id
         existing.event_ai_analysis_id = event_ai_analysis_id
@@ -1953,12 +1977,28 @@ async def update_alert_delivery_status(
     alert_id: int,
     status: str,
     error_message: str | None = None,
+    retry_count: int | None = None,
+    last_error: str | None = None,
+    next_retry_at: datetime | None = None,
+    final_failed_at: datetime | None = None,
 ) -> Alert | None:
     alert = await session.get(Alert, alert_id)
     if alert is None:
         return None
     alert.status = status
     alert.error_message = error_message
+    if retry_count is not None:
+        alert.retry_count = retry_count
+    if last_error is not None:
+        alert.last_error = last_error
+    if status == "sent":
+        alert.error_message = None
+        alert.next_retry_at = None
+        alert.final_failed_at = None
+    else:
+        alert.next_retry_at = next_retry_at
+        if final_failed_at is not None:
+            alert.final_failed_at = final_failed_at
     await session.commit()
     await session.refresh(alert)
     return alert

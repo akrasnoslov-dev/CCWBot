@@ -5,7 +5,7 @@ from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.alerts import schedule_automatic_btc_check
+from bot.alerts import schedule_automatic_market_check
 from bot.db.database import get_price_state
 from bot.error_logging import (
     disable_error_file_logging,
@@ -320,9 +320,9 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await save_interval_setting(interval)
-    schedule_automatic_btc_check(context.application, interval)
+    schedule_automatic_market_check(context.application, interval)
     await update.message.reply_text(
-        f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
+        f"Automatic market check interval updated to {interval} seconds ✅ Applied immediately."
     )
 
 
@@ -461,7 +461,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if data.startswith("admin:set_interval:"):
                 interval = int(data.rsplit(":", maxsplit=1)[1])
                 await save_interval_setting(interval)
-                schedule_automatic_btc_check(context.application, interval)
+                schedule_automatic_market_check(context.application, interval)
                 await query.message.reply_text(
                     f"Automatic check interval updated to {interval} seconds. Applied immediately."
                 )
@@ -491,7 +491,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "Current alert settings ⚙️\n\n"
                 f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
-                "Automatic BTC check interval: "
+                "Automatic market check interval: "
                 f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
@@ -513,9 +513,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
             await save_interval_setting(interval)
-            schedule_automatic_btc_check(context.application, interval)
+            schedule_automatic_market_check(context.application, interval)
             await query.message.reply_text(
-                f"Automatic BTC check interval updated to {interval} seconds ✅ "
+                f"Automatic market check interval updated to {interval} seconds ✅ "
                 "Applied immediately."
             )
             return
