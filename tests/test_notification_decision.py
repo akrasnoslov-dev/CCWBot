@@ -66,6 +66,129 @@ def test_extreme_5m_movement_creates_critical_alert():
     assert decision.severity is NotificationSeverity.EXTREME
 
 
+def test_same_direction_critical_alert_within_cooldown_is_suppressed():
+    decision = decide_notification(
+        _context(
+            symbol="ton",
+            current_price=1.005,
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=5.4,
+            user_period_change_percent=5.4,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 1.0},
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.should_send is False
+    assert decision.should_suppress is True
+
+
+def test_ton_repeated_critical_pattern_sends_only_first_without_extension():
+    first = decide_notification(
+        _context(
+            symbol="ton",
+            current_price=1.0,
+            latest_5m_change_percent=0.1,
+            change_since_last_market_update_percent=5.6,
+            user_period_change_percent=5.6,
+        )
+    )
+    second = decide_notification(
+        _context(
+            symbol="ton",
+            current_price=1.005,
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=5.5,
+            user_period_change_percent=5.5,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 1.0},
+        )
+    )
+    third = decide_notification(
+        _context(
+            symbol="ton",
+            current_price=1.01,
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=5.7,
+            user_period_change_percent=5.7,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=10),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 1.0},
+        )
+    )
+
+    assert first.should_send is True
+    assert second.should_send is False
+    assert third.should_send is False
+
+
+def test_same_direction_critical_with_btc_material_extension_is_allowed():
+    decision = decide_notification(
+        _context(
+            symbol="btc",
+            current_price=101.01,
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=5.5,
+            user_period_change_percent=5.5,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 100.0},
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.should_send is True
+
+
+def test_same_direction_critical_with_volatile_material_extension_is_allowed():
+    decision = decide_notification(
+        _context(
+            symbol="ton",
+            current_price=1.016,
+            latest_5m_change_percent=0.05,
+            change_since_last_market_update_percent=5.5,
+            user_period_change_percent=5.5,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 1.0},
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.should_send is True
+
+
+def test_opposite_direction_critical_alert_is_allowed():
+    decision = decide_notification(
+        _context(
+            latest_5m_change_percent=-5.5,
+            change_since_last_market_update_percent=-5.5,
+            user_period_change_percent=-5.5,
+            last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+            last_notification_type="critical_alert",
+            last_notification_severity="extreme",
+            last_notification_direction="up",
+            suppression_context={"last_event_alert_price": 100.0},
+        )
+    )
+
+    assert decision.notification_type is NotificationType.CRITICAL_ALERT
+    assert decision.should_send is True
+
+
 def test_gradual_decline_creates_important_alert_without_fast_move():
     decision = decide_notification(
         _context(
@@ -167,11 +290,39 @@ def test_24h_trend_alone_does_not_spam_unscheduled_alerts():
     assert decision.should_send is False
 
 
-def test_relevant_news_without_price_reaction_is_not_high():
+def test_medium_news_without_price_reaction_does_not_send_important_alert():
     decision = decide_notification(
         _context(
             relevant_news_items=[{"title": "Bitcoin ETF flow update"}],
-            news_relevance_score="relevant",
+            news_candidates=[
+                {
+                    "title": "Bitcoin ETF flow update",
+                    "source": "Example",
+                    "url": "https://example.test/btc",
+                    "relevance": "medium",
+                }
+            ],
+            news_relevance_score="medium",
+        )
+    )
+
+    assert decision.notification_type is NotificationType.NO_ALERT
+    assert decision.should_send is False
+
+
+def test_strong_news_without_price_reaction_can_send_important_alert():
+    decision = decide_notification(
+        _context(
+            relevant_news_items=[{"title": "Bitcoin ETF outflow accelerates"}],
+            news_candidates=[
+                {
+                    "title": "Bitcoin ETF outflow accelerates",
+                    "source": "Example",
+                    "url": "https://example.test/btc",
+                    "relevance": "strong",
+                }
+            ],
+            news_relevance_score="strong",
         )
     )
 
@@ -337,6 +488,7 @@ def test_market_update_payload_is_per_symbol_not_grouped():
     message = payload["plain_text"]
     assert message.startswith("📊 Market Update - BTC")
     assert "ETH:" not in message
+    assert "5m change" not in message
 
 
 def test_calm_market_update_does_not_claim_meaningful_movement():
@@ -365,6 +517,8 @@ def test_calm_market_update_does_not_claim_meaningful_movement():
     assert "meaningful movement" not in payload["plain_text"]
     assert "No significant short-term movement detected." in payload["plain_text"]
     assert "relevant news" not in payload["plain_text"].lower()
+    assert "News context:" not in payload["plain_text"]
+    assert "Related news:" not in payload["plain_text"]
 
 
 def test_conflicting_period_and_24h_direction_uses_mixed_timeframe_wording():
@@ -470,10 +624,10 @@ def test_weak_news_is_hidden_from_user_message():
     )
 
     assert "Weak related headline" not in payload["plain_text"]
-    assert "No clear news catalyst found." in payload["plain_text"]
+    assert "No clear news catalyst found." not in payload["plain_text"]
 
 
-def test_medium_or_high_news_is_shown_to_user():
+def test_medium_news_is_shown_in_scheduled_update():
     payload = alerts._build_product_notification_payload(
         alerts.SignalContext(
             symbol="btc",
@@ -494,20 +648,78 @@ def test_medium_or_high_news_is_shown_to_user():
             user_alert_frequency_seconds=3600,
         ),
         alerts.NotificationDecision(
-            notification_type=alerts.NotificationType.IMPORTANT_ALERT,
+            notification_type=alerts.NotificationType.MARKET_UPDATE,
             severity=alerts.NotificationSeverity.MEDIUM,
             direction=alerts.NotificationDirection.DOWN,
             should_send=True,
             should_suppress=False,
-            trigger_source=alerts.TriggerSource.NEWS,
-            reasoning_summary="Relevant market news appeared.",
-            possible_action="Monitor whether price starts reacting.",
+            trigger_source=alerts.TriggerSource.SCHEDULED_MARKET_UPDATE,
+            reasoning_summary="The scheduled update includes relevant news context.",
+            possible_action="No urgent action needed. Continue monitoring.",
             icon="📰",
         ),
     )
 
     assert "Material BTC headline" in payload["plain_text"]
     assert "https://example.test/btc" in payload["plain_text"]
+
+
+def test_important_no_news_uses_news_context_not_related_news():
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            latest_5m_change_percent=1.2,
+            user_period_change_percent=1.2,
+            one_hour_change_percent=1.0,
+            twenty_four_hour_change_percent=0.5,
+            news_relevance_score="none",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=alerts.NotificationType.IMPORTANT_ALERT,
+            severity=alerts.NotificationSeverity.MEDIUM,
+            direction=alerts.NotificationDirection.UP,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=alerts.TriggerSource.FAST_MOVEMENT,
+            reasoning_summary="The coin moved up by 1.20% on the 5-minute move.",
+            possible_action="Watch whether the move continues or fades.",
+            icon="ðŸ“ˆ",
+        ),
+    )
+
+    message = payload["plain_text"]
+    assert "News context:\nNo clear news catalyst found." in message
+    assert "Related news:" not in message
+    assert "5m change" not in message
+
+
+def test_product_message_grammar_does_not_include_bad_prepositions():
+    decision = decide_notification(
+        _context(
+            change_since_last_market_update_percent=1.76,
+            user_period_change_percent=1.76,
+        )
+    )
+
+    assert "on the since" not in decision.reasoning_summary
+    assert "on the over" not in decision.reasoning_summary
+    assert "over the since" not in decision.reasoning_summary
+
+
+def test_summary_does_not_gain_momentum_when_one_hour_move_is_negative():
+    summary = alerts._summary_sentence(
+        "BTC",
+        alerts.NotificationDirection.UP,
+        alerts.NotificationType.IMPORTANT_ALERT,
+        trigger_source=alerts.TriggerSource.COMBINED_SIGNAL,
+        alert_move_percent=1.2,
+        one_hour_change_percent=-0.38,
+    )
+
+    assert "gaining momentum" not in summary
+    assert "moving down" in summary
 
 
 def test_news_candidates_are_stored_in_numeric_context():
@@ -544,6 +756,43 @@ def test_news_candidates_are_stored_in_numeric_context():
 
     assert payload["news_relevance_score"] == "medium"
     assert payload["news_candidates"][0]["url"] == "https://example.test/btc"
+
+
+def test_weak_news_is_stored_but_hidden_from_message():
+    context = alerts.SignalContext(
+        symbol="btc",
+        current_price=100.0,
+        user_period_change_percent=0.2,
+        twenty_four_hour_change_percent=-0.2,
+        news_candidates=[
+            {
+                "title": "Weak BTC mention",
+                "source": "Example",
+                "url": "https://example.test/weak",
+                "relevance": "weak",
+                "reason": "Weak BTC mention without clear market catalyst",
+            }
+        ],
+        news_relevance_score="weak",
+        user_alert_frequency_seconds=3600,
+    )
+    decision = alerts.NotificationDecision(
+        notification_type=alerts.NotificationType.MARKET_UPDATE,
+        severity=alerts.NotificationSeverity.LOW,
+        direction=alerts.NotificationDirection.NEUTRAL,
+        should_send=True,
+        should_suppress=False,
+        trigger_source=alerts.TriggerSource.SCHEDULED_MARKET_UPDATE,
+        reasoning_summary="No significant short-term movement detected.",
+        possible_action="No urgent action needed. Continue monitoring.",
+        icon="ðŸ“Š",
+    )
+
+    payload = alerts._build_product_notification_payload(context, decision)["plain_text"]
+    stored = json.loads(alerts._format_signal_context_for_storage(context, decision))
+
+    assert "Weak BTC mention" not in payload
+    assert stored["news_candidates"][0]["title"] == "Weak BTC mention"
 
 
 def test_near_duplicate_calm_market_update_is_suppressed():

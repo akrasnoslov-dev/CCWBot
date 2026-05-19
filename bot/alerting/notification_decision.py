@@ -103,6 +103,10 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
         "medium",
         "strong",
     }
+    has_strong_news = any(
+        str(item.get("relevance") or "").lower() in {"strong", "very_relevant", "high"}
+        for item in useful_news
+    ) or news_score in {"strong", "very_relevant", "high"}
 
     direction = _direction(fast, cumulative, period, trend_24h)
     fast_abs = abs(fast)
@@ -121,7 +125,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
         (fast_trigger or cumulative_trigger or period_trigger)
         and (has_relevant_news or trend_abs >= max(cumulative_threshold * 1.5, 2.0))
     )
-    news_trigger = has_relevant_news
+    news_trigger = has_strong_news
 
     if _contains_market_shock(context.relevant_news_items):
         decision = _decision(
@@ -232,7 +236,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             should_send=False,
         )
 
-    suppressed = _should_suppress_important(context, decision, cumulative)
+    suppressed = _should_suppress_event_alert(context, decision)
     if suppressed:
         return NotificationDecision(
             notification_type=decision.notification_type,
@@ -242,8 +246,8 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             should_suppress=True,
             trigger_source=decision.trigger_source,
             reasoning_summary=(
-                "important_alert_suppressed: same_direction=true "
-                "severity_increased=false material_worsening=false"
+                "event_alert_suppressed: same_direction=true "
+                "severity_increased=false material_extension=false"
             ),
             possible_action=decision.possible_action,
             icon=decision.icon,
@@ -353,13 +357,11 @@ def _movement_trigger_source(
 
 def _movement_reason(label: str, move: float, threshold: float) -> str:
     verb = "moved up" if move > 0 else "moved down"
-    if "since" in label and move < 0:
-        return (
-            f"The coin declined by {abs(move):.2f}% {label}, crossing the "
-            f"{abs(threshold):.1f}% movement threshold."
-        )
+    preposition = "" if label.startswith(("since ", "over ")) else "on the "
+    if label.startswith("since the previous alert"):
+        label = "since the previous alert"
     return (
-        f"The coin {verb} by {abs(move):.2f}% on the {label}, crossing the "
+        f"The coin {verb} by {abs(move):.2f}% {preposition}{label}, crossing the "
         f"{abs(threshold):.1f}% movement threshold."
     )
 
@@ -390,12 +392,14 @@ def _scheduled_reason(period: float, trend_24h: float, has_relevant_news: bool) 
     return "The scheduled update shows meaningful movement over the last update window."
 
 
-def _should_suppress_important(
+def _should_suppress_event_alert(
     context: SignalContext,
     decision: NotificationDecision,
-    cumulative_move: float,
 ) -> bool:
-    if decision.notification_type is not NotificationType.IMPORTANT_ALERT:
+    if decision.notification_type not in {
+        NotificationType.IMPORTANT_ALERT,
+        NotificationType.CRITICAL_ALERT,
+    }:
         return False
     if not context.last_notification_time:
         return False
@@ -404,24 +408,19 @@ def _should_suppress_important(
         seconds=cooldown_seconds
     ):
         return False
-    if (context.last_notification_type or "") != NotificationType.IMPORTANT_ALERT.value:
+    if (context.last_notification_type or "") not in {
+        NotificationType.IMPORTANT_ALERT.value,
+        NotificationType.CRITICAL_ALERT.value,
+    }:
         return False
     if (context.last_notification_direction or "") != decision.direction.value:
         return False
     previous_severity = _severity_from_string(context.last_notification_severity)
     if previous_severity and SEVERITY_RANK[decision.severity] > SEVERITY_RANK[previous_severity]:
         return False
-    previous_move = context.suppression_context.get("previous_cumulative_movement_percent")
-    try:
-        previous_abs = abs(float(previous_move))
-    except (TypeError, ValueError):
-        previous_abs = abs(cumulative_move)
-    material_worsening = abs(cumulative_move) >= previous_abs + abs(
-        context.material_worsening_percent
-    )
-    if material_worsening:
-        return False
-    if context.suppression_context.get("new_highly_relevant_news") is True:
+    if context.suppression_context.get("new_highly_relevant_news") is True or (
+        _has_strong_news(context) and _contains_market_shock(context.relevant_news_items)
+    ):
         return False
     if _price_extended_materially_from_last_alert(context, decision):
         return False
@@ -442,19 +441,36 @@ def _price_extended_materially_from_last_alert(
     context: SignalContext,
     decision: NotificationDecision,
 ) -> bool:
-    previous_price = context.suppression_context.get("last_important_alert_price")
+    previous_price = context.suppression_context.get(
+        "last_event_alert_price",
+        context.suppression_context.get("last_important_alert_price"),
+    )
     try:
         previous = float(previous_price)
     except (TypeError, ValueError):
         return False
     if previous <= 0 or context.current_price <= 0:
         return False
-    threshold = abs(context.cumulative_movement_threshold_percent) * 0.75 / 100.0
+    extension_percent = _material_extension_percent(context.symbol)
+    threshold = extension_percent / 100.0
     if decision.direction is NotificationDirection.UP:
         return context.current_price >= previous * (1 + threshold)
     if decision.direction is NotificationDirection.DOWN:
         return context.current_price <= previous * (1 - threshold)
     return False
+
+
+def _material_extension_percent(symbol: str) -> float:
+    return 1.0 if str(symbol).strip().lower() in {"btc", "eth"} else 1.5
+
+
+def _has_strong_news(context: SignalContext) -> bool:
+    if str(context.news_relevance_score or "").lower() in {"strong", "very_relevant", "high"}:
+        return True
+    return any(
+        str(item.get("relevance") or "").lower() in {"strong", "very_relevant", "high"}
+        for item in context.news_candidates
+    )
 
 
 def _severity_from_string(value: str | None) -> NotificationSeverity | None:
