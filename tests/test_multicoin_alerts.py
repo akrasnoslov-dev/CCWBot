@@ -533,7 +533,7 @@ def test_material_news_is_relevant():
         }
     ]
 
-    assert alerts._classify_news_context("btc", news) == "relevant"
+    assert alerts._classify_news_context("btc", news) == "strong"
 
 
 @pytest.mark.asyncio

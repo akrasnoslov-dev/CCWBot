@@ -59,6 +59,7 @@ class SignalContext:
     four_hour_change_percent: float | None = None
     twenty_four_hour_change_percent: float | None = None
     relevant_news_items: list[dict[str, Any]] = field(default_factory=list)
+    news_candidates: list[dict[str, Any]] = field(default_factory=list)
     news_relevance_score: str | None = None
     last_notification_time: datetime | None = None
     last_notification_type: str | None = None
@@ -95,9 +96,12 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     period = _value(context.user_period_change_percent)
     trend_24h = _value(context.twenty_four_hour_change_percent)
     news_score = (context.news_relevance_score or "none").lower()
-    has_relevant_news = bool(context.relevant_news_items) and news_score in {
+    useful_news = _useful_news_candidates(context)
+    has_relevant_news = bool(useful_news) and news_score in {
         "relevant",
         "very_relevant",
+        "medium",
+        "strong",
     }
 
     direction = _direction(fast, cumulative, period, trend_24h)
@@ -148,12 +152,18 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             if max(fast_abs, cumulative_abs, period_abs) >= threshold * 1.5
             else NotificationSeverity.MEDIUM
         )
+        if has_relevant_news:
+            reason = "Price movement has possible news context."
+        elif trend_abs >= max(cumulative_threshold * 1.5, 2.0):
+            reason = "Price movement aligns with the broader price trend."
+        else:
+            reason = "Price movement crossed the user movement threshold."
         decision = _decision(
             NotificationType.IMPORTANT_ALERT,
             combined_severity,
             direction,
             TriggerSource.COMBINED_SIGNAL,
-            "Price movement aligns with broader trend or relevant news.",
+            reason,
             "Watch whether the move stabilises or continues over the next update window.",
         )
     elif fast_trigger:
@@ -172,7 +182,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             direction,
             TriggerSource.CUMULATIVE_MOVEMENT,
             _movement_reason(
-                "movement since the last Market Update",
+                "since the previous alert baseline",
                 cumulative,
                 cumulative_threshold,
             ),
@@ -184,8 +194,8 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             NotificationSeverity.MEDIUM,
             direction,
             TriggerSource.USER_PERIOD_MOVEMENT,
-            _movement_reason("period movement", period, cumulative_threshold),
-            "Watch whether the period trend extends or fades.",
+            _movement_reason("over the last update window", period, cumulative_threshold),
+            "Watch whether the move continues or fades.",
         )
     elif news_trigger:
         severity = (
@@ -346,7 +356,7 @@ def _movement_reason(label: str, move: float, threshold: float) -> str:
     if "since" in label and move < 0:
         return (
             f"The coin declined by {abs(move):.2f}% {label}, crossing the "
-            f"{abs(threshold):.1f}% cumulative movement threshold."
+            f"{abs(threshold):.1f}% movement threshold."
         )
     return (
         f"The coin {verb} by {abs(move):.2f}% on the {label}, crossing the "
@@ -363,21 +373,21 @@ def _scheduled_market_update_severity(
         return NotificationSeverity.HIGH
     if period_abs >= 2.0 and trend_abs >= 3.0:
         return NotificationSeverity.HIGH
-    if period_abs >= 1.0 or trend_abs >= 3.0 or has_relevant_news:
+    if period_abs >= 1.0 or has_relevant_news:
         return NotificationSeverity.MEDIUM
     return NotificationSeverity.LOW
 
 
 def _scheduled_reason(period: float, trend_24h: float, has_relevant_news: bool) -> str:
     if abs(period) < 1.0 and abs(trend_24h) < 3.0 and not has_relevant_news:
-        return "The market is calm over the selected period."
+        return "The market is calm over the last update window."
     if has_relevant_news:
         return "The scheduled update includes relevant news context."
     if abs(period) < 1.0:
         return "No significant short-term movement detected."
     if abs(period) < 2.0:
-        return "The scheduled update shows mild movement over the selected period."
-    return "The scheduled update shows meaningful movement over the selected period."
+        return "The scheduled update shows mild movement over the last update window."
+    return "The scheduled update shows meaningful movement over the last update window."
 
 
 def _should_suppress_important(
@@ -389,8 +399,9 @@ def _should_suppress_important(
         return False
     if not context.last_notification_time:
         return False
+    cooldown_seconds = max(int(context.user_alert_frequency_seconds or 3600), 0)
     if (datetime.now(timezone.utc) - _aware_utc(context.last_notification_time)) > timedelta(
-        minutes=60
+        seconds=cooldown_seconds
     ):
         return False
     if (context.last_notification_type or "") != NotificationType.IMPORTANT_ALERT.value:
@@ -412,7 +423,38 @@ def _should_suppress_important(
         return False
     if context.suppression_context.get("new_highly_relevant_news") is True:
         return False
+    if _price_extended_materially_from_last_alert(context, decision):
+        return False
     return True
+
+
+def _useful_news_candidates(context: SignalContext) -> list[dict[str, Any]]:
+    candidates = context.news_candidates or context.relevant_news_items
+    return [
+        item
+        for item in candidates
+        if str(item.get("relevance") or context.news_relevance_score or "").lower()
+        in {"medium", "strong", "relevant", "very_relevant", "high"}
+    ]
+
+
+def _price_extended_materially_from_last_alert(
+    context: SignalContext,
+    decision: NotificationDecision,
+) -> bool:
+    previous_price = context.suppression_context.get("last_important_alert_price")
+    try:
+        previous = float(previous_price)
+    except (TypeError, ValueError):
+        return False
+    if previous <= 0 or context.current_price <= 0:
+        return False
+    threshold = abs(context.cumulative_movement_threshold_percent) * 0.75 / 100.0
+    if decision.direction is NotificationDirection.UP:
+        return context.current_price >= previous * (1 + threshold)
+    if decision.direction is NotificationDirection.DOWN:
+        return context.current_price <= previous * (1 - threshold)
+    return False
 
 
 def _severity_from_string(value: str | None) -> NotificationSeverity | None:
