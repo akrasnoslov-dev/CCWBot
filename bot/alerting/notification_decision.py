@@ -59,6 +59,7 @@ class SignalContext:
     four_hour_change_percent: float | None = None
     twenty_four_hour_change_percent: float | None = None
     relevant_news_items: list[dict[str, Any]] = field(default_factory=list)
+    news_candidates: list[dict[str, Any]] = field(default_factory=list)
     news_relevance_score: str | None = None
     last_notification_time: datetime | None = None
     last_notification_type: str | None = None
@@ -95,10 +96,17 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     period = _value(context.user_period_change_percent)
     trend_24h = _value(context.twenty_four_hour_change_percent)
     news_score = (context.news_relevance_score or "none").lower()
-    has_relevant_news = bool(context.relevant_news_items) and news_score in {
+    useful_news = _useful_news_candidates(context)
+    has_relevant_news = bool(useful_news) and news_score in {
         "relevant",
         "very_relevant",
+        "medium",
+        "strong",
     }
+    has_strong_news = any(
+        str(item.get("relevance") or "").lower() in {"strong", "very_relevant", "high"}
+        for item in useful_news
+    ) or news_score in {"strong", "very_relevant", "high"}
 
     direction = _direction(fast, cumulative, period, trend_24h)
     fast_abs = abs(fast)
@@ -108,6 +116,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     threshold = abs(context.fast_movement_threshold_percent)
     cumulative_threshold = abs(context.cumulative_movement_threshold_percent)
     extreme_threshold = abs(context.extreme_movement_threshold_percent)
+    trend_confirmation_threshold = max(cumulative_threshold * 1.5, 2.0)
 
     fast_trigger = fast_abs >= threshold
     cumulative_trigger = cumulative_abs >= cumulative_threshold
@@ -115,11 +124,11 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
     extreme_trigger = fast_abs >= extreme_threshold or cumulative_abs >= extreme_threshold
     combined_trigger = (
         (fast_trigger or cumulative_trigger or period_trigger)
-        and (has_relevant_news or trend_abs >= max(cumulative_threshold * 1.5, 2.0))
+        and (has_relevant_news or trend_abs >= trend_confirmation_threshold)
     )
-    news_trigger = has_relevant_news
+    news_trigger = has_strong_news
 
-    if _contains_market_shock(context.relevant_news_items):
+    if _contains_market_shock(context.news_candidates, context.relevant_news_items):
         decision = _decision(
             NotificationType.CRITICAL_ALERT,
             NotificationSeverity.EXTREME,
@@ -148,12 +157,18 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             if max(fast_abs, cumulative_abs, period_abs) >= threshold * 1.5
             else NotificationSeverity.MEDIUM
         )
+        if has_relevant_news:
+            reason = "Price movement has possible news context."
+        elif trend_abs >= max(cumulative_threshold * 1.5, 2.0):
+            reason = "Price movement aligns with the broader price trend."
+        else:
+            reason = "Price movement crossed the user movement threshold."
         decision = _decision(
             NotificationType.IMPORTANT_ALERT,
             combined_severity,
             direction,
             TriggerSource.COMBINED_SIGNAL,
-            "Price movement aligns with broader trend or relevant news.",
+            reason,
             "Watch whether the move stabilises or continues over the next update window.",
         )
     elif fast_trigger:
@@ -172,7 +187,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             direction,
             TriggerSource.CUMULATIVE_MOVEMENT,
             _movement_reason(
-                "movement since the last Market Update",
+                "since the previous alert baseline",
                 cumulative,
                 cumulative_threshold,
             ),
@@ -184,8 +199,8 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             NotificationSeverity.MEDIUM,
             direction,
             TriggerSource.USER_PERIOD_MOVEMENT,
-            _movement_reason("period movement", period, cumulative_threshold),
-            "Watch whether the period trend extends or fades.",
+            _movement_reason("over the last update window", period, cumulative_threshold),
+            "Watch whether the move continues or fades.",
         )
     elif news_trigger:
         severity = (
@@ -222,7 +237,7 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             should_send=False,
         )
 
-    suppressed = _should_suppress_important(context, decision, cumulative)
+    suppressed = _should_suppress_event_alert(context, decision)
     if suppressed:
         return NotificationDecision(
             notification_type=decision.notification_type,
@@ -232,8 +247,8 @@ def decide_notification(context: SignalContext) -> NotificationDecision:
             should_suppress=True,
             trigger_source=decision.trigger_source,
             reasoning_summary=(
-                "important_alert_suppressed: same_direction=true "
-                "severity_increased=false material_worsening=false"
+                "event_alert_suppressed: same_direction=true "
+                "severity_increased=false material_extension=false"
             ),
             possible_action=decision.possible_action,
             icon=decision.icon,
@@ -343,13 +358,11 @@ def _movement_trigger_source(
 
 def _movement_reason(label: str, move: float, threshold: float) -> str:
     verb = "moved up" if move > 0 else "moved down"
-    if "since" in label and move < 0:
-        return (
-            f"The coin declined by {abs(move):.2f}% {label}, crossing the "
-            f"{abs(threshold):.1f}% cumulative movement threshold."
-        )
+    preposition = "" if label.startswith(("since ", "over ")) else "on the "
+    if label.startswith("since the previous alert"):
+        label = "since the previous alert"
     return (
-        f"The coin {verb} by {abs(move):.2f}% on the {label}, crossing the "
+        f"The coin {verb} by {abs(move):.2f}% {preposition}{label}, crossing the "
         f"{abs(threshold):.1f}% movement threshold."
     )
 
@@ -363,56 +376,103 @@ def _scheduled_market_update_severity(
         return NotificationSeverity.HIGH
     if period_abs >= 2.0 and trend_abs >= 3.0:
         return NotificationSeverity.HIGH
-    if period_abs >= 1.0 or trend_abs >= 3.0 or has_relevant_news:
+    if period_abs >= 1.0 or has_relevant_news:
         return NotificationSeverity.MEDIUM
     return NotificationSeverity.LOW
 
 
 def _scheduled_reason(period: float, trend_24h: float, has_relevant_news: bool) -> str:
     if abs(period) < 1.0 and abs(trend_24h) < 3.0 and not has_relevant_news:
-        return "The market is calm over the selected period."
+        return "The market is calm over the last update window."
     if has_relevant_news:
         return "The scheduled update includes relevant news context."
     if abs(period) < 1.0:
         return "No significant short-term movement detected."
     if abs(period) < 2.0:
-        return "The scheduled update shows mild movement over the selected period."
-    return "The scheduled update shows meaningful movement over the selected period."
+        return "The scheduled update shows mild movement over the last update window."
+    return "The scheduled update shows meaningful movement over the last update window."
 
 
-def _should_suppress_important(
+def _should_suppress_event_alert(
     context: SignalContext,
     decision: NotificationDecision,
-    cumulative_move: float,
 ) -> bool:
-    if decision.notification_type is not NotificationType.IMPORTANT_ALERT:
+    if decision.notification_type not in {
+        NotificationType.IMPORTANT_ALERT,
+        NotificationType.CRITICAL_ALERT,
+    }:
         return False
     if not context.last_notification_time:
         return False
+    cooldown_seconds = max(int(context.user_alert_frequency_seconds or 3600), 0)
     if (datetime.now(timezone.utc) - _aware_utc(context.last_notification_time)) > timedelta(
-        minutes=60
+        seconds=cooldown_seconds
     ):
         return False
-    if (context.last_notification_type or "") != NotificationType.IMPORTANT_ALERT.value:
+    if (context.last_notification_type or "") not in {
+        NotificationType.IMPORTANT_ALERT.value,
+        NotificationType.CRITICAL_ALERT.value,
+    }:
         return False
     if (context.last_notification_direction or "") != decision.direction.value:
         return False
     previous_severity = _severity_from_string(context.last_notification_severity)
     if previous_severity and SEVERITY_RANK[decision.severity] > SEVERITY_RANK[previous_severity]:
         return False
-    previous_move = context.suppression_context.get("previous_cumulative_movement_percent")
-    try:
-        previous_abs = abs(float(previous_move))
-    except (TypeError, ValueError):
-        previous_abs = abs(cumulative_move)
-    material_worsening = abs(cumulative_move) >= previous_abs + abs(
-        context.material_worsening_percent
-    )
-    if material_worsening:
+    if context.suppression_context.get("new_highly_relevant_news") is True or (
+        _has_strong_news(context)
+        and _contains_market_shock(context.news_candidates, context.relevant_news_items)
+    ):
         return False
-    if context.suppression_context.get("new_highly_relevant_news") is True:
+    if _price_extended_materially_from_last_alert(context, decision):
         return False
     return True
+
+
+def _useful_news_candidates(context: SignalContext) -> list[dict[str, Any]]:
+    candidates = context.news_candidates or context.relevant_news_items
+    return [
+        item
+        for item in candidates
+        if str(item.get("relevance") or context.news_relevance_score or "").lower()
+        in {"medium", "strong", "relevant", "very_relevant", "high"}
+    ]
+
+
+def _price_extended_materially_from_last_alert(
+    context: SignalContext,
+    decision: NotificationDecision,
+) -> bool:
+    previous_price = context.suppression_context.get(
+        "last_event_alert_price",
+        context.suppression_context.get("last_important_alert_price"),
+    )
+    try:
+        previous = float(previous_price)
+    except (TypeError, ValueError):
+        return False
+    if previous <= 0 or context.current_price <= 0:
+        return False
+    extension_percent = _material_extension_percent(context.symbol)
+    threshold = extension_percent / 100.0
+    if decision.direction is NotificationDirection.UP:
+        return context.current_price >= previous * (1 + threshold)
+    if decision.direction is NotificationDirection.DOWN:
+        return context.current_price <= previous * (1 - threshold)
+    return False
+
+
+def _material_extension_percent(symbol: str) -> float:
+    return 1.0 if str(symbol).strip().lower() in {"btc", "eth"} else 1.5
+
+
+def _has_strong_news(context: SignalContext) -> bool:
+    if str(context.news_relevance_score or "").lower() in {"strong", "very_relevant", "high"}:
+        return True
+    return any(
+        str(item.get("relevance") or "").lower() in {"strong", "very_relevant", "high"}
+        for item in context.news_candidates
+    )
 
 
 def _severity_from_string(value: str | None) -> NotificationSeverity | None:
@@ -431,21 +491,66 @@ def _severity_from_string(value: str | None) -> NotificationSeverity | None:
         return None
 
 
-def _contains_market_shock(news_items: list[dict[str, Any]]) -> bool:
-    shock_terms = (
-        "exchange collapse",
-        "bankruptcy",
-        "major hack",
-        "exploit",
-        "liquidation cascade",
-        "systemic",
-        "halted withdrawals",
-    )
-    for item in news_items:
+def _contains_market_shock(
+    news_candidates: list[dict[str, Any]],
+    fallback_news_items: list[dict[str, Any]] | None = None,
+) -> bool:
+    candidates = news_candidates or fallback_news_items or []
+    for item in candidates:
+        relevance = str(item.get("relevance") or "").lower()
+        if relevance and relevance not in {"strong", "very_relevant", "high"}:
+            continue
         text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-        if any(term in text for term in shock_terms):
+        if _is_true_market_shock_text(text):
             return True
     return False
+
+
+def _is_true_market_shock_text(text: str) -> bool:
+    company_legal_terms = (
+        "sued",
+        "lawsuit",
+        "transfers from",
+        "pre-bankruptcy transfer",
+        "revenue",
+        "earnings",
+        "hosting business",
+        "treasury",
+    )
+    if any(term in text for term in company_legal_terms) and not any(
+        term in text
+        for term in (
+            "market-wide",
+            "systemic",
+            "withdrawal freeze",
+            "halted withdrawals",
+            "exchange collapse",
+            "stablecoin depeg",
+        )
+    ):
+        return False
+    systemic_patterns = (
+        ("exchange", "collapse"),
+        ("exchange", "insolven"),
+        ("withdrawal", "freeze"),
+        ("halted withdrawals",),
+        ("major hack",),
+        ("major exploit",),
+        ("stablecoin", "depeg"),
+        ("stablecoin", "collapse"),
+        ("liquidation cascade",),
+        ("forced selling",),
+        ("bitcoin network", "security"),
+        ("bitcoin", "double spend"),
+        ("custody", "failure"),
+        ("sec", "ban"),
+        ("fed", "shock"),
+        ("regulatory", "ban"),
+        ("etf", "rejected"),
+        ("etf", "approved"),
+        ("etf", "delayed"),
+    )
+    return any(all(term in text for term in pattern) for pattern in systemic_patterns)
 
 
 def _aware_utc(value: datetime) -> datetime:

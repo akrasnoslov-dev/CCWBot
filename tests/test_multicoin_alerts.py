@@ -533,7 +533,68 @@ def test_material_news_is_relevant():
         }
     ]
 
-    assert alerts._classify_news_context("btc", news) == "relevant"
+    assert alerts._classify_news_context("btc", news) == "strong"
+
+
+def test_btc_soluna_revenue_article_is_weak():
+    news = [
+        {
+            "title": (
+                "Soluna revenue jumps 58% as hosting business offsets weaker Bitcoin mining"
+            ),
+            "source": "Example",
+            "link": "https://example.test/soluna",
+        }
+    ]
+
+    assert alerts._classify_news_context("btc", news) == "weak"
+    assert alerts._build_news_candidates("btc", news)[0]["relevance"] == "weak"
+
+
+def test_swan_lawsuit_article_is_weak_background_for_btc():
+    news = [
+        {
+            "title": (
+                "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers "
+                "from Prime Trust"
+            ),
+            "source": "Cointelegraph.com News",
+            "link": "https://example.test/swan-bitcoin-lawsuit",
+        }
+    ]
+
+    candidates = alerts._build_news_candidates("btc", news)
+
+    assert alerts._classify_news_context("btc", news) == "weak"
+    assert candidates[0]["relevance"] == "weak"
+    assert "clear market catalyst" in candidates[0]["reason"]
+
+
+def test_btc_is_weak_when_bitcoin_is_secondary_fund_flow_context():
+    news = [
+        {
+            "title": (
+                "XRP and Solana funds attract inflows as bitcoin outflows hit nearly $1 billion"
+            ),
+            "source": "Example",
+            "link": "https://example.test/funds",
+        }
+    ]
+
+    assert alerts._classify_news_context("btc", news) == "weak"
+    assert alerts._classify_news_context("sol", news) == "medium"
+
+
+def test_direct_btc_support_article_is_user_visible():
+    news = [
+        {
+            "title": "Bitcoin price tests key support as ETF outflows pressure BTC",
+            "source": "Example",
+            "link": "https://example.test/btc-support",
+        }
+    ]
+
+    assert alerts._classify_news_context("btc", news) in {"medium", "strong"}
 
 
 @pytest.mark.asyncio
