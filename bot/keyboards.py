@@ -83,12 +83,6 @@ def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("Current settings", callback_data="admin:current")],
             [InlineKeyboardButton("Check interval", callback_data="admin:interval_menu")],
-            [_admin_threshold_button("BTC/ETH movement", "major_movement_threshold_percent")],
-            [_admin_threshold_button("Altcoin movement", "alt_movement_threshold_percent")],
-            [_admin_threshold_button("BTC/ETH 24h Medium", "major_24h_medium_threshold_percent")],
-            [_admin_threshold_button("BTC/ETH 24h High", "major_24h_high_threshold_percent")],
-            [_admin_threshold_button("Altcoin 24h Medium", "alt_24h_medium_threshold_percent")],
-            [_admin_threshold_button("Altcoin 24h High", "alt_24h_high_threshold_percent")],
         ]
     )
 

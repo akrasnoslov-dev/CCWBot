@@ -1,16 +1,16 @@
 # CCWBot
 
 CCWBot is a Python Telegram crypto watcher bot. It provides manual crypto price checks,
-BTC reports, and automatic movement alerts with Groq-backed AI context and deterministic
-fallbacks.
+BTC reports, and automatic Event Alerts decided by Groq-backed LLM market analysis.
 
 ## Features
 
 - Manual `/price` checks for `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`, `ton`,
   `link`, and `trx`.
-- Automatic movement alerts use global polling: BTC is free, while enabled non-BTC watchlist
+- Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
+- If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
 - Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
@@ -23,7 +23,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 
 ## Current Limitations
 
-- Automatic monitoring uses one global admin-controlled threshold for all supported coins.
+- Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
+- Market Heartbeat and separate report redesign are not implemented yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
@@ -63,7 +64,7 @@ Common configuration:
 - `GROQ_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
-- `PRICE_MOVE_ALERT_PERCENT`
+- `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
 - `PRICE_CACHE_TTL_SECONDS`
@@ -72,9 +73,9 @@ Common configuration:
 - `ENABLE_WEEKLY_REPORT`
 - `WEEKLY_REPORT_DAY`
 - `WEEKLY_REPORT_HOUR`
-- `ENABLE_STRONG_SIGNAL_ALERTS`
-- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`
-- `STRONG_SIGNAL_COOLDOWN_HOURS`
+- `ENABLE_STRONG_SIGNAL_ALERTS` (legacy; separate strong-signal scheduling is disabled)
+- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS` (legacy)
+- `STRONG_SIGNAL_COOLDOWN_HOURS` (legacy)
 - `PREMIUM_MONTHLY_STARS`
 
 ## Local Development Setup
@@ -323,8 +324,9 @@ After deploy, verify with a private chat:
 7. Send `/myplan`; it should show Free, Premium, or expired Premium state without exposing internals.
 8. Send `/subscribe`; it should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
-10. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices.
-11. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
+10. Open Admin -> System status; Groq AI status should show OK after a successful/no-alert LLM analysis and NOT OK after an LLM failure.
+11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
+12. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
 
 Do not paste bot logs, `.env`, Compose config output, or private Telegram text into PRs.
 

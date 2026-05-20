@@ -725,8 +725,30 @@ class EventAiAnalysis(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, comment="Internal AI analysis row id."
     )
-    market_event_id: Mapped[int] = mapped_column(
-        ForeignKey("market_events.id"), index=True, comment="Market event analyzed by the LLM."
+    market_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_events.id"),
+        nullable=True,
+        index=True,
+        comment="Market event analyzed by the LLM when an event alert is created.",
+    )
+    analysis_id: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        nullable=True,
+        index=True,
+        comment="External stable id for this LLM analysis attempt.",
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="Uppercase coin symbol analyzed by this LLM attempt.",
+    )
+    analysis_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Analysis purpose such as event_analysis.",
     )
     provider: Mapped[str] = mapped_column(
         String(64), comment="LLM provider used for this analysis."
@@ -736,6 +758,42 @@ class EventAiAnalysis(Base):
     )
     input_hash: Mapped[str] = mapped_column(
         String(128), index=True, comment="Hash of the exact AI input used for idempotency."
+    )
+    raw_input_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
+    )
+    raw_output_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON or text output returned by the LLM."
+    )
+    parsed_result_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Validated JSON result fields from the LLM response."
+    )
+    should_alert: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, comment="Whether the LLM decided this analysis should alert users."
+    )
+    event_key: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True, comment="LLM event key when should_alert is true."
+    )
+    title: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM alert title for an event alert."
+    )
+    message_body: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM alert body for an event alert."
+    )
+    related_news_ids: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON array of candidate news ids selected by the LLM."
+    )
+    possible_action: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Cautious non-prescriptive possible action from the LLM."
+    )
+    urgency: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM event urgency: low, normal, or high."
+    )
+    confidence: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM confidence: low, medium, or high."
+    )
+    reason_for_no_alert: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM explanation when no event alert should be sent."
     )
     analysis_text: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Raw or legacy analysis text returned by the AI."
@@ -766,6 +824,11 @@ class EventAiAnalysis(Base):
     )
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Failure detail when analysis generation fails."
+    )
+    error_reason: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Normalized LLM failure reason for admin status.",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When this AI analysis row was created."
@@ -1866,6 +1929,25 @@ async def get_last_sent_alert(
     return await session.scalar(statement)
 
 
+async def get_latest_sent_alert_for_symbol(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str | None = None,
+) -> Alert | None:
+    """Return the latest sent delivery row for a symbol across all users."""
+    statement = (
+        select(Alert)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.status == "sent")
+        .order_by(Alert.created_at.desc(), Alert.id.desc())
+        .limit(1)
+    )
+    if alert_type is not None:
+        statement = statement.where(Alert.alert_type == alert_type)
+    return await session.scalar(statement)
+
+
 async def get_alert_delivery(
     session: AsyncSession,
     *,
@@ -2124,6 +2206,130 @@ async def save_event_ai_analysis(
         )
     await session.refresh(analysis)
     return analysis
+
+
+async def save_event_llm_analysis(
+    session: AsyncSession,
+    *,
+    analysis_id: str,
+    symbol: str,
+    input_hash: str,
+    raw_input_json: str,
+    raw_output_json: str | None,
+    status: str,
+    provider: str = "groq",
+    model: str = "",
+    analysis_type: str = "event_analysis",
+    market_event_id: int | None = None,
+    parsed_result_json: str | None = None,
+    should_alert: bool | None = None,
+    event_key: str | None = None,
+    title: str | None = None,
+    message_body: str | None = None,
+    related_news_ids: str | None = None,
+    possible_action: str | None = None,
+    urgency: str | None = None,
+    confidence: str | None = None,
+    reason_for_no_alert: str | None = None,
+    error_message: str | None = None,
+    error_reason: str | None = None,
+    plain_text: str | None = None,
+    html_text: str | None = None,
+) -> EventAiAnalysis:
+    """Save one raw LLM event-analysis attempt."""
+    existing = await session.scalar(
+        select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+    )
+    if existing:
+        return existing
+
+    analysis = EventAiAnalysis(
+        market_event_id=market_event_id,
+        analysis_id=analysis_id,
+        symbol=symbol.upper(),
+        analysis_type=analysis_type,
+        provider=provider,
+        model=model,
+        input_hash=input_hash,
+        raw_input_json=raw_input_json,
+        raw_output_json=raw_output_json,
+        parsed_result_json=parsed_result_json,
+        should_alert=should_alert,
+        event_key=event_key,
+        title=title,
+        message_body=message_body,
+        related_news_ids=related_news_ids,
+        possible_action=possible_action,
+        urgency=urgency,
+        confidence=confidence,
+        reason_for_no_alert=reason_for_no_alert,
+        analysis_text=raw_output_json,
+        plain_text=plain_text,
+        html_text=html_text,
+        status=status,
+        error_message=error_message,
+        error_reason=error_reason,
+    )
+    session.add(analysis)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        return await session.scalar(
+            select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+        )
+    await session.refresh(analysis)
+    return analysis
+
+
+async def attach_analysis_to_market_event(
+    session: AsyncSession,
+    *,
+    analysis_id: str,
+    market_event_id: int,
+    plain_text: str | None = None,
+    html_text: str | None = None,
+) -> EventAiAnalysis | None:
+    """Attach a previously saved event analysis to the event created from its decision."""
+    analysis = await session.scalar(
+        select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+    )
+    if analysis is None:
+        return None
+    analysis.market_event_id = market_event_id
+    if plain_text is not None:
+        analysis.plain_text = plain_text
+    if html_text is not None:
+        analysis.html_text = html_text
+    await session.commit()
+    await session.refresh(analysis)
+    return analysis
+
+
+async def get_latest_event_analysis_attempt(
+    session: AsyncSession,
+) -> EventAiAnalysis | None:
+    """Return the most recent LLM event-analysis attempt."""
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.analysis_type == "event_analysis")
+        .order_by(EventAiAnalysis.created_at.desc(), EventAiAnalysis.id.desc())
+        .limit(1)
+    )
+
+
+async def get_latest_event_analysis_by_statuses(
+    session: AsyncSession,
+    statuses: set[str],
+) -> EventAiAnalysis | None:
+    """Return the latest event-analysis row whose status is in statuses."""
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.analysis_type == "event_analysis")
+        .where(EventAiAnalysis.status.in_(sorted(statuses)))
+        .order_by(EventAiAnalysis.created_at.desc(), EventAiAnalysis.id.desc())
+        .limit(1)
+    )
 
 
 async def count_market_events(session: AsyncSession, symbol: str | None = None) -> int:
