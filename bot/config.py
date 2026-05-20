@@ -76,7 +76,7 @@ SEEN_NEWS_KEEP_LATEST = _get_int_env("SEEN_NEWS_KEEP_LATEST", 500, minimum=1)
 
 # In-memory CoinGecko cache TTL to reduce API calls and reduce 429 risk.
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
-# Automatic BTC check cadence in seconds.
+# Automatic market check cadence in seconds.
 AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 300, minimum=1)
 # Lightweight HTTP health endpoint port.
 HEALTH_PORT = _get_int_env("HEALTH_PORT", 8080, minimum=1)

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
@@ -62,8 +63,11 @@ async def create_market_event(session, event_key):
 
 @pytest.mark.asyncio
 async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monkeypatch):
+    attempts = []
+
     class FakeBot:
         async def send_message(self, chat_id, text, parse_mode=None):
+            attempts.append(chat_id)
             raise RuntimeError("Telegram API failed: Forbidden: bot was blocked by the user")
 
     engine, SessionLocal = await build_session_factory()
@@ -74,6 +78,8 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        sleep = AsyncMock()
+        monkeypatch.setattr(alerts.asyncio, "sleep", sleep)
 
         delivered = await alerts._deliver_market_event_alert(
             SimpleNamespace(bot=FakeBot()),
@@ -85,6 +91,8 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
         )
 
         assert delivered is False
+        assert len(attempts) == 1
+        sleep.assert_not_awaited()
         async with SessionLocal() as session:
             reloaded = await session.get(User, user.id)
             alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
@@ -92,6 +100,8 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
             assert reloaded.bot_blocked is True
             assert reloaded.blocked_at is not None
             assert alert.status == "failed"
+            assert alert.retry_count == 1
+            assert alert.final_failed_at is not None
             assert "Forbidden: bot was blocked by the user" in alert.error_message
     finally:
         await engine.dispose()
@@ -111,6 +121,7 @@ async def test_chat_not_found_disables_user_and_keeps_failed_alert(monkeypatch):
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts.asyncio, "sleep", AsyncMock())
 
         delivered = await alerts._deliver_market_event_alert(
             SimpleNamespace(bot=FakeBot()),
@@ -150,6 +161,7 @@ async def test_blocked_user_is_skipped_in_future_alert_delivery(monkeypatch):
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts.asyncio, "sleep", AsyncMock())
 
         delivered = await alerts._deliver_market_event_alert(
             SimpleNamespace(bot=FakeBot()),
@@ -181,6 +193,7 @@ async def test_transient_delivery_error_does_not_disable_user(monkeypatch):
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts.asyncio, "sleep", AsyncMock())
 
         delivered = await alerts._deliver_market_event_alert(
             SimpleNamespace(bot=FakeBot()),
@@ -200,6 +213,142 @@ async def test_transient_delivery_error_does_not_disable_user(monkeypatch):
             assert reloaded.blocked_at is None
             assert alert.status == "failed"
             assert alert.error_message == "Timed out while sending Telegram message"
+            assert alert.retry_count == alerts.TELEGRAM_DELIVERY_MAX_ATTEMPTS
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_temporary_delivery_failure_retries_then_succeeds(monkeypatch):
+    attempts = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            attempts.append(chat_id)
+            if len(attempts) == 1:
+                raise RuntimeError("Timed out while sending Telegram message")
+            return None
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:retry-success")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        sleep = AsyncMock()
+        monkeypatch.setattr(alerts.asyncio, "sleep", sleep)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC alert\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+        )
+
+        assert delivered is True
+        assert len(attempts) == 2
+        sleep.assert_awaited_once_with(30)
+        async with SessionLocal() as session:
+            alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
+            assert alert.status == "sent"
+            assert alert.retry_count == 1
+            assert alert.last_error == "Timed out while sending Telegram message"
+            assert alert.next_retry_at is None
+            assert alert.final_failed_at is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_temporary_delivery_failure_exhausts_retries(monkeypatch):
+    attempts = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            attempts.append(chat_id)
+            raise RuntimeError("Timed out while sending Telegram message")
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:retry-exhausted")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        sleep = AsyncMock()
+        monkeypatch.setattr(alerts.asyncio, "sleep", sleep)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC alert\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+        )
+
+        assert delivered is False
+        assert len(attempts) == alerts.TELEGRAM_DELIVERY_MAX_ATTEMPTS
+        assert [call.args[0] for call in sleep.await_args_list] == [30, 120]
+        async with SessionLocal() as session:
+            reloaded = await session.get(User, user.id)
+            alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
+            assert reloaded.is_active is True
+            assert reloaded.bot_blocked is False
+            assert alert.status == "failed"
+            assert alert.retry_count == alerts.TELEGRAM_DELIVERY_MAX_ATTEMPTS
+            assert alert.last_error == "Timed out while sending Telegram message"
+            assert alert.next_retry_at is None
+            assert alert.final_failed_at is not None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_bad_request_delivery_failure_is_not_retried(monkeypatch):
+    attempts = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, parse_mode=None):
+            attempts.append(chat_id)
+            raise RuntimeError("Bad Request: can't parse entities")
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+            market_event = await create_market_event(session, "btc:bad-request-no-retry")
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        sleep = AsyncMock()
+        monkeypatch.setattr(alerts.asyncio, "sleep", sleep)
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=FakeBot()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC alert\n\nNot financial advice."},
+            market_event_id=market_event.id,
+            event_ai_analysis_id=123,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+        )
+
+        assert delivered is False
+        assert len(attempts) == 1
+        sleep.assert_not_awaited()
+        async with SessionLocal() as session:
+            reloaded = await session.get(User, user.id)
+            alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
+            assert reloaded.is_active is True
+            assert reloaded.bot_blocked is False
+            assert alert.status == "failed"
+            assert alert.retry_count == 1
+            assert alert.final_failed_at is not None
     finally:
         await engine.dispose()
 
@@ -218,6 +367,7 @@ async def test_failed_market_update_does_not_persist_last_market_update_time(mon
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts.asyncio, "sleep", AsyncMock())
 
         delivered = await alerts._deliver_market_event_alert(
             SimpleNamespace(bot=FakeBot()),

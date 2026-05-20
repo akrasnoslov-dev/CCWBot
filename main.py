@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 
 from bot.alerts import (
-    schedule_automatic_btc_check,
+    schedule_automatic_market_check,
     schedule_seen_news_cleanup,
     schedule_strong_signal_job,
     schedule_weekly_report,
@@ -132,7 +132,7 @@ def main():
     register_handlers(app)
 
     runtime_settings = loop.run_until_complete(get_runtime_alert_settings())
-    schedule_automatic_btc_check(app, runtime_settings["automatic_check_interval_seconds"])
+    schedule_automatic_market_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_weekly_report(app)
     schedule_strong_signal_job(app)
     schedule_seen_news_cleanup(app)
@@ -141,7 +141,7 @@ def main():
         start_health_server(HEALTH_PORT, started_at=started_at)
     )
     log(f"Health server is running on port {HEALTH_PORT}.")
-    log("Bot is running. Automatic BTC checks are enabled.")
+    log("Bot is running. Automatic market checks are enabled.")
     app.post_init = setup_bot_commands
     try:
         app.run_polling(close_loop=False, stop_signals=get_stop_signals())
