@@ -37,6 +37,8 @@ from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_TYPE,
     MarketHeartbeatDecision,
     MarketHeartbeatValidationError,
+    sanitize_heartbeat_message_body,
+    sanitize_heartbeat_possible_action,
     validate_market_heartbeat_output,
 )
 from bot.alerting.notification_decision import (
@@ -604,14 +606,11 @@ def _build_market_heartbeat_payload(
     symbol = normalize_symbol(heartbeat.symbol).upper()
     icon, entities = build_coin_icon_prefix(symbol)
     title = _sanitize_event_text(heartbeat.title, f"{symbol} market heartbeat")
-    message_body = _sanitize_event_text(
+    message_body = sanitize_heartbeat_message_body(
         heartbeat.message_body,
         f"{symbol} remains under regular monitoring.",
     )
-    possible_action = _sanitize_event_text(
-        heartbeat.possible_action,
-        "No urgent action appears necessary. Keep monitoring your plan and risk exposure.",
-    )
+    possible_action = sanitize_heartbeat_possible_action(heartbeat.possible_action)
     related_section = _format_related_context(
         related_news,
         empty_text="No major related news selected.",

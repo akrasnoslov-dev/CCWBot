@@ -20,6 +20,30 @@ HEARTBEAT_RESULT_FIELDS = {
 DIRECT_ADVICE_RE = re.compile(
     r"(?i)\b(buy|sell|liquidate|short|long|move all|all money|all funds)\b"
 )
+HEARTBEAT_ADVICE_RE = re.compile(
+    r"(?i)\b("
+    r"review(?:ing)?\s+(?:your\s+)?(?:investment\s+)?portfolio|"
+    r"adjust(?:ing)?\s+(?:your\s+)?portfolio|"
+    r"rebalance|"
+    r"investment\s+strategy|"
+    r"financial\s+goals?|"
+    r"risk\s+tolerance|"
+    r"good\s+time\s+to\s+review|"
+    r"consider\s+adjust(?:ing|ments?)?|"
+    r"(?:any\s+)?adjustments?\s+(?:are|is)\s+needed|"
+    r"holdings?|"
+    r"exposure|"
+    r"allocation|"
+    r"portfolio|"
+    r"investment\s+portfolio|"
+    r"investment\s+plan|"
+    r"investment\s+approach"
+    r")\b"
+)
+SAFE_NEUTRAL_HEARTBEAT_ACTION = (
+    "No immediate action is suggested by this heartbeat. Continue monitoring if this coin "
+    "is on your watchlist."
+)
 
 
 class MarketHeartbeatValidationError(ValueError):
@@ -59,8 +83,8 @@ def validate_market_heartbeat_output(
     confidence = str(result["confidence"]).strip().lower()
     if confidence not in ALLOWED_HEARTBEAT_CONFIDENCE:
         raise MarketHeartbeatValidationError("invalid confidence")
-    if DIRECT_ADVICE_RE.search(possible_action):
-        raise MarketHeartbeatValidationError("possible_action contains direct financial advice")
+    _reject_heartbeat_advice(message_body, "message_body")
+    _reject_heartbeat_advice(possible_action, "possible_action")
 
     related_news_ids = result["related_news_ids"]
     if not isinstance(related_news_ids, list) or not all(
@@ -90,3 +114,33 @@ def _required_text(value: Any, field_name: str) -> str:
     if not stripped:
         raise MarketHeartbeatValidationError(f"{field_name} is required")
     return stripped
+
+
+def _reject_heartbeat_advice(value: str, field_name: str) -> None:
+    if DIRECT_ADVICE_RE.search(value):
+        raise MarketHeartbeatValidationError(f"{field_name} contains direct financial advice")
+    if HEARTBEAT_ADVICE_RE.search(value):
+        raise MarketHeartbeatValidationError(
+            f"{field_name} contains portfolio or investment advice"
+        )
+
+
+def sanitize_heartbeat_possible_action(value: str | None) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text or DIRECT_ADVICE_RE.search(text) or HEARTBEAT_ADVICE_RE.search(text):
+        return SAFE_NEUTRAL_HEARTBEAT_ACTION
+    return text
+
+
+def sanitize_heartbeat_message_body(value: str | None, fallback: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return fallback
+    safe_sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if sentence.strip()
+        and not DIRECT_ADVICE_RE.search(sentence)
+        and not HEARTBEAT_ADVICE_RE.search(sentence)
+    ]
+    return " ".join(safe_sentences).strip() or fallback

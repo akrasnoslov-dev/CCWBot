@@ -900,9 +900,20 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
         "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
         "Make the heartbeat useful and concise. Do not lazily say nothing happened. "
         "Mention selected relevant news if useful, but avoid exact causality claims.\n"
+        "message_body and possible_action must be neutral monitoring/status text only. "
+        "Do not suggest reviewing, adjusting, rebalancing, changing, or managing a user's "
+        "portfolio, holdings, exposure, allocation, investment strategy, risk tolerance, "
+        "or financial goals.\n"
         "related_news_ids must only contain news_id values from candidate_news.\n"
         "possible_action must be cautious and non-prescriptive. Do not tell users to buy, sell, "
-        "liquidate, short, long, or move all money.\n"
+        "liquidate, short, long, move all money, review an investment portfolio, adjust a "
+        "portfolio, rebalance, change investment strategy, assess financial goals, or act on "
+        "risk tolerance.\n"
+        "Safe possible_action examples: "
+        '"No immediate action is suggested by this heartbeat. Continue monitoring if this coin '
+        'is on your watchlist."; '
+        '"Watch whether the current trend continues before the next update."; '
+        '"Use this as a market status update only."\n'
         "Write in English only.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"

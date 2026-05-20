@@ -12,7 +12,14 @@ from telegram import MessageEntity
 import bot.alerts as alerts
 import bot.coin_icons as coin_icons
 import bot.handlers as handlers
-from bot.alerting.market_heartbeat import MARKET_HEARTBEAT_TYPE
+from bot.alerting.market_heartbeat import (
+    MARKET_HEARTBEAT_TYPE,
+    SAFE_NEUTRAL_HEARTBEAT_ACTION,
+    MarketHeartbeatValidationError,
+    sanitize_heartbeat_message_body,
+    sanitize_heartbeat_possible_action,
+    validate_market_heartbeat_output,
+)
 from bot.db.database import (
     Alert,
     Base,
@@ -83,7 +90,7 @@ async def create_heartbeat(session, *, generated_at=None):
         title="BTC remains calm with no major market stress",
         message_body="BTC is trading without a clear urgent signal.",
         related_news_ids=json.dumps(["news_a"]),
-        possible_action="No urgent action appears necessary. Keep monitoring risk exposure.",
+        possible_action=SAFE_NEUTRAL_HEARTBEAT_ACTION,
         confidence="medium",
         status="completed",
     )
@@ -154,9 +161,7 @@ async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
                         "title": "BTC remains calm with no major market stress",
                         "message_body": "BTC is trading without a clear urgent signal.",
                         "related_news_ids": [],
-                        "possible_action": (
-                            "No urgent action appears necessary. Keep monitoring risk exposure."
-                        ),
+                        "possible_action": SAFE_NEUTRAL_HEARTBEAT_ACTION,
                         "confidence": "medium",
                     },
                 )
@@ -285,7 +290,8 @@ async def test_heartbeat_missing_or_stale_is_not_sent(monkeypatch):
         await engine.dispose()
 
 
-def test_event_and_heartbeat_rendering_use_new_labels_and_fallback_emoji():
+def test_event_and_heartbeat_rendering_use_new_labels_and_fallback_emoji(monkeypatch):
+    monkeypatch.setitem(coin_icons.COIN_CUSTOM_EMOJI_IDS, "BTC", "")
     decision = alerts.EventAnalysisDecision(
         symbol="BTC",
         should_alert=True,
@@ -333,6 +339,147 @@ def test_event_and_heartbeat_rendering_use_new_labels_and_fallback_emoji():
     assert "Critical Alert" not in combined
     assert "Strong Signal" not in combined
     assert event_payload["entities"] is None
+
+
+def heartbeat_result(**overrides):
+    result = {
+        "symbol": "BTC",
+        "title": "BTC remains calm with no major market stress",
+        "message_body": "BTC is trading without a clear urgent signal.",
+        "related_news_ids": [],
+        "possible_action": SAFE_NEUTRAL_HEARTBEAT_ACTION,
+        "confidence": "medium",
+    }
+    result.update(overrides)
+    return result
+
+
+def test_market_heartbeat_safe_neutral_wording_is_accepted():
+    decision = validate_market_heartbeat_output(
+        heartbeat_result(
+            message_body=(
+                "BTC has traded without a clear urgent signal. "
+                "Watch whether the current trend continues before the next update."
+            ),
+            possible_action=(
+                "No immediate action is suggested by this heartbeat. "
+                "Continue monitoring if this coin is on your watchlist."
+            ),
+        ),
+        expected_symbol="btc",
+        candidate_news_ids=set(),
+    )
+
+    assert decision.possible_action == SAFE_NEUTRAL_HEARTBEAT_ACTION
+
+
+@pytest.mark.parametrize(
+    "possible_action",
+    [
+        "Consider reviewing your investment portfolio.",
+        "Assess whether any adjustments are needed.",
+        "Review your investment strategy and financial goals.",
+        "Adjusting your portfolio as needed may help with risk tolerance.",
+    ],
+)
+def test_market_heartbeat_possible_action_advice_is_rejected_and_sanitized(possible_action):
+    with pytest.raises(MarketHeartbeatValidationError, match="possible_action contains"):
+        validate_market_heartbeat_output(
+            heartbeat_result(possible_action=possible_action),
+            expected_symbol="btc",
+            candidate_news_ids=set(),
+        )
+
+    assert sanitize_heartbeat_possible_action(possible_action) == SAFE_NEUTRAL_HEARTBEAT_ACTION
+
+
+def test_market_heartbeat_message_body_advice_is_rejected_and_sanitized():
+    message_body = (
+        "BTC has traded in a narrow range. "
+        "It may be a good time to review your investment portfolio."
+    )
+
+    with pytest.raises(MarketHeartbeatValidationError, match="message_body contains"):
+        validate_market_heartbeat_output(
+            heartbeat_result(message_body=message_body),
+            expected_symbol="btc",
+            candidate_news_ids=set(),
+        )
+
+    assert sanitize_heartbeat_message_body(
+        message_body,
+        "BTC remains under regular monitoring.",
+    ) == "BTC has traded in a narrow range."
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("message_body", "BTC is calm, but users may want to buy before volatility returns."),
+        ("possible_action", "Sell if volatility increases."),
+        ("possible_action", "Do not short or long based on this heartbeat."),
+        ("possible_action", "Liquidate if market stress rises."),
+    ],
+)
+def test_market_heartbeat_direct_advice_remains_rejected(field, value):
+    with pytest.raises(MarketHeartbeatValidationError, match=f"{field} contains"):
+        validate_market_heartbeat_output(
+            heartbeat_result(**{field: value}),
+            expected_symbol="btc",
+            candidate_news_ids=set(),
+        )
+
+
+def test_heartbeat_rendering_sanitizes_cached_advice_like_text():
+    heartbeat = SimpleNamespace(
+        symbol="BTC",
+        title="BTC remains calm",
+        message_body=(
+            "BTC remains under regular monitoring. "
+            "Consider reviewing your investment portfolio."
+        ),
+        possible_action="Adjust your portfolio according to your risk tolerance.",
+    )
+
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=100000.0,
+        change_since_last_message=None,
+        change_24h=1.0,
+        related_news=[],
+    )
+
+    text = payload["plain_text"]
+    assert "BTC remains under regular monitoring." in text
+    assert SAFE_NEUTRAL_HEARTBEAT_ACTION in text
+    for forbidden in (
+        "investment portfolio",
+        "Adjust your portfolio",
+        "risk tolerance",
+        "financial goals",
+    ):
+        assert forbidden not in text
+
+
+def test_event_alert_validation_still_allows_existing_cautious_event_wording():
+    decision = alerts.validate_event_analysis_output(
+        {
+            "symbol": "BTC",
+            "should_alert": True,
+            "event_key": "btc_market_event_2026_05_21",
+            "title": "BTC volatility is rising",
+            "message_body": "BTC moved faster than usual.",
+            "related_news_ids": [],
+            "possible_action": "Review exposure and avoid reacting impulsively.",
+            "urgency": "normal",
+            "confidence": "medium",
+            "reason_for_no_alert": None,
+        },
+        expected_symbol="btc",
+        candidate_news_ids=set(),
+    )
+
+    assert decision.should_alert is True
 
 
 def test_custom_emoji_entity_is_used_when_id_exists(monkeypatch):
