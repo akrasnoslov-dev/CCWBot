@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta, timezone
 from hashlib import sha256
 from time import perf_counter
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 import httpx
 from telegram.constants import ParseMode
@@ -22,7 +23,13 @@ from bot.alerting.alert_severity import (
     SeverityInput,
     alert_title_action,
     evaluate_alert_severity,
-    thresholds_for_symbol,
+)
+from bot.alerting.event_analysis import (
+    EVENT_ALERT_TYPE,
+    EVENT_ANALYSIS_TYPE,
+    EventAnalysisDecision,
+    EventAnalysisValidationError,
+    validate_event_analysis_output,
 )
 from bot.alerting.notification_decision import (
     NotificationDecision,
@@ -31,7 +38,6 @@ from bot.alerting.notification_decision import (
     NotificationType,
     SignalContext,
     TriggerSource,
-    decide_notification,
 )
 from bot.config import (
     ENABLE_STRONG_SIGNAL_ALERTS,
@@ -44,22 +50,23 @@ from bot.config import (
     WEEKLY_REPORT_HOUR,
 )
 from bot.db.database import (
+    attach_analysis_to_market_event,
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
     get_event_ai_analysis,
-    get_last_sent_alert,
     get_last_sent_alert_at,
+    get_latest_sent_alert_for_symbol,
     get_latest_success_event_ai_analysis,
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
     get_reference_price_snapshot,
-    get_user_symbol_alert_state,
     make_news_key,
     mark_user_bot_blocked,
     reserve_alert_delivery,
     save_alert,
     save_event_ai_analysis,
+    save_event_llm_analysis,
     save_price_snapshot,
     update_alert_delivery_status,
     update_price_state,
@@ -76,7 +83,10 @@ from bot.reports import send_scheduled_weekly_report
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_MODEL,
+    AISchemaValidationError,
+    ask_event_analysis_raw,
     build_fallback_alert_message,
+    classify_ai_error_reason,
     classify_strong_signal,
     create_ai_alert_payload,
     sanitize_alert_message,
@@ -98,7 +108,9 @@ PRODUCT_ALERT_TYPES = {
     NotificationType.IMPORTANT_ALERT.value,
     NotificationType.CRITICAL_ALERT.value,
 }
-DELIVERABLE_ALERT_TYPES = {alert_type.value for alert_type in AlertType} | PRODUCT_ALERT_TYPES
+DELIVERABLE_ALERT_TYPES = (
+    {alert_type.value for alert_type in AlertType} | PRODUCT_ALERT_TYPES | {EVENT_ALERT_TYPE}
+)
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
@@ -346,6 +358,146 @@ def filter_news_for_symbol(
         elif relevance == "market_wide" and len(market_wide) < max_market_wide:
             market_wide.append(item)
     return direct + market_wide
+
+
+def _build_event_analysis_id(symbol: str) -> str:
+    return f"{EVENT_ANALYSIS_TYPE}_{normalize_symbol(symbol)}_{uuid4().hex}"
+
+
+def _json_dumps(payload: dict | list) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _event_input_hash(input_payload: dict) -> str:
+    return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
+
+
+def _news_id(index: int) -> str:
+    return f"news_{index + 1}"
+
+
+def _format_candidate_news(news_items: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    for index, item in enumerate(news_items):
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        candidates.append(
+            {
+                "news_id": _news_id(index),
+                "source": str(item.get("source") or "").strip() or "Unknown source",
+                "title": title,
+                "published_at_utc": str(
+                    item.get("published_at_utc")
+                    or item.get("published")
+                    or item.get("published_at")
+                    or ""
+                ),
+                "url": str(item.get("url") or item.get("link") or "").strip(),
+                "summary": str(item.get("summary") or "").strip(),
+            }
+        )
+    return candidates
+
+
+def _related_news_by_id(candidate_news: list[dict], related_news_ids: list[str]) -> list[dict]:
+    by_id = {str(item.get("news_id")): item for item in candidate_news}
+    return [by_id[news_id] for news_id in related_news_ids if news_id in by_id]
+
+
+def _format_optional_percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:+.2f}%"
+
+
+def _format_optional_price(value: float | None) -> str:
+    return "n/a" if value is None else f"${value:,.2f}"
+
+
+def _coin_fallback_emoji(symbol: str) -> str:
+    return {
+        "btc": "\U0001fa99",
+        "eth": "\U0001f48e",
+        "sol": "\u2600\ufe0f",
+        "xrp": "\U0001f30a",
+        "bnb": "\U0001f7e1",
+        "doge": "\U0001f43e",
+        "ada": "\U0001f535",
+        "ton": "\U0001f4ac",
+        "link": "\U0001f517",
+        "trx": "\U0001f53a",
+    }.get(normalize_symbol(symbol), "\U0001fa99")
+
+
+def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
+    cleaned = " ".join(str(value or "").split()).strip()
+    cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
+    cleaned = re.sub(r"(?i)\b(buy|sell|liquidate|short|long|move all money)\b", "review", cleaned)
+    return cleaned or fallback
+
+
+def _build_event_alert_payload(
+    *,
+    decision: EventAnalysisDecision,
+    input_payload: dict,
+    related_news: list[dict],
+) -> dict:
+    symbol = decision.symbol
+    market_data = input_payload["market_data"]
+    title = _sanitize_event_text(decision.title, f"{symbol} market event")
+    message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
+    possible_action = _sanitize_event_text(
+        decision.possible_action,
+        "Review the situation calmly and avoid impulsive decisions.",
+    )
+    if related_news:
+        news_lines = []
+        for item in related_news[:2]:
+            title_text = str(item.get("title") or "").strip()
+            source = str(item.get("source") or "").strip()
+            url = str(item.get("url") or "").strip()
+            detail = f" - {source}" if source else ""
+            if url:
+                detail = f"{detail} - {url}" if detail else f" - {url}"
+            news_lines.append(f"- {title_text}{detail}")
+        related_section = "\n".join(news_lines)
+    else:
+        related_section = "No clearly related news selected."
+
+    message = (
+        f"{_coin_fallback_emoji(symbol)} \u26a0\ufe0f {symbol} Event Alert\n\n"
+        f"{title}\n\n"
+        f"Price: {_format_optional_price(market_data.get('price_now_usd'))}\n"
+        "Since last "
+        f"{symbol} message: "
+        f"{_format_optional_percent(market_data.get('change_since_last_user_visible_message_percent'))}\n"
+        f"24h change: {_format_optional_percent(market_data.get('change_24h_percent'))}\n\n"
+        "Situation:\n"
+        f"{message_body}\n\n"
+        "Related context:\n"
+        f"{related_section}\n\n"
+        "Possible action:\n"
+        f"{possible_action}\n\n"
+        "Not financial advice."
+    )
+    return {"plain_text": message, "html_text": None}
+
+
+def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
+    market_data = input_payload["market_data"]
+    return _json_dumps(
+        {
+            "notification_type": EVENT_ALERT_TYPE,
+            "notification_severity": decision.urgency,
+            "notification_direction": None,
+            "current_price": market_data.get("price_now_usd"),
+            "change_since_last_market_update_percent": market_data.get(
+                "change_since_last_user_visible_message_percent"
+            ),
+            "twenty_four_hour_change_percent": market_data.get("change_24h_percent"),
+            "event_key": decision.event_key,
+            "confidence": decision.confidence,
+        }
+    )
 
 
 def _build_alert_ai_input_hash(
@@ -1169,6 +1321,275 @@ async def _resolve_window_market_context(
     return previous_price, peak
 
 
+async def _build_event_analysis_input(
+    *,
+    analysis_id: str,
+    symbol: str,
+    current_price: float,
+    change_24h: float,
+    now: datetime,
+    state: dict,
+    candidate_news: list[dict],
+) -> dict:
+    normalized_symbol = normalize_symbol(symbol)
+    fallback_previous_price = float(state.get("last_price") or current_price)
+    snapshots_payload: list[dict] = []
+    last_message_at = None
+    last_message_type = None
+    last_message_price = None
+
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        since = now - timedelta(minutes=60)
+        async with DB_SESSION_LOCAL() as session:
+            snapshots = await get_price_snapshots_since(
+                session,
+                symbol=normalized_symbol,
+                since=since,
+            )
+            latest_alert = await get_latest_sent_alert_for_symbol(
+                session,
+                symbol=normalized_symbol,
+                alert_type=EVENT_ALERT_TYPE,
+            )
+        snapshots_payload = [
+            {
+                "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
+                "price_usd": float(snapshot.price),
+            }
+            for snapshot in snapshots
+        ]
+        if latest_alert:
+            last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
+            last_message_type = latest_alert.alert_type
+            last_message_price = _numeric_context_value(
+                latest_alert.numeric_context,
+                "current_price",
+            )
+    else:
+        last_message_at = state.get("last_alert_at")
+        last_message_type = EVENT_ALERT_TYPE if last_message_at else None
+        last_message_price = (
+            float(state.get("last_price") or current_price) if last_message_at else None
+        )
+
+    change_since_last_message = (
+        calculate_price_change_percent(float(last_message_price), current_price)
+        if last_message_price
+        else None
+    )
+    if not snapshots_payload:
+        snapshots_payload = [
+            {
+                "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+                "price_usd": fallback_previous_price,
+            }
+        ]
+
+    return {
+        "analysis_id": analysis_id,
+        "symbol": normalized_symbol.upper(),
+        "coin_name": _coin_name(normalized_symbol),
+        "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+        "market_data": {
+            "price_now_usd": float(current_price),
+            "price_snapshots": snapshots_payload,
+            "change_24h_percent": float(change_24h),
+            "change_since_last_user_visible_message_percent": change_since_last_message,
+        },
+        "last_user_visible_message_context": {
+            "last_message_at": last_message_at,
+            "last_message_type": last_message_type,
+            "last_message_price_usd": last_message_price,
+        },
+        "candidate_news": candidate_news,
+        "policy": {
+            "language": "English",
+            "user_profile": (
+                "General retail crypto holder. The bot must not provide personalised "
+                "financial advice."
+            ),
+            "noise_preference": (
+                "Prefer fewer, more useful alerts. Do not send repetitive or low-value alerts."
+            ),
+        },
+    }
+
+
+async def _save_event_analysis_attempt(
+    *,
+    input_payload: dict,
+    raw_output_json: str | None,
+    status: str,
+    parsed_result: dict | None = None,
+    decision: EventAnalysisDecision | None = None,
+    error_message: str | None = None,
+    error_reason: str | None = None,
+    market_event_id: int | None = None,
+    plain_text: str | None = None,
+) -> int | None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    related_news_ids = decision.related_news_ids if decision else []
+    async with DB_SESSION_LOCAL() as session:
+        analysis = await save_event_llm_analysis(
+            session,
+            analysis_id=str(input_payload["analysis_id"]),
+            symbol=str(input_payload["symbol"]),
+            input_hash=_event_input_hash(input_payload),
+            raw_input_json=_json_dumps(input_payload),
+            raw_output_json=raw_output_json,
+            status=status,
+            model=GROQ_MODEL,
+            market_event_id=market_event_id,
+            parsed_result_json=_json_dumps(parsed_result) if parsed_result is not None else None,
+            should_alert=decision.should_alert if decision else None,
+            event_key=decision.event_key if decision else None,
+            title=decision.title if decision else None,
+            message_body=decision.message_body if decision else None,
+            related_news_ids=_json_dumps(related_news_ids),
+            possible_action=decision.possible_action if decision else None,
+            urgency=decision.urgency if decision else None,
+            confidence=decision.confidence if decision else None,
+            reason_for_no_alert=decision.reason_for_no_alert if decision else None,
+            error_message=error_message,
+            error_reason=error_reason,
+            plain_text=plain_text,
+        )
+        return analysis.id if analysis else None
+
+
+async def _create_event_analysis_decision(
+    input_payload: dict,
+) -> tuple[EventAnalysisDecision | None, int | None]:
+    raw_output = None
+    parsed = None
+    try:
+        raw_output, parsed = await ask_event_analysis_raw(input_payload)
+    except Exception as error:
+        raw_output = getattr(error, "raw_content", raw_output)
+        reason = classify_ai_error_reason(error)
+        status = "invalid_json" if reason == "invalid JSON" else "llm_error"
+        await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=raw_output,
+            status=status,
+            error_message=str(error),
+            error_reason=reason,
+        )
+        logger.warning(
+            "%s event analysis failed: %s",
+            str(input_payload["symbol"]).upper(),
+            reason,
+        )
+        return None, None
+
+    try:
+        decision = validate_event_analysis_output(
+            parsed,
+            expected_symbol=str(input_payload["symbol"]),
+            candidate_news_ids={
+                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+            },
+        )
+    except EventAnalysisValidationError as error:
+        schema_error = AISchemaValidationError(str(error))
+        await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=raw_output,
+            status="schema_error",
+            parsed_result=parsed,
+            error_message=str(error),
+            error_reason=classify_ai_error_reason(schema_error),
+        )
+        logger.warning(
+            "%s event analysis schema validation failed: %s",
+            str(input_payload["symbol"]).upper(),
+            error,
+        )
+        return None, None
+
+    status = "success" if decision.should_alert else "no_alert"
+    analysis_id = await _save_event_analysis_attempt(
+        input_payload=input_payload,
+        raw_output_json=raw_output,
+        status=status,
+        parsed_result=parsed,
+        decision=decision,
+    )
+    return decision, analysis_id
+
+
+async def _get_or_create_event_alert_market_event(
+    *,
+    decision: EventAnalysisDecision,
+    input_payload: dict,
+) -> tuple[int | None, str | None]:
+    if not decision.event_key:
+        return None, None
+    market_data = input_payload["market_data"]
+    current_price = float(market_data["price_now_usd"])
+    change_since_last = market_data.get("change_since_last_user_visible_message_percent")
+    if change_since_last is None:
+        previous_price = None
+        price_change_percent = 0.0
+    else:
+        price_change_percent = float(change_since_last)
+        previous_price = current_price / (1 + (price_change_percent / 100.0))
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None, decision.event_key
+    async with DB_SESSION_LOCAL() as session:
+        event = await get_or_create_market_event(
+            session,
+            symbol=decision.symbol,
+            event_type=EVENT_ALERT_TYPE,
+            event_key=decision.event_key,
+            price=current_price,
+            previous_price=previous_price,
+            price_change_percent=price_change_percent,
+            last_24h_change=market_data.get("change_24h_percent"),
+            detected_at=datetime.now(timezone.utc),
+        )
+        return event.id, event.event_key
+
+
+async def _filter_event_recipients_for_cooldown(
+    recipients: list[AlertRecipient],
+    *,
+    symbol: str,
+    urgency: str,
+    cooldown_seconds: int,
+    now: datetime,
+) -> list[AlertRecipient]:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return recipients
+    effective_cooldown = int(cooldown_seconds)
+    if urgency == "high":
+        effective_cooldown = min(effective_cooldown, 30 * 60)
+    if effective_cooldown <= 0:
+        return recipients
+
+    filtered: list[AlertRecipient] = []
+    async with DB_SESSION_LOCAL() as session:
+        for recipient in recipients:
+            if recipient.user_id is None:
+                filtered.append(recipient)
+                continue
+            last_sent_at = await get_last_sent_alert_at(
+                session,
+                user_id=recipient.user_id,
+                symbol=symbol,
+                alert_type=EVENT_ALERT_TYPE,
+            )
+            if last_sent_at is None:
+                filtered.append(recipient)
+                continue
+            if last_sent_at.tzinfo is None:
+                last_sent_at = last_sent_at.replace(tzinfo=timezone.utc)
+            if (now - last_sent_at.astimezone(timezone.utc)).total_seconds() >= effective_cooldown:
+                filtered.append(recipient)
+    return filtered
+
+
 def _strip_existing_alert_title(plain_text: str) -> str:
     lines = plain_text.strip().splitlines()
     if lines and any(term in lines[0].lower() for term in ("alert", "signal")):
@@ -1830,7 +2251,7 @@ async def _deliver_market_event_alert(
     thresholds_used: str | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
-    if event_type not in PRODUCT_ALERT_TYPES:
+    if event_type not in PRODUCT_ALERT_TYPES and event_type != EVENT_ALERT_TYPE:
         alert_payload = _apply_severity_header(alert_payload, symbol=symbol, severity=severity)
     alert_payload = _sanitize_alert_payload(alert_payload)
     normalized_symbol = normalize_symbol(symbol)
@@ -2094,6 +2515,8 @@ async def _persist_successful_product_alert_state(
     elif event_type == NotificationType.CRITICAL_ALERT.value:
         kwargs["last_critical_alert_time"] = now
         kwargs["last_market_update_time"] = now
+    elif event_type == EVENT_ALERT_TYPE:
+        pass
     else:
         return
     async with DB_SESSION_LOCAL() as session:
@@ -2195,7 +2618,7 @@ def _should_skip_near_duplicate_market_update(
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
     cycle_started_at = perf_counter()
-    logger.debug("Running automatic price check.")
+    logger.debug("Running automatic LLM event-analysis check.")
     try:
         db_active = DB_ENABLED and DB_SESSION_LOCAL
         now = datetime.now(timezone.utc)
@@ -2226,34 +2649,18 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             current_price = float(symbol_data["price"])
             change_24h = float(symbol_data.get("change_24h") or 0.0)
             change_7d = symbol_data.get("change_7d")
-            previous_price = None
             last_alert_at = None
             db_row = None
             if DB_ENABLED and DB_SESSION_LOCAL:
                 async with DB_SESSION_LOCAL() as session:
                     db_row = await get_price_state(session, symbol)
-                    previous_price = db_row.last_price if db_row else None
                     last_alert_at = db_row.last_alert_at if db_row else None
             else:
-                previous_price = state.get("last_price") if symbol == DEFAULT_SYMBOL else None
                 last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
-
-            if previous_price is None:
-                await _save_price_state(
-                    symbol=symbol,
-                    state=state,
-                    current_price=current_price,
-                    change_24h=change_24h,
-                    change_7d=change_7d if isinstance(change_7d, float) else None,
-                    checked_at=checked_at,
-                    last_alert_at=last_alert_at,
-                )
-                log(f"Initial {symbol.upper()} price saved: ${current_price:,.2f}")
-                continue
 
             candidate_recipients = await get_alert_recipients(
                 symbol=symbol,
-                event_type=AlertType.PRICE_MOVEMENT.value,
+                event_type=EVENT_ALERT_TYPE,
                 now=now,
                 bypass_frequency=True,
             )
@@ -2269,384 +2676,107 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     last_alert_at=None,
                 )
                 continue
-            latest_5m_change_percent = calculate_price_change_percent(
-                float(previous_price), current_price
-            )
-            one_hour_previous_price, _ = await _resolve_window_market_context(
-                symbol=symbol,
-                current_price=current_price,
-                fallback_previous_price=previous_price,
-                window_seconds=3600,
-                now=now,
-            )
-            four_hour_previous_price, _ = await _resolve_window_market_context(
-                symbol=symbol,
-                current_price=current_price,
-                fallback_previous_price=previous_price,
-                window_seconds=14400,
-                now=now,
-            )
-            one_hour_change_percent = calculate_price_change_percent(
-                one_hour_previous_price, current_price
-            )
-            four_hour_change_percent = calculate_price_change_percent(
-                four_hour_previous_price, current_price
-            )
-            logger.debug(
-                "%s movement calculated: latest_5m=%.4f%% one_hour=%.4f%% "
-                "four_hour=%.4f%% change24h=%.4f%% change7d=%s",
-                symbol.upper(),
-                latest_5m_change_percent,
-                one_hour_change_percent,
-                four_hour_change_percent,
-                change_24h,
-                change_7d,
-            )
 
             delivered = False
-            thresholds = thresholds_for_symbol(alert_settings, symbol)
             if raw_news_items is None:
                 raw_news_items = await fetch_news_context(limit=12)
             news_items = filter_news_for_symbol(symbol, raw_news_items)
-            news_candidates = _build_news_candidates(symbol, news_items)
-            news_relevance = _classify_news_context(symbol, news_items)
-            logger.debug(
-                "news_candidates_selected symbol=%s count=%s useful_count=%s score=%s",
-                symbol.upper(),
-                len(news_candidates),
-                len(_useful_news_candidates(news_candidates)),
-                news_relevance,
+            candidate_news = _format_candidate_news(news_items)
+            analysis_id = _build_event_analysis_id(symbol)
+            input_payload = await _build_event_analysis_input(
+                analysis_id=analysis_id,
+                symbol=symbol,
+                current_price=current_price,
+                change_24h=change_24h,
+                now=now,
+                state=state,
+                candidate_news=candidate_news,
             )
-
-            grouped_notifications: dict[
-                tuple[str, str, str, str | None, int],
-                tuple[SignalContext, NotificationDecision, list[AlertRecipient]],
-            ] = {}
-            for recipient in candidate_recipients:
-                frequency_seconds = recipient.alert_frequency_seconds or int(
-                    alert_settings.get("automatic_check_interval_seconds", 300)
-                )
-                last_notification = None
-                symbol_alert_state = None
-                recent_event_alert = None
-                last_market_update_alert = None
-                important = None
-                critical = None
-                if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None:
-                    async with DB_SESSION_LOCAL() as session:
-                        last_notification = await get_last_sent_alert(
-                            session,
-                            user_id=recipient.user_id,
-                            symbol=symbol,
-                        )
-                        symbol_alert_state = await get_user_symbol_alert_state(
-                            session,
-                            user_id=recipient.user_id,
-                            symbol=symbol,
-                        )
-                        important = await get_last_sent_alert(
-                            session,
-                            user_id=recipient.user_id,
-                            symbol=symbol,
-                            alert_type=NotificationType.IMPORTANT_ALERT.value,
-                        )
-                        critical = await get_last_sent_alert(
-                            session,
-                            user_id=recipient.user_id,
-                            symbol=symbol,
-                            alert_type=NotificationType.CRITICAL_ALERT.value,
-                        )
-                        recent_event_alert = max(
-                            [alert for alert in (important, critical) if alert is not None],
-                            key=lambda alert: alert.created_at,
-                            default=None,
-                        )
-                        last_market_update_alert = await get_last_sent_alert(
-                            session,
-                            user_id=recipient.user_id,
-                            symbol=symbol,
-                            alert_type=NotificationType.MARKET_UPDATE.value,
-                        )
-                last_market_update_time = (
-                    symbol_alert_state.last_market_update_time if symbol_alert_state else None
-                )
-                logger.info(
-                    "last_market_update_time_loaded user_id=%s symbol=%s value=%s",
-                    recipient.user_id,
-                    symbol.upper(),
-                    last_market_update_time.isoformat() if last_market_update_time else None,
-                )
-                if last_market_update_time is None:
-                    logger.info(
-                        "last_market_update_time_missing_safe_fallback user_id=%s symbol=%s",
-                        recipient.user_id,
-                        symbol.upper(),
-                    )
-                scheduled_due = (
-                    last_market_update_time is None
-                    or (now - last_market_update_time).total_seconds() >= frequency_seconds
-                )
-                period_previous_price, _ = await _resolve_window_market_context(
+            decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
+            if decision is None:
+                await _save_price_state(
                     symbol=symbol,
+                    state=state,
                     current_price=current_price,
-                    fallback_previous_price=previous_price,
-                    window_seconds=frequency_seconds,
-                    now=now,
-                )
-                user_period_change_percent = calculate_price_change_percent(
-                    period_previous_price, current_price
-                )
-                if last_market_update_time is not None:
-                    update_window_seconds = max(
-                        int((now - last_market_update_time).total_seconds()),
-                        int(alert_settings.get("automatic_check_interval_seconds", 300)),
-                    )
-                else:
-                    update_window_seconds = frequency_seconds
-                update_previous_price, _ = await _resolve_window_market_context(
-                    symbol=symbol,
-                    current_price=current_price,
-                    fallback_previous_price=period_previous_price,
-                    window_seconds=update_window_seconds,
-                    now=now,
-                )
-                cumulative_change_percent = calculate_price_change_percent(
-                    update_previous_price, current_price
-                )
-                if last_market_update_time is None:
-                    cumulative_change_percent = user_period_change_percent
-                logger.debug(
-                    "important_alert_baseline_used user_id=%s symbol=%s baseline_time=%s "
-                    "window_seconds=%s cumulative_change=%.4f",
-                    recipient.user_id,
-                    symbol.upper(),
-                    last_market_update_time.isoformat() if last_market_update_time else None,
-                    update_window_seconds,
-                    cumulative_change_percent,
-                )
-                context_object = SignalContext(
-                    symbol=symbol,
-                    current_price=current_price,
-                    latest_5m_change_percent=latest_5m_change_percent,
-                    change_since_last_market_update_percent=cumulative_change_percent,
-                    user_period_change_percent=user_period_change_percent,
-                    one_hour_change_percent=one_hour_change_percent,
-                    four_hour_change_percent=four_hour_change_percent,
-                    twenty_four_hour_change_percent=change_24h,
-                    relevant_news_items=news_items,
-                    news_candidates=news_candidates,
-                    news_relevance_score=news_relevance,
-                    last_notification_time=(
-                        recent_event_alert.created_at
-                        if recent_event_alert is not None
-                        else last_notification.created_at
-                        if last_notification
-                        else None
-                    ),
-                    last_notification_type=(
-                        recent_event_alert.alert_type
-                        if recent_event_alert is not None
-                        else last_notification.alert_type
-                        if last_notification
-                        else None
-                    ),
-                    last_notification_severity=(
-                        recent_event_alert.llm_severity
-                        if recent_event_alert is not None
-                        else last_notification.llm_severity
-                        if last_notification
-                        else None
-                    ),
-                    last_notification_direction=_last_alert_direction(
-                        recent_event_alert if recent_event_alert is not None else last_notification
-                    ),
-                    last_market_update_time=last_market_update_time,
-                    user_alert_frequency_seconds=frequency_seconds,
-                    scheduled_market_update_due=scheduled_due,
-                    fast_movement_threshold_percent=thresholds.movement_percent,
-                    cumulative_movement_threshold_percent=thresholds.movement_percent,
-                    extreme_movement_threshold_percent=max(
-                        thresholds.movement_percent * 3.0,
-                        thresholds.trend_24h_high_percent,
-                    ),
-                    suppression_context={
-                        "previous_cumulative_movement_percent": (
-                            symbol_alert_state.last_cumulative_movement_percent
-                            if symbol_alert_state
-                            else _numeric_context_value(
-                                getattr(recent_event_alert, "numeric_context", None),
-                                "change_since_last_market_update_percent",
-                            )
-                        ),
-                        "last_event_alert_price": _numeric_context_value(
-                            getattr(recent_event_alert, "numeric_context", None),
-                            "current_price",
-                        ),
-                    },
-                )
-                notification_decision = decide_notification(context_object)
-                logger.debug(
-                    "cooldown_decision user_id=%s symbol=%s alert_type=%s direction=%s "
-                    "severity=%s should_send=%s suppressed=%s last_event_at=%s",
-                    recipient.user_id,
-                    symbol.upper(),
-                    notification_decision.notification_type.value,
-                    notification_decision.direction.value,
-                    notification_decision.severity.value,
-                    notification_decision.should_send,
-                    notification_decision.should_suppress,
-                    recent_event_alert.created_at.isoformat() if recent_event_alert else None,
-                )
-                if notification_decision.notification_type is NotificationType.MARKET_UPDATE:
-                    logger.info(
-                        "market_update_severity_adjusted symbol=%s severity=%s "
-                        "period=%.4f trend_24h=%.4f",
-                        symbol.upper(),
-                        notification_decision.severity.value,
-                        user_period_change_percent,
-                        change_24h,
-                    )
-                logger.info(
-                    "%s notification decision: type=%s severity=%s direction=%s "
-                    "send=%s suppress=%s trigger=%s reason=%s",
-                    symbol.upper(),
-                    notification_decision.notification_type.value,
-                    notification_decision.severity.value,
-                    notification_decision.direction.value,
-                    notification_decision.should_send,
-                    notification_decision.should_suppress,
-                    (
-                        notification_decision.trigger_source.value
-                        if notification_decision.trigger_source
-                        else None
-                    ),
-                    notification_decision.reasoning_summary,
-                )
-                logger.info(
-                    "trigger_source_selected symbol=%s trigger_source=%s",
-                    symbol.upper(),
-                    (
-                        notification_decision.trigger_source.value
-                        if notification_decision.trigger_source
-                        else None
-                    ),
-                )
-                if notification_decision.notification_type.value in PRODUCT_ALERT_TYPES:
-                    logger.info(
-                        "alert_type_mapped_to_new_model symbol=%s alert_type=%s",
-                        symbol.upper(),
-                        notification_decision.notification_type.value,
-                    )
-                if _should_skip_near_duplicate_market_update(
-                    notification_type=notification_decision.notification_type,
-                    previous_alert=last_market_update_alert,
-                    context=context_object,
-                    decision=notification_decision,
-                    now=now,
-                    frequency_seconds=frequency_seconds,
-                ):
-                    logger.debug(
-                        "market_update_near_duplicate_suppressed user_id=%s symbol=%s",
-                        recipient.user_id,
-                        symbol.upper(),
-                    )
-                    continue
-                if not notification_decision.should_send:
-                    logger.info(
-                        "%s alert skipped: %s",
-                        symbol.upper(),
-                        notification_decision.reasoning_summary,
-                    )
-                    continue
-                group_key = (
-                    notification_decision.notification_type.value,
-                    notification_decision.severity.value,
-                    notification_decision.direction.value,
-                    (
-                        notification_decision.trigger_source.value
-                        if notification_decision.trigger_source
-                        else None
-                    ),
-                    frequency_seconds,
-                )
-                if group_key not in grouped_notifications:
-                    grouped_notifications[group_key] = (
-                        context_object,
-                        notification_decision,
-                        [],
-                    )
-                grouped_notifications[group_key][2].append(recipient)
-
-            for signal_context, notification_decision, recipients in grouped_notifications.values():
-                event_type = notification_decision.notification_type.value
-                price_change_percent = (
-                    signal_context.latest_5m_change_percent
-                    if notification_decision.trigger_source is TriggerSource.FAST_MOVEMENT
-                    else signal_context.change_since_last_market_update_percent
-                    or signal_context.user_period_change_percent
-                    or 0.0
-                )
-                previous_for_event = current_price / (1 + (price_change_percent / 100.0))
-                used_news_items.extend(news_items)
-                severity = SeverityEvaluation(
-                    severity=_notification_severity_to_alert_severity(
-                        notification_decision.severity
-                    ),
-                    primary_alert_type=AlertType.PRICE_MOVEMENT,
-                    signals=(notification_decision.reasoning_summary,),
-                )
-                market_event_id, _ = await _get_or_create_price_movement_market_event(
-                    symbol=symbol,
-                    event_type=event_type,
-                    previous_price=previous_for_event,
-                    current_price=current_price,
-                    price_change_percent=price_change_percent,
                     change_24h=change_24h,
                     change_7d=change_7d if isinstance(change_7d, float) else None,
+                    checked_at=checked_at,
+                    last_alert_at=None,
                 )
-                if event_type == NotificationType.MARKET_UPDATE.value:
-                    logger.info(
-                        "market_update_created_per_symbol user_id_count=%s symbol=%s",
-                        len(recipients),
-                        symbol.upper(),
-                    )
-                ai_started_at = perf_counter()
-                alert_payload = _build_product_notification_payload(
-                    signal_context, notification_decision
-                )
-                event_ai_analysis_id = await _save_product_notification_analysis(
-                    market_event_id=market_event_id,
-                    alert_payload=alert_payload,
-                    signal_context=signal_context,
-                    decision=notification_decision,
-                )
+                continue
+            if not decision.should_alert:
                 logger.info(
-                    "%s AI analysis resolved in %.2f seconds.",
+                    "%s LLM event analysis returned no alert: %s",
                     symbol.upper(),
-                    perf_counter() - ai_started_at,
+                    decision.reason_for_no_alert,
                 )
-                delivered = await _deliver_market_event_alert(
-                    app,
+                await _save_price_state(
                     symbol=symbol,
-                    alert_payload=alert_payload,
-                    market_event_id=market_event_id,
-                    event_ai_analysis_id=event_ai_analysis_id,
-                    recipients=recipients,
-                    event_type=event_type,
-                    severity=severity,
-                    trigger_reason=notification_decision.reasoning_summary,
-                    trigger_source=(
-                        notification_decision.trigger_source.value
-                        if notification_decision.trigger_source
-                        else None
-                    ),
-                    numeric_context=_format_signal_context_for_storage(
-                        signal_context, notification_decision
-                    ),
-                    thresholds_used=_format_thresholds_for_storage(thresholds),
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                    checked_at=checked_at,
+                    last_alert_at=None,
                 )
-                if delivered:
-                    delivered_symbols += 1
+                continue
+
+            market_event_id, _ = await _get_or_create_event_alert_market_event(
+                decision=decision,
+                input_payload=input_payload,
+            )
+            related_news = _related_news_by_id(candidate_news, decision.related_news_ids)
+            alert_payload = _build_event_alert_payload(
+                decision=decision,
+                input_payload=input_payload,
+                related_news=related_news,
+            )
+            if DB_ENABLED and DB_SESSION_LOCAL and market_event_id is not None:
+                async with DB_SESSION_LOCAL() as session:
+                    analysis = await attach_analysis_to_market_event(
+                        session,
+                        analysis_id=analysis_id,
+                        market_event_id=market_event_id,
+                        plain_text=alert_payload["plain_text"],
+                    )
+                    event_ai_analysis_id = analysis.id if analysis else event_ai_analysis_id
+
+            recipients = await _filter_event_recipients_for_cooldown(
+                candidate_recipients,
+                symbol=symbol,
+                urgency=decision.urgency,
+                cooldown_seconds=int(alert_settings.get("automatic_check_interval_seconds", 300)),
+                now=now,
+            )
+            if not recipients:
+                logger.info("%s event alert suppressed by backend cooldown.", symbol.upper())
+                await _save_price_state(
+                    symbol=symbol,
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                    checked_at=checked_at,
+                    last_alert_at=None,
+                )
+                continue
+
+            used_news_items.extend(news_items)
+            delivered = await _deliver_market_event_alert(
+                app,
+                symbol=symbol,
+                alert_payload=alert_payload,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                recipients=recipients,
+                event_type=EVENT_ALERT_TYPE,
+                trigger_reason=decision.title,
+                trigger_source=EVENT_ANALYSIS_TYPE,
+                numeric_context=_event_numeric_context(input_payload, decision),
+                thresholds_used=None,
+            )
+            if delivered:
+                delivered_symbols += 1
             await _save_price_state(
                 symbol=symbol,
                 state=state,
@@ -2654,7 +2784,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 change_24h=change_24h,
                 change_7d=change_7d if isinstance(change_7d, float) else None,
                 checked_at=checked_at,
-                last_alert_at=(datetime.now(timezone.utc) if delivered else None),
+                last_alert_at=(datetime.now(timezone.utc) if delivered else last_alert_at),
             )
         if used_news_items:
             deduped_news = list({make_news_key(item): item for item in used_news_items}.values())

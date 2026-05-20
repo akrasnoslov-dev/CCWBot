@@ -694,7 +694,19 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         alerts.AlertRecipient(chat_id=2001, user_id=1),
         alerts.AlertRecipient(chat_id=2002, user_id=2),
     ]
-    save_product_analysis = AsyncMock(return_value=456)
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_downward_pressure_2026_05_20",
+        title="BTC is showing renewed downside pressure",
+        message_body="BTC has weakened while the 24h trend remains negative.",
+        related_news_ids=[],
+        possible_action="Review your exposure and avoid reacting impulsively.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+    create_decision = AsyncMock(return_value=(decision, 456))
     deliver_alert = AsyncMock(return_value=True)
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
@@ -710,36 +722,45 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
     monkeypatch.setattr(
         alerts,
         "get_state_alert_settings",
-        lambda state: {"price_move_alert_percent": 2.0},
+        lambda state: {"automatic_check_interval_seconds": 300},
     )
     monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=recipients))
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
-        "_get_or_create_price_movement_market_event",
+        "_get_or_create_event_alert_market_event",
         AsyncMock(return_value=(123, "btc:event")),
     )
-    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
+    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    save_product_analysis.assert_awaited_once()
-    important_calls = [
-        call
-        for call in deliver_alert.await_args_list
-        if call.kwargs["event_type"] == "important_alert"
-    ]
-    assert len(important_calls) == 1
-    assert important_calls[0].kwargs["recipients"] == recipients
+    create_decision.assert_awaited_once()
+    deliver_alert.assert_awaited_once()
+    assert deliver_alert.await_args.kwargs["event_type"] == "event_alert"
+    assert deliver_alert.await_args.kwargs["recipients"] == recipients
+    assert "BTC Event Alert" in deliver_alert.await_args.kwargs["alert_payload"]["plain_text"]
 
 
 @pytest.mark.asyncio
 async def test_automatic_price_check_uses_product_analysis_for_each_event_group(monkeypatch):
     recipient = alerts.AlertRecipient(chat_id=2001, user_id=1)
-    save_product_analysis = AsyncMock(side_effect=[1, 2])
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_downward_pressure_2026_05_20",
+        title="BTC is showing renewed downside pressure",
+        message_body="BTC has weakened while the 24h trend remains negative.",
+        related_news_ids=[],
+        possible_action="Review your exposure and avoid reacting impulsively.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+    create_decision = AsyncMock(side_effect=[(decision, 1), (decision, 2)])
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
@@ -763,14 +784,14 @@ async def test_automatic_price_check_uses_product_analysis_for_each_event_group(
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
-        "_get_or_create_price_movement_market_event",
+        "_get_or_create_event_alert_market_event",
         AsyncMock(side_effect=[(123, "btc:event:1"), (124, "btc:event:2")]),
     )
-    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
+    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", AsyncMock(return_value=True))
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    assert save_product_analysis.await_count == 2
+    assert create_decision.await_count == 2
