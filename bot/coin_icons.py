@@ -7,16 +7,16 @@ from bot.domain.supported_coins import normalize_symbol
 # Fill these values after sending the CCWBotIcons custom emojis to the bot as admin
 # and copying custom_emoji_id values from logs.
 COIN_CUSTOM_EMOJI_IDS: dict[str, str] = {
-    "BTC": "",
-    "ETH": "",
-    "SOL": "",
-    "XRP": "",
-    "BNB": "",
-    "DOGE": "",
-    "ADA": "",
-    "TON": "",
-    "LINK": "",
-    "TRX": "",
+    "BTC": "5220072735815802195",
+    "ETH": "5219946347813182032",
+    "SOL": "5220183077820601140",
+    "XRP": "5220105935913000440",
+    "BNB": "5219798295995521250",
+    "DOGE": "5220160524947332359",
+    "ADA": "5219979977407111501",
+    "TON": "5219964412445631201",
+    "LINK": "5219729344590554883",
+    "TRX": "5219851227172479406",
 }
 
 COIN_FALLBACK_EMOJI: dict[str, str] = {
