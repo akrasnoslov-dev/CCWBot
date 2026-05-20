@@ -60,8 +60,8 @@ def event_decision(*, should_alert=True, urgency="normal"):
         possible_action="Review your exposure and avoid reacting impulsively."
         if should_alert
         else None,
-        urgency=urgency,
-        confidence="medium",
+        urgency=urgency if should_alert else None,
+        confidence="medium" if should_alert else None,
         reason_for_no_alert=None if should_alert else "No meaningful market event detected.",
     )
 
@@ -144,6 +144,60 @@ async def test_llm_should_alert_false_creates_no_delivery(monkeypatch):
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
     deliver_alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        parsed = {
+            "symbol": "SOL",
+            "should_alert": False,
+            "event_key": None,
+            "title": None,
+            "message_body": None,
+            "related_news_ids": None,
+            "possible_action": None,
+            "urgency": None,
+            "confidence": None,
+            "reason_for_no_alert": (
+                "No significant market event or news that requires user attention "
+                "has been detected."
+            ),
+        }
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(return_value=("raw no-alert output", parsed)),
+        )
+        payload = {
+            "analysis_id": "event_analysis_sol_no_alert",
+            "symbol": "SOL",
+            "candidate_news": [],
+            "market_data": {},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is not None
+        assert decision.should_alert is False
+        assert decision.related_news_ids == []
+        assert decision.urgency is None
+        assert decision.confidence is None
+        assert analysis_id is not None
+        async with session_local() as session:
+            row = await session.scalar(select(EventAiAnalysis))
+            assert row.status == "no_alert"
+            assert row.should_alert is False
+            assert row.related_news_ids == "[]"
+            assert row.urgency is None
+            assert row.confidence is None
+            assert row.error_reason is None
+            assert row.error_message is None
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
