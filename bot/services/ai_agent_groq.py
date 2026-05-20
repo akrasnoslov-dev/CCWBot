@@ -887,6 +887,59 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
     return raw_content, parsed
 
 
+async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON."""
+    client = get_groq_client()
+    prompt = (
+        "Return one valid JSON object only. Do not use Markdown or code fences.\n"
+        "Use exactly these fields: symbol, title, message_body, related_news_ids, "
+        "possible_action, confidence.\n"
+        'Allowed confidence values: "low", "medium", "high".\n'
+        "This is a calm Market Heartbeat, not an Event Alert and not a no-alert decision. "
+        "Do not return should_alert, event_key, urgency, market_update, important_alert, "
+        "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
+        "Make the heartbeat useful and concise. Do not lazily say nothing happened. "
+        "Mention selected relevant news if useful, but avoid exact causality claims.\n"
+        "related_news_ids must only contain news_id values from candidate_news.\n"
+        "possible_action must be cautious and non-prescriptive. Do not tell users to buy, sell, "
+        "liquidate, short, long, or move all money.\n"
+        "Write in English only.\n\n"
+        "Input JSON:\n"
+        f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
+    )
+    request_kwargs = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 550,
+    }
+    if _groq_json_mode_enabled():
+        request_kwargs["response_format"] = {"type": "json_object"}
+
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**request_kwargs),
+            timeout=15,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+    raw_content = response.choices[0].message.content or ""
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as error:
+        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
+    if not isinstance(parsed, dict):
+        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
+    return raw_content, parsed
+
+
 async def create_ai_alert_message(
     previous_price: float,
     current_price: float,

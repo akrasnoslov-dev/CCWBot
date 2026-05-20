@@ -9,6 +9,8 @@ BTC reports, and automatic Event Alerts decided by Groq-backed LLM market analys
   `link`, and `trx`.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
+- Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
+  when a user has not received any visible message for that coin within their alert frequency.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
 - If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
 - Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
@@ -24,7 +26,7 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 ## Current Limitations
 
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
-- Market Heartbeat and separate report redesign are not implemented yet.
+- Separate report redesign is not implemented yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
@@ -116,6 +118,7 @@ The Premium foundation stores:
 - `user_coin_subscriptions` with one lowercase symbol row per user and coin
 - `user_premium_subscriptions` for current Premium entitlement state
 - `payments` with one row per processed Telegram Stars payment
+- `market_heartbeats` with one cached hourly heartbeat generation row per supported coin
 
 `/subscribe` starts a recurring Telegram Stars Premium subscription. The default price is
 configured by `PREMIUM_MONTHLY_STARS=199`, uses Telegram Stars currency `XTR`, and uses a
@@ -134,6 +137,37 @@ again after renewal.
 Premium access is based primarily on `active_until > now`. Manual admin grants use
 `/grantpremium <telegram_user_id> <days>`, and revokes use `/revokepremium <telegram_user_id>`.
 Revoking Premium preserves saved coin choices.
+
+## Market Heartbeat And Coin Icons
+
+Market Heartbeat is separate from Event Alert analysis. The normal check-interval LLM call
+returns only `should_alert=true` or `should_alert=false`; heartbeat generation runs hourly,
+stores the latest cached result in PostgreSQL, and does not deliver it immediately.
+
+During automatic processing, the bot checks each eligible user and coin. If any user-visible
+delivery for that coin happened within the user's configured alert frequency, heartbeat is
+skipped. If no recent delivery exists, the bot sends the latest completed heartbeat only when
+it is fresh enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and
+not sent.
+
+Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
+symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,
+and allows the LLM to reference only selected `related_news_ids`.
+
+Coin icon mapping lives in `bot/coin_icons.py`:
+
+- `COIN_CUSTOM_EMOJI_IDS` is where custom Telegram `custom_emoji_id` values go.
+- `COIN_FALLBACK_EMOJI` is used automatically when a custom emoji ID is missing.
+
+To extract custom emoji IDs from the CCWBotIcons pack:
+
+1. Deploy the bot with this version.
+2. As the configured admin, send all custom coin emojis from `https://t.me/addemoji/CCWBotIcons`
+   to the bot in a private chat.
+3. Check logs for `custom_emoji_entity ... custom_emoji_id=...`.
+4. Copy the IDs into `COIN_CUSTOM_EMOJI_IDS` in `bot/coin_icons.py`.
+
+Missing custom emoji IDs are safe; alerts and heartbeats use fallback emoji instead.
 
 Premium payments are received as Telegram Stars on the bot's Stars balance. Withdrawal to TON
 wallet is handled separately by the bot owner through Telegram/Fragment. CCWBot does not store

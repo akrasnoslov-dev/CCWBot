@@ -15,6 +15,7 @@ from telegram.ext import (
 
 from bot.alerts import (
     schedule_automatic_market_check,
+    schedule_market_heartbeat_generation,
     schedule_seen_news_cleanup,
     schedule_weekly_report,
 )
@@ -35,6 +36,7 @@ from bot.handlers import (
     error_logging_on,
     error_logging_status,
     grant_premium,
+    log_custom_emoji_ids,
     myplan,
     price,
     reports,
@@ -104,6 +106,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("error_logging_status", error_logging_status))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout_handler))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_custom_emoji_ids))
     app.add_handler(CallbackQueryHandler(button_router))
 
 
@@ -132,6 +135,7 @@ def main():
 
     runtime_settings = loop.run_until_complete(get_runtime_alert_settings())
     schedule_automatic_market_check(app, runtime_settings["automatic_check_interval_seconds"])
+    schedule_market_heartbeat_generation(app)
     schedule_weekly_report(app)
     schedule_seen_news_cleanup(app)
 
