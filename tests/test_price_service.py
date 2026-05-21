@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import bot.services.price_service as price_service
+from bot.domain.supported_coins import ACTIVE_SYMBOLS
 
 
 class FakeResponse:
@@ -90,18 +91,13 @@ async def test_get_coin_price_unsupported_symbol_raises_value_error():
         await price_service.get_coin_price("usdt")
 
 
-def test_coin_mapping_is_supported_top_10_without_usdt():
+def test_coin_mapping_uses_active_symbols_only():
+    assert ACTIVE_SYMBOLS == ("btc", "eth", "ton", "sol")
     assert price_service.COIN_SYMBOL_TO_ID == {
         "btc": "bitcoin",
         "eth": "ethereum",
-        "sol": "solana",
-        "xrp": "ripple",
-        "bnb": "binancecoin",
-        "doge": "dogecoin",
-        "ada": "cardano",
         "ton": "toncoin",
-        "link": "chainlink",
-        "trx": "tron",
+        "sol": "solana",
     }
 
 

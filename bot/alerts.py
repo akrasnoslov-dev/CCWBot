@@ -97,7 +97,8 @@ from bot.news import fetch_news_context, remember_news_context
 from bot.reports import send_scheduled_weekly_report
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
-    GROQ_MODEL,
+    GROQ_EVENT_ANALYSIS_MODEL,
+    GROQ_STRONG_SIGNAL_MODEL,
     AISchemaValidationError,
     ask_event_analysis_raw,
     ask_market_heartbeat_raw,
@@ -105,6 +106,7 @@ from bot.services.ai_agent_groq import (
     classify_ai_error_reason,
     classify_strong_signal,
     create_ai_alert_payload,
+    mark_llm_usage_log_status,
     sanitize_alert_message,
 )
 from bot.services.price_service import (
@@ -477,6 +479,70 @@ def _format_candidate_news(news_items: list[dict]) -> list[dict]:
             }
         )
     return candidates
+
+
+def _truncate_text(value: str, max_chars: int) -> str:
+    cleaned = " ".join(str(value or "").split()).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max_chars - 1].rstrip(" ,;:") + "."
+
+
+def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
+    compacted = []
+    for item in candidate_news[:limit]:
+        compacted.append(
+            {
+                **item,
+                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+            }
+        )
+    return compacted
+
+
+def _select_representative_snapshots(
+    snapshots_payload: list[dict], *, limit: int = 6
+) -> list[dict]:
+    if len(snapshots_payload) <= limit:
+        return snapshots_payload
+    if limit <= 1:
+        return snapshots_payload[-1:]
+    last_index = len(snapshots_payload) - 1
+    selected_indices = {
+        round(index * last_index / (limit - 1))
+        for index in range(limit)
+    }
+    selected_indices.add(last_index)
+    selected = [snapshots_payload[index] for index in sorted(selected_indices)]
+    return selected[-limit:]
+
+
+def _snapshot_price(snapshot) -> float:
+    return float(snapshot.price)
+
+
+def _snapshot_change_percent(current_price: float, reference) -> float | None:
+    if reference is None:
+        return None
+    reference_price = _snapshot_price(reference)
+    if reference_price == 0:
+        return None
+    return calculate_price_change_percent(reference_price, current_price)
+
+
+def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
+    cutoff_utc = cutoff.astimezone(timezone.utc)
+    eligible = [
+        snapshot
+        for snapshot in snapshots
+        if (
+            snapshot.checked_at
+            if snapshot.checked_at.tzinfo is not None
+            else snapshot.checked_at.replace(tzinfo=timezone.utc)
+        ).astimezone(timezone.utc)
+        <= cutoff_utc
+    ]
+    return eligible[-1] if eligible else None
 
 
 def _related_news_by_id(candidate_news: list[dict], related_news_ids: list[str]) -> list[dict]:
@@ -984,7 +1050,7 @@ async def _get_or_create_strong_signal_ai_analysis(
                 session,
                 market_event_id=market_event_id,
                 provider="groq",
-                model=GROQ_MODEL,
+                model=GROQ_STRONG_SIGNAL_MODEL,
                 input_hash=input_hash,
                 analysis_text=message,
                 plain_text=message,
@@ -1115,7 +1181,7 @@ async def _get_or_create_event_ai_analysis(
                 )
 
     provider = "groq"
-    model = GROQ_MODEL
+    model = GROQ_EVENT_ANALYSIS_MODEL
     error_message = None
     if force_fallback:
         provider = "fallback"
@@ -1594,6 +1660,7 @@ async def _build_event_analysis_input(
             }
             for snapshot in snapshots
         ]
+        snapshots_payload = _select_representative_snapshots(snapshots_payload, limit=6)
         if latest_alert:
             last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
             last_message_type = latest_alert.alert_type
@@ -1620,6 +1687,7 @@ async def _build_event_analysis_input(
                 "price_usd": fallback_previous_price,
             }
         ]
+    candidate_news = _compact_candidate_news(candidate_news, limit=3)
 
     return {
         "analysis_id": analysis_id,
@@ -1640,13 +1708,8 @@ async def _build_event_analysis_input(
         "candidate_news": candidate_news,
         "policy": {
             "language": "English",
-            "user_profile": (
-                "General retail crypto holder. The bot must not provide personalised "
-                "financial advice."
-            ),
-            "noise_preference": (
-                "Prefer fewer, more useful alerts. Do not send repetitive or low-value alerts."
-            ),
+            "audience": "General retail crypto holder; no personalised financial advice.",
+            "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         },
     }
 
@@ -1661,7 +1724,8 @@ async def _build_market_heartbeat_input(
     candidate_news: list[dict],
 ) -> dict:
     normalized_symbol = normalize_symbol(symbol)
-    snapshots_payload: list[dict] = []
+    snapshots = []
+    reference_6h = None
     if DB_ENABLED and DB_SESSION_LOCAL:
         since = now - timedelta(hours=6)
         async with DB_SESSION_LOCAL() as session:
@@ -1670,20 +1734,15 @@ async def _build_market_heartbeat_input(
                 symbol=normalized_symbol,
                 since=since,
             )
-        snapshots_payload = [
-            {
-                "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
-                "price_usd": float(snapshot.price),
-            }
-            for snapshot in snapshots
-        ]
-    if not snapshots_payload:
-        snapshots_payload = [
-            {
-                "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
-                "price_usd": float(current_price),
-            }
-        ]
+            reference_6h = await get_reference_price_snapshot(
+                session,
+                symbol=normalized_symbol,
+                at_or_before=since,
+            )
+    reference_1h = _snapshot_at_or_before(snapshots, now - timedelta(hours=1))
+    observed_prices = [_snapshot_price(snapshot) for snapshot in snapshots]
+    observed_prices.append(float(current_price))
+    candidate_news = _compact_candidate_news(candidate_news, limit=3)
     return {
         "heartbeat_id": heartbeat_id,
         "symbol": normalized_symbol.upper(),
@@ -1691,17 +1750,17 @@ async def _build_market_heartbeat_input(
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
         "market_data": {
             "price_now_usd": float(current_price),
-            "price_snapshots_last_6h": snapshots_payload,
+            "change_1h_percent": _snapshot_change_percent(current_price, reference_1h),
+            "change_6h_percent": _snapshot_change_percent(current_price, reference_6h),
             "change_24h_percent": float(change_24h),
+            "high_6h_usd": max(observed_prices) if observed_prices else None,
+            "low_6h_usd": min(observed_prices) if observed_prices else None,
         },
         "candidate_news": candidate_news,
         "policy": {
             "language": "English",
-            "purpose": (
-                "A calm periodic market monitoring update when no user-visible event alert "
-                "was recently delivered."
-            ),
-            "financial_advice": "Do not provide personalised financial advice.",
+            "purpose": "Calm Market Heartbeat, not an Event Alert.",
+            "financial_advice": "No personalised financial advice or portfolio instructions.",
         },
     }
 
@@ -1737,8 +1796,11 @@ async def _save_market_heartbeat_attempt(
 async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
     parsed = None
+    usage_log_id = None
     try:
-        raw_output, parsed = await ask_market_heartbeat_raw(input_payload)
+        result = await ask_market_heartbeat_raw(input_payload)
+        raw_output, parsed = result
+        usage_log_id = getattr(result, "usage_log_id", None)
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         heartbeat_id = await _save_market_heartbeat_attempt(
@@ -1763,6 +1825,12 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             },
         )
     except MarketHeartbeatValidationError as error:
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason="schema validation failed",
+            error_message=str(error),
+        )
         heartbeat_id = await _save_market_heartbeat_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,
@@ -1808,7 +1876,7 @@ async def _save_event_analysis_attempt(
             raw_input_json=_json_dumps(input_payload),
             raw_output_json=raw_output_json,
             status=status,
-            model=GROQ_MODEL,
+            model=GROQ_EVENT_ANALYSIS_MODEL,
             market_event_id=market_event_id,
             parsed_result_json=_json_dumps(parsed_result) if parsed_result is not None else None,
             should_alert=decision.should_alert if decision else None,
@@ -1832,8 +1900,11 @@ async def _create_event_analysis_decision(
 ) -> tuple[EventAnalysisDecision | None, int | None]:
     raw_output = None
     parsed = None
+    usage_log_id = None
     try:
-        raw_output, parsed = await ask_event_analysis_raw(input_payload)
+        result = await ask_event_analysis_raw(input_payload)
+        raw_output, parsed = result
+        usage_log_id = getattr(result, "usage_log_id", None)
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
@@ -1862,6 +1933,12 @@ async def _create_event_analysis_decision(
         )
     except EventAnalysisValidationError as error:
         schema_error = AISchemaValidationError(str(error))
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason=classify_ai_error_reason(schema_error),
+            error_message=str(error),
+        )
         await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,

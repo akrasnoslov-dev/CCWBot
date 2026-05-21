@@ -107,11 +107,11 @@ async def test_app_settings_defaults_and_updates_are_global():
         defaults = await get_or_create_app_settings(
             session,
             default_threshold=2,
-            default_interval=300,
+            default_interval=600,
         )
         assert defaults.items() >= {
             "btc_alert_threshold_percent": 2.0,
-            "automatic_check_interval_seconds": 300,
+            "automatic_check_interval_seconds": 600,
             "error_file_logging_enabled": False,
         }.items()
         assert defaults["major_movement_threshold_percent"] == 1.0
@@ -120,7 +120,7 @@ async def test_app_settings_defaults_and_updates_are_global():
         updated = await update_app_settings(
             session,
             default_threshold=2,
-            default_interval=300,
+            default_interval=600,
             threshold=1.0,
             interval_seconds=600,
             error_file_logging_enabled=True,
@@ -134,7 +134,7 @@ async def test_app_settings_defaults_and_updates_are_global():
         reloaded = await get_or_create_app_settings(
             session,
             default_threshold=2,
-            default_interval=300,
+            default_interval=600,
         )
         assert reloaded == updated
     finally:
@@ -432,7 +432,7 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
             migrated = await get_or_create_app_settings(
                 session,
                 default_threshold=2,
-                default_interval=300,
+                default_interval=600,
             )
             assert migrated.items() >= {
                 "btc_alert_threshold_percent": 1.5,

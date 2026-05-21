@@ -888,6 +888,84 @@ class MarketHeartbeat(Base):
     )
 
 
+class LlmUsageLog(Base):
+    __tablename__ = "llm_usage_logs"
+    __table_args__ = (
+        Index("ix_llm_usage_logs_call_type_model_status", "call_type", "model", "status"),
+        Index("ix_llm_usage_logs_symbol_created_at", "symbol", "created_at"),
+        {
+            "comment": (
+                "Per-call LLM usage and rate-limit telemetry captured without extra provider calls."
+            )
+        },
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal LLM usage row id.")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True, comment="When this LLM call ran."
+    )
+    provider: Mapped[str] = mapped_column(
+        String(64), comment="LLM provider that handled the request."
+    )
+    model: Mapped[str] = mapped_column(
+        String(255), index=True, comment="Exact LLM model requested for this call."
+    )
+    call_type: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Purpose of the LLM call such as event_analysis."
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True, comment="Uppercase coin symbol for this call."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Final call status such as success or rate_limit."
+    )
+    prompt_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Prompt tokens reported by the provider."
+    )
+    completion_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Completion tokens reported by the provider."
+    )
+    total_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Total tokens reported by the provider."
+    )
+    input_chars: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Character count of messages sent to the provider."
+    )
+    output_chars: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Character count of the provider response body."
+    )
+    max_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Maximum completion tokens configured for the call."
+    )
+    rate_limit_limit_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider request limit header value when available."
+    )
+    rate_limit_remaining_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider remaining requests header when available."
+    )
+    rate_limit_reset_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider request limit reset header when available."
+    )
+    rate_limit_limit_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider token limit header value when available."
+    )
+    rate_limit_remaining_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider remaining tokens header when available."
+    )
+    rate_limit_reset_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider token limit reset header when available."
+    )
+    retry_after: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider retry-after header when rate limited."
+    )
+    error_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Normalized safe error reason for failed calls."
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Sanitized provider or parser error message."
+    )
+
+
 async def init_db(database_url: str):
     """Create SQLAlchemy async engine/session factory and run migrations."""
     await run_async_upgrade(database_url)
@@ -1128,7 +1206,8 @@ async def ensure_default_coin_subscriptions(
             )
         ).all()
     )
-    existing_symbols = {row.symbol for row in existing_rows}
+    active_rows = [row for row in existing_rows if row.symbol in SUPPORTED_SYMBOLS]
+    existing_symbols = {row.symbol for row in active_rows}
     rows_to_add = []
     for symbol in SUPPORTED_SYMBOLS:
         if symbol in existing_symbols:
@@ -1153,7 +1232,8 @@ async def ensure_default_coin_subscriptions(
                 )
             ).all()
         )
-    return sorted(existing_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
+        active_rows = [row for row in existing_rows if row.symbol in SUPPORTED_SYMBOLS]
+    return sorted(active_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
 
 
 async def set_user_coin_subscription(
@@ -2389,6 +2469,79 @@ async def save_market_heartbeat(
     await session.commit()
     await session.refresh(heartbeat)
     return heartbeat
+
+
+async def save_llm_usage_log(
+    session: AsyncSession,
+    *,
+    provider: str,
+    model: str,
+    call_type: str,
+    status: str,
+    symbol: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    input_chars: int | None = None,
+    output_chars: int | None = None,
+    max_tokens: int | None = None,
+    rate_limit_limit_requests: str | None = None,
+    rate_limit_remaining_requests: str | None = None,
+    rate_limit_reset_requests: str | None = None,
+    rate_limit_limit_tokens: str | None = None,
+    rate_limit_remaining_tokens: str | None = None,
+    rate_limit_reset_tokens: str | None = None,
+    retry_after: str | None = None,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> LlmUsageLog:
+    """Save one LLM usage telemetry row."""
+    row = LlmUsageLog(
+        provider=provider,
+        model=model,
+        call_type=call_type,
+        symbol=symbol.upper() if symbol else None,
+        status=status,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        input_chars=input_chars,
+        output_chars=output_chars,
+        max_tokens=max_tokens,
+        rate_limit_limit_requests=rate_limit_limit_requests,
+        rate_limit_remaining_requests=rate_limit_remaining_requests,
+        rate_limit_reset_requests=rate_limit_reset_requests,
+        rate_limit_limit_tokens=rate_limit_limit_tokens,
+        rate_limit_remaining_tokens=rate_limit_remaining_tokens,
+        rate_limit_reset_tokens=rate_limit_reset_tokens,
+        retry_after=retry_after,
+        error_reason=error_reason,
+        error_message=error_message,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def update_llm_usage_log_status(
+    session: AsyncSession,
+    *,
+    usage_log_id: int,
+    status: str,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> LlmUsageLog | None:
+    """Update a usage row when downstream JSON schema validation fails."""
+    row = await session.get(LlmUsageLog, usage_log_id)
+    if row is None:
+        return None
+    row.status = status
+    row.error_reason = error_reason
+    row.error_message = error_message
+    await session.commit()
+    await session.refresh(row)
+    return row
 
 
 async def get_latest_market_heartbeat(

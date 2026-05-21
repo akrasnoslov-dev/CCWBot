@@ -13,6 +13,7 @@ from bot.db.database import (
     EventAiAnalysis,
     User,
     ensure_default_coin_subscriptions,
+    save_price_snapshot,
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
@@ -64,6 +65,50 @@ def event_decision(*, should_alert=True, urgency="normal"):
         confidence="medium" if should_alert else None,
         reason_for_no_alert=None if should_alert else "No meaningful market event detected.",
     )
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            for index in range(12):
+                await save_price_snapshot(
+                    session,
+                    symbol="btc",
+                    price=100.0 + index,
+                    change_24h=1.0,
+                    checked_at=now - timedelta(minutes=55 - index * 5),
+                )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_test",
+            symbol="btc",
+            current_price=112.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[
+                {"news_id": f"news_{index}", "summary": "x" * 400}
+                for index in range(5)
+            ],
+        )
+
+        snapshots = payload["market_data"]["price_snapshots"]
+        assert len(snapshots) == 6
+        assert snapshots[-1]["price_usd"] == 111.0
+        assert len(payload["candidate_news"]) == 3
+        assert all(len(item["summary"]) <= 300 for item in payload["candidate_news"])
+        assert payload["policy"] == {
+            "language": "English",
+            "audience": "General retail crypto holder; no personalised financial advice.",
+            "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
+        }
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
