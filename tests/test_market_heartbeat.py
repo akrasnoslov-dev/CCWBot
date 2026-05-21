@@ -746,6 +746,92 @@ def test_custom_emoji_entity_is_used_when_id_exists(monkeypatch):
     assert payload["entities"][0].custom_emoji_id == "custom-btc-id"
 
 
+@pytest.mark.parametrize("symbol", ["BTC", "ETH", "TON", "SOL"])
+def test_active_coin_custom_icon_prefix_has_stable_entity(symbol):
+    icon, entities = coin_icons.build_coin_icon_prefix(symbol)
+
+    assert icon == coin_icons.coin_fallback_emoji(symbol)
+    assert entities is not None
+    assert entities[0].offset == 0
+    assert entities[0].length == len(icon.encode("utf-16-le")) // 2
+    assert entities[0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS[symbol]
+
+
+def test_sanitize_alert_payload_preserves_leading_custom_coin_entity():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    payload = {
+        "plain_text": f"{icon} BTC Event Alert\n\nSituation:\nBTC is calm.",
+        "html_text": "<b>html should be dropped if text is sanitized</b>",
+        "entities": entities,
+    }
+
+    sanitized = alerts._sanitize_alert_payload(payload)
+
+    assert sanitized["plain_text"].startswith(icon)
+    assert sanitized["entities"] == entities
+
+
+@pytest.mark.asyncio
+async def test_plain_send_path_passes_custom_emoji_entities():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    calls = []
+
+    class FakeBot:
+        async def send_message(self, **kwargs):
+            calls.append(kwargs)
+
+    app = SimpleNamespace(bot=FakeBot())
+    recipient = alerts.AlertRecipient(chat_id=123, user_id=1)
+    payload = {
+        "plain_text": f"{icon} BTC Event Alert\n\nNot financial advice.",
+        "html_text": None,
+        "entities": entities,
+    }
+
+    sent, error_message, error = await alerts._send_alert_to_recipient_once(
+        app,
+        recipient,
+        payload,
+    )
+
+    assert sent is True
+    assert error_message is None
+    assert error is None
+    assert calls[0]["entities"] == entities
+
+
+@pytest.mark.asyncio
+async def test_html_fallback_send_path_preserves_custom_emoji_entities():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    calls = []
+
+    class FakeBot:
+        async def send_message(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise RuntimeError("html parse failed")
+
+    app = SimpleNamespace(bot=FakeBot())
+    recipient = alerts.AlertRecipient(chat_id=123, user_id=1)
+    payload = {
+        "plain_text": f"{icon} BTC Market Heartbeat\n\nNot financial advice.",
+        "html_text": "<b>broken</b>",
+        "entities": entities,
+    }
+
+    sent, error_message, error = await alerts._send_alert_to_recipient_once(
+        app,
+        recipient,
+        payload,
+    )
+
+    assert sent is True
+    assert error_message is None
+    assert error is None
+    assert calls[0]["parse_mode"] == ParseMode.HTML
+    assert calls[1]["entities"] == entities
+
+
 @pytest.mark.asyncio
 async def test_custom_emoji_logging_helper_logs_admin_entities(monkeypatch, caplog):
     monkeypatch.setattr(handlers, "is_admin_update", AsyncMock(return_value=True))

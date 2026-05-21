@@ -342,6 +342,9 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
             assert "symbol, should_alert, event_key, title, message_body" in prompt
             assert "urgency: low, normal, high" in prompt
             assert "confidence: low, medium, high" in prompt
+            assert "If should_alert=false:" in prompt
+            assert "urgency null" in prompt
+            assert "reason_for_no_alert non-empty" in prompt
             assert "In snapshots, m is minutes before timestamp_utc and p is USD price." in prompt
             async with session_local() as session:
                 row = await session.scalar(select(LlmUsageLog))

@@ -260,6 +260,54 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_no_alert_low_urgency_is_normalized_before_validation(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        parsed = {
+            "symbol": "BTC",
+            "should_alert": False,
+            "event_key": "",
+            "title": "",
+            "message_body": "",
+            "related_news_ids": [],
+            "possible_action": "",
+            "urgency": "low",
+            "confidence": "low",
+            "reason_for_no_alert": "No significant event detected.",
+        }
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(return_value=("raw scout no-alert output", parsed)),
+        )
+        payload = {
+            "analysis_id": "event_analysis_btc_scout_no_alert",
+            "symbol": "BTC",
+            "news": [],
+            "market": {},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is not None
+        assert decision.should_alert is False
+        assert decision.urgency is None
+        assert decision.confidence == "low"
+        assert analysis_id is not None
+        async with session_local() as session:
+            row = await session.scalar(select(EventAiAnalysis))
+            assert row.status == "no_alert"
+            assert row.urgency is None
+            assert row.confidence == "low"
+            assert row.error_reason is None
+            assert row.error_message is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_invalid_json_creates_no_delivery_and_marks_ai_not_ok(monkeypatch):
     engine, session_local = await build_session_factory()
     try:

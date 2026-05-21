@@ -106,7 +106,11 @@ def validate_event_analysis_output(
             raise EventAnalysisValidationError("reason_for_no_alert must be null for alerts")
     else:
         urgency = _required_null(result["urgency"], "urgency")
-        confidence = _required_null(result["confidence"], "confidence")
+        confidence = (
+            None
+            if result["confidence"] is None
+            else _required_choice(result["confidence"], ALLOWED_CONFIDENCE, "confidence")
+        )
         related_news_ids = _validate_no_alert_related_news_ids(result["related_news_ids"])
         event_key = _required_null(result["event_key"], "event_key")
         title = _required_null(result["title"], "title")

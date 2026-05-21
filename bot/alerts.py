@@ -1971,9 +1971,10 @@ async def _create_event_analysis_decision(
         )
         return None, None
 
+    normalized_parsed = _normalize_event_analysis_result_for_validation(parsed)
     try:
         decision = validate_event_analysis_output(
-            parsed,
+            normalized_parsed,
             expected_symbol=str(input_payload["symbol"]),
             candidate_news_ids={
                 str(item["news_id"])
@@ -1992,7 +1993,7 @@ async def _create_event_analysis_decision(
             input_payload=input_payload,
             raw_output_json=raw_output,
             status="schema_error",
-            parsed_result=parsed,
+            parsed_result=normalized_parsed,
             error_message=str(error),
             error_reason=classify_ai_error_reason(schema_error),
         )
@@ -2008,10 +2009,23 @@ async def _create_event_analysis_decision(
         input_payload=input_payload,
         raw_output_json=raw_output,
         status=status,
-        parsed_result=parsed,
+        parsed_result=normalized_parsed,
         decision=decision,
     )
     return decision, analysis_id
+
+
+def _normalize_event_analysis_result_for_validation(result: object) -> object:
+    if not isinstance(result, dict) or result.get("should_alert") is not False:
+        return result
+
+    normalized = dict(result)
+    normalized["urgency"] = None
+    for field_name in ("event_key", "title", "message_body", "possible_action"):
+        value = normalized.get(field_name)
+        if isinstance(value, str) and not value.strip():
+            normalized[field_name] = None
+    return normalized
 
 
 async def _get_or_create_event_alert_market_event(
@@ -2215,6 +2229,7 @@ def _build_product_notification_payload(
     decision: NotificationDecision,
 ) -> dict:
     symbol = normalize_symbol(context.symbol).upper()
+    coin_icon, entities = build_coin_icon_prefix(symbol)
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
     alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
@@ -2266,7 +2281,8 @@ def _build_product_notification_payload(
         )
 
     message = (
-        f"{decision.icon} {_notification_type_label(decision.notification_type)} - {symbol}\n\n"
+        f"{coin_icon} {decision.icon} {_notification_type_label(decision.notification_type)} - "
+        f"{symbol}\n\n"
         f"{summary}\n\n"
         f"Price: ${context.current_price:,.2f}\n"
         f"{movement_lines}\n\n"
@@ -2277,7 +2293,8 @@ def _build_product_notification_payload(
         f"{decision.possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": sanitize_alert_message(message), "html_text": None}
+    plain_text = sanitize_alert_message(message)
+    return {"plain_text": plain_text, "html_text": None, "entities": entities}
 
 
 def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
@@ -2500,7 +2517,10 @@ async def _send_alert_to_recipient_once(
                 if is_bot_blocked_error(error):
                     raise
                 log(f"HTML alert send failed; falling back to plain text: {error}")
-                await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
+                fallback_kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+                if entities:
+                    fallback_kwargs["entities"] = entities
+                await app.bot.send_message(**fallback_kwargs)
         else:
             kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
             if entities:
@@ -2639,6 +2659,38 @@ async def _disable_recipient_if_bot_blocked(
             )
 
 
+def _prefix_for_utf16_length(text: str, utf16_length: int) -> str:
+    consumed = 0
+    chars: list[str] = []
+    for char in text:
+        consumed += len(char.encode("utf-16-le")) // 2
+        chars.append(char)
+        if consumed >= utf16_length:
+            break
+    if consumed != utf16_length:
+        return ""
+    return "".join(chars)
+
+
+def _preserve_leading_entities_after_sanitize(
+    *,
+    entities: object,
+    original_text: str,
+    sanitized_text: str,
+) -> object | None:
+    if not entities:
+        return None
+    for entity in entities:
+        offset = getattr(entity, "offset", None)
+        length = getattr(entity, "length", None)
+        if offset != 0 or not isinstance(length, int) or length <= 0:
+            return None
+        prefix = _prefix_for_utf16_length(original_text, length)
+        if not prefix or not sanitized_text.startswith(prefix):
+            return None
+    return entities
+
+
 def _sanitize_alert_payload(alert_payload: dict) -> dict:
     plain_text = str(alert_payload.get("plain_text", ""))
     sanitized_plain_text = sanitize_alert_message(plain_text)
@@ -2646,7 +2698,11 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
     entities = alert_payload.get("entities")
     if sanitized_plain_text != plain_text:
         html_text = None
-        entities = None
+        entities = _preserve_leading_entities_after_sanitize(
+            entities=entities,
+            original_text=plain_text,
+            sanitized_text=sanitized_plain_text,
+        )
     return {"plain_text": sanitized_plain_text, "html_text": html_text, "entities": entities}
 
 
