@@ -356,8 +356,8 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
         async with SessionLocal() as session:
             first = await create_user(session, 1001, 2001)
             second = await create_user(session, 1002, 2002)
-            await grant_user_premium(session, telegram_user_id=1001, days=10, now=now)
-            await grant_user_premium(session, telegram_user_id=1002, days=10, now=now)
+            await grant_user_premium(session, telegram_user_id=1001, days=30, now=now)
+            await grant_user_premium(session, telegram_user_id=1002, days=30, now=now)
             await set_user_coin_subscription(
                 session, user_id=first.id, symbol="eth", is_enabled=True
             )
