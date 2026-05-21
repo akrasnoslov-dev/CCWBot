@@ -24,6 +24,14 @@ These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
 Use dummy values from `.env.example` for Compose validation. Do not publish
 `docker compose config` output generated from a real `.env`, because Compose can expand secrets.
 
+## Codex Agent Workflow
+
+Codex task-review agents live in `agents/*.toml`, with mandatory routing rules in
+`agents/routing.toml`. They are development workflow prompts, not Telegram bot runtime code.
+Before starting any non-trivial task, Codex must check whether one or more agents apply, use
+them when required, or explain why they were not needed. See
+`docs/codex_agent_workflow.md`.
+
 ## Runtime Notes
 
 - `python main.py` remains the local bot entry point.

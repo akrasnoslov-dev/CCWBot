@@ -85,7 +85,9 @@ Never implement "1 user = 1 LLM call" for the same event.
 - If Telegram Stars recurring support is unclear, investigate and document it before implementing.
 
 ## Available Agents
-All agents live in `agents/*.toml`.
+Codex task-review agents live in `agents/*.toml`; routing rules live in
+`agents/routing.toml`. These are not runtime Telegram bot agents and are not imported by
+`main.py` or `bot/`. The runtime LLM service remains `bot/services/ai_agent_groq.py`.
 
 - `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
 - `security_review_agent`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
@@ -98,8 +100,10 @@ All agents live in `agents/*.toml`.
 - `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
 
 ## Agent Workflow
-- Use relevant agents proactively for every task.
-- For production-impacting changes, use `architecture_guardian` plus at least one domain agent.
+- Before starting any non-trivial task, check whether `agents/routing.toml` requires one or more agents.
+- If agents are relevant, use them through Codex subagent/delegation support when available. If that support is unavailable, apply the relevant TOML instructions manually and state that in the PR description.
+- Do not silently skip required agents for high-risk areas. If a required agent is not used, explain why before or in the PR description.
+- For production-impacting changes, use `architecture_guardian` plus the required domain agents from `agents/routing.toml`.
 - Use `security_review_agent`, `code_quality_agent`, and `test_ci_agent` for broad repository reviews.
 - Use `db_migration_guardian` for persistence/schema changes.
 - Use `market_pipeline_agent` for price, news, alert, and delivery changes.
@@ -107,6 +111,22 @@ All agents live in `agents/*.toml`.
 - Use `product_policy_agent` for command behavior, menus/help, and user-visible copy.
 - Use `devops_release_agent` for Docker, CI, config, health, dependencies, and deployment docs.
 - If no agent is relevant, state why in the PR description.
+
+Mandatory agent examples:
+
+- Security-sensitive changes: `security_review_agent`.
+- Database/schema changes: `db_migration_guardian`.
+- Alert/report logic changes: `architecture_guardian`, `market_pipeline_agent`, and `product_policy_agent`.
+- LLM prompt or output format changes: `architecture_guardian`, `market_pipeline_agent`, and `product_policy_agent`.
+- Production/debugging tasks: `devops_release_agent` and `security_review_agent`.
+- Refactors affecting multiple modules: `architecture_guardian`, `code_quality_agent`, and `test_ci_agent`.
+- Changes that may increase API usage, token usage, or rate-limit pressure: `architecture_guardian`, `market_pipeline_agent`, and `test_ci_agent`.
+
+Optional agent examples:
+
+- Typo-only documentation fixes.
+- Comment-only clarifications that do not change behaviour.
+- Narrow formatting-only changes after verifying no code or workflow behaviour changed.
 
 ## Safe Changes
 - Keep changes focused and safe.

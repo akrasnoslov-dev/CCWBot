@@ -1,0 +1,130 @@
+version = 1
+description = "Codex task routing rules for CCWBot review subagents."
+
+[defaults]
+runtime_bot_loads_agents = false
+non_trivial_task_requires_agent_check = true
+high_risk_skip_requires_written_reason = true
+prefer_parallel_subagents_when_available = true
+
+[[rules]]
+id = "security_sensitive"
+description = "Authorization, secrets, privacy, abuse, payment trust, or exposed diagnostics."
+must_use = ["security_review_agent"]
+also_consider = ["product_policy_agent", "devops_release_agent"]
+triggers = [
+  "admin-only command access",
+  "secret or token handling",
+  "logging of user or provider data",
+  "payment validation",
+  "health or diagnostics output",
+]
+
+[[rules]]
+id = "database_schema"
+description = "Persistence contracts, database models, migrations, or stored payment/delivery state."
+must_use = ["db_migration_guardian"]
+also_consider = ["security_review_agent", "test_ci_agent"]
+triggers = [
+  "Alembic migration",
+  "bot/db/database.py",
+  "async SQLAlchemy session handling",
+  "payment or delivery idempotency",
+  "new table or column comment",
+]
+
+[[rules]]
+id = "alert_report_logic"
+description = "Automatic alerts, reports, recipient eligibility, market events, or delivery flow."
+must_use = ["architecture_guardian", "market_pipeline_agent", "product_policy_agent"]
+also_consider = ["test_ci_agent"]
+triggers = [
+  "alert generation",
+  "report generation",
+  "recipient loop",
+  "market event",
+  "AI analysis reuse",
+  "Telegram message wording",
+]
+
+[[rules]]
+id = "llm_prompt_output"
+description = "LLM prompts, model settings, output formats, token usage, fallback behavior, or sanitization."
+must_use = ["architecture_guardian", "market_pipeline_agent", "product_policy_agent"]
+also_consider = ["security_review_agent", "test_ci_agent"]
+triggers = [
+  "Groq prompt",
+  "JSON output schema",
+  "alert wording",
+  "token limit",
+  "fallback message",
+  "sanitization",
+]
+
+[[rules]]
+id = "production_debugging"
+description = "Production incidents, deployment, Docker, CI, health, logs, or VPS workflow."
+must_use = ["devops_release_agent", "security_review_agent"]
+also_consider = ["test_ci_agent", "code_quality_agent"]
+triggers = [
+  "production deploy",
+  "Docker Compose",
+  "CI failure",
+  "health endpoint",
+  "runtime logs",
+  "VPS update",
+]
+
+[[rules]]
+id = "multi_module_refactor"
+description = "Refactors or implementation plans that affect multiple modules or shared boundaries."
+must_use = ["architecture_guardian", "code_quality_agent", "test_ci_agent"]
+also_consider = ["security_review_agent"]
+triggers = [
+  "cross-module refactor",
+  "shared helper",
+  "async boundary",
+  "error handling pattern",
+  "large implementation plan",
+]
+
+[[rules]]
+id = "api_token_rate_limit"
+description = "Changes that can increase external API calls, LLM calls, token usage, or rate-limit pressure."
+must_use = ["architecture_guardian", "market_pipeline_agent", "test_ci_agent"]
+also_consider = ["devops_release_agent"]
+triggers = [
+  "CoinGecko call volume",
+  "RSS fetch volume",
+  "LLM call volume",
+  "token usage",
+  "polling interval",
+  "rate limit",
+]
+
+[[rules]]
+id = "premium_payments"
+description = "Premium entitlement, Telegram Stars, grant/revoke, subscription expiry, or non-BTC gating."
+must_use = ["telegram_stars_payments_agent", "security_review_agent", "product_policy_agent"]
+also_consider = ["db_migration_guardian", "test_ci_agent"]
+triggers = [
+  "Telegram Stars",
+  "Premium entitlement",
+  "grantpremium",
+  "revokepremium",
+  "subscription expiry",
+  "non-BTC alert gating",
+]
+
+[[rules]]
+id = "broad_repository_review"
+description = "Broad reviews where no single product area owns all risk."
+must_use = ["security_review_agent", "code_quality_agent", "test_ci_agent"]
+also_consider = ["architecture_guardian"]
+triggers = [
+  "repository review",
+  "security review",
+  "debugging review",
+  "implementation planning",
+  "unknown regression",
+]
