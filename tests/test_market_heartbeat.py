@@ -26,6 +26,7 @@ from bot.db.database import (
     MarketHeartbeat,
     User,
     ensure_default_coin_subscriptions,
+    save_price_snapshot,
 )
 from bot.services import ai_agent_groq
 
@@ -139,6 +140,55 @@ def test_candidate_news_filter_max_limits_work():
 
 
 @pytest.mark.asyncio
+async def test_market_heartbeat_input_uses_aggregates_and_compact_news(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=95.0,
+                change_24h=1.2,
+                checked_at=now - timedelta(hours=7),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=98.0,
+                change_24h=1.2,
+                checked_at=now - timedelta(minutes=30),
+            )
+
+        payload = await alerts._build_market_heartbeat_input(
+            heartbeat_id="heartbeat_btc_test",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.2,
+            now=now,
+            candidate_news=[
+                {"news_id": f"news_{index}", "summary": "x" * 400}
+                for index in range(5)
+            ],
+        )
+
+        market_data = payload["market_data"]
+        assert "price_snapshots_last_6h" not in market_data
+        assert market_data["price_now_usd"] == 100.0
+        assert market_data["change_1h_percent"] is None
+        assert market_data["change_6h_percent"] == pytest.approx(5.2631578947)
+        assert market_data["change_24h_percent"] == 1.2
+        assert market_data["high_6h_usd"] == 100.0
+        assert market_data["low_6h_usd"] == 98.0
+        assert len(payload["candidate_news"]) == 3
+        assert all(len(item["summary"]) <= 300 for item in payload["candidate_news"])
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
@@ -177,6 +227,39 @@ async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
         assert len(heartbeats) == 1
         assert heartbeats[0].status == "completed"
         assert deliveries == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_generation_uses_active_symbols(monkeypatch):
+    engine, session_local = await build_session_factory()
+    requested_symbols = None
+    called_symbols = []
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        async def fake_market_data(symbols):
+            nonlocal requested_symbols
+            requested_symbols = list(symbols)
+            return {
+                symbol: {"price": 100.0, "change_24h": 1.0}
+                for symbol in symbols
+            }
+
+        async def fake_heartbeat(input_payload):
+            called_symbols.append(input_payload["symbol"])
+            return 100 + len(called_symbols)
+
+        monkeypatch.setattr(alerts, "get_coin_market_data_batch", fake_market_data)
+        monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(alerts, "_create_market_heartbeat", fake_heartbeat)
+
+        await alerts.generate_market_heartbeats(SimpleNamespace())
+
+        assert requested_symbols == ["btc", "eth", "ton", "sol"]
+        assert called_symbols == ["BTC", "ETH", "TON", "SOL"]
     finally:
         await engine.dispose()
 
@@ -661,6 +744,92 @@ def test_custom_emoji_entity_is_used_when_id_exists(monkeypatch):
     )
 
     assert payload["entities"][0].custom_emoji_id == "custom-btc-id"
+
+
+@pytest.mark.parametrize("symbol", ["BTC", "ETH", "TON", "SOL"])
+def test_active_coin_custom_icon_prefix_has_stable_entity(symbol):
+    icon, entities = coin_icons.build_coin_icon_prefix(symbol)
+
+    assert icon == coin_icons.coin_fallback_emoji(symbol)
+    assert entities is not None
+    assert entities[0].offset == 0
+    assert entities[0].length == len(icon.encode("utf-16-le")) // 2
+    assert entities[0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS[symbol]
+
+
+def test_sanitize_alert_payload_preserves_leading_custom_coin_entity():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    payload = {
+        "plain_text": f"{icon} BTC Event Alert\n\nSituation:\nBTC is calm.",
+        "html_text": "<b>html should be dropped if text is sanitized</b>",
+        "entities": entities,
+    }
+
+    sanitized = alerts._sanitize_alert_payload(payload)
+
+    assert sanitized["plain_text"].startswith(icon)
+    assert sanitized["entities"] == entities
+
+
+@pytest.mark.asyncio
+async def test_plain_send_path_passes_custom_emoji_entities():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    calls = []
+
+    class FakeBot:
+        async def send_message(self, **kwargs):
+            calls.append(kwargs)
+
+    app = SimpleNamespace(bot=FakeBot())
+    recipient = alerts.AlertRecipient(chat_id=123, user_id=1)
+    payload = {
+        "plain_text": f"{icon} BTC Event Alert\n\nNot financial advice.",
+        "html_text": None,
+        "entities": entities,
+    }
+
+    sent, error_message, error = await alerts._send_alert_to_recipient_once(
+        app,
+        recipient,
+        payload,
+    )
+
+    assert sent is True
+    assert error_message is None
+    assert error is None
+    assert calls[0]["entities"] == entities
+
+
+@pytest.mark.asyncio
+async def test_html_fallback_send_path_preserves_custom_emoji_entities():
+    icon, entities = coin_icons.build_coin_icon_prefix("BTC")
+    calls = []
+
+    class FakeBot:
+        async def send_message(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise RuntimeError("html parse failed")
+
+    app = SimpleNamespace(bot=FakeBot())
+    recipient = alerts.AlertRecipient(chat_id=123, user_id=1)
+    payload = {
+        "plain_text": f"{icon} BTC Market Heartbeat\n\nNot financial advice.",
+        "html_text": "<b>broken</b>",
+        "entities": entities,
+    }
+
+    sent, error_message, error = await alerts._send_alert_to_recipient_once(
+        app,
+        recipient,
+        payload,
+    )
+
+    assert sent is True
+    assert error_message is None
+    assert error is None
+    assert calls[0]["parse_mode"] == ParseMode.HTML
+    assert calls[1]["entities"] == entities
 
 
 @pytest.mark.asyncio

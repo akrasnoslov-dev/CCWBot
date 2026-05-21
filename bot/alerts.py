@@ -97,7 +97,8 @@ from bot.news import fetch_news_context, remember_news_context
 from bot.reports import send_scheduled_weekly_report
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
-    GROQ_MODEL,
+    GROQ_EVENT_ANALYSIS_MODEL,
+    GROQ_STRONG_SIGNAL_MODEL,
     AISchemaValidationError,
     ask_event_analysis_raw,
     ask_market_heartbeat_raw,
@@ -105,6 +106,7 @@ from bot.services.ai_agent_groq import (
     classify_ai_error_reason,
     classify_strong_signal,
     create_ai_alert_payload,
+    mark_llm_usage_log_status,
     sanitize_alert_message,
 )
 from bot.services.price_service import (
@@ -479,6 +481,107 @@ def _format_candidate_news(news_items: list[dict]) -> list[dict]:
     return candidates
 
 
+def _truncate_text(value: str, max_chars: int) -> str:
+    cleaned = " ".join(str(value or "").split()).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max_chars - 1].rstrip(" ,;:") + "."
+
+
+def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
+    compacted = []
+    for item in candidate_news[:limit]:
+        compacted.append(
+            {
+                **item,
+                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+            }
+        )
+    return compacted
+
+
+def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
+    compacted = []
+    for item in candidate_news[:limit]:
+        compacted.append(
+            {
+                "news_id": str(item.get("news_id") or ""),
+                "source": str(item.get("source") or "").strip(),
+                "title": str(item.get("title") or "").strip(),
+                "time": str(item.get("published_at") or "").strip(),
+                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+            }
+        )
+    return compacted
+
+
+def _select_representative_snapshots(
+    snapshots_payload: list[dict], *, limit: int = 6
+) -> list[dict]:
+    if len(snapshots_payload) <= limit:
+        return snapshots_payload
+    if limit <= 1:
+        return snapshots_payload[-1:]
+    last_index = len(snapshots_payload) - 1
+    selected_indices = {
+        round(index * last_index / (limit - 1))
+        for index in range(limit)
+    }
+    selected_indices.add(last_index)
+    selected = [snapshots_payload[index] for index in sorted(selected_indices)]
+    return selected[-limit:]
+
+
+def _compact_event_snapshot(snapshot: dict, *, now: datetime) -> dict:
+    raw_timestamp = snapshot.get("timestamp_utc")
+    if isinstance(raw_timestamp, datetime):
+        timestamp = raw_timestamp
+    else:
+        timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    delta_seconds = (
+        timestamp.astimezone(timezone.utc) - now.astimezone(timezone.utc)
+    ).total_seconds()
+    minutes = int(round(delta_seconds / 60))
+    return {
+        "m": minutes,
+        "p": _stable_float(float(snapshot["price_usd"]), 2),
+    }
+
+
+def _compact_event_snapshots(snapshots_payload: list[dict], *, now: datetime) -> list[dict]:
+    return [_compact_event_snapshot(snapshot, now=now) for snapshot in snapshots_payload]
+
+
+def _snapshot_price(snapshot) -> float:
+    return float(snapshot.price)
+
+
+def _snapshot_change_percent(current_price: float, reference) -> float | None:
+    if reference is None:
+        return None
+    reference_price = _snapshot_price(reference)
+    if reference_price == 0:
+        return None
+    return calculate_price_change_percent(reference_price, current_price)
+
+
+def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
+    cutoff_utc = cutoff.astimezone(timezone.utc)
+    eligible = [
+        snapshot
+        for snapshot in snapshots
+        if (
+            snapshot.checked_at
+            if snapshot.checked_at.tzinfo is not None
+            else snapshot.checked_at.replace(tzinfo=timezone.utc)
+        ).astimezone(timezone.utc)
+        <= cutoff_utc
+    ]
+    return eligible[-1] if eligible else None
+
+
 def _related_news_by_id(candidate_news: list[dict], related_news_ids: list[str]) -> list[dict]:
     by_id = {str(item.get("news_id")): item for item in candidate_news}
     return [by_id[news_id] for news_id in related_news_ids if news_id in by_id]
@@ -585,7 +688,7 @@ def _build_event_alert_payload(
     related_news: list[dict],
 ) -> dict:
     symbol = decision.symbol
-    market_data = input_payload["market_data"]
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
     icon, entities = build_coin_icon_prefix(symbol)
     title = _sanitize_event_text(decision.title, f"{symbol} market event")
     message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
@@ -597,15 +700,21 @@ def _build_event_alert_payload(
         related_news,
         empty_text="No major related news selected.",
     )
+    price = market_data.get("price", market_data.get("price_now_usd"))
+    change_since_message = market_data.get(
+        "chg_since_msg",
+        market_data.get("change_since_last_user_visible_message_percent"),
+    )
+    change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
 
     message = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
-        f"Price: {_format_optional_price(market_data.get('price_now_usd'))}\n"
+        f"Price: {_format_optional_price(price)}\n"
         "Since last "
         f"{symbol} message: "
-        f"{_format_optional_percent(market_data.get('change_since_last_user_visible_message_percent'))}\n"
-        f"24h change: {_format_optional_percent(market_data.get('change_24h_percent'))}\n\n"
+        f"{_format_optional_percent(change_since_message)}\n"
+        f"24h change: {_format_optional_percent(change_24h)}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -618,17 +727,20 @@ def _build_event_alert_payload(
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
-    market_data = input_payload["market_data"]
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
     return _json_dumps(
         {
             "notification_type": EVENT_ALERT_TYPE,
             "notification_severity": decision.urgency,
             "notification_direction": None,
-            "current_price": market_data.get("price_now_usd"),
+            "current_price": market_data.get("price", market_data.get("price_now_usd")),
             "change_since_last_market_update_percent": market_data.get(
-                "change_since_last_user_visible_message_percent"
+                "chg_since_msg",
+                market_data.get("change_since_last_user_visible_message_percent"),
             ),
-            "twenty_four_hour_change_percent": market_data.get("change_24h_percent"),
+            "twenty_four_hour_change_percent": market_data.get(
+                "chg24h", market_data.get("change_24h_percent")
+            ),
             "event_key": decision.event_key,
             "confidence": decision.confidence,
         }
@@ -984,7 +1096,7 @@ async def _get_or_create_strong_signal_ai_analysis(
                 session,
                 market_event_id=market_event_id,
                 provider="groq",
-                model=GROQ_MODEL,
+                model=GROQ_STRONG_SIGNAL_MODEL,
                 input_hash=input_hash,
                 analysis_text=message,
                 plain_text=message,
@@ -1115,7 +1227,7 @@ async def _get_or_create_event_ai_analysis(
                 )
 
     provider = "groq"
-    model = GROQ_MODEL
+    model = GROQ_EVENT_ANALYSIS_MODEL
     error_message = None
     if force_fallback:
         provider = "fallback"
@@ -1594,6 +1706,7 @@ async def _build_event_analysis_input(
             }
             for snapshot in snapshots
         ]
+        snapshots_payload = _select_representative_snapshots(snapshots_payload, limit=6)
         if latest_alert:
             last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
             last_message_type = latest_alert.alert_type
@@ -1620,33 +1733,30 @@ async def _build_event_analysis_input(
                 "price_usd": fallback_previous_price,
             }
         ]
+    snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
+    candidate_news = _compact_event_analysis_news(candidate_news, limit=3)
 
     return {
         "analysis_id": analysis_id,
         "symbol": normalized_symbol.upper(),
         "coin_name": _coin_name(normalized_symbol),
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
-        "market_data": {
-            "price_now_usd": float(current_price),
-            "price_snapshots": snapshots_payload,
-            "change_24h_percent": float(change_24h),
-            "change_since_last_user_visible_message_percent": change_since_last_message,
+        "market": {
+            "price": _stable_float(float(current_price), 2),
+            "snapshots": snapshots_payload,
+            "chg24h": _stable_float(float(change_24h), 4),
+            "chg_since_msg": _stable_float(change_since_last_message, 4),
         },
-        "last_user_visible_message_context": {
-            "last_message_at": last_message_at,
-            "last_message_type": last_message_type,
-            "last_message_price_usd": last_message_price,
+        "last_msg": {
+            "time": last_message_at,
+            "type": last_message_type,
+            "price": _stable_float(last_message_price, 2),
         },
-        "candidate_news": candidate_news,
+        "news": candidate_news,
         "policy": {
             "language": "English",
-            "user_profile": (
-                "General retail crypto holder. The bot must not provide personalised "
-                "financial advice."
-            ),
-            "noise_preference": (
-                "Prefer fewer, more useful alerts. Do not send repetitive or low-value alerts."
-            ),
+            "audience": "General retail crypto holder; no personalised financial advice.",
+            "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         },
     }
 
@@ -1661,7 +1771,8 @@ async def _build_market_heartbeat_input(
     candidate_news: list[dict],
 ) -> dict:
     normalized_symbol = normalize_symbol(symbol)
-    snapshots_payload: list[dict] = []
+    snapshots = []
+    reference_6h = None
     if DB_ENABLED and DB_SESSION_LOCAL:
         since = now - timedelta(hours=6)
         async with DB_SESSION_LOCAL() as session:
@@ -1670,20 +1781,15 @@ async def _build_market_heartbeat_input(
                 symbol=normalized_symbol,
                 since=since,
             )
-        snapshots_payload = [
-            {
-                "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
-                "price_usd": float(snapshot.price),
-            }
-            for snapshot in snapshots
-        ]
-    if not snapshots_payload:
-        snapshots_payload = [
-            {
-                "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
-                "price_usd": float(current_price),
-            }
-        ]
+            reference_6h = await get_reference_price_snapshot(
+                session,
+                symbol=normalized_symbol,
+                at_or_before=since,
+            )
+    reference_1h = _snapshot_at_or_before(snapshots, now - timedelta(hours=1))
+    observed_prices = [_snapshot_price(snapshot) for snapshot in snapshots]
+    observed_prices.append(float(current_price))
+    candidate_news = _compact_candidate_news(candidate_news, limit=3)
     return {
         "heartbeat_id": heartbeat_id,
         "symbol": normalized_symbol.upper(),
@@ -1691,17 +1797,17 @@ async def _build_market_heartbeat_input(
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
         "market_data": {
             "price_now_usd": float(current_price),
-            "price_snapshots_last_6h": snapshots_payload,
+            "change_1h_percent": _snapshot_change_percent(current_price, reference_1h),
+            "change_6h_percent": _snapshot_change_percent(current_price, reference_6h),
             "change_24h_percent": float(change_24h),
+            "high_6h_usd": max(observed_prices) if observed_prices else None,
+            "low_6h_usd": min(observed_prices) if observed_prices else None,
         },
         "candidate_news": candidate_news,
         "policy": {
             "language": "English",
-            "purpose": (
-                "A calm periodic market monitoring update when no user-visible event alert "
-                "was recently delivered."
-            ),
-            "financial_advice": "Do not provide personalised financial advice.",
+            "purpose": "Calm Market Heartbeat, not an Event Alert.",
+            "financial_advice": "No personalised financial advice or portfolio instructions.",
         },
     }
 
@@ -1737,8 +1843,11 @@ async def _save_market_heartbeat_attempt(
 async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
     parsed = None
+    usage_log_id = None
     try:
-        raw_output, parsed = await ask_market_heartbeat_raw(input_payload)
+        result = await ask_market_heartbeat_raw(input_payload)
+        raw_output, parsed = result
+        usage_log_id = getattr(result, "usage_log_id", None)
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         heartbeat_id = await _save_market_heartbeat_attempt(
@@ -1759,10 +1868,17 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             parsed,
             expected_symbol=str(input_payload["symbol"]),
             candidate_news_ids={
-                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+                str(item["news_id"])
+                for item in input_payload.get("news", input_payload.get("candidate_news", []))
             },
         )
     except MarketHeartbeatValidationError as error:
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason="schema validation failed",
+            error_message=str(error),
+        )
         heartbeat_id = await _save_market_heartbeat_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,
@@ -1808,7 +1924,7 @@ async def _save_event_analysis_attempt(
             raw_input_json=_json_dumps(input_payload),
             raw_output_json=raw_output_json,
             status=status,
-            model=GROQ_MODEL,
+            model=GROQ_EVENT_ANALYSIS_MODEL,
             market_event_id=market_event_id,
             parsed_result_json=_json_dumps(parsed_result) if parsed_result is not None else None,
             should_alert=decision.should_alert if decision else None,
@@ -1832,8 +1948,11 @@ async def _create_event_analysis_decision(
 ) -> tuple[EventAnalysisDecision | None, int | None]:
     raw_output = None
     parsed = None
+    usage_log_id = None
     try:
-        raw_output, parsed = await ask_event_analysis_raw(input_payload)
+        result = await ask_event_analysis_raw(input_payload)
+        raw_output, parsed = result
+        usage_log_id = getattr(result, "usage_log_id", None)
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
@@ -1852,21 +1971,29 @@ async def _create_event_analysis_decision(
         )
         return None, None
 
+    normalized_parsed = _normalize_event_analysis_result_for_validation(parsed)
     try:
         decision = validate_event_analysis_output(
-            parsed,
+            normalized_parsed,
             expected_symbol=str(input_payload["symbol"]),
             candidate_news_ids={
-                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+                str(item["news_id"])
+                for item in input_payload.get("news", input_payload.get("candidate_news", []))
             },
         )
     except EventAnalysisValidationError as error:
         schema_error = AISchemaValidationError(str(error))
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason=classify_ai_error_reason(schema_error),
+            error_message=str(error),
+        )
         await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,
             status="schema_error",
-            parsed_result=parsed,
+            parsed_result=normalized_parsed,
             error_message=str(error),
             error_reason=classify_ai_error_reason(schema_error),
         )
@@ -1882,10 +2009,23 @@ async def _create_event_analysis_decision(
         input_payload=input_payload,
         raw_output_json=raw_output,
         status=status,
-        parsed_result=parsed,
+        parsed_result=normalized_parsed,
         decision=decision,
     )
     return decision, analysis_id
+
+
+def _normalize_event_analysis_result_for_validation(result: object) -> object:
+    if not isinstance(result, dict) or result.get("should_alert") is not False:
+        return result
+
+    normalized = dict(result)
+    normalized["urgency"] = None
+    for field_name in ("event_key", "title", "message_body", "possible_action"):
+        value = normalized.get(field_name)
+        if isinstance(value, str) and not value.strip():
+            normalized[field_name] = None
+    return normalized
 
 
 async def _get_or_create_event_alert_market_event(
@@ -1895,9 +2035,12 @@ async def _get_or_create_event_alert_market_event(
 ) -> tuple[int | None, str | None]:
     if not decision.event_key:
         return None, None
-    market_data = input_payload["market_data"]
-    current_price = float(market_data["price_now_usd"])
-    change_since_last = market_data.get("change_since_last_user_visible_message_percent")
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    current_price = float(market_data.get("price", market_data.get("price_now_usd")))
+    change_since_last = market_data.get(
+        "chg_since_msg",
+        market_data.get("change_since_last_user_visible_message_percent"),
+    )
     if change_since_last is None:
         previous_price = None
         price_change_percent = 0.0
@@ -1915,7 +2058,7 @@ async def _get_or_create_event_alert_market_event(
             price=current_price,
             previous_price=previous_price,
             price_change_percent=price_change_percent,
-            last_24h_change=market_data.get("change_24h_percent"),
+            last_24h_change=market_data.get("chg24h", market_data.get("change_24h_percent")),
             detected_at=datetime.now(timezone.utc),
         )
         return event.id, event.event_key
@@ -2086,6 +2229,7 @@ def _build_product_notification_payload(
     decision: NotificationDecision,
 ) -> dict:
     symbol = normalize_symbol(context.symbol).upper()
+    coin_icon, entities = build_coin_icon_prefix(symbol)
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
     alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
@@ -2137,7 +2281,8 @@ def _build_product_notification_payload(
         )
 
     message = (
-        f"{decision.icon} {_notification_type_label(decision.notification_type)} - {symbol}\n\n"
+        f"{coin_icon} {decision.icon} {_notification_type_label(decision.notification_type)} - "
+        f"{symbol}\n\n"
         f"{summary}\n\n"
         f"Price: ${context.current_price:,.2f}\n"
         f"{movement_lines}\n\n"
@@ -2148,7 +2293,8 @@ def _build_product_notification_payload(
         f"{decision.possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": sanitize_alert_message(message), "html_text": None}
+    plain_text = sanitize_alert_message(message)
+    return {"plain_text": plain_text, "html_text": None, "entities": entities}
 
 
 def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
@@ -2371,7 +2517,10 @@ async def _send_alert_to_recipient_once(
                 if is_bot_blocked_error(error):
                     raise
                 log(f"HTML alert send failed; falling back to plain text: {error}")
-                await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
+                fallback_kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+                if entities:
+                    fallback_kwargs["entities"] = entities
+                await app.bot.send_message(**fallback_kwargs)
         else:
             kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
             if entities:
@@ -2510,6 +2659,38 @@ async def _disable_recipient_if_bot_blocked(
             )
 
 
+def _prefix_for_utf16_length(text: str, utf16_length: int) -> str:
+    consumed = 0
+    chars: list[str] = []
+    for char in text:
+        consumed += len(char.encode("utf-16-le")) // 2
+        chars.append(char)
+        if consumed >= utf16_length:
+            break
+    if consumed != utf16_length:
+        return ""
+    return "".join(chars)
+
+
+def _preserve_leading_entities_after_sanitize(
+    *,
+    entities: object,
+    original_text: str,
+    sanitized_text: str,
+) -> object | None:
+    if not entities:
+        return None
+    for entity in entities:
+        offset = getattr(entity, "offset", None)
+        length = getattr(entity, "length", None)
+        if offset != 0 or not isinstance(length, int) or length <= 0:
+            return None
+        prefix = _prefix_for_utf16_length(original_text, length)
+        if not prefix or not sanitized_text.startswith(prefix):
+            return None
+    return entities
+
+
 def _sanitize_alert_payload(alert_payload: dict) -> dict:
     plain_text = str(alert_payload.get("plain_text", ""))
     sanitized_plain_text = sanitize_alert_message(plain_text)
@@ -2517,7 +2698,11 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
     entities = alert_payload.get("entities")
     if sanitized_plain_text != plain_text:
         html_text = None
-        entities = None
+        entities = _preserve_leading_entities_after_sanitize(
+            entities=entities,
+            original_text=plain_text,
+            sanitized_text=sanitized_plain_text,
+        )
     return {"plain_text": sanitized_plain_text, "html_text": html_text, "entities": entities}
 
 

@@ -90,9 +90,10 @@ async def test_resolve_symbols_to_check_uses_enabled_active_eligible_users(monke
             await set_user_coin_subscription(
                 session, user_id=expired_user.id, symbol="btc", is_enabled=False
             )
-            await set_user_coin_subscription(
-                session, user_id=expired_user.id, symbol="xrp", is_enabled=True
+            session.add(
+                UserCoinSubscription(user_id=expired_user.id, symbol="xrp", is_enabled=True)
             )
+            await session.commit()
             await set_user_coin_subscription(
                 session, user_id=inactive_user.id, symbol="btc", is_enabled=True
             )

@@ -35,6 +35,9 @@ TABLE_COMMENTS = {
     "market_events": "Deduplicated market movements that can trigger many deliveries.",
     "event_ai_analyses": "One reusable AI analysis for a market event and exact input payload.",
     "market_heartbeats": "Cached AI market heartbeat updates generated independently of delivery.",
+    "llm_usage_logs": (
+        "Per-call LLM usage and rate-limit telemetry captured without extra provider calls."
+    ),
 }
 
 COLUMN_COMMENTS = {
@@ -282,6 +285,30 @@ COLUMN_COMMENTS = {
         "status": "Heartbeat generation state such as completed or failed.",
         "error_message": "Failure detail when heartbeat generation fails.",
         "created_at": "When this heartbeat row was created.",
+    },
+    "llm_usage_logs": {
+        "id": "Internal LLM usage row id.",
+        "created_at": "When this LLM call ran.",
+        "provider": "LLM provider that handled the request.",
+        "model": "Exact LLM model requested for this call.",
+        "call_type": "Purpose of the LLM call such as event_analysis.",
+        "symbol": "Uppercase coin symbol for this call.",
+        "status": "Final call status such as success or rate_limit.",
+        "prompt_tokens": "Prompt tokens reported by the provider.",
+        "completion_tokens": "Completion tokens reported by the provider.",
+        "total_tokens": "Total tokens reported by the provider.",
+        "input_chars": "Character count of messages sent to the provider.",
+        "output_chars": "Character count of the provider response body.",
+        "max_tokens": "Maximum completion tokens configured for the call.",
+        "rate_limit_limit_requests": "Provider request limit header value when available.",
+        "rate_limit_remaining_requests": "Provider remaining requests header when available.",
+        "rate_limit_reset_requests": "Provider request limit reset header when available.",
+        "rate_limit_limit_tokens": "Provider token limit header value when available.",
+        "rate_limit_remaining_tokens": "Provider remaining tokens header when available.",
+        "rate_limit_reset_tokens": "Provider token limit reset header when available.",
+        "retry_after": "Provider retry-after header when rate limited.",
+        "error_reason": "Normalized safe error reason for failed calls.",
+        "error_message": "Sanitized provider or parser error message.",
     },
 }
 

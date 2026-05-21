@@ -13,6 +13,7 @@ from bot.db.database import (
     EventAiAnalysis,
     User,
     ensure_default_coin_subscriptions,
+    save_price_snapshot,
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
@@ -64,6 +65,64 @@ def event_decision(*, should_alert=True, urgency="normal"):
         confidence="medium" if should_alert else None,
         reason_for_no_alert=None if should_alert else "No meaningful market event detected.",
     )
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            for index in range(12):
+                await save_price_snapshot(
+                    session,
+                    symbol="btc",
+                    price=100.0 + index,
+                    change_24h=1.0,
+                    checked_at=now - timedelta(minutes=55 - index * 5),
+                )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_test",
+            symbol="btc",
+            current_price=112.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[
+                {
+                    "news_id": f"news_{index}",
+                    "url": f"https://example.test/{index}",
+                    "link": f"https://example.test/link/{index}",
+                    "summary": "x" * 400,
+                }
+                for index in range(5)
+            ],
+        )
+
+        assert set(payload["market"]) == {"price", "snapshots", "chg24h", "chg_since_msg"}
+        assert "market_data" not in payload
+        assert "candidate_news" not in payload
+        snapshots = payload["market"]["snapshots"]
+        assert len(snapshots) == 6
+        assert snapshots[-1]["p"] == 111.0
+        assert all(set(snapshot) == {"m", "p"} for snapshot in snapshots)
+        assert all(isinstance(snapshot["m"], int) for snapshot in snapshots)
+        assert all(snapshot["m"] <= 0 for snapshot in snapshots)
+        assert "timestamp_utc" not in snapshots[-1]
+        assert "price_usd" not in snapshots[-1]
+        assert len(payload["news"]) == 3
+        assert all(len(item["summary"]) <= 300 for item in payload["news"])
+        assert all("url" not in item and "link" not in item for item in payload["news"])
+        assert payload["policy"] == {
+            "language": "English",
+            "audience": "General retail crypto holder; no personalised financial advice.",
+            "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
+        }
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -194,6 +253,54 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
             assert row.related_news_ids == "[]"
             assert row.urgency is None
             assert row.confidence is None
+            assert row.error_reason is None
+            assert row.error_message is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_no_alert_low_urgency_is_normalized_before_validation(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        parsed = {
+            "symbol": "BTC",
+            "should_alert": False,
+            "event_key": "",
+            "title": "",
+            "message_body": "",
+            "related_news_ids": [],
+            "possible_action": "",
+            "urgency": "low",
+            "confidence": "low",
+            "reason_for_no_alert": "No significant event detected.",
+        }
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(return_value=("raw scout no-alert output", parsed)),
+        )
+        payload = {
+            "analysis_id": "event_analysis_btc_scout_no_alert",
+            "symbol": "BTC",
+            "news": [],
+            "market": {},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is not None
+        assert decision.should_alert is False
+        assert decision.urgency is None
+        assert decision.confidence == "low"
+        assert analysis_id is not None
+        async with session_local() as session:
+            row = await session.scalar(select(EventAiAnalysis))
+            assert row.status == "no_alert"
+            assert row.urgency is None
+            assert row.confidence == "low"
             assert row.error_reason is None
             assert row.error_message is None
     finally:

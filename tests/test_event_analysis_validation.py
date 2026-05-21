@@ -65,6 +65,18 @@ def test_no_alert_accepts_empty_related_news_ids():
     assert decision.confidence is None
 
 
+def test_no_alert_accepts_confidence_value():
+    decision = validate_event_analysis_output(
+        event_analysis_result(related_news_ids=[], confidence="low"),
+        expected_symbol="sol",
+        candidate_news_ids={"news_1"},
+    )
+
+    assert decision.should_alert is False
+    assert decision.urgency is None
+    assert decision.confidence == "low"
+
+
 @pytest.mark.parametrize("reason", [None, "", "   "])
 def test_no_alert_rejects_missing_or_empty_reason_for_no_alert(reason):
     with pytest.raises(
@@ -82,6 +94,15 @@ def test_alert_rejects_null_urgency():
     with pytest.raises(EventAnalysisValidationError, match="invalid urgency"):
         validate_event_analysis_output(
             alert_analysis_result(urgency=None),
+            expected_symbol="sol",
+            candidate_news_ids={"news_1"},
+        )
+
+
+def test_alert_rejects_invalid_urgency():
+    with pytest.raises(EventAnalysisValidationError, match="invalid urgency"):
+        validate_event_analysis_output(
+            alert_analysis_result(urgency="urgent"),
             expected_symbol="sol",
             candidate_news_ids={"news_1"},
         )
