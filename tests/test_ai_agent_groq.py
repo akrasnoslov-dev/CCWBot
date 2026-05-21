@@ -1,7 +1,12 @@
 import asyncio
 from types import SimpleNamespace
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+import bot.runtime as runtime
 import bot.services.ai_agent_groq as ai_agent_groq
+from bot.db.database import Base, LlmUsageLog
 
 ALERT_ARGS = {
     "previous_price": 100000.0,
@@ -40,6 +45,19 @@ Monitor for continuation; no immediate action required.
 
 Not financial advice."""
 VALID_TELEGRAM_MESSAGE = VALID_TELEGRAM_MESSAGE.format(risk_reason=VALID_RISK_REASON)
+
+
+async def build_usage_session_factory():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_local = async_sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+    return engine, session_local
 
 
 def valid_compact_alert_response(**overrides):
@@ -271,6 +289,156 @@ def test_ask_json_uses_hard_15_second_timeout(monkeypatch):
 
     assert result == {"risk_level": "Medium"}
     assert captured_timeout == 15
+
+
+def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monkeypatch):
+    async def run_test():
+        engine, session_local = await build_usage_session_factory()
+        captured_kwargs = {}
+        try:
+            monkeypatch.setattr(runtime, "DB_ENABLED", True)
+            runtime.DB_SESSION_LOCAL.set(session_local)
+            monkeypatch.setattr(
+                ai_agent_groq,
+                "GROQ_EVENT_ANALYSIS_MODEL",
+                "event-model",
+            )
+
+            class FakeCompletions:
+                async def create(self, **kwargs):
+                    captured_kwargs.update(kwargs)
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(
+                                    content=(
+                                        '{"symbol":"BTC","should_alert":false,'
+                                        '"event_key":null,"title":null,'
+                                        '"message_body":null,"related_news_ids":[],'
+                                        '"possible_action":null,"urgency":null,'
+                                        '"confidence":null,'
+                                        '"reason_for_no_alert":"No event."}'
+                                    )
+                                )
+                            )
+                        ],
+                        usage=SimpleNamespace(
+                            prompt_tokens=12,
+                            completion_tokens=8,
+                            total_tokens=20,
+                        ),
+                        headers={"x-ratelimit-remaining-requests": "999"},
+                    )
+
+            fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+            await ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"})
+
+            assert captured_kwargs["model"] == "event-model"
+            assert captured_kwargs["max_tokens"] == 300
+            prompt = captured_kwargs["messages"][1]["content"]
+            assert "Return valid JSON only." in prompt
+            assert "symbol, should_alert, event_key, title, message_body" in prompt
+            assert "urgency: low, normal, high" in prompt
+            assert "confidence: low, medium, high" in prompt
+            assert "If should_alert=false:" in prompt
+            assert "urgency null" in prompt
+            assert "reason_for_no_alert non-empty" in prompt
+            assert "In snapshots, m is minutes before timestamp_utc and p is USD price." in prompt
+            async with session_local() as session:
+                row = await session.scalar(select(LlmUsageLog))
+            assert row.call_type == "event_analysis"
+            assert row.model == "event-model"
+            assert row.symbol == "BTC"
+            assert row.status == "success"
+            assert row.total_tokens == 20
+            assert row.max_tokens == 300
+            assert row.rate_limit_remaining_requests == "999"
+        finally:
+            runtime.DB_SESSION_LOCAL.clear()
+            await engine.dispose()
+
+    asyncio.run(run_test())
+
+
+def test_event_analysis_model_and_max_token_defaults():
+    assert (
+        ai_agent_groq.GROQ_EVENT_ANALYSIS_MODEL
+        == "meta-llama/llama-4-scout-17b-16e-instruct"
+    )
+    assert ai_agent_groq.GROQ_EVENT_ANALYSIS_MAX_TOKENS == 300
+
+
+def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatch):
+    captured_kwargs = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"symbol":"BTC","title":"BTC calm",'
+                                '"message_body":"BTC is calm.",'
+                                '"related_news_ids":[],"possible_action":"Monitor only.",'
+                                '"confidence":"medium"}'
+                            )
+                        )
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setattr(ai_agent_groq, "GROQ_MARKET_HEARTBEAT_MODEL", "heartbeat-model")
+    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+    asyncio.run(ai_agent_groq.ask_market_heartbeat_raw({"symbol": "BTC"}))
+
+    assert captured_kwargs["model"] == "heartbeat-model"
+    assert captured_kwargs["max_tokens"] == 350
+
+
+def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
+    async def run_test():
+        engine, session_local = await build_usage_session_factory()
+        try:
+            monkeypatch.setattr(runtime, "DB_ENABLED", True)
+            runtime.DB_SESSION_LOCAL.set(session_local)
+
+            class FakeResponse:
+                status_code = 429
+                headers = {"retry-after": "10"}
+
+            class RateLimitError(RuntimeError):
+                status_code = 429
+                response = FakeResponse()
+
+            class FakeCompletions:
+                async def create(self, **kwargs):
+                    raise RateLimitError("429 rate limit")
+
+            fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+            try:
+                await ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"})
+            except ai_agent_groq.AIGroqRateLimitError:
+                pass
+
+            async with session_local() as session:
+                row = await session.scalar(select(LlmUsageLog))
+            assert row.call_type == "event_analysis"
+            assert row.status == "rate_limit"
+            assert row.max_tokens == 300
+            assert row.retry_after == "10"
+        finally:
+            runtime.DB_SESSION_LOCAL.clear()
+            await engine.dispose()
+
+    asyncio.run(run_test())
 
 
 def test_create_ai_alert_payload_uses_fallback_when_json_mode_fails(monkeypatch):

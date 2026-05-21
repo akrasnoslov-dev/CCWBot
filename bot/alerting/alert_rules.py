@@ -1,4 +1,4 @@
-"""Core alert-rule helpers used by automatic BTC checks."""
+"""Core alert-rule helpers used by automatic market checks."""
 
 from datetime import datetime, timezone
 

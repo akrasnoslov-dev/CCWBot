@@ -2,11 +2,19 @@ import logging
 import time
 from functools import wraps
 
-from telegram import Update
+from telegram import MessageEntity, Update
 from telegram.ext import ContextTypes
 
-from bot.alerts import schedule_automatic_btc_check
-from bot.db.database import get_price_state
+from bot.alerting.event_analysis import (
+    EVENT_ANALYSIS_FAILURE_STATUSES,
+    EVENT_ANALYSIS_SUCCESS_STATUSES,
+)
+from bot.alerts import schedule_automatic_market_check
+from bot.db.database import (
+    get_latest_event_analysis_attempt,
+    get_latest_event_analysis_by_statuses,
+    get_price_state,
+)
 from bot.error_logging import (
     disable_error_file_logging,
     enable_error_file_logging,
@@ -59,31 +67,55 @@ def _format_admin_alert_settings(alert_settings: dict) -> str:
     return (
         "Current alert settings\n\n"
         f"Check interval: {alert_settings['automatic_check_interval_seconds']} seconds\n"
-        f"BTC/ETH movement threshold: {alert_settings['major_movement_threshold_percent']}%\n"
-        f"Altcoin movement threshold: {alert_settings['alt_movement_threshold_percent']}%\n"
-        f"BTC/ETH 24h Medium threshold: {alert_settings['major_24h_medium_threshold_percent']}%\n"
-        f"BTC/ETH 24h High threshold: {alert_settings['major_24h_high_threshold_percent']}%\n"
-        f"Altcoin 24h Medium threshold: {alert_settings['alt_24h_medium_threshold_percent']}%\n"
-        f"Altcoin 24h High threshold: {alert_settings['alt_24h_high_threshold_percent']}%"
+        "Event decision: Groq LLM JSON analysis\n"
+        "Movement thresholds: disabled for automatic event alerts"
     )
 
 
 async def _build_admin_system_status_text() -> str:
+    ai_status = "NOT OK"
+    last_success = "not available"
+    last_failed = "not available"
+    last_error_reason = "not available"
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
             btc_state = await get_price_state(session, DEFAULT_SYMBOL)
+            latest_ai = await get_latest_event_analysis_attempt(session)
+            latest_success = await get_latest_event_analysis_by_statuses(
+                session,
+                EVENT_ANALYSIS_SUCCESS_STATUSES,
+            )
+            latest_failure = await get_latest_event_analysis_by_statuses(
+                session,
+                EVENT_ANALYSIS_FAILURE_STATUSES,
+            )
         last_check = btc_state.last_checked_at if btc_state else "not checked yet"
         database_status = "OK"
+        if latest_ai and latest_ai.status in EVENT_ANALYSIS_SUCCESS_STATUSES:
+            ai_status = "OK"
+        elif latest_ai is None:
+            ai_status = "NOT OK"
+            last_error_reason = "no AI analysis yet"
+        if latest_success:
+            last_success = latest_success.created_at
+        if latest_failure:
+            last_failed = latest_failure.created_at
+            last_error_reason = latest_failure.error_reason or latest_failure.status
     else:
         state = load_state()
         last_check = state.get("last_checked_at", "not checked yet")
         database_status = "disabled"
+        ai_status = "NOT OK"
+        last_error_reason = "database disabled"
     return (
         "System status\n\n"
         "Bot status: OK\n"
         f"Database status: {database_status}\n"
         "CoinGecko status: OK\n"
-        "Groq AI status: OK\n"
+        f"Groq AI status: {ai_status}\n"
+        f"Last successful AI analysis time: {last_success}\n"
+        f"Last failed AI analysis time: {last_failed}\n"
+        f"Last AI error reason: {last_error_reason}\n"
         "RSS/news status: OK\n"
         f"Last check time: {last_check}\n"
         "Rate limit status: no active rate limit recorded"
@@ -277,24 +309,11 @@ async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _mark_denied(context)
         await update.message.reply_text("Sorry, only the bot admin can change settings.")
         return
-    if not context.args:
-        await update.message.reply_text(
-            "Please provide a threshold value.\n\nExample:\n/setthreshold 1.0"
-        )
-        return
-    try:
-        threshold = float(context.args[0])
-    except ValueError:
-        await update.message.reply_text(
-            "Threshold must be a number.\n\nExample:\n/setthreshold 1.0"
-        )
-        return
-    if threshold <= 0:
-        await update.message.reply_text("Threshold must be greater than 0.")
-        return
-
-    await save_threshold_setting(threshold)
-    await update.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
+    await update.message.reply_text(
+        "Price movement thresholds are disabled for automatic Event Alerts. "
+        "Use /setinterval to change the check interval."
+    )
+    return
 
 
 @log_request("/setinterval")
@@ -320,9 +339,9 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await save_interval_setting(interval)
-    schedule_automatic_btc_check(context.application, interval)
+    schedule_automatic_market_check(context.application, interval)
     await update.message.reply_text(
-        f"Automatic BTC check interval updated to {interval} seconds ✅ Applied immediately."
+        f"Automatic market check interval updated to {interval} seconds ✅ Applied immediately."
     )
 
 
@@ -403,6 +422,32 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        return
+    message = update.effective_message
+    if message is None:
+        return
+    text = message.text or message.caption or ""
+    entities = list(message.entities or ()) + list(message.caption_entities or ())
+    for entity in entities:
+        if entity.type != MessageEntity.CUSTOM_EMOJI:
+            continue
+        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+        if not custom_emoji_id:
+            continue
+        nearby_start = max(int(entity.offset) - 8, 0)
+        nearby_end = min(int(entity.offset) + int(entity.length) + 8, len(text))
+        logger.info(
+            "custom_emoji_entity type=%s offset=%s length=%s custom_emoji_id=%s nearby_text=%r",
+            entity.type,
+            entity.offset,
+            entity.length,
+            custom_emoji_id,
+            text[nearby_start:nearby_end],
+        )
+
+
 @log_request("callback")
 async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -461,7 +506,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if data.startswith("admin:set_interval:"):
                 interval = int(data.rsplit(":", maxsplit=1)[1])
                 await save_interval_setting(interval)
-                schedule_automatic_btc_check(context.application, interval)
+                schedule_automatic_market_check(context.application, interval)
                 await query.message.reply_text(
                     f"Automatic check interval updated to {interval} seconds. Applied immediately."
                 )
@@ -491,7 +536,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "Current alert settings ⚙️\n\n"
                 f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
-                "Automatic BTC check interval: "
+                "Automatic market check interval: "
                 f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
@@ -513,9 +558,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
             await save_interval_setting(interval)
-            schedule_automatic_btc_check(context.application, interval)
+            schedule_automatic_market_check(context.application, interval)
             await query.message.reply_text(
-                f"Automatic BTC check interval updated to {interval} seconds ✅ "
+                f"Automatic market check interval updated to {interval} seconds ✅ "
                 "Applied immediately."
             )
             return

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot import alerts
+from bot import alerts, coin_icons
 from bot.alerting.notification_decision import (
     NotificationSeverity,
     NotificationType,
@@ -457,12 +457,13 @@ def test_negative_threshold_wording_uses_absolute_values():
     assert "1.0% movement threshold" in decision.reasoning_summary
 
 
-def test_market_update_is_not_blocked_by_important_alert_cooldown():
+@pytest.mark.parametrize("recent_type", ["important_alert", "critical_alert"])
+def test_market_update_is_not_blocked_by_recent_event_alert_cooldown(recent_type):
     decision = decide_notification(
         _context(
             scheduled_market_update_due=True,
             last_notification_time=datetime.now(timezone.utc) - timedelta(minutes=20),
-            last_notification_type="important_alert",
+            last_notification_type=recent_type,
             last_notification_severity="medium",
             last_notification_direction="down",
         )
@@ -589,9 +590,62 @@ def test_market_update_payload_is_per_symbol_not_grouped():
     )
 
     message = payload["plain_text"]
-    assert message.startswith("📊 Market Update - BTC")
+    assert message.startswith(coin_icons.coin_fallback_emoji("BTC"))
+    assert "Market Update - BTC" in message
+    assert payload["entities"][0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS["BTC"]
     assert "ETH:" not in message
     assert "5m change" not in message
+
+
+@pytest.mark.parametrize(
+    "notification_type,severity,direction,trigger_source",
+    [
+        (
+            alerts.NotificationType.IMPORTANT_ALERT,
+            alerts.NotificationSeverity.MEDIUM,
+            alerts.NotificationDirection.UP,
+            alerts.TriggerSource.FAST_MOVEMENT,
+        ),
+        (
+            alerts.NotificationType.CRITICAL_ALERT,
+            alerts.NotificationSeverity.EXTREME,
+            alerts.NotificationDirection.DOWN,
+            alerts.TriggerSource.FAST_MOVEMENT,
+        ),
+    ],
+)
+def test_product_alert_payloads_preserve_coin_custom_emoji_entities(
+    notification_type,
+    severity,
+    direction,
+    trigger_source,
+):
+    payload = alerts._build_product_notification_payload(
+        alerts.SignalContext(
+            symbol="btc",
+            current_price=100.0,
+            latest_5m_change_percent=2.5,
+            one_hour_change_percent=3.0,
+            twenty_four_hour_change_percent=4.0,
+            news_relevance_score="none",
+            user_alert_frequency_seconds=3600,
+        ),
+        alerts.NotificationDecision(
+            notification_type=notification_type,
+            severity=severity,
+            direction=direction,
+            should_send=True,
+            should_suppress=False,
+            trigger_source=trigger_source,
+            reasoning_summary="BTC moved enough to warrant attention.",
+            possible_action="Review the situation calmly.",
+            icon=notification_icon(notification_type, direction, severity, trigger_source),
+        ),
+    )
+
+    assert payload["plain_text"].startswith(coin_icons.coin_fallback_emoji("BTC"))
+    assert payload["entities"][0].offset == 0
+    assert payload["entities"][0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS["BTC"]
 
 
 def test_calm_market_update_does_not_claim_meaningful_movement():
@@ -1059,48 +1113,6 @@ def test_llm_severity_is_normalized_to_allowed_values():
 
 def test_new_user_facing_alert_types_are_limited_to_product_model():
     assert alerts.PRODUCT_ALERT_TYPES == {"market_update", "important_alert", "critical_alert"}
-
-
-def test_recent_important_alert_suppresses_market_update_same_symbol():
-    recent = SimpleNamespace(
-        alert_type="important_alert",
-        status="sent",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
-
-
-def test_recent_critical_alert_suppresses_market_update_same_symbol():
-    recent = SimpleNamespace(
-        alert_type="critical_alert",
-        status="sent",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
-
-
-def test_failed_important_alert_does_not_suppress_market_update():
-    recent = SimpleNamespace(
-        alert_type="important_alert",
-        status="failed",
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-    )
-
-    assert not alerts._should_skip_market_update_after_recent_event_alert(
-        notification_type=alerts.NotificationType.MARKET_UPDATE,
-        recent_event_alert=recent,
-        now=datetime.now(timezone.utc),
-    )
 
 
 @pytest.mark.asyncio

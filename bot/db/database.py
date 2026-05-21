@@ -618,6 +618,24 @@ class Alert(Base):
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Failure detail for a failed delivery, if any."
     )
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="Number of Telegram delivery attempts already made for this alert.",
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Most recent Telegram delivery error for this alert."
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the next Telegram delivery retry is due, if retryable.",
+    )
+    final_failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When Telegram delivery retries were exhausted or marked permanent.",
+    )
     trigger_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Concise reason that triggered this delivered alert."
     )
@@ -707,8 +725,30 @@ class EventAiAnalysis(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, comment="Internal AI analysis row id."
     )
-    market_event_id: Mapped[int] = mapped_column(
-        ForeignKey("market_events.id"), index=True, comment="Market event analyzed by the LLM."
+    market_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_events.id"),
+        nullable=True,
+        index=True,
+        comment="Market event analyzed by the LLM when an event alert is created.",
+    )
+    analysis_id: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        nullable=True,
+        index=True,
+        comment="External stable id for this LLM analysis attempt.",
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="Uppercase coin symbol analyzed by this LLM attempt.",
+    )
+    analysis_type: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Analysis purpose such as event_analysis.",
     )
     provider: Mapped[str] = mapped_column(
         String(64), comment="LLM provider used for this analysis."
@@ -718,6 +758,42 @@ class EventAiAnalysis(Base):
     )
     input_hash: Mapped[str] = mapped_column(
         String(128), index=True, comment="Hash of the exact AI input used for idempotency."
+    )
+    raw_input_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
+    )
+    raw_output_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON or text output returned by the LLM."
+    )
+    parsed_result_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Validated JSON result fields from the LLM response."
+    )
+    should_alert: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, comment="Whether the LLM decided this analysis should alert users."
+    )
+    event_key: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True, comment="LLM event key when should_alert is true."
+    )
+    title: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM alert title for an event alert."
+    )
+    message_body: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM alert body for an event alert."
+    )
+    related_news_ids: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON array of candidate news ids selected by the LLM."
+    )
+    possible_action: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Cautious non-prescriptive possible action from the LLM."
+    )
+    urgency: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM event urgency: low, normal, or high."
+    )
+    confidence: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM confidence: low, medium, or high."
+    )
+    reason_for_no_alert: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM explanation when no event alert should be sent."
     )
     analysis_text: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Raw or legacy analysis text returned by the AI."
@@ -749,11 +825,145 @@ class EventAiAnalysis(Base):
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Failure detail when analysis generation fails."
     )
+    error_reason: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Normalized LLM failure reason for admin status.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When this AI analysis row was created."
     )
 
     market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
+
+
+class MarketHeartbeat(Base):
+    __tablename__ = "market_heartbeats"
+    __table_args__ = (
+        Index("ix_market_heartbeats_symbol_generated_at", "symbol", "generated_at"),
+        {"comment": "Cached AI market heartbeat updates generated independently of delivery."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal market heartbeat row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol this heartbeat describes."
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True, comment="When this heartbeat generation ran."
+    )
+    raw_input_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
+    )
+    raw_output_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON or text output returned by the LLM."
+    )
+    title: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM heartbeat title for Telegram delivery."
+    )
+    message_body: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM heartbeat body for Telegram delivery."
+    )
+    related_news_ids: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON array of candidate news ids selected by the LLM."
+    )
+    possible_action: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Cautious non-prescriptive possible action from the LLM."
+    )
+    confidence: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM heartbeat confidence: low, medium, or high."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default="completed",
+        index=True,
+        comment="Heartbeat generation state such as completed or failed.",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Failure detail when heartbeat generation fails."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this heartbeat row was created."
+    )
+
+
+class LlmUsageLog(Base):
+    __tablename__ = "llm_usage_logs"
+    __table_args__ = (
+        Index("ix_llm_usage_logs_call_type_model_status", "call_type", "model", "status"),
+        Index("ix_llm_usage_logs_symbol_created_at", "symbol", "created_at"),
+        {
+            "comment": (
+                "Per-call LLM usage and rate-limit telemetry captured without extra provider calls."
+            )
+        },
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal LLM usage row id.")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True, comment="When this LLM call ran."
+    )
+    provider: Mapped[str] = mapped_column(
+        String(64), comment="LLM provider that handled the request."
+    )
+    model: Mapped[str] = mapped_column(
+        String(255), index=True, comment="Exact LLM model requested for this call."
+    )
+    call_type: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Purpose of the LLM call such as event_analysis."
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True, comment="Uppercase coin symbol for this call."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Final call status such as success or rate_limit."
+    )
+    prompt_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Prompt tokens reported by the provider."
+    )
+    completion_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Completion tokens reported by the provider."
+    )
+    total_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Total tokens reported by the provider."
+    )
+    input_chars: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Character count of messages sent to the provider."
+    )
+    output_chars: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Character count of the provider response body."
+    )
+    max_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Maximum completion tokens configured for the call."
+    )
+    rate_limit_limit_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider request limit header value when available."
+    )
+    rate_limit_remaining_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider remaining requests header when available."
+    )
+    rate_limit_reset_requests: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider request limit reset header when available."
+    )
+    rate_limit_limit_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider token limit header value when available."
+    )
+    rate_limit_remaining_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider remaining tokens header when available."
+    )
+    rate_limit_reset_tokens: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider token limit reset header when available."
+    )
+    retry_after: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Provider retry-after header when rate limited."
+    )
+    error_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Normalized safe error reason for failed calls."
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Sanitized provider or parser error message."
+    )
 
 
 async def init_db(database_url: str):
@@ -996,7 +1206,8 @@ async def ensure_default_coin_subscriptions(
             )
         ).all()
     )
-    existing_symbols = {row.symbol for row in existing_rows}
+    active_rows = [row for row in existing_rows if row.symbol in SUPPORTED_SYMBOLS]
+    existing_symbols = {row.symbol for row in active_rows}
     rows_to_add = []
     for symbol in SUPPORTED_SYMBOLS:
         if symbol in existing_symbols:
@@ -1021,7 +1232,8 @@ async def ensure_default_coin_subscriptions(
                 )
             ).all()
         )
-    return sorted(existing_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
+        active_rows = [row for row in existing_rows if row.symbol in SUPPORTED_SYMBOLS]
+    return sorted(active_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
 
 
 async def set_user_coin_subscription(
@@ -1848,6 +2060,25 @@ async def get_last_sent_alert(
     return await session.scalar(statement)
 
 
+async def get_latest_sent_alert_for_symbol(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str | None = None,
+) -> Alert | None:
+    """Return the latest sent delivery row for a symbol across all users."""
+    statement = (
+        select(Alert)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.status == "sent")
+        .order_by(Alert.created_at.desc(), Alert.id.desc())
+        .limit(1)
+    )
+    if alert_type is not None:
+        statement = statement.where(Alert.alert_type == alert_type)
+    return await session.scalar(statement)
+
+
 async def get_alert_delivery(
     session: AsyncSession,
     *,
@@ -1894,10 +2125,16 @@ async def reserve_alert_delivery(
         market_event_id=market_event_id,
     )
     if existing:
-        if existing.status in {"sent", "pending"}:
+        if existing.status in {"sent", "pending", "retry_pending"}:
+            return existing, False
+        if existing.final_failed_at is not None:
             return existing, False
         existing.status = "pending"
         existing.error_message = None
+        existing.retry_count = 0
+        existing.last_error = None
+        existing.next_retry_at = None
+        existing.final_failed_at = None
         existing.message = message
         existing.sent_to_chat_id = sent_to_chat_id
         existing.event_ai_analysis_id = event_ai_analysis_id
@@ -1953,12 +2190,28 @@ async def update_alert_delivery_status(
     alert_id: int,
     status: str,
     error_message: str | None = None,
+    retry_count: int | None = None,
+    last_error: str | None = None,
+    next_retry_at: datetime | None = None,
+    final_failed_at: datetime | None = None,
 ) -> Alert | None:
     alert = await session.get(Alert, alert_id)
     if alert is None:
         return None
     alert.status = status
     alert.error_message = error_message
+    if retry_count is not None:
+        alert.retry_count = retry_count
+    if last_error is not None:
+        alert.last_error = last_error
+    if status == "sent":
+        alert.error_message = None
+        alert.next_retry_at = None
+        alert.final_failed_at = None
+    else:
+        alert.next_retry_at = next_retry_at
+        if final_failed_at is not None:
+            alert.final_failed_at = final_failed_at
     await session.commit()
     await session.refresh(alert)
     return alert
@@ -2084,6 +2337,254 @@ async def save_event_ai_analysis(
         )
     await session.refresh(analysis)
     return analysis
+
+
+async def save_event_llm_analysis(
+    session: AsyncSession,
+    *,
+    analysis_id: str,
+    symbol: str,
+    input_hash: str,
+    raw_input_json: str,
+    raw_output_json: str | None,
+    status: str,
+    provider: str = "groq",
+    model: str = "",
+    analysis_type: str = "event_analysis",
+    market_event_id: int | None = None,
+    parsed_result_json: str | None = None,
+    should_alert: bool | None = None,
+    event_key: str | None = None,
+    title: str | None = None,
+    message_body: str | None = None,
+    related_news_ids: str | None = None,
+    possible_action: str | None = None,
+    urgency: str | None = None,
+    confidence: str | None = None,
+    reason_for_no_alert: str | None = None,
+    error_message: str | None = None,
+    error_reason: str | None = None,
+    plain_text: str | None = None,
+    html_text: str | None = None,
+) -> EventAiAnalysis:
+    """Save one raw LLM event-analysis attempt."""
+    existing = await session.scalar(
+        select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+    )
+    if existing:
+        return existing
+
+    analysis = EventAiAnalysis(
+        market_event_id=market_event_id,
+        analysis_id=analysis_id,
+        symbol=symbol.upper(),
+        analysis_type=analysis_type,
+        provider=provider,
+        model=model,
+        input_hash=input_hash,
+        raw_input_json=raw_input_json,
+        raw_output_json=raw_output_json,
+        parsed_result_json=parsed_result_json,
+        should_alert=should_alert,
+        event_key=event_key,
+        title=title,
+        message_body=message_body,
+        related_news_ids=related_news_ids,
+        possible_action=possible_action,
+        urgency=urgency,
+        confidence=confidence,
+        reason_for_no_alert=reason_for_no_alert,
+        analysis_text=raw_output_json,
+        plain_text=plain_text,
+        html_text=html_text,
+        status=status,
+        error_message=error_message,
+        error_reason=error_reason,
+    )
+    session.add(analysis)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        return await session.scalar(
+            select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+        )
+    await session.refresh(analysis)
+    return analysis
+
+
+async def attach_analysis_to_market_event(
+    session: AsyncSession,
+    *,
+    analysis_id: str,
+    market_event_id: int,
+    plain_text: str | None = None,
+    html_text: str | None = None,
+) -> EventAiAnalysis | None:
+    """Attach a previously saved event analysis to the event created from its decision."""
+    analysis = await session.scalar(
+        select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
+    )
+    if analysis is None:
+        return None
+    analysis.market_event_id = market_event_id
+    if plain_text is not None:
+        analysis.plain_text = plain_text
+    if html_text is not None:
+        analysis.html_text = html_text
+    await session.commit()
+    await session.refresh(analysis)
+    return analysis
+
+
+async def save_market_heartbeat(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    generated_at: datetime,
+    raw_input_json: str | None,
+    raw_output_json: str | None,
+    title: str | None = None,
+    message_body: str | None = None,
+    related_news_ids: str | None = None,
+    possible_action: str | None = None,
+    confidence: str | None = None,
+    status: str = "completed",
+    error_message: str | None = None,
+) -> MarketHeartbeat:
+    heartbeat = MarketHeartbeat(
+        symbol=symbol.upper(),
+        generated_at=generated_at,
+        raw_input_json=raw_input_json,
+        raw_output_json=raw_output_json,
+        title=title,
+        message_body=message_body,
+        related_news_ids=related_news_ids,
+        possible_action=possible_action,
+        confidence=confidence,
+        status=status,
+        error_message=error_message,
+    )
+    session.add(heartbeat)
+    await session.commit()
+    await session.refresh(heartbeat)
+    return heartbeat
+
+
+async def save_llm_usage_log(
+    session: AsyncSession,
+    *,
+    provider: str,
+    model: str,
+    call_type: str,
+    status: str,
+    symbol: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    input_chars: int | None = None,
+    output_chars: int | None = None,
+    max_tokens: int | None = None,
+    rate_limit_limit_requests: str | None = None,
+    rate_limit_remaining_requests: str | None = None,
+    rate_limit_reset_requests: str | None = None,
+    rate_limit_limit_tokens: str | None = None,
+    rate_limit_remaining_tokens: str | None = None,
+    rate_limit_reset_tokens: str | None = None,
+    retry_after: str | None = None,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> LlmUsageLog:
+    """Save one LLM usage telemetry row."""
+    row = LlmUsageLog(
+        provider=provider,
+        model=model,
+        call_type=call_type,
+        symbol=symbol.upper() if symbol else None,
+        status=status,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        input_chars=input_chars,
+        output_chars=output_chars,
+        max_tokens=max_tokens,
+        rate_limit_limit_requests=rate_limit_limit_requests,
+        rate_limit_remaining_requests=rate_limit_remaining_requests,
+        rate_limit_reset_requests=rate_limit_reset_requests,
+        rate_limit_limit_tokens=rate_limit_limit_tokens,
+        rate_limit_remaining_tokens=rate_limit_remaining_tokens,
+        rate_limit_reset_tokens=rate_limit_reset_tokens,
+        retry_after=retry_after,
+        error_reason=error_reason,
+        error_message=error_message,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def update_llm_usage_log_status(
+    session: AsyncSession,
+    *,
+    usage_log_id: int,
+    status: str,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> LlmUsageLog | None:
+    """Update a usage row when downstream JSON schema validation fails."""
+    row = await session.get(LlmUsageLog, usage_log_id)
+    if row is None:
+        return None
+    row.status = status
+    row.error_reason = error_reason
+    row.error_message = error_message
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def get_latest_market_heartbeat(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    statuses: set[str] | None = None,
+) -> MarketHeartbeat | None:
+    statement = (
+        select(MarketHeartbeat)
+        .where(MarketHeartbeat.symbol == symbol.upper())
+        .order_by(MarketHeartbeat.generated_at.desc(), MarketHeartbeat.id.desc())
+        .limit(1)
+    )
+    if statuses is not None:
+        statement = statement.where(MarketHeartbeat.status.in_(sorted(statuses)))
+    return await session.scalar(statement)
+
+
+async def get_latest_event_analysis_attempt(
+    session: AsyncSession,
+) -> EventAiAnalysis | None:
+    """Return the most recent LLM event-analysis attempt."""
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.analysis_type == "event_analysis")
+        .order_by(EventAiAnalysis.created_at.desc(), EventAiAnalysis.id.desc())
+        .limit(1)
+    )
+
+
+async def get_latest_event_analysis_by_statuses(
+    session: AsyncSession,
+    statuses: set[str],
+) -> EventAiAnalysis | None:
+    """Return the latest event-analysis row whose status is in statuses."""
+    return await session.scalar(
+        select(EventAiAnalysis)
+        .where(EventAiAnalysis.analysis_type == "event_analysis")
+        .where(EventAiAnalysis.status.in_(sorted(statuses)))
+        .order_by(EventAiAnalysis.created_at.desc(), EventAiAnalysis.id.desc())
+        .limit(1)
+    )
 
 
 async def count_market_events(session: AsyncSession, symbol: str | None = None) -> int:

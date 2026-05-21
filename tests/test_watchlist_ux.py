@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +13,7 @@ from bot.db.database import (
     ensure_default_coin_subscriptions,
     grant_user_premium,
 )
+from bot.domain.supported_coins import ACTIVE_SYMBOLS
 from bot.handlers import start
 from bot.keyboards import build_price_keyboard
 from bot.setup import setup_bot_commands
@@ -41,7 +42,7 @@ def make_user(active_until=None, frequency=21600, role="user"):
 
 def make_subscriptions(**enabled_by_symbol):
     rows = []
-    for symbol in ("btc", "eth", "sol", "xrp", "bnb", "doge", "ada", "ton", "link", "trx"):
+    for symbol in ACTIVE_SYMBOLS:
         rows.append(
             SimpleNamespace(
                 symbol=symbol,
@@ -60,7 +61,7 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
 
     assert text.startswith("📡 Alert watchlist")
     assert "BTC alerts are free." in text
-    assert "ETH, SOL, XRP, BNB, DOGE, ADA, TON, LINK, TRX" in text
+    assert "ETH, TON, SOL" in text
     assert "ETH - Premium" not in text
     assert "Frequency: Every 4 hours" in text
     assert "Use /subscribe to upgrade." in text
@@ -91,23 +92,12 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
         now,
     )
 
-    assert "Subscribed coins: BTC, ETH, SOL, TON" in text
+    assert "Subscribed coins: BTC, ETH, TON, SOL" in text
     assert "Alert frequency: Every 1 hour" in text
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
     assert "Manage subscription: /myplan" in text
-    assert [symbol for symbol, _, _ in rows] == [
-        "btc",
-        "eth",
-        "sol",
-        "xrp",
-        "bnb",
-        "doge",
-        "ada",
-        "ton",
-        "link",
-        "trx",
-    ]
+    assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "ton", "sol"]
 
 
 def test_watchlist_free_user_can_have_btc_disabled_in_keyboard_state():
@@ -186,12 +176,12 @@ def test_subscribe_message_mentions_stars_payment_flow():
     assert "After payment, use /watchlist to choose your coins." in text
 
 
-def test_price_keyboard_uses_supported_top_10_without_usdt():
+def test_price_keyboard_uses_active_symbols_only():
     keyboard = build_price_keyboard()
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert labels == ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "TON", "LINK", "TRX"]
-    assert "USDT" not in labels
+    assert labels == ["BTC", "ETH", "TON", "SOL"]
+    assert "XRP" not in labels
 
 
 def test_watchlist_buttons_use_icons_and_compact_layout():
@@ -204,11 +194,16 @@ def test_watchlist_buttons_use_icons_and_compact_layout():
     rows = keyboard.inline_keyboard
     labels = [[button.text for button in row] for row in rows]
 
-    assert labels[0] == ["✅ BTC", "✅ ETH", "⬜ SOL"]
-    assert labels[1] == ["⬜ XRP", "⬜ BNB", "⬜ DOGE"]
-    assert labels[2] == ["⬜ ADA", "⬜ TON", "⬜ LINK"]
-    assert labels[3] == ["⬜ TRX"]
-    assert labels[4] == ["⬜ 1h", "✅ 6h", "⬜ 24h"]
+    assert [button.callback_data for row in rows for button in row] == [
+        "watchlist:set:btc:false",
+        "watchlist:set:eth:false",
+        "watchlist:set:ton:true",
+        "watchlist:set:sol:true",
+        "watchlist:frequency:3600",
+        "watchlist:frequency:21600",
+        "watchlist:frequency:86400",
+    ]
+    assert "XRP" not in " ".join(button.text for row in rows for button in row)
     assert all(len(row) <= 3 for row in labels)
 
 
@@ -220,11 +215,17 @@ def test_watchlist_buttons_show_locked_icons_for_free_user():
     )
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert labels[:4] == ["✅ BTC", "🔒 ETH", "🔒 SOL", "🔒 XRP"]
+    assert labels[:4] == ["✅ BTC", "🔒 ETH", "🔒 TON", "🔒 SOL"]
     assert "Enable" not in " ".join(labels)
     assert "Disable" not in " ".join(labels)
     assert "Locked" not in " ".join(labels)
 
+    assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
+        "watchlist:set:btc:false",
+        "watchlist:set:eth:true",
+        "watchlist:set:ton:true",
+        "watchlist:set:sol:true",
+    ]
 
 @pytest.mark.asyncio
 async def test_admin_commands_hidden_from_normal_menu(monkeypatch):

@@ -18,7 +18,28 @@ from openai import AsyncOpenAI
 
 load_dotenv()
 
+
+def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_EVENT_ANALYSIS_MODEL = os.getenv(
+    "GROQ_EVENT_ANALYSIS_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"
+)
+GROQ_EVENT_ANALYSIS_MAX_TOKENS = _get_int_env("GROQ_EVENT_ANALYSIS_MAX_TOKENS", 300, minimum=1)
+GROQ_MARKET_HEARTBEAT_MODEL = os.getenv(
+    "GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"
+)
+GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant")
+GROQ_STRONG_SIGNAL_MODEL = os.getenv("GROQ_STRONG_SIGNAL_MODEL", GROQ_MODEL)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +66,71 @@ _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|dri
 
 class AIGroqRateLimitError(RuntimeError):
     """Raised when Groq refuses a request because the account is rate limited."""
+
+
+class AIInvalidJsonError(RuntimeError):
+    """Raised when the provider response is not valid JSON."""
+
+    def __init__(self, message: str, raw_content: str | None = None):
+        super().__init__(message)
+        self.raw_content = raw_content
+
+
+class AISchemaValidationError(RuntimeError):
+    """Raised when validated JSON does not match the expected schema."""
+
+
+class LLMJsonResult(tuple):
+    """Tuple-compatible raw JSON result with attached usage log id."""
+
+    usage_log_id: int | None
+
+    def __new__(cls, raw_content: str, parsed: dict, usage_log_id: int | None = None):
+        value = super().__new__(cls, (raw_content, parsed))
+        value.usage_log_id = usage_log_id
+        return value
+
+
+def classify_ai_error_reason(error: Exception) -> str:
+    """Return admin-safe LLM failure reason."""
+    if isinstance(error, AIGroqRateLimitError) or _is_groq_rate_limit_error(error):
+        return "rate limit"
+    if isinstance(error, AIInvalidJsonError):
+        return "invalid JSON"
+    if isinstance(error, AISchemaValidationError):
+        return "schema validation failed"
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+        return "timeout"
+    status_code = getattr(error, "status_code", None)
+    response = getattr(error, "response", None)
+    if status_code in {401, 403} or getattr(response, "status_code", None) in {401, 403}:
+        return "auth error"
+    message = str(error).lower()
+    if "api key" in message or "unauthorized" in message or "forbidden" in message:
+        return "auth error"
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    return "unknown error"
+
+
+def _usage_status_for_error(error: Exception) -> str:
+    reason = classify_ai_error_reason(error)
+    if reason == "rate limit":
+        return "rate_limit"
+    if reason == "invalid JSON":
+        return "invalid_json"
+    if reason == "schema validation failed" or _is_groq_json_validation_error(error):
+        return "schema_error"
+    if reason == "timeout":
+        return "timeout"
+    if reason == "auth error":
+        return "auth_error"
+    return "other_error"
+
+
+def _safe_error_message(error: Exception, max_chars: int = 500) -> str:
+    message = " ".join(str(error).split())
+    return message[:max_chars]
 
 
 def _groq_json_mode_enabled() -> bool:
@@ -92,6 +178,184 @@ def get_groq_client() -> AsyncOpenAI:
             max_retries=0,
         )
     return _groq_client
+
+
+def _message_input_chars(messages: list[dict]) -> int:
+    return sum(len(str(message.get("content") or "")) for message in messages)
+
+
+def _response_content(response) -> str:
+    try:
+        return response.choices[0].message.content or ""
+    except (AttributeError, IndexError, TypeError):
+        return ""
+
+
+def _usage_int(response, name: str) -> int | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _headers_from_error(error: Exception):
+    response = getattr(error, "response", None)
+    return getattr(response, "headers", None)
+
+
+def _header_value(headers, name: str) -> str | None:
+    if headers is None:
+        return None
+    for candidate in (name, name.lower(), name.upper()):
+        try:
+            value = headers.get(candidate)
+        except AttributeError:
+            value = None
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _rate_limit_header_payload(headers) -> dict:
+    return {
+        "rate_limit_limit_requests": _header_value(headers, "x-ratelimit-limit-requests"),
+        "rate_limit_remaining_requests": _header_value(
+            headers, "x-ratelimit-remaining-requests"
+        ),
+        "rate_limit_reset_requests": _header_value(headers, "x-ratelimit-reset-requests"),
+        "rate_limit_limit_tokens": _header_value(headers, "x-ratelimit-limit-tokens"),
+        "rate_limit_remaining_tokens": _header_value(headers, "x-ratelimit-remaining-tokens"),
+        "rate_limit_reset_tokens": _header_value(headers, "x-ratelimit-reset-tokens"),
+        "retry_after": _header_value(headers, "retry-after"),
+    }
+
+
+async def _write_llm_usage_log(
+    *,
+    call_type: str,
+    symbol: str | None,
+    model: str,
+    status: str,
+    input_chars: int | None,
+    output_chars: int | None,
+    max_tokens: int | None,
+    headers=None,
+    response=None,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> int | None:
+    try:
+        from bot.db.database import save_llm_usage_log
+        from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
+
+        if not DB_ENABLED or not DB_SESSION_LOCAL:
+            return None
+        async with DB_SESSION_LOCAL() as session:
+            row = await save_llm_usage_log(
+                session,
+                provider="groq",
+                model=model,
+                call_type=call_type,
+                symbol=symbol,
+                status=status,
+                prompt_tokens=_usage_int(response, "prompt_tokens"),
+                completion_tokens=_usage_int(response, "completion_tokens"),
+                total_tokens=_usage_int(response, "total_tokens"),
+                input_chars=input_chars,
+                output_chars=output_chars,
+                max_tokens=max_tokens,
+                error_reason=error_reason,
+                error_message=error_message,
+                **_rate_limit_header_payload(headers),
+            )
+            return row.id
+    except Exception as log_error:
+        logger.debug("LLM usage logging failed: %s", log_error)
+        return None
+
+
+async def mark_llm_usage_log_status(
+    usage_log_id: int | None,
+    *,
+    status: str,
+    error_reason: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    if usage_log_id is None:
+        return
+    try:
+        from bot.db.database import update_llm_usage_log_status
+        from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
+
+        if not DB_ENABLED or not DB_SESSION_LOCAL:
+            return
+        async with DB_SESSION_LOCAL() as session:
+            await update_llm_usage_log_status(
+                session,
+                usage_log_id=usage_log_id,
+                status=status,
+                error_reason=error_reason,
+                error_message=error_message,
+            )
+    except Exception as log_error:
+        logger.debug("LLM usage status update failed: %s", log_error)
+
+
+async def _run_groq_chat_completion(
+    *,
+    call_type: str,
+    symbol: str | None,
+    model: str,
+    messages: list[dict],
+    max_tokens: int,
+    response_format: dict | None,
+    timeout: int = 15,
+):
+    client = get_groq_client()
+    request_kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.0,
+        "max_tokens": max_tokens,
+    }
+    if response_format is not None:
+        request_kwargs["response_format"] = response_format
+
+    input_chars = _message_input_chars(messages)
+    try:
+        completions = client.chat.completions
+        raw_resource = getattr(completions, "with_raw_response", None)
+        raw_create = getattr(raw_resource, "create", None)
+        if raw_create is not None:
+            raw_response = await asyncio.wait_for(raw_create(**request_kwargs), timeout=timeout)
+            headers = getattr(raw_response, "headers", None)
+            response = raw_response.parse()
+        else:
+            response = await asyncio.wait_for(completions.create(**request_kwargs), timeout=timeout)
+            headers = getattr(response, "headers", None)
+    except Exception as error:
+        headers = _headers_from_error(error)
+        status = _usage_status_for_error(error)
+        await _write_llm_usage_log(
+            call_type=call_type,
+            symbol=symbol,
+            model=model,
+            status=status,
+            input_chars=input_chars,
+            output_chars=None,
+            max_tokens=max_tokens,
+            headers=headers,
+            error_reason=classify_ai_error_reason(error),
+            error_message=_safe_error_message(error),
+        )
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+    return response, headers, input_chars
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
@@ -755,26 +1019,31 @@ def _build_news_text(news_items: list[dict] | None) -> str:
     )
 
 
-async def _ask_json(prompt: str) -> dict | None:
+async def _ask_json_with_usage(
+    prompt: str,
+    *,
+    call_type: str = "legacy_alert_payload",
+    symbol: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 450,
+) -> tuple[dict | None, int | None]:
     """Request JSON from Groq/OpenAI-compatible API and parse it."""
-    client = get_groq_client()
-    request_kwargs = {
-        "model": GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.0,
-        "max_tokens": 450,
-    }
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
     json_mode_enabled = _groq_json_mode_enabled()
-    if json_mode_enabled:
-        request_kwargs["response_format"] = {"type": "json_object"}
+    response_format = {"type": "json_object"} if json_mode_enabled else None
+    selected_model = model or GROQ_MODEL
 
     try:
-        response = await asyncio.wait_for(
-            client.chat.completions.create(**request_kwargs),
-            timeout=15,
+        response, headers, input_chars = await _run_groq_chat_completion(
+            call_type=call_type,
+            symbol=symbol,
+            model=selected_model,
+            messages=messages,
+            max_tokens=max_tokens,
+            response_format=response_format,
         )
     except Exception as error:
         if _is_groq_rate_limit_error(error):
@@ -783,20 +1052,223 @@ async def _ask_json(prompt: str) -> dict | None:
             raise
         if not _groq_json_mode_retry_plain_enabled():
             logger.warning("Groq JSON mode failed; using deterministic fallback.")
-            return None
+            return None, None
         logger.warning("Groq JSON mode failed; retrying once without response_format.")
-        retry_kwargs = dict(request_kwargs)
-        retry_kwargs.pop("response_format", None)
         try:
-            response = await asyncio.wait_for(
-                client.chat.completions.create(**retry_kwargs),
-                timeout=15,
+            response, headers, input_chars = await _run_groq_chat_completion(
+                call_type=call_type,
+                symbol=symbol,
+                model=selected_model,
+                messages=messages,
+                max_tokens=max_tokens,
+                response_format=None,
             )
         except Exception as retry_error:
             if _is_groq_rate_limit_error(retry_error):
                 raise AIGroqRateLimitError(str(retry_error)) from retry_error
             raise
-    return _parse_json(response.choices[0].message.content)
+    raw_content = _response_content(response)
+    parsed = _parse_json(raw_content)
+    status = "success" if parsed is not None else "invalid_json"
+    usage_log_id = await _write_llm_usage_log(
+        call_type=call_type,
+        symbol=symbol,
+        model=selected_model,
+        status=status,
+        input_chars=input_chars,
+        output_chars=len(raw_content),
+        max_tokens=max_tokens,
+        headers=headers,
+        response=response,
+        error_reason=None if parsed is not None else "invalid JSON",
+        error_message=None if parsed is not None else "Provider response was not valid JSON.",
+    )
+    return parsed, usage_log_id
+
+
+async def _ask_json(prompt: str) -> dict | None:
+    parsed, _ = await _ask_json_with_usage(prompt)
+    return parsed
+
+
+async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
+    prompt = (
+        "Return valid JSON only. Write English.\n"
+        "Use exactly these fields: symbol, should_alert, event_key, title, message_body, "
+        "related_news_ids, possible_action, urgency, confidence, reason_for_no_alert.\n"
+        "urgency: low, normal, high. confidence: low, medium, high.\n"
+        "event_key is required only when should_alert=true.\n"
+        "If should_alert=false: event_key null or \"\", title \"\", message_body \"\", "
+        "related_news_ids [], possible_action \"\", urgency null, confidence low|medium|high, "
+        "reason_for_no_alert non-empty.\n"
+        "related_news_ids must come from news.news_id.\n"
+        "Prefer fewer useful alerts. If no meaningful event exists, set should_alert=false.\n"
+        "No direct trading commands or guaranteed outcomes.\n"
+        "In snapshots, m is minutes before timestamp_utc and p is USD price.\n\n"
+        "Input JSON:\n"
+        f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
+    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
+    symbol = str(input_payload.get("symbol") or "").strip() or None
+
+    try:
+        response, headers, input_chars = await _run_groq_chat_completion(
+            call_type="event_analysis",
+            symbol=symbol,
+            model=GROQ_EVENT_ANALYSIS_MODEL,
+            messages=messages,
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+            response_format=response_format,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+    raw_content = _response_content(response)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as error:
+        await _write_llm_usage_log(
+            call_type="event_analysis",
+            symbol=symbol,
+            model=GROQ_EVENT_ANALYSIS_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message=_safe_error_message(error),
+        )
+        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
+    if not isinstance(parsed, dict):
+        await _write_llm_usage_log(
+            call_type="event_analysis",
+            symbol=symbol,
+            model=GROQ_EVENT_ANALYSIS_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message="top-level JSON is not an object",
+        )
+        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
+    usage_log_id = await _write_llm_usage_log(
+        call_type="event_analysis",
+        symbol=symbol,
+        model=GROQ_EVENT_ANALYSIS_MODEL,
+        status="success",
+        input_chars=input_chars,
+        output_chars=len(raw_content),
+        max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+        headers=headers,
+        response=response,
+    )
+    return LLMJsonResult(raw_content, parsed, usage_log_id)
+
+
+def build_market_heartbeat_prompt(input_payload: dict) -> str:
+    return (
+        "Return valid JSON only, in English.\n"
+        "Use exactly these fields: symbol, title, message_body, related_news_ids, "
+        "possible_action, confidence.\n"
+        'Allowed confidence values: "low", "medium", "high".\n'
+        "This is a calm Market Heartbeat, not an Event Alert. Do not return "
+        "should_alert, event_key, urgency, market_update, important_alert, "
+        "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
+        "Be concise and useful. Mention selected relevant news if useful, but avoid exact "
+        "causality claims. Do not repeat exact price values or exact percentage values in "
+        "message_body; describe the current price, since-last-message change, and 24h "
+        "change qualitatively.\n"
+        "related_news_ids must only contain news_id values from candidate_news.\n"
+        "Do not provide personalised financial advice or portfolio instructions. "
+        "possible_action must be cautious and non-prescriptive.\n\n"
+        "Input JSON:\n"
+        f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
+    )
+
+
+async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON."""
+    prompt = build_market_heartbeat_prompt(input_payload)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
+    symbol = str(input_payload.get("symbol") or "").strip() or None
+
+    try:
+        response, headers, input_chars = await _run_groq_chat_completion(
+            call_type="market_heartbeat",
+            symbol=symbol,
+            model=GROQ_MARKET_HEARTBEAT_MODEL,
+            messages=messages,
+            max_tokens=350,
+            response_format=response_format,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+    raw_content = _response_content(response)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as error:
+        await _write_llm_usage_log(
+            call_type="market_heartbeat",
+            symbol=symbol,
+            model=GROQ_MARKET_HEARTBEAT_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=350,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message=_safe_error_message(error),
+        )
+        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
+    if not isinstance(parsed, dict):
+        await _write_llm_usage_log(
+            call_type="market_heartbeat",
+            symbol=symbol,
+            model=GROQ_MARKET_HEARTBEAT_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=350,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message="top-level JSON is not an object",
+        )
+        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
+    usage_log_id = await _write_llm_usage_log(
+        call_type="market_heartbeat",
+        symbol=symbol,
+        model=GROQ_MARKET_HEARTBEAT_MODEL,
+        status="success",
+        input_chars=input_chars,
+        output_chars=len(raw_content),
+        max_tokens=350,
+        headers=headers,
+        response=response,
+    )
+    return LLMJsonResult(raw_content, parsed, usage_log_id)
 
 
 async def create_ai_alert_message(
@@ -956,11 +1428,22 @@ confirmation, monitor risk, avoid impulsive action.
 Data: price={current_price:.2f}, change24h={change_24h:.4f}%.
 News:\n{news_text}
 """
-    result = await _ask_json(prompt)
+    result, usage_log_id = await _ask_json_with_usage(
+        prompt,
+        call_type="daily_report",
+        symbol="BTC",
+        model=GROQ_REPORT_MODEL,
+    )
     if not result:
         return None
     required = {"risk_level", "market_interpretation", "possible_actions", "telegram_message"}
     if required - set(result.keys()):
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason="schema validation failed",
+            error_message="Daily report validation failed: missing required fields.",
+        )
         logger.error("Daily report validation failed: missing required fields.")
         return None
     return result
@@ -1002,11 +1485,22 @@ Data: price={current_price:.2f}, change24h={change_24h_text}%,
 change7d={change_7d_text}%.
 News:\n{news_text}
 """
-    result = await _ask_json(prompt)
+    result, usage_log_id = await _ask_json_with_usage(
+        prompt,
+        call_type="weekly_report",
+        symbol="BTC",
+        model=GROQ_REPORT_MODEL,
+    )
     if not result:
         return None
     required = {"risk_level", "weekly_interpretation", "possible_actions", "telegram_message"}
     if required - set(result.keys()):
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason="schema validation failed",
+            error_message="Weekly report validation failed: missing required fields.",
+        )
         logger.error("Weekly report validation failed: missing required fields.")
         return None
     return result
@@ -1031,7 +1525,12 @@ Data: price={current_price:.2f}, change24h={change_24h:.4f}%,
 change7d={change_7d_text}%.
 News:\n{news_text}
 """
-    result = await _ask_json(prompt)
+    result, usage_log_id = await _ask_json_with_usage(
+        prompt,
+        call_type="strong_signal",
+        symbol="BTC",
+        model=GROQ_STRONG_SIGNAL_MODEL,
+    )
     if not result:
         return None
     required = {
@@ -1044,6 +1543,12 @@ News:\n{news_text}
         "telegram_message",
     }
     if required - set(result.keys()):
+        await mark_llm_usage_log_status(
+            usage_log_id,
+            status="schema_error",
+            error_reason="schema validation failed",
+            error_message="Strong-signal validation failed: missing required fields.",
+        )
         logger.error("Strong-signal validation failed: missing required fields.")
         return None
     return result

@@ -90,9 +90,10 @@ async def test_resolve_symbols_to_check_uses_enabled_active_eligible_users(monke
             await set_user_coin_subscription(
                 session, user_id=expired_user.id, symbol="btc", is_enabled=False
             )
-            await set_user_coin_subscription(
-                session, user_id=expired_user.id, symbol="xrp", is_enabled=True
+            session.add(
+                UserCoinSubscription(user_id=expired_user.id, symbol="xrp", is_enabled=True)
             )
+            await session.commit()
             await set_user_coin_subscription(
                 session, user_id=inactive_user.id, symbol="btc", is_enabled=True
             )
@@ -117,6 +118,35 @@ async def test_resolve_symbols_includes_btc_when_active_user_enabled(monkeypatch
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
 
         assert await alerts.resolve_symbols_to_check(now) == ["btc"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_symbols_scope_is_free_btc_and_premium_watchlist(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            free_user = await create_user(session, 1001, 2001)
+            premium_user = await create_user(session, 1002, 2002)
+            await set_user_coin_subscription(
+                session, user_id=free_user.id, symbol="eth", is_enabled=True
+            )
+            await grant_user_premium(
+                session,
+                telegram_user_id=premium_user.telegram_user_id,
+                days=10,
+                now=now,
+            )
+            await set_user_coin_subscription(
+                session, user_id=premium_user.id, symbol="sol", is_enabled=True
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        assert await alerts.resolve_symbols_to_check(now) == ["btc", "sol"]
     finally:
         await engine.dispose()
 
@@ -327,8 +357,8 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
         async with SessionLocal() as session:
             first = await create_user(session, 1001, 2001)
             second = await create_user(session, 1002, 2002)
-            await grant_user_premium(session, telegram_user_id=1001, days=10, now=now)
-            await grant_user_premium(session, telegram_user_id=1002, days=10, now=now)
+            await grant_user_premium(session, telegram_user_id=1001, days=30, now=now)
+            await grant_user_premium(session, telegram_user_id=1002, days=30, now=now)
             await set_user_coin_subscription(
                 session, user_id=first.id, symbol="eth", is_enabled=True
             )
@@ -480,14 +510,32 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
         def run_repeating(self, callback, **kwargs):
             captured_kwargs.update(kwargs)
 
-    alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
+    alerts.schedule_automatic_market_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
 
     assert captured_kwargs["interval"] == 60
+    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
     assert captured_kwargs["job_kwargs"] == {
         "max_instances": 1,
         "coalesce": True,
         "misfire_grace_time": 15,
     }
+
+
+def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
+    captured_kwargs = {}
+
+    class FakeJobQueue:
+        def get_jobs_by_name(self, name):
+            captured_kwargs["removed_name"] = name
+            return []
+
+        def run_repeating(self, callback, **kwargs):
+            captured_kwargs.update(kwargs)
+
+    alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
+
+    assert captured_kwargs["removed_name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
+    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
 
 
 def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):
@@ -647,7 +695,19 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         alerts.AlertRecipient(chat_id=2001, user_id=1),
         alerts.AlertRecipient(chat_id=2002, user_id=2),
     ]
-    save_product_analysis = AsyncMock(return_value=456)
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_downward_pressure_2026_05_20",
+        title="BTC is showing renewed downside pressure",
+        message_body="BTC has weakened while the 24h trend remains negative.",
+        related_news_ids=[],
+        possible_action="Review your exposure and avoid reacting impulsively.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+    create_decision = AsyncMock(return_value=(decision, 456))
     deliver_alert = AsyncMock(return_value=True)
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
@@ -663,36 +723,45 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
     monkeypatch.setattr(
         alerts,
         "get_state_alert_settings",
-        lambda state: {"price_move_alert_percent": 2.0},
+        lambda state: {"automatic_check_interval_seconds": 300},
     )
     monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=recipients))
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
-        "_get_or_create_price_movement_market_event",
+        "_get_or_create_event_alert_market_event",
         AsyncMock(return_value=(123, "btc:event")),
     )
-    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
+    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    save_product_analysis.assert_awaited_once()
-    important_calls = [
-        call
-        for call in deliver_alert.await_args_list
-        if call.kwargs["event_type"] == "important_alert"
-    ]
-    assert len(important_calls) == 1
-    assert important_calls[0].kwargs["recipients"] == recipients
+    create_decision.assert_awaited_once()
+    deliver_alert.assert_awaited_once()
+    assert deliver_alert.await_args.kwargs["event_type"] == "event_alert"
+    assert deliver_alert.await_args.kwargs["recipients"] == recipients
+    assert "BTC Event Alert" in deliver_alert.await_args.kwargs["alert_payload"]["plain_text"]
 
 
 @pytest.mark.asyncio
 async def test_automatic_price_check_uses_product_analysis_for_each_event_group(monkeypatch):
     recipient = alerts.AlertRecipient(chat_id=2001, user_id=1)
-    save_product_analysis = AsyncMock(side_effect=[1, 2])
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_downward_pressure_2026_05_20",
+        title="BTC is showing renewed downside pressure",
+        message_body="BTC has weakened while the 24h trend remains negative.",
+        related_news_ids=[],
+        possible_action="Review your exposure and avoid reacting impulsively.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+    create_decision = AsyncMock(side_effect=[(decision, 1), (decision, 2)])
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
@@ -716,14 +785,14 @@ async def test_automatic_price_check_uses_product_analysis_for_each_event_group(
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
-        "_get_or_create_price_movement_market_event",
+        "_get_or_create_event_alert_market_event",
         AsyncMock(side_effect=[(123, "btc:event:1"), (124, "btc:event:2")]),
     )
-    monkeypatch.setattr(alerts, "_save_product_notification_analysis", save_product_analysis)
+    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", AsyncMock(return_value=True))
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    assert save_product_analysis.await_count == 2
+    assert create_decision.await_count == 2

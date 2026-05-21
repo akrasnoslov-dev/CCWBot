@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SUPPORTED_COINS = {
+ALL_SUPPORTED_COINS = {
     "btc": {"name": "Bitcoin", "coingecko_id": "bitcoin", "free": True},
     "eth": {"name": "Ethereum", "coingecko_id": "ethereum", "free": False},
     "sol": {"name": "Solana", "coingecko_id": "solana", "free": False},
@@ -15,7 +15,9 @@ SUPPORTED_COINS = {
     "trx": {"name": "TRON", "coingecko_id": "tron", "free": False},
 }
 
-SUPPORTED_SYMBOLS = tuple(SUPPORTED_COINS.keys())
+ACTIVE_SYMBOLS = ("btc", "eth", "ton", "sol")
+SUPPORTED_COINS = {symbol: ALL_SUPPORTED_COINS[symbol] for symbol in ACTIVE_SYMBOLS}
+SUPPORTED_SYMBOLS = ACTIVE_SYMBOLS
 FREE_ALERT_FREQUENCY_SECONDS = 14400
 PREMIUM_ALERT_FREQUENCY_SECONDS = (3600, 21600, 86400)
 DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS = 21600
@@ -36,4 +38,3 @@ def is_symbol_free(symbol: str) -> bool:
 
 def premium_symbols_display() -> str:
     return ", ".join(symbol.upper() for symbol in SUPPORTED_SYMBOLS if not is_symbol_free(symbol))
-

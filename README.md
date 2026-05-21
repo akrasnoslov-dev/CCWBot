@@ -1,16 +1,18 @@
 # CCWBot
 
 CCWBot is a Python Telegram crypto watcher bot. It provides manual crypto price checks,
-BTC reports, and automatic movement alerts with Groq-backed AI context and deterministic
-fallbacks.
+BTC reports, and automatic Event Alerts decided by Groq-backed LLM market analysis.
 
 ## Features
 
 - Manual `/price` checks for `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`, `ton`,
   `link`, and `trx`.
-- Automatic movement alerts use global polling: BTC is free, while enabled non-BTC watchlist
+- Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
+- Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
+  when a user has not received any visible message for that coin within their alert frequency.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
+- If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
 - Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
@@ -23,7 +25,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 
 ## Current Limitations
 
-- Automatic monitoring uses one global admin-controlled threshold for all supported coins.
+- Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
+- Separate report redesign is not implemented yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
@@ -61,9 +64,14 @@ Common configuration:
 - `DATABASE_URL`
 - `POSTGRES_PASSWORD`
 - `GROQ_MODEL`
+- `GROQ_EVENT_ANALYSIS_MODEL`
+- `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
+- `GROQ_MARKET_HEARTBEAT_MODEL`
+- `GROQ_REPORT_MODEL`
+- `GROQ_STRONG_SIGNAL_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
-- `PRICE_MOVE_ALERT_PERCENT`
+- `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
 - `PRICE_CACHE_TTL_SECONDS`
@@ -72,9 +80,9 @@ Common configuration:
 - `ENABLE_WEEKLY_REPORT`
 - `WEEKLY_REPORT_DAY`
 - `WEEKLY_REPORT_HOUR`
-- `ENABLE_STRONG_SIGNAL_ALERTS`
-- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`
-- `STRONG_SIGNAL_COOLDOWN_HOURS`
+- `ENABLE_STRONG_SIGNAL_ALERTS` (legacy; separate strong-signal scheduling is disabled)
+- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS` (legacy)
+- `STRONG_SIGNAL_COOLDOWN_HOURS` (legacy)
 - `PREMIUM_MONTHLY_STARS`
 
 ## Local Development Setup
@@ -115,6 +123,7 @@ The Premium foundation stores:
 - `user_coin_subscriptions` with one lowercase symbol row per user and coin
 - `user_premium_subscriptions` for current Premium entitlement state
 - `payments` with one row per processed Telegram Stars payment
+- `market_heartbeats` with one cached hourly heartbeat generation row per supported coin
 
 `/subscribe` starts a recurring Telegram Stars Premium subscription. The default price is
 configured by `PREMIUM_MONTHLY_STARS=199`, uses Telegram Stars currency `XTR`, and uses a
@@ -133,6 +142,37 @@ again after renewal.
 Premium access is based primarily on `active_until > now`. Manual admin grants use
 `/grantpremium <telegram_user_id> <days>`, and revokes use `/revokepremium <telegram_user_id>`.
 Revoking Premium preserves saved coin choices.
+
+## Market Heartbeat And Coin Icons
+
+Market Heartbeat is separate from Event Alert analysis. The normal check-interval LLM call
+returns only `should_alert=true` or `should_alert=false`; heartbeat generation runs hourly,
+stores the latest cached result in PostgreSQL, and does not deliver it immediately.
+
+During automatic processing, the bot checks each eligible user and coin. If any user-visible
+delivery for that coin happened within the user's configured alert frequency, heartbeat is
+skipped. If no recent delivery exists, the bot sends the latest completed heartbeat only when
+it is fresh enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and
+not sent.
+
+Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
+symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,
+and allows the LLM to reference only selected `related_news_ids`.
+
+Coin icon mapping lives in `bot/coin_icons.py`:
+
+- `COIN_CUSTOM_EMOJI_IDS` is where custom Telegram `custom_emoji_id` values go.
+- `COIN_FALLBACK_EMOJI` is used automatically when a custom emoji ID is missing.
+
+To extract custom emoji IDs from the CCWBotIcons pack:
+
+1. Deploy the bot with this version.
+2. As the configured admin, send all custom coin emojis from `https://t.me/addemoji/CCWBotIcons`
+   to the bot in a private chat.
+3. Check logs for `custom_emoji_entity ... custom_emoji_id=...`.
+4. Copy the IDs into `COIN_CUSTOM_EMOJI_IDS` in `bot/coin_icons.py`.
+
+Missing custom emoji IDs are safe; alerts and heartbeats use fallback emoji instead.
 
 Premium payments are received as Telegram Stars on the bot's Stars balance. Withdrawal to TON
 wallet is handled separately by the bot owner through Telegram/Fragment. CCWBot does not store
@@ -323,8 +363,9 @@ After deploy, verify with a private chat:
 7. Send `/myplan`; it should show Free, Premium, or expired Premium state without exposing internals.
 8. Send `/subscribe`; it should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
-10. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices.
-11. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
+10. Open Admin -> System status; Groq AI status should show OK after a successful/no-alert LLM analysis and NOT OK after an LLM failure.
+11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
+12. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
 
 Do not paste bot logs, `.env`, Compose config output, or private Telegram text into PRs.
 
