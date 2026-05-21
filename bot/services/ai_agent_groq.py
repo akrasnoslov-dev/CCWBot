@@ -39,7 +39,6 @@ GROQ_MARKET_HEARTBEAT_MODEL = os.getenv(
     "GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"
 )
 GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant")
-GROQ_STRONG_SIGNAL_MODEL = os.getenv("GROQ_STRONG_SIGNAL_MODEL", GROQ_MODEL)
 
 logger = logging.getLogger(__name__)
 
@@ -1271,6 +1270,112 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
     return LLMJsonResult(raw_content, parsed, usage_log_id)
 
 
+def build_market_report_prompt(input_payload: dict) -> str:
+    report_type = str(input_payload.get("report_type") or "daily").strip().lower()
+    overview_label = "Weekly overview" if report_type == "weekly" else "Market overview"
+    news_label = "Weekly news theme" if report_type == "weekly" else "News context"
+    return (
+        "Return valid JSON only, in English.\n"
+        "Use exactly these fields: report_type, title, market_overview, coin_summaries, "
+        "news_context, possible_action, telegram_message.\n"
+        f"report_type must be {report_type!r}.\n"
+        "coin_summaries must be an array of objects with symbol and summary.\n"
+        "telegram_message must be concise, sectioned, and readable in Telegram.\n"
+        "Mention all active coins from input once in the Coins section. Use the supplied "
+        "coin symbols and do not invent symbols.\n"
+        "Use this Telegram structure:\n"
+        f"📊 {'Weekly' if report_type == 'weekly' else 'Daily'} Market Report\n\n"
+        f"{overview_label}:\n"
+        "<1-2 short sentences across active coins>\n\n"
+        "Coins:\n"
+        "• BTC: $..., 24h ...\n"
+        "• ETH: $..., 24h ...\n\n"
+        f"{news_label}:\n"
+        "<1-2 short sentences or No major market-wide news selected.>\n\n"
+        "Possible action:\n"
+        "<one cautious non-prescriptive sentence>\n\n"
+        "Not financial advice.\n"
+        "No raw JSON in telegram_message. No dense paragraphs. No direct buy, sell, "
+        "short, or long commands. Do not provide personalised financial advice.\n\n"
+        "Input JSON:\n"
+        f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
+    )
+
+
+async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one cached market-wide report and return raw + parsed JSON."""
+    report_type = str(input_payload.get("report_type") or "").strip().lower()
+    call_type = f"{report_type}_report" if report_type in {"daily", "weekly"} else "market_report"
+    prompt = build_market_report_prompt(input_payload)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
+
+    try:
+        response, headers, input_chars = await _run_groq_chat_completion(
+            call_type=call_type,
+            symbol=None,
+            model=GROQ_REPORT_MODEL,
+            messages=messages,
+            max_tokens=800,
+            response_format=response_format,
+            timeout=20,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+    raw_content = _response_content(response)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as error:
+        await _write_llm_usage_log(
+            call_type=call_type,
+            symbol=None,
+            model=GROQ_REPORT_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=800,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message=_safe_error_message(error),
+        )
+        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
+    if not isinstance(parsed, dict):
+        await _write_llm_usage_log(
+            call_type=call_type,
+            symbol=None,
+            model=GROQ_REPORT_MODEL,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=800,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message="top-level JSON is not an object",
+        )
+        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
+    usage_log_id = await _write_llm_usage_log(
+        call_type=call_type,
+        symbol=None,
+        model=GROQ_REPORT_MODEL,
+        status="success",
+        input_chars=input_chars,
+        output_chars=len(raw_content),
+        max_tokens=800,
+        headers=headers,
+        response=response,
+    )
+    return LLMJsonResult(raw_content, parsed, usage_log_id)
+
+
 async def create_ai_alert_message(
     previous_price: float,
     current_price: float,
@@ -1505,50 +1610,3 @@ News:\n{news_text}
         return None
     return result
 
-
-async def classify_strong_signal(
-    current_price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict] | None = None,
-) -> dict | None:
-    """Classify strong-signal conditions with structured output for downstream checks."""
-    news_text = _build_news_text(news_items)
-    change_7d_text = change_7d if change_7d is not None else "unknown"
-    prompt = f"""
-Return only minified JSON with fields:
-signal_strength(none|weak|medium|strong), direction(bullish|bearish|mixed|unclear),
-risk_level(low|medium|high), should_alert(boolean), reason, possible_actions(array),
-telegram_message.
-Only cautious wording. Include 'Not financial advice.' in telegram_message.
-Data: price={current_price:.2f}, change24h={change_24h:.4f}%,
-change7d={change_7d_text}%.
-News:\n{news_text}
-"""
-    result, usage_log_id = await _ask_json_with_usage(
-        prompt,
-        call_type="strong_signal",
-        symbol="BTC",
-        model=GROQ_STRONG_SIGNAL_MODEL,
-    )
-    if not result:
-        return None
-    required = {
-        "signal_strength",
-        "direction",
-        "risk_level",
-        "should_alert",
-        "reason",
-        "possible_actions",
-        "telegram_message",
-    }
-    if required - set(result.keys()):
-        await mark_llm_usage_log_status(
-            usage_log_id,
-            status="schema_error",
-            error_reason="schema validation failed",
-            error_message="Strong-signal validation failed: missing required fields.",
-        )
-        logger.error("Strong-signal validation failed: missing required fields.")
-        return None
-    return result

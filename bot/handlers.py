@@ -26,7 +26,6 @@ from bot.keyboards import (
     build_interval_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
-    build_threshold_keyboard,
 )
 from bot.payments import send_subscribe_invoice
 from bot.permissions import is_admin_update, is_admin_user, sync_user_from_update
@@ -42,10 +41,8 @@ from bot.settings import (
     get_db_alert_settings,
     get_runtime_error_file_logging_enabled,
     get_state_alert_settings,
-    save_alert_threshold_setting,
     save_error_file_logging_enabled,
     save_interval_setting,
-    save_threshold_setting,
 )
 from bot.storage import load_state
 from bot.watchlist import (
@@ -491,17 +488,16 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             if data.startswith("admin:threshold_menu:"):
-                setting_key = data.rsplit(":", maxsplit=1)[1]
                 await query.message.reply_text(
-                    "Choose a new threshold:",
-                    reply_markup=build_threshold_keyboard(setting_key),
+                    "Price movement thresholds are disabled for automatic Event Alerts. "
+                    "Use /setinterval to change the check interval."
                 )
                 return
             if data.startswith("admin:set_threshold:"):
-                _, _, setting_key, raw_value = data.split(":", maxsplit=3)
-                threshold = float(raw_value)
-                await save_alert_threshold_setting(setting_key, threshold)
-                await query.message.reply_text(f"Threshold updated to {threshold}%.")
+                await query.message.reply_text(
+                    "Price movement thresholds are disabled for automatic Event Alerts. "
+                    "Use /setinterval to change the check interval."
+                )
                 return
             if data.startswith("admin:set_interval:"):
                 interval = int(data.rsplit(":", maxsplit=1)[1])
@@ -535,14 +531,16 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 alert_settings = get_state_alert_settings(state)
             await query.message.reply_text(
                 "Current alert settings ⚙️\n\n"
-                f"Price movement threshold: {alert_settings['price_move_alert_percent']}%\n"
+                "Event decision: Groq LLM JSON analysis\n"
+                "Movement thresholds: disabled for automatic Event Alerts\n"
                 "Automatic market check interval: "
                 f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
         if data == "settings:threshold_menu":
             await query.message.reply_text(
-                "Choose a new threshold:", reply_markup=build_threshold_keyboard()
+                "Price movement thresholds are disabled for automatic Event Alerts. "
+                "Use /setinterval to change the check interval."
             )
             return
         if data == "settings:interval_menu":
@@ -551,9 +549,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         if data.startswith("settings:set_threshold:"):
-            threshold = float(data.rsplit(":", maxsplit=1)[1])
-            await save_threshold_setting(threshold)
-            await query.message.reply_text(f"Price movement threshold updated to {threshold}% ✅")
+            await query.message.reply_text(
+                "Price movement thresholds are disabled for automatic Event Alerts. "
+                "Use /setinterval to change the check interval."
+            )
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])

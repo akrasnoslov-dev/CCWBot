@@ -23,9 +23,7 @@ from bot.alerting.alert_severity import (
     AlertSeverity,
     AlertType,
     SeverityEvaluation,
-    SeverityInput,
     alert_title_action,
-    evaluate_alert_severity,
 )
 from bot.alerting.event_analysis import (
     EVENT_ALERT_TYPE,
@@ -52,26 +50,15 @@ from bot.alerting.notification_decision import (
     TriggerSource,
 )
 from bot.coin_icons import build_coin_icon_prefix, coin_fallback_emoji
-from bot.config import (
-    ENABLE_STRONG_SIGNAL_ALERTS,
-    ENABLE_WEEKLY_REPORT,
-    SEEN_NEWS_KEEP_LATEST,
-    STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
-    STRONG_SIGNAL_COOLDOWN_HOURS,
-    TELEGRAM_CHAT_ID,
-    WEEKLY_REPORT_DAY,
-    WEEKLY_REPORT_HOUR,
-)
+from bot.config import SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
 from bot.db.database import (
     attach_analysis_to_market_event,
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
-    get_event_ai_analysis,
     get_last_sent_alert,
     get_last_sent_alert_at,
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
-    get_latest_success_event_ai_analysis,
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
@@ -80,7 +67,6 @@ from bot.db.database import (
     mark_user_bot_blocked,
     reserve_alert_delivery,
     save_alert,
-    save_event_ai_analysis,
     save_event_llm_analysis,
     save_market_heartbeat,
     save_price_snapshot,
@@ -95,25 +81,20 @@ from bot.domain.premium import (
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 from bot.news import fetch_news_context, remember_news_context
-from bot.reports import send_scheduled_weekly_report
+from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
-    GROQ_STRONG_SIGNAL_MODEL,
     AISchemaValidationError,
     ask_event_analysis_raw,
     ask_market_heartbeat_raw,
-    build_fallback_alert_message,
     classify_ai_error_reason,
-    classify_strong_signal,
-    create_ai_alert_payload,
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
 from bot.services.price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
-    get_btc_market_data,
     get_coin_market_data_batch,
 )
 from bot.settings import get_db_alert_settings, get_state_alert_settings
@@ -135,20 +116,11 @@ DELIVERABLE_ALERT_TYPES = (
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
 MARKET_HEARTBEAT_JOB_NAME = "market_heartbeat_generation"
-WEEKLY_REPORT_JOB_NAME = "weekly_report"
-STRONG_SIGNAL_JOB_NAME = "strong_signal"
+DAILY_REPORT_CACHE_JOB_NAME = "daily_report_cache"
+WEEKLY_REPORT_CACHE_JOB_NAME = "weekly_report_cache"
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
 TELEGRAM_DELIVERY_MAX_ATTEMPTS = 3
 TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS = (30, 120)
-WEEKDAY_MAP = {
-    "monday": 0,
-    "tuesday": 1,
-    "wednesday": 2,
-    "thursday": 3,
-    "friday": 4,
-    "saturday": 5,
-    "sunday": 6,
-}
 
 
 @dataclass(frozen=True)
@@ -291,33 +263,6 @@ def _build_price_movement_event_key(
     encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
     normalized_symbol = normalize_symbol(symbol)
     return f"{normalized_symbol}:{event_type}:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
-
-
-def _build_strong_signal_event_key(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> str:
-    key_parts = {
-        "symbol": "BTC",
-        "event_type": "strong_signal",
-        "price": _stable_float(price, 2),
-        "change_24h": _stable_float(change_24h, 4),
-        "change_7d": _stable_float(change_7d, 4),
-        "news": [
-            {
-                "key": make_news_key(item),
-                "title": str(item.get("title") or ""),
-                "source": str(item.get("source") or ""),
-                "link": _stable_news_link(str(item.get("link") or "")),
-            }
-            for item in news_items
-        ],
-    }
-    encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
-    return f"btc:strong_signal:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
 
 
 def _coin_name(symbol: str) -> str:
@@ -976,33 +921,6 @@ def _build_alert_ai_input_hash(
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _build_strong_signal_ai_input_hash(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> str:
-    payload = {
-        "symbol": "BTC",
-        "event_type": "strong_signal",
-        "price": _stable_float(price, 2),
-        "change_24h": _stable_float(change_24h, 4),
-        "change_7d": _stable_float(change_7d, 4),
-        "news": [
-            {
-                "key": make_news_key(item),
-                "title": str(item.get("title") or ""),
-                "source": str(item.get("source") or ""),
-                "link": _stable_news_link(str(item.get("link") or "")),
-            }
-            for item in news_items
-        ],
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
 def _enabled_subscription_by_symbol(user) -> dict[str, bool]:
     return {
         normalize_symbol(row.symbol): bool(row.is_enabled)
@@ -1041,9 +959,6 @@ async def get_alert_recipients(
     normalized_symbol = normalize_symbol(symbol)
     if event_type not in DELIVERABLE_ALERT_TYPES or normalized_symbol not in SUPPORTED_COINS:
         return []
-    if event_type == "strong_signal" and normalized_symbol != DEFAULT_SYMBOL:
-        return []
-
     if DB_ENABLED and DB_SESSION_LOCAL:
         now = now or datetime.now(timezone.utc)
         recipients = []
@@ -1080,126 +995,6 @@ async def get_alert_recipients(
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
-
-
-async def _get_or_create_strong_signal_market_event(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> tuple[int | None, str | None]:
-    if not DB_ENABLED or not DB_SESSION_LOCAL:
-        return None, None
-
-    event_key = _build_strong_signal_event_key(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-    async with DB_SESSION_LOCAL() as session:
-        market_event = await get_or_create_market_event(
-            session,
-            symbol=DEFAULT_SYMBOL,
-            event_type="strong_signal",
-            event_key=event_key,
-            price=price,
-            previous_price=None,
-            price_change_percent=change_24h,
-            last_24h_change=change_24h,
-            last_7d_change=change_7d,
-            detected_at=datetime.now(timezone.utc),
-        )
-        return market_event.id, event_key
-
-
-async def _get_or_create_strong_signal_ai_analysis(
-    *,
-    market_event_id: int | None,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> tuple[dict | None, int | None, str | None, str | None]:
-    input_hash = _build_strong_signal_ai_input_hash(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            saved_analysis = await get_latest_success_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-            )
-            if saved_analysis and saved_analysis.plain_text:
-                log("Reusing saved AI analysis for BTC strong-signal event.")
-                return (
-                    {
-                        "plain_text": saved_analysis.plain_text,
-                        "html_text": saved_analysis.html_text,
-                    },
-                    saved_analysis.id,
-                    "medium",
-                    "unclear",
-                )
-            existing_analysis = await get_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                input_hash=input_hash,
-            )
-            if (
-                existing_analysis
-                and existing_analysis.status == "success"
-                and existing_analysis.plain_text
-            ):
-                log("Reusing saved AI analysis for BTC strong-signal event.")
-                return (
-                    {
-                        "plain_text": existing_analysis.plain_text,
-                        "html_text": existing_analysis.html_text,
-                    },
-                    existing_analysis.id,
-                    "medium",
-                    "unclear",
-                )
-
-    result = await classify_strong_signal(price, change_24h, change_7d, news_items)
-    if not result:
-        return None, None, None, None
-
-    strength = str(result.get("signal_strength", "")).lower()
-    if result.get("should_alert") is not True or strength not in {"medium", "strong"}:
-        return None, None, strength, str(result.get("direction", "unclear")).lower()
-
-    message = sanitize_alert_message(str(result.get("telegram_message") or ""))
-    if not message:
-        return None, None, strength, str(result.get("direction", "unclear")).lower()
-
-    event_ai_analysis_id = None
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            analysis = await save_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                provider="groq",
-                model=GROQ_STRONG_SIGNAL_MODEL,
-                input_hash=input_hash,
-                analysis_text=message,
-                plain_text=message,
-                html_text=None,
-                status="success",
-            )
-            event_ai_analysis_id = analysis.id if analysis else None
-    return (
-        {"plain_text": message, "html_text": None},
-        event_ai_analysis_id,
-        strength,
-        str(result.get("direction", "unclear")).lower(),
-    )
 
 
 async def _get_or_create_price_movement_market_event(
@@ -1240,213 +1035,6 @@ async def _get_or_create_price_movement_market_event(
             detected_at=datetime.now(timezone.utc),
         )
         return market_event.id, event_key
-
-
-async def _get_or_create_event_ai_analysis(
-    *,
-    symbol: str,
-    event_type: str = "price_movement",
-    market_event_id: int | None,
-    previous_price: float,
-    current_price: float,
-    price_change_percent: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-    alert_settings: dict,
-    alert_threshold_percent: float | None = None,
-    window_seconds: int | None = None,
-    peak_movement_percent: float | None = None,
-    alert_type_label_text: str | None = None,
-    force_fallback: bool = False,
-) -> tuple[dict, int | None]:
-    """Create or reuse the single AI analysis for one market event.
-
-    The LLM call stays here, before recipient delivery, so one market event
-    produces one analysis that can be sent to many active users.
-    """
-    input_hash = _build_alert_ai_input_hash(
-        symbol=symbol,
-        event_type=event_type,
-        previous_price=previous_price,
-        current_price=current_price,
-        price_change_percent=price_change_percent,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-        alert_threshold_percent=alert_threshold_percent
-        or alert_settings["price_move_alert_percent"],
-        check_interval_seconds=window_seconds
-        or alert_settings["automatic_check_interval_seconds"],
-    )
-
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            saved_analysis = await get_latest_success_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-            )
-            if saved_analysis and saved_analysis.plain_text:
-                display_symbol = normalize_symbol(symbol).upper()
-                log(f"Reusing saved AI analysis for {display_symbol} market event.")
-                return (
-                    {
-                        "plain_text": saved_analysis.plain_text,
-                        "html_text": saved_analysis.html_text,
-                    },
-                    saved_analysis.id,
-                )
-            existing_analysis = await get_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                input_hash=input_hash,
-            )
-            if (
-                existing_analysis
-                and existing_analysis.status in {"success", "completed"}
-                and existing_analysis.plain_text
-            ):
-                display_symbol = normalize_symbol(symbol).upper()
-                log(f"Reusing saved AI analysis for {display_symbol} market event.")
-                return (
-                    {
-                        "plain_text": existing_analysis.plain_text,
-                        "html_text": existing_analysis.html_text,
-                    },
-                    existing_analysis.id,
-                )
-
-    provider = "groq"
-    model = GROQ_EVENT_ANALYSIS_MODEL
-    error_message = None
-    if force_fallback:
-        provider = "fallback"
-        model = "deterministic"
-        error_message = "AI disabled for this automatic check cycle."
-        plain_message = build_fallback_alert_message(
-            previous_price=previous_price,
-            current_price=current_price,
-            price_change_percent=price_change_percent,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            alert_threshold_percent=alert_settings["price_move_alert_percent"],
-            check_interval_seconds=window_seconds
-            or alert_settings["automatic_check_interval_seconds"],
-            symbol=normalize_symbol(symbol).upper(),
-            coin_name=_coin_name(symbol),
-            alert_type_label=alert_type_label_text or "basic price",
-            window_seconds=window_seconds,
-            peak_movement_percent=peak_movement_percent,
-        )
-        alert_payload = {"plain_text": plain_message, "html_text": None}
-    else:
-        try:
-            alert_payload = await create_ai_alert_payload(
-                previous_price,
-                current_price,
-                price_change_percent,
-                change_24h,
-                change_7d,
-                news_items,
-                alert_threshold_percent=alert_threshold_percent
-                or alert_settings["price_move_alert_percent"],
-                check_interval_seconds=window_seconds
-                or alert_settings["automatic_check_interval_seconds"],
-                symbol=normalize_symbol(symbol).upper(),
-                coin_name=_coin_name(symbol),
-            )
-        except Exception as error:
-            log(f"AI alert generation failed: {error}")
-            provider = "fallback"
-            model = "deterministic"
-            error_message = str(error)
-            plain_message = build_fallback_alert_message(
-                previous_price=previous_price,
-                current_price=current_price,
-                price_change_percent=price_change_percent,
-                change_24h=change_24h,
-                change_7d=change_7d,
-                alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                check_interval_seconds=window_seconds
-                or alert_settings["automatic_check_interval_seconds"],
-                symbol=normalize_symbol(symbol).upper(),
-                coin_name=_coin_name(symbol),
-                alert_type_label=alert_type_label_text or "basic price",
-                window_seconds=window_seconds,
-                peak_movement_percent=peak_movement_percent,
-            )
-            alert_payload = {"plain_text": plain_message, "html_text": None}
-    if alert_payload.get("rate_limited"):
-        provider = "fallback"
-        model = "deterministic"
-        error_message = "Groq rate limit reached."
-
-    event_ai_analysis_id = None
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            analysis = await save_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                provider=provider,
-                model=model,
-                input_hash=input_hash,
-                analysis_text=str(alert_payload.get("plain_text", "")),
-                plain_text=str(alert_payload.get("plain_text", "")),
-                html_text=alert_payload.get("html_text"),
-                status="success",
-                error_message=error_message,
-            )
-            event_ai_analysis_id = analysis.id if analysis else None
-    return alert_payload, event_ai_analysis_id
-
-
-async def _save_product_notification_analysis(
-    *,
-    market_event_id: int | None,
-    alert_payload: dict,
-    signal_context: SignalContext,
-    decision: NotificationDecision,
-) -> int | None:
-    if not DB_ENABLED or not DB_SESSION_LOCAL or not market_event_id:
-        return None
-    input_payload = {
-        "symbol": normalize_symbol(signal_context.symbol).upper(),
-        "notification_type": decision.notification_type.value,
-        "severity": decision.severity.value,
-        "direction": decision.direction.value,
-        "trigger_source": decision.trigger_source.value if decision.trigger_source else None,
-        "current_price": _stable_float(signal_context.current_price, 2),
-        "latest_5m_change_percent": _stable_float(
-            signal_context.latest_5m_change_percent, 4
-        ),
-        "change_since_last_market_update_percent": _stable_float(
-            signal_context.change_since_last_market_update_percent, 4
-        ),
-        "user_period_change_percent": _stable_float(
-            signal_context.user_period_change_percent, 4
-        ),
-        "twenty_four_hour_change_percent": _stable_float(
-            signal_context.twenty_four_hour_change_percent, 4
-        ),
-        "news": [make_news_key(item) for item in signal_context.relevant_news_items],
-        "news_candidates": signal_context.news_candidates,
-    }
-    input_hash = sha256(
-        json.dumps(input_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    async with DB_SESSION_LOCAL() as session:
-        analysis = await save_event_ai_analysis(
-            session,
-            market_event_id=market_event_id,
-            provider="deterministic",
-            model="product-notification-v1",
-            input_hash=input_hash,
-            analysis_text=str(alert_payload.get("plain_text", "")),
-            plain_text=str(alert_payload.get("plain_text", "")),
-            html_text=None,
-            status="success",
-        )
-        return analysis.id if analysis else None
 
 
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
@@ -3193,38 +2781,26 @@ def schedule_market_heartbeat_generation(app: Application) -> None:
     log("Market heartbeat generation scheduled every 3600 seconds.")
 
 
-def schedule_weekly_report(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(WEEKLY_REPORT_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_WEEKLY_REPORT:
-        log("Weekly report scheduling is disabled.")
-        return
-
-    weekday = WEEKDAY_MAP.get(WEEKLY_REPORT_DAY, WEEKDAY_MAP["sunday"])
-    app.job_queue.run_daily(
-        send_scheduled_weekly_report,
-        time=time(hour=WEEKLY_REPORT_HOUR, minute=0, second=0),
-        days=(weekday,),
-        name=WEEKLY_REPORT_JOB_NAME,
-    )
-    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
-
-
-def schedule_strong_signal_job(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(STRONG_SIGNAL_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_STRONG_SIGNAL_ALERTS:
-        log("Strong-signal alerting is disabled.")
-        return
+def schedule_report_cache_generation(app: Application) -> None:
+    for job_name in (DAILY_REPORT_CACHE_JOB_NAME, WEEKLY_REPORT_CACHE_JOB_NAME):
+        for job in app.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
 
     app.job_queue.run_repeating(
-        strong_signal_check,
-        interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
-        first=15,
-        name=STRONG_SIGNAL_JOB_NAME,
-        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
+        generate_daily_report_cache_job,
+        interval=4 * 3600,
+        first=60,
+        name=DAILY_REPORT_CACHE_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 120},
     )
-    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
+    app.job_queue.run_repeating(
+        generate_weekly_report_cache_job,
+        interval=24 * 3600,
+        first=120,
+        name=WEEKLY_REPORT_CACHE_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 300},
+    )
+    log("Report cache generation scheduled: daily every 14400 seconds, weekly every 86400 seconds.")
 
 
 def schedule_seen_news_cleanup(app: Application) -> None:
@@ -3696,72 +3272,3 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             "Automatic price check cycle completed in %.2f seconds.",
             perf_counter() - cycle_started_at,
         )
-
-
-async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
-    recipients = await get_alert_recipients(
-        symbol=DEFAULT_SYMBOL,
-        event_type="strong_signal",
-    )
-    if not recipients:
-        log("No eligible recipients for BTC strong-signal alert. Skipping AI analysis.")
-        return
-
-    state = load_state()
-    now = datetime.now(timezone.utc)
-    last_alert_at = state.get("last_strong_signal_alert_at")
-    if last_alert_at:
-        try:
-            if now - datetime.fromisoformat(last_alert_at) < timedelta(
-                hours=STRONG_SIGNAL_COOLDOWN_HOURS
-            ):
-                return
-        except ValueError:
-            pass
-
-    price, change_24h, change_7d = await get_btc_market_data()
-    news_items = await fetch_news_context(limit=6)
-    market_event_id, _ = await _get_or_create_strong_signal_market_event(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-    alert_payload, event_ai_analysis_id, strength, direction = (
-        await _get_or_create_strong_signal_ai_analysis(
-            market_event_id=market_event_id,
-            price=price,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            news_items=news_items,
-        )
-    )
-    if not alert_payload:
-        return
-
-    severity = evaluate_alert_severity(
-        SeverityInput(
-            symbol=DEFAULT_SYMBOL,
-            price_change_percent=0.0,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            news_relevance=_classify_news_context(DEFAULT_SYMBOL, news_items),
-            strong_signal_strength=strength,
-        )
-    )
-    delivered = await _deliver_market_event_alert(
-        context.application,
-        symbol=DEFAULT_SYMBOL,
-        alert_payload=alert_payload,
-        market_event_id=market_event_id,
-        event_ai_analysis_id=event_ai_analysis_id,
-        recipients=recipients,
-        event_type="strong_signal",
-        severity=severity,
-    )
-    if delivered:
-        await remember_news_context(news_items)
-        state["last_strong_signal_alert_at"] = now.isoformat()
-        state["last_strong_signal_strength"] = strength
-        state["last_strong_signal_direction"] = direction
-        save_state(state)

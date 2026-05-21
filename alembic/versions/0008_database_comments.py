@@ -35,6 +35,7 @@ TABLE_COMMENTS = {
     "market_events": "Deduplicated market movements that can trigger many deliveries.",
     "event_ai_analyses": "One reusable AI analysis for a market event and exact input payload.",
     "market_heartbeats": "Cached AI market heartbeat updates generated independently of delivery.",
+    "market_reports": "Cached AI market-wide reports generated independently of user requests.",
     "llm_usage_logs": (
         "Per-call LLM usage and rate-limit telemetry captured without extra provider calls."
     ),
@@ -286,6 +287,20 @@ COLUMN_COMMENTS = {
         "error_message": "Failure detail when heartbeat generation fails.",
         "created_at": "When this heartbeat row was created.",
     },
+    "market_reports": {
+        "id": "Internal market report row id.",
+        "report_type": "Report cadence, either daily or weekly.",
+        "generated_at": "When this report generation ran.",
+        "expires_at": "When this cached report should be refreshed.",
+        "status": "Report generation state, either completed or failed.",
+        "raw_input_json": "Raw JSON input payload sent to the report LLM.",
+        "raw_output_json": "Raw JSON or text output returned by the report LLM.",
+        "telegram_message": "Sanitized Telegram report message when generation succeeded.",
+        "error_message": "Failure detail when report generation failed.",
+        "provider": "LLM provider used for this report generation.",
+        "model": "LLM model used for this report generation.",
+        "created_at": "When this report row was created.",
+    },
     "llm_usage_logs": {
         "id": "Internal LLM usage row id.",
         "created_at": "When this LLM call ran.",
@@ -325,13 +340,18 @@ def _apply_comments(*, remove: bool) -> None:
     if not _is_postgresql():
         return
 
+    existing_tables = set(sa.inspect(op.get_bind()).get_table_names())
     for table_name, table_comment in TABLE_COMMENTS.items():
+        if table_name not in existing_tables:
+            continue
         if remove:
             op.drop_table_comment(table_name, existing_comment=table_comment)
         else:
             op.create_table_comment(table_name, table_comment, existing_comment=None)
 
     for table_name, columns in COLUMN_COMMENTS.items():
+        if table_name not in existing_tables:
+            continue
         existing_columns = _column_names(table_name)
         for column_name, column_comment in columns.items():
             if column_name not in existing_columns:

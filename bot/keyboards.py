@@ -87,24 +87,6 @@ def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _admin_threshold_button(label: str, setting_key: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(label, callback_data=f"admin:threshold_menu:{setting_key}")
-
-
-def build_threshold_keyboard(
-    setting_key: str = "major_movement_threshold_percent",
-) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("1.0%", callback_data=f"admin:set_threshold:{setting_key}:1.0")],
-            [InlineKeyboardButton("2.0%", callback_data=f"admin:set_threshold:{setting_key}:2.0")],
-            [InlineKeyboardButton("3.0%", callback_data=f"admin:set_threshold:{setting_key}:3.0")],
-            [InlineKeyboardButton("5.0%", callback_data=f"admin:set_threshold:{setting_key}:5.0")],
-            [InlineKeyboardButton("8.0%", callback_data=f"admin:set_threshold:{setting_key}:8.0")],
-        ]
-    )
-
-
 def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [

@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from bot.domain.supported_coins import SUPPORTED_SYMBOLS, normalize_symbol
+
+REPORT_TYPES = {"daily", "weekly"}
+REPORT_RESULT_FIELDS = {
+    "report_type",
+    "title",
+    "market_overview",
+    "coin_summaries",
+    "news_context",
+    "possible_action",
+    "telegram_message",
+}
+_NOT_FINANCIAL_ADVICE = "Not financial advice."
+_DIRECT_COMMAND_RE = re.compile(
+    r"(?i)\b("
+    r"buy\s+(now|today|immediately)|"
+    r"sell\s+(now|today|immediately)|"
+    r"short\s+(now|today|immediately)|"
+    r"go\s+long|go\s+short|"
+    r"you\s+should\s+(buy|sell|short|long)|"
+    r"must\s+(buy|sell|short|long)"
+    r")\b"
+)
+_PERSONAL_ADVICE_RE = re.compile(
+    r"(?i)\b(your portfolio|your position|your holdings|for your account)\b"
+)
+
+
+class MarketReportValidationError(ValueError):
+    """Raised when LLM market-report JSON cannot be trusted."""
+
+
+@dataclass(frozen=True)
+class MarketReportDecision:
+    report_type: str
+    title: str
+    market_overview: str
+    coin_summaries: list[dict[str, str]]
+    news_context: str
+    possible_action: str
+    telegram_message: str
+
+
+def validate_market_report_output(
+    result: dict[str, Any],
+    *,
+    expected_report_type: str,
+    active_symbols: tuple[str, ...] = SUPPORTED_SYMBOLS,
+) -> MarketReportDecision:
+    if not isinstance(result, dict):
+        raise MarketReportValidationError("report result must be an object")
+
+    extra_fields = set(result) - REPORT_RESULT_FIELDS
+    missing_fields = REPORT_RESULT_FIELDS - set(result)
+    if extra_fields:
+        raise MarketReportValidationError(f"unexpected fields: {sorted(extra_fields)}")
+    if missing_fields:
+        raise MarketReportValidationError(f"missing fields: {sorted(missing_fields)}")
+
+    report_type = _required_text(result["report_type"], "report_type").lower()
+    if report_type not in REPORT_TYPES or report_type != expected_report_type:
+        raise MarketReportValidationError("report_type mismatch")
+
+    title = _required_text(result["title"], "title")
+    market_overview = _required_text(result["market_overview"], "market_overview")
+    news_context = _required_text(result["news_context"], "news_context")
+    possible_action = _required_text(result["possible_action"], "possible_action")
+    telegram_message = _required_text(result["telegram_message"], "telegram_message")
+    if _NOT_FINANCIAL_ADVICE not in telegram_message:
+        raise MarketReportValidationError("telegram_message must contain Not financial advice.")
+    _validate_cautious_text(telegram_message)
+    _validate_cautious_text(possible_action)
+
+    coin_summaries = _validate_coin_summaries(
+        result["coin_summaries"],
+        active_symbols=active_symbols,
+    )
+
+    return MarketReportDecision(
+        report_type=report_type,
+        title=title,
+        market_overview=market_overview,
+        coin_summaries=coin_summaries,
+        news_context=news_context,
+        possible_action=possible_action,
+        telegram_message=telegram_message,
+    )
+
+
+def _required_text(value: Any, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise MarketReportValidationError(f"{field_name} must be text")
+    stripped = value.strip()
+    if not stripped:
+        raise MarketReportValidationError(f"{field_name} must be non-empty")
+    return stripped
+
+
+def _validate_coin_summaries(
+    value: Any,
+    *,
+    active_symbols: tuple[str, ...],
+) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise MarketReportValidationError("coin_summaries must be an array")
+
+    allowed = {symbol.upper() for symbol in active_symbols}
+    summaries: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise MarketReportValidationError("coin summary must be an object")
+        symbol = _required_text(item.get("symbol"), "coin_summaries.symbol").upper()
+        if normalize_symbol(symbol) not in active_symbols or symbol not in allowed:
+            raise MarketReportValidationError("coin summary symbol is not active")
+        summary = _required_text(item.get("summary"), "coin_summaries.summary")
+        _validate_cautious_text(summary)
+        summaries.append({"symbol": symbol, "summary": summary})
+
+    if not summaries:
+        raise MarketReportValidationError("coin_summaries must not be empty")
+    return summaries
+
+
+def _validate_cautious_text(value: str) -> None:
+    if _DIRECT_COMMAND_RE.search(value):
+        raise MarketReportValidationError("direct trading command detected")
+    if _PERSONAL_ADVICE_RE.search(value):
+        raise MarketReportValidationError("personalized financial advice detected")
