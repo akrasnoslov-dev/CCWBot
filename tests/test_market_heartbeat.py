@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram import MessageEntity
+from telegram.constants import ParseMode
 
 import bot.alerts as alerts
 import bot.coin_icons as coin_icons
@@ -15,7 +16,6 @@ import bot.handlers as handlers
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_TYPE,
     SAFE_NEUTRAL_HEARTBEAT_ACTION,
-    MarketHeartbeatValidationError,
     sanitize_heartbeat_message_body,
     sanitize_heartbeat_possible_action,
     validate_market_heartbeat_output,
@@ -27,6 +27,7 @@ from bot.db.database import (
     User,
     ensure_default_coin_subscriptions,
 )
+from bot.services import ai_agent_groq
 
 
 async def build_session_factory():
@@ -201,8 +202,14 @@ async def test_heartbeat_is_sent_when_frequency_due(monkeypatch):
 
         assert sent is True
         app.bot.send_message.assert_awaited_once()
-        text = app.bot.send_message.await_args.kwargs["text"]
+        send_kwargs = app.bot.send_message.await_args.kwargs
+        text = send_kwargs["text"]
         assert "BTC Market Heartbeat" in text
+        assert send_kwargs["parse_mode"] == ParseMode.HTML
+        assert (
+            '<a href="https://example.com/btc">Bitcoin ETF flows remain steady</a> - CoinDesk'
+            in text
+        )
         assert "No major related news selected." not in text
         async with session_local() as session:
             row = await session.scalar(select(Alert).where(Alert.user_id == user.id))
@@ -380,57 +387,126 @@ def test_market_heartbeat_safe_neutral_wording_is_accepted():
         "Assess whether any adjustments are needed.",
         "Review your investment strategy and financial goals.",
         "Adjusting your portfolio as needed may help with risk tolerance.",
+        "Consider selling if this no longer fits your plan.",
+        "Consider buying only if it fits your plan.",
     ],
 )
-def test_market_heartbeat_possible_action_advice_is_rejected_and_sanitized(possible_action):
-    with pytest.raises(MarketHeartbeatValidationError, match="possible_action contains"):
-        validate_market_heartbeat_output(
-            heartbeat_result(possible_action=possible_action),
-            expected_symbol="btc",
-            candidate_news_ids=set(),
-        )
+def test_market_heartbeat_possible_action_advice_like_wording_is_allowed(possible_action):
+    decision = validate_market_heartbeat_output(
+        heartbeat_result(possible_action=possible_action),
+        expected_symbol="btc",
+        candidate_news_ids=set(),
+    )
 
-    assert sanitize_heartbeat_possible_action(possible_action) == SAFE_NEUTRAL_HEARTBEAT_ACTION
+    assert decision.possible_action == possible_action
+    assert sanitize_heartbeat_possible_action(possible_action) == possible_action
 
 
-def test_market_heartbeat_message_body_advice_is_rejected_and_sanitized():
+def test_market_heartbeat_message_body_advice_like_wording_is_allowed():
     message_body = (
         "BTC has traded in a narrow range. "
         "It may be a good time to review your investment portfolio."
     )
 
-    with pytest.raises(MarketHeartbeatValidationError, match="message_body contains"):
-        validate_market_heartbeat_output(
-            heartbeat_result(message_body=message_body),
-            expected_symbol="btc",
-            candidate_news_ids=set(),
-        )
+    decision = validate_market_heartbeat_output(
+        heartbeat_result(
+            message_body=message_body,
+            possible_action="Consider selling if this no longer fits your plan.",
+        ),
+        expected_symbol="btc",
+        candidate_news_ids=set(),
+    )
 
+    assert decision.message_body == message_body
+    assert decision.possible_action == "Consider selling if this no longer fits your plan."
     assert sanitize_heartbeat_message_body(
         message_body,
         "BTC remains under regular monitoring.",
-    ) == "BTC has traded in a narrow range."
+    ) == message_body
 
 
-@pytest.mark.parametrize(
-    "field, value",
-    [
-        ("message_body", "BTC is calm, but users may want to buy before volatility returns."),
-        ("possible_action", "Sell if volatility increases."),
-        ("possible_action", "Do not short or long based on this heartbeat."),
-        ("possible_action", "Liquidate if market stress rises."),
-    ],
-)
-def test_market_heartbeat_direct_advice_remains_rejected(field, value):
-    with pytest.raises(MarketHeartbeatValidationError, match=f"{field} contains"):
-        validate_market_heartbeat_output(
-            heartbeat_result(**{field: value}),
-            expected_symbol="btc",
-            candidate_news_ids=set(),
+@pytest.mark.asyncio
+async def test_market_heartbeat_generation_accepts_advice_like_wording(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "SUPPORTED_SYMBOLS", ("btc",))
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(return_value={"btc": {"price": 100000.0, "change_24h": 1.2}}),
+        )
+        monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            alerts,
+            "ask_market_heartbeat_raw",
+            AsyncMock(
+                return_value=(
+                    "{}",
+                    {
+                        "symbol": "BTC",
+                        "title": "BTC remains calm with no major market stress",
+                        "message_body": "BTC is calm. It may be worth reviewing your portfolio.",
+                        "related_news_ids": [],
+                        "possible_action": "Consider buying or selling only if it fits your plan.",
+                        "confidence": "medium",
+                    },
+                )
+            ),
         )
 
+        await alerts.generate_market_heartbeats(SimpleNamespace())
 
-def test_heartbeat_rendering_sanitizes_cached_advice_like_text():
+        async with session_local() as session:
+            heartbeat = await session.scalar(select(MarketHeartbeat))
+        assert heartbeat.status == "completed"
+        assert "reviewing your portfolio" in heartbeat.message_body
+        assert "buying or selling" in heartbeat.possible_action
+    finally:
+        await engine.dispose()
+
+
+def test_market_heartbeat_prompt_discourages_exact_numeric_repetition():
+    prompt = ai_agent_groq.build_market_heartbeat_prompt(
+        {
+            "symbol": "BTC",
+            "market_data": {
+                "price_now_usd": 77566.0,
+                "change_since_last_user_visible_message_percent": 0.06,
+                "change_24h_percent": 0.78,
+            },
+            "candidate_news": [],
+        }
+    )
+
+    assert "Do not repeat exact price values" in prompt
+    assert "exact percentage values" in prompt
+    assert "current price" in prompt
+    assert "since-last-message change" in prompt
+    assert "24h change" in prompt
+
+
+def test_market_heartbeat_numeric_details_are_sanitized_from_message_body():
+    decision = validate_market_heartbeat_output(
+        heartbeat_result(
+            message_body=(
+                "Bitcoin is currently at $77,566 and is up 0.78% over the past 24 hours. "
+                "Recent news flow is mixed, with ETF and mining stories in broader context."
+            )
+        ),
+        expected_symbol="btc",
+        candidate_news_ids=set(),
+    )
+
+    assert "$77,566" not in decision.message_body
+    assert "0.78%" not in decision.message_body
+    assert decision.message_body == (
+        "Recent news flow is mixed, with ETF and mining stories in broader context."
+    )
+
+
+def test_heartbeat_rendering_preserves_cached_advice_like_text():
     heartbeat = SimpleNamespace(
         symbol="BTC",
         title="BTC remains calm",
@@ -451,14 +527,89 @@ def test_heartbeat_rendering_sanitizes_cached_advice_like_text():
 
     text = payload["plain_text"]
     assert "BTC remains under regular monitoring." in text
-    assert SAFE_NEUTRAL_HEARTBEAT_ACTION in text
-    for forbidden in (
-        "investment portfolio",
-        "Adjust your portfolio",
-        "risk tolerance",
-        "financial goals",
-    ):
-        assert forbidden not in text
+    assert "investment portfolio" in text
+    assert "Adjust your portfolio according to your risk tolerance." in text
+
+
+def test_heartbeat_related_context_uses_direct_article_links_and_escaping():
+    heartbeat = SimpleNamespace(
+        symbol="BTC",
+        title="BTC remains calm & steady",
+        message_body="BTC is showing mild movement.",
+        possible_action="Review your portfolio if it fits your own plan.",
+    )
+    related_news = [
+        {
+            "news_id": "news_a",
+            "title": "SEC seeks public comment as it weighs ETFs & funds",
+            "source": "Cointelegraph.com News",
+            "url": "https://cointelegraph.com/news/sec?x=1&y=2",
+        }
+    ]
+
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=100000.0,
+        change_since_last_message=0.6,
+        change_24h=1.0,
+        related_news=related_news,
+    )
+
+    assert payload["html_text"] is not None
+    assert (
+        '<a href="https://cointelegraph.com/news/sec?x=1&amp;y=2">'
+        "SEC seeks public comment as it weighs ETFs &amp; funds</a> - Cointelegraph.com News"
+        in payload["html_text"]
+    )
+    assert "BTC remains calm &amp; steady" in payload["html_text"]
+
+
+def test_heartbeat_related_context_missing_url_stays_plain_text():
+    heartbeat = SimpleNamespace(
+        symbol="BTC",
+        title="BTC remains calm",
+        message_body="BTC is showing mild movement.",
+        possible_action="No urgent action appears necessary.",
+    )
+    related_news = [
+        {
+            "news_id": "news_a",
+            "title": "Bitcoin ETF flows remain steady",
+            "source": "CoinDesk",
+            "url": "",
+        }
+    ]
+
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=100000.0,
+        change_since_last_message=0.6,
+        change_24h=1.0,
+        related_news=related_news,
+    )
+
+    assert payload["html_text"] is None
+    assert "• Bitcoin ETF flows remain steady - CoinDesk" in payload["plain_text"]
+
+
+def test_heartbeat_related_context_empty_selection_is_preserved():
+    heartbeat = SimpleNamespace(
+        symbol="BTC",
+        title="BTC remains calm",
+        message_body="BTC is showing mild movement.",
+        possible_action="No urgent action appears necessary.",
+    )
+
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=100000.0,
+        change_since_last_message=0.6,
+        change_24h=1.0,
+        related_news=[],
+    )
+
+    assert payload["html_text"] is None
+    assert "No major related news selected." in payload["plain_text"]
 
 
 def test_event_alert_validation_still_allows_existing_cautious_event_wording():

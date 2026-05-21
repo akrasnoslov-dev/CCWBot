@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
+from html import escape
 from time import perf_counter
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
@@ -516,6 +517,67 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
     return "\n".join(lines) if lines else empty_text
 
 
+def _format_market_heartbeat_related_context(
+    related_news: list[dict], *, empty_text: str
+) -> tuple[str, str | None]:
+    if not related_news:
+        return empty_text, None
+
+    plain_lines: list[str] = []
+    html_lines: list[str] = []
+    has_link = False
+    for item in related_news[:3]:
+        title_text = str(item.get("title") or "").strip()
+        source = str(item.get("source") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not title_text:
+            continue
+
+        detail = f" - {source}" if source else ""
+        plain_lines.append(f"\u2022 {title_text}{detail}")
+        escaped_source = escape(source)
+        html_detail = f" - {escaped_source}" if escaped_source else ""
+        if url:
+            has_link = True
+            html_lines.append(
+                f'\u2022 <a href="{escape(url, quote=True)}">{escape(title_text)}</a>{html_detail}'
+            )
+        else:
+            html_lines.append(f"\u2022 {escape(title_text)}{html_detail}")
+
+    if not plain_lines:
+        return empty_text, None
+    return "\n".join(plain_lines), "\n".join(html_lines) if has_link else None
+
+
+def _build_market_heartbeat_html_message(
+    *,
+    icon: str,
+    symbol: str,
+    title: str,
+    price_text: str,
+    since_last_text: str,
+    change_24h_text: str,
+    message_body: str,
+    related_section_html: str,
+    possible_action: str,
+) -> str:
+    return (
+        f"{escape(icon)} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
+        f"{escape(title)}\n\n"
+        f"Price: {escape(price_text)}\n"
+        f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
+        f"24h change: {escape(change_24h_text)}\n\n"
+        "Situation:\n"
+        f"{escape(message_body)}\n\n"
+        "Related context:\n"
+        f"{related_section_html}\n\n"
+        "Possible action:\n"
+        f"{escape(possible_action)}\n\n"
+        "Not financial advice."
+    )
+
+
 def _build_event_alert_payload(
     *,
     decision: EventAnalysisDecision,
@@ -611,16 +673,19 @@ def _build_market_heartbeat_payload(
         f"{symbol} remains under regular monitoring.",
     )
     possible_action = sanitize_heartbeat_possible_action(heartbeat.possible_action)
-    related_section = _format_related_context(
+    related_section, related_section_html = _format_market_heartbeat_related_context(
         related_news,
         empty_text="No major related news selected.",
     )
+    price_text = _format_optional_price(current_price)
+    since_last_text = _format_optional_percent(change_since_last_message)
+    change_24h_text = _format_optional_percent(change_24h)
     message = (
         f"{icon} \U0001f4e1 {symbol} Market Heartbeat\n\n"
         f"{title}\n\n"
-        f"Price: {_format_optional_price(current_price)}\n"
-        f"Since last {symbol} message: {_format_optional_percent(change_since_last_message)}\n"
-        f"24h change: {_format_optional_percent(change_24h)}\n\n"
+        f"Price: {price_text}\n"
+        f"Since last {symbol} message: {since_last_text}\n"
+        f"24h change: {change_24h_text}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -629,7 +694,20 @@ def _build_market_heartbeat_payload(
         f"{possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": message, "html_text": None, "entities": entities}
+    html_message = None
+    if related_section_html:
+        html_message = _build_market_heartbeat_html_message(
+            icon=icon,
+            symbol=symbol,
+            title=title,
+            price_text=price_text,
+            since_last_text=since_last_text,
+            change_24h_text=change_24h_text,
+            message_body=message_body,
+            related_section_html=related_section_html,
+            possible_action=possible_action,
+        )
+    return {"plain_text": message, "html_text": html_message, "entities": entities}
 
 
 def _heartbeat_related_news(heartbeat) -> list[dict]:

@@ -887,10 +887,8 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
     return raw_content, parsed
 
 
-async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON."""
-    client = get_groq_client()
-    prompt = (
+def build_market_heartbeat_prompt(input_payload: dict) -> str:
+    return (
         "Return one valid JSON object only. Do not use Markdown or code fences.\n"
         "Use exactly these fields: symbol, title, message_body, related_news_ids, "
         "possible_action, confidence.\n"
@@ -900,15 +898,15 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
         "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
         "Make the heartbeat useful and concise. Do not lazily say nothing happened. "
         "Mention selected relevant news if useful, but avoid exact causality claims.\n"
-        "message_body and possible_action must be neutral monitoring/status text only. "
-        "Do not suggest reviewing, adjusting, rebalancing, changing, or managing a user's "
-        "portfolio, holdings, exposure, allocation, investment strategy, risk tolerance, "
-        "or financial goals.\n"
+        "Backend-rendered fields are the source of truth for current price, "
+        "since-last-message change, and 24h change. Do not repeat exact price values or "
+        "exact percentage values in message_body. Describe the situation qualitatively "
+        "instead, such as broadly stable, minor upward movement, moderate volatility, "
+        "quiet news flow, or mixed recent news.\n"
         "related_news_ids must only contain news_id values from candidate_news.\n"
-        "possible_action must be cautious and non-prescriptive. Do not tell users to buy, sell, "
-        "liquidate, short, long, move all money, review an investment portfolio, adjust a "
-        "portfolio, rebalance, change investment strategy, assess financial goals, or act on "
-        "risk tolerance.\n"
+        "possible_action must be cautious and non-prescriptive. Softer wording is preferred, "
+        "for example: you may want to consider, it may be worth reviewing, or depending on "
+        "your own plan.\n"
         "Safe possible_action examples: "
         '"No immediate action is suggested by this heartbeat. Continue monitoring if this coin '
         'is on your watchlist."; '
@@ -918,6 +916,12 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
+
+
+async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON."""
+    client = get_groq_client()
+    prompt = build_market_heartbeat_prompt(input_payload)
     request_kwargs = {
         "model": GROQ_MODEL,
         "messages": [
