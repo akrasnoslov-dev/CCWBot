@@ -500,6 +500,21 @@ def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> li
     return compacted
 
 
+def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
+    compacted = []
+    for item in candidate_news[:limit]:
+        compacted.append(
+            {
+                "news_id": str(item.get("news_id") or ""),
+                "source": str(item.get("source") or "").strip(),
+                "title": str(item.get("title") or "").strip(),
+                "time": str(item.get("published_at") or "").strip(),
+                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+            }
+        )
+    return compacted
+
+
 def _select_representative_snapshots(
     snapshots_payload: list[dict], *, limit: int = 6
 ) -> list[dict]:
@@ -515,6 +530,28 @@ def _select_representative_snapshots(
     selected_indices.add(last_index)
     selected = [snapshots_payload[index] for index in sorted(selected_indices)]
     return selected[-limit:]
+
+
+def _compact_event_snapshot(snapshot: dict, *, now: datetime) -> dict:
+    raw_timestamp = snapshot.get("timestamp_utc")
+    if isinstance(raw_timestamp, datetime):
+        timestamp = raw_timestamp
+    else:
+        timestamp = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    delta_seconds = (
+        timestamp.astimezone(timezone.utc) - now.astimezone(timezone.utc)
+    ).total_seconds()
+    minutes = int(round(delta_seconds / 60))
+    return {
+        "m": minutes,
+        "p": _stable_float(float(snapshot["price_usd"]), 2),
+    }
+
+
+def _compact_event_snapshots(snapshots_payload: list[dict], *, now: datetime) -> list[dict]:
+    return [_compact_event_snapshot(snapshot, now=now) for snapshot in snapshots_payload]
 
 
 def _snapshot_price(snapshot) -> float:
@@ -651,7 +688,7 @@ def _build_event_alert_payload(
     related_news: list[dict],
 ) -> dict:
     symbol = decision.symbol
-    market_data = input_payload["market_data"]
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
     icon, entities = build_coin_icon_prefix(symbol)
     title = _sanitize_event_text(decision.title, f"{symbol} market event")
     message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
@@ -663,15 +700,21 @@ def _build_event_alert_payload(
         related_news,
         empty_text="No major related news selected.",
     )
+    price = market_data.get("price", market_data.get("price_now_usd"))
+    change_since_message = market_data.get(
+        "chg_since_msg",
+        market_data.get("change_since_last_user_visible_message_percent"),
+    )
+    change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
 
     message = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
-        f"Price: {_format_optional_price(market_data.get('price_now_usd'))}\n"
+        f"Price: {_format_optional_price(price)}\n"
         "Since last "
         f"{symbol} message: "
-        f"{_format_optional_percent(market_data.get('change_since_last_user_visible_message_percent'))}\n"
-        f"24h change: {_format_optional_percent(market_data.get('change_24h_percent'))}\n\n"
+        f"{_format_optional_percent(change_since_message)}\n"
+        f"24h change: {_format_optional_percent(change_24h)}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -684,17 +727,20 @@ def _build_event_alert_payload(
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
-    market_data = input_payload["market_data"]
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
     return _json_dumps(
         {
             "notification_type": EVENT_ALERT_TYPE,
             "notification_severity": decision.urgency,
             "notification_direction": None,
-            "current_price": market_data.get("price_now_usd"),
+            "current_price": market_data.get("price", market_data.get("price_now_usd")),
             "change_since_last_market_update_percent": market_data.get(
-                "change_since_last_user_visible_message_percent"
+                "chg_since_msg",
+                market_data.get("change_since_last_user_visible_message_percent"),
             ),
-            "twenty_four_hour_change_percent": market_data.get("change_24h_percent"),
+            "twenty_four_hour_change_percent": market_data.get(
+                "chg24h", market_data.get("change_24h_percent")
+            ),
             "event_key": decision.event_key,
             "confidence": decision.confidence,
         }
@@ -1687,25 +1733,26 @@ async def _build_event_analysis_input(
                 "price_usd": fallback_previous_price,
             }
         ]
-    candidate_news = _compact_candidate_news(candidate_news, limit=3)
+    snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
+    candidate_news = _compact_event_analysis_news(candidate_news, limit=3)
 
     return {
         "analysis_id": analysis_id,
         "symbol": normalized_symbol.upper(),
         "coin_name": _coin_name(normalized_symbol),
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
-        "market_data": {
-            "price_now_usd": float(current_price),
-            "price_snapshots": snapshots_payload,
-            "change_24h_percent": float(change_24h),
-            "change_since_last_user_visible_message_percent": change_since_last_message,
+        "market": {
+            "price": _stable_float(float(current_price), 2),
+            "snapshots": snapshots_payload,
+            "chg24h": _stable_float(float(change_24h), 4),
+            "chg_since_msg": _stable_float(change_since_last_message, 4),
         },
-        "last_user_visible_message_context": {
-            "last_message_at": last_message_at,
-            "last_message_type": last_message_type,
-            "last_message_price_usd": last_message_price,
+        "last_msg": {
+            "time": last_message_at,
+            "type": last_message_type,
+            "price": _stable_float(last_message_price, 2),
         },
-        "candidate_news": candidate_news,
+        "news": candidate_news,
         "policy": {
             "language": "English",
             "audience": "General retail crypto holder; no personalised financial advice.",
@@ -1821,7 +1868,8 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             parsed,
             expected_symbol=str(input_payload["symbol"]),
             candidate_news_ids={
-                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+                str(item["news_id"])
+                for item in input_payload.get("news", input_payload.get("candidate_news", []))
             },
         )
     except MarketHeartbeatValidationError as error:
@@ -1928,7 +1976,8 @@ async def _create_event_analysis_decision(
             parsed,
             expected_symbol=str(input_payload["symbol"]),
             candidate_news_ids={
-                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+                str(item["news_id"])
+                for item in input_payload.get("news", input_payload.get("candidate_news", []))
             },
         )
     except EventAnalysisValidationError as error:
@@ -1972,9 +2021,12 @@ async def _get_or_create_event_alert_market_event(
 ) -> tuple[int | None, str | None]:
     if not decision.event_key:
         return None, None
-    market_data = input_payload["market_data"]
-    current_price = float(market_data["price_now_usd"])
-    change_since_last = market_data.get("change_since_last_user_visible_message_percent")
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    current_price = float(market_data.get("price", market_data.get("price_now_usd")))
+    change_since_last = market_data.get(
+        "chg_since_msg",
+        market_data.get("change_since_last_user_visible_message_percent"),
+    )
     if change_since_last is None:
         previous_price = None
         price_change_percent = 0.0
@@ -1992,7 +2044,7 @@ async def _get_or_create_event_alert_market_event(
             price=current_price,
             previous_price=previous_price,
             price_change_percent=price_change_percent,
-            last_24h_change=market_data.get("change_24h_percent"),
+            last_24h_change=market_data.get("chg24h", market_data.get("change_24h_percent")),
             detected_at=datetime.now(timezone.utc),
         )
         return event.id, event.event_key

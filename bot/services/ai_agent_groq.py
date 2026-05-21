@@ -18,8 +18,23 @@ from openai import AsyncOpenAI
 
 load_dotenv()
 
+
+def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-GROQ_EVENT_ANALYSIS_MODEL = os.getenv("GROQ_EVENT_ANALYSIS_MODEL", GROQ_MODEL)
+GROQ_EVENT_ANALYSIS_MODEL = os.getenv(
+    "GROQ_EVENT_ANALYSIS_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"
+)
+GROQ_EVENT_ANALYSIS_MAX_TOKENS = _get_int_env("GROQ_EVENT_ANALYSIS_MAX_TOKENS", 300, minimum=1)
 GROQ_MARKET_HEARTBEAT_MODEL = os.getenv(
     "GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"
 )
@@ -1079,19 +1094,15 @@ async def _ask_json(prompt: str) -> dict | None:
 async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
     """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
     prompt = (
-        "Return valid JSON only. English. For a general retail crypto holder.\n"
+        "Return valid JSON only. Write English.\n"
         "Use exactly these fields: symbol, should_alert, event_key, title, message_body, "
         "related_news_ids, possible_action, urgency, confidence, reason_for_no_alert.\n"
-        'Allowed urgency values: "low", "normal", "high".\n'
-        'Allowed confidence values: "low", "medium", "high".\n'
-        "Do not return alert types such as important_alert, critical_alert, market_update, "
-        "strong_signal, market_heartbeat, buy_signal, or sell_signal.\n"
-        "event_key is required only when should_alert is true and must be stable for the same "
-        "market event, for example btc_downward_pressure_2026_05_20.\n"
-        "related_news_ids must only contain news_id values from candidate_news.\n"
-        "No personalised financial advice or buy/sell/short/liquidate instructions.\n"
-        "Prefer fewer useful alerts and avoid repetitive low-value alerts. If no meaningful "
-        "event exists, set should_alert=false and explain briefly in reason_for_no_alert.\n\n"
+        "urgency: low, normal, high. confidence: low, medium, high.\n"
+        "event_key is required only when should_alert=true.\n"
+        "related_news_ids must come from news.news_id.\n"
+        "Prefer fewer useful alerts. If no meaningful event exists, set should_alert=false.\n"
+        "No direct trading commands or guaranteed outcomes.\n"
+        "In snapshots, m is minutes before timestamp_utc and p is USD price.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
@@ -1108,7 +1119,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
             symbol=symbol,
             model=GROQ_EVENT_ANALYSIS_MODEL,
             messages=messages,
-            max_tokens=400,
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
             response_format=response_format,
         )
     except Exception as error:
@@ -1128,7 +1139,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
             status="invalid_json",
             input_chars=input_chars,
             output_chars=len(raw_content),
-            max_tokens=400,
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
             headers=headers,
             response=response,
             error_reason="invalid JSON",
@@ -1143,7 +1154,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
             status="invalid_json",
             input_chars=input_chars,
             output_chars=len(raw_content),
-            max_tokens=400,
+            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
             headers=headers,
             response=response,
             error_reason="invalid JSON",
@@ -1157,7 +1168,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
         status="success",
         input_chars=input_chars,
         output_chars=len(raw_content),
-        max_tokens=400,
+        max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
         headers=headers,
         response=response,
     )

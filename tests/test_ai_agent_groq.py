@@ -336,7 +336,13 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
             await ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"})
 
             assert captured_kwargs["model"] == "event-model"
-            assert captured_kwargs["max_tokens"] == 400
+            assert captured_kwargs["max_tokens"] == 300
+            prompt = captured_kwargs["messages"][1]["content"]
+            assert "Return valid JSON only." in prompt
+            assert "symbol, should_alert, event_key, title, message_body" in prompt
+            assert "urgency: low, normal, high" in prompt
+            assert "confidence: low, medium, high" in prompt
+            assert "In snapshots, m is minutes before timestamp_utc and p is USD price." in prompt
             async with session_local() as session:
                 row = await session.scalar(select(LlmUsageLog))
             assert row.call_type == "event_analysis"
@@ -344,12 +350,21 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
             assert row.symbol == "BTC"
             assert row.status == "success"
             assert row.total_tokens == 20
+            assert row.max_tokens == 300
             assert row.rate_limit_remaining_requests == "999"
         finally:
             runtime.DB_SESSION_LOCAL.clear()
             await engine.dispose()
 
     asyncio.run(run_test())
+
+
+def test_event_analysis_model_and_max_token_defaults():
+    assert (
+        ai_agent_groq.GROQ_EVENT_ANALYSIS_MODEL
+        == "meta-llama/llama-4-scout-17b-16e-instruct"
+    )
+    assert ai_agent_groq.GROQ_EVENT_ANALYSIS_MAX_TOKENS == 300
 
 
 def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatch):
@@ -414,6 +429,7 @@ def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
                 row = await session.scalar(select(LlmUsageLog))
             assert row.call_type == "event_analysis"
             assert row.status == "rate_limit"
+            assert row.max_tokens == 300
             assert row.retry_after == "10"
         finally:
             runtime.DB_SESSION_LOCAL.clear()

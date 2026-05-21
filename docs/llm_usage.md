@@ -51,3 +51,58 @@ FROM llm_usage_logs
 WHERE created_at >= now() - interval '48 hours'
 ORDER BY model, call_type, created_at DESC;
 ```
+
+Recent event-analysis token averages after deployment:
+
+```sql
+SELECT
+  call_type,
+  model,
+  status,
+  count(*) AS calls,
+  sum(prompt_tokens) AS prompt_tokens,
+  sum(completion_tokens) AS completion_tokens,
+  sum(total_tokens) AS total_tokens,
+  avg(total_tokens) AS avg_total_tokens
+FROM llm_usage_logs
+WHERE created_at >= now() - interval '2 hours'
+GROUP BY call_type, model, status
+ORDER BY call_type, model, status;
+```
+
+Recent event-analysis usage by symbol:
+
+```sql
+SELECT
+  symbol,
+  status,
+  count(*) AS calls,
+  avg(total_tokens) AS avg_tokens
+FROM llm_usage_logs
+WHERE call_type = 'event_analysis'
+  AND created_at >= now() - interval '2 hours'
+GROUP BY symbol, status
+ORDER BY symbol, status;
+```
+
+Latest rate-limit rows:
+
+```sql
+SELECT
+  created_at,
+  model,
+  call_type,
+  symbol,
+  status,
+  rate_limit_remaining_requests,
+  rate_limit_remaining_tokens,
+  rate_limit_reset_requests,
+  rate_limit_reset_tokens,
+  retry_after,
+  error_reason,
+  error_message
+FROM llm_usage_logs
+WHERE status = 'rate_limit'
+ORDER BY created_at DESC
+LIMIT 20;
+```

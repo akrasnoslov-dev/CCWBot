@@ -92,16 +92,30 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
             now=now,
             state={},
             candidate_news=[
-                {"news_id": f"news_{index}", "summary": "x" * 400}
+                {
+                    "news_id": f"news_{index}",
+                    "url": f"https://example.test/{index}",
+                    "link": f"https://example.test/link/{index}",
+                    "summary": "x" * 400,
+                }
                 for index in range(5)
             ],
         )
 
-        snapshots = payload["market_data"]["price_snapshots"]
+        assert set(payload["market"]) == {"price", "snapshots", "chg24h", "chg_since_msg"}
+        assert "market_data" not in payload
+        assert "candidate_news" not in payload
+        snapshots = payload["market"]["snapshots"]
         assert len(snapshots) == 6
-        assert snapshots[-1]["price_usd"] == 111.0
-        assert len(payload["candidate_news"]) == 3
-        assert all(len(item["summary"]) <= 300 for item in payload["candidate_news"])
+        assert snapshots[-1]["p"] == 111.0
+        assert all(set(snapshot) == {"m", "p"} for snapshot in snapshots)
+        assert all(isinstance(snapshot["m"], int) for snapshot in snapshots)
+        assert all(snapshot["m"] <= 0 for snapshot in snapshots)
+        assert "timestamp_utc" not in snapshots[-1]
+        assert "price_usd" not in snapshots[-1]
+        assert len(payload["news"]) == 3
+        assert all(len(item["summary"]) <= 300 for item in payload["news"])
+        assert all("url" not in item and "link" not in item for item in payload["news"])
         assert payload["policy"] == {
             "language": "English",
             "audience": "General retail crypto holder; no personalised financial advice.",
