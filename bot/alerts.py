@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
+from telegram import MessageEntity
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, ContextTypes
@@ -444,28 +445,24 @@ def _event_input_hash(input_payload: dict) -> str:
 
 
 def _news_id(index: int) -> str:
-    return f"news_{index + 1}"
+    return f"n{index + 1}"
 
 
 def _format_candidate_news(news_items: list[dict]) -> list[dict]:
     candidates: list[dict] = []
-    seen_ids: set[str] = set()
-    for index, item in enumerate(_sort_news_fresh_first(news_items)):
+    seen_keys: set[str] = set()
+    for item in _sort_news_fresh_first(news_items):
         title = str(item.get("title") or "").strip()
         if not title:
             continue
         stable_key = make_news_key(item)
-        news_id = (
-            f"news_{sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
-            if stable_key
-            else _news_id(index)
-        )
-        if news_id in seen_ids:
+        dedupe_key = stable_key or title.lower()
+        if dedupe_key in seen_keys:
             continue
-        seen_ids.add(news_id)
+        seen_keys.add(dedupe_key)
         candidates.append(
             {
-                "news_id": news_id,
+                "news_id": _news_id(len(candidates)),
                 "source": str(item.get("source") or "").strip() or "Unknown source",
                 "title": title,
                 "published_at": str(
@@ -582,9 +579,30 @@ def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
     return eligible[-1] if eligible else None
 
 
-def _related_news_by_id(candidate_news: list[dict], related_news_ids: list[str]) -> list[dict]:
+def _related_news_by_id(
+    candidate_news: list[dict],
+    related_news_ids: list[str],
+    *,
+    symbol: str | None = None,
+    context: str = "related news",
+) -> list[dict]:
     by_id = {str(item.get("news_id")): item for item in candidate_news}
-    return [by_id[news_id] for news_id in related_news_ids if news_id in by_id]
+    mapped_items: list[dict] = []
+    missing_ids: list[str] = []
+    for news_id in related_news_ids:
+        item = by_id.get(str(news_id))
+        if item is None:
+            missing_ids.append(str(news_id))
+            continue
+        mapped_items.append(item)
+    if missing_ids:
+        logger.warning(
+            "%s selected related_news_ids could not be mapped: symbol=%s missing_ids=%s",
+            context,
+            normalize_symbol(symbol).upper() if symbol else "unknown",
+            missing_ids[:5],
+        )
+    return mapped_items
 
 
 def _format_optional_percent(value: float | None) -> str:
@@ -606,6 +624,20 @@ def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
     return cleaned or fallback
 
 
+def _utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _safe_telegram_link_url(value: str | None) -> str | None:
+    url = str(value or "").strip()
+    if not url:
+        return None
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return None
+    return url
+
+
 def _format_related_context(related_news: list[dict], *, empty_text: str) -> str:
     if not related_news:
         return empty_text
@@ -618,6 +650,50 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
         detail = f" - {source}" if source else ""
         lines.append(f"\u2022 {title_text}{detail}")
     return "\n".join(lines) if lines else empty_text
+
+
+def _format_event_related_context(
+    related_news: list[dict], *, empty_text: str
+) -> tuple[str, list[dict]]:
+    if not related_news:
+        return empty_text, []
+
+    lines: list[str] = []
+    link_entities: list[dict] = []
+    cursor = 0
+    missing_url_count = 0
+    for item in related_news[:3]:
+        title_text = str(item.get("title") or "").strip()
+        source = str(item.get("source") or "").strip()
+        url = _safe_telegram_link_url(str(item.get("url") or item.get("link") or ""))
+        if not title_text:
+            continue
+
+        link_text = f"{title_text} - {source}" if source else title_text
+        line = f"\u2022 {link_text}"
+        if lines:
+            cursor += 1
+        if url:
+            link_entities.append(
+                {
+                    "offset": cursor + _utf16_length("\u2022 "),
+                    "length": _utf16_length(link_text),
+                    "url": url,
+                }
+            )
+        else:
+            missing_url_count += 1
+        lines.append(line)
+        cursor += _utf16_length(line)
+
+    if missing_url_count:
+        logger.warning(
+            "event related news selected without valid article URL: missing_url_count=%s",
+            missing_url_count,
+        )
+    if not lines:
+        return empty_text, []
+    return "\n".join(lines), link_entities
 
 
 def _format_market_heartbeat_related_context(
@@ -696,7 +772,7 @@ def _build_event_alert_payload(
         decision.possible_action,
         "Review the situation calmly and avoid impulsive decisions.",
     )
-    related_section = _format_related_context(
+    related_section, related_link_entities = _format_event_related_context(
         related_news,
         empty_text="No major related news selected.",
     )
@@ -707,7 +783,7 @@ def _build_event_alert_payload(
     )
     change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
 
-    message = (
+    before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
         f"Price: {_format_optional_price(price)}\n"
@@ -718,12 +794,26 @@ def _build_event_alert_payload(
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
-        f"{related_section}\n\n"
+    )
+    after_related = (
+        "\n\n"
         "Possible action:\n"
         f"{possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": message, "html_text": None, "entities": entities}
+    message = f"{before_related}{related_section}{after_related}"
+    all_entities = list(entities or [])
+    related_offset = _utf16_length(before_related)
+    for entity in related_link_entities:
+        all_entities.append(
+            MessageEntity(
+                type=MessageEntity.TEXT_LINK,
+                offset=related_offset + int(entity["offset"]),
+                length=int(entity["length"]),
+                url=str(entity["url"]),
+            )
+        )
+    return {"plain_text": message, "html_text": None, "entities": all_entities or None}
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
@@ -3512,7 +3602,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 decision=decision,
                 input_payload=input_payload,
             )
-            related_news = _related_news_by_id(candidate_news, decision.related_news_ids)
+            related_news = _related_news_by_id(
+                candidate_news,
+                decision.related_news_ids,
+                symbol=symbol,
+                context="event analysis",
+            )
             alert_payload = _build_event_alert_payload(
                 decision=decision,
                 input_payload=input_payload,

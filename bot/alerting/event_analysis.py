@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,11 +32,6 @@ FORBIDDEN_USER_ALERT_TYPES = {
     "buy_signal",
     "sell_signal",
 }
-DIRECT_ADVICE_RE = re.compile(
-    r"(?i)\b(buy|sell|liquidate|short|long|move all|all money|all funds)\b"
-)
-
-
 class EventAnalysisValidationError(ValueError):
     """Raised when LLM event-analysis JSON cannot be trusted."""
 
@@ -96,8 +90,6 @@ def validate_event_analysis_output(
         ).lower()
         if any(forbidden in joined_values for forbidden in FORBIDDEN_USER_ALERT_TYPES):
             raise EventAnalysisValidationError("legacy alert type returned by LLM")
-        if possible_action and DIRECT_ADVICE_RE.search(possible_action):
-            raise EventAnalysisValidationError("possible_action contains direct financial advice")
         if not event_key:
             raise EventAnalysisValidationError("event_key is required for should_alert=true")
         if not title or not message_body or not possible_action:
@@ -161,9 +153,6 @@ def _validate_alert_related_news_ids(
         raise EventAnalysisValidationError("related_news_ids must be a string array")
     if len(set(value)) != len(value):
         raise EventAnalysisValidationError("related_news_ids contains duplicates")
-    unknown_ids = set(value) - candidate_news_ids
-    if unknown_ids:
-        raise EventAnalysisValidationError(f"unknown related_news_ids: {sorted(unknown_ids)}")
     return value
 
 
