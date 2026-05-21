@@ -1,6 +1,13 @@
-# CCWBot subagents
+# CCWBot Codex subagents
 
-Runtime subagent definitions live here in TOML format. Keep each agent focused on a review area with actionable blocking criteria and concise deliverables.
+Codex task-review subagent definitions live here in TOML format. These files are not loaded by
+the Telegram bot at runtime; they guide Codex planning, implementation review, and PR checks.
+Keep each agent focused on a review area with actionable blocking criteria and concise
+deliverables.
+
+Routing rules live in `agents/routing.toml`. Before starting any non-trivial task, Codex must
+check those rules, use the required agents when relevant, or explicitly explain why a relevant
+agent was not used. High-risk areas must not skip agents silently.
 
 Current agents:
 
@@ -13,3 +20,17 @@ Current agents:
 - `db_migration_guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
 - `telegram_stars_payments_agent`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
 - `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
+
+Mandatory routing summary:
+
+- Security-sensitive changes: `security_review_agent`.
+- Database/schema changes: `db_migration_guardian`.
+- Alert/report logic changes: `architecture_guardian`, `market_pipeline_agent`, and `product_policy_agent`.
+- LLM prompt/output changes: `architecture_guardian`, `market_pipeline_agent`, and `product_policy_agent`.
+- Production/debugging tasks: `devops_release_agent` and `security_review_agent`.
+- Multi-module refactors: `architecture_guardian`, `code_quality_agent`, and `test_ci_agent`.
+- API, token, or rate-limit pressure changes: `architecture_guardian`, `market_pipeline_agent`, and `test_ci_agent`.
+- Premium/payment changes: `telegram_stars_payments_agent`, `security_review_agent`, and `product_policy_agent`.
+
+Simple typo fixes, comment-only changes, and narrowly scoped docs edits may skip subagents after
+an explicit agent relevance check.

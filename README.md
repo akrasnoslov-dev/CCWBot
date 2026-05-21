@@ -384,3 +384,5 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).
+Codex agent routing and review rules are in
+[docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).
