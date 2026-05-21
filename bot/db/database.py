@@ -837,6 +837,57 @@ class EventAiAnalysis(Base):
     market_event: Mapped[MarketEvent] = relationship(back_populates="ai_analyses")
 
 
+class MarketHeartbeat(Base):
+    __tablename__ = "market_heartbeats"
+    __table_args__ = (
+        Index("ix_market_heartbeats_symbol_generated_at", "symbol", "generated_at"),
+        {"comment": "Cached AI market heartbeat updates generated independently of delivery."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal market heartbeat row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol this heartbeat describes."
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True, comment="When this heartbeat generation ran."
+    )
+    raw_input_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
+    )
+    raw_output_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON or text output returned by the LLM."
+    )
+    title: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM heartbeat title for Telegram delivery."
+    )
+    message_body: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="LLM heartbeat body for Telegram delivery."
+    )
+    related_news_ids: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="JSON array of candidate news ids selected by the LLM."
+    )
+    possible_action: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Cautious non-prescriptive possible action from the LLM."
+    )
+    confidence: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="LLM heartbeat confidence: low, medium, or high."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default="completed",
+        index=True,
+        comment="Heartbeat generation state such as completed or failed.",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Failure detail when heartbeat generation fails."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this heartbeat row was created."
+    )
+
+
 async def init_db(database_url: str):
     """Create SQLAlchemy async engine/session factory and run migrations."""
     await run_async_upgrade(database_url)
@@ -2304,6 +2355,57 @@ async def attach_analysis_to_market_event(
     await session.commit()
     await session.refresh(analysis)
     return analysis
+
+
+async def save_market_heartbeat(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    generated_at: datetime,
+    raw_input_json: str | None,
+    raw_output_json: str | None,
+    title: str | None = None,
+    message_body: str | None = None,
+    related_news_ids: str | None = None,
+    possible_action: str | None = None,
+    confidence: str | None = None,
+    status: str = "completed",
+    error_message: str | None = None,
+) -> MarketHeartbeat:
+    heartbeat = MarketHeartbeat(
+        symbol=symbol.upper(),
+        generated_at=generated_at,
+        raw_input_json=raw_input_json,
+        raw_output_json=raw_output_json,
+        title=title,
+        message_body=message_body,
+        related_news_ids=related_news_ids,
+        possible_action=possible_action,
+        confidence=confidence,
+        status=status,
+        error_message=error_message,
+    )
+    session.add(heartbeat)
+    await session.commit()
+    await session.refresh(heartbeat)
+    return heartbeat
+
+
+async def get_latest_market_heartbeat(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    statuses: set[str] | None = None,
+) -> MarketHeartbeat | None:
+    statement = (
+        select(MarketHeartbeat)
+        .where(MarketHeartbeat.symbol == symbol.upper())
+        .order_by(MarketHeartbeat.generated_at.desc(), MarketHeartbeat.id.desc())
+        .limit(1)
+    )
+    if statuses is not None:
+        statement = statement.where(MarketHeartbeat.status.in_(sorted(statuses)))
+    return await session.scalar(statement)
 
 
 async def get_latest_event_analysis_attempt(

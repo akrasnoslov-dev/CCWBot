@@ -4,6 +4,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from time import perf_counter
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -31,6 +32,15 @@ from bot.alerting.event_analysis import (
     EventAnalysisValidationError,
     validate_event_analysis_output,
 )
+from bot.alerting.market_heartbeat import (
+    MARKET_HEARTBEAT_ANALYSIS_TYPE,
+    MARKET_HEARTBEAT_TYPE,
+    MarketHeartbeatDecision,
+    MarketHeartbeatValidationError,
+    sanitize_heartbeat_message_body,
+    sanitize_heartbeat_possible_action,
+    validate_market_heartbeat_output,
+)
 from bot.alerting.notification_decision import (
     NotificationDecision,
     NotificationDirection,
@@ -39,6 +49,7 @@ from bot.alerting.notification_decision import (
     SignalContext,
     TriggerSource,
 )
+from bot.coin_icons import build_coin_icon_prefix, coin_fallback_emoji
 from bot.config import (
     ENABLE_STRONG_SIGNAL_ALERTS,
     ENABLE_WEEKLY_REPORT,
@@ -54,7 +65,9 @@ from bot.db.database import (
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
     get_event_ai_analysis,
+    get_last_sent_alert,
     get_last_sent_alert_at,
+    get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
     get_latest_success_event_ai_analysis,
     get_or_create_market_event,
@@ -67,6 +80,7 @@ from bot.db.database import (
     save_alert,
     save_event_ai_analysis,
     save_event_llm_analysis,
+    save_market_heartbeat,
     save_price_snapshot,
     update_alert_delivery_status,
     update_price_state,
@@ -85,6 +99,7 @@ from bot.services.ai_agent_groq import (
     GROQ_MODEL,
     AISchemaValidationError,
     ask_event_analysis_raw,
+    ask_market_heartbeat_raw,
     build_fallback_alert_message,
     classify_ai_error_reason,
     classify_strong_signal,
@@ -109,10 +124,13 @@ PRODUCT_ALERT_TYPES = {
     NotificationType.CRITICAL_ALERT.value,
 }
 DELIVERABLE_ALERT_TYPES = (
-    {alert_type.value for alert_type in AlertType} | PRODUCT_ALERT_TYPES | {EVENT_ALERT_TYPE}
+    {alert_type.value for alert_type in AlertType}
+    | PRODUCT_ALERT_TYPES
+    | {EVENT_ALERT_TYPE, MARKET_HEARTBEAT_TYPE}
 )
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
+MARKET_HEARTBEAT_JOB_NAME = "market_heartbeat_generation"
 WEEKLY_REPORT_JOB_NAME = "weekly_report"
 STRONG_SIGNAL_JOB_NAME = "strong_signal"
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
@@ -346,12 +364,12 @@ def filter_news_for_symbol(
     symbol: str,
     news_items: list[dict],
     *,
-    max_direct: int = 3,
-    max_market_wide: int = 2,
+    max_direct: int = 5,
+    max_market_wide: int = 3,
 ) -> list[dict]:
     direct: list[dict] = []
     market_wide: list[dict] = []
-    for item in news_items:
+    for item in _sort_news_fresh_first(news_items):
         relevance = classify_news_relevance(symbol, item)
         if relevance == "direct" and len(direct) < max_direct:
             direct.append(item)
@@ -360,8 +378,58 @@ def filter_news_for_symbol(
     return direct + market_wide
 
 
+def _sort_news_fresh_first(news_items: list[dict]) -> list[dict]:
+    return sorted(news_items, key=_news_sort_key, reverse=True)
+
+
+def _news_sort_key(item: dict) -> tuple[int, str]:
+    parsed = _parse_news_datetime(item)
+    timestamp = int(parsed.timestamp()) if parsed else 0
+    return timestamp, make_news_key(item)
+
+
+def _parse_news_datetime(item: dict) -> datetime | None:
+    raw_value = (
+        item.get("published_at_utc")
+        or item.get("published_at")
+        or item.get("published")
+        or item.get("updated")
+        or ""
+    )
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        value = str(raw_value).strip()
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _news_within_hours(news_items: list[dict], *, now: datetime, hours: int) -> list[dict]:
+    cutoff = now.astimezone(timezone.utc) - timedelta(hours=hours)
+    recent = []
+    for item in news_items:
+        published_at = _parse_news_datetime(item)
+        if published_at is None or published_at >= cutoff:
+            recent.append(item)
+    return recent
+
+
 def _build_event_analysis_id(symbol: str) -> str:
     return f"{EVENT_ANALYSIS_TYPE}_{normalize_symbol(symbol)}_{uuid4().hex}"
+
+
+def _build_market_heartbeat_id(symbol: str) -> str:
+    return f"{MARKET_HEARTBEAT_ANALYSIS_TYPE}_{normalize_symbol(symbol)}_{uuid4().hex}"
 
 
 def _json_dumps(payload: dict | list) -> str:
@@ -378,19 +446,29 @@ def _news_id(index: int) -> str:
 
 def _format_candidate_news(news_items: list[dict]) -> list[dict]:
     candidates: list[dict] = []
-    for index, item in enumerate(news_items):
+    seen_ids: set[str] = set()
+    for index, item in enumerate(_sort_news_fresh_first(news_items)):
         title = str(item.get("title") or "").strip()
         if not title:
             continue
+        stable_key = make_news_key(item)
+        news_id = (
+            f"news_{sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
+            if stable_key
+            else _news_id(index)
+        )
+        if news_id in seen_ids:
+            continue
+        seen_ids.add(news_id)
         candidates.append(
             {
-                "news_id": _news_id(index),
+                "news_id": news_id,
                 "source": str(item.get("source") or "").strip() or "Unknown source",
                 "title": title,
-                "published_at_utc": str(
-                    item.get("published_at_utc")
+                "published_at": str(
+                    item.get("published_at")
+                    or item.get("published_at_utc")
                     or item.get("published")
-                    or item.get("published_at")
                     or ""
                 ),
                 "url": str(item.get("url") or item.get("link") or "").strip(),
@@ -414,18 +492,7 @@ def _format_optional_price(value: float | None) -> str:
 
 
 def _coin_fallback_emoji(symbol: str) -> str:
-    return {
-        "btc": "\U0001fa99",
-        "eth": "\U0001f48e",
-        "sol": "\u2600\ufe0f",
-        "xrp": "\U0001f30a",
-        "bnb": "\U0001f7e1",
-        "doge": "\U0001f43e",
-        "ada": "\U0001f535",
-        "ton": "\U0001f4ac",
-        "link": "\U0001f517",
-        "trx": "\U0001f53a",
-    }.get(normalize_symbol(symbol), "\U0001fa99")
+    return coin_fallback_emoji(symbol)
 
 
 def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
@@ -433,6 +500,20 @@ def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
     cleaned = re.sub(r"(?i)\b(buy|sell|liquidate|short|long|move all money)\b", "review", cleaned)
     return cleaned or fallback
+
+
+def _format_related_context(related_news: list[dict], *, empty_text: str) -> str:
+    if not related_news:
+        return empty_text
+    lines = []
+    for item in related_news[:3]:
+        title_text = str(item.get("title") or "").strip()
+        source = str(item.get("source") or "").strip()
+        if not title_text:
+            continue
+        detail = f" - {source}" if source else ""
+        lines.append(f"\u2022 {title_text}{detail}")
+    return "\n".join(lines) if lines else empty_text
 
 
 def _build_event_alert_payload(
@@ -443,28 +524,20 @@ def _build_event_alert_payload(
 ) -> dict:
     symbol = decision.symbol
     market_data = input_payload["market_data"]
+    icon, entities = build_coin_icon_prefix(symbol)
     title = _sanitize_event_text(decision.title, f"{symbol} market event")
     message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
     possible_action = _sanitize_event_text(
         decision.possible_action,
         "Review the situation calmly and avoid impulsive decisions.",
     )
-    if related_news:
-        news_lines = []
-        for item in related_news[:2]:
-            title_text = str(item.get("title") or "").strip()
-            source = str(item.get("source") or "").strip()
-            url = str(item.get("url") or "").strip()
-            detail = f" - {source}" if source else ""
-            if url:
-                detail = f"{detail} - {url}" if detail else f" - {url}"
-            news_lines.append(f"- {title_text}{detail}")
-        related_section = "\n".join(news_lines)
-    else:
-        related_section = "No clearly related news selected."
+    related_section = _format_related_context(
+        related_news,
+        empty_text="No major related news selected.",
+    )
 
     message = (
-        f"{_coin_fallback_emoji(symbol)} \u26a0\ufe0f {symbol} Event Alert\n\n"
+        f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
         f"Price: {_format_optional_price(market_data.get('price_now_usd'))}\n"
         "Since last "
@@ -479,7 +552,7 @@ def _build_event_alert_payload(
         f"{possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": message, "html_text": None}
+    return {"plain_text": message, "html_text": None, "entities": entities}
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
@@ -498,6 +571,91 @@ def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision)
             "confidence": decision.confidence,
         }
     )
+
+
+def _heartbeat_numeric_context(
+    *,
+    symbol: str,
+    current_price: float,
+    change_since_last_message: float | None,
+    change_24h: float,
+    heartbeat_id: int | None,
+    confidence: str | None,
+) -> str:
+    return _json_dumps(
+        {
+            "notification_type": MARKET_HEARTBEAT_TYPE,
+            "symbol": normalize_symbol(symbol).upper(),
+            "current_price": current_price,
+            "change_since_last_market_update_percent": change_since_last_message,
+            "twenty_four_hour_change_percent": change_24h,
+            "market_heartbeat_id": heartbeat_id,
+            "confidence": confidence,
+        }
+    )
+
+
+def _build_market_heartbeat_payload(
+    *,
+    heartbeat,
+    current_price: float,
+    change_since_last_message: float | None,
+    change_24h: float,
+    related_news: list[dict],
+) -> dict:
+    symbol = normalize_symbol(heartbeat.symbol).upper()
+    icon, entities = build_coin_icon_prefix(symbol)
+    title = _sanitize_event_text(heartbeat.title, f"{symbol} market heartbeat")
+    message_body = sanitize_heartbeat_message_body(
+        heartbeat.message_body,
+        f"{symbol} remains under regular monitoring.",
+    )
+    possible_action = sanitize_heartbeat_possible_action(heartbeat.possible_action)
+    related_section = _format_related_context(
+        related_news,
+        empty_text="No major related news selected.",
+    )
+    message = (
+        f"{icon} \U0001f4e1 {symbol} Market Heartbeat\n\n"
+        f"{title}\n\n"
+        f"Price: {_format_optional_price(current_price)}\n"
+        f"Since last {symbol} message: {_format_optional_percent(change_since_last_message)}\n"
+        f"24h change: {_format_optional_percent(change_24h)}\n\n"
+        "Situation:\n"
+        f"{message_body}\n\n"
+        "Related context:\n"
+        f"{related_section}\n\n"
+        "Possible action:\n"
+        f"{possible_action}\n\n"
+        "Not financial advice."
+    )
+    return {"plain_text": message, "html_text": None, "entities": entities}
+
+
+def _heartbeat_related_news(heartbeat) -> list[dict]:
+    try:
+        raw_input = json.loads(str(heartbeat.raw_input_json or "{}"))
+    except json.JSONDecodeError:
+        return []
+    candidate_news = raw_input.get("candidate_news")
+    if not isinstance(candidate_news, list):
+        return []
+    try:
+        related_news_ids = json.loads(str(heartbeat.related_news_ids or "[]"))
+    except json.JSONDecodeError:
+        related_news_ids = []
+    if not isinstance(related_news_ids, list):
+        related_news_ids = []
+    return _related_news_by_id(candidate_news, [str(item) for item in related_news_ids])
+
+
+def _is_fresh_heartbeat(heartbeat, *, now: datetime, max_age_seconds: int = 7200) -> bool:
+    generated_at = getattr(heartbeat, "generated_at", None)
+    if generated_at is None:
+        return False
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=timezone.utc)
+    return (now - generated_at.astimezone(timezone.utc)).total_seconds() <= max_age_seconds
 
 
 def _build_alert_ai_input_hash(
@@ -1415,6 +1573,139 @@ async def _build_event_analysis_input(
     }
 
 
+async def _build_market_heartbeat_input(
+    *,
+    heartbeat_id: str,
+    symbol: str,
+    current_price: float,
+    change_24h: float,
+    now: datetime,
+    candidate_news: list[dict],
+) -> dict:
+    normalized_symbol = normalize_symbol(symbol)
+    snapshots_payload: list[dict] = []
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        since = now - timedelta(hours=6)
+        async with DB_SESSION_LOCAL() as session:
+            snapshots = await get_price_snapshots_since(
+                session,
+                symbol=normalized_symbol,
+                since=since,
+            )
+        snapshots_payload = [
+            {
+                "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
+                "price_usd": float(snapshot.price),
+            }
+            for snapshot in snapshots
+        ]
+    if not snapshots_payload:
+        snapshots_payload = [
+            {
+                "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+                "price_usd": float(current_price),
+            }
+        ]
+    return {
+        "heartbeat_id": heartbeat_id,
+        "symbol": normalized_symbol.upper(),
+        "coin_name": _coin_name(normalized_symbol),
+        "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+        "market_data": {
+            "price_now_usd": float(current_price),
+            "price_snapshots_last_6h": snapshots_payload,
+            "change_24h_percent": float(change_24h),
+        },
+        "candidate_news": candidate_news,
+        "policy": {
+            "language": "English",
+            "purpose": (
+                "A calm periodic market monitoring update when no user-visible event alert "
+                "was recently delivered."
+            ),
+            "financial_advice": "Do not provide personalised financial advice.",
+        },
+    }
+
+
+async def _save_market_heartbeat_attempt(
+    *,
+    input_payload: dict,
+    raw_output_json: str | None,
+    status: str,
+    decision: MarketHeartbeatDecision | None = None,
+    error_message: str | None = None,
+) -> int | None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    async with DB_SESSION_LOCAL() as session:
+        heartbeat = await save_market_heartbeat(
+            session,
+            symbol=str(input_payload["symbol"]),
+            generated_at=datetime.now(timezone.utc),
+            raw_input_json=_json_dumps(input_payload),
+            raw_output_json=raw_output_json,
+            title=decision.title if decision else None,
+            message_body=decision.message_body if decision else None,
+            related_news_ids=_json_dumps(decision.related_news_ids if decision else []),
+            possible_action=decision.possible_action if decision else None,
+            confidence=decision.confidence if decision else None,
+            status=status,
+            error_message=error_message,
+        )
+        return heartbeat.id if heartbeat else None
+
+
+async def _create_market_heartbeat(input_payload: dict) -> int | None:
+    raw_output = None
+    parsed = None
+    try:
+        raw_output, parsed = await ask_market_heartbeat_raw(input_payload)
+    except Exception as error:
+        raw_output = getattr(error, "raw_content", raw_output)
+        heartbeat_id = await _save_market_heartbeat_attempt(
+            input_payload=input_payload,
+            raw_output_json=raw_output,
+            status="failed",
+            error_message=str(error),
+        )
+        logger.warning(
+            "%s market heartbeat generation failed: %s",
+            str(input_payload["symbol"]).upper(),
+            classify_ai_error_reason(error),
+        )
+        return heartbeat_id
+
+    try:
+        decision = validate_market_heartbeat_output(
+            parsed,
+            expected_symbol=str(input_payload["symbol"]),
+            candidate_news_ids={
+                str(item["news_id"]) for item in input_payload.get("candidate_news", [])
+            },
+        )
+    except MarketHeartbeatValidationError as error:
+        heartbeat_id = await _save_market_heartbeat_attempt(
+            input_payload=input_payload,
+            raw_output_json=raw_output,
+            status="failed",
+            error_message=str(error),
+        )
+        logger.warning(
+            "%s market heartbeat schema validation failed: %s",
+            str(input_payload["symbol"]).upper(),
+            error,
+        )
+        return heartbeat_id
+
+    return await _save_market_heartbeat_attempt(
+        input_payload=input_payload,
+        raw_output_json=raw_output,
+        status="completed",
+        decision=decision,
+    )
+
+
 async def _save_event_analysis_attempt(
     *,
     input_payload: dict,
@@ -1989,6 +2280,7 @@ async def _send_alert_to_recipient_once(
     logger.info("alert_delivery_path_used chat_id=%s", recipient.chat_id)
     html_text = alert_payload.get("html_text")
     plain_text = str(alert_payload.get("plain_text", ""))
+    entities = alert_payload.get("entities")
     try:
         if html_text:
             try:
@@ -2003,7 +2295,10 @@ async def _send_alert_to_recipient_once(
                 log(f"HTML alert send failed; falling back to plain text: {error}")
                 await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
         else:
-            await app.bot.send_message(chat_id=recipient.chat_id, text=plain_text)
+            kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+            if entities:
+                kwargs["entities"] = entities
+            await app.bot.send_message(**kwargs)
     except Exception as error:
         return False, str(error), error
     return True, None, None
@@ -2141,9 +2436,11 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
     plain_text = str(alert_payload.get("plain_text", ""))
     sanitized_plain_text = sanitize_alert_message(plain_text)
     html_text = alert_payload.get("html_text")
+    entities = alert_payload.get("entities")
     if sanitized_plain_text != plain_text:
         html_text = None
-    return {"plain_text": sanitized_plain_text, "html_text": html_text}
+        entities = None
+    return {"plain_text": sanitized_plain_text, "html_text": html_text, "entities": entities}
 
 
 async def _record_alert_delivery(
@@ -2369,6 +2666,149 @@ async def _deliver_market_event_alert(
     return delivered
 
 
+async def _get_due_market_heartbeat_recipients(
+    *,
+    symbol: str,
+    now: datetime,
+) -> list[tuple[AlertRecipient, float | None]]:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return []
+    normalized_symbol = normalize_symbol(symbol)
+    due: list[tuple[AlertRecipient, float | None]] = []
+    seen_chat_ids: set[int] = set()
+    async with DB_SESSION_LOCAL() as session:
+        for user in await get_active_users_with_alert_preferences(session):
+            if user.telegram_chat_id is None:
+                continue
+            enabled_by_symbol = _enabled_subscription_by_symbol(user)
+            if not enabled_by_symbol.get(normalized_symbol, False):
+                continue
+            if not is_coin_unlocked_for_user(user, normalized_symbol, now):
+                continue
+            last_sent = await get_last_sent_alert(
+                session,
+                user_id=user.id,
+                symbol=normalized_symbol,
+            )
+            last_sent_at = last_sent.created_at if last_sent else None
+            if not can_deliver_now(user, normalized_symbol, now, last_sent_at):
+                continue
+            chat_id = int(user.telegram_chat_id)
+            if chat_id in seen_chat_ids:
+                continue
+            seen_chat_ids.add(chat_id)
+            last_price = (
+                _numeric_context_value(last_sent.numeric_context, "current_price")
+                if last_sent
+                else None
+            )
+            due.append(
+                (
+                    AlertRecipient(
+                        chat_id=chat_id,
+                        user_id=user.id,
+                        alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                    ),
+                    last_price,
+                )
+            )
+    return due
+
+
+async def _deliver_market_heartbeat(
+    app: Application,
+    *,
+    symbol: str,
+    current_price: float,
+    change_24h: float,
+    now: datetime,
+) -> bool:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return False
+    normalized_symbol = normalize_symbol(symbol)
+    due_recipients = await _get_due_market_heartbeat_recipients(
+        symbol=normalized_symbol,
+        now=now,
+    )
+    if not due_recipients:
+        return False
+
+    async with DB_SESSION_LOCAL() as session:
+        heartbeat = await get_latest_market_heartbeat(
+            session,
+            symbol=normalized_symbol,
+            statuses={"completed"},
+        )
+    if heartbeat is None:
+        logger.info("%s market heartbeat skipped: no cached heartbeat.", normalized_symbol.upper())
+        return False
+    if not _is_fresh_heartbeat(heartbeat, now=now):
+        logger.info(
+            "%s market heartbeat skipped: latest cached heartbeat is stale.",
+            normalized_symbol.upper(),
+        )
+        return False
+
+    related_news = _heartbeat_related_news(heartbeat)
+    delivered = False
+    sent_count = 0
+    for recipient, last_message_price in due_recipients:
+        change_since_last_message = (
+            calculate_price_change_percent(float(last_message_price), current_price)
+            if last_message_price
+            else None
+        )
+        alert_payload = _sanitize_alert_payload(
+            _build_market_heartbeat_payload(
+                heartbeat=heartbeat,
+                current_price=current_price,
+                change_since_last_message=change_since_last_message,
+                change_24h=change_24h,
+                related_news=related_news,
+            )
+        )
+        plain_text = str(alert_payload.get("plain_text", ""))
+        sent, error_message = await _send_alert_to_recipient_with_retry(
+            app,
+            recipient,
+            alert_payload,
+        )
+        numeric_context = _heartbeat_numeric_context(
+            symbol=normalized_symbol,
+            current_price=current_price,
+            change_since_last_message=change_since_last_message,
+            change_24h=change_24h,
+            heartbeat_id=heartbeat.id,
+            confidence=heartbeat.confidence,
+        )
+        await _record_alert_delivery(
+            symbol=normalized_symbol,
+            alert_type=MARKET_HEARTBEAT_TYPE,
+            recipient=recipient,
+            plain_text=plain_text,
+            status="sent" if sent else "failed",
+            market_event_id=None,
+            event_ai_analysis_id=None,
+            error_message=error_message,
+            trigger_reason=heartbeat.title,
+            trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
+            numeric_context=numeric_context,
+            llm_severity=heartbeat.confidence,
+            llm_reasoning_summary=heartbeat.message_body,
+        )
+        if sent:
+            delivered = True
+            sent_count += 1
+        else:
+            await _disable_recipient_if_bot_blocked(recipient, error_message)
+            log(f"Market heartbeat delivery failed for chat {recipient.chat_id}: {error_message}")
+    log(
+        f"{normalized_symbol.upper()} market heartbeat sent to "
+        f"{sent_count}/{len(due_recipients)} due recipients."
+    )
+    return delivered
+
+
 def schedule_automatic_market_check(app: Application, interval_seconds: int) -> None:
     for job in app.job_queue.get_jobs_by_name(AUTOMATIC_MARKET_CHECK_JOB_NAME):
         job.schedule_removal()
@@ -2385,6 +2825,19 @@ def schedule_automatic_market_check(app: Application, interval_seconds: int) -> 
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
     """Compatibility wrapper for older imports; schedules the market-wide check."""
     schedule_automatic_market_check(app, interval_seconds)
+
+
+def schedule_market_heartbeat_generation(app: Application) -> None:
+    for job in app.job_queue.get_jobs_by_name(MARKET_HEARTBEAT_JOB_NAME):
+        job.schedule_removal()
+    app.job_queue.run_repeating(
+        generate_market_heartbeats,
+        interval=3600,
+        first=30,
+        name=MARKET_HEARTBEAT_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
+    )
+    log("Market heartbeat generation scheduled every 3600 seconds.")
 
 
 def schedule_weekly_report(app: Application) -> None:
@@ -2445,6 +2898,63 @@ async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
         log(f"Seen news cleanup removed {deleted_count} rows.")
     except Exception as error:
         log(f"Seen news cleanup error: {error}")
+
+
+async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        logger.info("Market heartbeat generation skipped because database storage is off.")
+        return
+    now = datetime.now(timezone.utc)
+    try:
+        market_data = await get_coin_market_data_batch(list(SUPPORTED_SYMBOLS))
+        if not market_data:
+            log("Market heartbeat generation skipped because CoinGecko returned no usable data.")
+            return
+        raw_news_items = _news_within_hours(
+            await fetch_news_context(limit=30),
+            now=now,
+            hours=12,
+        )
+        generated = 0
+        skipped_fresh = 0
+        for symbol in SUPPORTED_SYMBOLS:
+            normalized_symbol = normalize_symbol(symbol)
+            async with DB_SESSION_LOCAL() as session:
+                latest = await get_latest_market_heartbeat(
+                    session,
+                    symbol=normalized_symbol,
+                    statuses={"completed"},
+                )
+            if latest and _is_fresh_heartbeat(latest, now=now, max_age_seconds=3600):
+                skipped_fresh += 1
+                continue
+            symbol_data = market_data.get(normalized_symbol)
+            if not symbol_data:
+                continue
+            current_price = float(symbol_data["price"])
+            change_24h = float(symbol_data.get("change_24h") or 0.0)
+            candidate_news = _format_candidate_news(
+                filter_news_for_symbol(normalized_symbol, raw_news_items)
+            )
+            input_payload = await _build_market_heartbeat_input(
+                heartbeat_id=_build_market_heartbeat_id(normalized_symbol),
+                symbol=normalized_symbol,
+                current_price=current_price,
+                change_24h=change_24h,
+                now=now,
+                candidate_news=candidate_news,
+            )
+            heartbeat_id = await _create_market_heartbeat(input_payload)
+            if heartbeat_id:
+                generated += 1
+        log(
+            f"Market heartbeat generation completed: generated={generated}, "
+            f"fresh_skipped={skipped_fresh}."
+        )
+    except CoinGeckoRateLimitError:
+        log("CoinGecko returned 429 during market heartbeat generation. Skipping this cycle.")
+    except Exception as error:
+        log(f"Market heartbeat generation error: {error}")
 
 
 def _parse_state_alert_at(value: str | None) -> datetime | None:
@@ -2679,7 +3189,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
 
             delivered = False
             if raw_news_items is None:
-                raw_news_items = await fetch_news_context(limit=12)
+                raw_news_items = await fetch_news_context(limit=20)
             news_items = filter_news_for_symbol(symbol, raw_news_items)
             candidate_news = _format_candidate_news(news_items)
             analysis_id = _build_event_analysis_id(symbol)
@@ -2694,6 +3204,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
             if decision is None:
+                await _deliver_market_heartbeat(
+                    app,
+                    symbol=symbol,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    now=now,
+                )
                 await _save_price_state(
                     symbol=symbol,
                     state=state,
@@ -2709,6 +3226,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     "%s LLM event analysis returned no alert: %s",
                     symbol.upper(),
                     decision.reason_for_no_alert,
+                )
+                await _deliver_market_heartbeat(
+                    app,
+                    symbol=symbol,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    now=now,
                 )
                 await _save_price_state(
                     symbol=symbol,
@@ -2750,6 +3274,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             if not recipients:
                 logger.info("%s event alert suppressed by backend cooldown.", symbol.upper())
+                await _deliver_market_heartbeat(
+                    app,
+                    symbol=symbol,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    now=now,
+                )
                 await _save_price_state(
                     symbol=symbol,
                     state=state,

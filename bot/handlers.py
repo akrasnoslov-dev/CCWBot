@@ -2,7 +2,7 @@ import logging
 import time
 from functools import wraps
 
-from telegram import Update
+from telegram import MessageEntity, Update
 from telegram.ext import ContextTypes
 
 from bot.alerting.event_analysis import (
@@ -420,6 +420,32 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Last checked at: {state.get('last_checked_at')}\n"
         f"Last alert at: {state.get('last_alert_at')}"
     )
+
+
+async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        return
+    message = update.effective_message
+    if message is None:
+        return
+    text = message.text or message.caption or ""
+    entities = list(message.entities or ()) + list(message.caption_entities or ())
+    for entity in entities:
+        if entity.type != MessageEntity.CUSTOM_EMOJI:
+            continue
+        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+        if not custom_emoji_id:
+            continue
+        nearby_start = max(int(entity.offset) - 8, 0)
+        nearby_end = min(int(entity.offset) + int(entity.length) + 8, len(text))
+        logger.info(
+            "custom_emoji_entity type=%s offset=%s length=%s custom_emoji_id=%s nearby_text=%r",
+            entity.type,
+            entity.offset,
+            entity.length,
+            custom_emoji_id,
+            text[nearby_start:nearby_end],
+        )
 
 
 @log_request("callback")

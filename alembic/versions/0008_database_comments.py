@@ -34,6 +34,7 @@ TABLE_COMMENTS = {
     "alerts": "One delivery record per recipient for a market alert.",
     "market_events": "Deduplicated market movements that can trigger many deliveries.",
     "event_ai_analyses": "One reusable AI analysis for a market event and exact input payload.",
+    "market_heartbeats": "Cached AI market heartbeat updates generated independently of delivery.",
 }
 
 COLUMN_COMMENTS = {
@@ -266,6 +267,21 @@ COLUMN_COMMENTS = {
         "error_message": "Failure detail when analysis generation fails.",
         "error_reason": "Normalized LLM failure reason for admin status.",
         "created_at": "When this AI analysis row was created.",
+    },
+    "market_heartbeats": {
+        "id": "Internal market heartbeat row id.",
+        "symbol": "Uppercase coin symbol this heartbeat describes.",
+        "generated_at": "When this heartbeat generation ran.",
+        "raw_input_json": "Raw JSON input payload sent to the LLM.",
+        "raw_output_json": "Raw JSON or text output returned by the LLM.",
+        "title": "LLM heartbeat title for Telegram delivery.",
+        "message_body": "LLM heartbeat body for Telegram delivery.",
+        "related_news_ids": "JSON array of candidate news ids selected by the LLM.",
+        "possible_action": "Cautious non-prescriptive possible action from the LLM.",
+        "confidence": "LLM heartbeat confidence: low, medium, or high.",
+        "status": "Heartbeat generation state such as completed or failed.",
+        "error_message": "Failure detail when heartbeat generation fails.",
+        "created_at": "When this heartbeat row was created.",
     },
 }
 
