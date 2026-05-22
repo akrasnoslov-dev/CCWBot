@@ -1,18 +1,22 @@
 # CCWBot
 
 CCWBot is a Python Telegram crypto watcher bot. It provides manual crypto price checks,
-BTC reports, and automatic Event Alerts decided by Groq-backed LLM market analysis.
+cached market-wide reports, and automatic Event Alerts decided by Groq-backed LLM market
+analysis.
 
 ## Features
 
-- Manual `/price` checks for `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`, `ton`,
-  `link`, and `trx`.
+- Manual `/price` checks for the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
   when a user has not received any visible message for that coin within their alert frequency.
+- Daily and weekly reports are cached market-wide LLM reports across all active symbols.
+  Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
 - If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
+- If report generation fails, the bot stores the failed attempt when DB storage is enabled and
+  shows a temporary unavailable message instead of a fake deterministic report.
 - Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
@@ -26,7 +30,6 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 ## Current Limitations
 
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
-- Separate report redesign is not implemented yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
 - No paid LLM provider abstraction yet; Groq remains the current AI provider.
@@ -68,7 +71,6 @@ Common configuration:
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
 - `GROQ_MARKET_HEARTBEAT_MODEL`
 - `GROQ_REPORT_MODEL`
-- `GROQ_STRONG_SIGNAL_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
 - `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
@@ -77,13 +79,11 @@ Common configuration:
 - `PRICE_CACHE_TTL_SECONDS`
 - `HEALTH_PORT`
 - `ERROR_LOG_FILE`
-- `ENABLE_WEEKLY_REPORT`
-- `WEEKLY_REPORT_DAY`
-- `WEEKLY_REPORT_HOUR`
-- `ENABLE_STRONG_SIGNAL_ALERTS` (legacy; separate strong-signal scheduling is disabled)
-- `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS` (legacy)
-- `STRONG_SIGNAL_COOLDOWN_HOURS` (legacy)
 - `PREMIUM_MONTHLY_STARS`
+
+Legacy `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
+`WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
+and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 
 ## Local Development Setup
 
@@ -384,3 +384,5 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).
+Codex agent routing and review rules are in
+[docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).

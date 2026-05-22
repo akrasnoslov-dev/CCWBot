@@ -1,7 +1,7 @@
 """Centralized configuration loaded from environment variables.
 
 Notes about key IDs:
-- TELEGRAM_CHAT_ID: destination chat for automatic bot alerts/jobs.
+- TELEGRAM_CHAT_ID: fallback destination chat for automatic bot alerts when database storage is off.
 - TELEGRAM_ADMIN_USER_ID: Telegram user allowed to run admin-only commands.
 """
 
@@ -63,7 +63,7 @@ def parse_telegram_user_id(value: int | str | None) -> int | None:
 ENVIRONMENT = _get_environment()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-# Chat ID that receives automatic BTC alerts and scheduled reports.
+# Fallback chat ID for automatic BTC alerts when database storage is off.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # User ID allowed to run admin-only commands (/settings, /status, etc.).
@@ -80,19 +80,6 @@ PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1
 AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 600, minimum=1)
 # Lightweight HTTP health endpoint port.
 HEALTH_PORT = _get_int_env("HEALTH_PORT", 8080, minimum=1)
-
-ENABLE_WEEKLY_REPORT = _get_bool_env("ENABLE_WEEKLY_REPORT", default=False)
-WEEKLY_REPORT_DAY = os.getenv("WEEKLY_REPORT_DAY", "sunday").strip().lower()
-WEEKLY_REPORT_HOUR = _get_int_env("WEEKLY_REPORT_HOUR", 9, minimum=0)
-if WEEKLY_REPORT_HOUR > 23:
-    WEEKLY_REPORT_HOUR = 9
-
-ENABLE_STRONG_SIGNAL_ALERTS = _get_bool_env("ENABLE_STRONG_SIGNAL_ALERTS", default=False)
-STRONG_SIGNAL_CHECK_INTERVAL_SECONDS = _get_int_env(
-    "STRONG_SIGNAL_CHECK_INTERVAL_SECONDS", 1800, minimum=60
-)
-STRONG_SIGNAL_COOLDOWN_HOURS = _get_int_env("STRONG_SIGNAL_COOLDOWN_HOURS", 6, minimum=1)
-
 
 # Optional PostgreSQL connection string. If missing, JSON state remains active.
 DATABASE_URL = os.getenv("DATABASE_URL")

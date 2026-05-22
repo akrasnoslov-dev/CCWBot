@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 from telegram import MessageEntity
 
 from bot.domain.supported_coins import normalize_symbol
@@ -40,6 +42,17 @@ def coin_fallback_emoji(symbol: str) -> str:
 def coin_custom_emoji_id(symbol: str) -> str | None:
     value = COIN_CUSTOM_EMOJI_IDS.get(normalize_symbol(symbol).upper())
     return value.strip() if value and value.strip() else None
+
+
+def build_coin_icon_html(symbol: str) -> str:
+    emoji = coin_fallback_emoji(symbol)
+    custom_emoji_id = coin_custom_emoji_id(symbol)
+    if not custom_emoji_id:
+        return emoji
+    return (
+        f'<tg-emoji emoji-id="{escape(custom_emoji_id, quote=True)}">'
+        f"{escape(emoji)}</tg-emoji>"
+    )
 
 
 def build_coin_icon_prefix(symbol: str) -> tuple[str, list[MessageEntity] | None]:

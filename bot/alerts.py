@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
+from telegram import MessageEntity
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, ContextTypes
@@ -22,9 +23,7 @@ from bot.alerting.alert_severity import (
     AlertSeverity,
     AlertType,
     SeverityEvaluation,
-    SeverityInput,
     alert_title_action,
-    evaluate_alert_severity,
 )
 from bot.alerting.event_analysis import (
     EVENT_ALERT_TYPE,
@@ -50,27 +49,16 @@ from bot.alerting.notification_decision import (
     SignalContext,
     TriggerSource,
 )
-from bot.coin_icons import build_coin_icon_prefix, coin_fallback_emoji
-from bot.config import (
-    ENABLE_STRONG_SIGNAL_ALERTS,
-    ENABLE_WEEKLY_REPORT,
-    SEEN_NEWS_KEEP_LATEST,
-    STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
-    STRONG_SIGNAL_COOLDOWN_HOURS,
-    TELEGRAM_CHAT_ID,
-    WEEKLY_REPORT_DAY,
-    WEEKLY_REPORT_HOUR,
-)
+from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
+from bot.config import SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
 from bot.db.database import (
     attach_analysis_to_market_event,
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
-    get_event_ai_analysis,
     get_last_sent_alert,
     get_last_sent_alert_at,
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
-    get_latest_success_event_ai_analysis,
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
@@ -78,8 +66,8 @@ from bot.db.database import (
     make_news_key,
     mark_user_bot_blocked,
     reserve_alert_delivery,
+    reserve_market_heartbeat_delivery,
     save_alert,
-    save_event_ai_analysis,
     save_event_llm_analysis,
     save_market_heartbeat,
     save_price_snapshot,
@@ -94,25 +82,21 @@ from bot.domain.premium import (
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 from bot.news import fetch_news_context, remember_news_context
-from bot.reports import send_scheduled_weekly_report
+from bot.news_titles import clean_news_title, clean_related_news_text
+from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
-    GROQ_STRONG_SIGNAL_MODEL,
     AISchemaValidationError,
     ask_event_analysis_raw,
     ask_market_heartbeat_raw,
-    build_fallback_alert_message,
     classify_ai_error_reason,
-    classify_strong_signal,
-    create_ai_alert_payload,
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
 from bot.services.price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
-    get_btc_market_data,
     get_coin_market_data_batch,
 )
 from bot.settings import get_db_alert_settings, get_state_alert_settings
@@ -134,20 +118,11 @@ DELIVERABLE_ALERT_TYPES = (
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
 MARKET_HEARTBEAT_JOB_NAME = "market_heartbeat_generation"
-WEEKLY_REPORT_JOB_NAME = "weekly_report"
-STRONG_SIGNAL_JOB_NAME = "strong_signal"
+DAILY_REPORT_CACHE_JOB_NAME = "daily_report_cache"
+WEEKLY_REPORT_CACHE_JOB_NAME = "weekly_report_cache"
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
 TELEGRAM_DELIVERY_MAX_ATTEMPTS = 3
 TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS = (30, 120)
-WEEKDAY_MAP = {
-    "monday": 0,
-    "tuesday": 1,
-    "wednesday": 2,
-    "thursday": 3,
-    "friday": 4,
-    "saturday": 5,
-    "sunday": 6,
-}
 
 
 @dataclass(frozen=True)
@@ -292,33 +267,6 @@ def _build_price_movement_event_key(
     return f"{normalized_symbol}:{event_type}:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
 
 
-def _build_strong_signal_event_key(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> str:
-    key_parts = {
-        "symbol": "BTC",
-        "event_type": "strong_signal",
-        "price": _stable_float(price, 2),
-        "change_24h": _stable_float(change_24h, 4),
-        "change_7d": _stable_float(change_7d, 4),
-        "news": [
-            {
-                "key": make_news_key(item),
-                "title": str(item.get("title") or ""),
-                "source": str(item.get("source") or ""),
-                "link": _stable_news_link(str(item.get("link") or "")),
-            }
-            for item in news_items
-        ],
-    }
-    encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
-    return f"btc:strong_signal:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
-
-
 def _coin_name(symbol: str) -> str:
     return str(SUPPORTED_COINS[normalize_symbol(symbol)]["name"])
 
@@ -443,29 +391,65 @@ def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
 
 
+def _event_instance_bucket(timestamp_value: object, *, bucket_minutes: int = 60) -> str:
+    if isinstance(timestamp_value, datetime):
+        timestamp = timestamp_value
+    else:
+        try:
+            timestamp = datetime.fromisoformat(str(timestamp_value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            timestamp = datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    timestamp = timestamp.astimezone(timezone.utc)
+    bucket_seconds = bucket_minutes * 60
+    bucket_epoch = int(timestamp.timestamp()) // bucket_seconds * bucket_seconds
+    return datetime.fromtimestamp(bucket_epoch, tz=timezone.utc).isoformat()
+
+
+def _build_event_instance_key(
+    *,
+    symbol: str,
+    event_key: str,
+    timestamp_value: object,
+    related_news_ids: list[str],
+    input_hash: str,
+) -> str:
+    news_or_input = (
+        ",".join(sorted(str(news_id) for news_id in related_news_ids))
+        if related_news_ids
+        else input_hash
+    )
+    raw_key = "|".join(
+        (
+            normalize_symbol(symbol),
+            event_key,
+            _event_instance_bucket(timestamp_value),
+            news_or_input,
+        )
+    )
+    return sha256(raw_key.encode("utf-8")).hexdigest()
+
+
 def _news_id(index: int) -> str:
-    return f"news_{index + 1}"
+    return f"n{index + 1}"
 
 
 def _format_candidate_news(news_items: list[dict]) -> list[dict]:
     candidates: list[dict] = []
-    seen_ids: set[str] = set()
-    for index, item in enumerate(_sort_news_fresh_first(news_items)):
+    seen_keys: set[str] = set()
+    for item in _sort_news_fresh_first(news_items):
         title = str(item.get("title") or "").strip()
         if not title:
             continue
         stable_key = make_news_key(item)
-        news_id = (
-            f"news_{sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
-            if stable_key
-            else _news_id(index)
-        )
-        if news_id in seen_ids:
+        dedupe_key = stable_key or title.lower()
+        if dedupe_key in seen_keys:
             continue
-        seen_ids.add(news_id)
+        seen_keys.add(dedupe_key)
         candidates.append(
             {
-                "news_id": news_id,
+                "news_id": _news_id(len(candidates)),
                 "source": str(item.get("source") or "").strip() or "Unknown source",
                 "title": title,
                 "published_at": str(
@@ -582,9 +566,30 @@ def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
     return eligible[-1] if eligible else None
 
 
-def _related_news_by_id(candidate_news: list[dict], related_news_ids: list[str]) -> list[dict]:
+def _related_news_by_id(
+    candidate_news: list[dict],
+    related_news_ids: list[str],
+    *,
+    symbol: str | None = None,
+    context: str = "related news",
+) -> list[dict]:
     by_id = {str(item.get("news_id")): item for item in candidate_news}
-    return [by_id[news_id] for news_id in related_news_ids if news_id in by_id]
+    mapped_items: list[dict] = []
+    missing_ids: list[str] = []
+    for news_id in related_news_ids:
+        item = by_id.get(str(news_id))
+        if item is None:
+            missing_ids.append(str(news_id))
+            continue
+        mapped_items.append(item)
+    if missing_ids:
+        logger.warning(
+            "%s selected related_news_ids could not be mapped: symbol=%s missing_ids=%s",
+            context,
+            normalize_symbol(symbol).upper() if symbol else "unknown",
+            missing_ids[:5],
+        )
+    return mapped_items
 
 
 def _format_optional_percent(value: float | None) -> str:
@@ -602,8 +607,21 @@ def _coin_fallback_emoji(symbol: str) -> str:
 def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
     cleaned = " ".join(str(value or "").split()).strip()
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
-    cleaned = re.sub(r"(?i)\b(buy|sell|liquidate|short|long|move all money)\b", "review", cleaned)
     return cleaned or fallback
+
+
+def _utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _safe_telegram_link_url(value: str | None) -> str | None:
+    url = str(value or "").strip()
+    if not url:
+        return None
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return None
+    return url
 
 
 def _format_related_context(related_news: list[dict], *, empty_text: str) -> str:
@@ -611,13 +629,73 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
         return empty_text
     lines = []
     for item in related_news[:3]:
-        title_text = str(item.get("title") or "").strip()
+        title_text = clean_news_title(str(item.get("title") or ""))
         source = str(item.get("source") or "").strip()
         if not title_text:
             continue
-        detail = f" - {source}" if source else ""
-        lines.append(f"\u2022 {title_text}{detail}")
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+        lines.append(f"\u2022 {display_text}")
     return "\n".join(lines) if lines else empty_text
+
+
+def _format_event_related_context(
+    related_news: list[dict], *, empty_text: str
+) -> tuple[str, list[dict], str | None]:
+    if not related_news:
+        return empty_text, [], None
+
+    lines: list[str] = []
+    html_lines: list[str] = []
+    link_entities: list[dict] = []
+    cursor = 0
+    missing_url_count = 0
+    for item in related_news[:3]:
+        title_text = clean_news_title(str(item.get("title") or ""))
+        source = str(item.get("source") or "").strip()
+        url = _safe_telegram_link_url(str(item.get("url") or item.get("link") or ""))
+        if not title_text:
+            continue
+
+        link_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not link_text:
+            continue
+        line = f"\u2022 {link_text}"
+        escaped_link_text = escape(link_text)
+        if lines:
+            cursor += 1
+        if url:
+            link_entities.append(
+                {
+                    "offset": cursor + _utf16_length("\u2022 "),
+                    "length": _utf16_length(link_text),
+                    "url": url,
+                }
+            )
+            html_lines.append(
+                f'\u2022 <a href="{escape(url, quote=True)}">{escaped_link_text}</a>'
+            )
+        else:
+            missing_url_count += 1
+            html_lines.append(f"\u2022 {escaped_link_text}")
+        lines.append(line)
+        cursor += _utf16_length(line)
+
+    if missing_url_count:
+        logger.warning(
+            "event related news selected without valid article URL: missing_url_count=%s",
+            missing_url_count,
+        )
+    if not lines:
+        return empty_text, [], None
+    return "\n".join(lines), link_entities, "\n".join(html_lines)
 
 
 def _format_market_heartbeat_related_context(
@@ -628,34 +706,36 @@ def _format_market_heartbeat_related_context(
 
     plain_lines: list[str] = []
     html_lines: list[str] = []
-    has_link = False
     for item in related_news[:3]:
-        title_text = str(item.get("title") or "").strip()
+        title_text = clean_news_title(str(item.get("title") or ""))
         source = str(item.get("source") or "").strip()
-        url = str(item.get("url") or "").strip()
+        url = _safe_telegram_link_url(str(item.get("url") or item.get("link") or ""))
         if not title_text:
             continue
 
-        detail = f" - {source}" if source else ""
-        plain_lines.append(f"\u2022 {title_text}{detail}")
-        escaped_source = escape(source)
-        html_detail = f" - {escaped_source}" if escaped_source else ""
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+
+        plain_lines.append(f"\u2022 {display_text}")
         if url:
-            has_link = True
             html_lines.append(
-                f'\u2022 <a href="{escape(url, quote=True)}">{escape(title_text)}</a>{html_detail}'
+                f'\u2022 <a href="{escape(url, quote=True)}">{escape(display_text)}</a>'
             )
         else:
-            html_lines.append(f"\u2022 {escape(title_text)}{html_detail}")
+            html_lines.append(f"\u2022 {escape(display_text)}")
 
     if not plain_lines:
         return empty_text, None
-    return "\n".join(plain_lines), "\n".join(html_lines) if has_link else None
+    return "\n".join(plain_lines), "\n".join(html_lines)
 
 
 def _build_market_heartbeat_html_message(
     *,
-    icon: str,
+    icon_html: str,
     symbol: str,
     title: str,
     price_text: str,
@@ -666,7 +746,7 @@ def _build_market_heartbeat_html_message(
     possible_action: str,
 ) -> str:
     return (
-        f"{escape(icon)} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
+        f"{icon_html} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
         f"{escape(title)}\n\n"
         f"Price: {escape(price_text)}\n"
         f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
@@ -681,6 +761,42 @@ def _build_market_heartbeat_html_message(
     )
 
 
+def _build_event_alert_html_message(
+    *,
+    icon_html: str,
+    symbol: str,
+    title: str,
+    price_text: str,
+    since_last_text: str,
+    change_24h_text: str,
+    message_body: str,
+    related_section_html: str,
+    possible_action: str,
+) -> str:
+    return (
+        f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
+        f"{escape(title)}\n\n"
+        f"Price: {escape(price_text)}\n"
+        f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
+        f"24h change: {escape(change_24h_text)}\n\n"
+        "Situation:\n"
+        f"{escape(message_body)}\n\n"
+        "Related context:\n"
+        f"{related_section_html}\n\n"
+        "Possible action:\n"
+        f"{escape(possible_action)}\n\n"
+        "Not financial advice."
+    )
+
+
+def _build_html_message_from_plain_with_icon(
+    *, plain_text: str, plain_icon: str, icon_html: str
+) -> str:
+    if plain_text.startswith(plain_icon):
+        return f"{icon_html}{escape(plain_text[len(plain_icon) :])}"
+    return escape(plain_text)
+
+
 def _build_event_alert_payload(
     *,
     decision: EventAnalysisDecision,
@@ -690,13 +806,14 @@ def _build_event_alert_payload(
     symbol = decision.symbol
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     icon, entities = build_coin_icon_prefix(symbol)
+    icon_html = build_coin_icon_html(symbol)
     title = _sanitize_event_text(decision.title, f"{symbol} market event")
     message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
     possible_action = _sanitize_event_text(
         decision.possible_action,
         "Review the situation calmly and avoid impulsive decisions.",
     )
-    related_section = _format_related_context(
+    related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
         empty_text="No major related news selected.",
     )
@@ -706,24 +823,54 @@ def _build_event_alert_payload(
         market_data.get("change_since_last_user_visible_message_percent"),
     )
     change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
+    price_text = _format_optional_price(price)
+    since_last_text = _format_optional_percent(change_since_message)
+    change_24h_text = _format_optional_percent(change_24h)
 
-    message = (
+    before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
-        f"Price: {_format_optional_price(price)}\n"
+        f"Price: {price_text}\n"
         "Since last "
         f"{symbol} message: "
-        f"{_format_optional_percent(change_since_message)}\n"
-        f"24h change: {_format_optional_percent(change_24h)}\n\n"
+        f"{since_last_text}\n"
+        f"24h change: {change_24h_text}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
-        f"{related_section}\n\n"
+    )
+    after_related = (
+        "\n\n"
         "Possible action:\n"
         f"{possible_action}\n\n"
         "Not financial advice."
     )
-    return {"plain_text": message, "html_text": None, "entities": entities}
+    message = f"{before_related}{related_section}{after_related}"
+    all_entities = list(entities or [])
+    related_offset = _utf16_length(before_related)
+    for entity in related_link_entities:
+        all_entities.append(
+            MessageEntity(
+                type=MessageEntity.TEXT_LINK,
+                offset=related_offset + int(entity["offset"]),
+                length=int(entity["length"]),
+                url=str(entity["url"]),
+            )
+        )
+    html_message = None
+    if icon_html != icon:
+        html_message = _build_event_alert_html_message(
+            icon_html=icon_html,
+            symbol=symbol,
+            title=title,
+            price_text=price_text,
+            since_last_text=since_last_text,
+            change_24h_text=change_24h_text,
+            message_body=message_body,
+            related_section_html=related_section_html or escape(related_section),
+            possible_action=possible_action,
+        )
+    return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
@@ -779,6 +926,7 @@ def _build_market_heartbeat_payload(
 ) -> dict:
     symbol = normalize_symbol(heartbeat.symbol).upper()
     icon, entities = build_coin_icon_prefix(symbol)
+    icon_html = build_coin_icon_html(symbol)
     title = _sanitize_event_text(heartbeat.title, f"{symbol} market heartbeat")
     message_body = sanitize_heartbeat_message_body(
         heartbeat.message_body,
@@ -807,16 +955,16 @@ def _build_market_heartbeat_payload(
         "Not financial advice."
     )
     html_message = None
-    if related_section_html:
+    if icon_html != icon or related_section_html:
         html_message = _build_market_heartbeat_html_message(
-            icon=icon,
+            icon_html=icon_html,
             symbol=symbol,
             title=title,
             price_text=price_text,
             since_last_text=since_last_text,
             change_24h_text=change_24h_text,
             message_body=message_body,
-            related_section_html=related_section_html,
+            related_section_html=related_section_html or escape(related_section),
             possible_action=possible_action,
         )
     return {"plain_text": message, "html_text": html_message, "entities": entities}
@@ -886,33 +1034,6 @@ def _build_alert_ai_input_hash(
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _build_strong_signal_ai_input_hash(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> str:
-    payload = {
-        "symbol": "BTC",
-        "event_type": "strong_signal",
-        "price": _stable_float(price, 2),
-        "change_24h": _stable_float(change_24h, 4),
-        "change_7d": _stable_float(change_7d, 4),
-        "news": [
-            {
-                "key": make_news_key(item),
-                "title": str(item.get("title") or ""),
-                "source": str(item.get("source") or ""),
-                "link": _stable_news_link(str(item.get("link") or "")),
-            }
-            for item in news_items
-        ],
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
 def _enabled_subscription_by_symbol(user) -> dict[str, bool]:
     return {
         normalize_symbol(row.symbol): bool(row.is_enabled)
@@ -951,9 +1072,6 @@ async def get_alert_recipients(
     normalized_symbol = normalize_symbol(symbol)
     if event_type not in DELIVERABLE_ALERT_TYPES or normalized_symbol not in SUPPORTED_COINS:
         return []
-    if event_type == "strong_signal" and normalized_symbol != DEFAULT_SYMBOL:
-        return []
-
     if DB_ENABLED and DB_SESSION_LOCAL:
         now = now or datetime.now(timezone.utc)
         recipients = []
@@ -990,126 +1108,6 @@ async def get_alert_recipients(
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
-
-
-async def _get_or_create_strong_signal_market_event(
-    *,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> tuple[int | None, str | None]:
-    if not DB_ENABLED or not DB_SESSION_LOCAL:
-        return None, None
-
-    event_key = _build_strong_signal_event_key(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-    async with DB_SESSION_LOCAL() as session:
-        market_event = await get_or_create_market_event(
-            session,
-            symbol=DEFAULT_SYMBOL,
-            event_type="strong_signal",
-            event_key=event_key,
-            price=price,
-            previous_price=None,
-            price_change_percent=change_24h,
-            last_24h_change=change_24h,
-            last_7d_change=change_7d,
-            detected_at=datetime.now(timezone.utc),
-        )
-        return market_event.id, event_key
-
-
-async def _get_or_create_strong_signal_ai_analysis(
-    *,
-    market_event_id: int | None,
-    price: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-) -> tuple[dict | None, int | None, str | None, str | None]:
-    input_hash = _build_strong_signal_ai_input_hash(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            saved_analysis = await get_latest_success_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-            )
-            if saved_analysis and saved_analysis.plain_text:
-                log("Reusing saved AI analysis for BTC strong-signal event.")
-                return (
-                    {
-                        "plain_text": saved_analysis.plain_text,
-                        "html_text": saved_analysis.html_text,
-                    },
-                    saved_analysis.id,
-                    "medium",
-                    "unclear",
-                )
-            existing_analysis = await get_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                input_hash=input_hash,
-            )
-            if (
-                existing_analysis
-                and existing_analysis.status == "success"
-                and existing_analysis.plain_text
-            ):
-                log("Reusing saved AI analysis for BTC strong-signal event.")
-                return (
-                    {
-                        "plain_text": existing_analysis.plain_text,
-                        "html_text": existing_analysis.html_text,
-                    },
-                    existing_analysis.id,
-                    "medium",
-                    "unclear",
-                )
-
-    result = await classify_strong_signal(price, change_24h, change_7d, news_items)
-    if not result:
-        return None, None, None, None
-
-    strength = str(result.get("signal_strength", "")).lower()
-    if result.get("should_alert") is not True or strength not in {"medium", "strong"}:
-        return None, None, strength, str(result.get("direction", "unclear")).lower()
-
-    message = sanitize_alert_message(str(result.get("telegram_message") or ""))
-    if not message:
-        return None, None, strength, str(result.get("direction", "unclear")).lower()
-
-    event_ai_analysis_id = None
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            analysis = await save_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                provider="groq",
-                model=GROQ_STRONG_SIGNAL_MODEL,
-                input_hash=input_hash,
-                analysis_text=message,
-                plain_text=message,
-                html_text=None,
-                status="success",
-            )
-            event_ai_analysis_id = analysis.id if analysis else None
-    return (
-        {"plain_text": message, "html_text": None},
-        event_ai_analysis_id,
-        strength,
-        str(result.get("direction", "unclear")).lower(),
-    )
 
 
 async def _get_or_create_price_movement_market_event(
@@ -1150,213 +1148,6 @@ async def _get_or_create_price_movement_market_event(
             detected_at=datetime.now(timezone.utc),
         )
         return market_event.id, event_key
-
-
-async def _get_or_create_event_ai_analysis(
-    *,
-    symbol: str,
-    event_type: str = "price_movement",
-    market_event_id: int | None,
-    previous_price: float,
-    current_price: float,
-    price_change_percent: float,
-    change_24h: float,
-    change_7d: float | None,
-    news_items: list[dict],
-    alert_settings: dict,
-    alert_threshold_percent: float | None = None,
-    window_seconds: int | None = None,
-    peak_movement_percent: float | None = None,
-    alert_type_label_text: str | None = None,
-    force_fallback: bool = False,
-) -> tuple[dict, int | None]:
-    """Create or reuse the single AI analysis for one market event.
-
-    The LLM call stays here, before recipient delivery, so one market event
-    produces one analysis that can be sent to many active users.
-    """
-    input_hash = _build_alert_ai_input_hash(
-        symbol=symbol,
-        event_type=event_type,
-        previous_price=previous_price,
-        current_price=current_price,
-        price_change_percent=price_change_percent,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-        alert_threshold_percent=alert_threshold_percent
-        or alert_settings["price_move_alert_percent"],
-        check_interval_seconds=window_seconds
-        or alert_settings["automatic_check_interval_seconds"],
-    )
-
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            saved_analysis = await get_latest_success_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-            )
-            if saved_analysis and saved_analysis.plain_text:
-                display_symbol = normalize_symbol(symbol).upper()
-                log(f"Reusing saved AI analysis for {display_symbol} market event.")
-                return (
-                    {
-                        "plain_text": saved_analysis.plain_text,
-                        "html_text": saved_analysis.html_text,
-                    },
-                    saved_analysis.id,
-                )
-            existing_analysis = await get_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                input_hash=input_hash,
-            )
-            if (
-                existing_analysis
-                and existing_analysis.status in {"success", "completed"}
-                and existing_analysis.plain_text
-            ):
-                display_symbol = normalize_symbol(symbol).upper()
-                log(f"Reusing saved AI analysis for {display_symbol} market event.")
-                return (
-                    {
-                        "plain_text": existing_analysis.plain_text,
-                        "html_text": existing_analysis.html_text,
-                    },
-                    existing_analysis.id,
-                )
-
-    provider = "groq"
-    model = GROQ_EVENT_ANALYSIS_MODEL
-    error_message = None
-    if force_fallback:
-        provider = "fallback"
-        model = "deterministic"
-        error_message = "AI disabled for this automatic check cycle."
-        plain_message = build_fallback_alert_message(
-            previous_price=previous_price,
-            current_price=current_price,
-            price_change_percent=price_change_percent,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            alert_threshold_percent=alert_settings["price_move_alert_percent"],
-            check_interval_seconds=window_seconds
-            or alert_settings["automatic_check_interval_seconds"],
-            symbol=normalize_symbol(symbol).upper(),
-            coin_name=_coin_name(symbol),
-            alert_type_label=alert_type_label_text or "basic price",
-            window_seconds=window_seconds,
-            peak_movement_percent=peak_movement_percent,
-        )
-        alert_payload = {"plain_text": plain_message, "html_text": None}
-    else:
-        try:
-            alert_payload = await create_ai_alert_payload(
-                previous_price,
-                current_price,
-                price_change_percent,
-                change_24h,
-                change_7d,
-                news_items,
-                alert_threshold_percent=alert_threshold_percent
-                or alert_settings["price_move_alert_percent"],
-                check_interval_seconds=window_seconds
-                or alert_settings["automatic_check_interval_seconds"],
-                symbol=normalize_symbol(symbol).upper(),
-                coin_name=_coin_name(symbol),
-            )
-        except Exception as error:
-            log(f"AI alert generation failed: {error}")
-            provider = "fallback"
-            model = "deterministic"
-            error_message = str(error)
-            plain_message = build_fallback_alert_message(
-                previous_price=previous_price,
-                current_price=current_price,
-                price_change_percent=price_change_percent,
-                change_24h=change_24h,
-                change_7d=change_7d,
-                alert_threshold_percent=alert_settings["price_move_alert_percent"],
-                check_interval_seconds=window_seconds
-                or alert_settings["automatic_check_interval_seconds"],
-                symbol=normalize_symbol(symbol).upper(),
-                coin_name=_coin_name(symbol),
-                alert_type_label=alert_type_label_text or "basic price",
-                window_seconds=window_seconds,
-                peak_movement_percent=peak_movement_percent,
-            )
-            alert_payload = {"plain_text": plain_message, "html_text": None}
-    if alert_payload.get("rate_limited"):
-        provider = "fallback"
-        model = "deterministic"
-        error_message = "Groq rate limit reached."
-
-    event_ai_analysis_id = None
-    if DB_ENABLED and DB_SESSION_LOCAL and market_event_id:
-        async with DB_SESSION_LOCAL() as session:
-            analysis = await save_event_ai_analysis(
-                session,
-                market_event_id=market_event_id,
-                provider=provider,
-                model=model,
-                input_hash=input_hash,
-                analysis_text=str(alert_payload.get("plain_text", "")),
-                plain_text=str(alert_payload.get("plain_text", "")),
-                html_text=alert_payload.get("html_text"),
-                status="success",
-                error_message=error_message,
-            )
-            event_ai_analysis_id = analysis.id if analysis else None
-    return alert_payload, event_ai_analysis_id
-
-
-async def _save_product_notification_analysis(
-    *,
-    market_event_id: int | None,
-    alert_payload: dict,
-    signal_context: SignalContext,
-    decision: NotificationDecision,
-) -> int | None:
-    if not DB_ENABLED or not DB_SESSION_LOCAL or not market_event_id:
-        return None
-    input_payload = {
-        "symbol": normalize_symbol(signal_context.symbol).upper(),
-        "notification_type": decision.notification_type.value,
-        "severity": decision.severity.value,
-        "direction": decision.direction.value,
-        "trigger_source": decision.trigger_source.value if decision.trigger_source else None,
-        "current_price": _stable_float(signal_context.current_price, 2),
-        "latest_5m_change_percent": _stable_float(
-            signal_context.latest_5m_change_percent, 4
-        ),
-        "change_since_last_market_update_percent": _stable_float(
-            signal_context.change_since_last_market_update_percent, 4
-        ),
-        "user_period_change_percent": _stable_float(
-            signal_context.user_period_change_percent, 4
-        ),
-        "twenty_four_hour_change_percent": _stable_float(
-            signal_context.twenty_four_hour_change_percent, 4
-        ),
-        "news": [make_news_key(item) for item in signal_context.relevant_news_items],
-        "news_candidates": signal_context.news_candidates,
-    }
-    input_hash = sha256(
-        json.dumps(input_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    async with DB_SESSION_LOCAL() as session:
-        analysis = await save_event_ai_analysis(
-            session,
-            market_event_id=market_event_id,
-            provider="deterministic",
-            model="product-notification-v1",
-            input_hash=input_hash,
-            analysis_text=str(alert_payload.get("plain_text", "")),
-            plain_text=str(alert_payload.get("plain_text", "")),
-            html_text=None,
-            status="success",
-        )
-        return analysis.id if analysis else None
 
 
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
@@ -1755,7 +1546,7 @@ async def _build_event_analysis_input(
         "news": candidate_news,
         "policy": {
             "language": "English",
-            "audience": "General retail crypto holder; no personalised financial advice.",
+            "audience": "General retail crypto holder.",
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         },
     }
@@ -1807,7 +1598,6 @@ async def _build_market_heartbeat_input(
         "policy": {
             "language": "English",
             "purpose": "Calm Market Heartbeat, not an Event Alert.",
-            "financial_advice": "No personalised financial advice or portfolio instructions.",
         },
     }
 
@@ -2049,12 +1839,20 @@ async def _get_or_create_event_alert_market_event(
         previous_price = current_price / (1 + (price_change_percent / 100.0))
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return None, decision.event_key
+    event_instance_key = _build_event_instance_key(
+        symbol=decision.symbol,
+        event_key=decision.event_key,
+        timestamp_value=input_payload.get("timestamp_utc"),
+        related_news_ids=decision.related_news_ids,
+        input_hash=_event_input_hash(input_payload),
+    )
     async with DB_SESSION_LOCAL() as session:
         event = await get_or_create_market_event(
             session,
             symbol=decision.symbol,
             event_type=EVENT_ALERT_TYPE,
             event_key=decision.event_key,
+            event_instance_key=event_instance_key,
             price=current_price,
             previous_price=previous_price,
             price_change_percent=price_change_percent,
@@ -2230,6 +2028,7 @@ def _build_product_notification_payload(
 ) -> dict:
     symbol = normalize_symbol(context.symbol).upper()
     coin_icon, entities = build_coin_icon_prefix(symbol)
+    coin_icon_html = build_coin_icon_html(symbol)
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
     alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
@@ -2248,13 +2047,19 @@ def _build_product_notification_payload(
     if visible_news and _is_user_visible_news(context.news_relevance_score):
         lines = []
         for item in visible_news[:2]:
-            title = str(item.get("title") or "").strip()
+            title = clean_news_title(str(item.get("title") or ""))
             source = str(item.get("source") or "").strip()
             link = str(item.get("url") or item.get("link") or "").strip()
             if not title:
                 continue
             detail = f" - {source}" if source else ""
-            lines.append(f"- {title}{detail}")
+            display_text = clean_related_news_text(
+                f"{title}{detail}",
+                source=source,
+            )
+            if not display_text:
+                continue
+            lines.append(f"- {display_text}")
             if link:
                 lines.append(f"  {link}")
         if lines:
@@ -2294,7 +2099,14 @@ def _build_product_notification_payload(
         "Not financial advice."
     )
     plain_text = sanitize_alert_message(message)
-    return {"plain_text": plain_text, "html_text": None, "entities": entities}
+    html_text = None
+    if coin_icon_html != coin_icon:
+        html_text = _build_html_message_from_plain_with_icon(
+            plain_text=plain_text,
+            plain_icon=coin_icon,
+            icon_html=coin_icon_html,
+        )
+    return {"plain_text": plain_text, "html_text": html_text, "entities": entities}
 
 
 def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
@@ -2714,7 +2526,8 @@ async def _record_alert_delivery(
     plain_text: str,
     status: str,
     market_event_id: int | None,
-    event_ai_analysis_id: int | None,
+    market_heartbeat_id: int | None = None,
+    event_ai_analysis_id: int | None = None,
     error_message: str | None = None,
     trigger_reason: str | None = None,
     trigger_source: str | None = None,
@@ -2735,6 +2548,7 @@ async def _record_alert_delivery(
             message=plain_text,
             sent_to_chat_id=recipient.chat_id,
             market_event_id=market_event_id,
+            market_heartbeat_id=market_heartbeat_id,
             event_ai_analysis_id=event_ai_analysis_id,
             user_id=recipient.user_id,
             status=status,
@@ -3031,11 +2845,6 @@ async def _deliver_market_heartbeat(
             )
         )
         plain_text = str(alert_payload.get("plain_text", ""))
-        sent, error_message = await _send_alert_to_recipient_with_retry(
-            app,
-            recipient,
-            alert_payload,
-        )
         numeric_context = _heartbeat_numeric_context(
             symbol=normalized_symbol,
             current_price=current_price,
@@ -3044,21 +2853,66 @@ async def _deliver_market_heartbeat(
             heartbeat_id=heartbeat.id,
             confidence=heartbeat.confidence,
         )
-        await _record_alert_delivery(
-            symbol=normalized_symbol,
-            alert_type=MARKET_HEARTBEAT_TYPE,
-            recipient=recipient,
-            plain_text=plain_text,
-            status="sent" if sent else "failed",
-            market_event_id=None,
-            event_ai_analysis_id=None,
-            error_message=error_message,
-            trigger_reason=heartbeat.title,
-            trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
-            numeric_context=numeric_context,
-            llm_severity=heartbeat.confidence,
-            llm_reasoning_summary=heartbeat.message_body,
+        alert_id = None
+        if recipient.user_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                alert_row, should_send = await reserve_market_heartbeat_delivery(
+                    session,
+                    user_id=recipient.user_id,
+                    symbol=normalized_symbol,
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    sent_to_chat_id=recipient.chat_id,
+                    market_heartbeat_id=heartbeat.id,
+                    message=plain_text,
+                    trigger_reason=heartbeat.title,
+                    trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
+                    numeric_context=numeric_context,
+                    llm_severity=heartbeat.confidence,
+                    llm_reasoning_summary=heartbeat.message_body,
+                )
+                alert_id = alert_row.id
+            if not should_send:
+                continue
+        sent, error_message = await _send_alert_to_recipient_with_retry(
+            app,
+            recipient,
+            alert_payload,
+            alert_id=alert_id,
         )
+        if alert_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                await update_alert_delivery_status(
+                    session,
+                    alert_id=alert_id,
+                    status="sent" if sent else "failed",
+                    error_message=error_message,
+                    retry_count=(
+                        None
+                        if sent
+                        else TELEGRAM_DELIVERY_MAX_ATTEMPTS
+                        if _is_transient_telegram_delivery_error(error_message)
+                        else 1
+                    ),
+                    last_error=error_message,
+                    final_failed_at=None if sent else datetime.now(timezone.utc),
+                )
+        else:
+            await _record_alert_delivery(
+                symbol=normalized_symbol,
+                alert_type=MARKET_HEARTBEAT_TYPE,
+                recipient=recipient,
+                plain_text=plain_text,
+                status="sent" if sent else "failed",
+                market_event_id=None,
+                market_heartbeat_id=heartbeat.id,
+                event_ai_analysis_id=None,
+                error_message=error_message,
+                trigger_reason=heartbeat.title,
+                trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
+                numeric_context=numeric_context,
+                llm_severity=heartbeat.confidence,
+                llm_reasoning_summary=heartbeat.message_body,
+            )
         if sent:
             delivered = True
             sent_count += 1
@@ -3103,38 +2957,26 @@ def schedule_market_heartbeat_generation(app: Application) -> None:
     log("Market heartbeat generation scheduled every 3600 seconds.")
 
 
-def schedule_weekly_report(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(WEEKLY_REPORT_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_WEEKLY_REPORT:
-        log("Weekly report scheduling is disabled.")
-        return
-
-    weekday = WEEKDAY_MAP.get(WEEKLY_REPORT_DAY, WEEKDAY_MAP["sunday"])
-    app.job_queue.run_daily(
-        send_scheduled_weekly_report,
-        time=time(hour=WEEKLY_REPORT_HOUR, minute=0, second=0),
-        days=(weekday,),
-        name=WEEKLY_REPORT_JOB_NAME,
-    )
-    log(f"Weekly report scheduling enabled: {WEEKLY_REPORT_DAY} at {WEEKLY_REPORT_HOUR:02d}:00 UTC")
-
-
-def schedule_strong_signal_job(app: Application) -> None:
-    for job in app.job_queue.get_jobs_by_name(STRONG_SIGNAL_JOB_NAME):
-        job.schedule_removal()
-    if not ENABLE_STRONG_SIGNAL_ALERTS:
-        log("Strong-signal alerting is disabled.")
-        return
+def schedule_report_cache_generation(app: Application) -> None:
+    for job_name in (DAILY_REPORT_CACHE_JOB_NAME, WEEKLY_REPORT_CACHE_JOB_NAME):
+        for job in app.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
 
     app.job_queue.run_repeating(
-        strong_signal_check,
-        interval=STRONG_SIGNAL_CHECK_INTERVAL_SECONDS,
-        first=15,
-        name=STRONG_SIGNAL_JOB_NAME,
-        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
+        generate_daily_report_cache_job,
+        interval=4 * 3600,
+        first=60,
+        name=DAILY_REPORT_CACHE_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 120},
     )
-    log(f"Strong-signal check enabled every {STRONG_SIGNAL_CHECK_INTERVAL_SECONDS} seconds.")
+    app.job_queue.run_repeating(
+        generate_weekly_report_cache_job,
+        interval=24 * 3600,
+        first=120,
+        name=WEEKLY_REPORT_CACHE_JOB_NAME,
+        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 300},
+    )
+    log("Report cache generation scheduled: daily every 14400 seconds, weekly every 86400 seconds.")
 
 
 def schedule_seen_news_cleanup(app: Application) -> None:
@@ -3512,7 +3354,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 decision=decision,
                 input_payload=input_payload,
             )
-            related_news = _related_news_by_id(candidate_news, decision.related_news_ids)
+            related_news = _related_news_by_id(
+                candidate_news,
+                decision.related_news_ids,
+                symbol=symbol,
+                context="event analysis",
+            )
             alert_payload = _build_event_alert_payload(
                 decision=decision,
                 input_payload=input_payload,
@@ -3601,72 +3448,3 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             "Automatic price check cycle completed in %.2f seconds.",
             perf_counter() - cycle_started_at,
         )
-
-
-async def strong_signal_check(context: ContextTypes.DEFAULT_TYPE):
-    recipients = await get_alert_recipients(
-        symbol=DEFAULT_SYMBOL,
-        event_type="strong_signal",
-    )
-    if not recipients:
-        log("No eligible recipients for BTC strong-signal alert. Skipping AI analysis.")
-        return
-
-    state = load_state()
-    now = datetime.now(timezone.utc)
-    last_alert_at = state.get("last_strong_signal_alert_at")
-    if last_alert_at:
-        try:
-            if now - datetime.fromisoformat(last_alert_at) < timedelta(
-                hours=STRONG_SIGNAL_COOLDOWN_HOURS
-            ):
-                return
-        except ValueError:
-            pass
-
-    price, change_24h, change_7d = await get_btc_market_data()
-    news_items = await fetch_news_context(limit=6)
-    market_event_id, _ = await _get_or_create_strong_signal_market_event(
-        price=price,
-        change_24h=change_24h,
-        change_7d=change_7d,
-        news_items=news_items,
-    )
-    alert_payload, event_ai_analysis_id, strength, direction = (
-        await _get_or_create_strong_signal_ai_analysis(
-            market_event_id=market_event_id,
-            price=price,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            news_items=news_items,
-        )
-    )
-    if not alert_payload:
-        return
-
-    severity = evaluate_alert_severity(
-        SeverityInput(
-            symbol=DEFAULT_SYMBOL,
-            price_change_percent=0.0,
-            change_24h=change_24h,
-            change_7d=change_7d,
-            news_relevance=_classify_news_context(DEFAULT_SYMBOL, news_items),
-            strong_signal_strength=strength,
-        )
-    )
-    delivered = await _deliver_market_event_alert(
-        context.application,
-        symbol=DEFAULT_SYMBOL,
-        alert_payload=alert_payload,
-        market_event_id=market_event_id,
-        event_ai_analysis_id=event_ai_analysis_id,
-        recipients=recipients,
-        event_type="strong_signal",
-        severity=severity,
-    )
-    if delivered:
-        await remember_news_context(news_items)
-        state["last_strong_signal_alert_at"] = now.isoformat()
-        state["last_strong_signal_strength"] = strength
-        state["last_strong_signal_direction"] = direction
-        save_state(state)

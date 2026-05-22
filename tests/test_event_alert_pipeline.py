@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from telegram import MessageEntity
 
 import bot.alerts as alerts
 from bot.db.database import (
@@ -48,7 +49,14 @@ async def create_user(session, telegram_user_id=1001, chat_id=2001):
     return user
 
 
-def event_decision(*, should_alert=True, urgency="normal"):
+def _utf16_slice(value: str, offset: int, length: int) -> str:
+    encoded = value.encode("utf-16-le")
+    start = offset * 2
+    end = start + length * 2
+    return encoded[start:end].decode("utf-16-le")
+
+
+def event_decision(*, should_alert=True, urgency="normal", related_news_ids=None):
     return alerts.EventAnalysisDecision(
         symbol="BTC",
         should_alert=should_alert,
@@ -57,7 +65,7 @@ def event_decision(*, should_alert=True, urgency="normal"):
         message_body="BTC has weakened while the 24h trend remains negative."
         if should_alert
         else None,
-        related_news_ids=[],
+        related_news_ids=list(related_news_ids or []),
         possible_action="Review your exposure and avoid reacting impulsively."
         if should_alert
         else None,
@@ -65,6 +73,137 @@ def event_decision(*, should_alert=True, urgency="normal"):
         confidence="medium" if should_alert else None,
         reason_for_no_alert=None if should_alert else "No meaningful market event detected.",
     )
+
+
+def test_event_instance_key_reuses_same_bucket_and_splits_distinct_occurrences():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:15:00+00:00",
+        related_news_ids=["n2", "n1"],
+        input_hash="hash-a",
+    )
+    same_bucket = alerts._build_event_instance_key(
+        symbol="BTC",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:45:00+00:00",
+        related_news_ids=["n1", "n2"],
+        input_hash="hash-b",
+    )
+    next_bucket = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T13:00:00+00:00",
+        related_news_ids=["n1", "n2"],
+        input_hash="hash-a",
+    )
+    no_news_different_input = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-c",
+    )
+
+    assert first == same_bucket
+    assert next_bucket != first
+    assert no_news_different_input != first
+
+
+def test_event_alert_related_context_uses_clickable_article_entities():
+    decision = event_decision(related_news_ids=["n1"])
+    related_news = [
+        {
+            "news_id": "n1",
+            "title": (
+                "Bitcoin ETF flows & custody <update> - "
+                "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data"
+            ),
+            "source": 'CoinDesk "Markets"',
+            "url": "https://example.test/btc?x=1&y=2",
+        }
+    ]
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"price": 100000.0, "chg_since_msg": 1.2, "chg24h": -0.4}},
+        related_news=related_news,
+    )
+
+    message = payload["plain_text"]
+    link_entities = [
+        entity for entity in payload["entities"] if entity.type == MessageEntity.TEXT_LINK
+    ]
+    assert "\u2022 Bitcoin ETF flows & custody <update>" in message
+    assert 'Bitcoin ETF flows & custody <update> - CoinDesk "Markets"' not in message
+    assert link_entities[0].url == "https://example.test/btc?x=1&y=2"
+    assert (
+        _utf16_slice(message, link_entities[0].offset, link_entities[0].length)
+        == "Bitcoin ETF flows & custody <update>"
+    )
+    assert payload["entities"][0].offset == 0
+    assert payload["html_text"] is not None
+    assert "<tg-emoji emoji-id=" in payload["html_text"]
+    assert "&lt;tg-emoji" not in payload["html_text"]
+    assert (
+        '<a href="https://example.test/btc?x=1&amp;y=2">'
+        "Bitcoin ETF flows &amp; custody &lt;update&gt;</a>"
+        in payload["html_text"]
+    )
+
+
+def test_event_alert_related_context_renders_multiple_links_in_selected_order():
+    decision = event_decision(related_news_ids=["n1", "n2"])
+    related_news = [
+        {
+            "news_id": "n1",
+            "title": "First selected article",
+            "source": "Cointelegraph",
+            "url": "https://example.test/first",
+        },
+        {
+            "news_id": "n2",
+            "title": "Second selected article",
+            "source": "CoinDesk",
+            "url": "https://example.test/second",
+        },
+    ]
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"price": 100000.0, "chg_since_msg": 1.2, "chg24h": -0.4}},
+        related_news=related_news,
+    )
+
+    message = payload["plain_text"]
+    assert message.index("First selected article") < message.index("Second selected article")
+    link_entities = [
+        entity for entity in payload["entities"] if entity.type == MessageEntity.TEXT_LINK
+    ]
+    assert [entity.url for entity in link_entities] == [
+        "https://example.test/first",
+        "https://example.test/second",
+    ]
+
+
+def test_missing_event_related_news_id_logs_and_uses_safe_fallback(caplog):
+    caplog.set_level("WARNING")
+
+    related_news = alerts._related_news_by_id(
+        [{"news_id": "n1", "title": "Mapped", "url": "https://example.test/mapped"}],
+        ["n999"],
+        symbol="BTC",
+        context="event analysis",
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(related_news_ids=["n999"]),
+        input_payload={"market": {"price": 100000.0, "chg_since_msg": 1.2, "chg24h": -0.4}},
+        related_news=related_news,
+    )
+
+    assert related_news == []
+    assert "No major related news selected." in payload["plain_text"]
+    assert "n999" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -91,15 +230,18 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
             change_24h=1.0,
             now=now,
             state={},
-            candidate_news=[
-                {
-                    "news_id": f"news_{index}",
-                    "url": f"https://example.test/{index}",
-                    "link": f"https://example.test/link/{index}",
-                    "summary": "x" * 400,
-                }
-                for index in range(5)
-            ],
+            candidate_news=alerts._format_candidate_news(
+                [
+                    {
+                        "title": f"BTC article {index}",
+                        "source": "Example News",
+                        "url": f"https://example.test/{index}",
+                        "link": f"https://example.test/link/{index}",
+                        "summary": "x" * 400,
+                    }
+                    for index in range(5)
+                ]
+            ),
         )
 
         assert set(payload["market"]) == {"price", "snapshots", "chg24h", "chg_since_msg"}
@@ -114,11 +256,12 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
         assert "timestamp_utc" not in snapshots[-1]
         assert "price_usd" not in snapshots[-1]
         assert len(payload["news"]) == 3
+        assert [item["news_id"] for item in payload["news"]] == ["n1", "n2", "n3"]
         assert all(len(item["summary"]) <= 300 for item in payload["news"])
         assert all("url" not in item and "link" not in item for item in payload["news"])
         assert payload["policy"] == {
             "language": "English",
-            "audience": "General retail crypto holder; no personalised financial advice.",
+            "audience": "General retail crypto holder.",
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         }
     finally:
@@ -302,6 +445,49 @@ async def test_no_alert_low_urgency_is_normalized_before_validation(monkeypatch)
             assert row.urgency is None
             assert row.confidence == "low"
             assert row.error_reason is None
+            assert row.error_message is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_accepts_advice_like_possible_action(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        parsed = {
+            "symbol": "BTC",
+            "should_alert": True,
+            "event_key": "btc_event_2026_05_21",
+            "title": "BTC market conditions changed",
+            "message_body": "BTC moved while related context remains active.",
+            "related_news_ids": ["n1"],
+            "possible_action": "Consider selling only if it fits your own plan.",
+            "urgency": "normal",
+            "confidence": "medium",
+            "reason_for_no_alert": None,
+        }
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(return_value=("raw alert output", parsed)),
+        )
+        payload = {
+            "analysis_id": "event_analysis_btc_advice_like",
+            "symbol": "BTC",
+            "news": [{"news_id": "n1", "title": "Related", "source": "Example"}],
+            "market": {},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is not None
+        assert decision.possible_action == "Consider selling only if it fits your own plan."
+        assert analysis_id is not None
+        async with session_local() as session:
+            row = await session.scalar(select(EventAiAnalysis))
+            assert row.status == "success"
             assert row.error_message is None
     finally:
         await engine.dispose()

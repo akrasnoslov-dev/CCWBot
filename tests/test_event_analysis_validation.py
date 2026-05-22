@@ -29,7 +29,7 @@ def alert_analysis_result(**overrides):
         event_key="sol_market_event_2026_05_20",
         title="SOL market conditions changed",
         message_body="SOL moved sharply while market context remains mixed.",
-        related_news_ids=["news_1"],
+        related_news_ids=["n1"],
         possible_action="Review exposure and avoid reacting impulsively.",
         urgency="normal",
         confidence="medium",
@@ -43,7 +43,7 @@ def test_no_alert_accepts_null_urgency_confidence_and_null_related_news_ids():
     decision = validate_event_analysis_output(
         event_analysis_result(),
         expected_symbol="sol",
-        candidate_news_ids={"news_1"},
+        candidate_news_ids={"n1"},
     )
 
     assert decision.should_alert is False
@@ -56,7 +56,7 @@ def test_no_alert_accepts_empty_related_news_ids():
     decision = validate_event_analysis_output(
         event_analysis_result(related_news_ids=[]),
         expected_symbol="sol",
-        candidate_news_ids={"news_1"},
+        candidate_news_ids={"n1"},
     )
 
     assert decision.should_alert is False
@@ -69,7 +69,7 @@ def test_no_alert_accepts_confidence_value():
     decision = validate_event_analysis_output(
         event_analysis_result(related_news_ids=[], confidence="low"),
         expected_symbol="sol",
-        candidate_news_ids={"news_1"},
+        candidate_news_ids={"n1"},
     )
 
     assert decision.should_alert is False
@@ -86,7 +86,7 @@ def test_no_alert_rejects_missing_or_empty_reason_for_no_alert(reason):
         validate_event_analysis_output(
             event_analysis_result(reason_for_no_alert=reason),
             expected_symbol="sol",
-            candidate_news_ids={"news_1"},
+            candidate_news_ids={"n1"},
         )
 
 
@@ -95,7 +95,7 @@ def test_alert_rejects_null_urgency():
         validate_event_analysis_output(
             alert_analysis_result(urgency=None),
             expected_symbol="sol",
-            candidate_news_ids={"news_1"},
+            candidate_news_ids={"n1"},
         )
 
 
@@ -104,7 +104,7 @@ def test_alert_rejects_invalid_urgency():
         validate_event_analysis_output(
             alert_analysis_result(urgency="urgent"),
             expected_symbol="sol",
-            candidate_news_ids={"news_1"},
+            candidate_news_ids={"n1"},
         )
 
 
@@ -113,14 +113,41 @@ def test_alert_rejects_null_confidence():
         validate_event_analysis_output(
             alert_analysis_result(confidence=None),
             expected_symbol="sol",
-            candidate_news_ids={"news_1"},
+            candidate_news_ids={"n1"},
         )
 
 
-def test_alert_rejects_unknown_related_news_ids():
-    with pytest.raises(EventAnalysisValidationError, match="unknown related_news_ids"):
+def test_alert_accepts_unmapped_related_news_ids_for_safe_backend_fallback():
+    decision = validate_event_analysis_output(
+        alert_analysis_result(related_news_ids=["n999"]),
+        expected_symbol="sol",
+        candidate_news_ids={"n1"},
+    )
+
+    assert decision.related_news_ids == ["n999"]
+
+
+def test_alert_possible_action_advice_like_wording_no_longer_blocks_schema():
+    decision = validate_event_analysis_output(
+        alert_analysis_result(
+            possible_action=(
+                "Buy, sell, adjust your portfolio, and review exposure if it fits your plan."
+            )
+        ),
+        expected_symbol="sol",
+        candidate_news_ids={"n1"},
+    )
+
+    assert "adjust your portfolio" in decision.possible_action
+
+
+def test_alert_still_rejects_invalid_related_news_ids_shape():
+    with pytest.raises(
+        EventAnalysisValidationError,
+        match="related_news_ids must be a string array",
+    ):
         validate_event_analysis_output(
-            alert_analysis_result(related_news_ids=["unknown_news"]),
+            alert_analysis_result(related_news_ids=[1]),
             expected_symbol="sol",
-            candidate_news_ids={"news_1"},
+            candidate_news_ids={"n1"},
         )

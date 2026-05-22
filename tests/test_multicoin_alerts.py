@@ -398,6 +398,7 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Legacy strong-signal production path was removed in PR3.")
 async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monkeypatch):
     sent_messages = []
 
@@ -538,6 +539,28 @@ def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
     assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
 
 
+def test_report_cache_scheduler_replaces_weekly_direct_send_and_strong_signal():
+    captured = []
+
+    class FakeJobQueue:
+        def get_jobs_by_name(self, name):
+            return []
+
+        def run_repeating(self, callback, **kwargs):
+            captured.append((callback, kwargs))
+
+    alerts.schedule_report_cache_generation(SimpleNamespace(job_queue=FakeJobQueue()))
+
+    assert [kwargs["name"] for _, kwargs in captured] == [
+        alerts.DAILY_REPORT_CACHE_JOB_NAME,
+        alerts.WEEKLY_REPORT_CACHE_JOB_NAME,
+    ]
+    assert [kwargs["interval"] for _, kwargs in captured] == [4 * 3600, 24 * 3600]
+    assert not hasattr(alerts, "strong_signal_check")
+    assert not hasattr(alerts, "schedule_strong_signal_job")
+
+
+@pytest.mark.skip(reason="Legacy strong-signal scheduling was removed in PR3.")
 def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):
     captured_kwargs = {}
 
@@ -653,7 +676,6 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
     create_market_event = AsyncMock(
         side_effect=AssertionError("market event should not be created")
     )
-    create_ai_analysis = AsyncMock(side_effect=AssertionError("AI should not be called"))
     deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
@@ -674,7 +696,6 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
     monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
     monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
     monkeypatch.setattr(alerts, "_get_or_create_price_movement_market_event", create_market_event)
-    monkeypatch.setattr(alerts, "_get_or_create_event_ai_analysis", create_ai_analysis)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", save_price_state)
 
@@ -683,7 +704,6 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
     get_recipients.assert_awaited_once()
     fetch_news.assert_not_awaited()
     create_market_event.assert_not_awaited()
-    create_ai_analysis.assert_not_awaited()
     deliver_alert.assert_not_awaited()
     save_price_state.assert_awaited_once()
     assert save_price_state.await_args.kwargs["last_alert_at"] is None

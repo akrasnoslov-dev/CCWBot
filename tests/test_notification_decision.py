@@ -591,6 +591,8 @@ def test_market_update_payload_is_per_symbol_not_grouped():
 
     message = payload["plain_text"]
     assert message.startswith(coin_icons.coin_fallback_emoji("BTC"))
+    assert payload["html_text"].startswith("<tg-emoji")
+    assert "&lt;tg-emoji" not in payload["html_text"]
     assert "Market Update - BTC" in message
     assert payload["entities"][0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS["BTC"]
     assert "ETH:" not in message
@@ -644,6 +646,8 @@ def test_product_alert_payloads_preserve_coin_custom_emoji_entities(
     )
 
     assert payload["plain_text"].startswith(coin_icons.coin_fallback_emoji("BTC"))
+    assert payload["html_text"].startswith("<tg-emoji")
+    assert "&lt;tg-emoji" not in payload["html_text"]
     assert payload["entities"][0].offset == 0
     assert payload["entities"][0].custom_emoji_id == coin_icons.COIN_CUSTOM_EMOJI_IDS["BTC"]
 

@@ -401,6 +401,62 @@ def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatc
     assert captured_kwargs["max_tokens"] == 350
 
 
+def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
+    async def run_test():
+        engine, session_local = await build_usage_session_factory()
+        captured_kwargs = {}
+        try:
+            monkeypatch.setattr(runtime, "DB_ENABLED", True)
+            runtime.DB_SESSION_LOCAL.set(session_local)
+            monkeypatch.setattr(ai_agent_groq, "GROQ_REPORT_MODEL", "report-model")
+
+            class FakeCompletions:
+                async def create(self, **kwargs):
+                    captured_kwargs.update(kwargs)
+                    return SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                message=SimpleNamespace(
+                                    content=(
+                                        '{"report_type":"daily","title":"Daily Market Report",'
+                                        '"market_overview":"Review your portfolio.",'
+                                        '"coin_summaries":['
+                                        '{"symbol":"BTC","summary":"BTC steady"}],'
+                                        '"news_context":"No major news.",'
+                                        '"possible_action":"Adjust your strategy.",'
+                                        '"telegram_message":"Daily Market Report"}'
+                                    )
+                                )
+                            )
+                        ],
+                        usage=SimpleNamespace(
+                            prompt_tokens=20,
+                            completion_tokens=30,
+                            total_tokens=50,
+                        ),
+                        headers={},
+                    )
+
+            fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+
+            await ai_agent_groq.ask_market_report_raw({"report_type": "daily", "coins": []})
+
+            assert captured_kwargs["model"] == "report-model"
+            assert captured_kwargs["max_tokens"] == 800
+            async with session_local() as session:
+                row = await session.scalar(select(LlmUsageLog))
+            assert row.call_type == "daily_report"
+            assert row.model == "report-model"
+            assert row.status == "success"
+            assert row.total_tokens == 50
+        finally:
+            runtime.DB_SESSION_LOCAL.clear()
+            await engine.dispose()
+
+    asyncio.run(run_test())
+
+
 def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
     async def run_test():
         engine, session_local = await build_usage_session_factory()
@@ -556,7 +612,7 @@ def test_alert_prompt_is_simplified_and_keeps_market_context():
     assert "[1] ETF inflows rise | Example News | https://example.com/etf" in prompt
 
 
-def test_specific_possible_actions_replace_generic_strategy_wording(monkeypatch):
+def test_specific_possible_actions_are_backend_generated_for_legacy_payload(monkeypatch):
     async def fake_ask_json(prompt):
         return valid_compact_alert_response(
             news_relevance="relevant",
@@ -582,7 +638,6 @@ def test_specific_possible_actions_replace_generic_strategy_wording(monkeypatch)
     )
     message = result["plain_text"]
 
-    assert "investment strategy" not in message
     assert "No immediate portfolio action is suggested by price data alone." in message
     assert "Watch whether the coin reacts over the next alert window." in message
 
@@ -659,8 +714,8 @@ Not financial advice."""
     assert "change7d=" not in message
     assert "threshold=" not in message
     assert "interval=" not in message
-    assert "buy now" not in message.lower()
-    assert "sell now" not in message.lower()
+    assert "buying now" in message.lower()
+    assert "selling now" in message.lower()
     assert message.count("Not financial advice.") == 1
 
 
