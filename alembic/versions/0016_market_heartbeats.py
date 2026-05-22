@@ -67,7 +67,7 @@ def upgrade() -> None:
             "possible_action",
             sa.Text(),
             nullable=True,
-            comment="Cautious non-prescriptive possible action from the LLM.",
+            comment="Possible action text returned by the LLM.",
         ),
         sa.Column(
             "confidence",

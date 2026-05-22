@@ -177,6 +177,50 @@ async def test_market_event_helpers_create_and_reuse_event_key():
 
 
 @pytest.mark.asyncio
+async def test_market_event_helpers_use_event_instance_key_for_concrete_occurrence():
+    engine, session = await build_session()
+    try:
+        first = await get_or_create_market_event(
+            session,
+            symbol="btc",
+            event_type="event_alert",
+            event_key="btc_price_volatility",
+            event_instance_key="instance-a",
+            price=65000.0,
+            previous_price=64000.0,
+            price_change_percent=1.56,
+        )
+        same_instance = await get_or_create_market_event(
+            session,
+            symbol="btc",
+            event_type="event_alert",
+            event_key="btc_price_volatility",
+            event_instance_key="instance-a",
+            price=65100.0,
+            previous_price=64000.0,
+            price_change_percent=1.72,
+        )
+        next_instance = await get_or_create_market_event(
+            session,
+            symbol="btc",
+            event_type="event_alert",
+            event_key="btc_price_volatility",
+            event_instance_key="instance-b",
+            price=65200.0,
+            previous_price=64000.0,
+            price_change_percent=1.88,
+        )
+
+        assert first.id == same_instance.id
+        assert next_instance.id != first.id
+        assert first.event_key == next_instance.event_key == "btc_price_volatility"
+        assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 2
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
     engine, session = await build_session()
     try:
