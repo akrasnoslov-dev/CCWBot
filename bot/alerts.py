@@ -66,6 +66,7 @@ from bot.db.database import (
     make_news_key,
     mark_user_bot_blocked,
     reserve_alert_delivery,
+    reserve_market_heartbeat_delivery,
     save_alert,
     save_event_llm_analysis,
     save_market_heartbeat,
@@ -387,6 +388,46 @@ def _json_dumps(payload: dict | list) -> str:
 
 def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
+
+
+def _event_instance_bucket(timestamp_value: object, *, bucket_minutes: int = 60) -> str:
+    if isinstance(timestamp_value, datetime):
+        timestamp = timestamp_value
+    else:
+        try:
+            timestamp = datetime.fromisoformat(str(timestamp_value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            timestamp = datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    timestamp = timestamp.astimezone(timezone.utc)
+    bucket_seconds = bucket_minutes * 60
+    bucket_epoch = int(timestamp.timestamp()) // bucket_seconds * bucket_seconds
+    return datetime.fromtimestamp(bucket_epoch, tz=timezone.utc).isoformat()
+
+
+def _build_event_instance_key(
+    *,
+    symbol: str,
+    event_key: str,
+    timestamp_value: object,
+    related_news_ids: list[str],
+    input_hash: str,
+) -> str:
+    news_or_input = (
+        ",".join(sorted(str(news_id) for news_id in related_news_ids))
+        if related_news_ids
+        else input_hash
+    )
+    raw_key = "|".join(
+        (
+            normalize_symbol(symbol),
+            event_key,
+            _event_instance_bucket(timestamp_value),
+            news_or_input,
+        )
+    )
+    return sha256(raw_key.encode("utf-8")).hexdigest()
 
 
 def _news_id(index: int) -> str:
@@ -1725,12 +1766,20 @@ async def _get_or_create_event_alert_market_event(
         previous_price = current_price / (1 + (price_change_percent / 100.0))
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return None, decision.event_key
+    event_instance_key = _build_event_instance_key(
+        symbol=decision.symbol,
+        event_key=decision.event_key,
+        timestamp_value=input_payload.get("timestamp_utc"),
+        related_news_ids=decision.related_news_ids,
+        input_hash=_event_input_hash(input_payload),
+    )
     async with DB_SESSION_LOCAL() as session:
         event = await get_or_create_market_event(
             session,
             symbol=decision.symbol,
             event_type=EVENT_ALERT_TYPE,
             event_key=decision.event_key,
+            event_instance_key=event_instance_key,
             price=current_price,
             previous_price=previous_price,
             price_change_percent=price_change_percent,
@@ -2390,7 +2439,8 @@ async def _record_alert_delivery(
     plain_text: str,
     status: str,
     market_event_id: int | None,
-    event_ai_analysis_id: int | None,
+    market_heartbeat_id: int | None = None,
+    event_ai_analysis_id: int | None = None,
     error_message: str | None = None,
     trigger_reason: str | None = None,
     trigger_source: str | None = None,
@@ -2411,6 +2461,7 @@ async def _record_alert_delivery(
             message=plain_text,
             sent_to_chat_id=recipient.chat_id,
             market_event_id=market_event_id,
+            market_heartbeat_id=market_heartbeat_id,
             event_ai_analysis_id=event_ai_analysis_id,
             user_id=recipient.user_id,
             status=status,
@@ -2707,11 +2758,6 @@ async def _deliver_market_heartbeat(
             )
         )
         plain_text = str(alert_payload.get("plain_text", ""))
-        sent, error_message = await _send_alert_to_recipient_with_retry(
-            app,
-            recipient,
-            alert_payload,
-        )
         numeric_context = _heartbeat_numeric_context(
             symbol=normalized_symbol,
             current_price=current_price,
@@ -2720,21 +2766,66 @@ async def _deliver_market_heartbeat(
             heartbeat_id=heartbeat.id,
             confidence=heartbeat.confidence,
         )
-        await _record_alert_delivery(
-            symbol=normalized_symbol,
-            alert_type=MARKET_HEARTBEAT_TYPE,
-            recipient=recipient,
-            plain_text=plain_text,
-            status="sent" if sent else "failed",
-            market_event_id=None,
-            event_ai_analysis_id=None,
-            error_message=error_message,
-            trigger_reason=heartbeat.title,
-            trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
-            numeric_context=numeric_context,
-            llm_severity=heartbeat.confidence,
-            llm_reasoning_summary=heartbeat.message_body,
+        alert_id = None
+        if recipient.user_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                alert_row, should_send = await reserve_market_heartbeat_delivery(
+                    session,
+                    user_id=recipient.user_id,
+                    symbol=normalized_symbol,
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    sent_to_chat_id=recipient.chat_id,
+                    market_heartbeat_id=heartbeat.id,
+                    message=plain_text,
+                    trigger_reason=heartbeat.title,
+                    trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
+                    numeric_context=numeric_context,
+                    llm_severity=heartbeat.confidence,
+                    llm_reasoning_summary=heartbeat.message_body,
+                )
+                alert_id = alert_row.id
+            if not should_send:
+                continue
+        sent, error_message = await _send_alert_to_recipient_with_retry(
+            app,
+            recipient,
+            alert_payload,
+            alert_id=alert_id,
         )
+        if alert_id is not None:
+            async with DB_SESSION_LOCAL() as session:
+                await update_alert_delivery_status(
+                    session,
+                    alert_id=alert_id,
+                    status="sent" if sent else "failed",
+                    error_message=error_message,
+                    retry_count=(
+                        None
+                        if sent
+                        else TELEGRAM_DELIVERY_MAX_ATTEMPTS
+                        if _is_transient_telegram_delivery_error(error_message)
+                        else 1
+                    ),
+                    last_error=error_message,
+                    final_failed_at=None if sent else datetime.now(timezone.utc),
+                )
+        else:
+            await _record_alert_delivery(
+                symbol=normalized_symbol,
+                alert_type=MARKET_HEARTBEAT_TYPE,
+                recipient=recipient,
+                plain_text=plain_text,
+                status="sent" if sent else "failed",
+                market_event_id=None,
+                market_heartbeat_id=heartbeat.id,
+                event_ai_analysis_id=None,
+                error_message=error_message,
+                trigger_reason=heartbeat.title,
+                trigger_source=MARKET_HEARTBEAT_ANALYSIS_TYPE,
+                numeric_context=numeric_context,
+                llm_severity=heartbeat.confidence,
+                llm_reasoning_summary=heartbeat.message_body,
+            )
         if sent:
             delivered = True
             sent_count += 1

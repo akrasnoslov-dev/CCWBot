@@ -75,6 +75,41 @@ def event_decision(*, should_alert=True, urgency="normal", related_news_ids=None
     )
 
 
+def test_event_instance_key_reuses_same_bucket_and_splits_distinct_occurrences():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:15:00+00:00",
+        related_news_ids=["n2", "n1"],
+        input_hash="hash-a",
+    )
+    same_bucket = alerts._build_event_instance_key(
+        symbol="BTC",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:45:00+00:00",
+        related_news_ids=["n1", "n2"],
+        input_hash="hash-b",
+    )
+    next_bucket = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T13:00:00+00:00",
+        related_news_ids=["n1", "n2"],
+        input_hash="hash-a",
+    )
+    no_news_different_input = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_volatility",
+        timestamp_value="2026-05-22T12:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-c",
+    )
+
+    assert first == same_bucket
+    assert next_bucket != first
+    assert no_news_different_input != first
+
+
 def test_event_alert_related_context_uses_clickable_article_entities():
     decision = event_decision(related_news_ids=["n1"])
     related_news = [

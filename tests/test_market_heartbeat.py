@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram import MessageEntity
 from telegram.constants import ParseMode
@@ -297,7 +298,88 @@ async def test_heartbeat_is_sent_when_frequency_due(monkeypatch):
         async with session_local() as session:
             row = await session.scalar(select(Alert).where(Alert.user_id == user.id))
         assert row.alert_type == MARKET_HEARTBEAT_TYPE
+        assert row.market_heartbeat_id is not None
         assert row.status == "sent"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_heartbeat_delivery_for_same_cached_heartbeat_is_skipped(monkeypatch):
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    now = datetime.now(timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session)
+            heartbeat = await create_heartbeat(session, generated_at=now)
+
+        first = await alerts._deliver_market_heartbeat(
+            app,
+            symbol="btc",
+            current_price=101000.0,
+            change_24h=1.5,
+            now=now,
+        )
+        second = await alerts._deliver_market_heartbeat(
+            app,
+            symbol="btc",
+            current_price=102000.0,
+            change_24h=2.0,
+            now=now + timedelta(minutes=70),
+        )
+
+        assert first is True
+        assert second is False
+        app.bot.send_message.assert_awaited_once()
+        async with session_local() as session:
+            rows = (
+                await session.scalars(
+                    select(Alert)
+                    .where(Alert.user_id == user.id)
+                    .where(Alert.market_heartbeat_id == heartbeat.id)
+                )
+            ).all()
+        assert len(rows) == 1
+        assert rows[0].status == "sent"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_delivery_unique_index_rejects_duplicate_rows():
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            heartbeat = await create_heartbeat(session)
+            session.add_all(
+                [
+                    Alert(
+                        symbol="BTC",
+                        alert_type=MARKET_HEARTBEAT_TYPE,
+                        message="first",
+                        sent_to_chat_id=user.telegram_chat_id,
+                        user_id=user.id,
+                        market_heartbeat_id=heartbeat.id,
+                        status="sent",
+                    ),
+                    Alert(
+                        symbol="BTC",
+                        alert_type=MARKET_HEARTBEAT_TYPE,
+                        message="duplicate",
+                        sent_to_chat_id=user.telegram_chat_id,
+                        user_id=user.id,
+                        market_heartbeat_id=heartbeat.id,
+                        status="sent",
+                    ),
+                ]
+            )
+
+            with pytest.raises(IntegrityError):
+                await session.commit()
     finally:
         await engine.dispose()
 
