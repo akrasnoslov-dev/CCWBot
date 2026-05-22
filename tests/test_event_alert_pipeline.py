@@ -115,7 +115,10 @@ def test_event_alert_related_context_uses_clickable_article_entities():
     related_news = [
         {
             "news_id": "n1",
-            "title": "Bitcoin ETF flows & custody <update>",
+            "title": (
+                "Bitcoin ETF flows & custody <update> - "
+                "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data"
+            ),
             "source": 'CoinDesk "Markets"',
             "url": "https://example.test/btc?x=1&y=2",
         }
@@ -138,7 +141,14 @@ def test_event_alert_related_context_uses_clickable_article_entities():
         == 'Bitcoin ETF flows & custody <update> - CoinDesk "Markets"'
     )
     assert payload["entities"][0].offset == 0
-    assert payload["html_text"] is None
+    assert payload["html_text"] is not None
+    assert "<tg-emoji emoji-id=" in payload["html_text"]
+    assert "&lt;tg-emoji" not in payload["html_text"]
+    assert (
+        '<a href="https://example.test/btc?x=1&amp;y=2">'
+        "Bitcoin ETF flows &amp; custody &lt;update&gt; - CoinDesk &quot;Markets&quot;</a>"
+        in payload["html_text"]
+    )
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():

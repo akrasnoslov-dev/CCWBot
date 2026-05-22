@@ -706,7 +706,9 @@ def test_heartbeat_related_context_uses_direct_article_links_and_escaping():
     related_news = [
         {
             "news_id": "news_a",
-            "title": "SEC seeks public comment as it weighs ETFs & funds",
+            "title": (
+                "SEC seeks public comment as it weighs ETFs & funds - Cointelegraph.com News"
+            ),
             "source": "Cointelegraph.com News",
             "url": "https://cointelegraph.com/news/sec?x=1&y=2",
         }
@@ -726,6 +728,7 @@ def test_heartbeat_related_context_uses_direct_article_links_and_escaping():
         "SEC seeks public comment as it weighs ETFs &amp; funds</a> - Cointelegraph.com News"
         in payload["html_text"]
     )
+    assert "<tg-emoji emoji-id=" in payload["html_text"]
     assert "BTC remains calm &amp; steady" in payload["html_text"]
 
 
@@ -753,7 +756,9 @@ def test_heartbeat_related_context_missing_url_stays_plain_text():
         related_news=related_news,
     )
 
-    assert payload["html_text"] is None
+    assert payload["html_text"] is not None
+    assert "<tg-emoji emoji-id=" in payload["html_text"]
+    assert "<a href=" not in payload["html_text"]
     assert "• Bitcoin ETF flows remain steady - CoinDesk" in payload["plain_text"]
 
 
@@ -773,7 +778,8 @@ def test_heartbeat_related_context_empty_selection_is_preserved():
         related_news=[],
     )
 
-    assert payload["html_text"] is None
+    assert payload["html_text"] is not None
+    assert "<tg-emoji emoji-id=" in payload["html_text"]
     assert "No major related news selected." in payload["plain_text"]
 
 
