@@ -49,7 +49,7 @@ from bot.alerting.notification_decision import (
     SignalContext,
     TriggerSource,
 )
-from bot.coin_icons import build_coin_icon_prefix, coin_fallback_emoji
+from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
 from bot.config import SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
 from bot.db.database import (
     attach_analysis_to_market_event,
@@ -82,6 +82,7 @@ from bot.domain.premium import (
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 from bot.news import fetch_news_context, remember_news_context
+from bot.news_titles import clean_news_title, clean_related_news_text
 from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
@@ -628,34 +629,46 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
         return empty_text
     lines = []
     for item in related_news[:3]:
-        title_text = str(item.get("title") or "").strip()
+        title_text = clean_news_title(str(item.get("title") or ""))
         source = str(item.get("source") or "").strip()
         if not title_text:
             continue
-        detail = f" - {source}" if source else ""
-        lines.append(f"\u2022 {title_text}{detail}")
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+        lines.append(f"\u2022 {display_text}")
     return "\n".join(lines) if lines else empty_text
 
 
 def _format_event_related_context(
     related_news: list[dict], *, empty_text: str
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], str | None]:
     if not related_news:
-        return empty_text, []
+        return empty_text, [], None
 
     lines: list[str] = []
+    html_lines: list[str] = []
     link_entities: list[dict] = []
     cursor = 0
     missing_url_count = 0
     for item in related_news[:3]:
-        title_text = str(item.get("title") or "").strip()
+        title_text = clean_news_title(str(item.get("title") or ""))
         source = str(item.get("source") or "").strip()
         url = _safe_telegram_link_url(str(item.get("url") or item.get("link") or ""))
         if not title_text:
             continue
 
-        link_text = f"{title_text} - {source}" if source else title_text
+        link_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not link_text:
+            continue
         line = f"\u2022 {link_text}"
+        escaped_link_text = escape(link_text)
         if lines:
             cursor += 1
         if url:
@@ -666,8 +679,12 @@ def _format_event_related_context(
                     "url": url,
                 }
             )
+            html_lines.append(
+                f'\u2022 <a href="{escape(url, quote=True)}">{escaped_link_text}</a>'
+            )
         else:
             missing_url_count += 1
+            html_lines.append(f"\u2022 {escaped_link_text}")
         lines.append(line)
         cursor += _utf16_length(line)
 
@@ -677,8 +694,8 @@ def _format_event_related_context(
             missing_url_count,
         )
     if not lines:
-        return empty_text, []
-    return "\n".join(lines), link_entities
+        return empty_text, [], None
+    return "\n".join(lines), link_entities, "\n".join(html_lines)
 
 
 def _format_market_heartbeat_related_context(
@@ -689,34 +706,36 @@ def _format_market_heartbeat_related_context(
 
     plain_lines: list[str] = []
     html_lines: list[str] = []
-    has_link = False
     for item in related_news[:3]:
-        title_text = str(item.get("title") or "").strip()
+        title_text = clean_news_title(str(item.get("title") or ""))
         source = str(item.get("source") or "").strip()
-        url = str(item.get("url") or "").strip()
+        url = _safe_telegram_link_url(str(item.get("url") or item.get("link") or ""))
         if not title_text:
             continue
 
-        detail = f" - {source}" if source else ""
-        plain_lines.append(f"\u2022 {title_text}{detail}")
-        escaped_source = escape(source)
-        html_detail = f" - {escaped_source}" if escaped_source else ""
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+
+        plain_lines.append(f"\u2022 {display_text}")
         if url:
-            has_link = True
             html_lines.append(
-                f'\u2022 <a href="{escape(url, quote=True)}">{escape(title_text)}</a>{html_detail}'
+                f'\u2022 <a href="{escape(url, quote=True)}">{escape(display_text)}</a>'
             )
         else:
-            html_lines.append(f"\u2022 {escape(title_text)}{html_detail}")
+            html_lines.append(f"\u2022 {escape(display_text)}")
 
     if not plain_lines:
         return empty_text, None
-    return "\n".join(plain_lines), "\n".join(html_lines) if has_link else None
+    return "\n".join(plain_lines), "\n".join(html_lines)
 
 
 def _build_market_heartbeat_html_message(
     *,
-    icon: str,
+    icon_html: str,
     symbol: str,
     title: str,
     price_text: str,
@@ -727,7 +746,7 @@ def _build_market_heartbeat_html_message(
     possible_action: str,
 ) -> str:
     return (
-        f"{escape(icon)} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
+        f"{icon_html} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
         f"{escape(title)}\n\n"
         f"Price: {escape(price_text)}\n"
         f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
@@ -742,6 +761,42 @@ def _build_market_heartbeat_html_message(
     )
 
 
+def _build_event_alert_html_message(
+    *,
+    icon_html: str,
+    symbol: str,
+    title: str,
+    price_text: str,
+    since_last_text: str,
+    change_24h_text: str,
+    message_body: str,
+    related_section_html: str,
+    possible_action: str,
+) -> str:
+    return (
+        f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
+        f"{escape(title)}\n\n"
+        f"Price: {escape(price_text)}\n"
+        f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
+        f"24h change: {escape(change_24h_text)}\n\n"
+        "Situation:\n"
+        f"{escape(message_body)}\n\n"
+        "Related context:\n"
+        f"{related_section_html}\n\n"
+        "Possible action:\n"
+        f"{escape(possible_action)}\n\n"
+        "Not financial advice."
+    )
+
+
+def _build_html_message_from_plain_with_icon(
+    *, plain_text: str, plain_icon: str, icon_html: str
+) -> str:
+    if plain_text.startswith(plain_icon):
+        return f"{icon_html}{escape(plain_text[len(plain_icon) :])}"
+    return escape(plain_text)
+
+
 def _build_event_alert_payload(
     *,
     decision: EventAnalysisDecision,
@@ -751,13 +806,14 @@ def _build_event_alert_payload(
     symbol = decision.symbol
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     icon, entities = build_coin_icon_prefix(symbol)
+    icon_html = build_coin_icon_html(symbol)
     title = _sanitize_event_text(decision.title, f"{symbol} market event")
     message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
     possible_action = _sanitize_event_text(
         decision.possible_action,
         "Review the situation calmly and avoid impulsive decisions.",
     )
-    related_section, related_link_entities = _format_event_related_context(
+    related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
         empty_text="No major related news selected.",
     )
@@ -767,15 +823,18 @@ def _build_event_alert_payload(
         market_data.get("change_since_last_user_visible_message_percent"),
     )
     change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
+    price_text = _format_optional_price(price)
+    since_last_text = _format_optional_percent(change_since_message)
+    change_24h_text = _format_optional_percent(change_24h)
 
     before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
-        f"Price: {_format_optional_price(price)}\n"
+        f"Price: {price_text}\n"
         "Since last "
         f"{symbol} message: "
-        f"{_format_optional_percent(change_since_message)}\n"
-        f"24h change: {_format_optional_percent(change_24h)}\n\n"
+        f"{since_last_text}\n"
+        f"24h change: {change_24h_text}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -798,7 +857,20 @@ def _build_event_alert_payload(
                 url=str(entity["url"]),
             )
         )
-    return {"plain_text": message, "html_text": None, "entities": all_entities or None}
+    html_message = None
+    if icon_html != icon:
+        html_message = _build_event_alert_html_message(
+            icon_html=icon_html,
+            symbol=symbol,
+            title=title,
+            price_text=price_text,
+            since_last_text=since_last_text,
+            change_24h_text=change_24h_text,
+            message_body=message_body,
+            related_section_html=related_section_html or escape(related_section),
+            possible_action=possible_action,
+        )
+    return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
 
 
 def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision) -> str:
@@ -854,6 +926,7 @@ def _build_market_heartbeat_payload(
 ) -> dict:
     symbol = normalize_symbol(heartbeat.symbol).upper()
     icon, entities = build_coin_icon_prefix(symbol)
+    icon_html = build_coin_icon_html(symbol)
     title = _sanitize_event_text(heartbeat.title, f"{symbol} market heartbeat")
     message_body = sanitize_heartbeat_message_body(
         heartbeat.message_body,
@@ -882,16 +955,16 @@ def _build_market_heartbeat_payload(
         "Not financial advice."
     )
     html_message = None
-    if related_section_html:
+    if icon_html != icon or related_section_html:
         html_message = _build_market_heartbeat_html_message(
-            icon=icon,
+            icon_html=icon_html,
             symbol=symbol,
             title=title,
             price_text=price_text,
             since_last_text=since_last_text,
             change_24h_text=change_24h_text,
             message_body=message_body,
-            related_section_html=related_section_html,
+            related_section_html=related_section_html or escape(related_section),
             possible_action=possible_action,
         )
     return {"plain_text": message, "html_text": html_message, "entities": entities}
@@ -1955,6 +2028,7 @@ def _build_product_notification_payload(
 ) -> dict:
     symbol = normalize_symbol(context.symbol).upper()
     coin_icon, entities = build_coin_icon_prefix(symbol)
+    coin_icon_html = build_coin_icon_html(symbol)
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
     alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
@@ -1973,13 +2047,19 @@ def _build_product_notification_payload(
     if visible_news and _is_user_visible_news(context.news_relevance_score):
         lines = []
         for item in visible_news[:2]:
-            title = str(item.get("title") or "").strip()
+            title = clean_news_title(str(item.get("title") or ""))
             source = str(item.get("source") or "").strip()
             link = str(item.get("url") or item.get("link") or "").strip()
             if not title:
                 continue
             detail = f" - {source}" if source else ""
-            lines.append(f"- {title}{detail}")
+            display_text = clean_related_news_text(
+                f"{title}{detail}",
+                source=source,
+            )
+            if not display_text:
+                continue
+            lines.append(f"- {display_text}")
             if link:
                 lines.append(f"  {link}")
         if lines:
@@ -2019,7 +2099,14 @@ def _build_product_notification_payload(
         "Not financial advice."
     )
     plain_text = sanitize_alert_message(message)
-    return {"plain_text": plain_text, "html_text": None, "entities": entities}
+    html_text = None
+    if coin_icon_html != coin_icon:
+        html_text = _build_html_message_from_plain_with_icon(
+            plain_text=plain_text,
+            plain_icon=coin_icon,
+            icon_html=coin_icon_html,
+        )
+    return {"plain_text": plain_text, "html_text": html_text, "entities": entities}
 
 
 def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:

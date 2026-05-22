@@ -15,6 +15,8 @@ import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from bot.news_titles import clean_news_title, clean_related_news_text
+
 load_dotenv()
 
 
@@ -481,14 +483,19 @@ def _format_related_news_section(news_relevance: str, related_news: list[dict] |
     for item in related_news[:2]:
         if not isinstance(item, dict):
             continue
-        title = str(item.get("title", "")).strip()
+        title = clean_news_title(str(item.get("title", "")))
         source = str(item.get("source", "")).strip()
         link = str(item.get("link", "")).strip()
         if not title:
             continue
-        detail_parts = [part for part in (source, link) if part]
-        detail_text = f" - {' - '.join(detail_parts)}" if detail_parts else ""
-        lines.append(f"- {title}{detail_text}")
+        display_text = clean_related_news_text(
+            f"{title} - {source}" if source else title,
+            source=source,
+        )
+        if link and display_text:
+            display_text = f"{display_text} - {link}"
+        if display_text:
+            lines.append(f"- {display_text}")
 
     if not lines:
         return ""
@@ -911,7 +918,7 @@ def _extract_related_news_with_links(
     for item in related_news[:2]:
         if not isinstance(item, dict):
             continue
-        title = str(item.get("title", "")).strip()
+        title = clean_news_title(str(item.get("title", "")))
         source = str(item.get("source", "")).strip()
         link = str(item.get("link", "")).strip()
         if not title or not link:
