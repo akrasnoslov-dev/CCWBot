@@ -8,11 +8,16 @@ NEWS_TITLE_SOURCE_SUFFIXES = (
 )
 
 
-def clean_news_title(title: str) -> str:
-    cleaned = str(title or "").strip()
+def clean_related_news_text(text: str, *, source: str | None = None) -> str:
+    cleaned = str(text or "").strip()
+    suffixes = list(NEWS_TITLE_SOURCE_SUFFIXES)
+    source_text = str(source or "").strip()
+    if source_text:
+        suffixes.append(source_text)
+
     while cleaned:
         previous = cleaned
-        for suffix in NEWS_TITLE_SOURCE_SUFFIXES:
+        for suffix in suffixes:
             cleaned = re.sub(
                 rf"\s+-\s+{re.escape(suffix)}\s*$",
                 "",
@@ -22,3 +27,7 @@ def clean_news_title(title: str) -> str:
         if cleaned == previous:
             break
     return cleaned
+
+
+def clean_news_title(title: str) -> str:
+    return clean_related_news_text(title)

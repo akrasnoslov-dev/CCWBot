@@ -290,10 +290,8 @@ async def test_heartbeat_is_sent_when_frequency_due(monkeypatch):
         text = send_kwargs["text"]
         assert "BTC Market Heartbeat" in text
         assert send_kwargs["parse_mode"] == ParseMode.HTML
-        assert (
-            '<a href="https://example.com/btc">Bitcoin ETF flows remain steady</a> - CoinDesk'
-            in text
-        )
+        assert '<a href="https://example.com/btc">Bitcoin ETF flows remain steady</a>' in text
+        assert "Bitcoin ETF flows remain steady</a> - CoinDesk" not in text
         assert "No major related news selected." not in text
         async with session_local() as session:
             row = await session.scalar(select(Alert).where(Alert.user_id == user.id))
@@ -725,9 +723,10 @@ def test_heartbeat_related_context_uses_direct_article_links_and_escaping():
     assert payload["html_text"] is not None
     assert (
         '<a href="https://cointelegraph.com/news/sec?x=1&amp;y=2">'
-        "SEC seeks public comment as it weighs ETFs &amp; funds</a> - Cointelegraph.com News"
+        "SEC seeks public comment as it weighs ETFs &amp; funds</a>"
         in payload["html_text"]
     )
+    assert "Cointelegraph.com News" not in payload["html_text"]
     assert "<tg-emoji emoji-id=" in payload["html_text"]
     assert "BTC remains calm &amp; steady" in payload["html_text"]
 
@@ -759,7 +758,8 @@ def test_heartbeat_related_context_missing_url_stays_plain_text():
     assert payload["html_text"] is not None
     assert "<tg-emoji emoji-id=" in payload["html_text"]
     assert "<a href=" not in payload["html_text"]
-    assert "• Bitcoin ETF flows remain steady - CoinDesk" in payload["plain_text"]
+    assert "• Bitcoin ETF flows remain steady" in payload["plain_text"]
+    assert "Bitcoin ETF flows remain steady - CoinDesk" not in payload["plain_text"]
 
 
 def test_heartbeat_related_context_empty_selection_is_preserved():

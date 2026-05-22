@@ -82,7 +82,7 @@ from bot.domain.premium import (
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
 from bot.news import fetch_news_context, remember_news_context
-from bot.news_titles import clean_news_title
+from bot.news_titles import clean_news_title, clean_related_news_text
 from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
@@ -633,8 +633,13 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
         source = str(item.get("source") or "").strip()
         if not title_text:
             continue
-        detail = f" - {source}" if source else ""
-        lines.append(f"\u2022 {title_text}{detail}")
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+        lines.append(f"\u2022 {display_text}")
     return "\n".join(lines) if lines else empty_text
 
 
@@ -656,7 +661,12 @@ def _format_event_related_context(
         if not title_text:
             continue
 
-        link_text = f"{title_text} - {source}" if source else title_text
+        link_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not link_text:
+            continue
         line = f"\u2022 {link_text}"
         escaped_link_text = escape(link_text)
         if lines:
@@ -703,16 +713,20 @@ def _format_market_heartbeat_related_context(
         if not title_text:
             continue
 
-        detail = f" - {source}" if source else ""
-        plain_lines.append(f"\u2022 {title_text}{detail}")
-        escaped_source = escape(source)
-        html_detail = f" - {escaped_source}" if escaped_source else ""
+        display_text = clean_related_news_text(
+            f"{title_text} - {source}" if source else title_text,
+            source=source,
+        )
+        if not display_text:
+            continue
+
+        plain_lines.append(f"\u2022 {display_text}")
         if url:
             html_lines.append(
-                f'\u2022 <a href="{escape(url, quote=True)}">{escape(title_text)}</a>{html_detail}'
+                f'\u2022 <a href="{escape(url, quote=True)}">{escape(display_text)}</a>'
             )
         else:
-            html_lines.append(f"\u2022 {escape(title_text)}{html_detail}")
+            html_lines.append(f"\u2022 {escape(display_text)}")
 
     if not plain_lines:
         return empty_text, None
@@ -2039,7 +2053,13 @@ def _build_product_notification_payload(
             if not title:
                 continue
             detail = f" - {source}" if source else ""
-            lines.append(f"- {title}{detail}")
+            display_text = clean_related_news_text(
+                f"{title}{detail}",
+                source=source,
+            )
+            if not display_text:
+                continue
+            lines.append(f"- {display_text}")
             if link:
                 lines.append(f"  {link}")
         if lines:

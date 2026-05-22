@@ -134,11 +134,12 @@ def test_event_alert_related_context_uses_clickable_article_entities():
     link_entities = [
         entity for entity in payload["entities"] if entity.type == MessageEntity.TEXT_LINK
     ]
-    assert "\u2022 Bitcoin ETF flows & custody <update> - CoinDesk \"Markets\"" in message
+    assert "\u2022 Bitcoin ETF flows & custody <update>" in message
+    assert 'Bitcoin ETF flows & custody <update> - CoinDesk "Markets"' not in message
     assert link_entities[0].url == "https://example.test/btc?x=1&y=2"
     assert (
         _utf16_slice(message, link_entities[0].offset, link_entities[0].length)
-        == 'Bitcoin ETF flows & custody <update> - CoinDesk "Markets"'
+        == "Bitcoin ETF flows & custody <update>"
     )
     assert payload["entities"][0].offset == 0
     assert payload["html_text"] is not None
@@ -146,7 +147,7 @@ def test_event_alert_related_context_uses_clickable_article_entities():
     assert "&lt;tg-emoji" not in payload["html_text"]
     assert (
         '<a href="https://example.test/btc?x=1&amp;y=2">'
-        "Bitcoin ETF flows &amp; custody &lt;update&gt; - CoinDesk &quot;Markets&quot;</a>"
+        "Bitcoin ETF flows &amp; custody &lt;update&gt;</a>"
         in payload["html_text"]
     )
 
