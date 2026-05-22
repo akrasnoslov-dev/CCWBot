@@ -215,7 +215,7 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
         assert all("url" not in item and "link" not in item for item in payload["news"])
         assert payload["policy"] == {
             "language": "English",
-            "audience": "General retail crypto holder; no personalised financial advice.",
+            "audience": "General retail crypto holder.",
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         }
     finally:

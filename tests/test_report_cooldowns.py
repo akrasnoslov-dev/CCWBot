@@ -51,6 +51,15 @@ def _daily_message() -> str:
     )
 
 
+def _market_data():
+    return {
+        "btc": {"price": 77361.0, "change_24h": -0.4, "change_7d": -3.2},
+        "eth": {"price": 2127.86, "change_24h": -0.2, "change_7d": None},
+        "ton": {"price": 3.12, "change_24h": None, "change_7d": 1.4},
+        "sol": {"price": 142.35, "change_24h": 0.7, "change_7d": -4.6},
+    }
+
+
 @pytest.fixture(autouse=True)
 def clear_report_caches():
     reports._last_report_call.clear()
@@ -196,14 +205,7 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
         monkeypatch.setattr(
             reports,
             "get_coin_market_data_batch",
-            AsyncMock(
-                return_value={
-                    "btc": {"price": 100000.0, "change_24h": 1.0, "change_7d": None},
-                    "eth": {"price": 4000.0, "change_24h": 2.0, "change_7d": None},
-                    "ton": {"price": 5.0, "change_24h": -1.0, "change_7d": None},
-                    "sol": {"price": 200.0, "change_24h": 0.5, "change_7d": None},
-                }
-            ),
+            AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
@@ -244,14 +246,7 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
         monkeypatch.setattr(
             reports,
             "get_coin_market_data_batch",
-            AsyncMock(
-                return_value={
-                    "btc": {"price": 100000.0, "change_24h": 1.0, "change_7d": None},
-                    "eth": {"price": 4000.0, "change_24h": 2.0, "change_7d": None},
-                    "ton": {"price": 5.0, "change_24h": -1.0, "change_7d": None},
-                    "sol": {"price": 200.0, "change_24h": 0.5, "change_7d": None},
-                }
-            ),
+            AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
@@ -274,12 +269,97 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
         await reports.send_daily_report_message(target)
 
         assert target.replies[0][0].endswith("Not financial advice.")
+        assert "adjust your strategy" not in target.replies[0][0]
         assert "temporarily unavailable" not in target.replies[0][0]
         async with session_local() as session:
             saved_report = await session.scalar(select(MarketReport))
             assert saved_report.status == "completed"
             assert saved_report.telegram_message.endswith("Not financial advice.")
             assert await session.scalar(select(func.count()).select_from(Alert)) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_daily_report_accepts_strategy_wording(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            reports,
+            "get_coin_market_data_batch",
+            AsyncMock(return_value=_market_data()),
+        )
+        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
+        monkeypatch.setattr(
+            reports,
+            "ask_market_report_raw",
+            AsyncMock(
+                return_value=(
+                    "{}",
+                    {
+                        "report_type": "daily",
+                        "title": "Daily Market Report",
+                        "market_overview": "Adjust your strategy as needed while BTC is mixed.",
+                        "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
+                        "news_context": "No major market-wide news selected.",
+                        "possible_action": "Adjust your strategy as needed.",
+                        "telegram_message": "Daily Market Report",
+                    },
+                )
+            ),
+        )
+
+        report = await reports.get_or_generate_report("daily")
+
+        assert report.status == "completed"
+        assert "Adjust your strategy as needed." in report.telegram_message
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            reports,
+            "get_coin_market_data_batch",
+            AsyncMock(return_value=_market_data()),
+        )
+        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
+        monkeypatch.setattr(
+            reports,
+            "ask_market_report_raw",
+            AsyncMock(
+                return_value=(
+                    "{}",
+                    {
+                        "report_type": "weekly",
+                        "title": "Weekly Market Report",
+                        "market_overview": "Review your portfolio and adjust your strategy.",
+                        "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
+                        "news_context": "No major weekly news theme selected.",
+                        "possible_action": "Review your portfolio if needed.",
+                        "telegram_message": "Weekly Market Report",
+                    },
+                )
+            ),
+        )
+
+        report = await reports.get_or_generate_report("weekly")
+
+        assert report.status == "completed"
+        assert "• BTC: $77,361, 7d -3.2%, 24h -0.4%" in report.telegram_message
+        assert "• ETH: $2,127.86, 7d not enough data yet, 24h -0.2%" in report.telegram_message
+        assert "• TON: $3.12, 7d +1.4%, 24h not enough data yet" in report.telegram_message
+        assert "• SOL: $142.35, 7d -4.6%, 24h +0.7%" in report.telegram_message
+        assert report.telegram_message.endswith("Not financial advice.")
     finally:
         await engine.dispose()
 
@@ -306,7 +386,48 @@ async def test_failed_report_generation_does_not_create_fake_fallback(monkeypatc
             failed = await session.scalar(select(MarketReport))
             assert failed.status == "failed"
             assert failed.telegram_message is None
+            assert failed.error_message == "market data unavailable"
             assert await session.scalar(select(func.count()).select_from(Alert)) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_report_stores_exact_schema_failure(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            reports,
+            "get_coin_market_data_batch",
+            AsyncMock(return_value=_market_data()),
+        )
+        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "ask_market_report_raw",
+            AsyncMock(
+                return_value=(
+                    "{}",
+                    {
+                        "report_type": "daily",
+                        "title": "Daily Market Report",
+                        "market_overview": "Mixed market.",
+                        "coin_summaries": [{"symbol": "XRP", "summary": "XRP is steady."}],
+                        "news_context": "No major market-wide news selected.",
+                        "possible_action": "Monitor risk.",
+                        "telegram_message": "Daily Market Report",
+                    },
+                )
+            ),
+        )
+
+        report = await reports.get_or_generate_report("daily")
+
+        assert report.status == "failed"
+        assert report.error_message == "coin summary symbol is not active"
+        assert report.error_message != "unknown error"
     finally:
         await engine.dispose()
 

@@ -128,7 +128,13 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             expected_report_type=report_type,
             active_symbols=SUPPORTED_SYMBOLS,
         )
-        message = sanitize_alert_message(decision.telegram_message)
+        message = _build_report_telegram_message(
+            report_type=report_type,
+            input_payload=input_payload,
+            market_overview=decision.market_overview,
+            news_context=decision.news_context,
+            possible_action=decision.possible_action,
+        )
         await remember_news_context(news_items)
         return await _save_or_remember_report(
             report_type=report_type,
@@ -158,7 +164,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_input_json=raw_input_json,
             raw_output_json=raw_output_json,
             telegram_message=None,
-            error_message=classify_ai_error_reason(error),
+            error_message=str(error),
         )
     except MarketReportDataUnavailable as error:
         log(f"{report_type.capitalize()} report generation skipped: {error}")
@@ -314,6 +320,63 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
         },
         news_items,
     )
+
+
+def _build_report_telegram_message(
+    *,
+    report_type: str,
+    input_payload: dict,
+    market_overview: str,
+    news_context: str,
+    possible_action: str,
+) -> str:
+    is_weekly = report_type == "weekly"
+    title = "Weekly Market Report" if is_weekly else "Daily Market Report"
+    overview_label = "Weekly overview" if is_weekly else "Market overview"
+    news_label = "Weekly news theme" if is_weekly else "News context"
+    coin_rows = [
+        _format_coin_row(coin, weekly=is_weekly)
+        for coin in input_payload.get("coins", [])
+        if isinstance(coin, dict)
+    ]
+    message = (
+        f"📊 {title}\n\n"
+        f"{overview_label}:\n"
+        f"{market_overview.strip()}\n\n"
+        "Coins:\n"
+        f"{chr(10).join(coin_rows)}\n\n"
+        f"{news_label}:\n"
+        f"{news_context.strip()}\n\n"
+        "Possible action:\n"
+        f"{possible_action.strip()}\n\n"
+        "Not financial advice."
+    )
+    return sanitize_alert_message(message)
+
+
+def _format_coin_row(coin: dict, *, weekly: bool) -> str:
+    symbol = str(coin.get("symbol") or "").upper()
+    price = _format_price(coin.get("price"))
+    change_24h = _format_percent(coin.get("change_24h"))
+    if weekly:
+        change_7d = _format_percent(coin.get("change_7d"))
+        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}"
+    return f"• {symbol}: {price}, 24h {change_24h}"
+
+
+def _format_price(value) -> str:
+    if value is None:
+        return "not enough data yet"
+    numeric_value = float(value)
+    if numeric_value.is_integer():
+        return f"${numeric_value:,.0f}"
+    return f"${numeric_value:,.2f}"
+
+
+def _format_percent(value) -> str:
+    if value is None:
+        return "not enough data yet"
+    return f"{float(value):+.1f}%"
 
 
 def _round_optional(value) -> float | None:

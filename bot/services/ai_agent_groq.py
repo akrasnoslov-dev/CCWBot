@@ -1,8 +1,7 @@
 """Groq-backed AI helpers.
 
 The bot asks for structured JSON so code can validate output before posting messages.
-When parsing/validation fails, callers fall back to deterministic templates.
-All prompts explicitly avoid direct financial advice.
+When parsing/validation fails, callers fall back to deterministic templates where callers allow it.
 """
 
 import asyncio
@@ -49,7 +48,6 @@ _RAW_DIAGNOSTIC_LINE_RE = re.compile(
     r"(?i)\b(move|change24h|change7d|threshold|interval|previous|current|price)\s*="
 )
 _NOT_FINANCIAL_ADVICE = "Not financial advice."
-_DIRECT_ADVICE_RE = re.compile(r"(?i)\b(buy(?:ing)? now|sell(?:ing)? now)\b")
 _RISK_REASON_MAX_CHARS = 180
 _RISK_REASON_GENERIC_RE = re.compile(
     r"(?i)\b("
@@ -646,7 +644,6 @@ def _sanitize_risk_reason(
     can_mention_news: bool = False,
 ) -> str:
     cleaned = " ".join(str(reason or "").split())
-    cleaned = _DIRECT_ADVICE_RE.sub("review risk", cleaned)
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
     if (
         not cleaned
@@ -763,7 +760,6 @@ def _build_alert_message_with_related_news(
 
 def _sanitize_ai_sentence(value: str, fallback: str, *, max_chars: int = 180) -> str:
     cleaned = " ".join(str(value or "").split())
-    cleaned = _DIRECT_ADVICE_RE.sub("review risk", cleaned)
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
     if not cleaned:
         cleaned = fallback
@@ -984,7 +980,7 @@ Required JSON fields:
 - possible_action: one short cautious sentence
 - related_news_ids: an array with up to 2 numeric IDs from the News list
 
-Do not give direct buy/sell/short advice or guaranteed-outcome language.
+Do not use guaranteed-outcome language.
 High should be rare. Extreme should be used only for clearly abnormal market shocks.
 News-only alerts should be Low unless the news is clearly material.
 Never use Medium only because news may affect sentiment.
@@ -1103,7 +1099,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
         "reason_for_no_alert non-empty.\n"
         "related_news_ids must come from news.news_id.\n"
         "Prefer fewer useful alerts. If no meaningful event exists, set should_alert=false.\n"
-        "No direct trading commands or guaranteed outcomes.\n"
+        "No guaranteed outcomes.\n"
         "In snapshots, m is minutes before timestamp_utc and p is USD price.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
@@ -1191,8 +1187,7 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
         "message_body; describe the current price, since-last-message change, and 24h "
         "change qualitatively.\n"
         "related_news_ids must only contain news_id values from candidate_news.\n"
-        "Do not provide personalised financial advice or portfolio instructions. "
-        "possible_action must be cautious and non-prescriptive.\n\n"
+        "possible_action should be concise.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
@@ -1274,6 +1269,13 @@ def build_market_report_prompt(input_payload: dict) -> str:
     report_type = str(input_payload.get("report_type") or "daily").strip().lower()
     overview_label = "Weekly overview" if report_type == "weekly" else "Market overview"
     news_label = "Weekly news theme" if report_type == "weekly" else "News context"
+    coin_rows_example = (
+        "• BTC: $..., 7d ..., 24h ...\n"
+        "• ETH: $..., 7d ..., 24h ...\n\n"
+        if report_type == "weekly"
+        else "• BTC: $..., 24h ...\n"
+        "• ETH: $..., 24h ...\n\n"
+    )
     return (
         "Return valid JSON only, in English.\n"
         "Use exactly these fields: report_type, title, market_overview, coin_summaries, "
@@ -1291,15 +1293,13 @@ def build_market_report_prompt(input_payload: dict) -> str:
         f"{overview_label}:\n"
         "<1-2 short sentences across active coins>\n\n"
         "Coins:\n"
-        "• BTC: $..., 24h ...\n"
-        "• ETH: $..., 24h ...\n\n"
+        f"{coin_rows_example}"
         f"{news_label}:\n"
         "<1-2 short sentences or No major market-wide news selected.>\n\n"
         "Possible action:\n"
         "<one cautious non-prescriptive sentence>\n\n"
         "Not financial advice.\n"
-        "No raw JSON in telegram_message. No dense paragraphs. No direct buy, sell, "
-        "short, or long commands. Do not provide personalised financial advice.\n\n"
+        "No raw JSON in telegram_message. No dense paragraphs.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
@@ -1503,112 +1503,3 @@ async def create_ai_alert_payload(
     )
     html_message = build_html_alert_message(plain_message, related_news_links)
     return {"plain_text": plain_message, "html_text": html_message}
-
-
-async def create_daily_report(
-    current_price: float, change_24h: float, news_items: list[dict] | None = None
-) -> dict | None:
-    news_text = _build_news_text(news_items)
-    prompt = f"""
-Return only minified JSON with required fields: risk_level(low|medium|high),
-market_interpretation, possible_actions(array), telegram_message.
-telegram_message must be a concise, readable Telegram message
-(about 7-10 short lines) using this style:
-📊 BTC Daily Report
-
-Price: $...
-24h change: ...%
-7d trend: optional if context helps
-Risk level: ...
-
-Market view:
-<1 short sentence>
-
-News:
-<1 short sentence>
-
-Possible action:
-<1 cautious sentence>
-Not financial advice.
-No raw JSON in telegram_message. No dense paragraphs. No direct buy/sell advice.
-Use cautious wording such as: consider reviewing exposure, consider waiting for
-confirmation, monitor risk, avoid impulsive action.
-Data: price={current_price:.2f}, change24h={change_24h:.4f}%.
-News:\n{news_text}
-"""
-    result, usage_log_id = await _ask_json_with_usage(
-        prompt,
-        call_type="daily_report",
-        symbol="BTC",
-        model=GROQ_REPORT_MODEL,
-    )
-    if not result:
-        return None
-    required = {"risk_level", "market_interpretation", "possible_actions", "telegram_message"}
-    if required - set(result.keys()):
-        await mark_llm_usage_log_status(
-            usage_log_id,
-            status="schema_error",
-            error_reason="schema validation failed",
-            error_message="Daily report validation failed: missing required fields.",
-        )
-        logger.error("Daily report validation failed: missing required fields.")
-        return None
-    return result
-
-
-async def create_weekly_report(
-    current_price: float,
-    change_24h: float | None,
-    change_7d: float | None,
-    news_items: list[dict] | None = None,
-) -> dict | None:
-    news_text = _build_news_text(news_items)
-    change_24h_text = change_24h if change_24h is not None else "unknown"
-    change_7d_text = change_7d if change_7d is not None else "unknown"
-    prompt = f"""
-Return only minified JSON with required fields: risk_level(low|medium|high),
-weekly_interpretation, possible_actions(array), telegram_message.
-telegram_message must be concise and easy to read in Telegram, using short sections and line breaks:
-📊 BTC Weekly Report
-
-Price: $...
-7d trend: ...%
-24h change: optional
-Risk level: ...
-
-Weekly market view:
-<1 short sentence>
-
-Weekly news theme:
-<1 short sentence>
-
-Possible action:
-<1 cautious sentence>
-Not financial advice.
-No raw JSON in telegram_message. No dense paragraphs. No direct buy/sell advice.
-Use cautious wording such as: consider reviewing exposure, consider waiting for
-confirmation, monitor risk, avoid impulsive action.
-Data: price={current_price:.2f}, change24h={change_24h_text}%,
-change7d={change_7d_text}%.
-News:\n{news_text}
-"""
-    result, usage_log_id = await _ask_json_with_usage(
-        prompt,
-        call_type="weekly_report",
-        symbol="BTC",
-        model=GROQ_REPORT_MODEL,
-    )
-    if not result:
-        return None
-    required = {"risk_level", "weekly_interpretation", "possible_actions", "telegram_message"}
-    if required - set(result.keys()):
-        await mark_llm_usage_log_status(
-            usage_log_id,
-            status="schema_error",
-            error_reason="schema validation failed",
-            error_message="Weekly report validation failed: missing required fields.",
-        )
-        logger.error("Weekly report validation failed: missing required fields.")
-        return None
-    return result

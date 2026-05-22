@@ -42,6 +42,32 @@ def test_weekly_report_without_disclaimer_is_accepted_after_append():
     assert decision.telegram_message.endswith("Not financial advice.")
 
 
+def test_daily_report_advice_like_wording_is_accepted():
+    decision = validate_market_report_output(
+        _valid_report(
+            "daily",
+            telegram_message="Daily Market Report\n\nAdjust your strategy as needed.",
+        ),
+        expected_report_type="daily",
+    )
+
+    assert "Adjust your strategy" in decision.telegram_message
+
+
+def test_weekly_report_advice_like_wording_is_accepted():
+    decision = validate_market_report_output(
+        _valid_report(
+            "weekly",
+            telegram_message=(
+                "Weekly Market Report\n\nReview your portfolio and adjust your strategy."
+            ),
+        ),
+        expected_report_type="weekly",
+    )
+
+    assert "your portfolio" in decision.telegram_message
+
+
 def test_empty_telegram_message_is_rejected():
     with pytest.raises(MarketReportValidationError, match="telegram_message must be non-empty"):
         validate_market_report_output(
@@ -59,12 +85,13 @@ def test_empty_telegram_message_is_rejected():
         "Daily Market Report\n\nGo long.\n\nNot financial advice.",
     ],
 )
-def test_direct_trading_advice_is_rejected(telegram_message):
-    with pytest.raises(MarketReportValidationError, match="direct trading command"):
-        validate_market_report_output(
-            _valid_report("daily", telegram_message=telegram_message),
-            expected_report_type="daily",
-        )
+def test_direct_trading_wording_is_accepted(telegram_message):
+    decision = validate_market_report_output(
+        _valid_report("daily", telegram_message=telegram_message),
+        expected_report_type="daily",
+    )
+
+    assert decision.telegram_message == telegram_message
 
 
 def test_wrong_symbol_is_rejected():
@@ -73,3 +100,16 @@ def test_wrong_symbol_is_rejected():
 
     with pytest.raises(MarketReportValidationError, match="symbol is not active"):
         validate_market_report_output(report, expected_report_type="daily")
+
+
+def test_validation_errors_do_not_contain_financial_advice_messages():
+    report = _valid_report("daily")
+    report["coin_summaries"] = [{"symbol": "XRP", "summary": "XRP is moving."}]
+
+    with pytest.raises(MarketReportValidationError) as exc_info:
+        validate_market_report_output(report, expected_report_type="daily")
+
+    message = str(exc_info.value)
+    assert "personalized financial advice detected" not in message
+    assert "direct financial advice" not in message
+    assert "direct trading command" not in message

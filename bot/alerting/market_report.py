@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,19 +16,6 @@ REPORT_RESULT_FIELDS = {
     "telegram_message",
 }
 _NOT_FINANCIAL_ADVICE = "Not financial advice."
-_DIRECT_COMMAND_RE = re.compile(
-    r"(?i)\b("
-    r"buy\s+(now|today|immediately)|"
-    r"sell\s+(now|today|immediately)|"
-    r"short\s+(now|today|immediately)|"
-    r"go\s+long|go\s+short|"
-    r"you\s+should\s+(buy|sell|short|long)|"
-    r"must\s+(buy|sell|short|long)"
-    r")\b"
-)
-_PERSONAL_ADVICE_RE = re.compile(
-    r"(?i)\b(your portfolio|your position|your holdings|for your account)\b"
-)
 
 
 class MarketReportValidationError(ValueError):
@@ -74,8 +60,6 @@ def validate_market_report_output(
     telegram_message = _append_disclaimer_if_missing(
         _required_text(result["telegram_message"], "telegram_message")
     )
-    _validate_cautious_text(telegram_message)
-    _validate_cautious_text(possible_action)
 
     coin_summaries = _validate_coin_summaries(
         result["coin_summaries"],
@@ -125,16 +109,8 @@ def _validate_coin_summaries(
         if normalize_symbol(symbol) not in active_symbols or symbol not in allowed:
             raise MarketReportValidationError("coin summary symbol is not active")
         summary = _required_text(item.get("summary"), "coin_summaries.summary")
-        _validate_cautious_text(summary)
         summaries.append({"symbol": symbol, "summary": summary})
 
     if not summaries:
         raise MarketReportValidationError("coin_summaries must not be empty")
     return summaries
-
-
-def _validate_cautious_text(value: str) -> None:
-    if _DIRECT_COMMAND_RE.search(value):
-        raise MarketReportValidationError("direct trading command detected")
-    if _PERSONAL_ADVICE_RE.search(value):
-        raise MarketReportValidationError("personalized financial advice detected")

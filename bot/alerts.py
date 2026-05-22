@@ -565,7 +565,6 @@ def _coin_fallback_emoji(symbol: str) -> str:
 def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
     cleaned = " ".join(str(value or "").split()).strip()
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
-    cleaned = re.sub(r"(?i)\b(buy|sell|liquidate|short|long|move all money)\b", "review", cleaned)
     return cleaned or fallback
 
 
@@ -1433,7 +1432,7 @@ async def _build_event_analysis_input(
         "news": candidate_news,
         "policy": {
             "language": "English",
-            "audience": "General retail crypto holder; no personalised financial advice.",
+            "audience": "General retail crypto holder.",
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         },
     }
@@ -1485,7 +1484,6 @@ async def _build_market_heartbeat_input(
         "policy": {
             "language": "English",
             "purpose": "Calm Market Heartbeat, not an Event Alert.",
-            "financial_advice": "No personalised financial advice or portfolio instructions.",
         },
     }
 

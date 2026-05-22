@@ -129,12 +129,16 @@ def test_alert_accepts_unmapped_related_news_ids_for_safe_backend_fallback():
 
 def test_alert_possible_action_advice_like_wording_no_longer_blocks_schema():
     decision = validate_event_analysis_output(
-        alert_analysis_result(possible_action="Consider selling only if it fits your plan."),
+        alert_analysis_result(
+            possible_action=(
+                "Buy, sell, adjust your portfolio, and review exposure if it fits your plan."
+            )
+        ),
         expected_symbol="sol",
         candidate_news_ids={"n1"},
     )
 
-    assert decision.possible_action == "Consider selling only if it fits your plan."
+    assert "adjust your portfolio" in decision.possible_action
 
 
 def test_alert_still_rejects_invalid_related_news_ids_shape():
