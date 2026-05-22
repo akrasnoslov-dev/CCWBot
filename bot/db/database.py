@@ -888,6 +888,56 @@ class MarketHeartbeat(Base):
     )
 
 
+class MarketReport(Base):
+    __tablename__ = "market_reports"
+    __table_args__ = (
+        Index("ix_market_reports_type_generated_at", "report_type", "generated_at"),
+        CheckConstraint("report_type IN ('daily', 'weekly')", name="ck_market_reports_type"),
+        CheckConstraint("status IN ('completed', 'failed')", name="ck_market_reports_status"),
+        {"comment": "Cached AI market-wide reports generated independently of user requests."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal market report row id."
+    )
+    report_type: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Report cadence, either daily or weekly."
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True, comment="When this report generation ran."
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True, comment="When this cached report should be refreshed."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        default="completed",
+        index=True,
+        comment="Report generation state, either completed or failed.",
+    )
+    raw_input_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON input payload sent to the report LLM."
+    )
+    raw_output_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw JSON or text output returned by the report LLM."
+    )
+    telegram_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Sanitized Telegram report message when generation succeeded."
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Failure detail when report generation failed."
+    )
+    provider: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="LLM provider used for this report generation."
+    )
+    model: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="LLM model used for this report generation."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this report row was created."
+    )
+
+
 class LlmUsageLog(Base):
     __tablename__ = "llm_usage_logs"
     __table_args__ = (
@@ -2469,6 +2519,57 @@ async def save_market_heartbeat(
     await session.commit()
     await session.refresh(heartbeat)
     return heartbeat
+
+
+async def save_market_report(
+    session: AsyncSession,
+    *,
+    report_type: str,
+    generated_at: datetime,
+    expires_at: datetime,
+    status: str,
+    raw_input_json: str | None,
+    raw_output_json: str | None,
+    telegram_message: str | None = None,
+    error_message: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> MarketReport:
+    """Save one cached market report generation attempt."""
+    report = MarketReport(
+        report_type=report_type.lower(),
+        generated_at=generated_at,
+        expires_at=expires_at,
+        status=status,
+        raw_input_json=raw_input_json,
+        raw_output_json=raw_output_json,
+        telegram_message=telegram_message,
+        error_message=error_message,
+        provider=provider,
+        model=model,
+    )
+    session.add(report)
+    await session.commit()
+    await session.refresh(report)
+    return report
+
+
+async def get_latest_market_report(
+    session: AsyncSession,
+    *,
+    report_type: str,
+    statuses: set[str] | None = None,
+) -> MarketReport | None:
+    """Return the newest cached market report for a cadence."""
+    statement = (
+        select(MarketReport)
+        .where(MarketReport.report_type == report_type.lower())
+        .order_by(MarketReport.generated_at.desc(), MarketReport.id.desc())
+        .limit(1)
+    )
+    if statuses is not None:
+        statement = statement.where(MarketReport.status.in_(sorted(statuses)))
+    return await session.scalar(statement)
 
 
 async def save_llm_usage_log(

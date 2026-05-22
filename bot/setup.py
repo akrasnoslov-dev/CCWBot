@@ -14,6 +14,7 @@ async def setup_bot_commands(app: Application) -> None:
         BotCommand("start", "Open bot menu"),
         BotCommand("price", "Check crypto prices"),
         BotCommand("settings", "Manage alert settings"),
+        BotCommand("reports", "Open market reports"),
         BotCommand("myplan", "Show subscription plan"),
         BotCommand("subscribe", "Subscribe with Telegram Stars"),
         BotCommand("status", "Show bot status"),

@@ -16,8 +16,8 @@ from telegram.ext import (
 from bot.alerts import (
     schedule_automatic_market_check,
     schedule_market_heartbeat_generation,
+    schedule_report_cache_generation,
     schedule_seen_news_cleanup,
-    schedule_weekly_report,
 )
 from bot.config import (
     ENVIRONMENT,
@@ -136,7 +136,7 @@ def main():
     runtime_settings = loop.run_until_complete(get_runtime_alert_settings())
     schedule_automatic_market_check(app, runtime_settings["automatic_check_interval_seconds"])
     schedule_market_heartbeat_generation(app)
-    schedule_weekly_report(app)
+    schedule_report_cache_generation(app)
     schedule_seen_news_cleanup(app)
 
     health_runner = loop.run_until_complete(

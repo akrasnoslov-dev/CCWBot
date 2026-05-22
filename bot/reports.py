@@ -1,27 +1,50 @@
+from __future__ import annotations
+
+import asyncio
+import json
 import time
+from datetime import timedelta
+from typing import Any
 
-from telegram.ext import ContextTypes
-
-from bot.config import TELEGRAM_CHAT_ID
+from bot.alerting.market_report import MarketReportValidationError, validate_market_report_output
 from bot.db.database import (
-    is_telegram_chat_delivery_enabled,
-    mark_user_bot_blocked,
-    save_alert,
+    MarketReport,
+    get_latest_market_report,
+    save_market_report,
+    utc_now,
 )
+from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS
 from bot.news import fetch_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
-    build_fallback_alert_message,
-    create_daily_report,
-    create_weekly_report,
+    GROQ_REPORT_MODEL,
+    AIInvalidJsonError,
+    AISchemaValidationError,
+    ask_market_report_raw,
+    classify_ai_error_reason,
+    mark_llm_usage_log_status,
     sanitize_alert_message,
 )
-from bot.services.price_service import get_btc_market_data
-from bot.telegram_errors import is_bot_blocked_error
+from bot.services.price_service import get_coin_market_data_batch
+
+
+class MarketReportDataUnavailable(RuntimeError):
+    """Raised when report generation has no usable market data."""
+
 
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
+REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
+REPORT_UNAVAILABLE_MESSAGES = {
+    "daily": "Daily report is temporarily unavailable. Please try again later.",
+    "weekly": "Weekly report is temporarily unavailable. Please try again later.",
+}
 _last_report_call: dict[tuple[int, str], float] = {}
+_report_generation_locks = {
+    "daily": asyncio.Lock(),
+    "weekly": asyncio.Lock(),
+}
+_memory_report_cache: dict[str, dict[str, Any]] = {}
 
 
 def _target_chat_id(target) -> int | None:
@@ -49,117 +72,331 @@ def _is_report_rate_limited(chat_id: int | None, report_type: str) -> bool:
     return False
 
 
-async def send_daily_report_message(target) -> None:
-    chat_id = _target_chat_id(target)
-    if _is_report_rate_limited(chat_id, "daily"):
-        await target.reply_text("Please wait a minute before requesting another daily report.")
-        return
+def _freshness_seconds(report_type: str) -> int:
+    return REPORT_FRESHNESS_SECONDS[report_type]
+
+
+def _is_fresh_report(report: MarketReport | None) -> bool:
+    if report is None or report.status != "completed" or not report.telegram_message:
+        return False
+    expires_at = report.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=utc_now().tzinfo)
+    return expires_at > utc_now()
+
+
+def _is_fresh_memory_report(report: dict[str, Any] | None) -> bool:
+    return bool(
+        report
+        and report.get("status") == "completed"
+        and report.get("telegram_message")
+        and report.get("expires_at") > utc_now()
+    )
+
+
+async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, Any] | None:
+    """Return a fresh cached report, generating one global report if needed."""
+    report_type = _validate_report_type(report_type)
+    cached = await _get_fresh_cached_report(report_type)
+    if cached is not None:
+        return cached
+
+    async with _report_generation_locks[report_type]:
+        cached = await _get_fresh_cached_report(report_type)
+        if cached is not None:
+            return cached
+        return await generate_report_cache(report_type)
+
+
+async def generate_report_cache(report_type: str) -> MarketReport | dict[str, Any] | None:
+    """Generate one market-wide LLM report and cache the completed or failed attempt."""
+    report_type = _validate_report_type(report_type)
+    generated_at = utc_now()
+    expires_at = generated_at + timedelta(seconds=_freshness_seconds(report_type))
+    raw_input_json: str | None = None
+    raw_output_json: str | None = None
+    usage_log_id: int | None = None
+
     try:
-        price, change_24h, change_7d = await get_btc_market_data()
-        news_items = await fetch_news_context(limit=5, prefer_unseen=True)
-        report = await create_daily_report(price, change_24h, news_items)
-        if report and report.get("telegram_message"):
-            message = sanitize_alert_message(str(report["telegram_message"]))
-            await target.reply_text(message)
-            await remember_news_context(news_items)
-            if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
-                async with DB_SESSION_LOCAL() as session:
-                    await save_alert(
-                        session,
-                        symbol="BTC",
-                        alert_type="daily_report",
-                        message=message,
-                        sent_to_chat_id=chat_id,
-                    )
-            return
-        await target.reply_text(
-            sanitize_alert_message(
-                build_fallback_alert_message(price, price, 0.0, change_24h, change_7d)
+        input_payload, news_items = await _build_market_report_input(report_type, generated_at)
+        raw_input_json = json.dumps(input_payload, ensure_ascii=False, sort_keys=True)
+        llm_result = await ask_market_report_raw(input_payload)
+        usage_log_id = getattr(llm_result, "usage_log_id", None)
+        raw_output_json, parsed = llm_result
+        decision = validate_market_report_output(
+            parsed,
+            expected_report_type=report_type,
+            active_symbols=SUPPORTED_SYMBOLS,
+        )
+        message = _build_report_telegram_message(
+            report_type=report_type,
+            input_payload=input_payload,
+            market_overview=decision.market_overview,
+            news_context=decision.news_context,
+            possible_action=decision.possible_action,
+        )
+        await remember_news_context(news_items)
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="completed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=message,
+            error_message=None,
+        )
+    except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
+        if isinstance(error, MarketReportValidationError):
+            log(f"{report_type.capitalize()} report schema validation failed: {error}")
+            await mark_llm_usage_log_status(
+                usage_log_id,
+                status="schema_error",
+                error_reason="schema validation failed",
+                error_message=str(error)[:500],
             )
+        raw_output_json = getattr(error, "raw_content", raw_output_json)
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message=str(error),
+        )
+    except MarketReportDataUnavailable as error:
+        log(f"{report_type.capitalize()} report generation skipped: {error}")
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message=str(error),
         )
     except Exception as error:
-        log(f"Daily report generation failed: {error}")
-        await target.reply_text(
-            "Daily report unavailable. Monitor risk and avoid impulsive action.\n"
-            "Not financial advice."
+        log(f"{report_type.capitalize()} report generation failed: {error}")
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message=classify_ai_error_reason(error),
         )
+
+
+async def generate_daily_report_cache_job(context=None) -> None:
+    await get_or_generate_report("daily")
+
+
+async def generate_weekly_report_cache_job(context=None) -> None:
+    await get_or_generate_report("weekly")
+
+
+async def send_daily_report_message(target) -> None:
+    await _send_report_message(target, "daily")
 
 
 async def send_weekly_report_message(target) -> None:
+    await _send_report_message(target, "weekly")
+
+
+async def _send_report_message(target, report_type: str) -> None:
     chat_id = _target_chat_id(target)
-    if _is_report_rate_limited(chat_id, "weekly"):
-        await target.reply_text("Please wait a minute before requesting another weekly report.")
-        return
-    try:
-        price, change_24h, change_7d = await get_btc_market_data()
-        news_items = await fetch_news_context(limit=6, prefer_unseen=True)
-        report = await create_weekly_report(price, change_24h, change_7d, news_items)
-        if report and report.get("telegram_message"):
-            message = sanitize_alert_message(str(report["telegram_message"]))
-            await target.reply_text(message)
-            await remember_news_context(news_items)
-            if DB_ENABLED and DB_SESSION_LOCAL and chat_id is not None:
-                async with DB_SESSION_LOCAL() as session:
-                    await save_alert(
-                        session,
-                        symbol="BTC",
-                        alert_type="weekly_report",
-                        message=message,
-                        sent_to_chat_id=chat_id,
-                    )
-            return
-        trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
-        message = (
-            f"BTC weekly report\n\nPrice: ${price:,.2f}\n"
-            f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
-            "Risk level: Medium\n"
-            "Possible action: consider waiting for clearer confirmation.\n"
-            "Not financial advice."
+    if _is_report_rate_limited(chat_id, report_type):
+        await target.reply_text(
+            f"Please wait a minute before requesting another {report_type} report."
         )
-        await target.reply_text(sanitize_alert_message(message))
-    except Exception as error:
-        log(f"Weekly report generation failed: {error}")
+        return
+
+    report = await get_or_generate_report(report_type)
+    message = getattr(report, "telegram_message", None)
+    if isinstance(report, dict):
+        message = report.get("telegram_message")
+    if message:
+        await target.reply_text(str(message))
+        return
+
+    await target.reply_text(REPORT_UNAVAILABLE_MESSAGES[report_type])
 
 
-async def send_scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
-    try:
-        chat_id = int(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID is not None else None
-        if chat_id is None:
-            log("Scheduled weekly report skipped because TELEGRAM_CHAT_ID is not configured.")
-            return
-        if DB_ENABLED and DB_SESSION_LOCAL:
-            async with DB_SESSION_LOCAL() as session:
-                if not await is_telegram_chat_delivery_enabled(session, chat_id):
-                    log(f"Scheduled weekly report skipped for inactive chat_id {chat_id}.")
-                    return
-        price, change_24h, change_7d = await get_btc_market_data()
-        news_items = await fetch_news_context(limit=6, prefer_unseen=True)
-        report = await create_weekly_report(price, change_24h, change_7d, news_items)
-        message = report.get("telegram_message") if report else None
-        if not message:
-            trend_text = "unknown" if change_7d is None else f"{change_7d:+.2f}%"
-            message = (
-                f"BTC weekly report\n\nPrice: ${price:,.2f}\n"
-                f"24h change: {change_24h:+.2f}%\n7d trend: {trend_text}\n"
-                "Risk level: Medium\n"
-                "Possible action: monitor risk and avoid impulsive action.\n"
-                "Not financial advice."
+async def _get_fresh_cached_report(report_type: str) -> MarketReport | dict[str, Any] | None:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            report = await get_latest_market_report(
+                session,
+                report_type=report_type,
+                statuses={"completed"},
             )
-        message = sanitize_alert_message(str(message))
-        await context.application.bot.send_message(chat_id=chat_id, text=message)
-        await remember_news_context(news_items)
-    except Exception as error:
-        if is_bot_blocked_error(error) and DB_ENABLED and DB_SESSION_LOCAL:
-            async with DB_SESSION_LOCAL() as session:
-                chat_id = int(TELEGRAM_CHAT_ID) if TELEGRAM_CHAT_ID is not None else None
-                user, _ = await mark_user_bot_blocked(
-                    session,
-                    telegram_chat_id=chat_id,
-                )
-                if user is not None:
-                    log(
-                        f"User {user.telegram_user_id} / chat_id {user.telegram_chat_id} "
-                        "disabled because "
-                        "Telegram returned bot blocked error."
-                    )
-        log(f"Scheduled weekly report failed: {error}")
+            return report if _is_fresh_report(report) else None
+
+    report = _memory_report_cache.get(report_type)
+    return report if _is_fresh_memory_report(report) else None
+
+
+async def _save_or_remember_report(
+    *,
+    report_type: str,
+    generated_at,
+    expires_at,
+    status: str,
+    raw_input_json: str | None,
+    raw_output_json: str | None,
+    telegram_message: str | None,
+    error_message: str | None,
+) -> MarketReport | dict[str, Any]:
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            return await save_market_report(
+                session,
+                report_type=report_type,
+                generated_at=generated_at,
+                expires_at=expires_at,
+                status=status,
+                raw_input_json=raw_input_json,
+                raw_output_json=raw_output_json,
+                telegram_message=telegram_message,
+                error_message=error_message,
+                provider="groq",
+                model=GROQ_REPORT_MODEL,
+            )
+
+    cached = {
+        "report_type": report_type,
+        "generated_at": generated_at,
+        "expires_at": expires_at,
+        "status": status,
+        "raw_input_json": raw_input_json,
+        "raw_output_json": raw_output_json,
+        "telegram_message": telegram_message,
+        "error_message": error_message,
+        "provider": "groq",
+        "model": GROQ_REPORT_MODEL,
+    }
+    _memory_report_cache[report_type] = cached
+    return cached
+
+
+async def _build_market_report_input(report_type: str, generated_at) -> tuple[dict, list[dict]]:
+    symbols = list(SUPPORTED_SYMBOLS)
+    market_data = await get_coin_market_data_batch(symbols)
+    if not _has_usable_market_data(market_data):
+        raise MarketReportDataUnavailable("market data unavailable")
+    news_items = await fetch_news_context(limit=6, prefer_unseen=True)
+    return (
+        {
+            "report_type": report_type,
+            "generated_at": generated_at.isoformat(),
+            "active_symbols": [symbol.upper() for symbol in symbols],
+            "coins": [
+                {
+                    "symbol": symbol.upper(),
+                    "name": str(SUPPORTED_COINS[symbol]["name"]),
+                    "price": _round_optional((market_data.get(symbol) or {}).get("price")),
+                    "change_24h": _round_optional(
+                        (market_data.get(symbol) or {}).get("change_24h")
+                    ),
+                    "change_7d": _round_optional((market_data.get(symbol) or {}).get("change_7d")),
+                }
+                for symbol in symbols
+            ],
+            "news": [
+                {
+                    "news_id": str(index + 1),
+                    "title": str(item.get("title", "")).strip()[:180],
+                    "source": str(item.get("source", "")).strip()[:80],
+                    "link": str(item.get("link", "")).strip(),
+                }
+                for index, item in enumerate(news_items[:6])
+                if str(item.get("title", "")).strip()
+            ],
+        },
+        news_items,
+    )
+
+
+def _build_report_telegram_message(
+    *,
+    report_type: str,
+    input_payload: dict,
+    market_overview: str,
+    news_context: str,
+    possible_action: str,
+) -> str:
+    is_weekly = report_type == "weekly"
+    title = "Weekly Market Report" if is_weekly else "Daily Market Report"
+    overview_label = "Weekly overview" if is_weekly else "Market overview"
+    news_label = "Weekly news theme" if is_weekly else "News context"
+    coin_rows = [
+        _format_coin_row(coin, weekly=is_weekly)
+        for coin in input_payload.get("coins", [])
+        if isinstance(coin, dict)
+    ]
+    message = (
+        f"📊 {title}\n\n"
+        f"{overview_label}:\n"
+        f"{market_overview.strip()}\n\n"
+        "Coins:\n"
+        f"{chr(10).join(coin_rows)}\n\n"
+        f"{news_label}:\n"
+        f"{news_context.strip()}\n\n"
+        "Possible action:\n"
+        f"{possible_action.strip()}\n\n"
+        "Not financial advice."
+    )
+    return sanitize_alert_message(message)
+
+
+def _format_coin_row(coin: dict, *, weekly: bool) -> str:
+    symbol = str(coin.get("symbol") or "").upper()
+    price = _format_price(coin.get("price"))
+    change_24h = _format_percent(coin.get("change_24h"))
+    if weekly:
+        change_7d = _format_percent(coin.get("change_7d"))
+        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}"
+    return f"• {symbol}: {price}, 24h {change_24h}"
+
+
+def _format_price(value) -> str:
+    if value is None:
+        return "not enough data yet"
+    numeric_value = float(value)
+    if numeric_value.is_integer():
+        return f"${numeric_value:,.0f}"
+    return f"${numeric_value:,.2f}"
+
+
+def _format_percent(value) -> str:
+    if value is None:
+        return "not enough data yet"
+    return f"{float(value):+.1f}%"
+
+
+def _round_optional(value) -> float | None:
+    if value is None:
+        return None
+    return round(float(value), 4)
+
+
+def _has_usable_market_data(market_data: dict[str, dict[str, Any]] | None) -> bool:
+    if not market_data:
+        return False
+    for symbol in SUPPORTED_SYMBOLS:
+        coin_data = market_data.get(symbol) or {}
+        if coin_data.get("price") is not None:
+            return True
+    return False
+
+
+def _validate_report_type(report_type: str) -> str:
+    normalized = report_type.strip().lower()
+    if normalized not in REPORT_FRESHNESS_SECONDS:
+        raise ValueError(f"Unsupported report type: {report_type}")
+    return normalized
