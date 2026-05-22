@@ -1,6 +1,6 @@
 """heartbeat delivery idempotency and event instances
 
-Revision ID: 0019_heartbeat_idempotency_event_instances
+Revision ID: 0019_heartbeat_idemp
 Revises: 0018_market_reports
 Create Date: 2026-05-22 00:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0019_heartbeat_idempotency_event_instances"
+revision: str = "0019_heartbeat_idemp"
 down_revision: str | None = "0018_market_reports"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
