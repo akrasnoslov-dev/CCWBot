@@ -1283,6 +1283,9 @@ def build_market_report_prompt(input_payload: dict) -> str:
         "telegram_message must be concise, sectioned, and readable in Telegram.\n"
         "Mention all active coins from input once in the Coins section. Use the supplied "
         "coin symbols and do not invent symbols.\n"
+        'telegram_message must end with exactly this final line: "Not financial advice."\n'
+        "Do not omit the disclaimer. Do not wrap the disclaimer in Markdown italics, bold, "
+        "quotes, or punctuation.\n"
         "Use this Telegram structure:\n"
         f"📊 {'Weekly' if report_type == 'weekly' else 'Daily'} Market Report\n\n"
         f"{overview_label}:\n"
@@ -1609,4 +1612,3 @@ News:\n{news_text}
         logger.error("Weekly report validation failed: missing required fields.")
         return None
     return result
-

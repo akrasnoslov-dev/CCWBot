@@ -27,6 +27,11 @@ from bot.services.ai_agent_groq import (
 )
 from bot.services.price_service import get_coin_market_data_batch
 
+
+class MarketReportDataUnavailable(RuntimeError):
+    """Raised when report generation has no usable market data."""
+
+
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
@@ -137,6 +142,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         )
     except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
         if isinstance(error, MarketReportValidationError):
+            log(f"{report_type.capitalize()} report schema validation failed: {error}")
             await mark_llm_usage_log_status(
                 usage_log_id,
                 status="schema_error",
@@ -153,6 +159,18 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message=classify_ai_error_reason(error),
+        )
+    except MarketReportDataUnavailable as error:
+        log(f"{report_type.capitalize()} report generation skipped: {error}")
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message=str(error),
         )
     except Exception as error:
         log(f"{report_type.capitalize()} report generation failed: {error}")
@@ -263,6 +281,8 @@ async def _save_or_remember_report(
 async def _build_market_report_input(report_type: str, generated_at) -> tuple[dict, list[dict]]:
     symbols = list(SUPPORTED_SYMBOLS)
     market_data = await get_coin_market_data_batch(symbols)
+    if not _has_usable_market_data(market_data):
+        raise MarketReportDataUnavailable("market data unavailable")
     news_items = await fetch_news_context(limit=6, prefer_unseen=True)
     return (
         {
@@ -300,6 +320,16 @@ def _round_optional(value) -> float | None:
     if value is None:
         return None
     return round(float(value), 4)
+
+
+def _has_usable_market_data(market_data: dict[str, dict[str, Any]] | None) -> bool:
+    if not market_data:
+        return False
+    for symbol in SUPPORTED_SYMBOLS:
+        coin_data = market_data.get(symbol) or {}
+        if coin_data.get("price") is not None:
+            return True
+    return False
 
 
 def _validate_report_type(report_type: str) -> str:

@@ -244,6 +244,7 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "start",
         "price",
         "settings",
+        "reports",
         "myplan",
         "subscribe",
         "status",
@@ -252,6 +253,7 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "start",
         "price",
         "settings",
+        "reports",
         "myplan",
         "subscribe",
         "status",
@@ -287,6 +289,7 @@ async def test_start_text_mentions_subscription_commands_for_regular_users(monke
     text = message.replies[0][0]
     assert "/price - check crypto prices" in text
     assert "/settings - manage alert settings" in text
+    assert "/reports - open market reports" in text
     assert "/myplan - show subscription plan" in text
     assert "/subscribe - subscribe with Telegram Stars" in text
     assert "/status - show bot status" in text

@@ -180,6 +180,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use:\n"
         "/price - check crypto prices"
         "\n/settings - manage alert settings"
+        "\n/reports - open market reports"
         "\n/myplan - show subscription plan"
         "\n/subscribe - subscribe with Telegram Stars"
         "\n/status - show bot status"

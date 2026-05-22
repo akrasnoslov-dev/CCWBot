@@ -235,22 +235,70 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch):
+    engine, session_local = await build_session_factory()
+    target = FakeTarget()
+    try:
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            reports,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={
+                    "btc": {"price": 100000.0, "change_24h": 1.0, "change_7d": None},
+                    "eth": {"price": 4000.0, "change_24h": 2.0, "change_7d": None},
+                    "ton": {"price": 5.0, "change_24h": -1.0, "change_7d": None},
+                    "sol": {"price": 200.0, "change_24h": 0.5, "change_7d": None},
+                }
+            ),
+        )
+        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
+        ask_report = AsyncMock(
+            return_value=(
+                '{"report_type":"daily"}',
+                {
+                    "report_type": "daily",
+                    "title": "Daily Market Report",
+                    "market_overview": "Mixed market.",
+                    "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
+                    "news_context": "No major market-wide news selected.",
+                    "possible_action": "Monitor risk without rushing.",
+                    "telegram_message": "Daily Market Report\n\nCoins:\nBTC ETH TON SOL",
+                },
+            )
+        )
+        monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
+
+        await reports.send_daily_report_message(target)
+
+        assert target.replies[0][0].endswith("Not financial advice.")
+        assert "temporarily unavailable" not in target.replies[0][0]
+        async with session_local() as session:
+            saved_report = await session.scalar(select(MarketReport))
+            assert saved_report.status == "completed"
+            assert saved_report.telegram_message.endswith("Not financial advice.")
+            assert await session.scalar(select(func.count()).select_from(Alert)) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_failed_report_generation_does_not_create_fake_fallback(monkeypatch):
     engine, session_local = await build_session_factory()
     target = FakeTarget()
     try:
         monkeypatch.setattr(reports, "DB_ENABLED", True)
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        ask_report = AsyncMock(side_effect=RuntimeError("LLM should not be called"))
         monkeypatch.setattr(reports, "get_coin_market_data_batch", AsyncMock(return_value={}))
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
-        monkeypatch.setattr(
-            reports,
-            "ask_market_report_raw",
-            AsyncMock(side_effect=RuntimeError("boom")),
-        )
+        monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
 
         await reports.send_daily_report_message(target)
 
+        ask_report.assert_not_awaited()
         assert target.replies == [
             ("Daily report is temporarily unavailable. Please try again later.", {})
         ]

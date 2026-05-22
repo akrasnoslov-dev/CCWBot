@@ -71,9 +71,9 @@ def validate_market_report_output(
     market_overview = _required_text(result["market_overview"], "market_overview")
     news_context = _required_text(result["news_context"], "news_context")
     possible_action = _required_text(result["possible_action"], "possible_action")
-    telegram_message = _required_text(result["telegram_message"], "telegram_message")
-    if _NOT_FINANCIAL_ADVICE not in telegram_message:
-        raise MarketReportValidationError("telegram_message must contain Not financial advice.")
+    telegram_message = _append_disclaimer_if_missing(
+        _required_text(result["telegram_message"], "telegram_message")
+    )
     _validate_cautious_text(telegram_message)
     _validate_cautious_text(possible_action)
 
@@ -100,6 +100,12 @@ def _required_text(value: Any, field_name: str) -> str:
     if not stripped:
         raise MarketReportValidationError(f"{field_name} must be non-empty")
     return stripped
+
+
+def _append_disclaimer_if_missing(message: str) -> str:
+    if _NOT_FINANCIAL_ADVICE in message:
+        return message
+    return f"{message.rstrip()}\n\n{_NOT_FINANCIAL_ADVICE}"
 
 
 def _validate_coin_summaries(
