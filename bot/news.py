@@ -1,5 +1,6 @@
 import asyncio
 
+from bot.config import ENABLE_NEWS_INTELLIGENCE
 from bot.db.database import (
     cleanup_seen_news,
     make_news_key,
@@ -7,6 +8,7 @@ from bot.db.database import (
     was_news_seen,
 )
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
+from bot.services.news_intelligence_service import NewsIntelligenceService
 from bot.services.news_service import fetch_crypto_news
 
 
@@ -18,6 +20,13 @@ async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[
         return news_items[:limit]
 
     async with DB_SESSION_LOCAL() as session:
+        if ENABLE_NEWS_INTELLIGENCE:
+            try:
+                service = NewsIntelligenceService(session)
+                news_items = await service.analyze_items(news_items)
+            except Exception:
+                log("News intelligence failed; using RSS news without enrichment.")
+
         unseen_items = [
             item
             for item in news_items

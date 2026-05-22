@@ -74,6 +74,19 @@ PRICE_MOVE_ALERT_PERCENT = _get_float_env("PRICE_MOVE_ALERT_PERCENT", 2, minimum
 ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 30, minimum=0)
 SEEN_NEWS_KEEP_LATEST = _get_int_env("SEEN_NEWS_KEEP_LATEST", 500, minimum=1)
 
+# Budget-aware RSS news intelligence. Persistent cache must be checked before LLM calls.
+ENABLE_NEWS_INTELLIGENCE = _get_bool_env("ENABLE_NEWS_INTELLIGENCE", True)
+NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN = _get_int_env(
+    "NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN", 5, minimum=0
+)
+NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN = _get_int_env(
+    "NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN", 3, minimum=0
+)
+NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR = _get_int_env(
+    "NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR", 20, minimum=0
+)
+NEWS_LLM_TIMEOUT_SECONDS = _get_int_env("NEWS_LLM_TIMEOUT_SECONDS", 20, minimum=1)
+
 # In-memory CoinGecko cache TTL to reduce API calls and reduce 429 risk.
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
 # Automatic market check cadence in seconds.

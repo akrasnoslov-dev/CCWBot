@@ -40,6 +40,7 @@ GROQ_MARKET_HEARTBEAT_MODEL = os.getenv(
     "GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"
 )
 GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant")
+GROQ_NEWS_INTELLIGENCE_MODEL = os.getenv("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-3.1-8b-instant")
 
 logger = logging.getLogger(__name__)
 
@@ -1380,6 +1381,62 @@ async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
         input_chars=input_chars,
         output_chars=len(raw_content),
         max_tokens=800,
+        headers=headers,
+        response=response,
+    )
+    return LLMJsonResult(raw_content, parsed, usage_log_id)
+
+
+async def ask_news_intelligence_raw(
+    messages: list[dict],
+    *,
+    model: str = GROQ_NEWS_INTELLIGENCE_MODEL,
+    timeout: int = 20,
+    max_tokens: int = 350,
+) -> tuple[str, dict]:
+    """Ask Groq for one compact structured news intelligence JSON response."""
+    response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
+    try:
+        response, headers, input_chars = await _run_groq_chat_completion(
+            call_type="news_intelligence",
+            symbol=None,
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            timeout=timeout,
+        )
+    except Exception as error:
+        if _is_groq_rate_limit_error(error):
+            raise AIGroqRateLimitError(str(error)) from error
+        raise
+
+    raw_content = _response_content(response)
+    parsed = _parse_json(raw_content)
+    if parsed is None:
+        await _write_llm_usage_log(
+            call_type="news_intelligence",
+            symbol=None,
+            model=model,
+            status="invalid_json",
+            input_chars=input_chars,
+            output_chars=len(raw_content),
+            max_tokens=max_tokens,
+            headers=headers,
+            response=response,
+            error_reason="invalid JSON",
+            error_message="Provider response was not valid JSON.",
+        )
+        raise AIInvalidJsonError("Provider response was not valid JSON.", raw_content=raw_content)
+
+    usage_log_id = await _write_llm_usage_log(
+        call_type="news_intelligence",
+        symbol=None,
+        model=model,
+        status="success",
+        input_chars=input_chars,
+        output_chars=len(raw_content),
+        max_tokens=max_tokens,
         headers=headers,
         response=response,
     )
