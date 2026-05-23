@@ -128,7 +128,57 @@ def test_llm_json_is_validated_and_sanitized():
     assert validated["primary_symbol"] == "btc"
     assert validated["impact_score"] == 100
     assert validated["impact_level"] == "critical"
-    assert validated["relevance_score"] == 0
+    assert validated["relevance_score"] == 75
+
+
+def test_llm_score_strings_and_boolean_strings_are_normalized():
+    validated = validate_llm_output(
+        _valid_response(
+            impact_score="74/100",
+            relevance_score=0.62,
+            is_noise="false",
+            is_alert_worthy="false",
+        )
+    )
+
+    assert validated["impact_score"] == 74
+    assert validated["relevance_score"] == 62
+    assert validated["is_noise"] is False
+    assert validated["is_alert_worthy"] is False
+
+
+def test_llm_missing_scores_derive_non_zero_defaults_from_context():
+    validated = validate_llm_output(
+        _valid_response(
+            impact_score=None,
+            impact_level="high",
+            relevance_score=None,
+            related_symbols=["btc"],
+            primary_symbol="btc",
+        )
+    )
+
+    assert validated["impact_score"] == 72
+    assert validated["impact_level"] == "high"
+    assert validated["relevance_score"] == 75
+
+
+def test_llm_zero_scores_for_non_noise_are_derived_from_context():
+    validated = validate_llm_output(
+        _valid_response(
+            impact_score=0,
+            impact_level="medium",
+            relevance_score=0,
+            category="market",
+            related_symbols=["btc"],
+            primary_symbol="btc",
+            is_noise=False,
+        )
+    )
+
+    assert validated["impact_score"] == 45
+    assert validated["impact_level"] == "medium"
+    assert validated["relevance_score"] == 75
 
 
 def test_noise_cannot_be_alert_worthy():
@@ -327,6 +377,62 @@ async def test_existing_analysis_is_reused_without_repeated_llm_call():
 
 
 @pytest.mark.asyncio
+async def test_llm_non_zero_scores_are_persisted_from_flexible_values():
+    engine, session = await build_session()
+    fake_llm = FakeNewsLlm(
+        [
+            _valid_response(
+                impact_score="68%",
+                relevance_score="7/10",
+                is_noise="false",
+                is_alert_worthy="false",
+            )
+        ]
+    )
+    try:
+        service = NewsIntelligenceService(session, llm_client=fake_llm)
+        await service.analyze_items([_raw_item()])
+        row = await session.scalar(select(NewsItem))
+
+        assert row.impact_score == 68
+        assert row.relevance_score == 70
+        assert row.is_noise is False
+        assert row.is_alert_worthy is False
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_zero_scores_are_persisted_as_contextual_non_zero_scores():
+    engine, session = await build_session()
+    fake_llm = FakeNewsLlm(
+        [
+            _valid_response(
+                impact_score=0,
+                impact_level="high",
+                relevance_score=0,
+                category="market",
+                related_symbols=["btc"],
+                primary_symbol="btc",
+                is_noise=False,
+            )
+        ]
+    )
+    try:
+        service = NewsIntelligenceService(session, llm_client=fake_llm)
+        await service.analyze_items([_raw_item()])
+        row = await session.scalar(select(NewsItem))
+
+        assert row.llm_status == "success"
+        assert row.impact_score == 72
+        assert row.relevance_score == 75
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_per_run_budget_is_respected_and_exhaustion_does_not_crash():
     engine, session = await build_session()
     fake_llm = FakeNewsLlm([_valid_response()])
@@ -419,12 +525,88 @@ async def test_duplicate_news_receives_stable_dedup_handling():
         assert rows[1].llm_status == "skipped_duplicate"
         assert rows[1].is_duplicate is True
         assert build_pre_llm_dedup_group_id(normalize_news_item(_raw_item())) != ""
-        assert build_post_llm_dedup_group_id("Bitcoin ETF inflows rise", "fallback").startswith(
-            "hint:"
-        )
+        assert build_post_llm_dedup_group_id(
+            "Bitcoin ETF inflows rise",
+            "fallback",
+            title="Bitcoin ETF inflows rise",
+        ).startswith("hint2:")
     finally:
         await session.close()
         await engine.dispose()
+
+
+def test_post_llm_dedup_groups_same_story_context_but_not_unrelated_context():
+    first = build_post_llm_dedup_group_id(
+        "spot bitcoin ETF inflows",
+        "fallback-a",
+        title="Spot Bitcoin ETF inflows rise",
+        primary_symbol="btc",
+        category="etf",
+    )
+    second = build_post_llm_dedup_group_id(
+        "spot bitcoin ETF inflows",
+        "fallback-b",
+        title="Bitcoin ETF inflows jump",
+        primary_symbol="btc",
+        category="etf",
+    )
+    different_symbol = build_post_llm_dedup_group_id(
+        "spot bitcoin ETF inflows",
+        "fallback-c",
+        title="Spot Bitcoin ETF inflows rise",
+        primary_symbol="eth",
+        category="etf",
+    )
+    different_category = build_post_llm_dedup_group_id(
+        "spot bitcoin ETF inflows",
+        "fallback-d",
+        title="Spot Bitcoin ETF inflows rise",
+        primary_symbol="btc",
+        category="macro",
+    )
+
+    assert first == second
+    assert first != different_symbol
+    assert first != different_category
+
+
+def test_post_llm_dedup_ignores_broad_hint_for_unrelated_titles():
+    first = build_post_llm_dedup_group_id(
+        "crypto market",
+        "title:first",
+        title="Crypto trader sees Hyperliquid AI tokens leading next altcoin rally",
+        primary_symbol="btc",
+        category="market",
+    )
+    second = build_post_llm_dedup_group_id(
+        "crypto market",
+        "title:second",
+        title=(
+            "Bitcoin is ready to beat stocks and bonds again after "
+            "underperformance against Wall Street"
+        ),
+        primary_symbol="btc",
+        category="market",
+    )
+
+    assert first == "title:first"
+    assert second == "title:second"
+    assert first != second
+
+
+def test_pre_llm_dedup_ignores_known_source_suffixes():
+    clean = normalize_news_item(_raw_item(title="Bitcoin ETF inflows rise"))
+    suffixed = normalize_news_item(
+        _raw_item(
+            title=(
+                "Bitcoin ETF inflows rise - "
+                "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data"
+            ),
+            link="https://example.com/btc-etf-copy",
+        )
+    )
+
+    assert build_pre_llm_dedup_group_id(clean) == build_pre_llm_dedup_group_id(suffixed)
 
 
 @pytest.mark.asyncio

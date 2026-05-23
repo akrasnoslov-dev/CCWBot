@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from bot.db.database import (
     utc_now,
 )
 from bot.domain.supported_coins import ALL_SUPPORTED_COINS
+from bot.news_titles import clean_news_title
 from bot.services.ai_agent_groq import GROQ_NEWS_INTELLIGENCE_MODEL, ask_news_intelligence_raw
 
 logger = logging.getLogger(__name__)
@@ -199,7 +201,11 @@ class NewsIntelligenceService:
             self._run_llm_calls += 1
             validated = validate_llm_output(parsed)
             post_dedup_group_id = build_post_llm_dedup_group_id(
-                str(parsed.get("dedup_hint") or ""), dedup_group_id
+                str(parsed.get("dedup_hint") or ""),
+                dedup_group_id,
+                title=item.title,
+                primary_symbol=validated["primary_symbol"],
+                category=validated["category"],
             )
             return await self._persist(
                 item,
@@ -354,8 +360,13 @@ def build_llm_messages(payload: dict) -> list[dict]:
     schema = (
         'Fields: summary, category, related_symbols, primary_symbol, impact_score, '
         'impact_level, relevance_score, is_noise, is_alert_worthy, alert_reason, dedup_hint. '
-        'Categories: regulation, exchange, security, macro, etf, whale, project, technical, '
-        'market, noise. Impact levels: low, medium, high, critical.'
+        'impact_score and relevance_score must be integers from 0 to 100. Use 0 only for '
+        'noise/irrelevant items; every non-noise crypto item should have non-zero scores. '
+        'Do not use fractions, percent strings, or labels. Categories: regulation, exchange, '
+        'security, macro, etf, whale, project, technical, market, noise. Impact levels: low, '
+        'medium, high, critical. '
+        'dedup_hint must be a specific story/entity/event phrase for near-duplicate detection; '
+        'leave it empty for broad market themes.'
     )
     return [
         {"role": "system", "content": "You are a careful crypto news classifier."},
@@ -369,15 +380,20 @@ def build_llm_messages(payload: dict) -> list[dict]:
 def validate_llm_output(parsed: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("LLM response must be a JSON object.")
-    impact_score = _clamp_score(parsed.get("impact_score"))
-    relevance_score = _clamp_score(parsed.get("relevance_score"))
-    is_noise = bool(parsed.get("is_noise"))
+    is_noise = _parse_bool(parsed.get("is_noise"))
     category = str(parsed.get("category") or "").strip().lower()
     if category not in ALLOWED_CATEGORIES:
         category = "noise" if is_noise else "market"
     if category == "noise":
         is_noise = True
     impact_level = str(parsed.get("impact_level") or "").strip().lower()
+    impact_score = _parse_score(parsed.get("impact_score"))
+    if impact_level in ALLOWED_IMPACT_LEVELS and impact_score is None:
+        impact_score = _score_from_impact_level(impact_level)
+    if impact_score is None:
+        impact_score = 0
+    if not is_noise and impact_level in ALLOWED_IMPACT_LEVELS and impact_score == 0:
+        impact_score = _score_from_impact_level(impact_level)
     if impact_level not in ALLOWED_IMPACT_LEVELS:
         impact_level = derive_impact_level(impact_score)
     raw_related_symbols = parsed.get("related_symbols")
@@ -393,7 +409,22 @@ def validate_llm_output(parsed: dict[str, Any]) -> dict[str, Any]:
     primary_symbol = str(parsed.get("primary_symbol") or "").strip().lower() or None
     if primary_symbol not in ALLOWED_SYMBOLS:
         primary_symbol = related_symbols[0] if related_symbols else None
-    is_alert_worthy = bool(parsed.get("is_alert_worthy")) and not is_noise
+    relevance_score = _parse_score(parsed.get("relevance_score"))
+    if relevance_score is None:
+        relevance_score = _derive_relevance_score(
+            is_noise=is_noise,
+            primary_symbol=primary_symbol,
+            related_symbols=related_symbols,
+            category=category,
+        )
+    if relevance_score == 0 and not is_noise:
+        relevance_score = _derive_relevance_score(
+            is_noise=is_noise,
+            primary_symbol=primary_symbol,
+            related_symbols=related_symbols,
+            category=category,
+        )
+    is_alert_worthy = _parse_bool(parsed.get("is_alert_worthy")) and not is_noise
     return {
         "summary": _clean_text(parsed.get("summary"))[:240],
         "category": category,
@@ -423,17 +454,28 @@ def is_obvious_noise(item: NormalizedNewsItem) -> bool:
 
 
 def build_pre_llm_dedup_group_id(item: NormalizedNewsItem) -> str:
-    normalized_title = _normalize_for_hash(item.title)
+    normalized_title = _normalize_for_hash(clean_news_title(item.title))
     if normalized_title:
         return "title:" + hashlib.sha256(normalized_title.encode("utf-8")).hexdigest()[:32]
     return item.news_key[:64]
 
 
-def build_post_llm_dedup_group_id(dedup_hint: str, fallback: str) -> str:
+def build_post_llm_dedup_group_id(
+    dedup_hint: str,
+    fallback: str,
+    *,
+    title: str | None = None,
+    primary_symbol: str | None = None,
+    category: str | None = None,
+) -> str:
     normalized_hint = _normalize_for_hash(dedup_hint)
     if not normalized_hint:
         return fallback
-    return "hint:" + hashlib.sha256(normalized_hint.encode("utf-8")).hexdigest()[:32]
+    if not _dedup_hint_is_specific_to_title(normalized_hint, title):
+        return fallback
+    namespace = _normalize_for_hash(f"{primary_symbol or 'multi'} {category or 'market'}")
+    normalized_value = f"{namespace}:{normalized_hint}" if namespace else normalized_hint
+    return "hint2:" + hashlib.sha256(normalized_value.encode("utf-8")).hexdigest()[:32]
 
 
 def _parse_published_at(value: Any) -> datetime | None:
@@ -462,16 +504,139 @@ def _normalize_for_hash(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
+DEDUP_HINT_STOPWORDS = {
+    "a",
+    "again",
+    "after",
+    "and",
+    "as",
+    "coin",
+    "coins",
+    "crypto",
+    "cryptocurrency",
+    "for",
+    "from",
+    "in",
+    "is",
+    "market",
+    "markets",
+    "news",
+    "of",
+    "on",
+    "the",
+    "to",
+    "tokens",
+    "with",
+}
+
+
+def _dedup_hint_is_specific_to_title(normalized_hint: str, title: str | None) -> bool:
+    title_terms = _dedup_terms(clean_news_title(title or ""))
+    hint_terms = _dedup_terms(normalized_hint)
+    if len(hint_terms) < 2 or not title_terms:
+        return False
+    overlap = title_terms & hint_terms
+    return len(overlap) >= min(2, len(hint_terms))
+
+
+def _dedup_terms(value: str) -> set[str]:
+    normalized = _normalize_for_hash(value)
+    return {
+        term
+        for term in normalized.split()
+        if len(term) >= 3 and term not in DEDUP_HINT_STOPWORDS
+    }
+
+
 def _hash_json(value: dict) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return value != 0
+    text = str(value or "").strip().lower()
+    if text in {"true", "yes", "y", "1"}:
+        return True
+    if text in {"false", "no", "n", "0", ""}:
+        return False
+    return False
+
+
+def _parse_score(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            return None
+        return _clamp_score(numeric * 100 if 0 < numeric <= 1 else numeric)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    qualitative_scores = {
+        "none": 0,
+        "low": 15,
+        "medium": 45,
+        "moderate": 45,
+        "high": 72,
+        "critical": 92,
+    }
+    if text in qualitative_scores:
+        return qualitative_scores[text]
+    ratio_match = re.search(r"(-?\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", text)
+    if ratio_match:
+        numerator = float(ratio_match.group(1))
+        denominator = float(ratio_match.group(2))
+        if denominator > 0:
+            return _clamp_score((numerator / denominator) * 100)
+        return None
+    number_match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not number_match:
+        return None
+    score = float(number_match.group(0))
+    if not math.isfinite(score):
+        return None
+    if 0 < score <= 1:
+        score *= 100
+    return _clamp_score(score)
+
+
+def _score_from_impact_level(impact_level: str) -> int:
+    return {
+        "low": 15,
+        "medium": 45,
+        "high": 72,
+        "critical": 92,
+    }[impact_level]
+
+
+def _derive_relevance_score(
+    *,
+    is_noise: bool,
+    primary_symbol: str | None,
+    related_symbols: list[str],
+    category: str,
+) -> int:
+    if is_noise or category == "noise":
+        return 0
+    if primary_symbol:
+        return 75
+    if related_symbols:
+        return 60
+    return 35
+
+
 def _clamp_score(value: Any) -> int:
     try:
-        score = int(float(value))
-    except (TypeError, ValueError):
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
         score = 0
+    else:
+        score = int(numeric) if math.isfinite(numeric) else 0
     return max(0, min(100, score))
 
 
