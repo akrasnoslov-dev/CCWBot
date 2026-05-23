@@ -76,6 +76,7 @@ SEEN_NEWS_KEEP_LATEST = _get_int_env("SEEN_NEWS_KEEP_LATEST", 500, minimum=1)
 
 # Budget-aware RSS news intelligence. Persistent cache must be checked before LLM calls.
 ENABLE_NEWS_INTELLIGENCE = _get_bool_env("ENABLE_NEWS_INTELLIGENCE", True)
+ENABLE_NEWS_DRIVEN_ALERTS = _get_bool_env("ENABLE_NEWS_DRIVEN_ALERTS", False)
 NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN = _get_int_env(
     "NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN", 5, minimum=0
 )
