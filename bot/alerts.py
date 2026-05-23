@@ -81,7 +81,11 @@ from bot.domain.premium import (
     is_coin_unlocked_for_user,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
-from bot.news import fetch_news_context, remember_news_context
+from bot.news import (
+    fetch_news_context,
+    remember_news_context,
+    select_intelligence_news_for_symbol,
+)
 from bot.news_titles import clean_news_title, clean_related_news_text
 from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
@@ -435,10 +439,11 @@ def _news_id(index: int) -> str:
     return f"n{index + 1}"
 
 
-def _format_candidate_news(news_items: list[dict]) -> list[dict]:
+def _format_candidate_news(news_items: list[dict], *, preserve_order: bool = False) -> list[dict]:
     candidates: list[dict] = []
     seen_keys: set[str] = set()
-    for item in _sort_news_fresh_first(news_items):
+    ordered_items = news_items if preserve_order else _sort_news_fresh_first(news_items)
+    for item in ordered_items:
         title = str(item.get("title") or "").strip()
         if not title:
             continue
@@ -463,6 +468,46 @@ def _format_candidate_news(news_items: list[dict]) -> list[dict]:
             }
         )
     return candidates
+
+
+async def _select_related_news_context(
+    symbol: str,
+    raw_news_items: list[dict] | None,
+    *,
+    fetch_limit: int,
+    intelligence_limit: int = 8,
+    intelligence_max_age_hours: int | None = None,
+    fallback_max_age_hours: int | None = None,
+    now: datetime | None = None,
+) -> tuple[list[dict], list[dict] | None, bool]:
+    normalized_symbol = normalize_symbol(symbol)
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        try:
+            async with DB_SESSION_LOCAL() as session:
+                intelligence_news = await select_intelligence_news_for_symbol(
+                    session,
+                    normalized_symbol,
+                    limit=intelligence_limit,
+                    max_age_hours=intelligence_max_age_hours,
+                    now=now,
+                )
+            if intelligence_news:
+                return intelligence_news, raw_news_items, True
+        except Exception:
+            logger.warning(
+                "%s intelligence news selection failed; falling back to RSS news.",
+                normalized_symbol.upper(),
+            )
+
+    if raw_news_items is None:
+        raw_news_items = await fetch_news_context(limit=fetch_limit)
+        if fallback_max_age_hours is not None:
+            raw_news_items = _news_within_hours(
+                raw_news_items,
+                now=now or datetime.now(timezone.utc),
+                hours=fallback_max_age_hours,
+            )
+    return filter_news_for_symbol(normalized_symbol, raw_news_items), raw_news_items, False
 
 
 def _truncate_text(value: str, max_chars: int) -> str:
@@ -3015,11 +3060,7 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
         if not market_data:
             log("Market heartbeat generation skipped because CoinGecko returned no usable data.")
             return
-        raw_news_items = _news_within_hours(
-            await fetch_news_context(limit=30),
-            now=now,
-            hours=12,
-        )
+        raw_news_items: list[dict] | None = None
         generated = 0
         skipped_fresh = 0
         for symbol in SUPPORTED_SYMBOLS:
@@ -3038,8 +3079,17 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
                 continue
             current_price = float(symbol_data["price"])
             change_24h = float(symbol_data.get("change_24h") or 0.0)
+            news_items, raw_news_items, used_intelligence_news = await _select_related_news_context(
+                normalized_symbol,
+                raw_news_items,
+                fetch_limit=30,
+                intelligence_max_age_hours=12,
+                fallback_max_age_hours=12,
+                now=now,
+            )
             candidate_news = _format_candidate_news(
-                filter_news_for_symbol(normalized_symbol, raw_news_items)
+                news_items,
+                preserve_order=used_intelligence_news,
             )
             input_payload = await _build_market_heartbeat_input(
                 heartbeat_id=_build_market_heartbeat_id(normalized_symbol),
@@ -3293,10 +3343,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             delivered = False
-            if raw_news_items is None:
-                raw_news_items = await fetch_news_context(limit=20)
-            news_items = filter_news_for_symbol(symbol, raw_news_items)
-            candidate_news = _format_candidate_news(news_items)
+            news_items, raw_news_items, used_intelligence_news = await _select_related_news_context(
+                symbol,
+                raw_news_items,
+                fetch_limit=20,
+                intelligence_max_age_hours=24,
+                now=now,
+            )
+            candidate_news = _format_candidate_news(
+                news_items,
+                preserve_order=used_intelligence_news,
+            )
             analysis_id = _build_event_analysis_id(symbol)
             input_payload = await _build_event_analysis_input(
                 analysis_id=analysis_id,
