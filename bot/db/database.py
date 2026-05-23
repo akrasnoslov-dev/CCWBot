@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -576,6 +577,113 @@ class SeenNews(Base):
     )
     seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When the news item was first stored."
+    )
+
+
+class NewsItem(Base):
+    __tablename__ = "news_items"
+    __table_args__ = (
+        UniqueConstraint("news_key", name="uq_news_items_news_key"),
+        Index("ix_news_items_published_at", "published_at"),
+        Index("ix_news_items_primary_symbol", "primary_symbol"),
+        Index("ix_news_items_category", "category"),
+        Index("ix_news_items_impact_level", "impact_level"),
+        Index("ix_news_items_dedup_group_id", "dedup_group_id"),
+        Index("ix_news_items_llm_status", "llm_status"),
+        {"comment": "Structured RSS news intelligence cached before alert selection."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal structured news row id."
+    )
+    news_key: Mapped[str] = mapped_column(
+        String(500), index=True, comment="Stable news identity compatible with seen_news keys."
+    )
+    title: Mapped[str] = mapped_column(
+        String(1000), comment="Normalized RSS title for this news item."
+    )
+    source: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Normalized publisher or feed source."
+    )
+    url: Mapped[str] = mapped_column(
+        String(2000), default="", comment="Normalized article URL from RSS metadata."
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Publication timestamp from RSS metadata."
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this item was last fetched."
+    )
+    raw_summary: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Compact RSS summary or description before LLM analysis."
+    )
+    llm_summary: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Validated short user-facing summary returned by the LLM."
+    )
+    llm_raw_response: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Raw compact JSON response returned by the news LLM."
+    )
+    related_symbols: Mapped[list | None] = mapped_column(
+        JSON, nullable=True, comment="Lowercase supported symbols related to this news item."
+    )
+    primary_symbol: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Primary lowercase supported symbol selected for the item.",
+    )
+    category: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Validated news category such as market or regulation."
+    )
+    impact_score: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Validated impact score from 0 to 100."
+    )
+    impact_level: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Validated impact level such as low or high."
+    )
+    relevance_score: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Validated relevance score from 0 to 100."
+    )
+    dedup_group_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Stable group id for duplicate or similar news items."
+    )
+    is_duplicate: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Whether this item duplicates a previously processed item."
+    )
+    is_noise: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="Whether this item is low-quality or not useful context."
+    )
+    is_alert_worthy: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether intelligence considers the item alert-worthy later.",
+    )
+    llm_provider: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="LLM provider used for news intelligence."
+    )
+    llm_model: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="LLM model used for news intelligence."
+    )
+    llm_input_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="SHA-256 hash of the compact LLM input payload."
+    )
+    llm_status: Mapped[str] = mapped_column(
+        String(64),
+        default="pending",
+        comment="News intelligence status such as success or skipped.",
+    )
+    llm_error: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Sanitized news intelligence error message, if any."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When this structured news row was created.",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this structured news row was last updated.",
     )
 
 
@@ -2045,6 +2153,123 @@ async def cleanup_seen_news(session: AsyncSession, keep_latest: int = 100) -> in
         await session.delete(row)
     await session.commit()
     return len(rows_to_delete)
+
+
+async def get_news_item_by_key(session: AsyncSession, news_key: str) -> NewsItem | None:
+    """Return a structured news item by stable news key."""
+    if not news_key:
+        return None
+    return await session.scalar(select(NewsItem).where(NewsItem.news_key == news_key).limit(1))
+
+
+async def get_cached_news_item_analysis(
+    session: AsyncSession,
+    *,
+    news_key: str,
+    llm_input_hash: str,
+    llm_model: str,
+) -> NewsItem | None:
+    """Return a reusable structured news analysis for the exact compact LLM input."""
+    if not news_key or not llm_input_hash or not llm_model:
+        return None
+    return await session.scalar(
+        select(NewsItem)
+        .where(NewsItem.news_key == news_key)
+        .where(NewsItem.llm_input_hash == llm_input_hash)
+        .where(NewsItem.llm_model == llm_model)
+        .where(NewsItem.llm_status.in_(["success", "skipped_noise", "skipped_duplicate"]))
+        .limit(1)
+    )
+
+
+async def count_recent_news_intelligence_llm_calls(
+    session: AsyncSession,
+    *,
+    since: datetime,
+    provider: str = "groq",
+) -> int:
+    """Count recent news intelligence LLM attempts for budget enforcement."""
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(NewsItem)
+            .where(NewsItem.llm_provider == provider)
+            .where(NewsItem.llm_status.in_(["success", "failed"]))
+            .where(NewsItem.updated_at >= since)
+        )
+        or 0
+    )
+
+
+async def upsert_news_item(
+    session: AsyncSession,
+    *,
+    news_key: str,
+    title: str,
+    source: str | None,
+    url: str,
+    published_at: datetime | None,
+    fetched_at: datetime,
+    raw_summary: str | None,
+    llm_summary: str | None = None,
+    llm_raw_response: str | None = None,
+    related_symbols: list[str] | None = None,
+    primary_symbol: str | None = None,
+    category: str | None = None,
+    impact_score: int | None = None,
+    impact_level: str | None = None,
+    relevance_score: int | None = None,
+    dedup_group_id: str | None = None,
+    is_duplicate: bool = False,
+    is_noise: bool = False,
+    is_alert_worthy: bool = False,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    llm_input_hash: str | None = None,
+    llm_status: str = "pending",
+    llm_error: str | None = None,
+) -> NewsItem:
+    """Create or update one structured news intelligence row."""
+    row = await get_news_item_by_key(session, news_key)
+    if row is None:
+        row = NewsItem(news_key=news_key, title=title[:1000], url=url[:2000])
+        session.add(row)
+
+    row.title = title[:1000]
+    row.source = source[:255] if source else None
+    row.url = url[:2000]
+    row.published_at = published_at
+    row.fetched_at = fetched_at
+    row.raw_summary = raw_summary
+    row.llm_summary = llm_summary
+    row.llm_raw_response = llm_raw_response
+    row.related_symbols = related_symbols or []
+    row.primary_symbol = primary_symbol
+    row.category = category
+    row.impact_score = impact_score
+    row.impact_level = impact_level
+    row.relevance_score = relevance_score
+    row.dedup_group_id = dedup_group_id
+    row.is_duplicate = is_duplicate
+    row.is_noise = is_noise
+    row.is_alert_worthy = is_alert_worthy
+    row.llm_provider = llm_provider
+    row.llm_model = llm_model
+    row.llm_input_hash = llm_input_hash
+    row.llm_status = llm_status
+    row.llm_error = llm_error
+    row.updated_at = utc_now()
+
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await get_news_item_by_key(session, news_key)
+        if existing is None:
+            raise
+        return existing
+    await session.refresh(row)
+    return row
 
 
 async def save_alert(

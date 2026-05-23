@@ -50,7 +50,7 @@ from bot.alerting.notification_decision import (
     TriggerSource,
 )
 from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
-from bot.config import SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
+from bot.config import ENABLE_NEWS_DRIVEN_ALERTS, SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
 from bot.db.database import (
     attach_analysis_to_market_event,
     cleanup_seen_news,
@@ -81,7 +81,12 @@ from bot.domain.premium import (
     is_coin_unlocked_for_user,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
-from bot.news import fetch_news_context, remember_news_context
+from bot.news import (
+    fetch_news_context,
+    remember_news_context,
+    select_intelligence_news_for_symbol,
+    select_recent_news_items_for_alerts,
+)
 from bot.news_titles import clean_news_title, clean_related_news_text
 from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
@@ -123,6 +128,10 @@ WEEKLY_REPORT_CACHE_JOB_NAME = "weekly_report_cache"
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
 TELEGRAM_DELIVERY_MAX_ATTEMPTS = 3
 TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS = (30, 120)
+NEWS_DRIVEN_ALERT_MAX_AGE_HOURS = 6
+NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL = 1
+NEWS_DRIVEN_ALERT_SOURCE = "news_driven_alert"
+NEWS_DRIVEN_ALERT_MODEL = "deterministic-news-driven-alerts-v1"
 
 
 @dataclass(frozen=True)
@@ -212,6 +221,24 @@ COMPANY_BACKGROUND_NEWS_TERMS = (
     "earnings",
     "hosting business",
     "treasury",
+)
+CRITICAL_NEWS_CATEGORIES = {"regulation", "exchange", "security", "macro", "etf"}
+MARKET_MOVING_NEWS_TERMS = MATERIAL_NEWS_TERMS + (
+    "sec",
+    "federal reserve",
+    "fed decision",
+    "rate decision",
+    "emergency",
+    "halt",
+    "halts",
+    "freeze",
+    "frozen",
+    "sanction",
+    "sanctions",
+    "ban",
+    "banned",
+    "approval",
+    "approved",
 )
 
 
@@ -431,14 +458,52 @@ def _build_event_instance_key(
     return sha256(raw_key.encode("utf-8")).hexdigest()
 
 
+def _build_news_driven_event_key(*, symbol: str, news_item: dict) -> str:
+    identity = _news_driven_identity(news_item)
+    encoded = json.dumps(
+        {"symbol": normalize_symbol(symbol), "identity": identity},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"news:{normalize_symbol(symbol)}:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
+
+
+def _build_news_driven_event_instance_key(
+    *,
+    symbol: str,
+    event_key: str,
+    news_item: dict,
+    input_hash: str,
+) -> str:
+    identity = _news_driven_identity(news_item)
+    dedup_group_id = str(news_item.get("dedup_group_id") or "").strip()
+    bucket = (
+        "dedup_group"
+        if dedup_group_id
+        else _event_instance_bucket(news_item.get("published_at"), bucket_minutes=60)
+    )
+    detail_key = identity if dedup_group_id else input_hash
+    raw_key = "|".join(
+        (
+            normalize_symbol(symbol),
+            event_key,
+            bucket,
+            identity,
+            detail_key,
+        )
+    )
+    return sha256(raw_key.encode("utf-8")).hexdigest()
+
+
 def _news_id(index: int) -> str:
     return f"n{index + 1}"
 
 
-def _format_candidate_news(news_items: list[dict]) -> list[dict]:
+def _format_candidate_news(news_items: list[dict], *, preserve_order: bool = False) -> list[dict]:
     candidates: list[dict] = []
     seen_keys: set[str] = set()
-    for item in _sort_news_fresh_first(news_items):
+    ordered_items = news_items if preserve_order else _sort_news_fresh_first(news_items)
+    for item in ordered_items:
         title = str(item.get("title") or "").strip()
         if not title:
             continue
@@ -463,6 +528,78 @@ def _format_candidate_news(news_items: list[dict]) -> list[dict]:
             }
         )
     return candidates
+
+
+async def _select_related_news_context(
+    symbol: str,
+    raw_news_items: list[dict] | None,
+    *,
+    fetch_limit: int,
+    intelligence_limit: int = 8,
+    intelligence_max_age_hours: int | None = None,
+    fallback_max_age_hours: int | None = None,
+    now: datetime | None = None,
+) -> tuple[list[dict], list[dict] | None, bool]:
+    normalized_symbol = normalize_symbol(symbol)
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        try:
+            selection_stats: dict[str, int] = {}
+            async with DB_SESSION_LOCAL() as session:
+                intelligence_news = await select_intelligence_news_for_symbol(
+                    session,
+                    normalized_symbol,
+                    limit=intelligence_limit,
+                    max_age_hours=intelligence_max_age_hours,
+                    now=now,
+                    selection_stats=selection_stats,
+                )
+            if intelligence_news:
+                logger.info(
+                    "Related news selection: symbol=%s source=news_items "
+                    "candidate_count=%s selected_count=%s noise_filtered_count=%s "
+                    "dedup_filtered_count=%s fallback_used=%s",
+                    normalized_symbol,
+                    selection_stats.get("candidate_count", 0),
+                    len(intelligence_news),
+                    selection_stats.get("noise_filtered_count", 0),
+                    selection_stats.get("dedup_filtered_count", 0),
+                    False,
+                )
+                return intelligence_news, raw_news_items, True
+            logger.info(
+                "Related news selection: symbol=%s source=news_items "
+                "candidate_count=%s selected_count=0 noise_filtered_count=%s "
+                "dedup_filtered_count=%s fallback_used=%s",
+                normalized_symbol,
+                selection_stats.get("candidate_count", 0),
+                selection_stats.get("noise_filtered_count", 0),
+                selection_stats.get("dedup_filtered_count", 0),
+                True,
+            )
+        except Exception:
+            logger.warning(
+                "%s intelligence news selection failed; falling back to RSS news.",
+                normalized_symbol.upper(),
+            )
+
+    if raw_news_items is None:
+        raw_news_items = await fetch_news_context(limit=fetch_limit, use_intelligence=False)
+        if fallback_max_age_hours is not None:
+            raw_news_items = _news_within_hours(
+                raw_news_items,
+                now=now or datetime.now(timezone.utc),
+                hours=fallback_max_age_hours,
+            )
+    filtered_news = filter_news_for_symbol(normalized_symbol, raw_news_items)
+    logger.info(
+        "Related news selection: symbol=%s source=fallback candidate_count=%s "
+        "selected_count=%s noise_filtered_count=0 dedup_filtered_count=0 fallback_used=%s",
+        normalized_symbol,
+        len(raw_news_items),
+        len(filtered_news),
+        True,
+    )
+    return filtered_news, raw_news_items, False
 
 
 def _truncate_text(value: str, max_chars: int) -> str:
@@ -1083,6 +1220,8 @@ async def get_alert_recipients(
                 enabled_by_symbol = _enabled_subscription_by_symbol(user)
                 if not enabled_by_symbol.get(normalized_symbol, False):
                     continue
+                if not is_coin_unlocked_for_user(user, normalized_symbol, now):
+                    continue
                 last_sent_at = await get_last_sent_alert_at(
                     session,
                     user_id=user.id,
@@ -1310,6 +1449,408 @@ def _useful_news_candidates(candidates: list[dict] | None) -> list[dict]:
         for item in candidates or []
         if str(item.get("relevance") or "").strip().lower() in {"medium", "strong"}
     ]
+
+
+def _news_driven_identity(news_item: dict) -> str:
+    return str(
+        news_item.get("dedup_group_id")
+        or news_item.get("news_key")
+        or news_item.get("news_item_id")
+        or make_news_key(news_item)
+    ).strip()
+
+
+def _news_symbols(news_item: dict, field_name: str) -> set[str]:
+    raw_values = news_item.get(field_name)
+    if not isinstance(raw_values, list):
+        return set()
+    return {
+        normalized
+        for item in raw_values
+        if (normalized := normalize_symbol(str(item or "")))
+    }
+
+
+def _news_text(news_item: dict) -> str:
+    return " ".join(
+        str(news_item.get(field_name) or "")
+        for field_name in ("title", "summary", "source")
+    ).lower()
+
+
+def _is_clearly_market_moving_news(news_item: dict) -> bool:
+    text = _news_text(news_item)
+    return any(term in text for term in MARKET_MOVING_NEWS_TERMS)
+
+
+def _news_symbol_match_strength(symbol: str, news_item: dict) -> str | None:
+    normalized_symbol = normalize_symbol(symbol)
+    if normalize_symbol(str(news_item.get("primary_symbol") or "")) == normalized_symbol:
+        return "primary"
+    if normalized_symbol in _news_symbols(news_item, "related_symbols"):
+        return "related"
+    if normalized_symbol in _news_symbols(news_item, "matched_symbols"):
+        return "related"
+    return None
+
+
+def _news_item_can_trigger_standalone_alert(symbol: str, news_item: dict) -> bool:
+    if normalize_symbol(symbol) not in SUPPORTED_SYMBOLS:
+        return False
+    if not _news_driven_identity(news_item):
+        return False
+    if _parse_news_datetime(news_item) is None:
+        return False
+    if not str(news_item.get("title") or "").strip():
+        return False
+    if not str(news_item.get("source") or "").strip():
+        return False
+
+    impact_level = str(news_item.get("impact_level") or "").strip().lower()
+    category = str(news_item.get("category") or "").strip().lower()
+    match_strength = _news_symbol_match_strength(symbol, news_item)
+    if match_strength is None:
+        return False
+
+    market_moving = _is_clearly_market_moving_news(news_item)
+    critical_category = category in CRITICAL_NEWS_CATEGORIES
+    if match_strength == "primary":
+        return (
+            impact_level in {"high", "critical"}
+            or (critical_category and market_moving)
+            or (market_moving and not is_generic_news_item(news_item))
+        )
+    return (
+        impact_level in {"high", "critical"}
+        and critical_category
+        and market_moving
+        and not is_generic_news_item(news_item)
+    )
+
+
+def _news_driven_candidate_rank(symbol: str, news_item: dict) -> tuple[int, int, int, int, int]:
+    impact_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+    match_rank = 2 if _news_symbol_match_strength(symbol, news_item) == "primary" else 1
+    published_at = _parse_news_datetime(news_item)
+    impact_score = int(news_item.get("impact_score") or 0)
+    relevance_score = int(news_item.get("relevance_score") or 0)
+    return (
+        match_rank,
+        impact_rank.get(str(news_item.get("impact_level") or "").strip().lower(), 0),
+        impact_score if impact_score > 0 else 0,
+        relevance_score if relevance_score > 0 else 0,
+        int(published_at.timestamp()) if published_at else 0,
+    )
+
+
+def _select_news_driven_alert_candidates(
+    news_items: list[dict],
+    symbols: list[str] | tuple[str, ...],
+    *,
+    max_per_symbol: int = NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL,
+) -> dict[str, list[dict]]:
+    selected_by_symbol: dict[str, list[dict]] = {}
+    normalized_symbols = [symbol for symbol in symbols if symbol in SUPPORTED_SYMBOLS]
+    for symbol in normalized_symbols:
+        eligible = [
+            item
+            for item in news_items
+            if _news_item_can_trigger_standalone_alert(symbol, item)
+        ]
+        best_by_identity: dict[str, dict] = {}
+        for item in eligible:
+            identity = _news_driven_identity(item)
+            existing = best_by_identity.get(identity)
+            if existing is None or _news_driven_candidate_rank(
+                symbol, item
+            ) > _news_driven_candidate_rank(symbol, existing):
+                best_by_identity[identity] = item
+        ranked = sorted(
+            best_by_identity.values(),
+            key=lambda item: _news_driven_candidate_rank(symbol, item),
+            reverse=True,
+        )
+        selected_by_symbol[symbol] = ranked[:max_per_symbol]
+    return selected_by_symbol
+
+
+def _format_news_driven_summary(news_item: dict) -> str:
+    summary = str(news_item.get("summary") or "").strip()
+    title = str(news_item.get("title") or "").strip()
+    return _truncate_text(summary or title, 220)
+
+
+def _build_news_driven_event_decision(
+    *,
+    symbol: str,
+    news_item: dict,
+    event_key: str,
+) -> EventAnalysisDecision:
+    display_symbol = normalize_symbol(symbol).upper()
+    title = f"High-impact news detected for {display_symbol}"
+    context = _format_news_driven_summary(news_item)
+    message_body = (
+        f"Possible market context: {context} "
+        "This could be related to market sentiment, but price impact is uncertain."
+    )
+    possible_action = (
+        f"Review the news calmly and watch how {display_symbol} trades over the next alert window."
+    )
+    return EventAnalysisDecision(
+        symbol=display_symbol,
+        should_alert=True,
+        event_key=event_key,
+        title=title,
+        message_body=message_body,
+        related_news_ids=["n1"],
+        possible_action=possible_action,
+        urgency="high",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+
+def _build_news_driven_event_input(
+    *,
+    analysis_id: str,
+    symbol: str,
+    news_item: dict,
+    current_price: float,
+    change_24h: float,
+    now: datetime,
+) -> dict:
+    published_at = _parse_news_datetime(news_item) or now
+    return {
+        "analysis_id": analysis_id,
+        "symbol": normalize_symbol(symbol).upper(),
+        "coin_name": _coin_name(symbol),
+        "timestamp_utc": published_at.astimezone(timezone.utc).isoformat(),
+        "market": {
+            "price": _stable_float(float(current_price), 2),
+            "snapshots": [],
+            "chg24h": _stable_float(float(change_24h), 4),
+            "chg_since_msg": None,
+        },
+        "last_msg": {
+            "time": None,
+            "type": None,
+            "price": None,
+        },
+        "news": _format_candidate_news([news_item], preserve_order=True),
+        "policy": {
+            "language": "English",
+            "audience": "General retail crypto holder.",
+            "source": NEWS_DRIVEN_ALERT_SOURCE,
+            "causality": "Do not claim news caused a price move.",
+        },
+    }
+
+
+def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
+    market_data = input_payload.get("market", {})
+    return _json_dumps(
+        {
+            "notification_type": EVENT_ALERT_TYPE,
+            "trigger_source": NEWS_DRIVEN_ALERT_SOURCE,
+            "current_price": market_data.get("price"),
+            "twenty_four_hour_change_percent": market_data.get("chg24h"),
+            "news_key": str(news_item.get("news_key") or "").strip() or None,
+            "dedup_group_id": str(news_item.get("dedup_group_id") or "").strip() or None,
+            "published_at": str(input_payload.get("timestamp_utc") or ""),
+            "impact_level": str(news_item.get("impact_level") or "").strip().lower() or None,
+            "category": str(news_item.get("category") or "").strip().lower() or None,
+        }
+    )
+
+
+async def _get_or_create_news_driven_market_event(
+    *,
+    symbol: str,
+    news_item: dict,
+    input_payload: dict,
+    event_key: str,
+) -> int | None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    market_data = input_payload.get("market", {})
+    current_price = float(market_data.get("price") or 0.0)
+    event_instance_key = _build_news_driven_event_instance_key(
+        symbol=symbol,
+        event_key=event_key,
+        news_item=news_item,
+        input_hash=_event_input_hash(input_payload),
+    )
+    async with DB_SESSION_LOCAL() as session:
+        event = await get_or_create_market_event(
+            session,
+            symbol=normalize_symbol(symbol),
+            event_type=EVENT_ALERT_TYPE,
+            event_key=event_key,
+            event_instance_key=event_instance_key,
+            price=current_price,
+            previous_price=None,
+            price_change_percent=0.0,
+            last_24h_change=market_data.get("chg24h"),
+            detected_at=datetime.now(timezone.utc),
+        )
+        return event.id
+
+
+async def _save_news_driven_event_analysis(
+    *,
+    market_event_id: int,
+    input_payload: dict,
+    decision: EventAnalysisDecision,
+    plain_text: str,
+) -> int | None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    parsed_result = {
+        "symbol": decision.symbol,
+        "should_alert": decision.should_alert,
+        "event_key": decision.event_key,
+        "title": decision.title,
+        "message_body": decision.message_body,
+        "related_news_ids": decision.related_news_ids,
+        "possible_action": decision.possible_action,
+        "urgency": decision.urgency,
+        "confidence": decision.confidence,
+        "reason_for_no_alert": decision.reason_for_no_alert,
+    }
+    async with DB_SESSION_LOCAL() as session:
+        analysis = await save_event_llm_analysis(
+            session,
+            analysis_id=str(input_payload["analysis_id"]),
+            symbol=str(input_payload["symbol"]),
+            input_hash=_event_input_hash(input_payload),
+            raw_input_json=_json_dumps(input_payload),
+            raw_output_json=_json_dumps(parsed_result),
+            status="success",
+            provider="backend",
+            model=NEWS_DRIVEN_ALERT_MODEL,
+            analysis_type=EVENT_ANALYSIS_TYPE,
+            market_event_id=market_event_id,
+            parsed_result_json=_json_dumps(parsed_result),
+            should_alert=True,
+            event_key=decision.event_key,
+            title=decision.title,
+            message_body=decision.message_body,
+            related_news_ids=_json_dumps(decision.related_news_ids),
+            possible_action=decision.possible_action,
+            urgency=decision.urgency,
+            confidence=decision.confidence,
+            plain_text=plain_text,
+        )
+        return analysis.id if analysis else None
+
+
+async def _deliver_news_driven_alert_for_symbol(
+    app: Application,
+    *,
+    symbol: str,
+    news_item: dict,
+    current_price: float,
+    change_24h: float,
+    candidate_recipients: list[AlertRecipient],
+    cooldown_seconds: int,
+    now: datetime,
+) -> bool:
+    event_key = _build_news_driven_event_key(symbol=symbol, news_item=news_item)
+    event_hash = event_key.rsplit(":", 1)[-1]
+    analysis_id = f"{NEWS_DRIVEN_ALERT_SOURCE}_{normalize_symbol(symbol)}_{event_hash}"
+    input_payload = _build_news_driven_event_input(
+        analysis_id=analysis_id,
+        symbol=symbol,
+        news_item=news_item,
+        current_price=current_price,
+        change_24h=change_24h,
+        now=now,
+    )
+    decision = _build_news_driven_event_decision(
+        symbol=symbol,
+        news_item=news_item,
+        event_key=event_key,
+    )
+    related_news = _related_news_by_id(
+        input_payload["news"],
+        decision.related_news_ids,
+        symbol=symbol,
+        context="news-driven event",
+    )
+    alert_payload = _build_event_alert_payload(
+        decision=decision,
+        input_payload=input_payload,
+        related_news=related_news,
+    )
+    market_event_id = await _get_or_create_news_driven_market_event(
+        symbol=symbol,
+        news_item=news_item,
+        input_payload=input_payload,
+        event_key=event_key,
+    )
+    event_ai_analysis_id = None
+    if market_event_id is not None:
+        event_ai_analysis_id = await _save_news_driven_event_analysis(
+            market_event_id=market_event_id,
+            input_payload=input_payload,
+            decision=decision,
+            plain_text=alert_payload["plain_text"],
+        )
+
+    recipients = await _filter_event_recipients_for_cooldown(
+        candidate_recipients,
+        symbol=symbol,
+        urgency=decision.urgency,
+        cooldown_seconds=cooldown_seconds,
+        now=now,
+    )
+    if not recipients:
+        logger.info("%s news-driven event alert suppressed by backend cooldown.", symbol.upper())
+        return False
+    return await _deliver_market_event_alert(
+        app,
+        symbol=symbol,
+        alert_payload=alert_payload,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        recipients=recipients,
+        event_type=EVENT_ALERT_TYPE,
+        trigger_reason=decision.title,
+        trigger_source=NEWS_DRIVEN_ALERT_SOURCE,
+        numeric_context=_news_driven_numeric_context(input_payload, news_item),
+        thresholds_used=None,
+    )
+
+
+async def _load_news_driven_alert_candidates(
+    symbols: list[str],
+    *,
+    now: datetime,
+) -> dict[str, list[dict]]:
+    if not ENABLE_NEWS_DRIVEN_ALERTS:
+        return {}
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        logger.info("News-driven alerts skipped because database storage is off.")
+        return {}
+    active_symbols = [symbol for symbol in symbols if symbol in SUPPORTED_SYMBOLS]
+    if not active_symbols:
+        return {}
+    async with DB_SESSION_LOCAL() as session:
+        news_items = await select_recent_news_items_for_alerts(
+            session,
+            active_symbols,
+            max_age_hours=NEWS_DRIVEN_ALERT_MAX_AGE_HOURS,
+            now=now,
+        )
+    candidates = _select_news_driven_alert_candidates(news_items, active_symbols)
+    total_selected = sum(len(items) for items in candidates.values())
+    if total_selected:
+        logger.info(
+            "News-driven alert candidates selected: symbols=%s selected_count=%s",
+            ",".join(symbol.upper() for symbol in active_symbols),
+            total_selected,
+        )
+    return candidates
 
 
 def _market_condition_can_alert(evaluation: SeverityEvaluation) -> bool:
@@ -3015,11 +3556,7 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
         if not market_data:
             log("Market heartbeat generation skipped because CoinGecko returned no usable data.")
             return
-        raw_news_items = _news_within_hours(
-            await fetch_news_context(limit=30),
-            now=now,
-            hours=12,
-        )
+        raw_news_items: list[dict] | None = None
         generated = 0
         skipped_fresh = 0
         for symbol in SUPPORTED_SYMBOLS:
@@ -3038,8 +3575,17 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
                 continue
             current_price = float(symbol_data["price"])
             change_24h = float(symbol_data.get("change_24h") or 0.0)
+            news_items, raw_news_items, used_intelligence_news = await _select_related_news_context(
+                normalized_symbol,
+                raw_news_items,
+                fetch_limit=30,
+                intelligence_max_age_hours=12,
+                fallback_max_age_hours=12,
+                now=now,
+            )
             candidate_news = _format_candidate_news(
-                filter_news_for_symbol(normalized_symbol, raw_news_items)
+                news_items,
+                preserve_order=used_intelligence_news,
             )
             input_payload = await _build_market_heartbeat_input(
                 heartbeat_id=_build_market_heartbeat_id(normalized_symbol),
@@ -3253,6 +3799,10 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             alert_settings = await get_db_alert_settings()
         else:
             alert_settings = get_state_alert_settings(state)
+        news_driven_candidates = await _load_news_driven_alert_candidates(
+            symbols_to_check,
+            now=now,
+        )
 
         raw_news_items: list[dict] | None = None
         used_news_items: list[dict] = []
@@ -3293,10 +3843,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             delivered = False
-            if raw_news_items is None:
-                raw_news_items = await fetch_news_context(limit=20)
-            news_items = filter_news_for_symbol(symbol, raw_news_items)
-            candidate_news = _format_candidate_news(news_items)
+            news_items, raw_news_items, used_intelligence_news = await _select_related_news_context(
+                symbol,
+                raw_news_items,
+                fetch_limit=20,
+                intelligence_max_age_hours=24,
+                now=now,
+            )
+            candidate_news = _format_candidate_news(
+                news_items,
+                preserve_order=used_intelligence_news,
+            )
             analysis_id = _build_event_analysis_id(symbol)
             input_payload = await _build_event_analysis_input(
                 analysis_id=analysis_id,
@@ -3309,6 +3866,35 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
             if decision is None:
+                news_delivered = False
+                for news_item in news_driven_candidates.get(symbol, []):
+                    news_delivered = await _deliver_news_driven_alert_for_symbol(
+                        app,
+                        symbol=symbol,
+                        news_item=news_item,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        candidate_recipients=candidate_recipients,
+                        cooldown_seconds=int(
+                            alert_settings.get("automatic_check_interval_seconds", 300)
+                        ),
+                        now=now,
+                    )
+                    if news_delivered:
+                        used_news_items.append(news_item)
+                        delivered_symbols += 1
+                        break
+                if news_delivered:
+                    await _save_price_state(
+                        symbol=symbol,
+                        state=state,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        change_7d=change_7d if isinstance(change_7d, float) else None,
+                        checked_at=checked_at,
+                        last_alert_at=datetime.now(timezone.utc),
+                    )
+                    continue
                 await _deliver_market_heartbeat(
                     app,
                     symbol=symbol,
@@ -3332,6 +3918,35 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     symbol.upper(),
                     decision.reason_for_no_alert,
                 )
+                news_delivered = False
+                for news_item in news_driven_candidates.get(symbol, []):
+                    news_delivered = await _deliver_news_driven_alert_for_symbol(
+                        app,
+                        symbol=symbol,
+                        news_item=news_item,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        candidate_recipients=candidate_recipients,
+                        cooldown_seconds=int(
+                            alert_settings.get("automatic_check_interval_seconds", 300)
+                        ),
+                        now=now,
+                    )
+                    if news_delivered:
+                        used_news_items.append(news_item)
+                        delivered_symbols += 1
+                        break
+                if news_delivered:
+                    await _save_price_state(
+                        symbol=symbol,
+                        state=state,
+                        current_price=current_price,
+                        change_24h=change_24h,
+                        change_7d=change_7d if isinstance(change_7d, float) else None,
+                        checked_at=checked_at,
+                        last_alert_at=datetime.now(timezone.utc),
+                    )
+                    continue
                 await _deliver_market_heartbeat(
                     app,
                     symbol=symbol,

@@ -28,6 +28,7 @@ from bot.db.database import (
     User,
     ensure_default_coin_subscriptions,
     save_price_snapshot,
+    upsert_news_item,
 )
 from bot.services import ai_agent_groq
 
@@ -138,6 +139,122 @@ def test_candidate_news_filter_max_limits_work():
     assert len(filtered) == 5
     assert sum("Bitcoin" in item["title"] for item in filtered) == 3
     assert sum("SEC crypto" in item["title"] for item in filtered) == 2
+
+
+@pytest.mark.asyncio
+async def test_related_news_context_falls_back_to_existing_rss_selection(monkeypatch):
+    engine, session_local = await build_session_factory()
+    fetch_kwargs = {}
+
+    async def fake_fetch_news_context(limit, *, prefer_unseen=True, use_intelligence=True):
+        fetch_kwargs["use_intelligence"] = use_intelligence
+        return [
+            {"title": "Solana outage hits validators", "source": "A"},
+            {"title": "Sports result unrelated", "source": "B"},
+        ]
+
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "fetch_news_context", fake_fetch_news_context)
+
+        news_items, raw_news_items, used_intelligence_news = (
+            await alerts._select_related_news_context("sol", None, fetch_limit=20)
+        )
+
+        assert used_intelligence_news is False
+        assert fetch_kwargs["use_intelligence"] is False
+        assert raw_news_items is not None
+        assert [item["title"] for item in news_items] == ["Solana outage hits validators"]
+        assert all("alert_type" not in item and "event_type" not in item for item in news_items)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_related_news_context_prefers_persisted_intelligence_without_rss_fetch(
+    monkeypatch, caplog
+):
+    engine, session_local = await build_session_factory()
+
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "fetch_news_context",
+            AsyncMock(side_effect=AssertionError("RSS fallback should not be called")),
+        )
+        now = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+        async with session_local() as session:
+            await upsert_news_item(
+                session,
+                news_key="link:https://example.com/btc-etf",
+                title="Bitcoin ETF inflows rise",
+                source="Example",
+                url="https://example.com/btc-etf",
+                published_at=now,
+                fetched_at=now,
+                raw_summary="RSS summary",
+                llm_summary="LLM summary",
+                related_symbols=["btc"],
+                primary_symbol="btc",
+                category="etf",
+                impact_score=80,
+                impact_level="high",
+                relevance_score=90,
+                dedup_group_id="btc-etf-inflows",
+                is_duplicate=False,
+                is_noise=False,
+                is_alert_worthy=False,
+                llm_provider="groq",
+                llm_model="test-model",
+                llm_input_hash="hash",
+                llm_status="success",
+            )
+        caplog.set_level(logging.INFO, logger="bot.alerts")
+
+        news_items, raw_news_items, used_intelligence_news = (
+            await alerts._select_related_news_context("btc", None, fetch_limit=20)
+        )
+
+        assert used_intelligence_news is True
+        assert raw_news_items is None
+        assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
+        assert "Related news selection: symbol=btc source=news_items" in caplog.text
+        assert "fallback_used=False" in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_related_news_context_emits_selection_observability_log(monkeypatch, caplog):
+    engine, session_local = await build_session_factory()
+
+    async def fake_fetch_news_context(limit, *, prefer_unseen=True, use_intelligence=True):
+        return [
+            {"title": "Bitcoin ETF inflows rise", "source": "A"},
+            {"title": "Sports result unrelated", "source": "B"},
+        ]
+
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "fetch_news_context", fake_fetch_news_context)
+        caplog.set_level(logging.INFO, logger="bot.alerts")
+
+        news_items, _, used_intelligence_news = await alerts._select_related_news_context(
+            "btc", None, fetch_limit=20
+        )
+
+        assert used_intelligence_news is False
+        assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
+        assert "Related news selection: symbol=btc source=fallback" in caplog.text
+        assert "candidate_count=2" in caplog.text
+        assert "selected_count=1" in caplog.text
+        assert "fallback_used=True" in caplog.text
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
