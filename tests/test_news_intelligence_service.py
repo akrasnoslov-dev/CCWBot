@@ -1,10 +1,19 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from bot.db.database import Base, NewsItem, SeenNews, make_news_key, mark_news_items_seen
+from bot.db.database import (
+    Base,
+    NewsItem,
+    SeenNews,
+    make_news_key,
+    mark_news_items_seen,
+    upsert_news_item,
+)
+from bot.news import select_intelligence_news_for_symbol
 from bot.services.news_intelligence_service import (
     NewsIntelligenceService,
     build_post_llm_dedup_group_id,
@@ -70,6 +79,38 @@ def _valid_response(**overrides):
     return payload
 
 
+async def _store_news_item(session, *, title: str, **overrides):
+    now = overrides.pop("now", datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc))
+    slug = title.lower().replace(" ", "-")
+    news_key = overrides.pop("news_key", f"link:https://example.com/{slug}")
+    return await upsert_news_item(
+        session,
+        news_key=news_key,
+        title=title,
+        source=overrides.pop("source", "Example"),
+        url=overrides.pop("url", news_key.removeprefix("link:")),
+        published_at=overrides.pop("published_at", now),
+        fetched_at=now,
+        raw_summary=overrides.pop("raw_summary", "RSS summary"),
+        llm_summary=overrides.pop("llm_summary", "LLM summary"),
+        related_symbols=overrides.pop("related_symbols", ["btc"]),
+        primary_symbol=overrides.pop("primary_symbol", "btc"),
+        category=overrides.pop("category", "market"),
+        impact_score=overrides.pop("impact_score", 50),
+        impact_level=overrides.pop("impact_level", "high"),
+        relevance_score=overrides.pop("relevance_score", 50),
+        dedup_group_id=overrides.pop("dedup_group_id", news_key),
+        is_duplicate=overrides.pop("is_duplicate", False),
+        is_noise=overrides.pop("is_noise", False),
+        is_alert_worthy=overrides.pop("is_alert_worthy", False),
+        llm_provider=overrides.pop("llm_provider", "groq"),
+        llm_model=overrides.pop("llm_model", "test-model"),
+        llm_input_hash=overrides.pop("llm_input_hash", "abc123"),
+        llm_status=overrides.pop("llm_status", "success"),
+        llm_error=overrides.pop("llm_error", None),
+    )
+
+
 def test_llm_json_is_validated_and_sanitized():
     validated = validate_llm_output(
         _valid_response(
@@ -123,6 +164,145 @@ async def test_obvious_noise_skips_llm_and_persists_news_item():
         assert row.is_alert_worthy is False
         assert row.llm_status == "skipped_noise"
         assert result[0].keys() >= {"title", "source", "link", "url", "summary", "published"}
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_intelligence_news_selector_matches_symbol_and_preserves_dict_shape():
+    engine, session = await build_session()
+    try:
+        await _store_news_item(
+            session,
+            title="Ethereum ETF flows rise",
+            primary_symbol="eth",
+            related_symbols=["eth"],
+            impact_score=90,
+        )
+        await _store_news_item(
+            session,
+            title="Bitcoin ETF flows rise",
+            primary_symbol="btc",
+            related_symbols=["btc", "eth"],
+            impact_score=70,
+        )
+        await _store_news_item(
+            session,
+            title="Macro crypto story references BTC",
+            primary_symbol="eth",
+            related_symbols=["btc", "eth"],
+            impact_score=95,
+        )
+
+        selected = await select_intelligence_news_for_symbol(session, "btc")
+
+        assert [item["title"] for item in selected] == [
+            "Bitcoin ETF flows rise",
+            "Macro crypto story references BTC",
+        ]
+        assert selected[0].keys() >= {
+            "title",
+            "source",
+            "link",
+            "url",
+            "summary",
+            "published",
+            "published_at",
+        }
+        assert selected[0]["link"] == selected[0]["url"]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_intelligence_news_selector_excludes_noise():
+    engine, session = await build_session()
+    try:
+        await _store_news_item(
+            session,
+            title="Bitcoin ETF flows rise",
+            primary_symbol="btc",
+            related_symbols=["btc"],
+            is_noise=True,
+            impact_score=100,
+        )
+
+        selected = await select_intelligence_news_for_symbol(session, "btc")
+
+        assert selected == []
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_intelligence_news_selector_ranks_by_impact_relevance_and_recency():
+    engine, session = await build_session()
+    now = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+    try:
+        await _store_news_item(
+            session,
+            title="Lower impact recent BTC headline",
+            primary_symbol="btc",
+            impact_score=40,
+            relevance_score=95,
+            published_at=now,
+        )
+        await _store_news_item(
+            session,
+            title="Higher impact older BTC headline",
+            primary_symbol="btc",
+            impact_score=80,
+            relevance_score=40,
+            published_at=now - timedelta(hours=2),
+        )
+        await _store_news_item(
+            session,
+            title="Same impact newer BTC headline",
+            primary_symbol="btc",
+            impact_score=80,
+            relevance_score=40,
+            published_at=now - timedelta(minutes=30),
+        )
+
+        selected = await select_intelligence_news_for_symbol(session, "btc")
+
+        assert [item["title"] for item in selected] == [
+            "Same impact newer BTC headline",
+            "Higher impact older BTC headline",
+            "Lower impact recent BTC headline",
+        ]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_intelligence_news_selector_deduplicates_story_clusters():
+    engine, session = await build_session()
+    try:
+        await _store_news_item(
+            session,
+            title="Lower impact duplicate BTC story",
+            primary_symbol="btc",
+            impact_score=30,
+            dedup_group_id="btc-etf-flow",
+            url="https://example.com/low",
+        )
+        await _store_news_item(
+            session,
+            title="Higher impact duplicate BTC story",
+            primary_symbol="btc",
+            impact_score=90,
+            dedup_group_id="btc-etf-flow",
+            url="https://example.com/high",
+        )
+
+        selected = await select_intelligence_news_for_symbol(session, "btc")
+
+        assert [item["title"] for item in selected] == ["Higher impact duplicate BTC story"]
     finally:
         await session.close()
         await engine.dispose()

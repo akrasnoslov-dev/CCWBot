@@ -141,6 +141,33 @@ def test_candidate_news_filter_max_limits_work():
 
 
 @pytest.mark.asyncio
+async def test_related_news_context_falls_back_to_existing_rss_selection(monkeypatch):
+    engine, session_local = await build_session_factory()
+
+    async def fake_fetch_news_context(limit, *, prefer_unseen=True):
+        return [
+            {"title": "Solana outage hits validators", "source": "A"},
+            {"title": "Sports result unrelated", "source": "B"},
+        ]
+
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "fetch_news_context", fake_fetch_news_context)
+
+        news_items, raw_news_items, used_intelligence_news = (
+            await alerts._select_related_news_context("sol", None, fetch_limit=20)
+        )
+
+        assert used_intelligence_news is False
+        assert raw_news_items is not None
+        assert [item["title"] for item in news_items] == ["Solana outage hits validators"]
+        assert all("alert_type" not in item and "event_type" not in item for item in news_items)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_market_heartbeat_input_uses_aggregates_and_compact_news(monkeypatch):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
