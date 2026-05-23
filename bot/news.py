@@ -78,6 +78,7 @@ async def select_intelligence_news_for_symbol(
     limit: int = 8,
     max_age_hours: int | None = None,
     now: datetime | None = None,
+    selection_stats: dict[str, int] | None = None,
 ) -> list[dict]:
     """Return stored, intelligence-ranked news candidates for a symbol.
 
@@ -102,7 +103,11 @@ async def select_intelligence_news_for_symbol(
         )
     )
     ranked_rows: list[NewsItem] = []
-    for row in result.all():
+    result_rows = result.all()
+    if selection_stats is not None:
+        selection_stats["candidate_count"] = len(result_rows)
+        selection_stats["noise_filtered_count"] = 0
+    for row in result_rows:
         primary_match, related_match = _row_matches_symbol(row, normalized_symbol)
         if not (primary_match or related_match):
             continue
@@ -112,6 +117,7 @@ async def select_intelligence_news_for_symbol(
 
     selected: list[dict] = []
     seen_groups: set[str] = set()
+    dedup_filtered_count = 0
     for row in sorted(
         ranked_rows,
         key=lambda item: _news_row_rank(item, normalized_symbol),
@@ -119,15 +125,24 @@ async def select_intelligence_news_for_symbol(
     ):
         group_key = str(row.dedup_group_id or row.news_key or row.id).strip()
         if group_key in seen_groups:
+            dedup_filtered_count += 1
             continue
         seen_groups.add(group_key)
         selected.append(_news_row_to_compat_dict(row))
         if len(selected) >= limit:
             break
+    if selection_stats is not None:
+        selection_stats["selected_count"] = len(selected)
+        selection_stats["dedup_filtered_count"] = dedup_filtered_count
     return selected
 
 
-async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[dict]:
+async def fetch_news_context(
+    limit: int,
+    *,
+    prefer_unseen: bool = True,
+    use_intelligence: bool = True,
+) -> list[dict]:
     """Fetch RSS news and use seen_news for dedupe when PostgreSQL is active."""
     fetch_limit = max(limit * 3, limit)
     news_items = await asyncio.to_thread(fetch_crypto_news, limit=fetch_limit)
@@ -135,7 +150,7 @@ async def fetch_news_context(limit: int, *, prefer_unseen: bool = True) -> list[
         return news_items[:limit]
 
     async with DB_SESSION_LOCAL() as session:
-        if ENABLE_NEWS_INTELLIGENCE:
+        if use_intelligence and ENABLE_NEWS_INTELLIGENCE:
             try:
                 service = NewsIntelligenceService(session)
                 news_items = await service.analyze_items(news_items)

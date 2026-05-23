@@ -483,6 +483,7 @@ async def _select_related_news_context(
     normalized_symbol = normalize_symbol(symbol)
     if DB_ENABLED and DB_SESSION_LOCAL:
         try:
+            selection_stats: dict[str, int] = {}
             async with DB_SESSION_LOCAL() as session:
                 intelligence_news = await select_intelligence_news_for_symbol(
                     session,
@@ -490,9 +491,31 @@ async def _select_related_news_context(
                     limit=intelligence_limit,
                     max_age_hours=intelligence_max_age_hours,
                     now=now,
+                    selection_stats=selection_stats,
                 )
             if intelligence_news:
+                logger.info(
+                    "Related news selection: symbol=%s source=news_items "
+                    "candidate_count=%s selected_count=%s noise_filtered_count=%s "
+                    "dedup_filtered_count=%s fallback_used=%s",
+                    normalized_symbol,
+                    selection_stats.get("candidate_count", 0),
+                    len(intelligence_news),
+                    selection_stats.get("noise_filtered_count", 0),
+                    selection_stats.get("dedup_filtered_count", 0),
+                    False,
+                )
                 return intelligence_news, raw_news_items, True
+            logger.info(
+                "Related news selection: symbol=%s source=news_items "
+                "candidate_count=%s selected_count=0 noise_filtered_count=%s "
+                "dedup_filtered_count=%s fallback_used=%s",
+                normalized_symbol,
+                selection_stats.get("candidate_count", 0),
+                selection_stats.get("noise_filtered_count", 0),
+                selection_stats.get("dedup_filtered_count", 0),
+                True,
+            )
         except Exception:
             logger.warning(
                 "%s intelligence news selection failed; falling back to RSS news.",
@@ -500,14 +523,23 @@ async def _select_related_news_context(
             )
 
     if raw_news_items is None:
-        raw_news_items = await fetch_news_context(limit=fetch_limit)
+        raw_news_items = await fetch_news_context(limit=fetch_limit, use_intelligence=False)
         if fallback_max_age_hours is not None:
             raw_news_items = _news_within_hours(
                 raw_news_items,
                 now=now or datetime.now(timezone.utc),
                 hours=fallback_max_age_hours,
             )
-    return filter_news_for_symbol(normalized_symbol, raw_news_items), raw_news_items, False
+    filtered_news = filter_news_for_symbol(normalized_symbol, raw_news_items)
+    logger.info(
+        "Related news selection: symbol=%s source=fallback candidate_count=%s "
+        "selected_count=%s noise_filtered_count=0 dedup_filtered_count=0 fallback_used=%s",
+        normalized_symbol,
+        len(raw_news_items),
+        len(filtered_news),
+        True,
+    )
+    return filtered_news, raw_news_items, False
 
 
 def _truncate_text(value: str, max_chars: int) -> str:
