@@ -71,6 +71,7 @@ Common configuration:
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
 - `GROQ_MARKET_HEARTBEAT_MODEL`
 - `GROQ_REPORT_MODEL`
+- `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
 - `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
@@ -80,6 +81,15 @@ Common configuration:
 - `HEALTH_PORT`
 - `ERROR_LOG_FILE`
 - `PREMIUM_MONTHLY_STARS`
+- `ENABLE_NEWS_INTELLIGENCE`
+- `NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN`
+- `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN`
+- `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR`
+- `NEWS_LLM_TIMEOUT_SECONDS`
+
+News Intelligence stores structured RSS metadata in `news_items` and checks that persistent cache
+before calling Groq. Per-run and hourly budgets keep the feature from materially increasing LLM
+usage; when budget is exhausted, RSS news still flows through the existing alert/report contracts.
 
 Legacy `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
 `WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
