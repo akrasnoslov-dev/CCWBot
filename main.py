@@ -42,7 +42,6 @@ from bot.handlers import (
     reports,
     revoke_premium,
     set_interval,
-    set_threshold,
     settings,
     start,
     status,
@@ -96,8 +95,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("reports", reports))
     app.add_handler(CommandHandler("dailyreport", daily_report))
     app.add_handler(CommandHandler("weeklyreport", weekly_report))
-    app.add_handler(CommandHandler("setthreshold", set_threshold))
-    app.add_handler(CommandHandler("setcooldown", set_interval))
     app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CommandHandler("grantpremium", grant_premium))
     app.add_handler(CommandHandler("revokepremium", revoke_premium))

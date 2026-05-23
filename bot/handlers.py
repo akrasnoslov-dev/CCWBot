@@ -1,6 +1,7 @@
 import logging
 import time
 from functools import wraps
+from io import BytesIO
 
 from telegram import MessageEntity, Update
 from telegram.ext import ContextTypes
@@ -16,6 +17,7 @@ from bot.db.database import (
     get_price_state,
 )
 from bot.error_logging import (
+    build_sanitized_log_exports,
     disable_error_file_logging,
     enable_error_file_logging,
     is_error_file_logging_enabled,
@@ -23,6 +25,8 @@ from bot.error_logging import (
 from bot.keyboards import (
     build_admin_alert_settings_keyboard,
     build_admin_keyboard,
+    build_admin_logs_keyboard,
+    build_admin_premium_keyboard,
     build_interval_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
@@ -119,6 +123,69 @@ async def _build_admin_system_status_text() -> str:
     )
 
 
+def _premium_grant_usage_text() -> str:
+    return (
+        "Grant premium\n\n"
+        "Usage:\n"
+        "/grantpremium <telegram_user_id|me> <days>\n\n"
+        "Examples:\n"
+        "/grantpremium 123456789 30\n"
+        "/grantpremium me 7"
+    )
+
+
+def _premium_revoke_usage_text() -> str:
+    return (
+        "Revoke premium\n\n"
+        "Usage:\n"
+        "/revokepremium <telegram_user_id|me>\n\n"
+        "Examples:\n"
+        "/revokepremium 123456789\n"
+        "/revokepremium me"
+    )
+
+
+async def _set_error_logging_enabled(enabled: bool) -> str:
+    await save_error_file_logging_enabled(enabled)
+    if enabled:
+        log_file = enable_error_file_logging()
+        return f"Warning/error file logging enabled.\nPath: {log_file}"
+    disable_error_file_logging()
+    return "Warning/error file logging disabled."
+
+
+async def _build_error_logging_status_text() -> str:
+    persisted_enabled = await get_runtime_error_file_logging_enabled()
+    active_enabled = is_error_file_logging_enabled()
+    state = "enabled" if persisted_enabled else "disabled"
+    active = "active" if active_enabled else "inactive"
+    return f"Warning/error file logging: {state} ({active})."
+
+
+async def _toggle_error_logging() -> str:
+    persisted_enabled = await get_runtime_error_file_logging_enabled()
+    return await _set_error_logging_enabled(not persisted_enabled)
+
+
+async def _send_log_exports(message) -> None:
+    exports = build_sanitized_log_exports()
+    if not exports:
+        await message.reply_text(
+            "No log files are available. Enable warning/error file logging and try again "
+            "after a warning or error is recorded."
+        )
+        return
+
+    for export in exports:
+        document = BytesIO(export.content)
+        document.name = export.file_name
+        await message.reply_document(
+            document=document,
+            filename=export.file_name,
+            caption=f"Log export: {export.file_name}",
+        )
+
+
 def _telegram_user_id(update: Update) -> int | str:
     return update.effective_user.id if update.effective_user else "unknown"
 
@@ -183,10 +250,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n/reports - open market reports"
         "\n/myplan - show subscription plan"
         "\n/subscribe - subscribe with Telegram Stars"
-        "\n/status - show bot status"
     )
     if is_admin:
-        message += "\n/admin - open admin menu"
+        message += "\n/status - show system status\n/admin - open admin menu"
     await update.message.reply_text(message)
 
 
@@ -247,9 +313,7 @@ async def error_logging_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, only the bot admin can change error logging.")
         return
 
-    await save_error_file_logging_enabled(True)
-    log_file = enable_error_file_logging()
-    await update.message.reply_text(f"Warning/error file logging enabled.\nPath: {log_file}")
+    await update.message.reply_text(await _set_error_logging_enabled(True))
 
 
 @log_request("/error_logging_off")
@@ -259,9 +323,7 @@ async def error_logging_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, only the bot admin can change error logging.")
         return
 
-    await save_error_file_logging_enabled(False)
-    disable_error_file_logging()
-    await update.message.reply_text("Warning/error file logging disabled.")
+    await update.message.reply_text(await _set_error_logging_enabled(False))
 
 
 @log_request("/error_logging_status")
@@ -271,11 +333,7 @@ async def error_logging_status(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Sorry, only the bot admin can view error logging status.")
         return
 
-    persisted_enabled = await get_runtime_error_file_logging_enabled()
-    active_enabled = is_error_file_logging_enabled()
-    state = "enabled" if persisted_enabled else "disabled"
-    active = "active" if active_enabled else "inactive"
-    await update.message.reply_text(f"Warning/error file logging: {state} ({active}).")
+    await update.message.reply_text(await _build_error_logging_status_text())
 
 
 @log_request("/chatid")
@@ -299,19 +357,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, only the bot admin can access admin settings.")
         return
     await update.message.reply_text("Admin menu", reply_markup=build_admin_keyboard())
-
-
-@log_request("/setthreshold")
-async def set_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_update(update):
-        _mark_denied(context)
-        await update.message.reply_text("Sorry, only the bot admin can change settings.")
-        return
-    await update.message.reply_text(
-        "Price movement thresholds are disabled for automatic Event Alerts. "
-        "Use /setinterval to change the check interval."
-    )
-    return
 
 
 @log_request("/setinterval")
@@ -388,36 +433,11 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @log_request("/status")
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if DB_ENABLED and DB_SESSION_LOCAL:
-        async with DB_SESSION_LOCAL() as session:
-            btc_state = await get_price_state(session, DEFAULT_SYMBOL)
-        if btc_state is None:
-            await update.message.reply_text(
-                "Status: running ✅\n\nNo BTC price has been saved yet."
-            )
-            return
-        await update.message.reply_text(
-            "Status: running ✅\n\n"
-            f"Last saved BTC price: ${btc_state.last_price:,.2f}\n"
-            f"Last 24h change: {btc_state.last_24h_change:.2f}%\n"
-            f"Last checked at: {btc_state.last_checked_at}\n"
-            f"Last alert at: {btc_state.last_alert_at}"
-        )
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can view system status.")
         return
-    state = load_state()
-    last_price = state.get("last_price")
-    if last_price is None:
-        await update.message.reply_text(
-            "Status: running ✅\n\nNo BTC price has been saved yet.\nSend /price first."
-        )
-        return
-    await update.message.reply_text(
-        "Status: running ✅\n\n"
-        f"Last saved BTC price: ${last_price:,.2f}\n"
-        f"Last 24h change: {state.get('last_24h_change'):.2f}%\n"
-        f"Last checked at: {state.get('last_checked_at')}\n"
-        f"Last alert at: {state.get('last_alert_at')}"
-    )
+    await update.message.reply_text(await _build_admin_system_status_text())
 
 
 async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -467,13 +487,34 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Alert settings", reply_markup=build_admin_alert_settings_keyboard()
                 )
                 return
+            if data == "admin:back":
+                await query.message.reply_text("Admin menu", reply_markup=build_admin_keyboard())
+                return
             if data == "admin:system_status":
                 await query.message.reply_text(await _build_admin_system_status_text())
                 return
-            if data == "admin:export_logs":
+            if data == "admin:premium_menu":
                 await query.message.reply_text(
-                    "Log export is available from the server logs directory."
+                    "Premium management", reply_markup=build_admin_premium_keyboard()
                 )
+                return
+            if data == "admin:premium_grant":
+                await query.message.reply_text(_premium_grant_usage_text())
+                return
+            if data == "admin:premium_revoke":
+                await query.message.reply_text(_premium_revoke_usage_text())
+                return
+            if data == "admin:logs_menu":
+                await query.message.reply_text("Logs", reply_markup=build_admin_logs_keyboard())
+                return
+            if data == "admin:logs_toggle":
+                await query.message.reply_text(await _toggle_error_logging())
+                return
+            if data == "admin:logs_status":
+                await query.message.reply_text(await _build_error_logging_status_text())
+                return
+            if data == "admin:logs_export":
+                await _send_log_exports(query.message)
                 return
             if data == "admin:current":
                 alert_settings = (
@@ -486,18 +527,6 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if data == "admin:interval_menu":
                 await query.message.reply_text(
                     "Choose a new check interval:", reply_markup=build_interval_keyboard()
-                )
-                return
-            if data.startswith("admin:threshold_menu:"):
-                await query.message.reply_text(
-                    "Price movement thresholds are disabled for automatic Event Alerts. "
-                    "Use /setinterval to change the check interval."
-                )
-                return
-            if data.startswith("admin:set_threshold:"):
-                await query.message.reply_text(
-                    "Price movement thresholds are disabled for automatic Event Alerts. "
-                    "Use /setinterval to change the check interval."
                 )
                 return
             if data.startswith("admin:set_interval:"):
@@ -538,21 +567,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
-        if data == "settings:threshold_menu":
-            await query.message.reply_text(
-                "Price movement thresholds are disabled for automatic Event Alerts. "
-                "Use /setinterval to change the check interval."
-            )
-            return
         if data == "settings:interval_menu":
             await query.message.reply_text(
                 "Choose a new check interval:", reply_markup=build_interval_keyboard()
-            )
-            return
-        if data.startswith("settings:set_threshold:"):
-            await query.message.reply_text(
-                "Price movement thresholds are disabled for automatic Event Alerts. "
-                "Use /setinterval to change the check interval."
             )
             return
         if data.startswith("settings:set_interval:"):

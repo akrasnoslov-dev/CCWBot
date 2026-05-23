@@ -17,12 +17,12 @@ async def setup_bot_commands(app: Application) -> None:
         BotCommand("reports", "Open market reports"),
         BotCommand("myplan", "Show subscription plan"),
         BotCommand("subscribe", "Subscribe with Telegram Stars"),
-        BotCommand("status", "Show bot status"),
     ]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
 
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
+            BotCommand("status", "Show system status"),
             BotCommand("admin", "Open admin menu"),
         ]
         try:
