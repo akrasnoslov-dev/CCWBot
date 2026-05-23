@@ -71,6 +71,89 @@ def _news_row_to_compat_dict(row: NewsItem) -> dict:
     }
 
 
+def _news_row_to_alert_dict(row: NewsItem, matched_symbols: list[str]) -> dict:
+    published_at = _row_published_at(row)
+    published = published_at.isoformat() if published_at else ""
+    url = str(row.url or "").strip()
+    related_symbols = row.related_symbols if isinstance(row.related_symbols, list) else []
+    return {
+        "news_item_id": row.id,
+        "news_key": str(row.news_key or "").strip(),
+        "dedup_group_id": str(row.dedup_group_id or "").strip(),
+        "title": str(row.title or "").strip(),
+        "source": str(row.source or "").strip(),
+        "link": url,
+        "url": url,
+        "summary": str(row.llm_summary or row.raw_summary or "").strip(),
+        "published": published,
+        "published_at": published_at or "",
+        "primary_symbol": _normalize_news_symbol(row.primary_symbol or ""),
+        "related_symbols": [
+            normalized
+            for item in related_symbols
+            if (normalized := _normalize_news_symbol(item))
+        ],
+        "matched_symbols": matched_symbols,
+        "category": str(row.category or "").strip().lower(),
+        "impact_level": str(row.impact_level or "").strip().lower(),
+        "impact_score": row.impact_score,
+        "relevance_score": row.relevance_score,
+        "is_alert_worthy": bool(row.is_alert_worthy),
+    }
+
+
+async def select_recent_news_items_for_alerts(
+    session: AsyncSession,
+    symbols: list[str] | tuple[str, ...],
+    *,
+    max_age_hours: int,
+    now: datetime | None = None,
+    limit: int = 200,
+) -> list[dict]:
+    """Return recent structured news rows that mention currently active symbols.
+
+    This is a read-only selector for persisted news intelligence. It does not
+    call RSS providers or LLMs.
+    """
+    normalized_symbols = {
+        normalized
+        for symbol in symbols
+        if (normalized := _normalize_news_symbol(symbol))
+    }
+    if not normalized_symbols or max_age_hours < 1 or limit < 1:
+        return []
+
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    cutoff = current_time.astimezone(timezone.utc) - timedelta(hours=max_age_hours)
+
+    result = await session.scalars(
+        select(NewsItem)
+        .where(NewsItem.is_noise.is_(False))
+        .where(NewsItem.published_at.isnot(None))
+        .where(NewsItem.published_at >= cutoff)
+        .order_by(NewsItem.published_at.desc(), NewsItem.id.desc())
+        .limit(limit)
+    )
+
+    rows: list[dict] = []
+    for row in result.all():
+        title = str(row.title or "").strip()
+        source = str(row.source or "").strip()
+        if not title or not source:
+            continue
+        matched_symbols = [
+            symbol
+            for symbol in sorted(normalized_symbols)
+            if any(_row_matches_symbol(row, symbol))
+        ]
+        if not matched_symbols:
+            continue
+        rows.append(_news_row_to_alert_dict(row, matched_symbols))
+    return rows
+
+
 async def select_intelligence_news_for_symbol(
     session: AsyncSession,
     symbol: str,
