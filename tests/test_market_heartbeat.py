@@ -126,6 +126,70 @@ def test_candidate_news_filter_returns_relevant_coin_and_market_items():
     assert "Sports result unrelated" not in titles
 
 
+def test_symbol_news_filter_keeps_btc_only_news_for_btc_only():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Bitcoin in high-risk zone as range highs approach", "source": "B"},
+    ]
+
+    assert {item["title"] for item in alerts.filter_news_for_symbol("btc", news_items)} == {
+        "Bitcoin in high-risk zone as range highs approach",
+        "Bitcoin ETFs crushed by billions in outflows",
+    }
+    assert alerts.filter_news_for_symbol("sol", news_items) == []
+    assert alerts.filter_news_for_symbol("ton", news_items) == []
+
+
+def test_symbol_news_filter_selects_direct_altcoin_news_and_market_wide_news():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Crypto market sells off after Fed decision", "source": "B"},
+        {"title": "Solana network outage hits validators", "source": "C"},
+        {"title": "Toncoin ecosystem upgrade expands The Open Network", "source": "D"},
+        {"title": "Ethereum ETF inflows lift staking sentiment", "source": "E"},
+    ]
+
+    sol_titles = [item["title"] for item in alerts.filter_news_for_symbol("sol", news_items)]
+    ton_titles = [item["title"] for item in alerts.filter_news_for_symbol("ton", news_items)]
+    eth_titles = [item["title"] for item in alerts.filter_news_for_symbol("eth", news_items)]
+
+    assert "Solana network outage hits validators" in sol_titles
+    assert "Toncoin ecosystem upgrade expands The Open Network" in ton_titles
+    assert "Ethereum ETF inflows lift staking sentiment" in eth_titles
+    for titles in (sol_titles, ton_titles, eth_titles):
+        assert "Crypto market sells off after Fed decision" in titles
+        assert "Bitcoin ETFs crushed by billions in outflows" not in titles
+
+
+def test_empty_direct_altcoin_news_does_not_force_btc_only_context():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Bitcoin in high-risk zone as range highs approach", "source": "B"},
+    ]
+
+    assert alerts.filter_news_for_symbol("eth", news_items) == []
+    assert alerts.filter_news_for_symbol("sol", news_items) == []
+    assert alerts.filter_news_for_symbol("ton", news_items) == []
+
+
+def test_candidate_news_includes_relevance_labels():
+    news_items = [
+        {"title": "Solana network outage hits validators", "source": "A"},
+        {"title": "Crypto market sells off after Fed decision", "source": "B"},
+    ]
+
+    formatted = alerts._format_candidate_news(
+        alerts.filter_news_for_symbol("sol", news_items),
+        preserve_order=True,
+        symbol="sol",
+    )
+
+    assert [item["relevance_label"] for item in formatted] == [
+        "direct_symbol",
+        "market_wide",
+    ]
+
+
 def test_candidate_news_filter_max_limits_work():
     direct = [{"title": f"Bitcoin headline {index}"} for index in range(8)]
     market = [{"title": f"SEC crypto market update {index}"} for index in range(6)]
@@ -222,7 +286,7 @@ async def test_related_news_context_prefers_persisted_intelligence_without_rss_f
         assert used_intelligence_news is True
         assert raw_news_items is None
         assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
-        assert "Related news selection: symbol=btc source=news_items" in caplog.text
+        assert "related_news_selection symbol=BTC source=news_items" in caplog.text
         assert "fallback_used=False" in caplog.text
     finally:
         await engine.dispose()
@@ -250,9 +314,11 @@ async def test_related_news_context_emits_selection_observability_log(monkeypatc
 
         assert used_intelligence_news is False
         assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
-        assert "Related news selection: symbol=btc source=fallback" in caplog.text
+        assert "related_news_selection symbol=BTC source=fallback" in caplog.text
         assert "candidate_count=2" in caplog.text
         assert "selected_count=1" in caplog.text
+        assert "direct_news_count=1" in caplog.text
+        assert "irrelevant_filtered_count=1" in caplog.text
         assert "fallback_used=True" in caplog.text
     finally:
         await engine.dispose()

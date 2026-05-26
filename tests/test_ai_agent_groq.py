@@ -370,6 +370,23 @@ def test_event_analysis_model_and_max_token_defaults():
     assert ai_agent_groq.GROQ_EVENT_ANALYSIS_MAX_TOKENS == 300
 
 
+def test_event_analysis_prompt_quality_requirements():
+    prompt = ai_agent_groq.build_event_analysis_prompt(
+        {
+            "symbol": "TON",
+            "market": {"chg24h": 5.8, "snapshots": [{"m": -30, "p": 3.1}]},
+            "news": [],
+        }
+    )
+
+    assert "Analyze exactly one symbol" in prompt
+    assert "altcoins, a 24h move around 5-7% can be meaningful" in prompt
+    assert "reason_for_no_alert must mention the actual 24h change" in prompt
+    assert "recent short-term snapshot behavior" in prompt
+    assert "Do not generate UUID-like or random event keys" in prompt
+    assert "event_analysis_btc_<random>" in prompt
+
+
 def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatch):
     captured_kwargs = {}
 
@@ -399,6 +416,31 @@ def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatc
 
     assert captured_kwargs["model"] == "heartbeat-model"
     assert captured_kwargs["max_tokens"] == 350
+
+
+def test_market_heartbeat_prompt_quality_requirements():
+    prompt = ai_agent_groq.build_market_heartbeat_prompt(
+        {
+            "symbol": "SOL",
+            "candidate_news": [
+                {
+                    "news_id": "n1",
+                    "title": "Bitcoin ETF outflows deepen",
+                    "relevance_label": "irrelevant",
+                }
+            ],
+        }
+    )
+
+    assert "calm Market Heartbeat, not an Event Alert" in prompt
+    assert "Do not present BTC-only news as related context for ETH, SOL, TON" in prompt
+    assert (
+        "possible_action must be specific, practical, and tied to the current market context"
+        in prompt
+    )
+    assert "Monitor market developments" in prompt
+    assert "Monitor market sentiment" in prompt
+    assert "Keep watching" in prompt
 
 
 def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
