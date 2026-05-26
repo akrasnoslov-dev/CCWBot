@@ -10,7 +10,7 @@ analysis.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
-  when a user has not received any visible message for that coin within their alert frequency.
+  when the user's last sent heartbeat for that coin is older than their alert frequency.
 - Daily and weekly reports are cached market-wide LLM reports across all active symbols.
   Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
@@ -70,6 +70,7 @@ Common configuration:
 - `GROQ_EVENT_ANALYSIS_MODEL`
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
 - `GROQ_MARKET_HEARTBEAT_MODEL`
+- `GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS`
 - `GROQ_REPORT_MODEL`
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
@@ -160,11 +161,11 @@ Market Heartbeat is separate from Event Alert analysis. The normal check-interva
 returns only `should_alert=true` or `should_alert=false`; heartbeat generation runs hourly,
 stores the latest cached result in PostgreSQL, and does not deliver it immediately.
 
-During automatic processing, the bot checks each eligible user and coin. If any user-visible
-delivery for that coin happened within the user's configured alert frequency, heartbeat is
-skipped. If no recent delivery exists, the bot sends the latest completed heartbeat only when
-it is fresh enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and
-not sent.
+During automatic processing, the bot checks each eligible user and coin. If a sent
+`market_heartbeat` for that user and coin happened within the user's configured alert
+frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
+no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
+enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
 symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,

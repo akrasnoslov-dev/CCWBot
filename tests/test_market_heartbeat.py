@@ -26,6 +26,7 @@ from bot.db.database import (
     Base,
     MarketHeartbeat,
     User,
+    UserPremiumSubscription,
     ensure_default_coin_subscriptions,
     save_price_snapshot,
     upsert_news_item,
@@ -500,7 +501,7 @@ async def test_heartbeat_delivery_unique_index_rejects_duplicate_rows():
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
+async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_due(monkeypatch):
     engine, session_local = await build_session_factory()
     app = fake_app()
     now = datetime.now(timezone.utc)
@@ -508,8 +509,26 @@ async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         async with session_local() as session:
-            user = await create_user(session, frequency=3600)
+            user = await create_user(session, frequency=86400)
+            session.add(
+                UserPremiumSubscription(
+                    user_id=user.id,
+                    status="active",
+                    active_until=now + timedelta(days=1),
+                )
+            )
             await create_heartbeat(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="older heartbeat",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(hours=25),
+                )
+            )
             session.add(
                 Alert(
                     symbol="BTC",
@@ -519,6 +538,51 @@ async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        sent = await alerts._deliver_market_heartbeat(
+            app,
+            symbol="btc",
+            current_price=101000.0,
+            change_24h=1.5,
+            now=now,
+        )
+
+        assert sent is True
+        app.bot.send_message.assert_awaited_once()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_is_not_sent_if_recent_market_heartbeat_exists(monkeypatch):
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    now = datetime.now(timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session, frequency=86400)
+            session.add(
+                UserPremiumSubscription(
+                    user_id=user.id,
+                    status="active",
+                    active_until=now + timedelta(days=1),
+                )
+            )
+            await create_heartbeat(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="previous",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(hours=23),
                 )
             )
             await session.commit()
