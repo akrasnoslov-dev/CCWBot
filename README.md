@@ -75,9 +75,9 @@ Common configuration:
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
-- `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
+- `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`
 - `PRICE_CACHE_TTL_SECONDS`
 - `HEALTH_PORT`
 - `ERROR_LOG_FILE`
@@ -93,7 +93,7 @@ News Intelligence stores structured RSS metadata in `news_items` and checks that
 before calling Groq. Per-run and hourly budgets keep the feature from materially increasing LLM
 usage; when budget is exhausted, RSS news still flows through the existing alert/report contracts.
 
-Legacy `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
+Legacy `PRICE_MOVE_ALERT_PERCENT`, `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
 `WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
 and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 
@@ -396,5 +396,6 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).
+Read-only operational SQL snippets are in [docs/observability.md](docs/observability.md).
 Codex agent routing and review rules are in
 [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).

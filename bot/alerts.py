@@ -31,6 +31,7 @@ from bot.alerting.event_analysis import (
     EventAnalysisDecision,
     EventAnalysisValidationError,
     validate_event_analysis_output,
+    with_canonical_event_key,
 )
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_ANALYSIS_TYPE,
@@ -50,13 +51,19 @@ from bot.alerting.notification_decision import (
     TriggerSource,
 )
 from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
-from bot.config import ENABLE_NEWS_DRIVEN_ALERTS, SEEN_NEWS_KEEP_LATEST, TELEGRAM_CHAT_ID
+from bot.config import (
+    ENABLE_NEWS_DRIVEN_ALERTS,
+    EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
+    SEEN_NEWS_KEEP_LATEST,
+    TELEGRAM_CHAT_ID,
+)
 from bot.db.database import (
     attach_analysis_to_market_event,
     cleanup_seen_news,
     get_active_users_with_alert_preferences,
     get_last_sent_alert,
     get_last_sent_alert_at,
+    get_last_sent_event_alert_at_for_event_key,
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
     get_or_create_market_event,
@@ -1935,6 +1942,7 @@ async def _deliver_news_driven_alert_for_symbol(
         symbol=symbol,
         urgency=decision.urgency,
         cooldown_seconds=cooldown_seconds,
+        canonical_event_key=event_key,
         now=now,
     )
     if not recipients:
@@ -1950,6 +1958,7 @@ async def _deliver_news_driven_alert_for_symbol(
         event_type=EVENT_ALERT_TYPE,
         trigger_reason=decision.title,
         trigger_source=NEWS_DRIVEN_ALERT_SOURCE,
+        canonical_event_key=event_key,
         numeric_context=_news_driven_numeric_context(input_payload, news_item),
         thresholds_used=None,
     )
@@ -2485,6 +2494,16 @@ async def _create_event_analysis_decision(
         )
         return None, None
 
+    if decision.should_alert:
+        decision, canonical = with_canonical_event_key(decision)
+        logger.info(
+            "event_key_canonicalized symbol=%s raw_event_key=%s canonical_event_key=%s reason=%s",
+            decision.symbol,
+            canonical.raw_event_key,
+            canonical.canonical_event_key,
+            canonical.reason,
+        )
+
     status = "success" if decision.should_alert else "no_alert"
     analysis_id = await _save_event_analysis_attempt(
         input_payload=input_payload,
@@ -2559,6 +2578,8 @@ async def _filter_event_recipients_for_cooldown(
     symbol: str,
     urgency: str,
     cooldown_seconds: int,
+    canonical_event_key: str | None = None,
+    semantic_cooldown_seconds: int = EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
     now: datetime,
 ) -> list[AlertRecipient]:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -2566,13 +2587,60 @@ async def _filter_event_recipients_for_cooldown(
     effective_cooldown = int(cooldown_seconds)
     if urgency == "high":
         effective_cooldown = min(effective_cooldown, 30 * 60)
-    if effective_cooldown <= 0:
+    if effective_cooldown <= 0 and (not canonical_event_key or semantic_cooldown_seconds <= 0):
         return recipients
 
     filtered: list[AlertRecipient] = []
     async with DB_SESSION_LOCAL() as session:
         for recipient in recipients:
             if recipient.user_id is None:
+                filtered.append(recipient)
+                continue
+            if canonical_event_key and semantic_cooldown_seconds > 0:
+                last_semantic_sent_at = await get_last_sent_event_alert_at_for_event_key(
+                    session,
+                    user_id=recipient.user_id,
+                    symbol=symbol,
+                    canonical_event_key=canonical_event_key,
+                    alert_type=EVENT_ALERT_TYPE,
+                )
+                semantic_allowed = True
+                semantic_remaining = 0
+                if last_semantic_sent_at is not None:
+                    if last_semantic_sent_at.tzinfo is None:
+                        last_semantic_sent_at = last_semantic_sent_at.replace(
+                            tzinfo=timezone.utc
+                        )
+                    elapsed = (
+                        now - last_semantic_sent_at.astimezone(timezone.utc)
+                    ).total_seconds()
+                    semantic_remaining = max(0, int(semantic_cooldown_seconds - elapsed))
+                    semantic_allowed = elapsed >= semantic_cooldown_seconds
+                logger.info(
+                    "event_alert_semantic_cooldown_check user_id=%s symbol=%s "
+                    "canonical_event_key=%s last_sent_at=%s cooldown_seconds=%s allowed=%s",
+                    recipient.user_id,
+                    normalize_symbol(symbol),
+                    canonical_event_key,
+                    (
+                        last_semantic_sent_at.isoformat()
+                        if last_semantic_sent_at is not None
+                        else None
+                    ),
+                    semantic_cooldown_seconds,
+                    semantic_allowed,
+                )
+                if not semantic_allowed:
+                    logger.info(
+                        "event_alert_suppressed user_id=%s symbol=%s canonical_event_key=%s "
+                        "reason=semantic_cooldown cooldown_remaining_seconds=%s",
+                        recipient.user_id,
+                        normalize_symbol(symbol),
+                        canonical_event_key,
+                        semantic_remaining,
+                    )
+                    continue
+            if effective_cooldown <= 0:
                 filtered.append(recipient)
                 continue
             last_sent_at = await get_last_sent_alert_at(
@@ -2586,8 +2654,18 @@ async def _filter_event_recipients_for_cooldown(
                 continue
             if last_sent_at.tzinfo is None:
                 last_sent_at = last_sent_at.replace(tzinfo=timezone.utc)
-            if (now - last_sent_at.astimezone(timezone.utc)).total_seconds() >= effective_cooldown:
+            elapsed = (now - last_sent_at.astimezone(timezone.utc)).total_seconds()
+            if elapsed >= effective_cooldown:
                 filtered.append(recipient)
+                continue
+            logger.info(
+                "event_alert_suppressed user_id=%s symbol=%s canonical_event_key=%s "
+                "reason=event_alert_cooldown cooldown_remaining_seconds=%s",
+                recipient.user_id,
+                normalize_symbol(symbol),
+                canonical_event_key,
+                max(0, int(effective_cooldown - elapsed)),
+            )
     return filtered
 
 
@@ -3312,6 +3390,7 @@ async def _deliver_market_event_alert(
     severity: SeverityEvaluation | None = None,
     trigger_reason: str | None = None,
     trigger_source: str | None = None,
+    canonical_event_key: str | None = None,
     numeric_context: str | None = None,
     thresholds_used: str | None = None,
 ) -> bool:
@@ -3368,6 +3447,17 @@ async def _deliver_market_event_alert(
                     fallback_mode="AI analysis is temporarily unavailable" in plain_text,
                 )
                 alert_id = alert_row.id
+                if should_send:
+                    logger.info(
+                        "event_alert_created user_id=%s symbol=%s alert_type=%s "
+                        "trigger_source=%s canonical_event_key=%s market_event_id=%s",
+                        recipient.user_id,
+                        normalized_symbol,
+                        event_type,
+                        trigger_source,
+                        canonical_event_key,
+                        market_event_id,
+                    )
             if not should_send:
                 skipped_count += 1
                 continue
@@ -4167,6 +4257,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 symbol=symbol,
                 urgency=decision.urgency,
                 cooldown_seconds=int(alert_settings.get("automatic_check_interval_seconds", 300)),
+                canonical_event_key=decision.event_key,
                 now=now,
             )
             if not recipients:
@@ -4200,6 +4291,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 event_type=EVENT_ALERT_TYPE,
                 trigger_reason=decision.title,
                 trigger_source=EVENT_ANALYSIS_TYPE,
+                canonical_event_key=decision.event_key,
                 numeric_context=_event_numeric_context(input_payload, decision),
                 thresholds_used=None,
             )
