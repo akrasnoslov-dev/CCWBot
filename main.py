@@ -38,6 +38,7 @@ from bot.handlers import (
     grant_premium,
     log_custom_emoji_ids,
     myplan,
+    plan,
     price,
     reports,
     revoke_premium,
@@ -84,6 +85,7 @@ def get_stop_signals() -> tuple[signal.Signals, ...] | None:
 def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
+    app.add_handler(CommandHandler("plan", plan))
     app.add_handler(CommandHandler("watchlist", watchlist))
     app.add_handler(CommandHandler("myplan", myplan))
     app.add_handler(CommandHandler("subscribe", subscribe))

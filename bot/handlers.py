@@ -2,6 +2,7 @@ import logging
 import time
 from functools import wraps
 from io import BytesIO
+from types import SimpleNamespace
 
 from telegram import MessageEntity, Update
 from telegram.ext import ContextTypes
@@ -28,6 +29,7 @@ from bot.keyboards import (
     build_admin_logs_keyboard,
     build_admin_premium_keyboard,
     build_interval_keyboard,
+    build_plan_keyboard,
     build_price_keyboard,
     build_reports_keyboard,
 )
@@ -186,6 +188,15 @@ async def _send_log_exports(message) -> None:
         )
 
 
+def _callback_command_update(update: Update) -> SimpleNamespace:
+    query = update.callback_query
+    return SimpleNamespace(
+        message=query.message if query else None,
+        effective_user=query.from_user if query else None,
+        effective_chat=getattr(query.message, "chat", None) if query and query.message else None,
+    )
+
+
 def _telegram_user_id(update: Update) -> int | str:
     return update.effective_user.id if update.effective_user else "unknown"
 
@@ -248,8 +259,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/price - check crypto prices"
         "\n/settings - manage alert settings"
         "\n/reports - open market reports"
-        "\n/myplan - show subscription plan"
-        "\n/subscribe - subscribe with Telegram Stars"
+        "\n/plan - plan and subscription"
     )
     if is_admin:
         message += "\n/status - show system status\n/admin - open admin menu"
@@ -275,6 +285,11 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @log_request("/reports")
 async def reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Reports menu 📊", reply_markup=build_reports_keyboard())
+
+
+@log_request("/plan")
+async def plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Plan & subscription", reply_markup=build_plan_keyboard())
 
 
 @log_request("/watchlist")
@@ -552,6 +567,12 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data == "reports:weekly":
             await send_weekly_report_message(query.message)
+            return
+        if data == "plan:my_plan":
+            await myplan_command(_callback_command_update(update))
+            return
+        if data == "plan:subscribe":
+            await send_subscribe_invoice(_callback_command_update(update), context)
             return
         if data == "settings:current":
             if DB_ENABLED and DB_SESSION_LOCAL:

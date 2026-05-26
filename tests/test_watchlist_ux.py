@@ -14,8 +14,8 @@ from bot.db.database import (
     grant_user_premium,
 )
 from bot.domain.supported_coins import ACTIVE_SYMBOLS
-from bot.handlers import start, status
-from bot.keyboards import build_price_keyboard
+from bot.handlers import button_router, plan, start, status
+from bot.keyboards import build_plan_keyboard, build_price_keyboard
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
     build_plan_message,
@@ -184,6 +184,20 @@ def test_price_keyboard_uses_active_symbols_only():
     assert "XRP" not in labels
 
 
+def test_plan_keyboard_shows_plan_and_subscription_actions():
+    keyboard = build_plan_keyboard()
+    buttons = [
+        (button.text, button.callback_data)
+        for row in keyboard.inline_keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("My plan", "plan:my_plan"),
+        ("Subscribe", "plan:subscribe"),
+    ]
+
+
 def test_watchlist_buttons_use_icons_and_compact_layout():
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
     _, keyboard = build_watchlist_render(
@@ -245,16 +259,14 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "price",
         "settings",
         "reports",
-        "myplan",
-        "subscribe",
+        "plan",
     ]
     assert admin_commands == [
         "start",
         "price",
         "settings",
         "reports",
-        "myplan",
-        "subscribe",
+        "plan",
         "status",
         "admin",
     ]
@@ -265,6 +277,13 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "grantpremium" not in default_commands
     assert "revokepremium" not in default_commands
     assert "userid" not in default_commands
+    assert "status" not in default_commands
+    assert "myplan" not in default_commands
+    assert "subscribe" not in default_commands
+    assert "dailyreport" not in default_commands
+    assert "weeklyreport" not in default_commands
+    assert "chatid" not in default_commands
+    assert "setinterval" not in default_commands
     assert "admin" in admin_commands
     assert "grantpremium" not in admin_commands
     assert "revokepremium" not in admin_commands
@@ -291,8 +310,9 @@ async def test_start_text_mentions_subscription_commands_for_regular_users(monke
     assert "/price - check crypto prices" in text
     assert "/settings - manage alert settings" in text
     assert "/reports - open market reports" in text
-    assert "/myplan - show subscription plan" in text
-    assert "/subscribe - subscribe with Telegram Stars" in text
+    assert "/plan - plan and subscription" in text
+    assert "/myplan" not in text
+    assert "/subscribe" not in text
     assert "/status" not in text
     assert "/admin" not in text
 
@@ -310,9 +330,73 @@ async def test_start_text_mentions_admin_command_for_admins(monkeypatch):
     await start(update, context)
 
     text = message.replies[0][0]
-    assert "/subscribe - subscribe with Telegram Stars" in text
+    assert "/plan - plan and subscription" in text
     assert "/status - show system status" in text
     assert "/admin - open admin menu" in text
+
+
+@pytest.mark.asyncio
+async def test_plan_command_opens_inline_keyboard(monkeypatch):
+    message = FakeMessage()
+    update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=1001))
+    context = SimpleNamespace(user_data={})
+
+    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
+
+    await plan(update, context)
+
+    text, kwargs = message.replies[0]
+    labels = [
+        button.text
+        for row in kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert text == "Plan & subscription"
+    assert labels == ["My plan", "Subscribe"]
+
+
+@pytest.mark.asyncio
+async def test_plan_my_plan_callback_reuses_myplan_command(monkeypatch):
+    calls = []
+    query = CallbackQuery("plan:my_plan", telegram_user_id=1001)
+    update = SimpleNamespace(callback_query=query, effective_user=query.from_user)
+    context = SimpleNamespace(user_data={})
+
+    async def fake_myplan_command(command_update):
+        calls.append(command_update)
+
+    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
+    monkeypatch.setattr("bot.handlers.myplan_command", fake_myplan_command)
+
+    await button_router(update, context)
+
+    assert query.answers == [(None, None)]
+    assert calls[0].message is query.message
+    assert calls[0].effective_user is query.from_user
+
+
+@pytest.mark.asyncio
+async def test_plan_subscribe_callback_reuses_subscribe_handler(monkeypatch):
+    calls = []
+    query = CallbackQuery("plan:subscribe", telegram_user_id=1001)
+    update = SimpleNamespace(callback_query=query, effective_user=query.from_user)
+    context = SimpleNamespace(user_data={})
+
+    async def fake_send_subscribe_invoice(command_update, command_context):
+        calls.append((command_update, command_context))
+
+    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
+    monkeypatch.setattr("bot.handlers.send_subscribe_invoice", fake_send_subscribe_invoice)
+
+    await button_router(update, context)
+
+    assert query.answers == [(None, None)]
+    assert calls[0][0].message is query.message
+    assert calls[0][0].effective_user is query.from_user
+    assert calls[0][1] is context
 
 
 @pytest.mark.asyncio
@@ -466,6 +550,7 @@ class SessionContext:
 class FakeMessage:
     def __init__(self):
         self.replies = []
+        self.chat = SimpleNamespace(id=2001)
 
     async def reply_text(self, text, **kwargs):
         self.replies.append((text, kwargs))
@@ -488,6 +573,17 @@ class FakeQuery:
 
     async def edit_message_text(self, text, reply_markup=None, **kwargs):
         self.edits.append((text, reply_markup, kwargs))
+
+
+class CallbackQuery:
+    def __init__(self, data, telegram_user_id):
+        self.data = data
+        self.from_user = SimpleNamespace(id=telegram_user_id)
+        self.message = FakeMessage()
+        self.answers = []
+
+    async def answer(self, text=None, show_alert=None, **kwargs):
+        self.answers.append((text, show_alert))
 
 
 @pytest.mark.asyncio

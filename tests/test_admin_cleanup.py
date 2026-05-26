@@ -85,6 +85,9 @@ def test_legacy_alert_commands_are_not_registered():
         if isinstance(handler, CommandHandler)
         for command in handler.commands
     }
+    assert "plan" in commands
+    assert "myplan" in commands
+    assert "subscribe" in commands
     assert "setinterval" in commands
     assert "grantpremium" in commands
     assert "revokepremium" in commands

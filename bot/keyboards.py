@@ -68,6 +68,15 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def build_plan_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("My plan", callback_data="plan:my_plan")],
+            [InlineKeyboardButton("Subscribe", callback_data="plan:subscribe")],
+        ]
+    )
+
+
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
