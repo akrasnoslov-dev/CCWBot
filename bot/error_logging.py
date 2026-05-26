@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -13,11 +14,19 @@ from bot.config import ERROR_LOG_FILE
 ERROR_FILE_HANDLER_NAME = "ccwbot_warning_error_file"
 MAX_BYTES = 10 * 1024 * 1024
 BACKUP_COUNT = 5
+MAX_EXPORT_BYTES = MAX_BYTES
 
 _SECRET_URL_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:\s/@]+:)([^@\s]+)(@)", re.IGNORECASE)
 _KEY_VALUE_SECRET_RE = re.compile(
-    r"(?i)\b(token|api[_-]?key|password|secret|session[_-]?token)=([^\s]+)"
+    r"(?i)\b([a-z0-9_-]*(?:token|api[_-]?key|password|secret|session[_-]?token|"
+    r"database[_-]?url|private[_-]?key)[a-z0-9_-]*)(\s*[:=]\s*)([^\s]+)"
 )
+
+
+@dataclass(frozen=True)
+class LogExport:
+    file_name: str
+    content: bytes
 
 
 class RedactingFormatter(logging.Formatter):
@@ -51,7 +60,7 @@ def _redact(message: str, secret_values: tuple[str, ...]) -> str:
     for value in secret_values:
         redacted = redacted.replace(value, "[REDACTED]")
     redacted = _SECRET_URL_RE.sub(r"\1[REDACTED]\3", redacted)
-    return _KEY_VALUE_SECRET_RE.sub(r"\1=[REDACTED]", redacted)
+    return _KEY_VALUE_SECRET_RE.sub(r"\1\2[REDACTED]", redacted)
 
 
 def _find_file_handler() -> logging.Handler | None:
@@ -60,6 +69,33 @@ def _find_file_handler() -> logging.Handler | None:
         if getattr(handler, "name", None) == ERROR_FILE_HANDLER_NAME:
             return handler
     return None
+
+
+def _configured_log_paths() -> list[Path]:
+    paths = [Path(ERROR_LOG_FILE)]
+    for index in range(1, BACKUP_COUNT + 1):
+        paths.append(Path(f"{ERROR_LOG_FILE}.{index}"))
+    return paths
+
+
+def _active_error_log_path() -> Path | None:
+    handler = _find_file_handler()
+    if handler is None:
+        return None
+    base_filename = getattr(handler, "baseFilename", None)
+    return Path(base_filename) if base_filename else None
+
+
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    seen = set()
+    deduped = []
+    for path in paths:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
 
 
 def is_error_file_logging_enabled() -> bool:
@@ -95,6 +131,31 @@ def disable_error_file_logging() -> None:
 
     logging.getLogger().removeHandler(handler)
     handler.close()
+
+
+def get_available_log_export_paths() -> list[Path]:
+    paths = _configured_log_paths()
+    active_path = _active_error_log_path()
+    if active_path is not None:
+        paths.insert(0, active_path)
+    return [
+        path
+        for path in _dedupe_paths(paths)
+        if path.is_file() and path.stat().st_size > 0
+    ]
+
+
+def build_sanitized_log_exports() -> list[LogExport]:
+    secret_values = _collect_secret_values()
+    exports = []
+    for path in get_available_log_export_paths():
+        raw = path.read_bytes()
+        if len(raw) > MAX_EXPORT_BYTES:
+            raw = raw[-MAX_EXPORT_BYTES:]
+        text = raw.decode("utf-8", errors="replace")
+        content = _redact(text, secret_values).encode("utf-8")
+        exports.append(LogExport(file_name=path.name, content=content))
+    return exports
 
 
 async def apply_persisted_error_file_logging_state() -> None:

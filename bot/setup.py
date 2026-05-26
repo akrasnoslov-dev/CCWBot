@@ -11,13 +11,11 @@ logger = logging.getLogger(__name__)
 
 async def setup_bot_commands(app: Application) -> None:
     default_commands = [
-        BotCommand("start", "Open bot menu"),
+        BotCommand("start", "Main bot menu"),
         BotCommand("price", "Check crypto prices"),
-        BotCommand("settings", "Manage alert settings"),
-        BotCommand("reports", "Open market reports"),
-        BotCommand("myplan", "Show subscription plan"),
-        BotCommand("subscribe", "Subscribe with Telegram Stars"),
-        BotCommand("status", "Show bot status"),
+        BotCommand("settings", "Alert settings / watchlist"),
+        BotCommand("reports", "Reports"),
+        BotCommand("plan", "Plan & subscription"),
     ]
     await app.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
 

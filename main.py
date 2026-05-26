@@ -38,14 +38,13 @@ from bot.handlers import (
     grant_premium,
     log_custom_emoji_ids,
     myplan,
+    plan,
     price,
     reports,
     revoke_premium,
     set_interval,
-    set_threshold,
     settings,
     start,
-    status,
     subscribe,
     user_id,
     watchlist,
@@ -85,19 +84,17 @@ def get_stop_signals() -> tuple[signal.Signals, ...] | None:
 def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("price", price))
+    app.add_handler(CommandHandler("plan", plan))
     app.add_handler(CommandHandler("watchlist", watchlist))
     app.add_handler(CommandHandler("myplan", myplan))
     app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("userid", user_id))
-    app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("reports", reports))
     app.add_handler(CommandHandler("dailyreport", daily_report))
     app.add_handler(CommandHandler("weeklyreport", weekly_report))
-    app.add_handler(CommandHandler("setthreshold", set_threshold))
-    app.add_handler(CommandHandler("setcooldown", set_interval))
     app.add_handler(CommandHandler("setinterval", set_interval))
     app.add_handler(CommandHandler("grantpremium", grant_premium))
     app.add_handler(CommandHandler("revokepremium", revoke_premium))

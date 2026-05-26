@@ -17,10 +17,10 @@ analysis.
 - If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
 - If report generation fails, the bot stores the failed attempt when DB storage is enabled and
   shows a temporary unavailable message instead of a fake deterministic report.
-- Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
+- Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
-  commands.
+- Admin-only `/settings`, `/admin`, `/chatid`, `/grantpremium`, and `/revokepremium`
+  commands. System status is available from `/admin`.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -366,13 +366,13 @@ CI runs Ruff, compile checks, the test suite, and Compose validation on pull req
 After deploy, verify with a private chat:
 
 1. Send `/start` as the configured `TELEGRAM_ADMIN_USER_ID`; admin-only commands should appear.
-2. Send `/settings` and `/status` as admin; both should work. Send the same commands from a normal user; both should be denied.
+2. Send `/settings` as admin; it should work. Send it from a normal user; it should be denied.
 3. Send `/grantpremium <telegram_user_id> 1` and `/revokepremium <telegram_user_id>` as admin; both should update `/myplan` without deleting saved coin choices.
 4. Send `/userid`; it should work manually but stay hidden from command menus.
 5. Send `/price btc` and another supported symbol such as `/price eth`; both should return concise price text or a generic temporary-unavailable message. Send `/price usdt`; it should be rejected as unsupported.
 6. Send `/watchlist` as a free user; BTC should be available and non-BTC choices should be locked. After an admin grant or paid access, non-BTC choices should unlock but should not auto-enable.
-7. Send `/myplan`; it should show Free, Premium, or expired Premium state without exposing internals.
-8. Send `/subscribe`; it should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
+7. Send `/plan`; My plan should show Free, Premium, or expired Premium state without exposing internals.
+8. In `/plan`, Subscribe should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
 10. Open Admin -> System status; Groq AI status should show OK after a successful/no-alert LLM analysis and NOT OK after an LLM failure.
 11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.

@@ -54,7 +54,45 @@ def test_error_file_logging_disable_stops_writes(tmp_path):
     [
         ("postgresql://user:password@example/db", "postgresql://user:[REDACTED]@example/db"),
         ("api_key=secret-value", "api_key=[REDACTED]"),
+        ("TELEGRAM_BOT_TOKEN: abc123", "TELEGRAM_BOT_TOKEN: [REDACTED]"),
+        ("DATABASE_URL=postgresql://user:password@example/db", "DATABASE_URL=[REDACTED]"),
+        ("private_key: secret-value", "private_key: [REDACTED]"),
     ],
 )
 def test_redact_masks_common_secret_shapes(message, expected):
     assert error_logging._redact(message, ()) == expected
+
+
+def test_log_export_uses_configured_file_and_redacts(monkeypatch, tmp_path):
+    log_file = tmp_path / "ccwbot-warnings-errors.log"
+    log_file.write_text(
+        "token=abc123\npostgresql://user:secret@db/name\nnormal line",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(error_logging, "ERROR_LOG_FILE", log_file)
+    monkeypatch.setattr(error_logging, "_active_error_log_path", lambda: None)
+
+    exports = error_logging.build_sanitized_log_exports()
+
+    assert [export.file_name for export in exports] == ["ccwbot-warnings-errors.log"]
+    assert exports[0].content.decode("utf-8").splitlines() == [
+        "token=[REDACTED]",
+        "postgresql://user:[REDACTED]@db/name",
+        "normal line",
+    ]
+
+
+def test_log_export_includes_rotated_files(monkeypatch, tmp_path):
+    log_file = tmp_path / "ccwbot-warnings-errors.log"
+    rotated_log_file = tmp_path / "ccwbot-warnings-errors.log.1"
+    log_file.write_text("current", encoding="utf-8")
+    rotated_log_file.write_text("rotated", encoding="utf-8")
+    monkeypatch.setattr(error_logging, "ERROR_LOG_FILE", log_file)
+    monkeypatch.setattr(error_logging, "_active_error_log_path", lambda: None)
+
+    exports = error_logging.build_sanitized_log_exports()
+
+    assert [export.file_name for export in exports] == [
+        "ccwbot-warnings-errors.log",
+        "ccwbot-warnings-errors.log.1",
+    ]
