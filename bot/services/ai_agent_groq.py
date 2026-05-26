@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from html import escape
 
 import httpx
@@ -45,6 +47,11 @@ GROQ_NEWS_INTELLIGENCE_MODEL = os.getenv("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-
 logger = logging.getLogger(__name__)
 
 _groq_client: AsyncOpenAI | None = None
+_GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS = _get_int_env(
+    "GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS", 300, minimum=1
+)
+_RATE_LIMIT_BACKOFF_CALL_TYPES = {"event_analysis", "market_heartbeat"}
+_llm_rate_limit_backoffs: dict[tuple[str, str], datetime] = {}
 
 SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
 _RAW_DIAGNOSTIC_LINE_RE = re.compile(
@@ -66,6 +73,33 @@ _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|dri
 
 class AIGroqRateLimitError(RuntimeError):
     """Raised when Groq refuses a request because the account is rate limited."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str = "groq",
+        model: str | None = None,
+        retry_after_seconds: int | None = None,
+        limited_until: datetime | None = None,
+    ):
+        super().__init__(message)
+        self.provider = provider
+        self.model = model
+        self.retry_after_seconds = retry_after_seconds
+        self.limited_until = limited_until
+
+
+class LLMRateLimitBackoffActive(RuntimeError):
+    """Raised when a provider/model is already in temporary rate-limit backoff."""
+
+    def __init__(self, *, provider: str, model: str, limited_until: datetime):
+        super().__init__(
+            f"{provider} model {model} is rate-limited until {limited_until.isoformat()}"
+        )
+        self.provider = provider
+        self.model = model
+        self.limited_until = limited_until
 
 
 class AIInvalidJsonError(RuntimeError):
@@ -93,6 +127,8 @@ class LLMJsonResult(tuple):
 
 def classify_ai_error_reason(error: Exception) -> str:
     """Return admin-safe LLM failure reason."""
+    if isinstance(error, LLMRateLimitBackoffActive):
+        return "rate limit backoff active"
     if isinstance(error, AIGroqRateLimitError) or _is_groq_rate_limit_error(error):
         return "rate limit"
     if isinstance(error, AIInvalidJsonError):
@@ -156,12 +192,19 @@ def _is_groq_json_validation_error(error: Exception) -> bool:
 
 
 def _is_groq_rate_limit_error(error: Exception) -> bool:
+    if isinstance(error, AIGroqRateLimitError):
+        return True
     status_code = getattr(error, "status_code", None)
     response = getattr(error, "response", None)
     if status_code == 429 or getattr(response, "status_code", None) == 429:
         return True
     message = str(error).lower()
-    return "429" in message or "rate limit" in message or "tokens per day" in message
+    return (
+        "429" in message
+        or "rate limit" in message
+        or "rate_limit" in message
+        or "tokens per day" in message
+    )
 
 
 def get_groq_client() -> AsyncOpenAI:
@@ -232,6 +275,132 @@ def _rate_limit_header_payload(headers) -> dict:
         "rate_limit_reset_tokens": _header_value(headers, "x-ratelimit-reset-tokens"),
         "retry_after": _header_value(headers, "retry-after"),
     }
+
+
+def _parse_retry_after_header(value: str | None, now: datetime) -> int | None:
+    if not value:
+        return None
+    stripped = str(value).strip()
+    try:
+        seconds = int(float(stripped))
+    except ValueError:
+        seconds = None
+    if seconds is not None:
+        return max(seconds, 1)
+    try:
+        retry_at = parsedate_to_datetime(stripped)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    return max(int((retry_at.astimezone(timezone.utc) - now).total_seconds()), 1)
+
+
+def _parse_retry_delay_text(value: str | None) -> int | None:
+    if not value:
+        return None
+    text = str(value).lower()
+    match = re.search(
+        r"(?:try again in|retry after|retry in)\s+"
+        r"(?:(?P<hours>\d+(?:\.\d+)?)\s*h(?:ours?)?)?\s*"
+        r"(?:(?P<minutes>\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?)?\s*"
+        r"(?:(?P<seconds>\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?)?",
+        text,
+    )
+    if not match:
+        return None
+    total = 0.0
+    for name, multiplier in (("hours", 3600), ("minutes", 60), ("seconds", 1)):
+        raw = match.group(name)
+        if raw:
+            total += float(raw) * multiplier
+    if total <= 0:
+        return None
+    return max(int(total), 1)
+
+
+def _retry_after_seconds_from_rate_limit(
+    error: Exception,
+    headers,
+    *,
+    now: datetime,
+) -> int:
+    for header_name in (
+        "retry-after",
+        "x-ratelimit-reset-tokens",
+        "x-ratelimit-reset-requests",
+    ):
+        retry_after = _parse_retry_after_header(_header_value(headers, header_name), now)
+        if retry_after is not None:
+            return retry_after
+        retry_after = _parse_retry_delay_text(_header_value(headers, header_name))
+        if retry_after is not None:
+            return retry_after
+    retry_after = _parse_retry_delay_text(str(error))
+    if retry_after is not None:
+        return retry_after
+    return _GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS
+
+
+def _active_rate_limit_backoff(
+    *,
+    provider: str,
+    model: str,
+    now: datetime | None = None,
+) -> datetime | None:
+    now = now or datetime.now(timezone.utc)
+    key = (provider, model)
+    limited_until = _llm_rate_limit_backoffs.get(key)
+    if limited_until is None:
+        return None
+    if limited_until.tzinfo is None:
+        limited_until = limited_until.replace(tzinfo=timezone.utc)
+    limited_until = limited_until.astimezone(timezone.utc)
+    if limited_until <= now:
+        _llm_rate_limit_backoffs.pop(key, None)
+        return None
+    return limited_until
+
+
+def get_llm_rate_limit_backoff(
+    *,
+    provider: str = "groq",
+    model: str,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Return the active provider/model backoff expiry, if any."""
+    return _active_rate_limit_backoff(provider=provider, model=model, now=now)
+
+
+def reset_llm_rate_limit_backoffs() -> None:
+    """Clear in-memory provider/model backoffs for tests and controlled restarts."""
+    _llm_rate_limit_backoffs.clear()
+
+
+def _start_llm_rate_limit_backoff(
+    *,
+    provider: str,
+    model: str,
+    error: Exception,
+    headers,
+) -> tuple[int, datetime]:
+    now = datetime.now(timezone.utc)
+    retry_after_seconds = _retry_after_seconds_from_rate_limit(error, headers, now=now)
+    limited_until = now + timedelta(seconds=retry_after_seconds)
+    key = (provider, model)
+    existing = _active_rate_limit_backoff(provider=provider, model=model, now=now)
+    if existing and existing > limited_until:
+        limited_until = existing
+        retry_after_seconds = max(int((limited_until - now).total_seconds()), 1)
+    _llm_rate_limit_backoffs[key] = limited_until
+    logger.warning(
+        "llm_rate_limit_started provider=%s model=%s retry_after_seconds=%s limited_until=%s",
+        provider,
+        model,
+        retry_after_seconds,
+        limited_until.isoformat(),
+    )
+    return retry_after_seconds, limited_until
 
 
 async def _write_llm_usage_log(
@@ -315,6 +484,38 @@ async def _run_groq_chat_completion(
     response_format: dict | None,
     timeout: int = 15,
 ):
+    input_chars = _message_input_chars(messages)
+    provider = "groq"
+    limited_until = None
+    if call_type in _RATE_LIMIT_BACKOFF_CALL_TYPES:
+        limited_until = _active_rate_limit_backoff(provider=provider, model=model)
+    if limited_until is not None:
+        await _write_llm_usage_log(
+            call_type=call_type,
+            symbol=symbol,
+            model=model,
+            status="skipped_due_to_rate_limit",
+            input_chars=input_chars,
+            output_chars=None,
+            max_tokens=max_tokens,
+            error_reason="rate limit backoff active",
+            error_message=f"{provider} model {model} is limited until {limited_until.isoformat()}",
+        )
+        logger.info(
+            "llm_call_skipped_due_to_rate_limit provider=%s model=%s symbol=%s "
+            "analysis_type=%s limited_until=%s",
+            provider,
+            model,
+            symbol,
+            call_type,
+            limited_until.isoformat(),
+        )
+        raise LLMRateLimitBackoffActive(
+            provider=provider,
+            model=model,
+            limited_until=limited_until,
+        )
+
     client = get_groq_client()
     request_kwargs = {
         "model": model,
@@ -325,7 +526,6 @@ async def _run_groq_chat_completion(
     if response_format is not None:
         request_kwargs["response_format"] = response_format
 
-    input_chars = _message_input_chars(messages)
     try:
         completions = client.chat.completions
         raw_resource = getattr(completions, "with_raw_response", None)
@@ -353,7 +553,19 @@ async def _run_groq_chat_completion(
             error_message=_safe_error_message(error),
         )
         if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
+            retry_after_seconds, limited_until = _start_llm_rate_limit_backoff(
+                provider=provider,
+                model=model,
+                error=error,
+                headers=headers,
+            )
+            raise AIGroqRateLimitError(
+                str(error),
+                provider=provider,
+                model=model,
+                retry_after_seconds=retry_after_seconds,
+                limited_until=limited_until,
+            ) from error
         raise
     return response, headers, input_chars
 

@@ -13,6 +13,7 @@ from bot.db.database import (
     Base,
     EventAiAnalysis,
     User,
+    UserPremiumSubscription,
     ensure_default_coin_subscriptions,
     save_price_snapshot,
 )
@@ -557,6 +558,55 @@ async def test_llm_unavailable_creates_no_delivery_and_marks_ai_not_ok(monkeypat
             assert row.status == "llm_error"
         status_text = await _build_admin_system_status_text()
         assert "Groq AI status: NOT OK" in status_text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_alert_recipient_selection_bypasses_user_frequency(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            user.alert_frequency_seconds = 86400
+            session.add(
+                UserPremiumSubscription(
+                    user_id=user.id,
+                    status="active",
+                    active_until=now + timedelta(days=1),
+                )
+            )
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type="market_heartbeat",
+                    message="recent heartbeat",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(minutes=5),
+                )
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        recipients = await alerts.get_alert_recipients(
+            symbol="btc",
+            event_type="event_alert",
+            now=now,
+            bypass_frequency=True,
+        )
+
+        assert recipients == [
+            alerts.AlertRecipient(
+                chat_id=2001,
+                user_id=user.id,
+                alert_frequency_seconds=86400,
+            )
+        ]
     finally:
         await engine.dispose()
 

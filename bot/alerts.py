@@ -93,6 +93,7 @@ from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
     AISchemaValidationError,
+    LLMRateLimitBackoffActive,
     ask_event_analysis_raw,
     ask_market_heartbeat_raw,
     classify_ai_error_reason,
@@ -2179,6 +2180,14 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         result = await ask_market_heartbeat_raw(input_payload)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
+    except LLMRateLimitBackoffActive as error:
+        await _save_market_heartbeat_attempt(
+            input_payload=input_payload,
+            raw_output_json=None,
+            status="skipped_due_to_rate_limit",
+            error_message=str(error),
+        )
+        return None
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         heartbeat_id = await _save_market_heartbeat_attempt(
@@ -2284,6 +2293,15 @@ async def _create_event_analysis_decision(
         result = await ask_event_analysis_raw(input_payload)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
+    except LLMRateLimitBackoffActive as error:
+        await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=None,
+            status="skipped_due_to_rate_limit",
+            error_message=str(error),
+            error_reason=classify_ai_error_reason(error),
+        )
+        return None, None
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
@@ -3307,9 +3325,29 @@ async def _get_due_market_heartbeat_recipients(
                 session,
                 user_id=user.id,
                 symbol=normalized_symbol,
+                alert_type=MARKET_HEARTBEAT_TYPE,
             )
             last_sent_at = last_sent.created_at if last_sent else None
-            if not can_deliver_now(user, normalized_symbol, now, last_sent_at):
+            frequency_seconds = get_effective_frequency_seconds(user, now)
+            due_now = can_deliver_now(user, normalized_symbol, now, last_sent_at)
+            logger.info(
+                "heartbeat_due_check user_id=%s symbol=%s frequency_seconds=%s "
+                "last_heartbeat_at=%s due=%s",
+                user.id,
+                normalized_symbol,
+                frequency_seconds,
+                last_sent_at.isoformat() if last_sent_at else None,
+                due_now,
+            )
+            if not due_now:
+                logger.info(
+                    "heartbeat_delivery_frequency_skipped user_id=%s symbol=%s "
+                    "frequency_seconds=%s last_heartbeat_at=%s",
+                    user.id,
+                    normalized_symbol,
+                    frequency_seconds,
+                    last_sent_at.isoformat() if last_sent_at else None,
+                )
                 continue
             chat_id = int(user.telegram_chat_id)
             if chat_id in seen_chat_ids:
@@ -3325,7 +3363,7 @@ async def _get_due_market_heartbeat_recipients(
                     AlertRecipient(
                         chat_id=chat_id,
                         user_id=user.id,
-                        alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                        alert_frequency_seconds=frequency_seconds,
                     ),
                     last_price,
                 )
