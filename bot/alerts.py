@@ -157,9 +157,21 @@ COIN_ALIASES = {
 MARKET_WIDE_NEWS_TERMS = (
     "crypto market",
     "cryptocurrency market",
+    "cryptocurrencies",
     "digital asset",
     "digital assets",
     "market-wide",
+    "market wide",
+    "broader crypto",
+    "broader cryptocurrency",
+    "broader market",
+    "altcoin",
+    "altcoins",
+    "crypto assets",
+    "crypto prices",
+    "crypto selloff",
+    "crypto sell-off",
+    "crypto rally",
     "regulation",
     "regulatory",
     "sec",
@@ -173,6 +185,28 @@ MARKET_WIDE_NEWS_TERMS = (
     "hack",
     "etf",
     "dominance",
+)
+BTC_ONLY_NEWS_TERMS = ("bitcoin", "btc")
+CLEAR_MARKET_WIDE_NEWS_TERMS = (
+    "crypto market",
+    "cryptocurrency market",
+    "cryptocurrencies",
+    "digital asset",
+    "digital assets",
+    "market-wide",
+    "market wide",
+    "broader crypto",
+    "broader cryptocurrency",
+    "broader market",
+    "altcoin",
+    "altcoins",
+    "crypto assets",
+    "crypto prices",
+    "crypto selloff",
+    "crypto sell-off",
+    "crypto rally",
+    "market-wide selloff",
+    "market-wide rally",
 )
 MATERIAL_NEWS_TERMS = (
     "approval",
@@ -299,36 +333,61 @@ def _coin_name(symbol: str) -> str:
     return str(SUPPORTED_COINS[normalize_symbol(symbol)]["name"])
 
 
+def _news_search_text(news_item: dict) -> str:
+    title = str(news_item.get("title") or "")
+    summary = str(news_item.get("summary") or "")
+    return f" {title} {summary} ".lower()
+
+
+def _matches_symbol_alias(symbol: str, text: str) -> bool:
+    aliases = COIN_ALIASES.get(normalize_symbol(symbol), (normalize_symbol(symbol),))
+    return any(re_search_word(alias.lower(), text) for alias in aliases)
+
+
+def _news_metadata_matches_symbol(symbol: str, news_item: dict) -> bool:
+    normalized_symbol = normalize_symbol(symbol)
+    primary_symbol = str(news_item.get("primary_symbol") or "").strip().lower()
+    if primary_symbol == normalized_symbol:
+        return True
+    related_symbols = news_item.get("related_symbols")
+    if not isinstance(related_symbols, list):
+        return False
+    return normalized_symbol in {
+        str(item or "").strip().lower() for item in related_symbols if str(item or "").strip()
+    }
+
+
+def _mentions_btc(text: str) -> bool:
+    return any(re_search_word(term, text) for term in BTC_ONLY_NEWS_TERMS)
+
+
+def _is_clearly_market_wide_news(text: str) -> bool:
+    return any(term in text for term in CLEAR_MARKET_WIDE_NEWS_TERMS)
+
+
 def classify_news_relevance(symbol: str, news_item: dict) -> str:
     """Classify RSS item relevance before it reaches the LLM."""
     normalized_symbol = normalize_symbol(symbol)
-    title = str(news_item.get("title") or "")
-    summary = str(news_item.get("summary") or "")
-    text = f" {title} {summary} ".lower()
-    aliases = COIN_ALIASES.get(normalized_symbol, (normalized_symbol,))
-    for alias in aliases:
-        if re_search_word(alias.lower(), text):
-            return "direct"
+    if _news_metadata_matches_symbol(normalized_symbol, news_item):
+        return "direct"
+    text = _news_search_text(news_item)
+    if _matches_symbol_alias(normalized_symbol, text):
+        return "direct"
     if any(term in text for term in MARKET_WIDE_NEWS_TERMS):
-        if normalized_symbol != "btc" and re_search_word("bitcoin", text):
-            broader_terms = ("crypto", "market", "dominance", "etf", "macro", "regulation")
-            if not any(term in text for term in broader_terms):
+        if normalized_symbol != "btc" and _mentions_btc(text):
+            if not _is_clearly_market_wide_news(text):
                 return "irrelevant"
         return "market_wide"
     return "irrelevant"
 
 
 def is_material_news_item(news_item: dict) -> bool:
-    title = str(news_item.get("title") or "")
-    summary = str(news_item.get("summary") or "")
-    text = f" {title} {summary} ".lower()
+    text = _news_search_text(news_item)
     return any(term in text for term in MATERIAL_NEWS_TERMS)
 
 
 def is_generic_news_item(news_item: dict) -> bool:
-    title = str(news_item.get("title") or "")
-    summary = str(news_item.get("summary") or "")
-    text = f" {title} {summary} ".lower()
+    text = _news_search_text(news_item)
     return any(term in text for term in GENERIC_NEWS_TERMS)
 
 
@@ -351,10 +410,72 @@ def filter_news_for_symbol(
     for item in _sort_news_fresh_first(news_items):
         relevance = classify_news_relevance(symbol, item)
         if relevance == "direct" and len(direct) < max_direct:
-            direct.append(item)
+            direct.append({**item, "relevance_label": "direct_symbol"})
         elif relevance == "market_wide" and len(market_wide) < max_market_wide:
-            market_wide.append(item)
+            market_wide.append({**item, "relevance_label": "market_wide"})
     return direct + market_wide
+
+
+def _candidate_news_relevance_label(symbol: str | None, item: dict) -> str:
+    explicit_label = str(item.get("relevance_label") or "").strip().lower()
+    if explicit_label:
+        return explicit_label
+    if not symbol:
+        return ""
+    relevance = classify_news_relevance(symbol, item)
+    if relevance == "direct":
+        return "direct_symbol"
+    if relevance == "market_wide":
+        return "market_wide"
+    return "irrelevant"
+
+
+def _log_news_selection_summary(
+    *,
+    symbol: str,
+    source: str,
+    raw_news_items: list[dict],
+    selected_news_items: list[dict],
+    fallback_used: bool,
+    selection_stats: dict[str, int] | None = None,
+) -> None:
+    direct_count = 0
+    market_wide_count = 0
+    irrelevant_count = 0
+    for item in raw_news_items:
+        relevance = classify_news_relevance(symbol, item)
+        if relevance == "direct":
+            direct_count += 1
+        elif relevance == "market_wide":
+            market_wide_count += 1
+        else:
+            irrelevant_count += 1
+    selected_titles = [
+        _truncate_text(str(item.get("title") or "").strip(), 90)
+        for item in selected_news_items
+        if str(item.get("title") or "").strip()
+    ]
+    selected_labels = [
+        _candidate_news_relevance_label(symbol, item) for item in selected_news_items
+    ]
+    logger.info(
+        "related_news_selection symbol=%s source=%s candidate_count=%s "
+        "direct_news_count=%s market_wide_news_count=%s irrelevant_filtered_count=%s "
+        "selected_count=%s selected_news_titles=%s selected_news_relevance_labels=%s "
+        "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
+        normalize_symbol(symbol).upper(),
+        source,
+        len(raw_news_items),
+        direct_count,
+        market_wide_count,
+        irrelevant_count,
+        len(selected_news_items),
+        selected_titles,
+        selected_labels,
+        (selection_stats or {}).get("noise_filtered_count", 0),
+        (selection_stats or {}).get("dedup_filtered_count", 0),
+        fallback_used,
+    )
 
 
 def _sort_news_fresh_first(news_items: list[dict]) -> list[dict]:
@@ -500,7 +621,12 @@ def _news_id(index: int) -> str:
     return f"n{index + 1}"
 
 
-def _format_candidate_news(news_items: list[dict], *, preserve_order: bool = False) -> list[dict]:
+def _format_candidate_news(
+    news_items: list[dict],
+    *,
+    preserve_order: bool = False,
+    symbol: str | None = None,
+) -> list[dict]:
     candidates: list[dict] = []
     seen_keys: set[str] = set()
     ordered_items = news_items if preserve_order else _sort_news_fresh_first(news_items)
@@ -526,6 +652,7 @@ def _format_candidate_news(news_items: list[dict], *, preserve_order: bool = Fal
                 ),
                 "url": str(item.get("url") or item.get("link") or "").strip(),
                 "summary": str(item.get("summary") or "").strip(),
+                "relevance_label": _candidate_news_relevance_label(symbol, item),
             }
         )
     return candidates
@@ -555,23 +682,28 @@ async def _select_related_news_context(
                     selection_stats=selection_stats,
                 )
             if intelligence_news:
-                logger.info(
-                    "Related news selection: symbol=%s source=news_items "
-                    "candidate_count=%s selected_count=%s noise_filtered_count=%s "
-                    "dedup_filtered_count=%s fallback_used=%s",
+                filtered_intelligence_news = filter_news_for_symbol(
                     normalized_symbol,
-                    selection_stats.get("candidate_count", 0),
-                    len(intelligence_news),
-                    selection_stats.get("noise_filtered_count", 0),
-                    selection_stats.get("dedup_filtered_count", 0),
-                    False,
+                    intelligence_news,
+                    max_direct=intelligence_limit,
+                    max_market_wide=min(3, intelligence_limit),
                 )
-                return intelligence_news, raw_news_items, True
+                _log_news_selection_summary(
+                    symbol=normalized_symbol,
+                    source="news_items",
+                    raw_news_items=intelligence_news,
+                    selected_news_items=filtered_intelligence_news,
+                    fallback_used=False,
+                    selection_stats=selection_stats,
+                )
+                if filtered_intelligence_news:
+                    return filtered_intelligence_news, raw_news_items, True
             logger.info(
-                "Related news selection: symbol=%s source=news_items "
-                "candidate_count=%s selected_count=0 noise_filtered_count=%s "
-                "dedup_filtered_count=%s fallback_used=%s",
-                normalized_symbol,
+                "related_news_selection symbol=%s source=news_items candidate_count=%s "
+                "direct_news_count=0 market_wide_news_count=0 irrelevant_filtered_count=0 "
+                "selected_count=0 selected_news_titles=[] selected_news_relevance_labels=[] "
+                "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
+                normalized_symbol.upper(),
                 selection_stats.get("candidate_count", 0),
                 selection_stats.get("noise_filtered_count", 0),
                 selection_stats.get("dedup_filtered_count", 0),
@@ -592,13 +724,12 @@ async def _select_related_news_context(
                 hours=fallback_max_age_hours,
             )
     filtered_news = filter_news_for_symbol(normalized_symbol, raw_news_items)
-    logger.info(
-        "Related news selection: symbol=%s source=fallback candidate_count=%s "
-        "selected_count=%s noise_filtered_count=0 dedup_filtered_count=0 fallback_used=%s",
-        normalized_symbol,
-        len(raw_news_items),
-        len(filtered_news),
-        True,
+    _log_news_selection_summary(
+        symbol=normalized_symbol,
+        source="fallback",
+        raw_news_items=raw_news_items,
+        selected_news_items=filtered_news,
+        fallback_used=True,
     )
     return filtered_news, raw_news_items, False
 
@@ -632,6 +763,7 @@ def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) 
                 "title": str(item.get("title") or "").strip(),
                 "time": str(item.get("published_at") or "").strip(),
                 "summary": _truncate_text(str(item.get("summary") or ""), 300),
+                "relevance_label": str(item.get("relevance_label") or "").strip(),
             }
         )
     return compacted
@@ -1637,7 +1769,7 @@ def _build_news_driven_event_input(
             "type": None,
             "price": None,
         },
-        "news": _format_candidate_news([news_item], preserve_order=True),
+        "news": _format_candidate_news([news_item], preserve_order=True, symbol=symbol),
         "policy": {
             "language": "English",
             "audience": "General retail crypto holder.",
@@ -3624,6 +3756,7 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
             candidate_news = _format_candidate_news(
                 news_items,
                 preserve_order=used_intelligence_news,
+                symbol=normalized_symbol,
             )
             input_payload = await _build_market_heartbeat_input(
                 heartbeat_id=_build_market_heartbeat_id(normalized_symbol),
@@ -3891,6 +4024,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             candidate_news = _format_candidate_news(
                 news_items,
                 preserve_order=used_intelligence_news,
+                symbol=symbol,
             )
             analysis_id = _build_event_analysis_id(symbol)
             input_payload = await _build_event_analysis_input(

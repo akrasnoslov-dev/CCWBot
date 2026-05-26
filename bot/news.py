@@ -60,6 +60,7 @@ def _news_row_to_compat_dict(row: NewsItem) -> dict:
     published_at = _row_published_at(row)
     published = published_at.isoformat() if published_at else ""
     url = str(row.url or "").strip()
+    related_symbols = row.related_symbols if isinstance(row.related_symbols, list) else []
     return {
         "title": str(row.title or "").strip(),
         "source": str(row.source or "").strip(),
@@ -68,6 +69,16 @@ def _news_row_to_compat_dict(row: NewsItem) -> dict:
         "summary": str(row.llm_summary or row.raw_summary or "").strip(),
         "published": published,
         "published_at": published_at or "",
+        "primary_symbol": _normalize_news_symbol(row.primary_symbol or ""),
+        "related_symbols": [
+            normalized
+            for item in related_symbols
+            if (normalized := _normalize_news_symbol(item))
+        ],
+        "category": str(row.category or "").strip().lower(),
+        "impact_level": str(row.impact_level or "").strip().lower(),
+        "impact_score": row.impact_score,
+        "relevance_score": row.relevance_score,
     }
 
 

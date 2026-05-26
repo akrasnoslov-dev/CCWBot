@@ -1306,17 +1306,30 @@ async def _ask_json(prompt: str) -> dict | None:
     return parsed
 
 
-async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
-    prompt = (
+def build_event_analysis_prompt(input_payload: dict) -> str:
+    return (
         "Return valid JSON only. Write English.\n"
         "Use exactly these fields: symbol, should_alert, event_key, title, message_body, "
         "related_news_ids, possible_action, urgency, confidence, reason_for_no_alert.\n"
         "urgency: low, normal, high. confidence: low, medium, high.\n"
+        "Analyze exactly one symbol: the symbol in the input payload. Do not change backend "
+        "alert types.\n"
+        "Use only direct symbol news or clearly market-wide crypto news. Do not treat "
+        "BTC-only news as related context for ETH, SOL, TON, or any non-BTC symbol.\n"
+        "Do not claim news caused a price move. Avoid overconfident trading instructions.\n"
+        "Do not ignore meaningful price moves only because direct news is absent. For "
+        "altcoins, a 24h move around 5-7% can be meaningful even without coin-specific news.\n"
         "event_key is required only when should_alert=true.\n"
+        "When should_alert=true, use a stable event_key based on symbol and event theme. Do "
+        "not generate UUID-like or random event keys such as event_analysis_btc_<random>.\n"
         "If should_alert=false: event_key null or \"\", title \"\", message_body \"\", "
         "related_news_ids [], possible_action \"\", urgency null, confidence low|medium|high, "
         "reason_for_no_alert non-empty.\n"
+        "For should_alert=false, reason_for_no_alert must mention the actual 24h change from "
+        "the input, recent short-term snapshot behavior, whether news was direct, "
+        "market-wide, irrelevant, or absent, and why that does or does not justify an alert.\n"
+        "Avoid generic no-alert reasons like \"No significant price movement\" or "
+        "\"No relevant news\" unless backed by the actual input numbers.\n"
         "related_news_ids must come from news.news_id.\n"
         "Prefer fewer useful alerts. If no meaningful event exists, set should_alert=false.\n"
         "No guaranteed outcomes.\n"
@@ -1324,6 +1337,11 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
+
+
+async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
+    prompt = build_event_analysis_prompt(input_payload)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -1402,12 +1420,20 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
         "This is a calm Market Heartbeat, not an Event Alert. Do not return "
         "should_alert, event_key, urgency, market_update, important_alert, "
         "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
+        "Use direct symbol news first. Use clearly market-wide crypto news only when useful. "
+        "Do not present BTC-only news as related context for ETH, SOL, TON, or any non-BTC "
+        "symbol.\n"
         "Be concise and useful. Mention selected relevant news if useful, but avoid exact "
         "causality claims. Do not repeat exact price values or exact percentage values in "
         "message_body; describe the current price, since-last-message change, and 24h "
         "change qualitatively.\n"
         "related_news_ids must only contain news_id values from candidate_news.\n"
-        "possible_action should be concise.\n\n"
+        "possible_action must be specific, practical, and tied to the current market context. "
+        "Prefer guidance about the price range, volatility, confirmation, whether news is "
+        "direct or only market-wide, or whether the market is quiet. Avoid generic "
+        "possible_action phrases such as \"Monitor market developments\", \"Monitor market "
+        "sentiment\", or \"Keep watching\" unless there is genuinely no better action. "
+        "Avoid overconfident trading instructions.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )

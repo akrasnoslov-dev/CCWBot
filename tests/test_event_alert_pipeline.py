@@ -270,6 +270,68 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ton_event_analysis_payload_excludes_btc_only_news_without_direct_ton(monkeypatch):
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    raw_news = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Crypto market sells off after Fed decision", "source": "B"},
+    ]
+    candidate_news = alerts._format_candidate_news(
+        alerts.filter_news_for_symbol("ton", raw_news),
+        preserve_order=True,
+        symbol="ton",
+    )
+
+    payload = await alerts._build_event_analysis_input(
+        analysis_id="event_analysis_ton_test",
+        symbol="ton",
+        current_price=6.2,
+        change_24h=5.8,
+        now=now,
+        state={"last_price": 6.0},
+        candidate_news=candidate_news,
+    )
+
+    titles = [item["title"] for item in payload["news"]]
+    assert "Crypto market sells off after Fed decision" in titles
+    assert "Bitcoin ETFs crushed by billions in outflows" not in titles
+    assert payload["market"]["chg24h"] == 5.8
+    assert [item["relevance_label"] for item in payload["news"]] == ["market_wide"]
+
+
+@pytest.mark.asyncio
+async def test_sol_event_analysis_payload_excludes_bitcoin_etf_only_news(monkeypatch):
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    raw_news = [
+        {"title": "Bitcoin ETF-only article dominates fund flows", "source": "A"},
+        {"title": "Solana network outage hits validators", "source": "B"},
+    ]
+    candidate_news = alerts._format_candidate_news(
+        alerts.filter_news_for_symbol("sol", raw_news),
+        preserve_order=True,
+        symbol="sol",
+    )
+
+    payload = await alerts._build_event_analysis_input(
+        analysis_id="event_analysis_sol_test",
+        symbol="sol",
+        current_price=180.0,
+        change_24h=2.4,
+        now=now,
+        state={"last_price": 178.0},
+        candidate_news=candidate_news,
+    )
+
+    titles = [item["title"] for item in payload["news"]]
+    assert titles == ["Solana network outage hits validators"]
+    assert payload["news"][0]["relevance_label"] == "direct_symbol"
+
+
+@pytest.mark.asyncio
 async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
     recipients = [alerts.AlertRecipient(chat_id=2001, user_id=1)]
     deliver_alert = AsyncMock(return_value=True)
