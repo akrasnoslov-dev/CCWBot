@@ -14,7 +14,7 @@ from bot.db.database import (
     grant_user_premium,
 )
 from bot.domain.supported_coins import ACTIVE_SYMBOLS
-from bot.handlers import button_router, plan, start, status
+from bot.handlers import button_router, plan, start
 from bot.keyboards import build_plan_keyboard, build_price_keyboard
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
@@ -267,7 +267,6 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "settings",
         "reports",
         "plan",
-        "status",
         "admin",
     ]
     assert "watchlist" not in default_commands
@@ -278,6 +277,7 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "revokepremium" not in default_commands
     assert "userid" not in default_commands
     assert "status" not in default_commands
+    assert "status" not in admin_commands
     assert "myplan" not in default_commands
     assert "subscribe" not in default_commands
     assert "dailyreport" not in default_commands
@@ -331,7 +331,7 @@ async def test_start_text_mentions_admin_command_for_admins(monkeypatch):
 
     text = message.replies[0][0]
     assert "/plan - plan and subscription" in text
-    assert "/status - show system status" in text
+    assert "/status" not in text
     assert "/admin - open admin menu" in text
 
 
@@ -397,23 +397,6 @@ async def test_plan_subscribe_callback_reuses_subscribe_handler(monkeypatch):
     assert calls[0][0].message is query.message
     assert calls[0][0].effective_user is query.from_user
     assert calls[0][1] is context
-
-
-@pytest.mark.asyncio
-async def test_status_denies_regular_users(monkeypatch):
-    message = FakeMessage()
-    update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=1001))
-    context = SimpleNamespace(user_data={})
-
-    monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
-    monkeypatch.setattr("bot.handlers.is_admin_update", AsyncFalse())
-    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
-
-    await status(update, context)
-
-    assert message.replies == [
-        ("Sorry, only the bot admin can view system status.", {})
-    ]
 
 
 @pytest.mark.asyncio

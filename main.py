@@ -45,7 +45,6 @@ from bot.handlers import (
     set_interval,
     settings,
     start,
-    status,
     subscribe,
     user_id,
     watchlist,
@@ -90,7 +89,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("myplan", myplan))
     app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("userid", user_id))
-    app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("chatid", chat_id))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("admin", admin))

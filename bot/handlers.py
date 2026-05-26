@@ -262,7 +262,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n/plan - plan and subscription"
     )
     if is_admin:
-        message += "\n/status - show system status\n/admin - open admin menu"
+        message += "\n/admin - open admin menu"
     await update.message.reply_text(message)
 
 
@@ -444,15 +444,6 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as error:
         await update.message.reply_text("Sorry, I could not get the price right now.")
         logger.exception("Price command failed: %s", error)
-
-
-@log_request("/status")
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin_update(update):
-        _mark_denied(context)
-        await update.message.reply_text("Sorry, only the bot admin can view system status.")
-        return
-    await update.message.reply_text(await _build_admin_system_status_text())
 
 
 async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):

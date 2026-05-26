@@ -66,7 +66,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Fallback chat ID for automatic BTC alerts when database storage is off.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# User ID allowed to run admin-only commands (/settings, /status, etc.).
+# User ID allowed to run admin-only commands (/settings, /admin, etc.).
 TELEGRAM_ADMIN_USER_ID = parse_telegram_user_id(os.getenv("TELEGRAM_ADMIN_USER_ID"))
 
 # Movement threshold (in percentage points) required to send an automatic BTC alert.

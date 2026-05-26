@@ -21,7 +21,6 @@ async def setup_bot_commands(app: Application) -> None:
 
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
-            BotCommand("status", "Show system status"),
             BotCommand("admin", "Open admin menu"),
         ]
         try:
