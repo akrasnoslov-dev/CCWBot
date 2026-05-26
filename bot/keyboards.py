@@ -68,12 +68,22 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def build_plan_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("My plan", callback_data="plan:my_plan")],
+            [InlineKeyboardButton("Subscribe", callback_data="plan:subscribe")],
+        ]
+    )
+
+
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Alert settings", callback_data="admin:alert_settings")],
             [InlineKeyboardButton("System status", callback_data="admin:system_status")],
-            [InlineKeyboardButton("Export logs", callback_data="admin:export_logs")],
+            [InlineKeyboardButton("Premium management", callback_data="admin:premium_menu")],
+            [InlineKeyboardButton("Logs", callback_data="admin:logs_menu")],
         ]
     )
 
@@ -83,6 +93,28 @@ def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("Current settings", callback_data="admin:current")],
             [InlineKeyboardButton("Check interval", callback_data="admin:interval_menu")],
+            [InlineKeyboardButton("Back", callback_data="admin:back")],
+        ]
+    )
+
+
+def build_admin_premium_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Grant premium", callback_data="admin:premium_grant")],
+            [InlineKeyboardButton("Revoke premium", callback_data="admin:premium_revoke")],
+            [InlineKeyboardButton("Back", callback_data="admin:back")],
+        ]
+    )
+
+
+def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("ON / OFF", callback_data="admin:logs_toggle")],
+            [InlineKeyboardButton("Status", callback_data="admin:logs_status")],
+            [InlineKeyboardButton("Export logs", callback_data="admin:logs_export")],
+            [InlineKeyboardButton("Back", callback_data="admin:back")],
         ]
     )
 
@@ -93,6 +125,7 @@ def build_interval_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("60 sec", callback_data="admin:set_interval:60")],
             [InlineKeyboardButton("300 sec", callback_data="admin:set_interval:300")],
             [InlineKeyboardButton("600 sec", callback_data="admin:set_interval:600")],
+            [InlineKeyboardButton("Back", callback_data="admin:alert_settings")],
         ]
     )
 

@@ -1,3 +1,5 @@
+import re
+
 import feedparser
 
 from bot.db.database import make_news_key
@@ -8,10 +10,18 @@ RSS_FEEDS = [
     "https://cointelegraph.com/rss",
 ]
 
-# Lightweight keyword filter to keep only BTC/crypto-related headlines.
+# Lightweight keyword filter to keep supported-coin/crypto-related headlines.
 NEWS_KEYWORDS = [
     "bitcoin",
     "btc",
+    "ethereum",
+    "eth",
+    "ether",
+    "solana",
+    "sol",
+    "toncoin",
+    "ton",
+    "the open network",
     "crypto",
     "cryptocurrency",
     "etf",
@@ -25,10 +35,17 @@ NEWS_KEYWORDS = [
 ]
 
 
+def _keyword_matches(keyword: str, text: str) -> bool:
+    escaped = re.escape(keyword.lower())
+    if re.fullmatch(r"[a-z0-9]+", keyword):
+        return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
+    return keyword.lower() in text
+
+
 def headline_is_relevant(title: str, summary: str = "") -> bool:
-    """Check whether a news item looks relevant to BTC."""
+    """Check whether a news item looks relevant to supported crypto monitoring."""
     text = f"{title} {summary}".lower()
-    return any(keyword in text for keyword in NEWS_KEYWORDS)
+    return any(_keyword_matches(keyword, text) for keyword in NEWS_KEYWORDS)
 
 
 def fetch_crypto_news(limit: int = 5) -> list[dict]:

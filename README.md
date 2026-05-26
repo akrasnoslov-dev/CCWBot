@@ -10,17 +10,17 @@ analysis.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
-  when a user has not received any visible message for that coin within their alert frequency.
+  when the user's last sent heartbeat for that coin is older than their alert frequency.
 - Daily and weekly reports are cached market-wide LLM reports across all active symbols.
   Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
 - If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
 - If report generation fails, the bot stores the failed attempt when DB storage is enabled and
   shows a temporary unavailable message instead of a fake deterministic report.
-- Premium-aware `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
+- Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- Admin-only `/settings`, `/status`, `/chatid`, `/grantpremium`, and `/revokepremium`
-  commands.
+- Admin-only `/settings`, `/admin`, `/chatid`, `/grantpremium`, and `/revokepremium`
+  commands. System status is available from `/admin`.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -70,13 +70,14 @@ Common configuration:
 - `GROQ_EVENT_ANALYSIS_MODEL`
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
 - `GROQ_MARKET_HEARTBEAT_MODEL`
+- `GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS`
 - `GROQ_REPORT_MODEL`
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
-- `PRICE_MOVE_ALERT_PERCENT` (legacy; not used for automatic Event Alert decisions)
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
+- `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`
 - `PRICE_CACHE_TTL_SECONDS`
 - `HEALTH_PORT`
 - `ERROR_LOG_FILE`
@@ -92,7 +93,7 @@ News Intelligence stores structured RSS metadata in `news_items` and checks that
 before calling Groq. Per-run and hourly budgets keep the feature from materially increasing LLM
 usage; when budget is exhausted, RSS news still flows through the existing alert/report contracts.
 
-Legacy `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
+Legacy `PRICE_MOVE_ALERT_PERCENT`, `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
 `WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
 and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 
@@ -160,11 +161,11 @@ Market Heartbeat is separate from Event Alert analysis. The normal check-interva
 returns only `should_alert=true` or `should_alert=false`; heartbeat generation runs hourly,
 stores the latest cached result in PostgreSQL, and does not deliver it immediately.
 
-During automatic processing, the bot checks each eligible user and coin. If any user-visible
-delivery for that coin happened within the user's configured alert frequency, heartbeat is
-skipped. If no recent delivery exists, the bot sends the latest completed heartbeat only when
-it is fresh enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and
-not sent.
+During automatic processing, the bot checks each eligible user and coin. If a sent
+`market_heartbeat` for that user and coin happened within the user's configured alert
+frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
+no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
+enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
 symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,
@@ -366,13 +367,13 @@ CI runs Ruff, compile checks, the test suite, and Compose validation on pull req
 After deploy, verify with a private chat:
 
 1. Send `/start` as the configured `TELEGRAM_ADMIN_USER_ID`; admin-only commands should appear.
-2. Send `/settings` and `/status` as admin; both should work. Send the same commands from a normal user; both should be denied.
+2. Send `/settings` as admin; it should work. Send it from a normal user; it should be denied.
 3. Send `/grantpremium <telegram_user_id> 1` and `/revokepremium <telegram_user_id>` as admin; both should update `/myplan` without deleting saved coin choices.
 4. Send `/userid`; it should work manually but stay hidden from command menus.
 5. Send `/price btc` and another supported symbol such as `/price eth`; both should return concise price text or a generic temporary-unavailable message. Send `/price usdt`; it should be rejected as unsupported.
 6. Send `/watchlist` as a free user; BTC should be available and non-BTC choices should be locked. After an admin grant or paid access, non-BTC choices should unlock but should not auto-enable.
-7. Send `/myplan`; it should show Free, Premium, or expired Premium state without exposing internals.
-8. Send `/subscribe`; it should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
+7. Send `/plan`; My plan should show Free, Premium, or expired Premium state without exposing internals.
+8. In `/plan`, Subscribe should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
 10. Open Admin -> System status; Groq AI status should show OK after a successful/no-alert LLM analysis and NOT OK after an LLM failure.
 11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
@@ -395,5 +396,6 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).
+Read-only operational SQL snippets are in [docs/observability.md](docs/observability.md).
 Codex agent routing and review rules are in
 [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).

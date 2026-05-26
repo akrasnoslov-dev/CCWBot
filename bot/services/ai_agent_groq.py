@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from html import escape
 
 import httpx
@@ -45,6 +47,11 @@ GROQ_NEWS_INTELLIGENCE_MODEL = os.getenv("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-
 logger = logging.getLogger(__name__)
 
 _groq_client: AsyncOpenAI | None = None
+_GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS = _get_int_env(
+    "GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS", 300, minimum=1
+)
+_RATE_LIMIT_BACKOFF_CALL_TYPES = {"event_analysis", "market_heartbeat"}
+_llm_rate_limit_backoffs: dict[tuple[str, str], datetime] = {}
 
 SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
 _RAW_DIAGNOSTIC_LINE_RE = re.compile(
@@ -66,6 +73,33 @@ _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|dri
 
 class AIGroqRateLimitError(RuntimeError):
     """Raised when Groq refuses a request because the account is rate limited."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str = "groq",
+        model: str | None = None,
+        retry_after_seconds: int | None = None,
+        limited_until: datetime | None = None,
+    ):
+        super().__init__(message)
+        self.provider = provider
+        self.model = model
+        self.retry_after_seconds = retry_after_seconds
+        self.limited_until = limited_until
+
+
+class LLMRateLimitBackoffActive(RuntimeError):
+    """Raised when a provider/model is already in temporary rate-limit backoff."""
+
+    def __init__(self, *, provider: str, model: str, limited_until: datetime):
+        super().__init__(
+            f"{provider} model {model} is rate-limited until {limited_until.isoformat()}"
+        )
+        self.provider = provider
+        self.model = model
+        self.limited_until = limited_until
 
 
 class AIInvalidJsonError(RuntimeError):
@@ -93,6 +127,8 @@ class LLMJsonResult(tuple):
 
 def classify_ai_error_reason(error: Exception) -> str:
     """Return admin-safe LLM failure reason."""
+    if isinstance(error, LLMRateLimitBackoffActive):
+        return "rate limit backoff active"
     if isinstance(error, AIGroqRateLimitError) or _is_groq_rate_limit_error(error):
         return "rate limit"
     if isinstance(error, AIInvalidJsonError):
@@ -156,12 +192,19 @@ def _is_groq_json_validation_error(error: Exception) -> bool:
 
 
 def _is_groq_rate_limit_error(error: Exception) -> bool:
+    if isinstance(error, AIGroqRateLimitError):
+        return True
     status_code = getattr(error, "status_code", None)
     response = getattr(error, "response", None)
     if status_code == 429 or getattr(response, "status_code", None) == 429:
         return True
     message = str(error).lower()
-    return "429" in message or "rate limit" in message or "tokens per day" in message
+    return (
+        "429" in message
+        or "rate limit" in message
+        or "rate_limit" in message
+        or "tokens per day" in message
+    )
 
 
 def get_groq_client() -> AsyncOpenAI:
@@ -232,6 +275,132 @@ def _rate_limit_header_payload(headers) -> dict:
         "rate_limit_reset_tokens": _header_value(headers, "x-ratelimit-reset-tokens"),
         "retry_after": _header_value(headers, "retry-after"),
     }
+
+
+def _parse_retry_after_header(value: str | None, now: datetime) -> int | None:
+    if not value:
+        return None
+    stripped = str(value).strip()
+    try:
+        seconds = int(float(stripped))
+    except ValueError:
+        seconds = None
+    if seconds is not None:
+        return max(seconds, 1)
+    try:
+        retry_at = parsedate_to_datetime(stripped)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    return max(int((retry_at.astimezone(timezone.utc) - now).total_seconds()), 1)
+
+
+def _parse_retry_delay_text(value: str | None) -> int | None:
+    if not value:
+        return None
+    text = str(value).lower()
+    match = re.search(
+        r"(?:try again in|retry after|retry in)\s+"
+        r"(?:(?P<hours>\d+(?:\.\d+)?)\s*h(?:ours?)?)?\s*"
+        r"(?:(?P<minutes>\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?)?\s*"
+        r"(?:(?P<seconds>\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?)?",
+        text,
+    )
+    if not match:
+        return None
+    total = 0.0
+    for name, multiplier in (("hours", 3600), ("minutes", 60), ("seconds", 1)):
+        raw = match.group(name)
+        if raw:
+            total += float(raw) * multiplier
+    if total <= 0:
+        return None
+    return max(int(total), 1)
+
+
+def _retry_after_seconds_from_rate_limit(
+    error: Exception,
+    headers,
+    *,
+    now: datetime,
+) -> int:
+    for header_name in (
+        "retry-after",
+        "x-ratelimit-reset-tokens",
+        "x-ratelimit-reset-requests",
+    ):
+        retry_after = _parse_retry_after_header(_header_value(headers, header_name), now)
+        if retry_after is not None:
+            return retry_after
+        retry_after = _parse_retry_delay_text(_header_value(headers, header_name))
+        if retry_after is not None:
+            return retry_after
+    retry_after = _parse_retry_delay_text(str(error))
+    if retry_after is not None:
+        return retry_after
+    return _GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS
+
+
+def _active_rate_limit_backoff(
+    *,
+    provider: str,
+    model: str,
+    now: datetime | None = None,
+) -> datetime | None:
+    now = now or datetime.now(timezone.utc)
+    key = (provider, model)
+    limited_until = _llm_rate_limit_backoffs.get(key)
+    if limited_until is None:
+        return None
+    if limited_until.tzinfo is None:
+        limited_until = limited_until.replace(tzinfo=timezone.utc)
+    limited_until = limited_until.astimezone(timezone.utc)
+    if limited_until <= now:
+        _llm_rate_limit_backoffs.pop(key, None)
+        return None
+    return limited_until
+
+
+def get_llm_rate_limit_backoff(
+    *,
+    provider: str = "groq",
+    model: str,
+    now: datetime | None = None,
+) -> datetime | None:
+    """Return the active provider/model backoff expiry, if any."""
+    return _active_rate_limit_backoff(provider=provider, model=model, now=now)
+
+
+def reset_llm_rate_limit_backoffs() -> None:
+    """Clear in-memory provider/model backoffs for tests and controlled restarts."""
+    _llm_rate_limit_backoffs.clear()
+
+
+def _start_llm_rate_limit_backoff(
+    *,
+    provider: str,
+    model: str,
+    error: Exception,
+    headers,
+) -> tuple[int, datetime]:
+    now = datetime.now(timezone.utc)
+    retry_after_seconds = _retry_after_seconds_from_rate_limit(error, headers, now=now)
+    limited_until = now + timedelta(seconds=retry_after_seconds)
+    key = (provider, model)
+    existing = _active_rate_limit_backoff(provider=provider, model=model, now=now)
+    if existing and existing > limited_until:
+        limited_until = existing
+        retry_after_seconds = max(int((limited_until - now).total_seconds()), 1)
+    _llm_rate_limit_backoffs[key] = limited_until
+    logger.warning(
+        "llm_rate_limit_started provider=%s model=%s retry_after_seconds=%s limited_until=%s",
+        provider,
+        model,
+        retry_after_seconds,
+        limited_until.isoformat(),
+    )
+    return retry_after_seconds, limited_until
 
 
 async def _write_llm_usage_log(
@@ -315,6 +484,38 @@ async def _run_groq_chat_completion(
     response_format: dict | None,
     timeout: int = 15,
 ):
+    input_chars = _message_input_chars(messages)
+    provider = "groq"
+    limited_until = None
+    if call_type in _RATE_LIMIT_BACKOFF_CALL_TYPES:
+        limited_until = _active_rate_limit_backoff(provider=provider, model=model)
+    if limited_until is not None:
+        await _write_llm_usage_log(
+            call_type=call_type,
+            symbol=symbol,
+            model=model,
+            status="skipped_due_to_rate_limit",
+            input_chars=input_chars,
+            output_chars=None,
+            max_tokens=max_tokens,
+            error_reason="rate limit backoff active",
+            error_message=f"{provider} model {model} is limited until {limited_until.isoformat()}",
+        )
+        logger.info(
+            "llm_call_skipped_due_to_rate_limit provider=%s model=%s symbol=%s "
+            "analysis_type=%s limited_until=%s",
+            provider,
+            model,
+            symbol,
+            call_type,
+            limited_until.isoformat(),
+        )
+        raise LLMRateLimitBackoffActive(
+            provider=provider,
+            model=model,
+            limited_until=limited_until,
+        )
+
     client = get_groq_client()
     request_kwargs = {
         "model": model,
@@ -325,7 +526,6 @@ async def _run_groq_chat_completion(
     if response_format is not None:
         request_kwargs["response_format"] = response_format
 
-    input_chars = _message_input_chars(messages)
     try:
         completions = client.chat.completions
         raw_resource = getattr(completions, "with_raw_response", None)
@@ -353,7 +553,19 @@ async def _run_groq_chat_completion(
             error_message=_safe_error_message(error),
         )
         if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
+            retry_after_seconds, limited_until = _start_llm_rate_limit_backoff(
+                provider=provider,
+                model=model,
+                error=error,
+                headers=headers,
+            )
+            raise AIGroqRateLimitError(
+                str(error),
+                provider=provider,
+                model=model,
+                retry_after_seconds=retry_after_seconds,
+                limited_until=limited_until,
+            ) from error
         raise
     return response, headers, input_chars
 
@@ -1094,17 +1306,30 @@ async def _ask_json(prompt: str) -> dict | None:
     return parsed
 
 
-async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
-    prompt = (
+def build_event_analysis_prompt(input_payload: dict) -> str:
+    return (
         "Return valid JSON only. Write English.\n"
         "Use exactly these fields: symbol, should_alert, event_key, title, message_body, "
         "related_news_ids, possible_action, urgency, confidence, reason_for_no_alert.\n"
         "urgency: low, normal, high. confidence: low, medium, high.\n"
+        "Analyze exactly one symbol: the symbol in the input payload. Do not change backend "
+        "alert types.\n"
+        "Use only direct symbol news or clearly market-wide crypto news. Do not treat "
+        "BTC-only news as related context for ETH, SOL, TON, or any non-BTC symbol.\n"
+        "Do not claim news caused a price move. Avoid overconfident trading instructions.\n"
+        "Do not ignore meaningful price moves only because direct news is absent. For "
+        "altcoins, a 24h move around 5-7% can be meaningful even without coin-specific news.\n"
         "event_key is required only when should_alert=true.\n"
+        "When should_alert=true, use a stable event_key based on symbol and event theme. Do "
+        "not generate UUID-like or random event keys such as event_analysis_btc_<random>.\n"
         "If should_alert=false: event_key null or \"\", title \"\", message_body \"\", "
         "related_news_ids [], possible_action \"\", urgency null, confidence low|medium|high, "
         "reason_for_no_alert non-empty.\n"
+        "For should_alert=false, reason_for_no_alert must mention the actual 24h change from "
+        "the input, recent short-term snapshot behavior, whether news was direct, "
+        "market-wide, irrelevant, or absent, and why that does or does not justify an alert.\n"
+        "Avoid generic no-alert reasons like \"No significant price movement\" or "
+        "\"No relevant news\" unless backed by the actual input numbers.\n"
         "related_news_ids must come from news.news_id.\n"
         "Prefer fewer useful alerts. If no meaningful event exists, set should_alert=false.\n"
         "No guaranteed outcomes.\n"
@@ -1112,6 +1337,11 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )
+
+
+async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
+    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
+    prompt = build_event_analysis_prompt(input_payload)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -1190,12 +1420,20 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
         "This is a calm Market Heartbeat, not an Event Alert. Do not return "
         "should_alert, event_key, urgency, market_update, important_alert, "
         "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
+        "Use direct symbol news first. Use clearly market-wide crypto news only when useful. "
+        "Do not present BTC-only news as related context for ETH, SOL, TON, or any non-BTC "
+        "symbol.\n"
         "Be concise and useful. Mention selected relevant news if useful, but avoid exact "
         "causality claims. Do not repeat exact price values or exact percentage values in "
         "message_body; describe the current price, since-last-message change, and 24h "
         "change qualitatively.\n"
         "related_news_ids must only contain news_id values from candidate_news.\n"
-        "possible_action should be concise.\n\n"
+        "possible_action must be specific, practical, and tied to the current market context. "
+        "Prefer guidance about the price range, volatility, confirmation, whether news is "
+        "direct or only market-wide, or whether the market is quiet. Avoid generic "
+        "possible_action phrases such as \"Monitor market developments\", \"Monitor market "
+        "sentiment\", or \"Keep watching\" unless there is genuinely no better action. "
+        "Avoid overconfident trading instructions.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
     )

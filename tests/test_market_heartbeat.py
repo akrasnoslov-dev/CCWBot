@@ -26,6 +26,7 @@ from bot.db.database import (
     Base,
     MarketHeartbeat,
     User,
+    UserPremiumSubscription,
     ensure_default_coin_subscriptions,
     save_price_snapshot,
     upsert_news_item,
@@ -125,6 +126,70 @@ def test_candidate_news_filter_returns_relevant_coin_and_market_items():
     assert "Sports result unrelated" not in titles
 
 
+def test_symbol_news_filter_keeps_btc_only_news_for_btc_only():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Bitcoin in high-risk zone as range highs approach", "source": "B"},
+    ]
+
+    assert {item["title"] for item in alerts.filter_news_for_symbol("btc", news_items)} == {
+        "Bitcoin in high-risk zone as range highs approach",
+        "Bitcoin ETFs crushed by billions in outflows",
+    }
+    assert alerts.filter_news_for_symbol("sol", news_items) == []
+    assert alerts.filter_news_for_symbol("ton", news_items) == []
+
+
+def test_symbol_news_filter_selects_direct_altcoin_news_and_market_wide_news():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Crypto market sells off after Fed decision", "source": "B"},
+        {"title": "Solana network outage hits validators", "source": "C"},
+        {"title": "Toncoin ecosystem upgrade expands The Open Network", "source": "D"},
+        {"title": "Ethereum ETF inflows lift staking sentiment", "source": "E"},
+    ]
+
+    sol_titles = [item["title"] for item in alerts.filter_news_for_symbol("sol", news_items)]
+    ton_titles = [item["title"] for item in alerts.filter_news_for_symbol("ton", news_items)]
+    eth_titles = [item["title"] for item in alerts.filter_news_for_symbol("eth", news_items)]
+
+    assert "Solana network outage hits validators" in sol_titles
+    assert "Toncoin ecosystem upgrade expands The Open Network" in ton_titles
+    assert "Ethereum ETF inflows lift staking sentiment" in eth_titles
+    for titles in (sol_titles, ton_titles, eth_titles):
+        assert "Crypto market sells off after Fed decision" in titles
+        assert "Bitcoin ETFs crushed by billions in outflows" not in titles
+
+
+def test_empty_direct_altcoin_news_does_not_force_btc_only_context():
+    news_items = [
+        {"title": "Bitcoin ETFs crushed by billions in outflows", "source": "A"},
+        {"title": "Bitcoin in high-risk zone as range highs approach", "source": "B"},
+    ]
+
+    assert alerts.filter_news_for_symbol("eth", news_items) == []
+    assert alerts.filter_news_for_symbol("sol", news_items) == []
+    assert alerts.filter_news_for_symbol("ton", news_items) == []
+
+
+def test_candidate_news_includes_relevance_labels():
+    news_items = [
+        {"title": "Solana network outage hits validators", "source": "A"},
+        {"title": "Crypto market sells off after Fed decision", "source": "B"},
+    ]
+
+    formatted = alerts._format_candidate_news(
+        alerts.filter_news_for_symbol("sol", news_items),
+        preserve_order=True,
+        symbol="sol",
+    )
+
+    assert [item["relevance_label"] for item in formatted] == [
+        "direct_symbol",
+        "market_wide",
+    ]
+
+
 def test_candidate_news_filter_max_limits_work():
     direct = [{"title": f"Bitcoin headline {index}"} for index in range(8)]
     market = [{"title": f"SEC crypto market update {index}"} for index in range(6)]
@@ -221,7 +286,7 @@ async def test_related_news_context_prefers_persisted_intelligence_without_rss_f
         assert used_intelligence_news is True
         assert raw_news_items is None
         assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
-        assert "Related news selection: symbol=btc source=news_items" in caplog.text
+        assert "related_news_selection symbol=BTC source=news_items" in caplog.text
         assert "fallback_used=False" in caplog.text
     finally:
         await engine.dispose()
@@ -249,9 +314,11 @@ async def test_related_news_context_emits_selection_observability_log(monkeypatc
 
         assert used_intelligence_news is False
         assert [item["title"] for item in news_items] == ["Bitcoin ETF inflows rise"]
-        assert "Related news selection: symbol=btc source=fallback" in caplog.text
+        assert "related_news_selection symbol=BTC source=fallback" in caplog.text
         assert "candidate_count=2" in caplog.text
         assert "selected_count=1" in caplog.text
+        assert "direct_news_count=1" in caplog.text
+        assert "irrelevant_filtered_count=1" in caplog.text
         assert "fallback_used=True" in caplog.text
     finally:
         await engine.dispose()
@@ -500,7 +567,7 @@ async def test_heartbeat_delivery_unique_index_rejects_duplicate_rows():
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
+async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_due(monkeypatch):
     engine, session_local = await build_session_factory()
     app = fake_app()
     now = datetime.now(timezone.utc)
@@ -508,8 +575,26 @@ async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         async with session_local() as session:
-            user = await create_user(session, frequency=3600)
+            user = await create_user(session, frequency=86400)
+            session.add(
+                UserPremiumSubscription(
+                    user_id=user.id,
+                    status="active",
+                    active_until=now + timedelta(days=1),
+                )
+            )
             await create_heartbeat(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="older heartbeat",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(hours=25),
+                )
+            )
             session.add(
                 Alert(
                     symbol="BTC",
@@ -519,6 +604,51 @@ async def test_heartbeat_is_not_sent_if_recent_event_alert_exists(monkeypatch):
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        sent = await alerts._deliver_market_heartbeat(
+            app,
+            symbol="btc",
+            current_price=101000.0,
+            change_24h=1.5,
+            now=now,
+        )
+
+        assert sent is True
+        app.bot.send_message.assert_awaited_once()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_is_not_sent_if_recent_market_heartbeat_exists(monkeypatch):
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    now = datetime.now(timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session, frequency=86400)
+            session.add(
+                UserPremiumSubscription(
+                    user_id=user.id,
+                    status="active",
+                    active_until=now + timedelta(days=1),
+                )
+            )
+            await create_heartbeat(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="previous",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(hours=23),
                 )
             )
             await session.commit()

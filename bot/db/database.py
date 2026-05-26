@@ -2337,6 +2337,28 @@ async def get_last_sent_alert_at(
     return await session.scalar(statement)
 
 
+async def get_last_sent_event_alert_at_for_event_key(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    symbol: str,
+    canonical_event_key: str,
+    alert_type: str,
+) -> datetime | None:
+    """Return latest sent delivery for a user+symbol+canonical event key."""
+    statement = (
+        select(func.max(Alert.created_at))
+        .select_from(Alert)
+        .join(MarketEvent, Alert.market_event_id == MarketEvent.id)
+        .where(Alert.user_id == user_id)
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.alert_type == alert_type)
+        .where(Alert.status == "sent")
+        .where(MarketEvent.event_key == canonical_event_key)
+    )
+    return await session.scalar(statement)
+
+
 async def get_last_sent_alert(
     session: AsyncSession,
     *,
