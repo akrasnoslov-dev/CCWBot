@@ -36,6 +36,7 @@ def _fake_groq_client(create_mock):
 @pytest.fixture(autouse=True)
 def clear_rate_limit_backoffs(monkeypatch):
     ai_agent_groq.reset_llm_rate_limit_backoffs()
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
     monkeypatch.setattr(ai_agent_groq, "_groq_client", None)
     yield
     ai_agent_groq.reset_llm_rate_limit_backoffs()
