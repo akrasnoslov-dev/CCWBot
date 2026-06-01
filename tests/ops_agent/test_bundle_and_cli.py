@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from ops_agent.bundle import BundleWriter
 from ops_agent.cli import build_parser
-from ops_agent.config import OpsAgentConfig
+from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import Period
 
@@ -50,3 +50,32 @@ def test_bundle_manifest_contains_required_files(tmp_path):
     assert "bundle_summary.md" in inventory_paths
     assert manifest["collection_status"] == "complete"
 
+
+def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=1),
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+
+    status = writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+
+    manifest = json.loads((writer.path / "manifest.json").read_text(encoding="utf-8"))
+    assert status == "partial"
+    assert manifest["collection_status"] == "partial"
+    assert any("bundle_size_exceeded" in warning for warning in manifest["warnings"])

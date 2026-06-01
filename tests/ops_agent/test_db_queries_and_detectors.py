@@ -13,6 +13,12 @@ def test_all_db_queries_are_read_only_and_parameterized():
     assert any(":since" in query.sql for query in QUERIES)
 
 
+def test_price_state_query_uses_existing_price_state_columns_only():
+    price_state_query = next(query for query in QUERIES if query.name == "price_state_current")
+
+    assert "last_7d_change" not in price_state_query.sql
+
+
 def test_failed_delivery_detector_triggers():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -59,4 +65,3 @@ def test_health_detector_triggers_when_unavailable():
     }
 
     assert results["health_endpoint_unavailable"].status == "triggered"
-

@@ -112,7 +112,7 @@ async def _collect(args: argparse.Namespace) -> int:
 
     partial = any(status.status != "ok" for status in writer.collector_status)
     collection_status = "partial" if partial else "complete"
-    writer.finalize(
+    collection_status = writer.finalize(
         collection_status=collection_status,
         redaction_report=redaction_report,
         detector_count=len(results),

@@ -93,7 +93,7 @@ class BundleWriter:
         redaction_report: RedactionReport,
         detector_count: int,
         protected_identity_map: bool,
-    ) -> None:
+    ) -> str:
         self.write_json("redaction_report.json", redaction_report.as_dict())
         self.write_json(
             "limits.json",
@@ -122,7 +122,30 @@ class BundleWriter:
                 ]
             ),
         )
-        self.write_manifest(collection_status, protected_identity_map=protected_identity_map)
+        final_status = self._collection_status_with_size_warning(collection_status)
+        self.write_manifest(final_status, protected_identity_map=protected_identity_map)
+        return final_status
+
+    def _bundle_size_bytes(self) -> int:
+        return sum(child.stat().st_size for child in self.path.rglob("*") if child.is_file())
+
+    def _collection_status_with_size_warning(self, collection_status: str) -> str:
+        bundle_size = self._bundle_size_bytes()
+        limit = self.config.limits.bundle_hard_cap_bytes
+        if bundle_size <= limit:
+            return collection_status
+        self.warnings.append(
+            "bundle_size_exceeded: "
+            f"bundle is {bundle_size} bytes, over hard cap {limit} bytes"
+        )
+        self.collector_status.append(
+            CollectorStatus(
+                "bundle.size_limit",
+                "partial",
+                f"bundle size {bundle_size} exceeds hard cap {limit}",
+            )
+        )
+        return "partial"
 
     def write_manifest(self, collection_status: str, *, protected_identity_map: bool) -> None:
         files = []

@@ -54,7 +54,7 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "price_state_current",
         "evidence/db/aggregate_metrics.json",
-        "SELECT symbol, last_price, last_24h_change, last_7d_change, last_checked_at, last_alert_at "
+        "SELECT symbol, last_price, last_24h_change, last_checked_at, last_alert_at "
         "FROM price_state ORDER BY symbol",
     ),
     DbQuery(
