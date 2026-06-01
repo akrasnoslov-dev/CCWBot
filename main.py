@@ -26,7 +26,10 @@ from bot.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
-from bot.error_logging import apply_persisted_error_file_logging_state
+from bot.error_logging import (
+    apply_persisted_error_file_logging_state,
+    enable_operational_file_logging,
+)
 from bot.handlers import (
     admin,
     button_router,
@@ -73,6 +76,7 @@ def configure_logging() -> None:
     logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
     logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    enable_operational_file_logging()
 
 
 def get_stop_signals() -> tuple[signal.Signals, ...] | None:
@@ -121,7 +125,7 @@ def main():
     if not TELEGRAM_ADMIN_USER_ID:
         raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
 
-    log(f"Environment: {ENVIRONMENT}.")
+    log(f"ops_event=bot_start environment={ENVIRONMENT} health_port={HEALTH_PORT}")
 
     loop.run_until_complete(initialize_database())
     loop.run_until_complete(apply_persisted_error_file_logging_state())
@@ -139,13 +143,13 @@ def main():
     health_runner = loop.run_until_complete(
         start_health_server(HEALTH_PORT, started_at=started_at)
     )
-    log(f"Health server is running on port {HEALTH_PORT}.")
-    log("Bot is running. Automatic market checks are enabled.")
+    log(f"ops_event=health_started port={HEALTH_PORT}")
+    log("ops_event=bot_polling_started automatic_market_checks=true")
     app.post_init = setup_bot_commands
     try:
         app.run_polling(close_loop=False, stop_signals=get_stop_signals())
     finally:
-        log("Shutting down bot.")
+        log("ops_event=bot_shutdown_started")
         if not loop.is_closed():
             loop.run_until_complete(stop_health_server(health_runner))
         if not loop.is_closed():
@@ -158,4 +162,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        log("Bot stopped by user.")
+        log("ops_event=bot_stopped_by_user")

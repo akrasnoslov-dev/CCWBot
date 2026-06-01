@@ -128,11 +128,29 @@ class NewsIntelligenceService:
             since=utc_now() - timedelta(hours=1),
         )
         seen_dedup_groups: set[str] = set()
+        success = 0
+        skipped_budget = 0
+        failed = 0
         for item in processable:
             try:
-                await self._process_item(item, seen_dedup_groups, hourly_calls)
+                row = await self._process_item(item, seen_dedup_groups, hourly_calls)
+                if row.llm_status == "success":
+                    success += 1
+                elif row.llm_status == "skipped_budget":
+                    skipped_budget += 1
+                elif row.llm_status == "failed":
+                    failed += 1
             except Exception as error:
+                failed += 1
                 logger.warning("News intelligence item processing failed: %s", _safe_error(error))
+        logger.info(
+            "ops_event=news_intelligence_batch_completed fetched=%s success=%s "
+            "skipped_budget=%s failed=%s",
+            len(raw_items),
+            success,
+            skipped_budget,
+            failed,
+        )
         return compatibility_items
 
     async def _process_item(

@@ -112,10 +112,8 @@ async def _get_with_retry(
     base_delay: int = 5,
 ) -> dict:
     """Fetch CoinGecko data, retrying 429s and falling back to stale cache."""
-    last_status_code = None
     for attempt in range(max_retries + 1):
         response = await client.get(url, params=params, timeout=10)
-        last_status_code = response.status_code
         if response.status_code != 429:
             response.raise_for_status()
             return response.json()
@@ -123,18 +121,22 @@ async def _get_with_retry(
         if attempt < max_retries:
             delay = base_delay * (2**attempt)
             logger.warning(
-                "CoinGecko returned 429. Retrying after %s seconds. attempt=%s max_retries=%s",
-                delay,
+                "ops_event=coingecko_rate_limit attempt=%s max_retries=%s "
+                "stale_cache_available=%s retry_delay_seconds=%s",
                 attempt + 1,
                 max_retries,
+                _build_stale_price_payload(params) is not None,
+                delay,
             )
             await asyncio.sleep(delay)
 
     stale_payload = _build_stale_price_payload(params)
     if stale_payload is not None:
         logger.warning(
-            "CoinGecko returned %s after retries. Returning stale cached price data.",
-            last_status_code,
+            "ops_event=coingecko_rate_limit attempt=%s max_retries=%s "
+            "stale_cache_available=true",
+            max_retries,
+            max_retries,
         )
         return stale_payload
 

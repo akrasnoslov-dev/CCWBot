@@ -409,7 +409,7 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
             "User was not found. Ask them to start the bot first.",
         )
         return
-    log(f"Granted Premium to telegram_user_id={telegram_user_id} for {days} days.")
+    log(f"ops_event=premium_grant_processed days={days}")
     await _safe_reply_text(
         update.message,
         "Premium granted "
@@ -441,7 +441,7 @@ async def revoke_premium_command(update: Update, args: list[str]) -> None:
             "User was not found. Ask them to start the bot first.",
         )
         return
-    log(f"Revoked Premium for telegram_user_id={telegram_user_id}.")
+    log("ops_event=premium_revoke_processed")
     await _safe_reply_text(
         update.message,
         f"Premium revoked for Telegram user ID {telegram_user_id}. "

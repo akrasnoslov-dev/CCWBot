@@ -12,6 +12,8 @@ from pathlib import Path
 from bot.config import ERROR_LOG_FILE
 
 ERROR_FILE_HANDLER_NAME = "ccwbot_warning_error_file"
+OPERATIONAL_FILE_HANDLER_NAME = "ccwbot_operational_file"
+OPERATIONAL_LOG_FILE = Path(os.getenv("OPERATIONAL_LOG_FILE", "logs/ccwbot-operational.log"))
 MAX_BYTES = 10 * 1024 * 1024
 BACKUP_COUNT = 5
 MAX_EXPORT_BYTES = MAX_BYTES
@@ -20,6 +22,12 @@ _SECRET_URL_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:\s/@]+:)([^@\s]+)(@)", re.
 _KEY_VALUE_SECRET_RE = re.compile(
     r"(?i)\b([a-z0-9_-]*(?:token|api[_-]?key|password|secret|session[_-]?token|"
     r"database[_-]?url|private[_-]?key)[a-z0-9_-]*)(\s*[:=]\s*)([^\s]+)"
+)
+_PRIVATE_KEY_VALUE_RE = re.compile(
+    r"(?i)\b(telegram_user_id|telegram_chat_id|sent_to_chat_id|chat_id|user_id|"
+    r"username|first_name|provider_payment_id|telegram_payment_charge_id|"
+    r"provider_payment_charge_id|provider_subscription_id|invoice_payload|payload)"
+    r"(\s*[:=]\s*)([^\s,]+)"
 )
 
 
@@ -60,13 +68,18 @@ def _redact(message: str, secret_values: tuple[str, ...]) -> str:
     for value in secret_values:
         redacted = redacted.replace(value, "[REDACTED]")
     redacted = _SECRET_URL_RE.sub(r"\1[REDACTED]\3", redacted)
-    return _KEY_VALUE_SECRET_RE.sub(r"\1\2[REDACTED]", redacted)
+    redacted = _KEY_VALUE_SECRET_RE.sub(r"\1\2[REDACTED]", redacted)
+    return _PRIVATE_KEY_VALUE_RE.sub(r"\1\2[REDACTED]", redacted)
 
 
 def _find_file_handler() -> logging.Handler | None:
+    return _find_named_file_handler(ERROR_FILE_HANDLER_NAME)
+
+
+def _find_named_file_handler(name: str) -> logging.Handler | None:
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
-        if getattr(handler, "name", None) == ERROR_FILE_HANDLER_NAME:
+        if getattr(handler, "name", None) == name:
             return handler
     return None
 
@@ -117,6 +130,28 @@ def enable_error_file_logging(log_file: Path | None = None) -> Path:
     )
     handler.name = ERROR_FILE_HANDLER_NAME
     handler.setLevel(logging.WARNING)
+    handler.setFormatter(
+        RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    logging.getLogger().addHandler(handler)
+    return target
+
+
+def enable_operational_file_logging(log_file: Path | None = None) -> Path:
+    existing_handler = _find_named_file_handler(OPERATIONAL_FILE_HANDLER_NAME)
+    target = Path(log_file or OPERATIONAL_LOG_FILE)
+    if existing_handler is not None:
+        return Path(getattr(existing_handler, "baseFilename", target))
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        target,
+        maxBytes=MAX_BYTES,
+        backupCount=BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    handler.name = OPERATIONAL_FILE_HANDLER_NAME
+    handler.setLevel(logging.INFO)
     handler.setFormatter(
         RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
