@@ -136,6 +136,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             possible_action=decision.possible_action,
         )
         await remember_news_context(news_items)
+        log(f"ops_event=market_report_generated report_type={report_type} status=completed")
         return await _save_or_remember_report(
             report_type=report_type,
             generated_at=generated_at,
@@ -148,7 +149,10 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         )
     except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
         if isinstance(error, MarketReportValidationError):
-            log(f"{report_type.capitalize()} report schema validation failed: {error}")
+            log(
+                "ops_event=market_report_failed "
+                f"report_type={report_type} reason=schema_error"
+            )
             await mark_llm_usage_log_status(
                 usage_log_id,
                 status="schema_error",
@@ -166,8 +170,11 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             telegram_message=None,
             error_message=str(error),
         )
-    except MarketReportDataUnavailable as error:
-        log(f"{report_type.capitalize()} report generation skipped: {error}")
+    except MarketReportDataUnavailable:
+        log(
+            "ops_event=market_report_failed "
+            f"report_type={report_type} reason=data_unavailable"
+        )
         return await _save_or_remember_report(
             report_type=report_type,
             generated_at=generated_at,
@@ -176,10 +183,13 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_input_json=raw_input_json,
             raw_output_json=raw_output_json,
             telegram_message=None,
-            error_message=str(error),
+            error_message="market data unavailable",
         )
     except Exception as error:
-        log(f"{report_type.capitalize()} report generation failed: {error}")
+        log(
+            "ops_event=market_report_failed "
+            f"report_type={report_type} reason={classify_ai_error_reason(error).replace(' ', '_')}"
+        )
         return await _save_or_remember_report(
             report_type=report_type,
             generated_at=generated_at,

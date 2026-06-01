@@ -1,0 +1,18 @@
+services:
+  ops-agent:
+    build:
+      context: .
+      dockerfile: ops-agent/Dockerfile
+    env_file:
+      - .env
+    environment:
+      OPS_AGENT_DATABASE_URL: ${OPS_AGENT_DATABASE_URL:-}
+      OPS_AGENT_HEALTH_URL: http://bot:${HEALTH_PORT:-8080}/health
+      OPS_AGENT_OUTPUT_DIR: /app/reports/ops-agent
+      OPS_AGENT_LOGS_DIR: /app/logs
+      OPS_AGENT_LEGACY_STATE_PATH: /app/state.json
+    volumes:
+      - ./logs:/app/logs:ro
+      - ./reports/ops-agent:/app/reports/ops-agent:rw
+    profiles:
+      - ops

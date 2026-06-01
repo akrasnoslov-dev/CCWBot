@@ -9,6 +9,9 @@ __pycache__/
 .ruff_cache/
 logs/*.log
 logs/*.log.*
+reports/ops-agent/bundles/
+reports/ops-agent/reports/
+reports/ops-agent/state/
 pytest-cache-files-*/
 *.dump
 *.db

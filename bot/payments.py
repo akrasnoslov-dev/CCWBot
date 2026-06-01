@@ -218,19 +218,17 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         return
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         await _safe_reply_text(message, "Premium payment was received, but storage is unavailable.")
-        logger.warning("Telegram Stars payment received while database is unavailable.")
+        logger.warning("ops_event=premium_payment_rejected reason=database_unavailable")
         return
     if not validate_premium_invoice_payload(payment.invoice_payload, telegram_user.id):
         await _safe_reply_text(message, "Payment could not be validated. Please contact the admin.")
-        logger.warning("Rejected Telegram Stars successful_payment with invalid payload.")
+        logger.warning("ops_event=premium_payment_rejected reason=invalid_payload")
         return
     if payment.currency != STARS_CURRENCY or int(payment.total_amount) != int(
         PREMIUM_MONTHLY_STARS
     ):
         await _safe_reply_text(message, "Payment could not be validated. Please contact the admin.")
-        logger.warning(
-            "Rejected Telegram Stars successful_payment with invalid amount or currency."
-        )
+        logger.warning("ops_event=premium_payment_rejected reason=invalid_amount_or_currency")
         return
 
     async with DB_SESSION_LOCAL() as session:
@@ -252,10 +250,7 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 ),
             )
         except ValueError:
-            logger.warning(
-                "Telegram Stars payment received for unknown telegram_user_id=%s.",
-                telegram_user.id,
-            )
+            logger.warning("ops_event=premium_payment_rejected reason=unknown_user")
             await _safe_reply_text(
                 message,
                 "Payment received, but your user record was not found. Please contact the admin.",
@@ -264,12 +259,9 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
 
     if created:
         log(
-            "Processed Telegram Stars Premium payment "
-            f"for telegram_user_id={telegram_user.id} provider={TELEGRAM_STARS_PROVIDER}."
+            "ops_event=premium_payment_processed "
+            f"provider={TELEGRAM_STARS_PROVIDER} status=processed"
         )
     else:
-        log(
-            "Ignored duplicate Telegram Stars Premium payment "
-            f"for telegram_user_id={telegram_user.id}."
-        )
+        log("ops_event=premium_payment_processed provider=telegram_stars status=duplicate")
     await _safe_reply_text(message, "Premium activated ✅\nUse /watchlist to choose your coins.")

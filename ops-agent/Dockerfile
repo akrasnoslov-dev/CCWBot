@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ops_agent ./ops_agent
+COPY ops-agent ./ops-agent
+
+ENV PYTHONPATH=/app
+ENTRYPOINT ["python", "-m", "ops_agent"]
+

@@ -394,11 +394,11 @@ def _start_llm_rate_limit_backoff(
         retry_after_seconds = max(int((limited_until - now).total_seconds()), 1)
     _llm_rate_limit_backoffs[key] = limited_until
     logger.warning(
-        "llm_rate_limit_started provider=%s model=%s retry_after_seconds=%s limited_until=%s",
+        "ops_event=llm_rate_limit_started provider=%s model=%s call_type=unknown "
+        "retry_after_seconds=%s",
         provider,
         model,
         retry_after_seconds,
-        limited_until.isoformat(),
     )
     return retry_after_seconds, limited_until
 
@@ -502,13 +502,11 @@ async def _run_groq_chat_completion(
             error_message=f"{provider} model {model} is limited until {limited_until.isoformat()}",
         )
         logger.info(
-            "llm_call_skipped_due_to_rate_limit provider=%s model=%s symbol=%s "
-            "analysis_type=%s limited_until=%s",
+            "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
+            "status=skipped_due_to_rate_limit",
             provider,
             model,
-            symbol,
             call_type,
-            limited_until.isoformat(),
         )
         raise LLMRateLimitBackoffActive(
             provider=provider,
@@ -567,6 +565,12 @@ async def _run_groq_chat_completion(
                 limited_until=limited_until,
             ) from error
         raise
+    logger.info(
+        "ops_event=llm_call_completed provider=%s model=%s call_type=%s status=success",
+        provider,
+        model,
+        call_type,
+    )
     return response, headers, input_chars
 
 

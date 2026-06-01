@@ -41,12 +41,12 @@ DB_ENGINE = None
 async def initialize_database() -> None:
     global DB_ENGINE
     if not DB_ENABLED:
-        log("DATABASE_URL is not configured. Using local JSON state.")
+        log("ops_event=db_configured backend=local_json")
         return
     if DB_SESSION_LOCAL:
         return
 
-    log("Database configured. Using PostgreSQL state.")
+    log("ops_event=db_configured backend=postgres")
     DB_ENGINE, session_local = await init_db(DATABASE_URL)
     DB_SESSION_LOCAL.set(session_local)
 
@@ -60,4 +60,4 @@ async def close_database() -> None:
     await DB_ENGINE.dispose()
     DB_ENGINE = None
     DB_SESSION_LOCAL.clear()
-    log("Database resources closed.")
+    log("ops_event=db_closed")
