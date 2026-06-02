@@ -83,6 +83,23 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY detected_at DESC, id DESC LIMIT :sample_limit",
     ),
     DbQuery(
+        "duplicate_market_event_buckets",
+        "evidence/db/anomalies.json",
+        "WITH bucketed_events AS ("
+        "SELECT symbol, event_type, event_key, "
+        "floor(extract(epoch FROM detected_at) / (:duplicate_bucket_minutes * 60)) AS bucket_id, "
+        "count(*) AS group_size, min(detected_at) AS first_detected_at, "
+        "max(detected_at) AS last_detected_at, "
+        "(array_agg(id ORDER BY detected_at ASC, id ASC))[1:5] AS sample_market_event_ids "
+        "FROM market_events WHERE detected_at >= :since AND detected_at < :until "
+        "GROUP BY symbol, event_type, event_key, "
+        "floor(extract(epoch FROM detected_at) / (:duplicate_bucket_minutes * 60)) "
+        "HAVING count(*) > 1) "
+        "SELECT symbol, event_type, event_key, group_size, first_detected_at, last_detected_at, "
+        "sample_market_event_ids FROM bucketed_events "
+        "ORDER BY group_size DESC, last_detected_at DESC LIMIT :anomaly_limit",
+    ),
+    DbQuery(
         "event_ai_analysis_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, coalesce(status, 'unknown') AS status, "
@@ -140,6 +157,71 @@ QUERIES: tuple[DbQuery, ...] = (
         "GROUP BY symbol, market_event_id HAVING count(DISTINCT event_ai_analysis_id) > 1) "
         "SELECT * FROM duplicate_deliveries UNION ALL SELECT * FROM events_without_delivery "
         "UNION ALL SELECT * FROM multiple_analysis LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "market_events_without_delivery_classification",
+        "evidence/db/anomalies.json",
+        "WITH events_without_delivery AS ("
+        "SELECT me.id AS market_event_id, me.symbol, me.event_type, me.event_key, me.detected_at "
+        "FROM market_events me LEFT JOIN alerts a ON a.market_event_id = me.id "
+        "WHERE me.detected_at >= :since AND me.detected_at < :until "
+        "GROUP BY me.id, me.symbol, me.event_type, me.event_key, me.detected_at "
+        "HAVING count(a.id) = 0), "
+        "latest_analysis AS ("
+        "SELECT DISTINCT ON (market_event_id) market_event_id, id AS analysis_id, status, "
+        "should_alert, error_reason, created_at AS analysis_created_at "
+        "FROM event_ai_analyses WHERE market_event_id IS NOT NULL "
+        "ORDER BY market_event_id, created_at DESC, id DESC), "
+        "recipient_summary AS ("
+        "SELECT ucs.symbol, "
+        "count(DISTINCT u.id) FILTER ("
+        "WHERE u.telegram_chat_id IS NOT NULL AND u.is_active = true AND u.bot_blocked = false "
+        "AND ucs.is_enabled = true "
+        "AND (ucs.symbol = 'btc' OR ups.active_until >= :until)"
+        ") AS likely_eligible_recipients, "
+        "count(DISTINCT u.id) FILTER ("
+        "WHERE u.telegram_chat_id IS NOT NULL AND u.is_active = true AND u.bot_blocked = false "
+        "AND ucs.is_enabled = true AND ucs.symbol <> 'btc' "
+        "AND (ups.active_until IS NULL OR ups.active_until < :until)"
+        ") AS product_gated_users, "
+        "count(DISTINCT u.id) FILTER (WHERE ucs.is_enabled = true) AS enabled_watchlist_users "
+        "FROM user_coin_subscriptions ucs "
+        "JOIN users u ON u.id = ucs.user_id "
+        "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
+        "GROUP BY ucs.symbol), "
+        "classified AS ("
+        "SELECT e.market_event_id, e.symbol, e.event_type, e.event_key, e.detected_at, "
+        "la.analysis_id, la.status AS analysis_status, la.should_alert, la.error_reason, "
+        "coalesce(rs.likely_eligible_recipients, 0) AS likely_eligible_recipients, "
+        "coalesce(rs.product_gated_users, 0) AS product_gated_users, "
+        "coalesce(rs.enabled_watchlist_users, 0) AS enabled_watchlist_users, "
+        "CASE "
+        "WHEN la.analysis_id IS NULL THEN 'unknown_no_analysis' "
+        "WHEN la.status NOT IN ('success', 'completed', 'no_alert') "
+        "OR lower(coalesce(la.error_reason, '')) LIKE '%rate%' THEN 'llm_failure_or_rate_limit' "
+        "WHEN la.should_alert = false THEN 'expected_should_alert_false' "
+        "WHEN la.should_alert IS NULL THEN 'unknown_should_alert_null' "
+        "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) = 0 "
+        "AND e.symbol <> 'BTC' AND coalesce(rs.product_gated_users, 0) > 0 THEN 'expected_product_gating_possible' "
+        "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) = 0 THEN 'expected_no_eligible_recipients' "
+        "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) > 0 THEN 'delivery_gap_should_alert_true' "
+        "ELSE 'unknown' END AS classification "
+        "FROM events_without_delivery e "
+        "LEFT JOIN latest_analysis la ON la.market_event_id = e.market_event_id "
+        "LEFT JOIN recipient_summary rs ON rs.symbol = lower(e.symbol)) "
+        "SELECT classification, count(*) AS events, "
+        "count(*) FILTER (WHERE analysis_id IS NOT NULL) AS events_with_analysis, "
+        "count(*) FILTER (WHERE should_alert = true) AS should_alert_true, "
+        "count(*) FILTER (WHERE should_alert = false) AS should_alert_false, "
+        "sum(likely_eligible_recipients) AS likely_eligible_recipient_total, "
+        "sum(product_gated_users) AS product_gated_user_total, "
+        "(array_agg(jsonb_build_object("
+        "'market_event_id', market_event_id, 'symbol', symbol, 'event_type', event_type, "
+        "'event_key', event_key, 'detected_at', detected_at, 'analysis_status', analysis_status, "
+        "'should_alert', should_alert, 'likely_eligible_recipients', likely_eligible_recipients, "
+        "'product_gated_users', product_gated_users"
+        ") ORDER BY detected_at DESC, market_event_id DESC))[1:5] AS sample_events "
+        "FROM classified GROUP BY classification ORDER BY events DESC LIMIT :anomaly_limit",
     ),
     DbQuery(
         "market_heartbeats_summary",

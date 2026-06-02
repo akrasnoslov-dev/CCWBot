@@ -6,14 +6,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ops_agent.bundle import BundleWriter, sha256_tree
+from ops_agent.bundle import BundleWriter, sha256_file, sha256_tree
 from ops_agent.collectors.db import collect_db
 from ops_agent.collectors.health import collect_health
 from ops_agent.collectors.local_state import collect_local_state
 from ops_agent.collectors.logs import collect_logs
 from ops_agent.config import load_config
 from ops_agent.detectors import detector_payload, detector_summary, run_detectors
-from ops_agent.redaction import RedactionReport, ReferenceMapper
+from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message
 from ops_agent.retention import apply_retention
 from ops_agent.state import (
     load_state,
@@ -58,7 +58,7 @@ async def _collect(args: argparse.Namespace) -> int:
         for status in db_statuses:
             writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
     except Exception as error:
-        writer.add_status("db", "partial", f"{type(error).__name__}: {str(error)[:300]}")
+        writer.add_status("db", "partial", redact_error_message(error, mapper, redaction_report))
 
     health_payload, health_status = await collect_health(
         config=config,
@@ -109,6 +109,10 @@ async def _collect(args: argparse.Namespace) -> int:
     results = run_detectors(evidence, period)
     writer.write_json("detectors/detector_results.json", detector_payload(period, results))
     writer.write_text("detectors/detector_summary.md", detector_summary(results))
+    detector_status_counts: dict[str, int] = {}
+    for result in results:
+        detector_status_counts[result.status] = detector_status_counts.get(result.status, 0) + 1
+    log_evidence_summary = _summarize_log_evidence(log_index)
 
     partial = any(status.status != "ok" for status in writer.collector_status)
     collection_status = "partial" if partial else "complete"
@@ -117,6 +121,8 @@ async def _collect(args: argparse.Namespace) -> int:
         redaction_report=redaction_report,
         detector_count=len(results),
         protected_identity_map=protected_identity_map,
+        detector_status_counts=detector_status_counts,
+        log_evidence_summary=log_evidence_summary,
     )
 
     if not args.no_state_update:
@@ -143,6 +149,29 @@ async def _collect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _summarize_log_evidence(log_index: dict[str, Any]) -> dict[str, Any]:
+    files = log_index.get("files") or []
+    period_matched_lines = 0
+    unparseable_timestamp_lines = 0
+    period_filter_available = False
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        timestamp_parse = item.get("timestamp_parse") or {}
+        period_matched_lines += int(timestamp_parse.get("period_matched_lines") or 0)
+        unparseable_timestamp_lines += int(
+            timestamp_parse.get("unparseable_timestamp_lines") or 0
+        )
+        period_filter_available = period_filter_available or bool(
+            timestamp_parse.get("period_filter_applied")
+        )
+    return {
+        "period_filter_available": period_filter_available,
+        "period_matched_lines": period_matched_lines,
+        "unparseable_timestamp_lines": unparseable_timestamp_lines,
+    }
+
+
 def _validate_bundle(args: argparse.Namespace) -> int:
     bundle = Path(args.bundle)
     required = [
@@ -164,6 +193,9 @@ def _validate_bundle(args: argparse.Namespace) -> int:
     for item in manifest.get("file_inventory", []):
         path = bundle / item["path"]
         if not path.is_file():
+            bad_hashes.append(item["path"])
+            continue
+        if sha256_file(path) != item.get("sha256"):
             bad_hashes.append(item["path"])
     _print_json({"status": "ok" if not bad_hashes else "failed", "missing": [], "bad": bad_hashes})
     return 0 if not bad_hashes else 1

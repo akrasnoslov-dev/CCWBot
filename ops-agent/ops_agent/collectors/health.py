@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ops_agent.config import OpsAgentConfig
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_value
+from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message, redact_value
 from ops_agent.schemas import Period
 
 
@@ -47,7 +47,7 @@ async def collect_health(
             },
         )
     except Exception as error:
-        message = f"{type(error).__name__}: {str(error)[:300]}"
+        message = redact_error_message(error, mapper, redaction_report)
         return (
             {
                 "schema_version": 1,

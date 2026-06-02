@@ -37,9 +37,10 @@ class DetectorResult:
     summary: str
     evidence_refs: list[str] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
+    evidence_gap: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "id": self.id,
             "severity": self.severity,
             "status": self.status,
@@ -47,6 +48,9 @@ class DetectorResult:
             "evidence_refs": self.evidence_refs,
             "metrics": self.metrics,
         }
+        if self.evidence_gap:
+            payload["evidence_gap"] = self.evidence_gap
+        return payload
 
 
 def isoformat_utc(value: datetime) -> str:

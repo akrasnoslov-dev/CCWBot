@@ -34,6 +34,17 @@ Only then inspect referenced `evidence/**` files when needed to verify or expand
 
 Treat detector results as leads, not as final truth. Verify important findings against evidence where possible.
 
+## Evidence strength
+
+Use period-matched DB rows and period-matched log excerpts as the strongest evidence for the requested report period.
+
+Log evidence is split into:
+
+* `period_matched_*`: timestamped log lines inside the requested `since` / `until` period;
+* `tail_context_*`: matching log lines without parseable timestamps.
+
+Treat tail-context logs as supporting context only. Do not use them alone to claim a period-specific incident unless other period evidence agrees. If no period-matched logs are available, say why if the bundle provides a reason.
+
 ## Partial bundle handling
 
 If `manifest.json` says the bundle is partial:
@@ -42,8 +53,25 @@ If `manifest.json` says the bundle is partial:
 * state which collectors failed or returned partial data;
 * do not infer that missing data means there are no problems;
 * keep detector statuses marked as `unknown` when evidence is missing;
+* do not treat `unknown` as healthy;
+* do not infer absence of issues from missing evidence;
 * lower confidence for affected findings;
 * do not run `mark-report-success` unless the operator explicitly accepts the partial report.
+
+## Market events without deliveries
+
+Market events without alert delivery rows need classification before they are treated as delivery failures.
+
+Separate:
+
+* expected no-delivery because the AI analysis had `should_alert=false`;
+* expected no-delivery because no eligible recipients likely existed;
+* expected no-delivery because product gating may explain a non-BTC event;
+* no-delivery tied to LLM failure or rate limiting;
+* no-delivery despite `should_alert=true` and likely eligible recipients;
+* unknown cases where the schema or available evidence is insufficient.
+
+Do not frame non-BTC no-delivery as a bug when Premium/watchlist gating or no eligible recipients likely explains it.
 
 ## Privacy and safety rules
 

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from ops_agent.config import OpsAgentConfig, database_role_warning
 from ops_agent.db_queries import QUERIES, validate_read_only_queries
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_value
+from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message, redact_value
 from ops_agent.schemas import Period
 
 
@@ -69,6 +69,7 @@ async def collect_db(
         "limit": config.limits.db_row_cap,
         "sample_limit": config.limits.recent_sample_row_cap,
         "anomaly_limit": config.limits.anomaly_row_cap,
+        "duplicate_bucket_minutes": config.limits.duplicate_market_event_bucket_minutes,
     }
     try:
         async with engine.connect() as connection:
@@ -92,9 +93,15 @@ async def collect_db(
                         "rows": rows,
                         "warnings": [],
                     }
+                    if query.name == "duplicate_market_event_buckets":
+                        grouped[query.evidence_file]["queries"][query.name]["parameters"] = {
+                            "bucket_minutes": (
+                                config.limits.duplicate_market_event_bucket_minutes
+                            )
+                        }
                     statuses.append({"name": f"db.{query.name}", "status": "ok", "error": None})
                 except Exception as error:
-                    message = f"{type(error).__name__}: {str(error)[:300]}"
+                    message = redact_error_message(error, mapper, redaction_report)
                     grouped[query.evidence_file]["warnings"].append(f"{query.name}: {message}")
                     statuses.append(
                         {"name": f"db.{query.name}", "status": "partial", "error": message}
@@ -139,7 +146,7 @@ async def collect_db(
                         {"name": "db.raw_llm_samples", "status": "ok", "error": None}
                     )
                 except Exception as error:
-                    message = f"{type(error).__name__}: {str(error)[:300]}"
+                    message = redact_error_message(error, mapper, redaction_report)
                     grouped["evidence/db/raw_llm_samples.redacted.json"]["warnings"].append(
                         f"raw_llm_samples: {message}"
                     )

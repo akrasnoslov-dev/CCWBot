@@ -284,6 +284,7 @@ Default limits:
 * Recent sample row cap: 100.
 * Logs: read max 5 MB per file tail.
 * Logs: export max 2 MB per file and 8 MB total.
+* Duplicate market-event bucket: 15 minutes by default, configurable with `OPS_AGENT_DUPLICATE_MARKET_EVENT_BUCKET_MINUTES`.
 * Raw LLM samples: disabled by default.
 * Raw LLM sample cap when enabled: 5 records, 2 KB input preview and 2 KB output preview each after redaction.
 
@@ -346,6 +347,8 @@ Detector statuses:
 * `triggered`
 * `clear`
 * `unknown`
+
+Each detector defines required evidence. Missing DB/log evidence returns `unknown` with an evidence gap instead of `clear`.
 
 Detector threshold defaults:
 
@@ -432,6 +435,7 @@ Collect:
 * Payment rejection lines.
 
 Log evidence must be redacted and truncated before export.
+When timestamps can be parsed, log evidence is split into timestamped period-matched excerpts and unscoped tail-context excerpts. Lines without parseable timestamps are not period evidence. `log_index.json`, `pattern_counts.json`, and `bundle_summary.md` identify which evidence scope each count or excerpt belongs to.
 
 ## Bot Operational Logging Changes
 
@@ -688,8 +692,10 @@ Add tests for:
 * Non-stability of refs across bundles.
 * Optional protected identity map generation.
 * Every detector listed in this plan.
-* Log collector pattern extraction.
+* Log collector pattern extraction, period filtering, and unscoped tail-context handling.
 * Log truncation.
+* Duplicate market-event bucket detection for clear, triggered, and unknown cases.
+* No-delivery event classification for expected no-alert, product/no-recipient gating, LLM/rate-limit, `should_alert=true` gaps, and unknown cases.
 * Read-only SQL guard: collector SQL starts with `SELECT` or `WITH` and uses parameters.
 * Static prompt file existence and expected content.
 * Compose overlay config validation.
