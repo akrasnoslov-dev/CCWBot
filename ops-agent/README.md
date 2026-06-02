@@ -36,6 +36,20 @@ Set `OPS_AGENT_DATABASE_URL` in the production `.env` with the `ccwbot_ops_reade
 OPS_AGENT_DATABASE_URL=postgresql+asyncpg://ccwbot_ops_reader:<password>@postgres:5432/ccwbot
 ```
 
+The `.env.example` values are placeholders only and must not contain real passwords.
+
+By default, the health collector uses the production-safe Compose `bot` service name:
+
+```text
+OPS_AGENT_HEALTH_URL=http://bot:8080/health
+```
+
+For local Windows/Docker Desktop testing, override it in `.env` if the bot is reachable through the host:
+
+```text
+OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
+```
+
 Smoke test:
 
 ```bash
