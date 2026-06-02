@@ -18,6 +18,7 @@ class OpsAgentLimits:
     max_log_export_bytes_total: int = 8 * 1024 * 1024
     raw_llm_sample_cap: int = 5
     raw_llm_preview_bytes: int = 2048
+    duplicate_market_event_bucket_minutes: int = 15
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,9 @@ def load_config(output_dir: str | None = None) -> OpsAgentConfig:
         ),
         raw_llm_sample_cap=_int_env("OPS_AGENT_RAW_LLM_SAMPLE_CAP", 5),
         raw_llm_preview_bytes=_int_env("OPS_AGENT_RAW_LLM_PREVIEW_BYTES", 2048),
+        duplicate_market_event_bucket_minutes=_int_env(
+            "OPS_AGENT_DUPLICATE_MARKET_EVENT_BUCKET_MINUTES", 15
+        ),
     )
     return OpsAgentConfig(
         database_url=os.getenv("OPS_AGENT_DATABASE_URL") or None,
@@ -93,4 +97,3 @@ def database_role_warning(database_url: str | None) -> str | None:
     if username != "ccwbot_ops_reader":
         return "OPS_AGENT_DATABASE_URL user is not ccwbot_ops_reader; use the read-only role."
     return None
-

@@ -68,6 +68,17 @@ def redact_text(text: str, mapper: ReferenceMapper, report: RedactionReport) -> 
     return redacted
 
 
+def redact_error_message(
+    error: Exception,
+    mapper: ReferenceMapper,
+    report: RedactionReport,
+    *,
+    limit: int = 300,
+) -> str:
+    message = f"{type(error).__name__}: {str(error)[:limit]}"
+    return redact_text(message, mapper, report)
+
+
 def redact_value(value: Any, mapper: ReferenceMapper, report: RedactionReport) -> Any:
     if isinstance(value, dict):
         return {key: redact_value_by_key(key, item, mapper, report) for key, item in value.items()}

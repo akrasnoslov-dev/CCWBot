@@ -24,9 +24,12 @@ Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-promp
 5. Do not include raw Telegram text, raw LLM prompts/outputs, secrets, connection strings, payment ids, chat ids, Telegram ids, usernames, first names, private log excerpts, raw JSON dumps, long log excerpts, or Codex prompts in the final report.
 6. Use user references only as redacted refs such as `user_ref:u_7c91b2`.
 7. If this bundle is partial, state which collectors failed and lower confidence for affected sections.
-8. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
-9. Final report must be English Markdown.
-10. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
+8. Treat period-matched log evidence as stronger than tail-context log evidence.
+9. Treat detector `unknown` as an evidence gap or inconclusive state, not as healthy.
+10. Classify market events without deliveries before calling them delivery failures.
+11. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
+12. Final report must be English Markdown.
+13. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
 """
 
 
@@ -93,6 +96,8 @@ class BundleWriter:
         redaction_report: RedactionReport,
         detector_count: int,
         protected_identity_map: bool,
+        detector_status_counts: dict[str, int] | None = None,
+        log_evidence_summary: dict[str, Any] | None = None,
     ) -> str:
         self.write_json("redaction_report.json", redaction_report.as_dict())
         self.write_json(
@@ -103,8 +108,13 @@ class BundleWriter:
                 "db_row_cap": self.config.limits.db_row_cap,
                 "max_log_tail_bytes": self.config.limits.max_log_tail_bytes,
                 "raw_llm_samples_enabled_by_default": False,
+                "duplicate_market_event_bucket_minutes": (
+                    self.config.limits.duplicate_market_event_bucket_minutes
+                ),
             },
         )
+        detector_status_counts = detector_status_counts or {}
+        log_evidence_summary = log_evidence_summary or {}
         self.write_text(
             "bundle_summary.md",
             "\n".join(
@@ -116,8 +126,23 @@ class BundleWriter:
                     f"Period: {self.period.as_dict()['start']} to {self.period.as_dict()['end']}",
                     f"Collectors: {len(self.collector_status)}",
                     f"Detector results: {detector_count}",
+                    "Detector statuses: "
+                    + ", ".join(
+                        f"{name}={count}"
+                        for name, count in sorted(detector_status_counts.items())
+                    ),
+                    "Log evidence: "
+                    + (
+                        "period-matched entries available"
+                        if log_evidence_summary.get("period_filter_available")
+                        else "tail-context only or no parseable timestamps"
+                    ),
+                    f"Log period-matched lines: {log_evidence_summary.get('period_matched_lines', 0)}",
+                    "Log unscoped/tail-context lines: "
+                    f"{log_evidence_summary.get('unparseable_timestamp_lines', 0)}",
                     "",
                     "This bundle is sanitized operational evidence for Codex analysis.",
+                    "Unknown detector results are evidence gaps or inconclusive states, not healthy states.",
                     "",
                 ]
             ),
