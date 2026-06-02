@@ -2616,10 +2616,9 @@ async def _filter_event_recipients_for_cooldown(
                     ).total_seconds()
                     semantic_remaining = max(0, int(semantic_cooldown_seconds - elapsed))
                     semantic_allowed = elapsed >= semantic_cooldown_seconds
-                logger.info(
-                    "event_alert_semantic_cooldown_check user_id=%s symbol=%s "
-                    "canonical_event_key=%s last_sent_at=%s cooldown_seconds=%s allowed=%s",
-                    recipient.user_id,
+                logger.debug(
+                    "event_alert_semantic_cooldown_check symbol=%s canonical_event_key=%s "
+                    "last_sent_at=%s cooldown_seconds=%s allowed=%s",
                     normalize_symbol(symbol),
                     canonical_event_key,
                     (
@@ -2631,10 +2630,9 @@ async def _filter_event_recipients_for_cooldown(
                     semantic_allowed,
                 )
                 if not semantic_allowed:
-                    logger.info(
-                        "event_alert_suppressed user_id=%s symbol=%s canonical_event_key=%s "
+                    logger.debug(
+                        "event_alert_suppressed symbol=%s canonical_event_key=%s "
                         "reason=semantic_cooldown cooldown_remaining_seconds=%s",
-                        recipient.user_id,
                         normalize_symbol(symbol),
                         canonical_event_key,
                         semantic_remaining,
@@ -2658,10 +2656,9 @@ async def _filter_event_recipients_for_cooldown(
             if elapsed >= effective_cooldown:
                 filtered.append(recipient)
                 continue
-            logger.info(
-                "event_alert_suppressed user_id=%s symbol=%s canonical_event_key=%s "
+            logger.debug(
+                "event_alert_suppressed symbol=%s canonical_event_key=%s "
                 "reason=event_alert_cooldown cooldown_remaining_seconds=%s",
-                recipient.user_id,
                 normalize_symbol(symbol),
                 canonical_event_key,
                 max(0, int(effective_cooldown - elapsed)),
@@ -3082,7 +3079,7 @@ async def _send_alert_to_recipient(
 async def _send_alert_to_recipient_once(
     app: Application, recipient: AlertRecipient, alert_payload: dict
 ) -> tuple[bool, str | None, BaseException | None]:
-    logger.info("alert_delivery_path_used chat_id=%s", recipient.chat_id)
+    logger.debug("alert_delivery_path_used")
     html_text = alert_payload.get("html_text")
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
@@ -3198,13 +3195,10 @@ async def _send_alert_to_recipient_with_retry(
                     next_retry_at=next_retry_at,
                 )
         logger.info(
-            "temporary_telegram_delivery_failure_retrying user_id=%s chat_id=%s attempt=%s "
-            "next_retry_seconds=%s error=%r",
-            recipient.user_id,
-            recipient.chat_id,
+            "ops_event=telegram_delivery_retrying attempt=%s next_retry_seconds=%s error_class=%s",
             attempt,
             delay_seconds,
-            error_message,
+            type(classification_error).__name__,
         )
         await asyncio.sleep(delay_seconds)
     return False, last_error
@@ -3217,10 +3211,8 @@ async def _disable_recipient_if_bot_blocked(
     if not is_bot_blocked_error(error_message):
         if error_message:
             logger.info(
-                "delivery_failure_not_permanent user_id=%s telegram_chat_id=%s error=%r",
-                recipient.user_id,
-                recipient.chat_id,
-                error_message,
+                "ops_event=telegram_delivery_failure_not_permanent error_class=%s",
+                type(error_message).__name__,
             )
         return
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -3232,12 +3224,7 @@ async def _disable_recipient_if_bot_blocked(
             telegram_chat_id=recipient.chat_id,
         )
         if user is not None:
-            logger.info(
-                "user_deactivated_after_delivery_failure user_id=%s telegram_chat_id=%s error=%r",
-                user.id,
-                recipient.chat_id,
-                error_message,
-            )
+            logger.info("ops_event=user_deactivated_after_delivery_failure")
 
 
 def _prefix_for_utf16_length(text: str, utf16_length: int) -> str:
@@ -3449,13 +3436,11 @@ async def _deliver_market_event_alert(
                 alert_id = alert_row.id
                 if should_send:
                     logger.info(
-                        "event_alert_created user_id=%s symbol=%s alert_type=%s "
-                        "trigger_source=%s canonical_event_key=%s market_event_id=%s",
-                        recipient.user_id,
-                        normalized_symbol,
+                        "ops_event=event_alert_delivery_reserved symbol=%s alert_type=%s "
+                        "trigger_source=%s market_event_id=%s",
+                        normalized_symbol.upper(),
                         event_type,
                         trigger_source,
-                        canonical_event_key,
                         market_event_id,
                     )
             if not should_send:
@@ -3516,10 +3501,15 @@ async def _deliver_market_event_alert(
             )
         else:
             await _disable_recipient_if_bot_blocked(recipient, error_message)
-            log(f"Alert delivery failed for chat {recipient.chat_id}: {error_message}")
+            log(
+                "ops_event=telegram_delivery_failed "
+                f"symbol={normalized_symbol.upper()} error_class={type(error_message).__name__}"
+            )
     log(
-        f"{normalized_symbol.upper()} alert sent to {sent_count}/{len(recipients)} "
-        f"eligible recipients; skipped duplicates={skipped_count}."
+        "ops_event=event_alert_delivery_summary "
+        f"symbol={normalized_symbol.upper()} market_event_id={market_event_id} "
+        f"eligible={len(recipients)} sent={sent_count} "
+        f"failed={len(recipients) - sent_count - skipped_count} skipped_duplicates={skipped_count}"
     )
     return delivered
 
@@ -3552,20 +3542,17 @@ async def _get_due_market_heartbeat_recipients(
             last_sent_at = last_sent.created_at if last_sent else None
             frequency_seconds = get_effective_frequency_seconds(user, now)
             due_now = can_deliver_now(user, normalized_symbol, now, last_sent_at)
-            logger.info(
-                "heartbeat_due_check user_id=%s symbol=%s frequency_seconds=%s "
-                "last_heartbeat_at=%s due=%s",
-                user.id,
+            logger.debug(
+                "heartbeat_due_check symbol=%s frequency_seconds=%s last_heartbeat_at=%s due=%s",
                 normalized_symbol,
                 frequency_seconds,
                 last_sent_at.isoformat() if last_sent_at else None,
                 due_now,
             )
             if not due_now:
-                logger.info(
-                    "heartbeat_delivery_frequency_skipped user_id=%s symbol=%s "
-                    "frequency_seconds=%s last_heartbeat_at=%s",
-                    user.id,
+                logger.debug(
+                    "heartbeat_delivery_frequency_skipped symbol=%s frequency_seconds=%s "
+                    "last_heartbeat_at=%s",
                     normalized_symbol,
                     frequency_seconds,
                     last_sent_at.isoformat() if last_sent_at else None,
@@ -3719,10 +3706,14 @@ async def _deliver_market_heartbeat(
             sent_count += 1
         else:
             await _disable_recipient_if_bot_blocked(recipient, error_message)
-            log(f"Market heartbeat delivery failed for chat {recipient.chat_id}: {error_message}")
+            log(
+                "ops_event=heartbeat_delivery_failed "
+                f"symbol={normalized_symbol.upper()} error_class={type(error_message).__name__}"
+            )
     log(
-        f"{normalized_symbol.upper()} market heartbeat sent to "
-        f"{sent_count}/{len(due_recipients)} due recipients."
+        "ops_event=heartbeat_delivery_summary "
+        f"symbol={normalized_symbol.upper()} heartbeat_id={heartbeat.id} "
+        f"due={len(due_recipients)} sent={sent_count} failed={len(due_recipients) - sent_count}"
     )
     return delivered
 
@@ -3737,7 +3728,7 @@ def schedule_automatic_market_check(app: Application, interval_seconds: int) -> 
         name=AUTOMATIC_MARKET_CHECK_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
     )
-    log(f"Automatic market check interval: {interval_seconds} seconds")
+    log(f"ops_event=automatic_check_scheduled interval_seconds={interval_seconds}")
 
 
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
@@ -3755,7 +3746,7 @@ def schedule_market_heartbeat_generation(app: Application) -> None:
         name=MARKET_HEARTBEAT_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
     )
-    log("Market heartbeat generation scheduled every 3600 seconds.")
+    log("ops_event=heartbeat_generation_scheduled interval_seconds=3600")
 
 
 def schedule_report_cache_generation(app: Application) -> None:
@@ -3777,7 +3768,10 @@ def schedule_report_cache_generation(app: Application) -> None:
         name=WEEKLY_REPORT_CACHE_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 300},
     )
-    log("Report cache generation scheduled: daily every 14400 seconds, weekly every 86400 seconds.")
+    log(
+        "ops_event=market_report_cache_scheduled "
+        "daily_interval_seconds=14400 weekly_interval_seconds=86400"
+    )
 
 
 def schedule_seen_news_cleanup(app: Application) -> None:
@@ -3860,13 +3854,16 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
             if heartbeat_id:
                 generated += 1
         log(
-            f"Market heartbeat generation completed: generated={generated}, "
-            f"fresh_skipped={skipped_fresh}."
+            "ops_event=heartbeat_generation_completed "
+            f"generated={generated} fresh_skipped={skipped_fresh}"
         )
     except CoinGeckoRateLimitError:
-        log("CoinGecko returned 429 during market heartbeat generation. Skipping this cycle.")
+        log("ops_event=coingecko_rate_limit context=heartbeat_generation")
     except Exception as error:
-        log(f"Market heartbeat generation error: {error}")
+        log(
+            "ops_event=heartbeat_generation_failed "
+            f"error_class={type(error).__name__}"
+        )
 
 
 def _parse_state_alert_at(value: str | None) -> datetime | None:
@@ -3944,9 +3941,8 @@ async def _persist_successful_product_alert_state(
     async with DB_SESSION_LOCAL() as session:
         await upsert_user_symbol_alert_state(session, **kwargs)
     if event_type == NotificationType.MARKET_UPDATE.value:
-        logger.info(
-            "last_market_update_time_persisted user_id=%s symbol=%s value=%s",
-            recipient.user_id,
+        logger.debug(
+            "last_market_update_time_persisted symbol=%s value=%s",
             normalized_symbol.upper(),
             now.isoformat(),
         )
@@ -3955,8 +3951,7 @@ async def _persist_successful_product_alert_state(
         NotificationType.CRITICAL_ALERT.value,
     }:
         logger.debug(
-            "alert_baseline_updated_after_send user_id=%s symbol=%s alert_type=%s value=%s",
-            recipient.user_id,
+            "alert_baseline_updated_after_send symbol=%s alert_type=%s value=%s",
             normalized_symbol.upper(),
             event_type,
             now.isoformat(),
@@ -4313,17 +4308,25 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             save_state(state)
         checked_symbols_text = ", ".join(symbol.upper() for symbol in symbols_to_check)
         log(
-            f"Automatic price check completed for symbols: {checked_symbols_text}; "
-            f"delivered alerts for {delivered_symbols} symbol(s)."
+            "ops_event=automatic_check_completed "
+            f"symbols={checked_symbols_text.replace(' ', '')} "
+            f"delivered_symbols={delivered_symbols} "
+            f"duration_seconds={perf_counter() - cycle_started_at:.2f}"
         )
     except CoinGeckoRateLimitError:
-        log("CoinGecko returned 429 during automatic price check. Skipping this cycle.")
+        log("ops_event=coingecko_rate_limit context=automatic_price_check")
     except httpx.HTTPStatusError as error:
-        log(f"Automatic check HTTP error: {error}")
+        log(
+            "ops_event=automatic_check_failed reason=http_error "
+            f"error_class={type(error).__name__}"
+        )
     except Exception as error:
-        log(f"Automatic check error: {error}")
+        log(
+            "ops_event=automatic_check_failed reason=unexpected_error "
+            f"error_class={type(error).__name__}"
+        )
     finally:
         logger.info(
-            "Automatic price check cycle completed in %.2f seconds.",
+            "ops_event=automatic_check_cycle_finished duration_seconds=%.2f",
             perf_counter() - cycle_started_at,
         )

@@ -1,10 +1,11 @@
 import logging
+import sys
 from typing import Any
 
 from bot.config import DATABASE_URL
 from bot.db.database import init_db
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("bot.runtime")
 
 
 def log(message: str) -> None:
@@ -38,17 +39,24 @@ DB_SESSION_LOCAL = SessionFactoryRef()
 DB_ENGINE = None
 
 
+def _sync_package_database_engine() -> None:
+    runtime_package = sys.modules.get("bot.runtime")
+    if runtime_package is not None:
+        runtime_package.DB_ENGINE = DB_ENGINE
+
+
 async def initialize_database() -> None:
     global DB_ENGINE
     if not DB_ENABLED:
-        log("DATABASE_URL is not configured. Using local JSON state.")
+        log("ops_event=db_configured backend=local_json")
         return
     if DB_SESSION_LOCAL:
         return
 
-    log("Database configured. Using PostgreSQL state.")
+    log("ops_event=db_configured backend=postgres")
     DB_ENGINE, session_local = await init_db(DATABASE_URL)
     DB_SESSION_LOCAL.set(session_local)
+    _sync_package_database_engine()
 
 
 async def close_database() -> None:
@@ -60,4 +68,5 @@ async def close_database() -> None:
     await DB_ENGINE.dispose()
     DB_ENGINE = None
     DB_SESSION_LOCAL.clear()
-    log("Database resources closed.")
+    _sync_package_database_engine()
+    log("ops_event=db_closed")

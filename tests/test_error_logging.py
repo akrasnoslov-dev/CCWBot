@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from bot import error_logging
+from bot.observability import error_file_logging as error_logging
 
 
 def test_error_file_logging_writes_warning_and_traceback(tmp_path):
@@ -31,6 +31,16 @@ def test_error_file_logging_writes_warning_and_traceback(tmp_path):
         assert "abc123secret" not in content
     finally:
         error_logging.disable_error_file_logging()
+
+
+def test_legacy_error_logging_module_reexports_public_helpers():
+    from bot import error_logging as legacy_error_logging
+
+    assert legacy_error_logging.enable_error_file_logging is error_logging.enable_error_file_logging
+    assert (
+        legacy_error_logging.build_sanitized_log_exports
+        is error_logging.build_sanitized_log_exports
+    )
 
 
 def test_error_file_logging_disable_stops_writes(tmp_path):

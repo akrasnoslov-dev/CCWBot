@@ -226,9 +226,8 @@ def log_request(action_name: str):
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
                 role = await _role_label(update)
                 logger.warning(
-                    "Failed %s for user_id=%s role=%s in %sms",
+                    "ops_event=command_failed command=%s role=%s duration_ms=%s",
                     action_name,
-                    _telegram_user_id(update),
                     role,
                     duration_ms,
                     exc_info=True,
@@ -239,8 +238,9 @@ def log_request(action_name: str):
             role = await _role_label(update)
             outcome = "Denied" if _pop_denied(context) else "Handled"
             log(
-                f"{outcome} {action_name} for user_id={_telegram_user_id(update)} "
-                f"role={role} in {duration_ms}ms"
+                "ops_event=command_handled "
+                f"command={action_name} outcome={outcome.lower()} role={role} "
+                f"duration_ms={duration_ms}"
             )
             return result
 
@@ -452,7 +452,6 @@ async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYP
     message = update.effective_message
     if message is None:
         return
-    text = message.text or message.caption or ""
     entities = list(message.entities or ()) + list(message.caption_entities or ())
     for entity in entities:
         if entity.type != MessageEntity.CUSTOM_EMOJI:
@@ -460,15 +459,12 @@ async def log_custom_emoji_ids(update: Update, context: ContextTypes.DEFAULT_TYP
         custom_emoji_id = getattr(entity, "custom_emoji_id", None)
         if not custom_emoji_id:
             continue
-        nearby_start = max(int(entity.offset) - 8, 0)
-        nearby_end = min(int(entity.offset) + int(entity.length) + 8, len(text))
         logger.info(
-            "custom_emoji_entity type=%s offset=%s length=%s custom_emoji_id=%s nearby_text=%r",
+            "custom_emoji_entity type=%s offset=%s length=%s custom_emoji_id=%s",
             entity.type,
             entity.offset,
             entity.length,
             custom_emoji_id,
-            text[nearby_start:nearby_end],
         )
 
 
