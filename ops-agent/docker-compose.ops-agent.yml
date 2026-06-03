@@ -3,8 +3,6 @@ services:
     build:
       context: .
       dockerfile: ops-agent/Dockerfile
-    env_file:
-      - .env
     environment:
       OPS_AGENT_DATABASE_URL: ${OPS_AGENT_DATABASE_URL:-}
       OPS_AGENT_HEALTH_URL: ${OPS_AGENT_HEALTH_URL:-http://bot:${HEALTH_PORT:-8080}/health}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,19 @@ from ops_agent import __version__
 from ops_agent.config import OpsAgentConfig
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import CollectorStatus, Period
+
+NON_DROPPABLE_BUNDLE_FILES = {
+    "CODEX_INSTRUCTIONS.md",
+    "manifest.json",
+    "bundle_summary.md",
+    "detectors/detector_summary.md",
+    "detectors/detector_results.json",
+    "evidence/db/aggregate_metrics.json",
+    "evidence/db/anomalies.json",
+    "evidence/health/health.json",
+    "redaction_report.json",
+    "limits.json",
+}
 
 CODEX_INSTRUCTIONS = """# Codex Instructions For This Ops-Agent Bundle
 
@@ -49,6 +63,16 @@ def write_text(path: Path, payload: str) -> None:
     path.write_text(payload, encoding="utf-8")
 
 
+def write_protected_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
+    write_json(path, payload)
+    os.chmod(path, 0o600)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as file:
@@ -76,6 +100,9 @@ class BundleWriter:
 
     def write_json(self, relative_path: str, payload: Any) -> None:
         write_json(self.path / relative_path, payload)
+
+    def write_protected_json(self, relative_path: str, payload: Any) -> None:
+        write_protected_json(self.path / relative_path, payload)
 
     def write_text(self, relative_path: str, payload: str) -> None:
         write_text(self.path / relative_path, payload)
@@ -147,18 +174,72 @@ class BundleWriter:
                 ]
             ),
         )
-        final_status = self._collection_status_with_size_warning(collection_status)
+        final_status = self._collection_status_after_size_enforcement(collection_status)
         self.write_manifest(final_status, protected_identity_map=protected_identity_map)
         return final_status
 
     def _bundle_size_bytes(self) -> int:
         return sum(child.stat().st_size for child in self.path.rglob("*") if child.is_file())
 
-    def _collection_status_with_size_warning(self, collection_status: str) -> str:
+    def _drop_candidates_for_size_pressure(self) -> list[Path]:
+        candidates: list[Path] = []
+        priority_groups = [
+            ["evidence/db/raw_llm_samples.redacted.json"],
+            [
+                item.relative_to(self.path).as_posix()
+                for item in sorted((self.path / "evidence/logs/excerpts").glob("*.tail-context.redacted.log"))
+                if item.is_file()
+            ],
+            [
+                item.relative_to(self.path).as_posix()
+                for item in sorted((self.path / "evidence/logs/excerpts").glob("*.period.redacted.log"))
+                if item.is_file()
+            ],
+            [
+                "evidence/db/recent_market_events.json",
+                "evidence/db/recent_news_failures.json",
+            ],
+            [
+                "evidence/local_state/legacy_state_snapshot.json",
+                "evidence/local_state/ops_agent_state_snapshot.json",
+            ],
+        ]
+        for group in priority_groups:
+            candidates.extend(
+                self.path / relative
+                for relative in group
+                if relative not in NON_DROPPABLE_BUNDLE_FILES
+            )
+        return candidates
+
+    def _collection_status_after_size_enforcement(self, collection_status: str) -> str:
         bundle_size = self._bundle_size_bytes()
         limit = self.config.limits.bundle_hard_cap_bytes
         if bundle_size <= limit:
             return collection_status
+        dropped: list[str] = []
+        for candidate in self._drop_candidates_for_size_pressure():
+            if not candidate.is_file():
+                continue
+            relative = candidate.relative_to(self.path).as_posix()
+            candidate.unlink()
+            dropped.append(relative)
+            bundle_size = self._bundle_size_bytes()
+            if bundle_size <= limit:
+                break
+        if dropped:
+            self.warnings.append(
+                "bundle_size_pressure_dropped_files: " + ", ".join(dropped)
+            )
+            self.collector_status.append(
+                CollectorStatus(
+                    "bundle.size_limit",
+                    "partial",
+                    "bundle exceeded hard cap; dropped lower-priority evidence files",
+                )
+            )
+            if bundle_size <= limit:
+                return "partial"
         self.warnings.append(
             "bundle_size_exceeded: "
             f"bundle is {bundle_size} bytes, over hard cap {limit} bytes"
