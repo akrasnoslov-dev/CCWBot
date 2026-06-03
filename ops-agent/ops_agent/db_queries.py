@@ -45,6 +45,77 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM user_premium_subscriptions GROUP BY status ORDER BY status",
     ),
     DbQuery(
+        "premium_payment_inconsistencies",
+        "evidence/db/anomalies.json",
+        "WITH duplicate_provider_payment_ids AS ("
+        "SELECT 'duplicate_provider_payment_ids' AS anomaly, p.user_id, p.provider, "
+        "p.provider_payment_id, NULL::integer AS payment_id, NULL::text AS details "
+        "FROM payments p JOIN ("
+        "SELECT provider, provider_payment_id FROM payments "
+        "GROUP BY provider, provider_payment_id HAVING count(*) > 1"
+        ") dup ON dup.provider = p.provider AND dup.provider_payment_id = p.provider_payment_id), "
+        "duplicate_charge_ids AS ("
+        "SELECT 'duplicate_charge_ids' AS anomaly, p.user_id, p.provider, "
+        "coalesce(p.telegram_payment_charge_id, p.provider_payment_charge_id, p.provider_subscription_id) "
+        "AS provider_payment_id, p.id AS payment_id, 'duplicate non-null charge/subscription id' AS details "
+        "FROM payments p WHERE p.telegram_payment_charge_id IN ("
+        "SELECT telegram_payment_charge_id FROM payments WHERE telegram_payment_charge_id IS NOT NULL "
+        "GROUP BY telegram_payment_charge_id HAVING count(*) > 1"
+        ") OR p.provider_payment_charge_id IN ("
+        "SELECT provider_payment_charge_id FROM payments WHERE provider_payment_charge_id IS NOT NULL "
+        "GROUP BY provider_payment_charge_id HAVING count(*) > 1"
+        ") OR p.provider_subscription_id IN ("
+        "SELECT provider_subscription_id FROM payments WHERE provider_subscription_id IS NOT NULL "
+        "GROUP BY provider_subscription_id HAVING count(*) > 1"
+        ")), "
+        "paid_without_premium AS ("
+        "SELECT 'paid_without_premium' AS anomaly, p.user_id, p.provider, p.provider_payment_id, "
+        "p.id AS payment_id, 'paid payment lacks active premium row' AS details "
+        "FROM payments p LEFT JOIN user_premium_subscriptions ups ON ups.user_id = p.user_id "
+        "WHERE p.status = 'paid' AND p.created_at >= :since AND p.created_at < :until "
+        "AND (ups.id IS NULL OR ups.active_until IS NULL OR ups.active_until < p.created_at + interval '29 days') "
+        "AND ups.cancelled_at IS NULL), "
+        "expired_active_subscriptions AS ("
+        "SELECT 'expired_active_subscription' AS anomaly, ups.user_id, ups.provider, "
+        "ups.last_payment_id AS provider_payment_id, NULL::integer AS payment_id, "
+        "'status active but active_until is expired' AS details "
+        "FROM user_premium_subscriptions ups "
+        "WHERE ups.status = 'active' AND (ups.active_until IS NULL OR ups.active_until <= :until)), "
+        "premium_access_status_mismatch AS ("
+        "SELECT 'premium_access_status_mismatch' AS anomaly, ups.user_id, ups.provider, "
+        "ups.last_payment_id AS provider_payment_id, NULL::integer AS payment_id, "
+        "'active_until grants access but lifecycle status/cancelled_at disagrees' AS details "
+        "FROM user_premium_subscriptions ups "
+        "WHERE ups.active_until > :until AND (ups.status != 'active' OR ups.cancelled_at IS NOT NULL)), "
+        "active_premium_without_trail AS ("
+        "SELECT 'active_premium_without_trail' AS anomaly, ups.user_id, ups.provider, "
+        "ups.last_payment_id AS provider_payment_id, NULL::integer AS payment_id, "
+        "'active premium has no payment or manual grant trail' AS details "
+        "FROM user_premium_subscriptions ups "
+        "LEFT JOIN payments p ON p.user_id = ups.user_id AND p.id::text = ups.last_payment_id "
+        "WHERE ups.status = 'active' AND ups.active_until > :until "
+        "AND (ups.provider IS NULL OR ups.provider NOT IN ('manual', 'telegram_stars') "
+        "OR (ups.provider = 'telegram_stars' AND (ups.last_payment_id IS NULL OR p.id IS NULL)))), "
+        "payment_payload_user_mismatch AS ("
+        "SELECT 'payment_payload_user_mismatch' AS anomaly, p.user_id, p.provider, "
+        "p.provider_payment_id, p.id AS payment_id, 'invoice payload does not match Telegram user' AS details "
+        "FROM payments p JOIN users u ON u.id = p.user_id "
+        "WHERE p.provider = 'telegram_stars' "
+        "AND p.payload != concat('ccwbot-premium-v1:u', u.telegram_user_id)), "
+        "charge_id_mismatch AS ("
+        "SELECT 'charge_id_mismatch' AS anomaly, p.user_id, p.provider, p.provider_payment_id, "
+        "p.id AS payment_id, 'provider payment id differs from Telegram charge id' AS details "
+        "FROM payments p WHERE p.provider = 'telegram_stars' "
+        "AND p.telegram_payment_charge_id IS NOT NULL "
+        "AND p.provider_payment_id != p.telegram_payment_charge_id) "
+        "SELECT * FROM duplicate_provider_payment_ids UNION ALL SELECT * FROM duplicate_charge_ids "
+        "UNION ALL SELECT * FROM paid_without_premium UNION ALL SELECT * FROM expired_active_subscriptions "
+        "UNION ALL SELECT * FROM premium_access_status_mismatch "
+        "UNION ALL SELECT * FROM active_premium_without_trail "
+        "UNION ALL SELECT * FROM payment_payload_user_mismatch UNION ALL SELECT * FROM charge_id_mismatch "
+        "LIMIT :anomaly_limit",
+    ),
+    DbQuery(
         "payments_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT provider, currency, status, count(*) AS payments, sum(amount) AS amount_total "
@@ -108,6 +179,17 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHERE created_at >= :since AND created_at < :until "
         "GROUP BY coalesce(symbol, 'UNKNOWN'), coalesce(status, 'unknown'), should_alert, error_reason "
         "ORDER BY analyses DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "event_ai_analysis_invariant_checks",
+        "evidence/db/anomalies.json",
+        "SELECT 'multiple_event_ai_analyses_for_event' AS anomaly, symbol, market_event_id, "
+        "count(*) AS analysis_count, count(DISTINCT input_hash) AS input_hashes, "
+        "(array_agg(id ORDER BY created_at ASC, id ASC))[1:5] AS sample_analysis_ids "
+        "FROM event_ai_analyses WHERE market_event_id IS NOT NULL "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY symbol, market_event_id HAVING count(*) > 1 OR count(DISTINCT input_hash) > 1 "
+        "ORDER BY analysis_count DESC LIMIT :anomaly_limit",
     ),
     DbQuery(
         "event_ai_analysis_samples",
@@ -189,9 +271,20 @@ QUERIES: tuple[DbQuery, ...] = (
         "JOIN users u ON u.id = ucs.user_id "
         "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
         "GROUP BY ucs.symbol), "
+        "settings AS ("
+        "SELECT coalesce(automatic_check_interval_seconds, 0) AS cooldown_seconds "
+        "FROM app_settings ORDER BY id DESC LIMIT 1), "
+        "recent_event_alerts AS ("
+        "SELECT e.market_event_id, max(a.created_at) AS recent_sent_at "
+        "FROM events_without_delivery e JOIN alerts a ON lower(a.symbol) = lower(e.symbol) "
+        "AND a.alert_type = 'event_alert' AND a.status = 'sent' "
+        "AND a.created_at < e.detected_at "
+        "AND a.created_at >= e.detected_at - ((SELECT cooldown_seconds FROM settings) * interval '1 second') "
+        "GROUP BY e.market_event_id), "
         "classified AS ("
         "SELECT e.market_event_id, e.symbol, e.event_type, e.event_key, e.detected_at, "
         "la.analysis_id, la.status AS analysis_status, la.should_alert, la.error_reason, "
+        "rea.recent_sent_at, "
         "coalesce(rs.likely_eligible_recipients, 0) AS likely_eligible_recipients, "
         "coalesce(rs.product_gated_users, 0) AS product_gated_users, "
         "coalesce(rs.enabled_watchlist_users, 0) AS enabled_watchlist_users, "
@@ -202,13 +295,15 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHEN la.should_alert = false THEN 'expected_should_alert_false' "
         "WHEN la.should_alert IS NULL THEN 'unknown_should_alert_null' "
         "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) = 0 "
-        "AND e.symbol <> 'BTC' AND coalesce(rs.product_gated_users, 0) > 0 THEN 'expected_product_gating_possible' "
+        "AND lower(e.symbol) <> 'btc' AND coalesce(rs.product_gated_users, 0) > 0 THEN 'expected_product_gating_possible' "
+        "WHEN la.should_alert = true AND rea.recent_sent_at IS NOT NULL THEN 'expected_backend_cooldown_active' "
         "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) = 0 THEN 'expected_no_eligible_recipients' "
         "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) > 0 THEN 'delivery_gap_should_alert_true' "
         "ELSE 'unknown' END AS classification "
         "FROM events_without_delivery e "
         "LEFT JOIN latest_analysis la ON la.market_event_id = e.market_event_id "
-        "LEFT JOIN recipient_summary rs ON rs.symbol = lower(e.symbol)) "
+        "LEFT JOIN recipient_summary rs ON rs.symbol = lower(e.symbol) "
+        "LEFT JOIN recent_event_alerts rea ON rea.market_event_id = e.market_event_id) "
         "SELECT classification, count(*) AS events, "
         "count(*) FILTER (WHERE analysis_id IS NOT NULL) AS events_with_analysis, "
         "count(*) FILTER (WHERE should_alert = true) AS should_alert_true, "
@@ -219,7 +314,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "'market_event_id', market_event_id, 'symbol', symbol, 'event_type', event_type, "
         "'event_key', event_key, 'detected_at', detected_at, 'analysis_status', analysis_status, "
         "'should_alert', should_alert, 'likely_eligible_recipients', likely_eligible_recipients, "
-        "'product_gated_users', product_gated_users"
+        "'product_gated_users', product_gated_users, 'recent_sent_at', recent_sent_at"
         ") ORDER BY detected_at DESC, market_event_id DESC))[1:5] AS sample_events "
         "FROM classified GROUP BY classification ORDER BY events DESC LIMIT :anomaly_limit",
     ),
@@ -234,12 +329,49 @@ QUERIES: tuple[DbQuery, ...] = (
         "GROUP BY h.symbol, h.status ORDER BY h.symbol, h.status",
     ),
     DbQuery(
+        "market_heartbeats_freshness",
+        "evidence/db/aggregate_metrics.json",
+        "WITH symbols AS ("
+        "SELECT DISTINCT symbol FROM price_state UNION SELECT DISTINCT symbol FROM market_heartbeats"
+        "), latest AS ("
+        "SELECT DISTINCT ON (symbol) symbol, status, generated_at "
+        "FROM market_heartbeats ORDER BY symbol, generated_at DESC, id DESC"
+        ") "
+        "SELECT s.symbol, l.status AS latest_status, l.generated_at AS latest_generated_at, "
+        "extract(epoch FROM (:until - l.generated_at)) AS age_seconds "
+        "FROM symbols s LEFT JOIN latest l ON l.symbol = s.symbol ORDER BY s.symbol LIMIT :limit",
+    ),
+    DbQuery(
         "market_reports_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT report_type, status, count(*) AS reports, max(generated_at) AS latest_generated_at, "
         "max(expires_at) AS latest_expires_at FROM market_reports "
         "WHERE generated_at >= :since AND generated_at < :until "
         "GROUP BY report_type, status ORDER BY report_type, status",
+    ),
+    DbQuery(
+        "market_reports_freshness",
+        "evidence/db/aggregate_metrics.json",
+        "WITH report_types(report_type, max_age_seconds) AS ("
+        "VALUES ('daily', 14400), ('weekly', 86400)"
+        "), latest AS ("
+        "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at "
+        "FROM market_reports ORDER BY report_type, generated_at DESC, id DESC"
+        "), period_counts AS ("
+        "SELECT report_type, count(*) AS reports_in_period, "
+        "count(*) FILTER (WHERE status = 'completed') AS completed_in_period, "
+        "count(*) FILTER (WHERE status != 'completed') AS failed_in_period "
+        "FROM market_reports WHERE generated_at >= :since AND generated_at < :until "
+        "GROUP BY report_type"
+        ") "
+        "SELECT rt.report_type, rt.max_age_seconds, l.status AS latest_status, "
+        "l.generated_at AS latest_generated_at, l.expires_at AS latest_expires_at, "
+        "extract(epoch FROM (:until - l.generated_at)) AS age_seconds, "
+        "coalesce(pc.reports_in_period, 0) AS reports_in_period, "
+        "coalesce(pc.completed_in_period, 0) AS completed_in_period, "
+        "coalesce(pc.failed_in_period, 0) AS failed_in_period "
+        "FROM report_types rt LEFT JOIN latest l ON l.report_type = rt.report_type "
+        "LEFT JOIN period_counts pc ON pc.report_type = rt.report_type ORDER BY rt.report_type",
     ),
     DbQuery(
         "llm_usage_summary",
@@ -272,12 +404,6 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         "SELECT count(*) AS seen_news_count, min(seen_at) AS oldest_seen_at, max(seen_at) AS newest_seen_at "
         "FROM seen_news",
-    ),
-    DbQuery(
-        "duplicate_provider_payment_ids",
-        "evidence/db/anomalies.json",
-        "SELECT 'duplicate_provider_payment_ids' AS anomaly, provider, provider_payment_id, count(*) AS count "
-        "FROM payments GROUP BY provider, provider_payment_id HAVING count(*) > 1 LIMIT :anomaly_limit",
     ),
     DbQuery(
         "blocked_users_still_active",

@@ -31,19 +31,26 @@ async def collect_health(
             response = await client.get(config.health_url)
         content_type = response.headers.get("content-type", "")
         payload = response.json() if content_type.startswith("application/json") else {}
+        body_status = str(payload.get("status") or "").strip().lower() if payload else ""
+        healthy_body = not body_status or body_status in {"ok", "healthy"}
+        health_status = "ok" if response.status_code == 200 and healthy_body else "failed"
+        collector_status = "ok" if health_status == "ok" else "partial"
+        warnings = [] if healthy_body else [f"health body status is {body_status or 'unknown'}"]
+        error = None if collector_status == "ok" else "; ".join(warnings) or "health failed"
         return (
             {
                 "schema_version": 1,
                 "period": period.as_dict(),
                 "http_status": response.status_code,
-                "status": "ok" if response.status_code == 200 else "failed",
+                "status": health_status,
+                "body_status": body_status or None,
                 "body": redact_value(payload, mapper, redaction_report),
-                "warnings": [],
+                "warnings": warnings,
             },
             {
                 "name": "health",
-                "status": "ok" if response.status_code == 200 else "partial",
-                "error": None,
+                "status": collector_status,
+                "error": error,
             },
         )
     except Exception as error:
