@@ -2,11 +2,13 @@
 .env
 .env.local
 .env.production
+.ops-agent.env
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 pytest-cache-files-*/
+.cache/tmp/
 state.json
 *.dump
 *.db
@@ -21,3 +23,7 @@ logs/*.log.*
 reports/ops-agent/bundles/
 reports/ops-agent/reports/
 reports/ops-agent/state/
+reports/ops-agent/logs/
+reports/ops-agent/**/*.log
+reports/ops-agent/**/private/
+reports/ops-agent/**/identity_map.protected.json
