@@ -18,6 +18,8 @@ Your role is to:
 
 Do not modify production systems, apply fixes, edit code, restart services, or create implementation prompts unless explicitly requested by the operator.
 
+Do not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
+
 ## Required reading order
 
 Start with the bundle-specific instructions and metadata:
