@@ -89,6 +89,7 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "expected_should_alert_false",
             "expected_no_eligible_recipients",
             "expected_product_gating_possible",
+            "expected_backend_cooldown_active",
         }
     )
     unknown = sum(
@@ -103,6 +104,9 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "classifications": classifications,
         "expected_no_delivery": expected,
         "llm_failure_or_rate_limit": classifications.get("llm_failure_or_rate_limit", 0),
+        "expected_backend_cooldown_active": classifications.get(
+            "expected_backend_cooldown_active", 0
+        ),
         "delivery_gap_should_alert_true": classifications.get(
             "delivery_gap_should_alert_true", 0
         ),
@@ -124,7 +128,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
     reports = _query_rows(evidence, aggregate, "market_reports_summary")
+    report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
+    heartbeat_freshness = _query_rows(evidence, aggregate, "market_heartbeats_freshness")
+    market_event_summary = _query_rows(evidence, aggregate, "market_events_summary")
     price_state = _query_rows(evidence, aggregate, "price_state_current")
     market_events = _query_rows(evidence, "evidence/db/recent_market_events.json", "market_events_recent")
     duplicate_event_payload = _query_payload(evidence, anomalies, "duplicate_market_event_buckets")
@@ -133,8 +140,11 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         evidence, anomalies, "market_events_without_delivery_classification"
     )
     invariant_rows = _query_rows(evidence, anomalies, "delivery_invariant_checks")
+    analysis_invariant_rows = _query_rows(
+        evidence, anomalies, "event_ai_analysis_invariant_checks"
+    )
     blocked_users = _query_rows(evidence, anomalies, "blocked_users_still_active")
-    duplicate_payments = _query_rows(evidence, anomalies, "duplicate_provider_payment_ids")
+    payment_inconsistencies = _query_rows(evidence, anomalies, "premium_payment_inconsistencies")
     news_rows = _query_rows(evidence, "evidence/db/recent_news_failures.json", "news_items_recent_high_impact")
     logs_available, period_logs, tail_logs, period_logs_available = _log_counts(evidence)
     health = evidence.get("evidence/health/health.json") or {}
@@ -151,11 +161,30 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     failed_reports = sum(
         _int(row.get("reports")) for row in reports if str(row.get("status")) != "completed"
     )
+    stale_reports = [
+        row
+        for row in report_freshness
+        if row.get("latest_generated_at") is None
+        or str(row.get("latest_status") or "") != "completed"
+        or _int(row.get("age_seconds")) > _int(row.get("max_age_seconds"))
+        or (
+            _parse_datetime(row.get("latest_expires_at")) is not None
+            and _parse_datetime(row.get("latest_expires_at")) <= period.end
+        )
+    ]
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))
         for row in heartbeats
         if str(row.get("status")) != "completed"
     )
+    heartbeat_threshold_seconds = 7200
+    stale_heartbeats = [
+        row
+        for row in heartbeat_freshness
+        if row.get("latest_generated_at") is None
+        or str(row.get("latest_status") or "") != "completed"
+        or _int(row.get("age_seconds")) > heartbeat_threshold_seconds
+    ]
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
     error_patterns = _int(period_logs.get("error"))
     tail_error_patterns = _int(tail_logs.get("error"))
@@ -189,6 +218,28 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     for row in invariant_rows:
         key = str(row.get("anomaly") or "unknown")
         invariant_by_type[key] = invariant_by_type.get(key, 0) + _int(row.get("count") or 1)
+    for row in analysis_invariant_rows:
+        key = str(row.get("anomaly") or "unknown")
+        invariant_by_type[key] = invariant_by_type.get(key, 0) + _int(
+            row.get("analysis_count") or 1
+        )
+    payment_by_type: dict[str, int] = {}
+    for row in payment_inconsistencies:
+        key = str(row.get("anomaly") or "unknown")
+        payment_by_type[key] = payment_by_type.get(key, 0) + 1
+    high_risk_payment_anomalies = sum(
+        count
+        for name, count in payment_by_type.items()
+        if name
+        in {
+            "duplicate_provider_payment_ids",
+            "duplicate_charge_ids",
+            "paid_without_premium",
+            "active_premium_without_trail",
+            "payment_payload_user_mismatch",
+            "charge_id_mismatch",
+        }
+    )
 
     duplicate_group_count = len(duplicate_event_rows)
     duplicate_max_group_size = max(
@@ -242,12 +293,15 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "no_alert_deliveries_observed",
             "info",
-            [(aggregate, "alerts_summary"), (aggregate, "price_state_current")],
-            "unknown" if price_state and not total_deliveries else "clear",
-            "Alert delivery rows are present or no active price evidence was observed",
+            [(aggregate, "alerts_summary"), (aggregate, "price_state_current"), (aggregate, "market_events_summary")],
+            "clear"
+            if total_deliveries or not market_event_summary
+            else "unknown",
+            "Alert delivery rows are present or the active period has no market events",
             ["evidence/db/aggregate_metrics.json"],
             {
                 "price_state_rows": len(price_state),
+                "market_event_summary_rows": len(market_event_summary),
                 "deliveries": total_deliveries,
                 "interpretation": "zero deliveries alone is not a failure; inspect no-delivery classifications",
             },
@@ -281,21 +335,30 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ),
         db_result(
             "failed_daily_weekly_reports",
-            "high",
-            [(aggregate, "market_reports_summary")],
-            "triggered" if failed_reports else "clear",
-            f"{failed_reports} failed market report generations",
+            "high" if stale_reports else "medium",
+            [(aggregate, "market_reports_summary"), (aggregate, "market_reports_freshness")],
+            "triggered" if failed_reports or stale_reports else "clear",
+            f"{failed_reports} failed and {len(stale_reports)} stale/missing market reports",
             ["evidence/db/aggregate_metrics.json"],
-            {"failed_reports": failed_reports},
+            {
+                "failed_reports": failed_reports,
+                "stale_or_missing_reports": len(stale_reports),
+                "affected_report_types": [row.get("report_type") for row in stale_reports],
+            },
         ),
         db_result(
             "stale_or_failed_market_heartbeats",
             "medium",
-            [(aggregate, "market_heartbeats_summary")],
-            "triggered" if heartbeat_failures else "clear",
-            f"{heartbeat_failures} failed heartbeat generations",
+            [(aggregate, "market_heartbeats_summary"), (aggregate, "market_heartbeats_freshness")],
+            "triggered" if heartbeat_failures or stale_heartbeats else "clear",
+            f"{heartbeat_failures} failed and {len(stale_heartbeats)} stale/missing heartbeat rows",
             ["evidence/db/aggregate_metrics.json"],
-            {"failed_heartbeats": heartbeat_failures},
+            {
+                "failed_heartbeats": heartbeat_failures,
+                "stale_or_missing_heartbeats": len(stale_heartbeats),
+                "freshness_threshold_seconds": heartbeat_threshold_seconds,
+                "affected_symbols": [row.get("symbol") for row in stale_heartbeats[:10]],
+            },
         ),
         db_result(
             "duplicate_market_events",
@@ -323,6 +386,28 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             {"duplicate_deliveries": invariant_by_type.get("duplicate_alert_deliveries", 0)},
         ),
         db_result(
+            "market_event_analysis_invariant",
+            "critical",
+            [
+                (anomalies, "delivery_invariant_checks"),
+                (anomalies, "event_ai_analysis_invariant_checks"),
+            ],
+            "triggered"
+            if invariant_by_type.get("multiple_analysis_ids_for_event", 0)
+            or invariant_by_type.get("multiple_event_ai_analyses_for_event", 0)
+            else "clear",
+            "Core market event to AI analysis invariant check",
+            ["evidence/db/anomalies.json"],
+            {
+                "multiple_analysis_ids_for_event": invariant_by_type.get(
+                    "multiple_analysis_ids_for_event", 0
+                ),
+                "multiple_event_ai_analyses_for_event": invariant_by_type.get(
+                    "multiple_event_ai_analyses_for_event", 0
+                ),
+            },
+        ),
+        db_result(
             "blocked_users_still_active",
             "high",
             [(anomalies, "blocked_users_still_active")],
@@ -333,12 +418,15 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ),
         db_result(
             "payment_premium_inconsistencies",
-            "high",
-            [(anomalies, "duplicate_provider_payment_ids")],
-            "triggered" if duplicate_payments else "clear",
-            f"{len(duplicate_payments)} duplicate provider payment id groups",
+            "high" if high_risk_payment_anomalies else "medium",
+            [(anomalies, "premium_payment_inconsistencies")],
+            "triggered" if payment_inconsistencies else "clear",
+            f"{len(payment_inconsistencies)} premium/payment inconsistency rows",
             ["evidence/db/anomalies.json"],
-            {"duplicate_provider_payment_ids": len(duplicate_payments)},
+            {
+                "anomalies_by_type": payment_by_type,
+                "high_risk_anomalies": high_risk_payment_anomalies,
+            },
         ),
         db_result(
             "news_intelligence_failures",

@@ -19,6 +19,15 @@ def test_price_state_query_uses_existing_price_state_columns_only():
     assert "last_7d_change" not in price_state_query.sql
 
 
+def test_ops_agent_queries_include_hardened_anomaly_evidence():
+    query_names = {query.name for query in QUERIES}
+
+    assert "premium_payment_inconsistencies" in query_names
+    assert "market_reports_freshness" in query_names
+    assert "market_heartbeats_freshness" in query_names
+    assert "event_ai_analysis_invariant_checks" in query_names
+
+
 def test_failed_delivery_detector_triggers():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -255,3 +264,187 @@ def test_no_delivery_classification_unknown_when_reason_missing():
     results = {result.id: result for result in run_detectors(evidence, period)}
 
     assert results["market_events_without_alert_deliveries"].status == "unknown"
+
+
+def test_no_delivery_classification_clear_for_backend_cooldown():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "market_events_without_delivery_classification": {
+                    "rows": [
+                        {
+                            "classification": "expected_backend_cooldown_active",
+                            "events": 2,
+                            "sample_events": [{"market_event_id": 40}],
+                        }
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["market_events_without_alert_deliveries"]
+    assert detector.status == "clear"
+    assert detector.metrics["expected_backend_cooldown_active"] == 2
+
+
+def test_no_alert_deliveries_clear_when_active_period_has_no_market_events():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "alerts_summary": {"rows": []},
+                "price_state_current": {"rows": [{"symbol": "BTC"}]},
+                "market_events_summary": {"rows": []},
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    assert results["no_alert_deliveries_observed"].status == "clear"
+
+
+def test_payment_premium_detector_aggregates_inconsistency_types():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "premium_payment_inconsistencies": {
+                    "rows": [
+                        {"anomaly": "paid_without_premium"},
+                        {"anomaly": "expired_active_subscription"},
+                        {"anomaly": "active_premium_without_trail"},
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["payment_premium_inconsistencies"]
+    assert detector.status == "triggered"
+    assert detector.severity == "high"
+    assert detector.metrics["anomalies_by_type"]["paid_without_premium"] == 1
+    assert detector.metrics["anomalies_by_type"]["expired_active_subscription"] == 1
+
+
+def test_market_event_analysis_invariant_surfaces_multiple_analysis_ids():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "delivery_invariant_checks": {
+                    "rows": [{"anomaly": "multiple_analysis_ids_for_event", "count": 2}]
+                },
+                "event_ai_analysis_invariant_checks": {"rows": []},
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["market_event_analysis_invariant"]
+    assert detector.status == "triggered"
+    assert detector.severity == "critical"
+    assert detector.metrics["multiple_analysis_ids_for_event"] == 2
+
+
+def test_report_freshness_detector_triggers_for_stale_or_missing_reports():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_reports_summary": {"rows": []},
+                "market_reports_freshness": {
+                    "rows": [
+                        {
+                            "report_type": "daily",
+                            "latest_status": "completed",
+                            "latest_generated_at": "2026-06-01T00:00:00Z",
+                            "latest_expires_at": "2026-06-01T04:00:00Z",
+                            "age_seconds": 86400,
+                            "max_age_seconds": 14400,
+                        },
+                        {"report_type": "weekly", "latest_generated_at": None},
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["failed_daily_weekly_reports"]
+    assert detector.status == "triggered"
+    assert detector.metrics["stale_or_missing_reports"] == 2
+    assert detector.metrics["affected_report_types"] == ["daily", "weekly"]
+
+
+def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_heartbeats_summary": {"rows": []},
+                "market_heartbeats_freshness": {
+                    "rows": [
+                        {
+                            "symbol": "BTC",
+                            "latest_status": "completed",
+                            "latest_generated_at": "2026-06-01T00:00:00Z",
+                            "age_seconds": 86400,
+                        },
+                        {"symbol": "ETH", "latest_generated_at": None},
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["stale_or_failed_market_heartbeats"]
+    assert detector.status == "triggered"
+    assert detector.metrics["stale_or_missing_heartbeats"] == 2
+    assert detector.metrics["affected_symbols"] == ["BTC", "ETH"]

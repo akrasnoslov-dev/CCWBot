@@ -8,15 +8,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SECRET_URL_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:\s/@]+:)([^@\s]+)(@)", re.IGNORECASE)
+DATABASE_URL_RE = re.compile(
+    r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb)(?:\+[a-z0-9_]+)?://[^\s,\"'}]+",
+    re.IGNORECASE,
+)
 KEY_VALUE_SECRET_RE = re.compile(
-    r"(?i)\b([a-z0-9_-]*(?:token|api[_-]?key|password|secret|database[_-]?url|"
-    r"private[_-]?key|charge[_-]?id|payment[_-]?id|invoice[_-]?payload|"
-    r"provider[_-]?subscription[_-]?id)[a-z0-9_-]*)(\s*[:=]\s*)([^\s,]+)"
+    r"(?i)([\"']?\b[a-z0-9_-]*(?:token|api[_-]?key|password|secret|database[_-]?url|"
+    r"private[_-]?key)[a-z0-9_-]*[\"']?\s*[:=]\s*[\"']?)([^\"'\s,}]+)([\"']?)"
 )
 TELEGRAM_ID_RE = re.compile(
-    r"(?i)\b(telegram_user_id|telegram_chat_id|chat_id|sent_to_chat_id|user_id)\s*=\s*(-?\d+)"
+    r"(?i)([\"']?\b(?:telegram_user_id|telegram_chat_id|chat_id|sent_to_chat_id|user_id)"
+    r"[\"']?\s*[:=]\s*)(-?\d+)"
 )
-USERNAME_RE = re.compile(r"(?i)\b(username|first_name)\s*=\s*([^\s,]+)")
+PAYMENT_ID_RE = re.compile(
+    r"(?i)([\"']?\b[a-z0-9_-]*(?:charge[_-]?id|payment[_-]?id|invoice[_-]?payload|"
+    r"provider[_-]?subscription[_-]?id|subscription[_-]?id)[a-z0-9_-]*[\"']?"
+    r"\s*[:=]\s*[\"']?)([^\"'\s,}]+)([\"']?)"
+)
+USERNAME_RE = re.compile(
+    r"(?i)([\"']?\b(?:username|first_name)[\"']?\s*[:=]\s*[\"']?)"
+    r"([^\"'\s,}]+)([\"']?)"
+)
+LONG_SECRET_RE = re.compile(
+    r"\b(?=[A-Za-z0-9_./+=-]{32,}\b)(?=[A-Za-z0-9_./+=-]*[A-Za-z])"
+    r"(?=[A-Za-z0-9_./+=-]*\d)[A-Za-z0-9_./+=-]{32,}\b"
+)
 
 
 @dataclass
@@ -49,20 +65,35 @@ class ReferenceMapper:
 def redact_text(text: str, mapper: ReferenceMapper, report: RedactionReport) -> str:
     redacted = text
     redacted, url_count = SECRET_URL_RE.subn(r"\1[REDACTED]\3", redacted)
-    redacted, key_count = KEY_VALUE_SECRET_RE.subn(r"\1\2[REDACTED]", redacted)
-    if url_count or key_count:
+    redacted, db_url_count = DATABASE_URL_RE.subn("[REDACTED_DATABASE_URL]", redacted)
+    redacted, key_count = KEY_VALUE_SECRET_RE.subn(r"\1[REDACTED]\3", redacted)
+    redacted, long_secret_count = LONG_SECRET_RE.subn("[REDACTED_SECRET]", redacted)
+    if url_count or db_url_count or key_count or long_secret_count:
         report.replacements["secret"] = (
-            report.replacements.get("secret", 0) + url_count + key_count
+            report.replacements.get("secret", 0)
+            + url_count
+            + db_url_count
+            + key_count
+            + long_secret_count
         )
 
     def replace_id(match: re.Match[str]) -> str:
         key = match.group(1).lower()
         namespace = "chat" if "chat" in key else "user"
         report.increment(namespace)
-        return f"{match.group(1)}={mapper.ref(namespace, match.group(2))}"
+        return f"{match.group(1)}{mapper.ref(namespace, match.group(2))}"
 
     redacted = TELEGRAM_ID_RE.sub(replace_id, redacted)
-    redacted, count = USERNAME_RE.subn(lambda match: f"{match.group(1)}=[REDACTED]", redacted)
+
+    def replace_payment(match: re.Match[str]) -> str:
+        report.increment("payment")
+        return f"{match.group(1)}{mapper.ref('payment', match.group(2))}{match.group(3)}"
+
+    redacted = PAYMENT_ID_RE.sub(replace_payment, redacted)
+    redacted, count = USERNAME_RE.subn(
+        lambda match: f"{match.group(1)}[REDACTED]{match.group(3)}",
+        redacted,
+    )
     if count:
         report.replacements["name"] = report.replacements.get("name", 0) + count
     return redacted

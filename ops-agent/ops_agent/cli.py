@@ -103,7 +103,7 @@ async def _collect(args: argparse.Namespace) -> int:
     writer.add_status("local_state", "ok", None)
 
     if args.include_protected_identity_map:
-        writer.write_json("private/identity_map.protected.json", mapper.identity_map)
+        writer.write_protected_json("private/identity_map.protected.json", mapper.identity_map)
         protected_identity_map = True
 
     results = run_detectors(evidence, period)
@@ -201,10 +201,48 @@ def _validate_bundle(args: argparse.Namespace) -> int:
     return 0 if not bad_hashes else 1
 
 
+def _resolve_under(path: Path, root: Path) -> Path | None:
+    resolved_path = path.resolve()
+    resolved_root = root.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return resolved_path
+
+
+def _manifest_checksum_errors(bundle: Path, manifest: dict[str, Any]) -> list[str]:
+    bad_hashes: list[str] = []
+    inventory = manifest.get("file_inventory")
+    if not isinstance(inventory, list) or not inventory:
+        return ["<missing file inventory>"]
+    for item in inventory:
+        if not isinstance(item, dict):
+            bad_hashes.append("<invalid inventory item>")
+            continue
+        relative = item.get("path")
+        if not isinstance(relative, str):
+            bad_hashes.append("<invalid inventory path>")
+            continue
+        safe_path = _resolve_under(bundle / relative, bundle)
+        if safe_path is None or not safe_path.is_file():
+            bad_hashes.append(relative)
+            continue
+        if sha256_file(safe_path) != item.get("sha256"):
+            bad_hashes.append(relative)
+    return bad_hashes
+
+
 def _mark_report_success(args: argparse.Namespace) -> int:
     config = load_config(args.output_dir)
-    bundle = Path(args.bundle)
-    report = Path(args.report)
+    bundle = _resolve_under(Path(args.bundle), config.bundles_dir)
+    report = _resolve_under(Path(args.report), config.reports_dir)
+    if bundle is None:
+        _print_json({"status": "failed", "error": "bundle path is outside ops-agent bundles"})
+        return 1
+    if report is None:
+        _print_json({"status": "failed", "error": "report path is outside ops-agent reports"})
+        return 1
     manifest_path = bundle / "manifest.json"
     if not report.is_file():
         _print_json({"status": "failed", "error": "report file does not exist"})
@@ -214,6 +252,16 @@ def _mark_report_success(args: argparse.Namespace) -> int:
         return 1
     with manifest_path.open(encoding="utf-8") as file:
         manifest = json.load(file)
+    bad_hashes = _manifest_checksum_errors(bundle, manifest)
+    if bad_hashes:
+        _print_json(
+            {
+                "status": "failed",
+                "error": "bundle checksum validation failed",
+                "bad": bad_hashes,
+            }
+        )
+        return 1
     if manifest.get("collection_status") != "complete" and not args.accept_partial:
         _print_json({"status": "failed", "error": "bundle is partial; pass --accept-partial"})
         return 1
