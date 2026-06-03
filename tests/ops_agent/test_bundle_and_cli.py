@@ -13,6 +13,17 @@ from ops_agent.schemas import Period
 from ops_agent.state import load_state, resolve_period
 
 
+def _write_mandatory_evidence(writer: BundleWriter) -> None:
+    writer.write_json(
+        "evidence/db/aggregate_metrics.json",
+        {"schema_version": 1, "queries": {}},
+    )
+    writer.write_json("evidence/db/anomalies.json", {"schema_version": 1, "queries": {}})
+    writer.write_json("evidence/health/health.json", {"schema_version": 1, "status": "ok"})
+    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
+    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+
+
 def test_cli_parses_collect_auto():
     parser = build_parser()
     args = parser.parse_args(["collect", "--period", "auto", "--no-state-update"])
@@ -46,8 +57,7 @@ def test_bundle_manifest_contains_required_files(tmp_path):
     )
     writer = BundleWriter(config, period)
     writer.initialize()
-    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
-    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    _write_mandatory_evidence(writer)
     writer.finalize(
         collection_status="complete",
         redaction_report=RedactionReport(),
@@ -109,10 +119,10 @@ def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
     )
     writer = BundleWriter(config, period)
     writer.initialize()
-    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
-    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    _write_mandatory_evidence(writer)
     writer.write_text("evidence/db/raw_llm_samples.redacted.json", "x" * 5000)
     writer.write_text("evidence/logs/excerpts/app.tail-context.redacted.log", "y" * 1000)
+    writer.write_text("evidence/health/health.json", "z" * 1000)
     size_before = writer._bundle_size_bytes()
     writer.config = OpsAgentConfig(
         database_url=None,
@@ -129,6 +139,7 @@ def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
     assert not (writer.path / "evidence/db/raw_llm_samples.redacted.json").exists()
     assert (writer.path / "evidence/logs/excerpts/app.tail-context.redacted.log").exists()
     assert (writer.path / "detectors/detector_results.json").exists()
+    assert (writer.path / "evidence/health/health.json").exists()
 
 
 def test_protected_identity_map_uses_owner_only_permissions(tmp_path):
@@ -147,8 +158,7 @@ def test_protected_identity_map_uses_owner_only_permissions(tmp_path):
     writer = BundleWriter(config, period)
     writer.initialize()
     writer.write_protected_json("private/identity_map.protected.json", {"user": {"1": "u"}})
-    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
-    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    _write_mandatory_evidence(writer)
     writer.finalize(
         collection_status="complete",
         redaction_report=RedactionReport(),
@@ -179,8 +189,7 @@ def test_validate_bundle_detects_hash_mismatch(tmp_path):
     )
     writer = BundleWriter(config, period)
     writer.initialize()
-    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
-    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    _write_mandatory_evidence(writer)
     writer.finalize(
         collection_status="complete",
         redaction_report=RedactionReport(),
@@ -191,6 +200,54 @@ def test_validate_bundle_detects_hash_mismatch(tmp_path):
         "# Tampered\n",
         encoding="utf-8",
     )
+
+    result = _validate_bundle(type("Args", (), {"bundle": str(writer.path)})())
+
+    assert result == 1
+
+
+def test_validate_bundle_requires_mandatory_core_evidence(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
+    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+
+    result = _validate_bundle(type("Args", (), {"bundle": str(writer.path)})())
+
+    assert result == 1
+
+
+def test_validate_bundle_rejects_manifest_inventory_path_traversal(tmp_path):
+    writer = _write_valid_bundle(tmp_path)
+    manifest_path = writer.path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["file_inventory"].append(
+        {
+            "path": "../outside.txt",
+            "bytes": 1,
+            "sha256": "abc",
+            "protected": False,
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     result = _validate_bundle(type("Args", (), {"bundle": str(writer.path)})())
 
@@ -212,8 +269,7 @@ def _write_valid_bundle(tmp_path: Path) -> BundleWriter:
     )
     writer = BundleWriter(config, period)
     writer.initialize()
-    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
-    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    _write_mandatory_evidence(writer)
     writer.finalize(
         collection_status="complete",
         redaction_report=RedactionReport(),

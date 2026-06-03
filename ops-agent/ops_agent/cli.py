@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ops_agent.bundle import BundleWriter, sha256_file, sha256_tree
+from ops_agent.bundle import NON_DROPPABLE_BUNDLE_FILES, BundleWriter, sha256_file, sha256_tree
 from ops_agent.collectors.db import collect_db
 from ops_agent.collectors.health import collect_health
 from ops_agent.collectors.local_state import collect_local_state
@@ -172,35 +172,6 @@ def _summarize_log_evidence(log_index: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validate_bundle(args: argparse.Namespace) -> int:
-    bundle = Path(args.bundle)
-    required = [
-        "CODEX_INSTRUCTIONS.md",
-        "manifest.json",
-        "bundle_summary.md",
-        "redaction_report.json",
-        "limits.json",
-        "detectors/detector_summary.md",
-        "detectors/detector_results.json",
-    ]
-    missing = [path for path in required if not (bundle / path).is_file()]
-    if missing:
-        _print_json({"status": "failed", "missing": missing})
-        return 1
-    with (bundle / "manifest.json").open(encoding="utf-8") as file:
-        manifest = json.load(file)
-    bad_hashes = []
-    for item in manifest.get("file_inventory", []):
-        path = bundle / item["path"]
-        if not path.is_file():
-            bad_hashes.append(item["path"])
-            continue
-        if sha256_file(path) != item.get("sha256"):
-            bad_hashes.append(item["path"])
-    _print_json({"status": "ok" if not bad_hashes else "failed", "missing": [], "bad": bad_hashes})
-    return 0 if not bad_hashes else 1
-
-
 def _resolve_under(path: Path, root: Path) -> Path | None:
     resolved_path = path.resolve()
     resolved_root = root.resolve()
@@ -209,6 +180,15 @@ def _resolve_under(path: Path, root: Path) -> Path | None:
     except ValueError:
         return None
     return resolved_path
+
+
+def _mandatory_bundle_file_errors(bundle: Path) -> list[str]:
+    missing: list[str] = []
+    for relative in sorted(NON_DROPPABLE_BUNDLE_FILES):
+        safe_path = _resolve_under(bundle / relative, bundle)
+        if safe_path is None or not safe_path.is_file():
+            missing.append(relative)
+    return missing
 
 
 def _manifest_checksum_errors(bundle: Path, manifest: dict[str, Any]) -> list[str]:
@@ -233,6 +213,28 @@ def _manifest_checksum_errors(bundle: Path, manifest: dict[str, Any]) -> list[st
     return bad_hashes
 
 
+def _validate_bundle_contents(bundle: Path) -> tuple[dict[str, Any] | None, list[str], list[str]]:
+    missing = _mandatory_bundle_file_errors(bundle)
+    manifest_path = _resolve_under(bundle / "manifest.json", bundle)
+    if manifest_path is None or not manifest_path.is_file():
+        return None, missing, ["manifest.json"]
+    with manifest_path.open(encoding="utf-8") as file:
+        manifest = json.load(file)
+    bad_hashes = _manifest_checksum_errors(bundle, manifest)
+    return manifest, missing, bad_hashes
+
+
+def _validate_bundle(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle).resolve()
+    if not bundle.is_dir():
+        _print_json({"status": "failed", "missing": ["<bundle directory>"], "bad": []})
+        return 1
+    _, missing, bad_hashes = _validate_bundle_contents(bundle)
+    status = "ok" if not missing and not bad_hashes else "failed"
+    _print_json({"status": status, "missing": missing, "bad": bad_hashes})
+    return 0 if status == "ok" else 1
+
+
 def _mark_report_success(args: argparse.Namespace) -> int:
     config = load_config(args.output_dir)
     bundle = _resolve_under(Path(args.bundle), config.bundles_dir)
@@ -250,9 +252,16 @@ def _mark_report_success(args: argparse.Namespace) -> int:
     if not manifest_path.is_file():
         _print_json({"status": "failed", "error": "bundle manifest does not exist"})
         return 1
-    with manifest_path.open(encoding="utf-8") as file:
-        manifest = json.load(file)
-    bad_hashes = _manifest_checksum_errors(bundle, manifest)
+    manifest, missing, bad_hashes = _validate_bundle_contents(bundle)
+    if missing:
+        _print_json(
+            {
+                "status": "failed",
+                "error": "mandatory bundle files are missing",
+                "missing": missing,
+            }
+        )
+        return 1
     if bad_hashes:
         _print_json(
             {
@@ -261,6 +270,9 @@ def _mark_report_success(args: argparse.Namespace) -> int:
                 "bad": bad_hashes,
             }
         )
+        return 1
+    if manifest is None:
+        _print_json({"status": "failed", "error": "bundle manifest does not exist"})
         return 1
     if manifest.get("collection_status") != "complete" and not args.accept_partial:
         _print_json({"status": "failed", "error": "bundle is partial; pass --accept-partial"})

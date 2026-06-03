@@ -14,6 +14,19 @@ from ops_agent.config import OpsAgentConfig
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import CollectorStatus, Period
 
+NON_DROPPABLE_BUNDLE_FILES = {
+    "CODEX_INSTRUCTIONS.md",
+    "manifest.json",
+    "bundle_summary.md",
+    "detectors/detector_summary.md",
+    "detectors/detector_results.json",
+    "evidence/db/aggregate_metrics.json",
+    "evidence/db/anomalies.json",
+    "evidence/health/health.json",
+    "redaction_report.json",
+    "limits.json",
+}
+
 CODEX_INSTRUCTIONS = """# Codex Instructions For This Ops-Agent Bundle
 
 Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-prompt.md`.
@@ -189,11 +202,14 @@ class BundleWriter:
             [
                 "evidence/local_state/legacy_state_snapshot.json",
                 "evidence/local_state/ops_agent_state_snapshot.json",
-                "evidence/health/health.json",
             ],
         ]
         for group in priority_groups:
-            candidates.extend(self.path / relative for relative in group)
+            candidates.extend(
+                self.path / relative
+                for relative in group
+                if relative not in NON_DROPPABLE_BUNDLE_FILES
+            )
         return candidates
 
     def _collection_status_after_size_enforcement(self, collection_status: str) -> str:

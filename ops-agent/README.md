@@ -6,12 +6,59 @@ The Compose overlay must not pass the bot `.env` into the container. Only explic
 
 ## Production Read-Only Setup
 
-Create a dedicated OS/service account on the VPS if operators need shell access. It should only be able to run the collection command, read mounted logs, and write under `/opt/CCWBot/reports/ops-agent/`. Do not give it bot token access, Docker socket access beyond the required Compose run, or write access to tracked project files.
+Create or use a dedicated limited VPS account named `ccwbot_ops` for operator collection access:
+
+```bash
+sudo adduser --disabled-password --gecos "" ccwbot_ops
+sudo install -d -m 700 -o ccwbot_ops -g ccwbot_ops /home/ccwbot_ops/.ssh
+sudoedit /home/ccwbot_ops/.ssh/authorized_keys
+sudo chown ccwbot_ops:ccwbot_ops /home/ccwbot_ops/.ssh/authorized_keys
+sudo chmod 600 /home/ccwbot_ops/.ssh/authorized_keys
+```
+
+Do not give `ccwbot_ops` broad sudo. Do not add it to the `docker` group unless the operator explicitly accepts that Docker group membership is root-equivalent.
+
+Preferred production access is through a root-owned wrapper:
+
+```bash
+sudo tee /usr/local/bin/ccwbot-ops-agent-collect >/dev/null <<'EOF'
+#!/bin/sh
+set -eu
+cd /opt/CCWBot
+exec docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --period auto "$@"
+EOF
+sudo chown root:root /usr/local/bin/ccwbot-ops-agent-collect
+sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
+```
+
+Allow only that wrapper through sudoers:
+
+```bash
+sudo visudo -f /etc/sudoers.d/ccwbot_ops
+```
+
+Use this entry:
+
+```text
+ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-ops-agent-collect
+```
+
+Filesystem permission checks:
+
+```bash
+sudo -u ccwbot_ops test ! -r /opt/CCWBot/.env
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/main.py
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/docker-compose.yml
+sudo install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
+sudo -u ccwbot_ops test -w /opt/CCWBot/reports/ops-agent
+```
+
+Verify `ccwbot_ops` can write only under `/opt/CCWBot/reports/ops-agent` and cannot write tracked files. If any check fails, stop and fix permissions before collecting.
 
 Normal production collection:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --period auto
+sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
 The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
@@ -67,8 +114,10 @@ OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
 Safe production command:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --period auto
+sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
+
+Do not print, paste, or publish `docker compose config` output from production. Compose may interpolate `OPS_AGENT_DATABASE_URL` or other environment-local values into that output.
 
 Smoke test without advancing state:
 
@@ -99,9 +148,27 @@ docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml r
 
 Stop using the overlay command and remove or unset `OPS_AGENT_DATABASE_URL`. This only disables future ops-agent DB collection; it does not change bot runtime behavior. Do not restart production services solely for ops-agent unless a separate deployment requires it.
 
+To disable shell collection access immediately:
+
+```bash
+sudo rm -f /etc/sudoers.d/ccwbot_ops
+sudo chmod 000 /usr/local/bin/ccwbot-ops-agent-collect
+```
+
+To revoke the read-only database role:
+
+```sql
+REVOKE SELECT ON ALL TABLES IN SCHEMA public FROM ccwbot_ops_reader;
+REVOKE USAGE ON SCHEMA public FROM ccwbot_ops_reader;
+REVOKE CONNECT ON DATABASE ccwbot FROM ccwbot_ops_reader;
+ALTER ROLE ccwbot_ops_reader NOLOGIN;
+```
+
 ## Credential Rotation
 
 Rotate the `ccwbot_ops_reader` password in PostgreSQL, update only `OPS_AGENT_DATABASE_URL` in the environment-local production `.env`, and run a no-state smoke test. Never copy the bot `DATABASE_URL`, Telegram token, Groq key, or production `.env` into reports or chat.
+
+Rotate SSH access by replacing `/home/ccwbot_ops/.ssh/authorized_keys`, preserving owner `ccwbot_ops:ccwbot_ops` and mode `600`.
 
 ## Cleanup
 
