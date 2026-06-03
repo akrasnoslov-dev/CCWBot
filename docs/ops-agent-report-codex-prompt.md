@@ -82,6 +82,23 @@ Separate:
 
 Do not frame non-BTC no-delivery as a bug when Premium/watchlist gating or no eligible recipients likely explains it.
 
+## Alert repetition evidence
+
+When the bundle includes alert repetition files, use them to diagnose noisy automatic
+alerts and backend filtering opportunities:
+
+* `evidence/db/alert_delivery_distribution.json` shows which symbols produced the most deliveries.
+* `evidence/db/event_analysis_decision_timeline.json` shows sanitized LLM decision flow.
+* `evidence/db/alert_content_fingerprints.json` shows exact repeated content hash groups.
+* `evidence/db/alert_similarity_groups.json` shows near-similar alert groups.
+* `evidence/db/backend_suppression_effectiveness.json` shows inferred cooldown/dedup effectiveness.
+* `evidence/db/event_identity_quality.json` shows weak event-key or event-identity signals.
+
+Do not quote alert text or LLM output. Use hashes, group ids, counts, symbols,
+event keys, time windows, and safe terms only. Treat content hashes as bundle-local;
+do not compare them across bundles. Treat suppression evidence as inferred unless a
+future bundle contains durable suppression rows.
+
 ## Privacy and safety rules
 
 Do not include any of the following in the final report:

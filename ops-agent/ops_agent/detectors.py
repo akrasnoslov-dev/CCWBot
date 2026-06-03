@@ -26,12 +26,24 @@ def _query_rows(evidence: dict[str, Any], file_name: str, query_name: str) -> li
     return list(query.get("rows") or [])
 
 
+def _file_payload(evidence: dict[str, Any], file_name: str) -> dict[str, Any]:
+    payload = evidence.get(file_name)
+    return payload if isinstance(payload, dict) else {}
+
+
 def _missing_gap(evidence: dict[str, Any], required: list[tuple[str, str]]) -> str | None:
     missing = [
         f"{file_name}:{query_name}"
         for file_name, query_name in required
         if not _has_query(evidence, file_name, query_name)
     ]
+    if not missing:
+        return None
+    return "Required evidence missing: " + ", ".join(missing)
+
+
+def _missing_files_gap(evidence: dict[str, Any], required: list[str]) -> str | None:
+    missing = [file_name for file_name in required if not isinstance(evidence.get(file_name), dict)]
     if not missing:
         return None
     return "Required evidence missing: " + ", ".join(missing)
@@ -58,6 +70,11 @@ def _parse_datetime(value: Any) -> datetime | None:
 
 def _event_ref(value: Any) -> str:
     return f"market_event:{value}"
+
+
+def _list_payload_items(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    values = payload.get(key)
+    return [item for item in values if isinstance(item, dict)] if isinstance(values, list) else []
 
 
 def _log_counts(evidence: dict[str, Any]) -> tuple[bool, dict[str, Any], dict[str, Any], bool]:
@@ -146,6 +163,17 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     blocked_users = _query_rows(evidence, anomalies, "blocked_users_still_active")
     payment_inconsistencies = _query_rows(evidence, anomalies, "premium_payment_inconsistencies")
     news_rows = _query_rows(evidence, "evidence/db/recent_news_failures.json", "news_items_recent_high_impact")
+    delivery_distribution_payload = _file_payload(
+        evidence, "evidence/db/alert_delivery_distribution.json"
+    )
+    content_fingerprint_payload = _file_payload(
+        evidence, "evidence/db/alert_content_fingerprints.json"
+    )
+    similarity_payload = _file_payload(evidence, "evidence/db/alert_similarity_groups.json")
+    suppression_payload = _file_payload(
+        evidence, "evidence/db/backend_suppression_effectiveness.json"
+    )
+    identity_payload = _file_payload(evidence, "evidence/db/event_identity_quality.json")
     logs_available, period_logs, tail_logs, period_logs_available = _log_counts(evidence)
     health = evidence.get("evidence/health/health.json") or {}
 
@@ -188,6 +216,36 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
     error_patterns = _int(period_logs.get("error"))
     tail_error_patterns = _int(tail_logs.get("error"))
+    noisy_symbol_rows = [
+        row
+        for row in _list_payload_items(delivery_distribution_payload, "symbols")
+        if _int(row.get("sent_deliveries")) >= 5
+    ]
+    repeated_content_groups = _list_payload_items(
+        content_fingerprint_payload, "repeated_groups"
+    )
+    similar_alert_groups = _list_payload_items(similarity_payload, "groups")
+    weak_identity_rows = [
+        row
+        for row in _list_payload_items(identity_payload, "rows")
+        if _int(row.get("same_content_split_key_groups"))
+        or _int(row.get("suspicious_key_count"))
+        or (
+            _int(row.get("market_events")) >= 5
+            and float(row.get("event_key_churn_ratio") or 0) >= 0.8
+        )
+    ]
+    split_key_groups = _list_payload_items(identity_payload, "same_content_split_key_groups")
+    cooldown_gap_groups = [
+        row
+        for row in _list_payload_items(suppression_payload, "suppression_groups")
+        if _int(row.get("delivered_inside_cooldown_candidates")) > 0
+    ]
+    repeated_alert_true_groups = [
+        row
+        for row in similar_alert_groups
+        if _int(row.get("should_alert_true")) >= 2 and _int(row.get("market_events")) >= 2
+    ]
 
     def result(
         detector_id: str,
@@ -210,6 +268,20 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         metrics: dict[str, Any],
     ) -> DetectorResult:
         gap = _missing_gap(evidence, required)
+        if gap:
+            return result(detector_id, severity, "unknown", "Required evidence is missing", refs, metrics, gap)
+        return result(detector_id, severity, clear_status, summary, refs, metrics)
+
+    def file_result(
+        detector_id: str,
+        severity: str,
+        required: list[str],
+        clear_status: str,
+        summary: str,
+        refs: list[str],
+        metrics: dict[str, Any],
+    ) -> DetectorResult:
+        gap = _missing_files_gap(evidence, required)
         if gap:
             return result(detector_id, severity, "unknown", "Required evidence is missing", refs, metrics, gap)
         return result(detector_id, severity, clear_status, summary, refs, metrics)
@@ -304,6 +376,98 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 "market_event_summary_rows": len(market_event_summary),
                 "deliveries": total_deliveries,
                 "interpretation": "zero deliveries alone is not a failure; inspect no-delivery classifications",
+            },
+        ),
+        file_result(
+            "noisy_alert_symbols",
+            "medium",
+            ["evidence/db/alert_delivery_distribution.json"],
+            "triggered" if noisy_symbol_rows else "clear",
+            f"{len(noisy_symbol_rows)} symbols sent at least 5 automatic alert deliveries",
+            ["evidence/db/alert_delivery_distribution.json"],
+            {
+                "threshold_sent_deliveries": 5,
+                "affected_symbols": [row.get("symbol") for row in noisy_symbol_rows[:10]],
+                "top_symbols": _list_payload_items(delivery_distribution_payload, "symbols")[:10],
+            },
+        ),
+        file_result(
+            "repeated_alert_content",
+            "medium",
+            ["evidence/db/alert_content_fingerprints.json"],
+            "triggered" if repeated_content_groups else "clear",
+            f"{len(repeated_content_groups)} repeated exact alert-content hash groups",
+            ["evidence/db/alert_content_fingerprints.json"],
+            {
+                "repeated_groups": len(repeated_content_groups),
+                "max_sent_deliveries": max(
+                    (_int(row.get("sent_deliveries")) for row in repeated_content_groups),
+                    default=0,
+                ),
+                "sample_groups": repeated_content_groups[:5],
+            },
+        ),
+        file_result(
+            "similar_alert_groups",
+            "medium",
+            ["evidence/db/alert_similarity_groups.json"],
+            "triggered" if similar_alert_groups else "clear",
+            f"{len(similar_alert_groups)} near-similar alert groups",
+            ["evidence/db/alert_similarity_groups.json"],
+            {
+                "similar_groups": len(similar_alert_groups),
+                "max_market_events": max(
+                    (_int(row.get("market_events")) for row in similar_alert_groups),
+                    default=0,
+                ),
+                "sample_groups": similar_alert_groups[:5],
+            },
+        ),
+        file_result(
+            "llm_repeated_alert_true_for_similar_situations",
+            "medium",
+            ["evidence/db/alert_similarity_groups.json"],
+            "triggered" if repeated_alert_true_groups else "clear",
+            f"{len(repeated_alert_true_groups)} similar groups had repeated should_alert=true decisions",
+            ["evidence/db/alert_similarity_groups.json"],
+            {
+                "groups": len(repeated_alert_true_groups),
+                "max_should_alert_true": max(
+                    (_int(row.get("should_alert_true")) for row in repeated_alert_true_groups),
+                    default=0,
+                ),
+                "sample_groups": repeated_alert_true_groups[:5],
+            },
+        ),
+        file_result(
+            "weak_event_identity",
+            "medium",
+            ["evidence/db/event_identity_quality.json"],
+            "triggered" if weak_identity_rows or split_key_groups else "clear",
+            f"{len(weak_identity_rows)} symbols show weak event identity signals",
+            ["evidence/db/event_identity_quality.json"],
+            {
+                "affected_symbols": [row.get("symbol") for row in weak_identity_rows[:10]],
+                "same_content_split_key_groups": len(split_key_groups),
+                "sample_split_groups": split_key_groups[:5],
+                "sample_symbol_rows": weak_identity_rows[:5],
+            },
+        ),
+        file_result(
+            "cooldown_effectiveness_gap",
+            "medium",
+            ["evidence/db/backend_suppression_effectiveness.json"],
+            "triggered" if cooldown_gap_groups else "clear",
+            f"{len(cooldown_gap_groups)} semantic cooldown groups have delivered-inside-cooldown candidates",
+            ["evidence/db/backend_suppression_effectiveness.json"],
+            {
+                "groups": len(cooldown_gap_groups),
+                "candidate_deliveries": sum(
+                    _int(row.get("delivered_inside_cooldown_candidates"))
+                    for row in cooldown_gap_groups
+                ),
+                "sample_groups": cooldown_gap_groups[:5],
+                "confidence_note": "suppression is inferred; no durable suppression rows exist",
             },
         ),
         db_result(

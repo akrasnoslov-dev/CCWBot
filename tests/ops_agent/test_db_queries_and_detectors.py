@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.db_queries import QUERIES, validate_read_only_queries
 from ops_agent.detectors import run_detectors
 from ops_agent.schemas import Period
@@ -11,6 +12,9 @@ def test_all_db_queries_are_read_only_and_parameterized():
     assert validate_read_only_queries() == []
     assert all(query.sql.strip().lower().startswith(("select", "with")) for query in QUERIES)
     assert any(":since" in query.sql for query in QUERIES)
+    assert ALERT_EVIDENCE_SQL.strip().lower().startswith(("select", "with"))
+    assert ";" not in ALERT_EVIDENCE_SQL
+    assert ":since" in ALERT_EVIDENCE_SQL
 
 
 def test_price_state_query_uses_existing_price_state_columns_only():
@@ -26,6 +30,89 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_reports_freshness" in query_names
     assert "market_heartbeats_freshness" in query_names
     assert "event_ai_analysis_invariant_checks" in query_names
+
+
+def test_alert_repetition_detectors_unknown_when_evidence_missing():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+
+    results = {
+        result.id: result
+        for result in run_detectors(
+            {
+                "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+                "evidence/health/health.json": {"status": "ok"},
+            },
+            period,
+        )
+    }
+
+    assert results["noisy_alert_symbols"].status == "unknown"
+    assert results["repeated_alert_content"].status == "unknown"
+    assert results["similar_alert_groups"].status == "unknown"
+    assert results["weak_event_identity"].status == "unknown"
+    assert results["cooldown_effectiveness_gap"].status == "unknown"
+    assert results["llm_repeated_alert_true_for_similar_situations"].status == "unknown"
+
+
+def test_alert_repetition_detectors_trigger_with_evidence():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/alert_delivery_distribution.json": {
+            "symbols": [{"symbol": "BTC", "sent_deliveries": 8}]
+        },
+        "evidence/db/alert_content_fingerprints.json": {
+            "repeated_groups": [{"symbol": "BTC", "sent_deliveries": 8, "market_events": 2}]
+        },
+        "evidence/db/alert_similarity_groups.json": {
+            "groups": [
+                {
+                    "symbols": ["BTC"],
+                    "market_events": 2,
+                    "sent_deliveries": 8,
+                    "should_alert_true": 2,
+                }
+            ]
+        },
+        "evidence/db/event_identity_quality.json": {
+            "rows": [
+                {
+                    "symbol": "BTC",
+                    "market_events": 6,
+                    "event_key_churn_ratio": 1.0,
+                    "same_content_split_key_groups": 1,
+                }
+            ],
+            "same_content_split_key_groups": [{"symbol": "BTC", "event_key_count": 2}],
+        },
+        "evidence/db/backend_suppression_effectiveness.json": {
+            "suppression_groups": [
+                {
+                    "symbol": "BTC",
+                    "event_key": "btc_price_volatility",
+                    "delivered_inside_cooldown_candidates": 1,
+                }
+            ]
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    assert results["noisy_alert_symbols"].status == "triggered"
+    assert results["repeated_alert_content"].status == "triggered"
+    assert results["similar_alert_groups"].status == "triggered"
+    assert results["weak_event_identity"].status == "triggered"
+    assert results["cooldown_effectiveness_gap"].status == "triggered"
+    assert results["llm_repeated_alert_true_for_similar_situations"].status == "triggered"
 
 
 def test_failed_delivery_detector_triggers():
