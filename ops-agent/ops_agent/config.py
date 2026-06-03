@@ -19,6 +19,8 @@ class OpsAgentLimits:
     raw_llm_sample_cap: int = 5
     raw_llm_preview_bytes: int = 2048
     duplicate_market_event_bucket_minutes: int = 15
+    alert_evidence_row_cap: int = 500
+    event_alert_semantic_cooldown_seconds: int = 4 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,10 @@ def load_config(output_dir: str | None = None) -> OpsAgentConfig:
         raw_llm_preview_bytes=_int_env("OPS_AGENT_RAW_LLM_PREVIEW_BYTES", 2048),
         duplicate_market_event_bucket_minutes=_int_env(
             "OPS_AGENT_DUPLICATE_MARKET_EVENT_BUCKET_MINUTES", 15
+        ),
+        alert_evidence_row_cap=_int_env("OPS_AGENT_ALERT_EVIDENCE_ROW_CAP", 500),
+        event_alert_semantic_cooldown_seconds=_int_env(
+            "OPS_AGENT_EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS", 4 * 60 * 60, minimum=0
         ),
     )
     return OpsAgentConfig(

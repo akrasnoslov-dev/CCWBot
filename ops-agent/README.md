@@ -183,6 +183,30 @@ Optional duplicate market-event bucket size:
 OPS_AGENT_DUPLICATE_MARKET_EVENT_BUCKET_MINUTES=15
 ```
 
+Optional alert repetition evidence settings:
+
+```text
+OPS_AGENT_ALERT_EVIDENCE_ROW_CAP=500
+OPS_AGENT_EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS=14400
+```
+
+Alert repetition evidence is derived from read-only DB queries and written as sanitized
+hash/group data only. The bundle does not include full alert messages, raw LLM prompts,
+raw LLM outputs, Telegram ids, chat ids, usernames, secrets, or connection strings.
+Generated files include:
+
+* `evidence/db/alert_delivery_distribution.json`
+* `evidence/db/event_analysis_decision_timeline.json`
+* `evidence/db/alert_content_fingerprints.json`
+* `evidence/db/alert_similarity_groups.json`
+* `evidence/db/backend_suppression_effectiveness.json`
+* `evidence/db/event_identity_quality.json`
+
+Content and analysis hashes are bundle-local HMAC references. They can group repeated
+content inside one bundle, but cannot be compared across separate bundles. Cooldown
+effectiveness is inferred from analysis, event, and delivery rows because suppression
+decisions are not stored as durable rows.
+
 Retention is automatic after collection and can be run manually:
 
 ```bash
