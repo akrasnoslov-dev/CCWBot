@@ -188,6 +188,15 @@ class BundleWriter:
         priority_groups = [
             ["evidence/db/raw_llm_samples.redacted.json"],
             [
+                "evidence/db/event_analysis_decision_timeline.json",
+                "evidence/db/alert_similarity_groups.json",
+            ],
+            [
+                "evidence/db/alert_content_fingerprints.json",
+                "evidence/db/backend_suppression_effectiveness.json",
+                "evidence/db/event_identity_quality.json",
+            ],
+            [
                 item.relative_to(self.path).as_posix()
                 for item in sorted((self.path / "evidence/logs/excerpts").glob("*.tail-context.redacted.log"))
                 if item.is_file()

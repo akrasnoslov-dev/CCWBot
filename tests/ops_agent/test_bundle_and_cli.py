@@ -214,6 +214,7 @@ def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
     writer.initialize()
     _write_mandatory_evidence(writer)
     writer.write_text("evidence/db/raw_llm_samples.redacted.json", "x" * 5000)
+    writer.write_text("evidence/db/event_analysis_decision_timeline.json", "a" * 2000)
     writer.write_text("evidence/logs/excerpts/app.tail-context.redacted.log", "y" * 1000)
     writer.write_text("evidence/health/health.json", "z" * 1000)
     size_before = writer._bundle_size_bytes()
@@ -223,13 +224,14 @@ def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
         output_dir=tmp_path,
         logs_dir=tmp_path / "logs",
         legacy_state_path=tmp_path / "state.json",
-        limits=OpsAgentLimits(bundle_hard_cap_bytes=size_before - 4000),
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=size_before - 6000),
     )
 
     status = writer._collection_status_after_size_enforcement("complete")
 
     assert status == "partial"
     assert not (writer.path / "evidence/db/raw_llm_samples.redacted.json").exists()
+    assert not (writer.path / "evidence/db/event_analysis_decision_timeline.json").exists()
     assert (writer.path / "evidence/logs/excerpts/app.tail-context.redacted.log").exists()
     assert (writer.path / "detectors/detector_results.json").exists()
     assert (writer.path / "evidence/health/health.json").exists()
