@@ -3,6 +3,7 @@
 `ops-agent` is a local, on-demand diagnostic bundle collector for Codex. It does not use an LLM, does not expose a port, does not mount the Docker socket, does not apply fixes, and does not provide a raw SQL endpoint.
 
 The Compose overlay must not pass the bot `.env` into the container. Only explicit `OPS_AGENT_*` variables are allowed.
+The overlay reads `.ops-agent.env` for the `ops-agent` service only; the base Compose file may still use the project `.env` for normal interpolation.
 
 ## Production Read-Only Setup
 
@@ -55,6 +56,22 @@ sudo -u ccwbot_ops test -w /opt/CCWBot/reports/ops-agent
 
 Verify `ccwbot_ops` can write only under `/opt/CCWBot/reports/ops-agent` and cannot write tracked files. If any check fails, stop and fix permissions before collecting.
 
+Create the production ops-agent environment manually. Do not copy the bot `.env`; use `.ops-agent.env.example` as the placeholder-only reference and create only the minimal `OPS_AGENT_*` values needed by the collector:
+
+```bash
+sudo install -m 600 -o root -g root /dev/null /opt/CCWBot/.ops-agent.env
+sudoedit /opt/CCWBot/.ops-agent.env
+sudo chown root:root /opt/CCWBot/.ops-agent.env
+sudo chmod 600 /opt/CCWBot/.ops-agent.env
+```
+
+Required production contents:
+
+```text
+OPS_AGENT_DATABASE_URL=postgresql+asyncpg://ccwbot_ops_reader:<password>@postgres:5432/ccwbot
+OPS_AGENT_HEALTH_URL=http://bot:8080/health
+```
+
 Normal production collection:
 
 ```bash
@@ -71,7 +88,7 @@ The command prints one JSON object with the generated bundle path. Codex should 
 6. `redaction_report.json`
 7. `limits.json`
 
-Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `mark-report-success` only after a complete bundle has produced a written report.
+Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `mark-report-success` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
 Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped period-matched excerpts from unscoped tail-context excerpts and include skipped/unparseable counts. Period-matched logs are stronger evidence for the requested report period.
 
@@ -83,13 +100,13 @@ First-time DB setup uses a read-only PostgreSQL role:
 docker compose exec postgres psql -U ccwbot -d ccwbot -f /path/to/ops-agent/sql/create_readonly_role.sql
 ```
 
-Set `OPS_AGENT_DATABASE_URL` in the production `.env` with the `ccwbot_ops_reader` role:
+Set `OPS_AGENT_DATABASE_URL` in `/opt/CCWBot/.ops-agent.env` with the `ccwbot_ops_reader` role:
 
 ```text
 OPS_AGENT_DATABASE_URL=postgresql+asyncpg://ccwbot_ops_reader:<password>@postgres:5432/ccwbot
 ```
 
-The `.env.example` values are placeholders only and must not contain real passwords.
+The `.ops-agent.env.example` values are placeholders only and must not contain real passwords.
 
 By default, the health collector uses the production-safe Compose `bot` service name:
 
@@ -97,7 +114,7 @@ By default, the health collector uses the production-safe Compose `bot` service 
 OPS_AGENT_HEALTH_URL=http://bot:8080/health
 ```
 
-For local Windows/Docker Desktop testing, override it in `.env` if the bot is reachable through the host:
+For local Windows/Docker Desktop testing, override it in `.ops-agent.env` if the bot is reachable through the host:
 
 ```text
 OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
@@ -146,7 +163,7 @@ docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml r
 
 ## Emergency Disable
 
-Stop using the overlay command and remove or unset `OPS_AGENT_DATABASE_URL`. This only disables future ops-agent DB collection; it does not change bot runtime behavior. Do not restart production services solely for ops-agent unless a separate deployment requires it.
+Stop using the overlay command and remove or unset `OPS_AGENT_DATABASE_URL` from `/opt/CCWBot/.ops-agent.env`. This only disables future ops-agent DB collection; it does not change bot runtime behavior. Do not restart production services solely for ops-agent unless a separate deployment requires it.
 
 To disable shell collection access immediately:
 
@@ -166,7 +183,7 @@ ALTER ROLE ccwbot_ops_reader NOLOGIN;
 
 ## Credential Rotation
 
-Rotate the `ccwbot_ops_reader` password in PostgreSQL, update only `OPS_AGENT_DATABASE_URL` in the environment-local production `.env`, and run a no-state smoke test. Never copy the bot `DATABASE_URL`, Telegram token, Groq key, or production `.env` into reports or chat.
+Rotate the `ccwbot_ops_reader` password in PostgreSQL, update only `OPS_AGENT_DATABASE_URL` in `/opt/CCWBot/.ops-agent.env`, and run a no-state smoke test. Never copy the bot `DATABASE_URL`, Telegram token, Groq key, production `.env`, or production `.ops-agent.env` into reports or chat.
 
 Rotate SSH access by replacing `/home/ccwbot_ops/.ssh/authorized_keys`, preserving owner `ccwbot_ops:ccwbot_ops` and mode `600`.
 

@@ -36,7 +36,7 @@ def test_cli_parses_collect_auto():
 def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
     compose = Path("ops-agent/docker-compose.ops-agent.yml").read_text(encoding="utf-8")
 
-    assert "env_file" not in compose
+    assert ".ops-agent.env" in compose
     assert "- .env" not in compose
     assert "TELEGRAM_BOT_TOKEN" not in compose
     assert "GROQ_API_KEY" not in compose

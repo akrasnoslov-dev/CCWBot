@@ -3,9 +3,10 @@ services:
     build:
       context: .
       dockerfile: ops-agent/Dockerfile
+    env_file:
+      - path: .ops-agent.env
+        required: false
     environment:
-      OPS_AGENT_DATABASE_URL: ${OPS_AGENT_DATABASE_URL:-}
-      OPS_AGENT_HEALTH_URL: ${OPS_AGENT_HEALTH_URL:-http://bot:${HEALTH_PORT:-8080}/health}
       OPS_AGENT_OUTPUT_DIR: /app/reports/ops-agent
       OPS_AGENT_LOGS_DIR: /app/logs
       OPS_AGENT_LEGACY_STATE_PATH: /app/state.json
