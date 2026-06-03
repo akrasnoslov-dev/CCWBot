@@ -19,20 +19,24 @@ sudo chmod 600 /home/ccwbot_ops/.ssh/authorized_keys
 
 Do not give `ccwbot_ops` broad sudo. Do not add it to the `docker` group unless the operator explicitly accepts that Docker group membership is root-equivalent.
 
-Preferred production access is through a root-owned wrapper:
+Preferred production access is through root-owned wrappers installed from the tracked templates:
 
 ```bash
-sudo tee /usr/local/bin/ccwbot-ops-agent-collect >/dev/null <<'EOF'
-#!/bin/sh
-set -eu
-cd /opt/CCWBot
-exec docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --period auto "$@"
-EOF
+sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-mark-report-success /usr/local/bin/ccwbot-ops-agent-mark-report-success
 sudo chown root:root /usr/local/bin/ccwbot-ops-agent-collect
+sudo chown root:root /usr/local/bin/ccwbot-ops-agent-mark-report-success
 sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
+sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-mark-report-success
 ```
 
-Allow only that wrapper through sudoers:
+The collect wrapper allows only `ops-agent collect` with `--period auto|Nh`, `--since <UTC timestamp>`, `--until <UTC timestamp|now>`, and `--no-state-update`. It rejects unsupported flags such as raw LLM samples, protected identity maps, custom output directories, shell fragments, deployment commands, restarts, migrations, environment printing, and secret-reading commands.
+
+The mark-success wrapper allows only `ops-agent mark-report-success` with one bundle path under `/opt/CCWBot/reports/ops-agent/bundles/` or `/app/reports/ops-agent/bundles/`, one Markdown report path under `/opt/CCWBot/reports/ops-agent/reports/` or `/app/reports/ops-agent/reports/`, and optional `--accept-partial`.
+
+Both wrappers execute `/usr/bin/docker` with a minimal environment. If Docker is installed elsewhere on the VPS, update the tracked wrapper template and deploy that change through Git rather than editing `/usr/local/bin` by hand.
+
+Allow only those wrappers through sudoers:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/ccwbot_ops
@@ -41,24 +45,36 @@ sudo visudo -f /etc/sudoers.d/ccwbot_ops
 Use this entry:
 
 ```text
+Defaults:ccwbot_ops env_reset, secure_path="/usr/bin:/bin"
 ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-ops-agent-collect
+ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-ops-agent-mark-report-success
 ```
 
 Filesystem permission checks:
 
 ```bash
 sudo -u ccwbot_ops test ! -r /opt/CCWBot/.env
+sudo -u ccwbot_ops test ! -r /opt/CCWBot/.ops-agent.env
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/main.py
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/docker-compose.yml
-sudo install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
-sudo -u ccwbot_ops test -w /opt/CCWBot/reports/ops-agent
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-mark-report-success
+sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
+sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles
+sudo install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/reports
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/reports/ops-agent
+sudo -u ccwbot_ops test -r /opt/CCWBot/reports/ops-agent/bundles
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/reports/ops-agent/bundles
+sudo -u ccwbot_ops test -w /opt/CCWBot/reports/ops-agent/reports
 ```
 
-Verify `ccwbot_ops` can write only under `/opt/CCWBot/reports/ops-agent` and cannot write tracked files. If any check fails, stop and fix permissions before collecting.
+Verify `ccwbot_ops` can read generated bundles, write only final Markdown reports under `/opt/CCWBot/reports/ops-agent/reports/`, and cannot write tracked files or wrapper templates. If any check fails, stop and fix permissions before collecting.
 
 Create the production ops-agent environment manually. Do not copy the bot `.env`; use `.ops-agent.env.example` as the placeholder-only reference and create only the minimal `OPS_AGENT_*` values needed by the collector:
 
 ```bash
+sudo chown root:root /opt/CCWBot/.env
+sudo chmod 600 /opt/CCWBot/.env
 sudo install -m 600 -o root -g root /dev/null /opt/CCWBot/.ops-agent.env
 sudoedit /opt/CCWBot/.ops-agent.env
 sudo chown root:root /opt/CCWBot/.ops-agent.env
@@ -78,6 +94,14 @@ Normal production collection:
 sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
+Explicit production collection period:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --until now
+```
+
+Explicit periods must have `since < until` and must not exceed 720 hours.
+
 The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
 
 1. `CODEX_INSTRUCTIONS.md`
@@ -88,7 +112,7 @@ The command prints one JSON object with the generated bundle path. Codex should 
 6. `redaction_report.json`
 7. `limits.json`
 
-Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `mark-report-success` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
+Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
 Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped period-matched excerpts from unscoped tail-context excerpts and include skipped/unparseable counts. Period-matched logs are stronger evidence for the requested report period.
 
@@ -125,8 +149,7 @@ OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
 1. Run collection with the safe production command.
 2. Read the printed JSON and open the bundle path.
 3. Have Codex write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
-4. Run `validate-bundle` against the bundle.
-5. Run `mark-report-success` only after the written report exists. The command rejects paths outside ops-agent report/bundle directories and refuses tampered bundles.
+4. Run the safe mark-success wrapper only after the written report exists. The command validates the bundle before advancing state, rejects paths outside ops-agent report/bundle directories, and refuses tampered bundles.
 
 Safe production command:
 
@@ -134,19 +157,24 @@ Safe production command:
 sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
+Safe explicit-period production command:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --until now
+```
+
 Do not print, paste, or publish `docker compose config` output from production. Compose may interpolate `OPS_AGENT_DATABASE_URL` or other environment-local values into that output.
 
 Smoke test without advancing state:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --since 2026-06-01T00:00:00Z --until 2026-06-01T01:00:00Z --no-state-update
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent validate-bundle <bundle-path>
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-06-01T00:00:00Z --until 2026-06-01T01:00:00Z --no-state-update
 ```
 
 Mark a completed report successful:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent mark-report-success --bundle /app/reports/ops-agent/bundles/<bundle-id> --report /app/reports/ops-agent/reports/<report-file>.md
+sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle /opt/CCWBot/reports/ops-agent/bundles/<bundle-id> --report /opt/CCWBot/reports/ops-agent/reports/<report-file>.md
 ```
 
 Optional duplicate market-event bucket size:
@@ -170,6 +198,7 @@ To disable shell collection access immediately:
 ```bash
 sudo rm -f /etc/sudoers.d/ccwbot_ops
 sudo chmod 000 /usr/local/bin/ccwbot-ops-agent-collect
+sudo chmod 000 /usr/local/bin/ccwbot-ops-agent-mark-report-success
 ```
 
 To revoke the read-only database role:
@@ -189,4 +218,6 @@ Rotate SSH access by replacing `/home/ccwbot_ops/.ssh/authorized_keys`, preservi
 
 ## Cleanup
 
-Use `retention` for normal cleanup. If manual cleanup is required, remove only old files under `/opt/CCWBot/reports/ops-agent/bundles/` and `/opt/CCWBot/reports/ops-agent/reports/`. Do not remove `.env`, database volumes, tracked project files, or live logs needed for incident analysis.
+Use `retention` for normal cleanup. If manual cleanup is required, remove only old files under `/opt/CCWBot/reports/ops-agent/bundles/` and `/opt/CCWBot/reports/ops-agent/reports/`. Do not remove `.env`, `.ops-agent.env`, database volumes, tracked project files, or live logs needed for incident analysis.
+
+Generated bundles and reports are local operational artifacts. Keep `.ops-agent.env`, `reports/ops-agent/bundles/`, and `reports/ops-agent/reports/` ignored by Git; commit only safe templates such as `.ops-agent.env.example` and the wrapper scripts.

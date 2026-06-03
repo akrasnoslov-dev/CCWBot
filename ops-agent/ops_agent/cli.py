@@ -31,12 +31,16 @@ def _print_json(payload: dict[str, Any]) -> None:
 async def _collect(args: argparse.Namespace) -> int:
     config = load_config(args.output_dir)
     state = load_state(config.state_path)
-    period = resolve_period(
-        state=state,
-        period=args.period,
-        since=args.since,
-        until=args.until,
-    )
+    try:
+        period = resolve_period(
+            state=state,
+            period=args.period,
+            since=args.since,
+            until=args.until,
+        )
+    except ValueError as error:
+        _print_json({"status": "failed", "error": str(error)})
+        return 2
     mapper = ReferenceMapper()
     redaction_report = RedactionReport()
     writer = BundleWriter(config, period)
@@ -278,12 +282,16 @@ def _mark_report_success(args: argparse.Namespace) -> int:
         _print_json({"status": "failed", "error": "bundle is partial; pass --accept-partial"})
         return 1
     period_payload = manifest.get("period") or {}
-    period = resolve_period(
-        state={},
-        period=None,
-        since=str(period_payload["start"]),
-        until=str(period_payload["end"]),
-    )
+    try:
+        period = resolve_period(
+            state={},
+            period=None,
+            since=str(period_payload["start"]),
+            until=str(period_payload["end"]),
+        )
+    except (KeyError, ValueError) as error:
+        _print_json({"status": "failed", "error": f"invalid bundle period: {error}"})
+        return 1
     state = load_state(config.state_path)
     report_id = report.stem
     save_state(

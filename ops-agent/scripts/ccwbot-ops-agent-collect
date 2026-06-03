@@ -1,0 +1,112 @@
+#!/bin/sh
+set -eu
+
+DOCKER=/usr/bin/docker
+
+usage() {
+  echo "usage: ccwbot-ops-agent-collect [--period auto|Nh] [--since YYYY-MM-DDTHH:MM:SSZ] [--until YYYY-MM-DDTHH:MM:SSZ|now] [--no-state-update]" >&2
+}
+
+reject() {
+  echo "ccwbot-ops-agent-collect: $1" >&2
+  usage
+  exit 2
+}
+
+is_utc_timestamp() {
+  case "$1" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_period() {
+  case "$1" in
+    auto) return 0 ;;
+    *h)
+      hours=${1%h}
+      case "$hours" in
+        ""|0|*[!0-9]*) return 1 ;;
+      esac
+      [ "$hours" -le 720 ] || return 1
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+period=""
+since=""
+until=""
+no_state_update=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --period)
+      shift
+      [ "$#" -gt 0 ] || reject "--period requires a value"
+      validate_period "$1" || reject "unsupported --period value"
+      period=$1
+      ;;
+    --period=*)
+      value=${1#--period=}
+      validate_period "$value" || reject "unsupported --period value"
+      period=$value
+      ;;
+    --since)
+      shift
+      [ "$#" -gt 0 ] || reject "--since requires a value"
+      is_utc_timestamp "$1" || reject "--since must be UTC ISO-8601 ending in Z"
+      since=$1
+      ;;
+    --since=*)
+      value=${1#--since=}
+      is_utc_timestamp "$value" || reject "--since must be UTC ISO-8601 ending in Z"
+      since=$value
+      ;;
+    --until)
+      shift
+      [ "$#" -gt 0 ] || reject "--until requires a value"
+      if [ "$1" != "now" ]; then
+        is_utc_timestamp "$1" || reject "--until must be now or UTC ISO-8601 ending in Z"
+      fi
+      until=$1
+      ;;
+    --until=*)
+      value=${1#--until=}
+      if [ "$value" != "now" ]; then
+        is_utc_timestamp "$value" || reject "--until must be now or UTC ISO-8601 ending in Z"
+      fi
+      until=$value
+      ;;
+    --no-state-update)
+      no_state_update=1
+      ;;
+    *)
+      reject "unsupported argument: $1"
+      ;;
+  esac
+  shift
+done
+
+[ -z "$period" ] || [ -z "$since" ] || reject "use either --period or --since, not both"
+[ -x "$DOCKER" ] || reject "/usr/bin/docker is not executable"
+
+cd /opt/CCWBot
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect
+
+if [ -n "$since" ]; then
+  set -- "$@" --since "$since"
+else
+  set -- "$@" --period "${period:-auto}"
+fi
+
+if [ -n "$until" ]; then
+  set -- "$@" --until "$until"
+fi
+
+if [ -n "$no_state_update" ]; then
+  set -- "$@" --no-state-update
+fi
+
+exec "$@"
