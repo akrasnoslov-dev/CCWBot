@@ -1,0 +1,95 @@
+#!/bin/sh
+set -eu
+
+DOCKER=/usr/bin/docker
+
+usage() {
+  echo "usage: ccwbot-ops-agent-mark-report-success --bundle /opt/CCWBot/reports/ops-agent/bundles/<bundle> --report /opt/CCWBot/reports/ops-agent/reports/<report>.md [--accept-partial]" >&2
+}
+
+reject() {
+  echo "ccwbot-ops-agent-mark-report-success: $1" >&2
+  usage
+  exit 2
+}
+
+safe_relative_path() {
+  case "$1" in
+    ""|*..*|/*|*\\*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+bundle=""
+report=""
+accept_partial=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --bundle)
+      shift
+      [ "$#" -gt 0 ] || reject "--bundle requires a value"
+      bundle=$1
+      ;;
+    --bundle=*)
+      bundle=${1#--bundle=}
+      ;;
+    --report)
+      shift
+      [ "$#" -gt 0 ] || reject "--report requires a value"
+      report=$1
+      ;;
+    --report=*)
+      report=${1#--report=}
+      ;;
+    --accept-partial)
+      accept_partial=1
+      ;;
+    *)
+      reject "unsupported argument: $1"
+      ;;
+  esac
+  shift
+done
+
+[ -n "$bundle" ] || reject "--bundle is required"
+[ -n "$report" ] || reject "--report is required"
+
+case "$bundle" in
+  /opt/CCWBot/reports/ops-agent/bundles/*)
+    bundle_rel=${bundle#/opt/CCWBot/reports/ops-agent/bundles/}
+    ;;
+  /app/reports/ops-agent/bundles/*)
+    bundle_rel=${bundle#/app/reports/ops-agent/bundles/}
+    ;;
+  *)
+    reject "--bundle must be under the ops-agent bundles directory"
+    ;;
+esac
+
+case "$report" in
+  /opt/CCWBot/reports/ops-agent/reports/*.md)
+    report_rel=${report#/opt/CCWBot/reports/ops-agent/reports/}
+    ;;
+  /app/reports/ops-agent/reports/*.md)
+    report_rel=${report#/app/reports/ops-agent/reports/}
+    ;;
+  *)
+    reject "--report must be a Markdown file under the ops-agent reports directory"
+    ;;
+esac
+
+safe_relative_path "$bundle_rel" || reject "unsafe bundle path"
+safe_relative_path "$report_rel" || reject "unsafe report path"
+[ -x "$DOCKER" ] || reject "/usr/bin/docker is not executable"
+
+cd /opt/CCWBot
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent mark-report-success \
+  --bundle "/app/reports/ops-agent/bundles/$bundle_rel" \
+  --report "/app/reports/ops-agent/reports/$report_rel"
+
+if [ -n "$accept_partial" ]; then
+  set -- "$@" --accept-partial
+fi
+
+exec "$@"
