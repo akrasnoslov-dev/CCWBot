@@ -7,6 +7,8 @@ from typing import Any
 
 from ops_agent.schemas import Period
 
+MAX_COLLECTION_PERIOD = timedelta(hours=720)
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -15,6 +17,14 @@ def utc_now() -> datetime:
 def parse_timestamp(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _validated_period(start: datetime, end: datetime, source: str) -> Period:
+    if start >= end:
+        raise ValueError("collection period start must be before end")
+    if end - start > MAX_COLLECTION_PERIOD:
+        raise ValueError("collection period must not exceed 720 hours")
+    return Period(start=start, end=end, source=source)
 
 
 def load_state(path: Path) -> dict[str, Any]:
@@ -46,20 +56,20 @@ def resolve_period(
     until: str | None,
     now: datetime | None = None,
 ) -> Period:
-    end = parse_timestamp(until) if until else (now or utc_now())
+    end = parse_timestamp(until) if until and until.lower() != "now" else (now or utc_now())
     if since:
-        return Period(start=parse_timestamp(since), end=end, source="explicit")
+        return _validated_period(parse_timestamp(since), end, "explicit")
     if period and period != "auto":
         hours = int(period.removesuffix("h")) if period.endswith("h") else 24
-        return Period(start=end - timedelta(hours=hours), end=end, source=period)
+        return _validated_period(end - timedelta(hours=hours), end, period)
     last_success = state.get("last_successful_report")
     if isinstance(last_success, dict) and last_success.get("period_end"):
-        return Period(
-            start=parse_timestamp(str(last_success["period_end"])),
-            end=end,
-            source="auto",
+        return _validated_period(
+            parse_timestamp(str(last_success["period_end"])),
+            end,
+            "auto",
         )
-    return Period(start=end - timedelta(hours=24), end=end, source="auto")
+    return _validated_period(end - timedelta(hours=24), end, "auto")
 
 
 def record_collection(

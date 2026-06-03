@@ -111,6 +111,7 @@ Implement these commands:
 ```bash
 ops-agent collect --period auto --output-dir /app/reports/ops-agent
 ops-agent collect --since 2026-05-31T00:00:00Z --until 2026-06-01T00:00:00Z
+ops-agent collect --since 2026-05-31T00:00:00Z --until now
 ops-agent collect --no-state-update
 ops-agent collect --include-raw-llm-samples
 ops-agent collect --include-protected-identity-map
@@ -606,9 +607,38 @@ Run retention after successful collection and through explicit `ops-agent retent
 
 1. Deploy the implementation through Git to `/opt/CCWBot`.
 2. Create the read-only PostgreSQL role with `ops-agent/sql/create_readonly_role.sql`.
-3. Create `/opt/CCWBot/.ops-agent.env` manually on production with only minimal `OPS_AGENT_*` values.
-4. Create `/opt/CCWBot/reports/ops-agent` if it does not exist.
-5. Validate Compose:
+3. Keep `/opt/CCWBot/.env` root-owned with mode `600`; `ccwbot_ops` must not be able to read it.
+4. Create `/opt/CCWBot/.ops-agent.env` manually on production with only minimal `OPS_AGENT_*` values. Keep it root-owned with mode `600`; `ccwbot_ops` must not be able to read it.
+5. Install root-owned safe wrappers:
+
+```bash
+sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-mark-report-success /usr/local/bin/ccwbot-ops-agent-mark-report-success
+```
+
+The wrappers execute `/usr/bin/docker` with a minimal environment. If Docker is installed elsewhere, update the tracked wrapper template through Git.
+
+6. Allow only those wrappers through sudoers:
+
+```text
+Defaults:ccwbot_ops env_reset, secure_path="/usr/bin:/bin"
+ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-ops-agent-collect
+ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-ops-agent-mark-report-success
+```
+
+7. Create the report tree:
+
+```bash
+sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
+sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles
+sudo install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/reports
+```
+
+`ccwbot_ops` may read generated bundles and may write only final Markdown reports under `/opt/CCWBot/reports/ops-agent/reports/` if needed. It must not be able to read `.env` or `.ops-agent.env`, write bundles directly, write tracked files or wrapper templates, run arbitrary Docker commands, print environments, deploy, restart services, or run migrations.
+
+Generated bundles and reports are operational artifacts and must stay ignored by Git. Commit only safe templates and wrapper scripts.
+
+8. Validate Compose locally before deployment and avoid publishing production Compose output:
 
 ```bash
 docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml config >/dev/null
@@ -617,23 +647,35 @@ docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml c
 ### Smoke Test
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --since <1-hour-ago> --until <now> --no-state-update
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent validate-bundle <bundle-path>
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <1-hour-ago UTC timestamp> --until now --no-state-update
 ```
 
 ### Normal Codex Workflow
 
 1. SSH to the server.
-2. Run:
+2. Run the safe collection wrapper:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect --period auto
+sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
+
+For an explicit incident window, run:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --until now
+```
+
+Explicit periods must have `since < until` and must not exceed 720 hours.
 
 3. Read stdout JSON.
 4. Read the bundle in the required order.
 5. Write the final report under `/opt/CCWBot/reports/ops-agent/reports/`.
-6. Run `mark-report-success` only if the report was written and the bundle is complete, unless the operator explicitly accepts a partial report.
+6. Run the safe mark-success wrapper only if the report was written and the bundle is complete, unless the operator explicitly accepts a partial report:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle /opt/CCWBot/reports/ops-agent/bundles/<bundle-id> --report /opt/CCWBot/reports/ops-agent/reports/<report-file>.md
+```
+
 7. Return the Markdown report to the operator.
 
 ### Emergency Disable
@@ -655,7 +697,7 @@ ALTER ROLE ccwbot_ops_reader NOLOGIN;
 ALTER ROLE ccwbot_ops_reader PASSWORD '<new-password>';
 ```
 
-3. Update production `.env`.
+3. Update production `.ops-agent.env`.
 4. Run the smoke test.
 5. Confirm old credentials no longer work if they were stored elsewhere.
 

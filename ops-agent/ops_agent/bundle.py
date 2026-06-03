@@ -42,8 +42,10 @@ Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-promp
 9. Treat detector `unknown` as an evidence gap or inconclusive state, not as healthy.
 10. Classify market events without deliveries before calling them delivery failures.
 11. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
-12. Final report must be English Markdown.
-13. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
+12. On production, use only the root-owned wrappers authorized by the operator: `sudo /usr/local/bin/ccwbot-ops-agent-collect` and `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success`.
+13. Do not run raw `docker compose`, raw `ops-agent`, deployment, restart, migration, environment-printing, or secret-reading commands.
+14. Final report must be English Markdown.
+15. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
 """
 
 

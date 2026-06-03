@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from ops_agent.bundle import BundleWriter
 from ops_agent.cli import _mark_report_success, _validate_bundle, build_parser
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
@@ -33,6 +34,40 @@ def test_cli_parses_collect_auto():
     assert args.no_state_update is True
 
 
+def test_resolve_period_accepts_until_now_for_explicit_window():
+    now = datetime(2026, 6, 3, 9, 51, 35, tzinfo=timezone.utc)
+
+    period = resolve_period(
+        state={},
+        period=None,
+        since="2026-05-27T00:00:00Z",
+        until="now",
+        now=now,
+    )
+
+    assert period.start == datetime(2026, 5, 27, tzinfo=timezone.utc)
+    assert period.end == now
+    assert period.source == "explicit"
+
+
+def test_resolve_period_rejects_reversed_or_overlong_explicit_window():
+    with pytest.raises(ValueError, match="start must be before end"):
+        resolve_period(
+            state={},
+            period=None,
+            since="2026-06-03T00:00:00Z",
+            until="2026-06-02T00:00:00Z",
+        )
+
+    with pytest.raises(ValueError, match="720 hours"):
+        resolve_period(
+            state={},
+            period=None,
+            since="2026-05-01T00:00:00Z",
+            until="2026-06-03T00:00:00Z",
+        )
+
+
 def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
     compose = Path("ops-agent/docker-compose.ops-agent.yml").read_text(encoding="utf-8")
 
@@ -40,6 +75,64 @@ def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
     assert "- .env" not in compose
     assert "TELEGRAM_BOT_TOKEN" not in compose
     assert "GROQ_API_KEY" not in compose
+
+
+def test_production_collect_wrapper_restricts_arguments():
+    script = Path("ops-agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
+
+    assert "DOCKER=/usr/bin/docker" in script
+    assert "env -i" in script
+    assert "collect --period auto \"$@\"" not in script
+    assert "unsupported argument" in script
+    assert "--since" in script
+    assert "--until" in script
+    assert "--no-state-update" in script
+    assert "--include-raw-llm-samples" not in script
+    assert "--include-protected-identity-map" not in script
+    assert "--output-dir" not in script
+    assert "eval " not in script
+    assert "printenv" not in script
+
+
+def test_production_mark_success_wrapper_restricts_paths_and_arguments():
+    script = Path("ops-agent/scripts/ccwbot-ops-agent-mark-report-success").read_text(
+        encoding="utf-8"
+    )
+
+    assert "DOCKER=/usr/bin/docker" in script
+    assert "env -i" in script
+    assert "mark-report-success" in script
+    assert "unsupported argument" in script
+    assert "/opt/CCWBot/reports/ops-agent/bundles/" in script
+    assert "/opt/CCWBot/reports/ops-agent/reports/*.md" in script
+    assert "--accept-partial" in script
+    assert "--output-dir" not in script
+    assert "eval " not in script
+    assert "printenv" not in script
+
+
+def test_ops_agent_runbook_documents_safe_production_report_tree():
+    readme = Path("ops-agent/README.md").read_text(encoding="utf-8")
+
+    assert "install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent" in readme
+    assert "install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles" in readme
+    assert (
+        "install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/reports"
+        in readme
+    )
+    assert "sudo -u ccwbot_ops test ! -r /opt/CCWBot/.env" in readme
+    assert "sudo -u ccwbot_ops test ! -r /opt/CCWBot/.ops-agent.env" in readme
+    assert "sudo -u ccwbot_ops test -r /opt/CCWBot/reports/ops-agent/bundles" in readme
+    assert "ccwbot_ops` can read generated bundles" in readme
+    assert "write only final Markdown reports" in readme
+
+
+def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+
+    assert ".ops-agent.env" in gitignore
+    assert "reports/ops-agent/bundles/" in gitignore
+    assert "reports/ops-agent/reports/" in gitignore
 
 
 def test_bundle_manifest_contains_required_files(tmp_path):

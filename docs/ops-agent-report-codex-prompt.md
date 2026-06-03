@@ -20,6 +20,13 @@ Do not modify production systems, apply fixes, edit code, restart services, or c
 
 Do not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
+On production, run only the root-owned ops-agent wrappers authorized by the operator:
+
+* `sudo /usr/local/bin/ccwbot-ops-agent-collect` with the wrapper's safe collection arguments;
+* `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success` after the report success conditions below are met.
+
+Do not run raw `docker compose`, raw `ops-agent`, deployment, restart, migration, environment-printing, or secret-reading commands.
+
 ## Required reading order
 
 Start with the bundle-specific instructions and metadata:
@@ -182,7 +189,7 @@ Use:
 After writing the final report:
 
 1. Save it under `/opt/CCWBot/reports/ops-agent/reports/`.
-2. Run `mark-report-success --bundle <bundle> --report <report>` only if:
+2. Run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only if:
 
    * the report was successfully written;
    * the bundle is complete;
