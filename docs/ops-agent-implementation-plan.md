@@ -606,7 +606,7 @@ Run retention after successful collection and through explicit `ops-agent retent
 
 1. Deploy the implementation through Git to `/opt/CCWBot`.
 2. Create the read-only PostgreSQL role with `ops-agent/sql/create_readonly_role.sql`.
-3. Add `OPS_AGENT_DATABASE_URL` to the production `.env`.
+3. Create `/opt/CCWBot/.ops-agent.env` manually on production with only minimal `OPS_AGENT_*` values.
 4. Create `/opt/CCWBot/reports/ops-agent` if it does not exist.
 5. Validate Compose:
 
