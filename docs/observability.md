@@ -76,6 +76,41 @@ GROUP BY symbol, status, should_alert
 ORDER BY latest_attempt_at DESC;
 ```
 
+## Event Alert LLM Cadence Estimate
+
+```sql
+WITH settings AS (
+  SELECT greatest(coalesce(automatic_check_interval_seconds, 1800), 1)
+    AS event_analysis_interval_seconds
+  FROM app_settings
+  ORDER BY id DESC
+  LIMIT 1
+),
+eligible_symbols AS (
+  SELECT count(DISTINCT lower(ucs.symbol)) AS symbols
+  FROM user_coin_subscriptions ucs
+  JOIN users u ON u.id = ucs.user_id
+  LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id
+  WHERE u.telegram_chat_id IS NOT NULL
+    AND u.is_active = true
+    AND u.bot_blocked = false
+    AND ucs.is_enabled = true
+    AND (lower(ucs.symbol) = 'btc' OR ups.active_until >= now())
+)
+SELECT
+  s.event_analysis_interval_seconds,
+  6 AS payload_points,
+  ceil((s.event_analysis_interval_seconds * 6) / 60.0)::integer
+    AS analysed_window_minutes,
+  coalesce(e.symbols, 0) AS eligible_symbols,
+  round((coalesce(e.symbols, 0) * 3600.0 / s.event_analysis_interval_seconds)::numeric, 2)
+    AS estimated_event_alert_llm_calls_per_hour,
+  round((coalesce(e.symbols, 0) * 86400.0 / s.event_analysis_interval_seconds)::numeric, 2)
+    AS estimated_event_alert_llm_calls_per_day
+FROM settings s
+CROSS JOIN eligible_symbols e;
+```
+
 ## Heartbeat Delivery By User
 
 ```sql

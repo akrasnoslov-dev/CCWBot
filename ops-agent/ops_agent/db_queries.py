@@ -36,6 +36,34 @@ QUERIES: tuple[DbQuery, ...] = (
         "GROUP BY symbol, is_enabled ORDER BY symbol, is_enabled",
     ),
     DbQuery(
+        "event_alert_llm_estimates",
+        "evidence/db/aggregate_metrics.json",
+        "WITH settings AS ("
+        "SELECT event_analysis_interval_seconds FROM ("
+        "(SELECT greatest(coalesce(automatic_check_interval_seconds, 1800), 1) AS event_analysis_interval_seconds, 0 AS priority "
+        "FROM app_settings ORDER BY id DESC LIMIT 1) "
+        "UNION ALL "
+        "(SELECT 1800 AS event_analysis_interval_seconds, 1 AS priority "
+        "WHERE NOT EXISTS (SELECT 1 FROM app_settings))"
+        ") rows ORDER BY priority LIMIT 1), "
+        "eligible_symbols AS ("
+        "SELECT count(DISTINCT lower(ucs.symbol)) AS symbols "
+        "FROM user_coin_subscriptions ucs "
+        "JOIN users u ON u.id = ucs.user_id "
+        "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
+        "WHERE u.telegram_chat_id IS NOT NULL AND u.is_active = true AND u.bot_blocked = false "
+        "AND ucs.is_enabled = true "
+        "AND (lower(ucs.symbol) = 'btc' OR ups.active_until >= :until)) "
+        "SELECT s.event_analysis_interval_seconds, 6 AS payload_points, "
+        "ceil((s.event_analysis_interval_seconds * 6) / 60.0)::integer AS analysed_window_minutes, "
+        "coalesce(e.symbols, 0) AS eligible_symbols, "
+        "round((coalesce(e.symbols, 0) * 3600.0 / s.event_analysis_interval_seconds)::numeric, 2) "
+        "AS estimated_event_alert_llm_calls_per_hour, "
+        "round((coalesce(e.symbols, 0) * 86400.0 / s.event_analysis_interval_seconds)::numeric, 2) "
+        "AS estimated_event_alert_llm_calls_per_day "
+        "FROM settings s CROSS JOIN eligible_symbols e",
+    ),
+    DbQuery(
         "premium_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT status, count(*) AS subscriptions, "

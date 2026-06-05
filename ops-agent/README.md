@@ -190,6 +190,15 @@ OPS_AGENT_ALERT_EVIDENCE_ROW_CAP=500
 OPS_AGENT_EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS=14400
 ```
 
+The aggregate DB evidence includes `event_alert_llm_estimates` with sanitized Event Alert
+LLM pressure fields:
+
+* `event_analysis_interval_seconds`
+* `payload_points`
+* `analysed_window_minutes`
+* `estimated_event_alert_llm_calls_per_hour`
+* `estimated_event_alert_llm_calls_per_day`
+
 Alert repetition evidence is derived from read-only DB queries and written as sanitized
 hash/group data only. The bundle does not include full alert messages, raw LLM prompts,
 raw LLM outputs, Telegram ids, chat ids, usernames, secrets, or connection strings.

@@ -502,41 +502,95 @@ async def test_deliver_market_event_alert_respects_empty_recipient_list(monkeypa
 
 
 def test_schedule_automatic_price_check_coalesces_overlapping_runs():
-    captured_kwargs = {}
+    captured_kwargs = []
+    removed_names = []
 
     class FakeJobQueue:
         def get_jobs_by_name(self, name):
+            removed_names.append(name)
             return []
 
         def run_repeating(self, callback, **kwargs):
-            captured_kwargs.update(kwargs)
+            captured_kwargs.append(kwargs)
 
     alerts.schedule_automatic_market_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
 
-    assert captured_kwargs["interval"] == 60
-    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
-    assert captured_kwargs["job_kwargs"] == {
-        "max_instances": 1,
-        "coalesce": True,
-        "misfire_grace_time": 15,
-    }
+    assert removed_names == [
+        alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME,
+        "automatic_market_check:btc",
+        "automatic_market_check:eth",
+        "automatic_market_check:ton",
+        "automatic_market_check:sol",
+    ]
+    assert [kwargs["name"] for kwargs in captured_kwargs] == [
+        "automatic_market_check:btc",
+        "automatic_market_check:eth",
+        "automatic_market_check:ton",
+        "automatic_market_check:sol",
+    ]
+    assert all(kwargs["interval"] == 60 for kwargs in captured_kwargs)
+    assert all(
+        kwargs["job_kwargs"] == {
+            "max_instances": 1,
+            "coalesce": True,
+            "misfire_grace_time": 15,
+        }
+        for kwargs in captured_kwargs
+    )
+    assert [kwargs["data"] for kwargs in captured_kwargs] == [
+        {"symbol": "btc"},
+        {"symbol": "eth"},
+        {"symbol": "ton"},
+        {"symbol": "sol"},
+    ]
 
 
 def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
-    captured_kwargs = {}
+    captured_kwargs = []
+    removed_names = []
 
     class FakeJobQueue:
         def get_jobs_by_name(self, name):
-            captured_kwargs["removed_name"] = name
+            removed_names.append(name)
             return []
 
         def run_repeating(self, callback, **kwargs):
-            captured_kwargs.update(kwargs)
+            captured_kwargs.append(kwargs)
 
     alerts.schedule_automatic_btc_check(SimpleNamespace(job_queue=FakeJobQueue()), 60)
 
-    assert captured_kwargs["removed_name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
-    assert captured_kwargs["name"] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
+    assert removed_names[0] == alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME
+    assert [kwargs["name"] for kwargs in captured_kwargs] == [
+        "automatic_market_check:btc",
+        "automatic_market_check:eth",
+        "automatic_market_check:ton",
+        "automatic_market_check:sol",
+    ]
+
+
+def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
+    now = datetime(2026, 6, 5, 12, 0, tzinfo=timezone.utc)
+
+    assert alerts._seconds_until_next_symbol_check(
+        symbol="btc",
+        interval_seconds=1800,
+        now=now,
+    ) == 0
+    assert alerts._seconds_until_next_symbol_check(
+        symbol="eth",
+        interval_seconds=1800,
+        now=now,
+    ) == 300
+    assert alerts._seconds_until_next_symbol_check(
+        symbol="ton",
+        interval_seconds=1800,
+        now=now,
+    ) == 600
+    assert alerts._seconds_until_next_symbol_check(
+        symbol="sol",
+        interval_seconds=1800,
+        now=now,
+    ) == 900
 
 
 def test_report_cache_scheduler_replaces_weekly_direct_send_and_strong_signal():

@@ -91,8 +91,8 @@ NEWS_LLM_TIMEOUT_SECONDS = _get_int_env("NEWS_LLM_TIMEOUT_SECONDS", 20, minimum=
 
 # In-memory CoinGecko cache TTL to reduce API calls and reduce 429 risk.
 PRICE_CACHE_TTL_SECONDS = _get_int_env("PRICE_CACHE_TTL_SECONDS", 300, minimum=1)
-# Automatic market check cadence in seconds.
-AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 600, minimum=1)
+# Event Alert LLM analysis cadence in seconds.
+AUTOMATIC_CHECK_INTERVAL_SECONDS = _get_int_env("AUTOMATIC_CHECK_INTERVAL_SECONDS", 1800, minimum=1)
 # Lightweight HTTP health endpoint port.
 HEALTH_PORT = _get_int_env("HEALTH_PORT", 8080, minimum=1)
 

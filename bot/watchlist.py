@@ -90,7 +90,11 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
     if premium_active:
         lines.append("Select coins for automatic alerts.")
         lines.append("")
-        lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
+        lines.append(
+            "Heartbeat frequency: "
+            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+        )
+        lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append(f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}")
     elif had_premium:
@@ -98,7 +102,8 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append(f"Your Premium expired on: {expired_on}.")
         lines.append("Your premium coin choices are saved, but locked until renewal.")
         lines.append("")
-        lines.append("Frequency: Every 4 hours for BTC")
+        lines.append("Heartbeat frequency: Every 4 hours for BTC")
+        lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to renew.")
     else:
@@ -107,7 +112,11 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
             f"Premium unlocks automatic alerts for {premium_symbols_display()}."
         )
         lines.append("")
-        lines.append(f"Frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}")
+        lines.append(
+            "Heartbeat frequency: "
+            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+        )
+        lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to upgrade.")
     return "\n".join(lines), keyboard_rows
@@ -225,7 +234,11 @@ def build_user_settings_message(
         "Alert settings",
         "",
         f"Subscribed coins: {subscribed_text}",
-        f"Alert frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+        f"Heartbeat frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+        (
+            "How often you receive regular market heartbeat updates. Event alerts may "
+            "arrive separately when significant market events are detected."
+        ),
         "",
     ]
     if premium_active:

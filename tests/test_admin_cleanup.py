@@ -24,8 +24,14 @@ def _callback_values(markup):
 
 def test_admin_alert_settings_keyboard_has_no_threshold_controls():
     callbacks = _callback_values(build_admin_alert_settings_keyboard())
+    labels = [
+        button.text
+        for row in build_admin_alert_settings_keyboard().inline_keyboard
+        for button in row
+    ]
 
     assert callbacks == ["admin:current", "admin:interval_menu", "admin:back"]
+    assert labels == ["Current settings", "Event analysis interval", "Back"]
     assert all("threshold" not in callback for callback in callbacks)
 
 

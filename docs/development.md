@@ -44,8 +44,12 @@ them when required, or explain why they were not needed. See
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
-- Automatic alerts use global multi-coin polling. BTC is free; enabled non-BTC watchlist
-  alerts require active Premium.
+- Automatic Event Alerts use per-symbol LLM analysis every 30 minutes by default, staggered
+  across the cycle to avoid burst LLM calls. BTC is free; enabled non-BTC watchlist alerts
+  require active Premium.
+- Event Alert messages show the analysed-window price change. The window is derived from
+  `AUTOMATIC_CHECK_INTERVAL_SECONDS` and the compact payload point count: 30 minutes * 6
+  points = 3 hours by default.
 - Manual `/price` checks support `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`,
   `ton`, `link`, and `trx`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
@@ -61,6 +65,9 @@ them when required, or explain why they were not needed. See
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
   them in `/watchlist`.
+- User heartbeat frequency controls regular Market Heartbeat delivery only. Event Alerts can
+  arrive separately when market events are detected, subject to backend cooldowns and LLM
+  decisioning.
 - `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
   admin-only manual Premium controls for testing and support.
 - Automatic alert threshold remains one global admin-controlled value for all coins.

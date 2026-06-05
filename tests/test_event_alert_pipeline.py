@@ -240,6 +240,41 @@ def test_event_alert_related_context_uses_clickable_article_entities():
     )
 
 
+def test_analysed_window_minutes_uses_interval_and_payload_points():
+    assert alerts.get_analysed_window_minutes(1800, 6) == 180
+    assert alerts.get_analysed_window_minutes(300, 6) == 30
+
+
+def test_event_alert_payload_uses_analysed_window_change_not_24h():
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(),
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "chg_since_msg": 1.2,
+                "analysed_window_minutes": 180,
+                "chg_window": -2.4,
+                "chg24h": -9.9,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    html_message = payload["html_text"] or ""
+    assert "Analysed window: 3h" in message
+    assert "Price change: -2.40%" in message
+    assert "24h change" not in message
+    assert "chg24h" not in message
+    assert "Data:" not in message
+    assert "Debug:" not in message
+    assert "move=" not in message
+    assert "Not financial advice." in message
+    assert "Analysed window: 3h" in html_message
+    assert "Price change: -2.40%" in html_message
+    assert "24h change" not in html_message
+
+
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
     decision = event_decision(related_news_ids=["n1", "n2"])
     related_news = [
@@ -330,11 +365,23 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
                     for index in range(5)
                 ]
             ),
+            event_analysis_interval_seconds=1800,
         )
 
-        assert set(payload["market"]) == {"price", "snapshots", "chg24h", "chg_since_msg"}
+        assert set(payload["market"]) == {
+            "price",
+            "snapshots",
+            "payload_points",
+            "analysed_window_minutes",
+            "chg_window",
+            "chg24h",
+            "chg_since_msg",
+        }
         assert "market_data" not in payload
         assert "candidate_news" not in payload
+        assert payload["market"]["payload_points"] == 6
+        assert payload["market"]["analysed_window_minutes"] == 180
+        assert payload["market"]["chg_window"] == 12.0
         snapshots = payload["market"]["snapshots"]
         assert len(snapshots) == 6
         assert snapshots[-1]["p"] == 111.0
@@ -379,6 +426,7 @@ async def test_ton_event_analysis_payload_excludes_btc_only_news_without_direct_
         now=now,
         state={"last_price": 6.0},
         candidate_news=candidate_news,
+        event_analysis_interval_seconds=1800,
     )
 
     titles = [item["title"] for item in payload["news"]]
@@ -411,6 +459,7 @@ async def test_sol_event_analysis_payload_excludes_bitcoin_etf_only_news(monkeyp
         now=now,
         state={"last_price": 178.0},
         candidate_news=candidate_news,
+        event_analysis_interval_seconds=1800,
     )
 
     titles = [item["title"] for item in payload["news"]]
