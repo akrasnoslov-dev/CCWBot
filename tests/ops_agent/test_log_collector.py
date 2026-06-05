@@ -25,8 +25,13 @@ def test_collect_logs_separates_period_matched_and_tail_context(tmp_path):
                 "2026-06-01 00:00:00,000 INFO bot.runtime: ops_event=bot_start",
                 "2026-06-01 00:30:00,000 ERROR bot.alerts: "
                 "ops_event=event_alert_delivery_summary user_id=123",
+                "2026-06-01 00:31:00,000 INFO bot.alerts: "
+                "ops_event=event_alert_suppression suppression_reason=semantic_cooldown "
+                "raw_event_key=btc_move canonical_event_key=btc_move "
+                "event_instance_key=btc_move delivery_count=0 suppression_count=1 "
+                "analysed_window_minutes=180",
                 "2026-06-02 00:00:00,000 ERROR bot.alerts: outside period",
-                "ERROR unscoped tail context user_id=456",
+                "ERROR unscoped tail context user_id=456 suppression_reason=delivery_failed",
             ]
         ),
         encoding="utf-8",
@@ -54,13 +59,23 @@ def test_collect_logs_separates_period_matched_and_tail_context(tmp_path):
 
     assert statuses == [{"name": "logs.ccwbot-operational.log", "status": "ok", "error": None}]
     file_index = index["files"][0]
-    assert file_index["timestamp_parse"]["period_matched_lines"] == 2
+    assert file_index["timestamp_parse"]["period_matched_lines"] == 3
     assert file_index["timestamp_parse"]["outside_period_lines"] == 1
     assert file_index["timestamp_parse"]["unparseable_timestamp_lines"] == 1
     assert pattern_counts["period_matched_pattern_counts"]["error"] == 1
     assert pattern_counts["tail_context_pattern_counts"]["error"] == 1
+    assert pattern_counts["period_matched_suppression_reason_counts"] == {
+        "semantic_cooldown": 1
+    }
+    assert pattern_counts["tail_context_suppression_reason_counts"] == {"delivery_failed": 1}
+    assert pattern_counts["suppression_reason_counts"] == {
+        "delivery_failed": 1,
+        "semantic_cooldown": 1,
+    }
     period_excerpt = excerpts[file_index["period_matched_excerpt"]]["text"]
     tail_excerpt = excerpts[file_index["tail_context_excerpt"]]["text"]
+    assert file_index["suppression_reasons"]["period_matched"] == {"semantic_cooldown": 1}
+    assert file_index["suppression_reasons"]["tail_context"] == {"delivery_failed": 1}
     assert "00:30:00" in period_excerpt
     assert "outside period" not in period_excerpt
     assert "unscoped tail context" in tail_excerpt

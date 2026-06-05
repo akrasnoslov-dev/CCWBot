@@ -175,8 +175,10 @@ PostgreSQL, and does not deliver it immediately.
 The Event Alert analysed market window is derived from the analysis interval and the number
 of compact price points sent to the LLM. With the default 30-minute interval and 6 payload
 points, alerts analyse a 3-hour window. Event Alert messages show that analysed-window
-change, for example `Analysed window: 3h` and `Price change: -2.40%`, instead of exposing
-CoinGecko's rolling 24h change as the main alert move.
+change with a dynamic label, for example `3h change: -2.40%`, instead of exposing
+CoinGecko's rolling 24h change as the main alert move. The separate
+`Since last BTC alert` line describes movement since the last user-visible alert for that
+symbol, so those two percentages can differ.
 The analysed-window baseline ignores stale snapshots outside the window tolerance: a
 pre-window reference may be used only when it is no more than one Event Alert analysis
 interval before the window start. Otherwise the first fresh in-window snapshot is used, or
@@ -187,6 +189,10 @@ During automatic processing, the bot checks each eligible user and coin. If a se
 frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
 no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
 enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.
+Event Alert suppression diagnostics are written only to operational logs and ops-agent
+evidence, never to Telegram messages. Suppression reasons use stable values such as
+`exact_cooldown`, `semantic_cooldown`, `no_eligible_recipient`, `delivery_failed`, and
+`llm_rate_limited`.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
 symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,

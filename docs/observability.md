@@ -59,7 +59,36 @@ ORDER BY last_sent_at DESC;
 ```
 
 Suppressed semantic duplicates are logged as `event_alert_suppressed` with
-`reason=semantic_cooldown`.
+`suppression_reason=semantic_cooldown`.
+
+## Event Alert Suppression Reasons
+
+Event Alert suppression diagnostics are operational-log only and must not be copied into
+Telegram messages. Suppression logs use:
+
+```text
+ops_event=event_alert_suppression symbol=BTC raw_event_key=... canonical_event_key=...
+semantic_family=None event_instance_key=... delivery_count=0 suppression_count=1
+suppression_reason=semantic_cooldown analysed_window_minutes=180
+```
+
+Stable `suppression_reason` values include:
+
+- `exact_cooldown`
+- `semantic_cooldown`
+- `user_frequency_cooldown`
+- `no_eligible_recipient`
+- `premium_required`
+- `product_gated`
+- `delivery_failed`
+- `llm_rate_limited`
+- `stale_heartbeat`
+- `unknown`
+
+The ops-agent log collector aggregates these in
+`evidence/logs/pattern_counts.json` under `suppression_reason_counts`,
+`period_matched_suppression_reason_counts`, and
+`tail_context_suppression_reason_counts`.
 
 ## LLM Outcomes By Symbol
 
