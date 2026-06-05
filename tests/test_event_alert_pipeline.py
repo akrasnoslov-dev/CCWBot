@@ -404,6 +404,216 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_event_analysis_input_ignores_stale_reference_snapshot(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 5, 11, 40, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.93,
+                change_24h=-1.0,
+                checked_at=datetime(2026, 6, 2, 15, 47, tzinfo=timezone.utc),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.55,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=160),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.545,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=70),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.54,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=5),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_ton_stale_reference",
+            symbol="ton",
+            current_price=1.54,
+            change_24h=-1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        market = payload["market"]
+        assert market["analysed_window_minutes"] == 180
+        assert market["chg_window"] == pytest.approx(-0.6452)
+        assert market["chg_window"] != pytest.approx(-20.2073)
+        assert all(snapshot["p"] != 1.93 for snapshot in market["snapshots"])
+        assert all(snapshot["m"] >= -180 for snapshot in market["snapshots"])
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_uses_fresh_boundary_reference(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=90.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=210),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=95.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=150),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=99.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=30),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_fresh_reference",
+            symbol="btc",
+            current_price=99.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        snapshots = payload["market"]["snapshots"]
+        assert payload["market"]["chg_window"] == 10.0
+        assert snapshots[0] == {"m": -210, "p": 90.0}
+        assert snapshots[-1] == {"m": -30, "p": 99.0}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_reports_unknown_change_without_snapshots(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_no_snapshots",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={"last_price": 50.0},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        assert payload["market"]["chg_window"] is None
+        assert payload["market"]["snapshots"] == [{"m": 0, "p": 100.0}]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_excludes_future_snapshots(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=100.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=60),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=1000.0,
+                change_24h=1.0,
+                checked_at=now + timedelta(minutes=5),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_future_snapshot",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        assert payload["market"]["chg_window"] == 0.0
+        assert all(snapshot["m"] <= 0 for snapshot in payload["market"]["snapshots"])
+        assert all(snapshot["p"] != 1000.0 for snapshot in payload["market"]["snapshots"])
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_window_market_context_ignores_stale_reference_for_peak(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=80.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(days=3),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=100.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=20),
+            )
+
+        previous_price, peak = await alerts._resolve_window_market_context(
+            symbol="btc",
+            current_price=100.0,
+            fallback_previous_price=99.0,
+            window_seconds=3600,
+            now=now,
+        )
+
+        assert previous_price == 100.0
+        assert peak == 0.0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_ton_event_analysis_payload_excludes_btc_only_news_without_direct_ton(monkeypatch):
     now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
