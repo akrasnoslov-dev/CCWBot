@@ -23,6 +23,7 @@ LOG_PATTERNS = {
     "payment_rejection": re.compile(r"payment.*rejected|invalid payload", re.IGNORECASE),
 }
 OPS_EVENT_RE = re.compile(r"\bops_event=([a-z0-9_]+)")
+SUPPRESSION_REASON_RE = re.compile(r"\bsuppression_reason=([a-z0-9_]+)")
 LOG_TIMESTAMP_RE = re.compile(
     r"^(?P<stamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}"
     r"(?:,\d{1,6}|\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})?)"
@@ -92,6 +93,8 @@ def collect_logs(
     index = {"schema_version": 1, "period": period.as_dict(), "files": [], "warnings": []}
     period_counts = _empty_counts()
     tail_context_counts = _empty_counts()
+    period_suppression_reason_counts: dict[str, int] = {}
+    tail_suppression_reason_counts: dict[str, int] = {}
     excerpts: dict[str, dict[str, Any]] = {}
     total_exported = 0
     statuses = []
@@ -102,6 +105,8 @@ def collect_logs(
             period_selected: list[str] = []
             tail_selected: list[str] = []
             ops_events: dict[str, int] = {}
+            period_suppression_reasons: dict[str, int] = {}
+            tail_suppression_reasons: dict[str, int] = {}
             parseable_timestamps = 0
             period_matched_lines = 0
             outside_period_lines = 0
@@ -115,6 +120,15 @@ def collect_logs(
                         period_matched_lines += 1
                         for name in matches:
                             period_counts[name] += 1
+                        suppression_match = SUPPRESSION_REASON_RE.search(line)
+                        if suppression_match:
+                            reason = suppression_match.group(1)
+                            period_suppression_reasons[reason] = (
+                                period_suppression_reasons.get(reason, 0) + 1
+                            )
+                            period_suppression_reason_counts[reason] = (
+                                period_suppression_reason_counts.get(reason, 0) + 1
+                            )
                         if matches and len(period_selected) < 200:
                             period_selected.append(line)
                     else:
@@ -123,6 +137,15 @@ def collect_logs(
                     unparseable_timestamp_lines += 1
                     for name in matches:
                         tail_context_counts[name] += 1
+                    suppression_match = SUPPRESSION_REASON_RE.search(line)
+                    if suppression_match:
+                        reason = suppression_match.group(1)
+                        tail_suppression_reasons[reason] = (
+                            tail_suppression_reasons.get(reason, 0) + 1
+                        )
+                        tail_suppression_reason_counts[reason] = (
+                            tail_suppression_reason_counts.get(reason, 0) + 1
+                        )
                     if matches and len(tail_selected) < 200:
                         tail_selected.append(line)
                 match = OPS_EVENT_RE.search(line)
@@ -184,6 +207,10 @@ def collect_logs(
                         },
                     },
                     "ops_events": ops_events,
+                    "suppression_reasons": {
+                        "period_matched": period_suppression_reasons,
+                        "tail_context": tail_suppression_reasons,
+                    },
                 }
             )
             excerpts[f"evidence/logs/excerpts/{period_excerpt_name}"] = {
@@ -208,6 +235,15 @@ def collect_logs(
         "pattern_counts": {
             name: period_counts.get(name, 0) + tail_context_counts.get(name, 0)
             for name in period_counts
+        },
+        "period_matched_suppression_reason_counts": period_suppression_reason_counts,
+        "tail_context_suppression_reason_counts": tail_suppression_reason_counts,
+        "suppression_reason_counts": {
+            reason: period_suppression_reason_counts.get(reason, 0)
+            + tail_suppression_reason_counts.get(reason, 0)
+            for reason in sorted(
+                set(period_suppression_reason_counts) | set(tail_suppression_reason_counts)
+            )
         },
         "notes": [
             "period_matched_pattern_counts are timestamped lines within the requested period",

@@ -262,17 +262,19 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
 
     message = payload["plain_text"]
     html_message = payload["html_text"] or ""
-    assert "Analysed window: 3h" in message
-    assert "Price change: -2.40%" in message
+    assert "Since last BTC alert: +1.20%" in message
+    assert "3h change: -2.40%" in message
     assert "24h change" not in message
+    assert "Price change" not in message
     assert "chg24h" not in message
     assert "Data:" not in message
     assert "Debug:" not in message
     assert "move=" not in message
     assert "Not financial advice." in message
-    assert "Analysed window: 3h" in html_message
-    assert "Price change: -2.40%" in html_message
+    assert "Since last BTC alert: +1.20%" in html_message
+    assert "3h change: -2.40%" in html_message
     assert "24h change" not in html_message
+    assert "Price change" not in html_message
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
@@ -1063,7 +1065,10 @@ async def test_event_alert_recipient_selection_bypasses_user_frequency(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(monkeypatch):
+async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(
+    monkeypatch,
+    caplog,
+):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
     try:
@@ -1086,16 +1091,20 @@ async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(mon
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         recipients = [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
 
-        assert (
-            await alerts._filter_event_recipients_for_cooldown(
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            normal_filtered = await alerts._filter_event_recipients_for_cooldown(
                 recipients,
                 symbol="btc",
                 urgency="normal",
                 cooldown_seconds=3600,
                 now=now,
             )
-            == []
-        )
+        assert normal_filtered == []
+        assert "event_alert_suppressed" in caplog.text
+        assert "suppression_reason=exact_cooldown" in caplog.text
+        assert "cooldown_remaining_seconds=900" in caplog.text
+        caplog.clear()
+
         assert await alerts._filter_event_recipients_for_cooldown(
             recipients,
             symbol="btc",
@@ -1103,12 +1112,16 @@ async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(mon
             cooldown_seconds=3600,
             now=now,
         ) == recipients
+        assert "event_alert_suppressed" not in caplog.text
     finally:
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key(monkeypatch):
+async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key(
+    monkeypatch,
+    caplog,
+):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
     try:
@@ -1127,17 +1140,63 @@ async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         recipients = [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
 
-        filtered = await alerts._filter_event_recipients_for_cooldown(
-            recipients,
-            symbol="btc",
-            urgency="normal",
-            cooldown_seconds=0,
-            canonical_event_key="btc_price_volatility",
-            semantic_cooldown_seconds=4 * 3600,
-            now=now,
-        )
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            filtered = await alerts._filter_event_recipients_for_cooldown(
+                recipients,
+                symbol="btc",
+                urgency="normal",
+                cooldown_seconds=0,
+                canonical_event_key="btc_price_volatility",
+                semantic_cooldown_seconds=4 * 3600,
+                now=now,
+            )
 
         assert filtered == []
+        assert "event_alert_semantic_cooldown_check" in caplog.text
+        assert "allowed=False" in caplog.text
+        assert "event_alert_suppressed" in caplog.text
+        assert "suppression_reason=semantic_cooldown" in caplog.text
+        assert "cooldown_remaining_seconds=10800" in caplog.text
+        assert "user_id=" not in caplog.text
+        assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_recipient_cooldown_filter_can_return_suppression_summary(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type="event_alert",
+                    message="previous",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=1800,
+            now=now,
+            return_summary=True,
+        )
+
+        assert result.recipients == []
+        assert result.suppression_reason_counts == {"exact_cooldown": 1}
     finally:
         await engine.dispose()
 
