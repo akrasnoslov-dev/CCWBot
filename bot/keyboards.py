@@ -122,9 +122,6 @@ def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
 def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("60 sec", callback_data="admin:set_interval:60")],
-            [InlineKeyboardButton("300 sec", callback_data="admin:set_interval:300")],
-            [InlineKeyboardButton("600 sec", callback_data="admin:set_interval:600")],
             [InlineKeyboardButton("1800 sec", callback_data="admin:set_interval:1800")],
             [InlineKeyboardButton("Back", callback_data="admin:alert_settings")],
         ]

@@ -99,9 +99,13 @@ Legacy `PRICE_MOVE_ALERT_PERCENT`, `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_RE
 and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 
 `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls Event Alert LLM analysis cadence per symbol.
-The default is `1800` seconds (30 minutes). It does not control Market Heartbeat delivery
-frequency. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
-BTC at minute 00/30, ETH at 05/35, TON at 10/40, and SOL at 15/45.
+The supported cadence is `1800` seconds (30 minutes); stale custom values from local state
+or app settings are normalized back to 1800 seconds. It does not control Market Heartbeat
+delivery frequency. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
+BTC at minute 00/30, ETH at 05/35, TON at 10/40, and SOL at 15/45. On startup, the schedule
+log should show `symbol_first_delays=BTC:0s,ETH:300s,TON:600s,SOL:900s` at the cycle boundary.
+The first-delay calculation is anchored to the wall-clock cycle, so restarts preserve the same
+symbol spacing instead of pairing symbols together.
 
 ## Local Development Setup
 

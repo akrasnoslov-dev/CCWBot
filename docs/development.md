@@ -44,9 +44,12 @@ them when required, or explain why they were not needed. See
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
-- Automatic Event Alerts use per-symbol LLM analysis every 30 minutes by default, staggered
-  across the cycle to avoid burst LLM calls. BTC is free; enabled non-BTC watchlist alerts
-  require active Premium.
+- Automatic Event Alerts use per-symbol LLM analysis every 30 minutes. Custom persisted
+  interval values are normalized back to 1800 seconds. Active symbols are staggered across
+  the cycle to avoid burst LLM calls; for the current symbols the first-delay pattern is
+  BTC 0s, ETH 300s, TON 600s, SOL 900s. Staggering is anchored to the wall-clock cycle, so
+  restarts preserve symbol spacing and do not pair symbols together. BTC is free; enabled
+  non-BTC watchlist alerts require active Premium.
 - Event Alert messages show the analysed-window price change. The window is derived from
   `AUTOMATIC_CHECK_INTERVAL_SECONDS` and the compact payload point count: 30 minutes * 6
   points = 3 hours by default.
