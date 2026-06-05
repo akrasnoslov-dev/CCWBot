@@ -381,7 +381,8 @@ def test_event_analysis_prompt_quality_requirements():
 
     assert "Analyze exactly one symbol" in prompt
     assert "altcoins, a 24h move around 5-7% can be meaningful" in prompt
-    assert "reason_for_no_alert must mention the actual analysed-window change" in prompt
+    assert "market.chg_window is not null" in prompt
+    assert "fresh analysed-window data is insufficient when it is null" in prompt
     assert "Use market.chg24h only as broader context" in prompt
     assert "recent short-term snapshot behavior" in prompt
     assert "Do not generate UUID-like or random event keys" in prompt

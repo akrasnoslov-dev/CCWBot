@@ -52,7 +52,9 @@ them when required, or explain why they were not needed. See
   non-BTC watchlist alerts require active Premium.
 - Event Alert messages show the analysed-window price change. The window is derived from
   `AUTOMATIC_CHECK_INTERVAL_SECONDS` and the compact payload point count: 30 minutes * 6
-  points = 3 hours by default.
+  points = 3 hours by default. The analysed-window baseline ignores stale snapshots outside
+  one automatic check interval before the window start; if no fresh baseline exists, the
+  message leaves the analysed-window change unknown instead of reusing old market data.
 - Manual `/price` checks support `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`,
   `ton`, `link`, and `trx`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when

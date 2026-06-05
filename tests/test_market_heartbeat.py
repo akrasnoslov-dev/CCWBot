@@ -374,6 +374,45 @@ async def test_market_heartbeat_input_uses_aggregates_and_compact_news(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_market_heartbeat_input_ignores_stale_six_hour_reference(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=80.0,
+                change_24h=1.2,
+                checked_at=now - timedelta(days=3),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=100.0,
+                change_24h=1.2,
+                checked_at=now - timedelta(hours=5),
+            )
+
+        payload = await alerts._build_market_heartbeat_input(
+            heartbeat_id="heartbeat_btc_stale_reference",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.2,
+            now=now,
+            candidate_news=[],
+        )
+
+        assert payload["market_data"]["change_6h_percent"] == 0.0
+        assert payload["market_data"]["high_6h_usd"] == 100.0
+        assert payload["market_data"]["low_6h_usd"] == 100.0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
     engine, session_local = await build_session_factory()
     try:

@@ -177,6 +177,10 @@ of compact price points sent to the LLM. With the default 30-minute interval and
 points, alerts analyse a 3-hour window. Event Alert messages show that analysed-window
 change, for example `Analysed window: 3h` and `Price change: -2.40%`, instead of exposing
 CoinGecko's rolling 24h change as the main alert move.
+The analysed-window baseline ignores stale snapshots outside the window tolerance: a
+pre-window reference may be used only when it is no more than one Event Alert analysis
+interval before the window start. Otherwise the first fresh in-window snapshot is used, or
+the analysed-window change is left unknown.
 
 During automatic processing, the bot checks each eligible user and coin. If a sent
 `market_heartbeat` for that user and coin happened within the user's configured heartbeat

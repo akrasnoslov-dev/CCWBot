@@ -318,6 +318,63 @@ def _calculate_price_change(current_price: float, reference_price: float | None)
     return calculate_price_change_percent(reference_price, current_price)
 
 
+def _utc_checked_at(snapshot) -> datetime:
+    checked_at = snapshot.checked_at
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    return checked_at.astimezone(timezone.utc)
+
+
+@dataclass(frozen=True)
+class AnalysedWindowReference:
+    reference_price: float | None
+    reference_snapshot: object | None
+    window_snapshots: list
+
+
+def _select_analysed_window_reference(
+    *,
+    reference,
+    snapshots: list,
+    since: datetime,
+    now: datetime,
+    max_reference_age: timedelta,
+) -> AnalysedWindowReference:
+    since_utc = since.astimezone(timezone.utc)
+    now_utc = now.astimezone(timezone.utc)
+    earliest_reference_at = since_utc - max_reference_age
+    window_snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if since_utc <= _utc_checked_at(snapshot) <= now_utc
+    ]
+
+    if reference is not None:
+        reference_time = _utc_checked_at(reference)
+        if earliest_reference_at <= reference_time <= since_utc:
+            return AnalysedWindowReference(
+                reference_price=float(reference.price),
+                reference_snapshot=reference,
+                window_snapshots=[
+                    snapshot
+                    for snapshot in window_snapshots
+                    if _utc_checked_at(snapshot) > reference_time
+                ],
+            )
+
+    if window_snapshots:
+        return AnalysedWindowReference(
+            reference_price=float(window_snapshots[0].price),
+            reference_snapshot=None,
+            window_snapshots=window_snapshots,
+        )
+    return AnalysedWindowReference(
+        reference_price=None,
+        reference_snapshot=None,
+        window_snapshots=[],
+    )
+
+
 def _automatic_market_check_job_name(symbol: str) -> str:
     return f"{AUTOMATIC_MARKET_CHECK_JOB_NAME}:{normalize_symbol(symbol)}"
 
@@ -2204,12 +2261,19 @@ async def _resolve_window_market_context(
             at_or_before=since,
         )
         snapshots = await get_price_snapshots_since(session, symbol=symbol, since=since)
-    previous_price = float(reference.price) if reference else fallback_previous_price
+    selection = _select_analysed_window_reference(
+        reference=reference,
+        snapshots=snapshots,
+        since=since,
+        now=now,
+        max_reference_age=timedelta(seconds=max(1, int(window_seconds))),
+    )
+    previous_price = selection.reference_price or fallback_previous_price
     peak = None
-    if snapshots:
+    if selection.window_snapshots:
         moves = [
             abs(calculate_price_change_percent(previous_price, float(snapshot.price)))
-            for snapshot in snapshots
+            for snapshot in selection.window_snapshots
             if previous_price
         ]
         if moves:
@@ -2241,8 +2305,9 @@ async def _build_event_analysis_input(
         EVENT_ANALYSIS_PAYLOAD_POINTS,
     )
     window_reference_price: float | None = None
+    db_snapshots_available = bool(DB_ENABLED and DB_SESSION_LOCAL)
 
-    if DB_ENABLED and DB_SESSION_LOCAL:
+    if db_snapshots_available:
         since = now - timedelta(minutes=analysed_window_minutes)
         async with DB_SESSION_LOCAL() as session:
             reference = await get_reference_price_snapshot(
@@ -2260,25 +2325,6 @@ async def _build_event_analysis_input(
                 symbol=normalized_symbol,
                 alert_type=EVENT_ALERT_TYPE,
             )
-        if reference:
-            window_reference_price = float(reference.price)
-            snapshots_payload.append(
-                {
-                    "timestamp_utc": reference.checked_at.astimezone(timezone.utc).isoformat(),
-                    "price_usd": window_reference_price,
-                }
-            )
-        snapshots_payload.extend(
-            {
-                "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
-                "price_usd": float(snapshot.price),
-            }
-            for snapshot in snapshots
-        )
-        snapshots_payload = _select_representative_snapshots(
-            snapshots_payload,
-            limit=EVENT_ANALYSIS_PAYLOAD_POINTS,
-        )
         if latest_alert:
             last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
             last_message_type = latest_alert.alert_type
@@ -2286,6 +2332,36 @@ async def _build_event_analysis_input(
                 latest_alert.numeric_context,
                 "current_price",
             )
+        selection = _select_analysed_window_reference(
+            reference=reference,
+            snapshots=snapshots,
+            since=since,
+            now=now,
+            max_reference_age=timedelta(
+                seconds=max(1, int(event_analysis_interval_seconds))
+            ),
+        )
+        window_reference_price = selection.reference_price
+        if selection.reference_snapshot:
+            snapshots_payload.append(
+                {
+                    "timestamp_utc": _utc_checked_at(
+                        selection.reference_snapshot
+                    ).isoformat(),
+                    "price_usd": float(selection.reference_snapshot.price),
+                }
+            )
+        snapshots_payload.extend(
+            {
+                "timestamp_utc": _utc_checked_at(snapshot).isoformat(),
+                "price_usd": float(snapshot.price),
+            }
+            for snapshot in selection.window_snapshots
+        )
+        snapshots_payload = _select_representative_snapshots(
+            snapshots_payload,
+            limit=EVENT_ANALYSIS_PAYLOAD_POINTS,
+        )
     else:
         last_message_at = state.get("last_alert_at")
         last_message_type = EVENT_ALERT_TYPE if last_message_at else None
@@ -2300,14 +2376,22 @@ async def _build_event_analysis_input(
         else None
     )
     if not snapshots_payload:
-        window_reference_price = fallback_previous_price
-        snapshots_payload = [
-            {
-                "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
-                "price_usd": fallback_previous_price,
-            }
-        ]
-    if window_reference_price is None and snapshots_payload:
+        if db_snapshots_available:
+            snapshots_payload = [
+                {
+                    "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+                    "price_usd": float(current_price),
+                }
+            ]
+        else:
+            window_reference_price = fallback_previous_price
+            snapshots_payload = [
+                {
+                    "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+                    "price_usd": fallback_previous_price,
+                }
+            ]
+    if window_reference_price is None and snapshots_payload and not db_snapshots_available:
         window_reference_price = float(snapshots_payload[0]["price_usd"])
     analysed_window_change = _calculate_price_change(current_price, window_reference_price)
     snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
@@ -2366,8 +2450,18 @@ async def _build_market_heartbeat_input(
                 symbol=normalized_symbol,
                 at_or_before=since,
             )
-    reference_1h = _snapshot_at_or_before(snapshots, now - timedelta(hours=1))
-    observed_prices = [_snapshot_price(snapshot) for snapshot in snapshots]
+    selection = _select_analysed_window_reference(
+        reference=reference_6h,
+        snapshots=snapshots,
+        since=now - timedelta(hours=6),
+        now=now,
+        max_reference_age=timedelta(hours=1),
+    )
+    reference_1h = _snapshot_at_or_before(
+        selection.window_snapshots,
+        now - timedelta(hours=1),
+    )
+    observed_prices = [_snapshot_price(snapshot) for snapshot in selection.window_snapshots]
     observed_prices.append(float(current_price))
     candidate_news = _compact_candidate_news(candidate_news, limit=3)
     return {
@@ -2378,7 +2472,10 @@ async def _build_market_heartbeat_input(
         "market_data": {
             "price_now_usd": float(current_price),
             "change_1h_percent": _snapshot_change_percent(current_price, reference_1h),
-            "change_6h_percent": _snapshot_change_percent(current_price, reference_6h),
+            "change_6h_percent": _calculate_price_change(
+                current_price,
+                selection.reference_price,
+            ),
             "change_24h_percent": float(change_24h),
             "high_6h_usd": max(observed_prices) if observed_prices else None,
             "low_6h_usd": min(observed_prices) if observed_prices else None,
