@@ -63,7 +63,8 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert "BTC alerts are free." in text
     assert "ETH, TON, SOL" in text
     assert "ETH - Premium" not in text
-    assert "Frequency: Every 4 hours" in text
+    assert "Heartbeat frequency: Every 4 hours" in text
+    assert "Event alerts may arrive separately when market events are detected." in text
     assert "Use /subscribe to upgrade." in text
     assert ("btc", True, True) in rows
     assert ("eth", False, False) in rows
@@ -78,7 +79,9 @@ def test_user_settings_free_user_shows_btc_frequency_and_upgrade_path():
 
     assert text.startswith("Alert settings")
     assert "Subscribed coins: BTC" in text
-    assert "Alert frequency: Every 4 hours" in text
+    assert "Heartbeat frequency: Every 4 hours" in text
+    assert "regular market heartbeat updates" in text
+    assert "Event alerts may arrive separately" in text
     assert "Plan: Free" in text
     assert "Upgrade: /subscribe" in text
     assert [symbol for symbol, _, _ in rows] == ["btc"]
@@ -93,7 +96,7 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
     )
 
     assert "Subscribed coins: BTC, ETH, TON, SOL" in text
-    assert "Alert frequency: Every 1 hour" in text
+    assert "Heartbeat frequency: Every 1 hour" in text
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
     assert "Manage subscription: /myplan" in text
@@ -119,7 +122,7 @@ def test_watchlist_premium_user_sees_enabled_non_btc_and_frequency():
     )
 
     assert "Select coins for automatic alerts." in text
-    assert "Frequency: Every 6 hours" in text
+    assert "Heartbeat frequency: Every 6 hours" in text
     assert "Paid access until: 2026-05-12" in text
     assert ("eth", True, True) in rows
     assert ("sol", False, True) in rows
@@ -135,7 +138,7 @@ def test_watchlist_expired_user_sees_locked_but_saved_choices_are_not_deleted():
 
     assert "Your Premium expired on: 2026-05-10." in text
     assert "Your premium coin choices are saved, but locked until renewal." in text
-    assert "Frequency: Every 4 hours for BTC" in text
+    assert "Heartbeat frequency: Every 4 hours for BTC" in text
     assert ("eth", True, False) in rows
 
 

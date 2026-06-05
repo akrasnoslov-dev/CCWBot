@@ -140,6 +140,13 @@ NEWS_DRIVEN_ALERT_MAX_AGE_HOURS = 6
 NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL = 1
 NEWS_DRIVEN_ALERT_SOURCE = "news_driven_alert"
 NEWS_DRIVEN_ALERT_MODEL = "deterministic-news-driven-alerts-v1"
+EVENT_ANALYSIS_PAYLOAD_POINTS = 6
+SYMBOL_STAGGER_OFFSETS_SECONDS = {
+    "btc": 0,
+    "eth": 5 * 60,
+    "ton": 10 * 60,
+    "sol": 15 * 60,
+}
 
 
 @dataclass(frozen=True)
@@ -288,6 +295,49 @@ def _stable_float(value: float | None, digits: int) -> float | None:
     if value is None:
         return None
     return round(float(value), digits)
+
+
+def get_analysed_window_minutes(
+    event_analysis_interval_seconds: int,
+    payload_points: int = EVENT_ANALYSIS_PAYLOAD_POINTS,
+) -> int:
+    seconds = max(1, int(event_analysis_interval_seconds)) * max(1, int(payload_points))
+    return max(1, (seconds + 59) // 60)
+
+
+def _format_analysed_window_label(minutes: int | None) -> str:
+    if minutes is None:
+        return "n/a"
+    minutes = max(1, int(minutes))
+    if minutes % 60 == 0:
+        return f"{minutes // 60}h"
+    return f"{minutes}m"
+
+
+def _calculate_price_change(current_price: float, reference_price: float | None) -> float | None:
+    if reference_price is None or reference_price == 0:
+        return None
+    return calculate_price_change_percent(reference_price, current_price)
+
+
+def _automatic_market_check_job_name(symbol: str) -> str:
+    return f"{AUTOMATIC_MARKET_CHECK_JOB_NAME}:{normalize_symbol(symbol)}"
+
+
+def _seconds_until_next_symbol_check(
+    *,
+    symbol: str,
+    interval_seconds: int,
+    now: datetime | None = None,
+) -> int:
+    now = now or datetime.now(timezone.utc)
+    interval = max(1, int(interval_seconds))
+    offset = SYMBOL_STAGGER_OFFSETS_SECONDS.get(normalize_symbol(symbol), 0) % interval
+    seconds_since_hour = now.minute * 60 + now.second
+    if now.microsecond:
+        seconds_since_hour += 1
+    cycle_position = seconds_since_hour % interval
+    return (offset - cycle_position) % interval
 
 
 def _stable_news_link(link: str) -> str:
@@ -1045,7 +1095,8 @@ def _build_event_alert_html_message(
     title: str,
     price_text: str,
     since_last_text: str,
-    change_24h_text: str,
+    analysed_window_label: str,
+    analysed_window_change_text: str,
     message_body: str,
     related_section_html: str,
     possible_action: str,
@@ -1055,7 +1106,8 @@ def _build_event_alert_html_message(
         f"{escape(title)}\n\n"
         f"Price: {escape(price_text)}\n"
         f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
-        f"24h change: {escape(change_24h_text)}\n\n"
+        f"Analysed window: {escape(analysed_window_label)}\n"
+        f"Price change: {escape(analysed_window_change_text)}\n\n"
         "Situation:\n"
         f"{escape(message_body)}\n\n"
         "Related context:\n"
@@ -1099,10 +1151,12 @@ def _build_event_alert_payload(
         "chg_since_msg",
         market_data.get("change_since_last_user_visible_message_percent"),
     )
-    change_24h = market_data.get("chg24h", market_data.get("change_24h_percent"))
+    analysed_window_minutes = market_data.get("analysed_window_minutes")
+    analysed_window_change = market_data.get("chg_window")
     price_text = _format_optional_price(price)
     since_last_text = _format_optional_percent(change_since_message)
-    change_24h_text = _format_optional_percent(change_24h)
+    analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
+    analysed_window_change_text = _format_optional_percent(analysed_window_change)
 
     before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
@@ -1111,7 +1165,8 @@ def _build_event_alert_payload(
         "Since last "
         f"{symbol} message: "
         f"{since_last_text}\n"
-        f"24h change: {change_24h_text}\n\n"
+        f"Analysed window: {analysed_window_label}\n"
+        f"Price change: {analysed_window_change_text}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -1142,7 +1197,8 @@ def _build_event_alert_payload(
             title=title,
             price_text=price_text,
             since_last_text=since_last_text,
-            change_24h_text=change_24h_text,
+            analysed_window_label=analysed_window_label,
+            analysed_window_change_text=analysed_window_change_text,
             message_body=message_body,
             related_section_html=related_section_html or escape(related_section),
             possible_action=possible_action,
@@ -1162,6 +1218,8 @@ def _event_numeric_context(input_payload: dict, decision: EventAnalysisDecision)
                 "chg_since_msg",
                 market_data.get("change_since_last_user_visible_message_percent"),
             ),
+            "analysed_window_minutes": market_data.get("analysed_window_minutes"),
+            "analysed_window_change_percent": market_data.get("chg_window"),
             "twenty_four_hour_change_percent": market_data.get(
                 "chg24h", market_data.get("change_24h_percent")
             ),
@@ -2152,6 +2210,7 @@ async def _build_event_analysis_input(
     now: datetime,
     state: dict,
     candidate_news: list[dict],
+    event_analysis_interval_seconds: int,
 ) -> dict:
     normalized_symbol = normalize_symbol(symbol)
     fallback_previous_price = float(state.get("last_price") or current_price)
@@ -2159,10 +2218,20 @@ async def _build_event_analysis_input(
     last_message_at = None
     last_message_type = None
     last_message_price = None
+    analysed_window_minutes = get_analysed_window_minutes(
+        event_analysis_interval_seconds,
+        EVENT_ANALYSIS_PAYLOAD_POINTS,
+    )
+    window_reference_price: float | None = None
 
     if DB_ENABLED and DB_SESSION_LOCAL:
-        since = now - timedelta(minutes=60)
+        since = now - timedelta(minutes=analysed_window_minutes)
         async with DB_SESSION_LOCAL() as session:
+            reference = await get_reference_price_snapshot(
+                session,
+                symbol=normalized_symbol,
+                at_or_before=since,
+            )
             snapshots = await get_price_snapshots_since(
                 session,
                 symbol=normalized_symbol,
@@ -2173,14 +2242,25 @@ async def _build_event_analysis_input(
                 symbol=normalized_symbol,
                 alert_type=EVENT_ALERT_TYPE,
             )
-        snapshots_payload = [
+        if reference:
+            window_reference_price = float(reference.price)
+            snapshots_payload.append(
+                {
+                    "timestamp_utc": reference.checked_at.astimezone(timezone.utc).isoformat(),
+                    "price_usd": window_reference_price,
+                }
+            )
+        snapshots_payload.extend(
             {
                 "timestamp_utc": snapshot.checked_at.astimezone(timezone.utc).isoformat(),
                 "price_usd": float(snapshot.price),
             }
             for snapshot in snapshots
-        ]
-        snapshots_payload = _select_representative_snapshots(snapshots_payload, limit=6)
+        )
+        snapshots_payload = _select_representative_snapshots(
+            snapshots_payload,
+            limit=EVENT_ANALYSIS_PAYLOAD_POINTS,
+        )
         if latest_alert:
             last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
             last_message_type = latest_alert.alert_type
@@ -2194,6 +2274,7 @@ async def _build_event_analysis_input(
         last_message_price = (
             float(state.get("last_price") or current_price) if last_message_at else None
         )
+        window_reference_price = fallback_previous_price
 
     change_since_last_message = (
         calculate_price_change_percent(float(last_message_price), current_price)
@@ -2201,12 +2282,16 @@ async def _build_event_analysis_input(
         else None
     )
     if not snapshots_payload:
+        window_reference_price = fallback_previous_price
         snapshots_payload = [
             {
                 "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
                 "price_usd": fallback_previous_price,
             }
         ]
+    if window_reference_price is None and snapshots_payload:
+        window_reference_price = float(snapshots_payload[0]["price_usd"])
+    analysed_window_change = _calculate_price_change(current_price, window_reference_price)
     snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
     candidate_news = _compact_event_analysis_news(candidate_news, limit=3)
 
@@ -2218,6 +2303,9 @@ async def _build_event_analysis_input(
         "market": {
             "price": _stable_float(float(current_price), 2),
             "snapshots": snapshots_payload,
+            "payload_points": EVENT_ANALYSIS_PAYLOAD_POINTS,
+            "analysed_window_minutes": analysed_window_minutes,
+            "chg_window": _stable_float(analysed_window_change, 4),
             "chg24h": _stable_float(float(change_24h), 4),
             "chg_since_msg": _stable_float(change_since_last_message, 4),
         },
@@ -3719,16 +3807,35 @@ async def _deliver_market_heartbeat(
 
 
 def schedule_automatic_market_check(app: Application, interval_seconds: int) -> None:
-    for job in app.job_queue.get_jobs_by_name(AUTOMATIC_MARKET_CHECK_JOB_NAME):
-        job.schedule_removal()
-    app.job_queue.run_repeating(
-        automatic_price_check,
-        interval=interval_seconds,
-        first=5,
-        name=AUTOMATIC_MARKET_CHECK_JOB_NAME,
-        job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
+    job_names = [AUTOMATIC_MARKET_CHECK_JOB_NAME] + [
+        _automatic_market_check_job_name(symbol) for symbol in SUPPORTED_SYMBOLS
+    ]
+    for job_name in job_names:
+        for job in app.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
+
+    now = datetime.now(timezone.utc)
+    scheduled_symbols = []
+    for symbol in SUPPORTED_SYMBOLS:
+        first = _seconds_until_next_symbol_check(
+            symbol=symbol,
+            interval_seconds=interval_seconds,
+            now=now,
+        )
+        first = max(1, first)
+        app.job_queue.run_repeating(
+            automatic_price_check,
+            interval=interval_seconds,
+            first=first,
+            name=_automatic_market_check_job_name(symbol),
+            data={"symbol": symbol},
+            job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
+        )
+        scheduled_symbols.append(f"{symbol.upper()}:{first}s")
+    log(
+        "ops_event=automatic_check_scheduled "
+        f"interval_seconds={interval_seconds} symbol_first_delays={','.join(scheduled_symbols)}"
     )
-    log(f"ops_event=automatic_check_scheduled interval_seconds={interval_seconds}")
 
 
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
@@ -4039,7 +4146,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     try:
         db_active = DB_ENABLED and DB_SESSION_LOCAL
         now = datetime.now(timezone.utc)
+        job_data = getattr(getattr(context, "job", None), "data", None)
+        target_symbol = None
+        if isinstance(job_data, dict) and job_data.get("symbol"):
+            target_symbol = normalize_symbol(str(job_data["symbol"]))
         symbols_to_check = await resolve_symbols_to_check(now)
+        if target_symbol:
+            symbols_to_check = [symbol for symbol in symbols_to_check if symbol == target_symbol]
         if not symbols_to_check:
             logger.debug("Automatic price check skipped because no eligible symbols are enabled.")
             return
@@ -4120,6 +4233,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 now=now,
                 state=state,
                 candidate_news=candidate_news,
+                event_analysis_interval_seconds=int(
+                    alert_settings.get("automatic_check_interval_seconds", 300)
+                ),
             )
             decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
             if decision is None:

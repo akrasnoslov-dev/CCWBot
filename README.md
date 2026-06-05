@@ -10,7 +10,7 @@ analysis.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
-  when the user's last sent heartbeat for that coin is older than their alert frequency.
+  when the user's last sent heartbeat for that coin is older than their heartbeat frequency.
 - Daily and weekly reports are cached market-wide LLM reports across all active symbols.
   Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
@@ -19,8 +19,9 @@ analysis.
   shows a temporary unavailable message instead of a fake deterministic report.
 - Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- Admin-only `/settings`, `/admin`, `/chatid`, `/grantpremium`, and `/revokepremium`
-  commands. System status is available from `/admin`.
+- User `/settings` for watchlist and heartbeat frequency, plus admin-only `/admin`,
+  `/chatid`, `/grantpremium`, and `/revokepremium` commands. System status is available
+  from `/admin`.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -97,6 +98,11 @@ Legacy `PRICE_MOVE_ALERT_PERCENT`, `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_RE
 `WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
 and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 
+`AUTOMATIC_CHECK_INTERVAL_SECONDS` controls Event Alert LLM analysis cadence per symbol.
+The default is `1800` seconds (30 minutes). It does not control Market Heartbeat delivery
+frequency. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
+BTC at minute 00/30, ETH at 05/35, TON at 10/40, and SOL at 15/45.
+
 ## Local Development Setup
 
 ```bash
@@ -157,12 +163,19 @@ Revoking Premium preserves saved coin choices.
 
 ## Market Heartbeat And Coin Icons
 
-Market Heartbeat is separate from Event Alert analysis. The normal check-interval LLM call
-returns only `should_alert=true` or `should_alert=false`; heartbeat generation runs hourly,
-stores the latest cached result in PostgreSQL, and does not deliver it immediately.
+Market Heartbeat is separate from Event Alert analysis. Event Alert LLM analysis runs every
+30 minutes per active symbol by default and returns only `should_alert=true` or
+`should_alert=false`; heartbeat generation runs hourly, stores the latest cached result in
+PostgreSQL, and does not deliver it immediately.
+
+The Event Alert analysed market window is derived from the analysis interval and the number
+of compact price points sent to the LLM. With the default 30-minute interval and 6 payload
+points, alerts analyse a 3-hour window. Event Alert messages show that analysed-window
+change, for example `Analysed window: 3h` and `Price change: -2.40%`, instead of exposing
+CoinGecko's rolling 24h change as the main alert move.
 
 During automatic processing, the bot checks each eligible user and coin. If a sent
-`market_heartbeat` for that user and coin happened within the user's configured alert
+`market_heartbeat` for that user and coin happened within the user's configured heartbeat
 frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
 no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
 enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.

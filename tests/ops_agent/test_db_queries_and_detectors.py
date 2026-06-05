@@ -30,6 +30,17 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_reports_freshness" in query_names
     assert "market_heartbeats_freshness" in query_names
     assert "event_ai_analysis_invariant_checks" in query_names
+    assert "event_alert_llm_estimates" in query_names
+
+
+def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
+    query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
+
+    assert "event_analysis_interval_seconds" in query.sql
+    assert "payload_points" in query.sql
+    assert "analysed_window_minutes" in query.sql
+    assert "estimated_event_alert_llm_calls_per_hour" in query.sql
+    assert "estimated_event_alert_llm_calls_per_day" in query.sql
 
 
 def test_alert_repetition_detectors_unknown_when_evidence_missing():

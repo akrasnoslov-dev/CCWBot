@@ -462,7 +462,7 @@ Exact logging touchpoints:
 * `bot/runtime.close_database`: database resources closed.
   * INFO sample: `ops_event=db_closed`
 * `bot/alerts.schedule_automatic_market_check`: interval configured.
-  * INFO sample: `ops_event=automatic_check_scheduled interval_seconds=600`
+  * INFO sample: `ops_event=automatic_check_scheduled interval_seconds=1800 symbol_first_delays=BTC:0s,ETH:300s,TON:600s,SOL:900s`
 * `bot/alerts.automatic_price_check`: cycle completion, symbols checked, delivered count, skipped reason, CoinGecko 429.
   * INFO sample: `ops_event=automatic_check_completed symbols=BTC,ETH delivered_symbols=1 duration_seconds=2.31`
   * WARNING sample: `ops_event=automatic_check_failed reason=http_error error_class=HTTPStatusError`
