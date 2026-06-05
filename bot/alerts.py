@@ -112,7 +112,11 @@ from bot.services.price_service import (
     CoinGeckoRateLimitError,
     get_coin_market_data_batch,
 )
-from bot.settings import get_db_alert_settings, get_state_alert_settings
+from bot.settings import (
+    get_db_alert_settings,
+    get_state_alert_settings,
+    normalize_automatic_check_interval_seconds,
+)
 from bot.storage import load_state, save_state
 from bot.telegram_errors import is_bot_blocked_error
 
@@ -141,12 +145,6 @@ NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL = 1
 NEWS_DRIVEN_ALERT_SOURCE = "news_driven_alert"
 NEWS_DRIVEN_ALERT_MODEL = "deterministic-news-driven-alerts-v1"
 EVENT_ANALYSIS_PAYLOAD_POINTS = 6
-SYMBOL_STAGGER_OFFSETS_SECONDS = {
-    "btc": 0,
-    "eth": 5 * 60,
-    "ton": 10 * 60,
-    "sol": 15 * 60,
-}
 
 
 @dataclass(frozen=True)
@@ -324,15 +322,35 @@ def _automatic_market_check_job_name(symbol: str) -> str:
     return f"{AUTOMATIC_MARKET_CHECK_JOB_NAME}:{normalize_symbol(symbol)}"
 
 
+def _symbol_stagger_offsets_seconds(
+    *,
+    symbols: tuple[str, ...] | list[str],
+    interval_seconds: int,
+) -> dict[str, int]:
+    interval = max(1, int(interval_seconds))
+    normalized_symbols = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols))
+    if not normalized_symbols:
+        return {}
+    bucket_count = max(len(normalized_symbols), EVENT_ANALYSIS_PAYLOAD_POINTS)
+    return {
+        symbol: (index * interval) // bucket_count
+        for index, symbol in enumerate(normalized_symbols)
+    }
+
+
 def _seconds_until_next_symbol_check(
     *,
     symbol: str,
     interval_seconds: int,
     now: datetime | None = None,
+    symbols: tuple[str, ...] | list[str] = SUPPORTED_SYMBOLS,
 ) -> int:
     now = now or datetime.now(timezone.utc)
     interval = max(1, int(interval_seconds))
-    offset = SYMBOL_STAGGER_OFFSETS_SECONDS.get(normalize_symbol(symbol), 0) % interval
+    offset = _symbol_stagger_offsets_seconds(
+        symbols=symbols,
+        interval_seconds=interval,
+    ).get(normalize_symbol(symbol), 0)
     seconds_since_hour = now.minute * 60 + now.second
     if now.microsecond:
         seconds_since_hour += 1
@@ -3807,6 +3825,7 @@ async def _deliver_market_heartbeat(
 
 
 def schedule_automatic_market_check(app: Application, interval_seconds: int) -> None:
+    interval_seconds = normalize_automatic_check_interval_seconds(interval_seconds)
     job_names = [AUTOMATIC_MARKET_CHECK_JOB_NAME] + [
         _automatic_market_check_job_name(symbol) for symbol in SUPPORTED_SYMBOLS
     ]
@@ -3822,7 +3841,6 @@ def schedule_automatic_market_check(app: Application, interval_seconds: int) -> 
             interval_seconds=interval_seconds,
             now=now,
         )
-        first = max(1, first)
         app.job_queue.run_repeating(
             automatic_price_check,
             interval=interval_seconds,

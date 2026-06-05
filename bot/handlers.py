@@ -47,6 +47,7 @@ from bot.settings import (
     get_db_alert_settings,
     get_runtime_error_file_logging_enabled,
     get_state_alert_settings,
+    normalize_automatic_check_interval_seconds,
     save_error_file_logging_enabled,
     save_interval_setting,
 )
@@ -397,8 +398,10 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Interval must be greater than 0.")
         return
 
-    await save_interval_setting(interval)
-    schedule_automatic_market_check(context.application, interval)
+    applied_interval = normalize_automatic_check_interval_seconds(interval)
+    await save_interval_setting(applied_interval)
+    schedule_automatic_market_check(context.application, applied_interval)
+    interval = applied_interval
     await update.message.reply_text(
         f"Event Alert analysis interval updated to {interval} seconds ✅ Applied immediately."
     )
@@ -535,8 +538,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             if data.startswith("admin:set_interval:"):
                 interval = int(data.rsplit(":", maxsplit=1)[1])
-                await save_interval_setting(interval)
-                schedule_automatic_market_check(context.application, interval)
+                applied_interval = normalize_automatic_check_interval_seconds(interval)
+                await save_interval_setting(applied_interval)
+                schedule_automatic_market_check(context.application, applied_interval)
+                interval = applied_interval
                 await query.message.reply_text(
                     f"Automatic check interval updated to {interval} seconds. Applied immediately."
                 )
@@ -585,8 +590,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
-            await save_interval_setting(interval)
-            schedule_automatic_market_check(context.application, interval)
+            applied_interval = normalize_automatic_check_interval_seconds(interval)
+            await save_interval_setting(applied_interval)
+            schedule_automatic_market_check(context.application, applied_interval)
+            interval = applied_interval
             await query.message.reply_text(
                 f"Event Alert analysis interval updated to {interval} seconds ✅ "
                 "Applied immediately."

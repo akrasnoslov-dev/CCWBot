@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
+import bot.settings as settings
 from bot.db.database import (
     Alert,
     Base,
@@ -528,7 +529,7 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
         "automatic_market_check:ton",
         "automatic_market_check:sol",
     ]
-    assert all(kwargs["interval"] == 60 for kwargs in captured_kwargs)
+    assert all(kwargs["interval"] == 1800 for kwargs in captured_kwargs)
     assert all(
         kwargs["job_kwargs"] == {
             "max_instances": 1,
@@ -571,6 +572,15 @@ def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
 def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
     now = datetime(2026, 6, 5, 12, 0, tzinfo=timezone.utc)
 
+    assert alerts._symbol_stagger_offsets_seconds(
+        symbols=("btc", "eth", "ton", "sol"),
+        interval_seconds=1800,
+    ) == {
+        "btc": 0,
+        "eth": 300,
+        "ton": 600,
+        "sol": 900,
+    }
     assert alerts._seconds_until_next_symbol_check(
         symbol="btc",
         interval_seconds=1800,
@@ -591,6 +601,93 @@ def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
         interval_seconds=1800,
         now=now,
     ) == 900
+
+
+def test_symbol_first_delays_are_deterministic_after_mid_cycle_restart():
+    now = datetime(2026, 6, 5, 12, 0, 43, tzinfo=timezone.utc)
+
+    first_delays = {
+        symbol: alerts._seconds_until_next_symbol_check(
+            symbol=symbol,
+            interval_seconds=1800,
+            now=now,
+        )
+        for symbol in ("btc", "eth", "ton", "sol")
+    }
+
+    assert first_delays == {
+        "btc": 1757,
+        "eth": 257,
+        "ton": 557,
+        "sol": 857,
+    }
+    assert len(set(first_delays.values())) == len(first_delays)
+    assert first_delays == {
+        symbol: alerts._seconds_until_next_symbol_check(
+            symbol=symbol,
+            interval_seconds=1800,
+            now=now,
+        )
+        for symbol in ("btc", "eth", "ton", "sol")
+    }
+
+
+def test_symbol_stagger_offsets_do_not_pair_symbols_on_shorter_interval():
+    offsets = alerts._symbol_stagger_offsets_seconds(
+        symbols=("btc", "eth", "ton", "sol"),
+        interval_seconds=600,
+    )
+
+    assert offsets == {
+        "btc": 0,
+        "eth": 100,
+        "ton": 200,
+        "sol": 300,
+    }
+    assert len(set(offsets.values())) == len(offsets)
+
+
+def test_state_event_analysis_interval_is_normalized_to_supported_cadence():
+    assert (
+        settings.get_state_alert_settings(
+            {"automatic_check_interval_seconds": 600}
+        )["automatic_check_interval_seconds"]
+        == 1800
+    )
+    assert (
+        settings.get_state_alert_settings(
+            {"automatic_check_interval_seconds": 3600}
+        )["automatic_check_interval_seconds"]
+        == 1800
+    )
+
+
+def test_automatic_check_startup_log_shows_separated_symbol_first_delays(monkeypatch):
+    captured_kwargs = []
+    captured_logs = []
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 6, 5, 12, 0, tzinfo=tz)
+
+    class FakeJobQueue:
+        def get_jobs_by_name(self, name):
+            return []
+
+        def run_repeating(self, callback, **kwargs):
+            captured_kwargs.append(kwargs)
+
+    monkeypatch.setattr(alerts, "datetime", FixedDateTime)
+    monkeypatch.setattr(alerts, "log", captured_logs.append)
+
+    alerts.schedule_automatic_market_check(SimpleNamespace(job_queue=FakeJobQueue()), 1800)
+
+    assert [kwargs["first"] for kwargs in captured_kwargs] == [0, 300, 600, 900]
+    assert captured_logs == [
+        "ops_event=automatic_check_scheduled "
+        "interval_seconds=1800 symbol_first_delays=BTC:0s,ETH:300s,TON:600s,SOL:900s"
+    ]
 
 
 def test_report_cache_scheduler_replaces_weekly_direct_send_and_strong_signal():
