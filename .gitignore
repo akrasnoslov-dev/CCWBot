@@ -8,7 +8,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 pytest-cache-files-*/
-.cache/tmp/
+.cache/
 state.json
 *.dump
 *.db
