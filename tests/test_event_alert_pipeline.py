@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram import MessageEntity
 
 import bot.alerts as alerts
-from bot.alerting.event_analysis import canonicalize_event_key
+from bot.alerting.event_analysis import canonicalize_event_key, normalize_event_semantic_family
 from bot.db.database import (
     Alert,
     Base,
@@ -60,6 +60,9 @@ async def seed_sent_event_alert(
     symbol: str,
     event_key: str,
     created_at: datetime,
+    urgency: str | None = None,
+    analysed_window_change_percent: float | None = None,
+    stable_related_news_ids: list[str] | None = None,
 ):
     event = MarketEvent(
         symbol=symbol.upper(),
@@ -83,6 +86,14 @@ async def seed_sent_event_alert(
             market_event_id=event.id,
             status="sent",
             created_at=created_at,
+            numeric_context=alerts._json_dumps(
+                {
+                    "notification_type": alerts.EVENT_ALERT_TYPE,
+                    "notification_severity": urgency,
+                    "analysed_window_change_percent": analysed_window_change_percent,
+                    "stable_related_news_ids": stable_related_news_ids or [],
+                }
+            ),
         )
     )
     await session.commit()
@@ -151,19 +162,129 @@ def test_event_instance_key_reuses_same_bucket_and_splits_distinct_occurrences()
     assert no_news_different_input != first
 
 
+def test_event_instance_key_uses_stable_market_only_family_identity():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+    same_bucket_different_input = alerts._build_event_instance_key(
+        symbol="BTC",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:45:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-b",
+    )
+    next_bucket = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T22:00:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+    different_family = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_etf_flows",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+
+    assert first == same_bucket_different_input
+    assert next_bucket != first
+    assert different_family != first
+
+
+def test_event_instance_key_uses_stable_news_identity_not_temporary_news_ids():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=["n1"],
+        stable_news_ids=["source_title:abc"],
+        input_hash="hash-a",
+    )
+    same_stable_news = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:45:00+00:00",
+        related_news_ids=["n2"],
+        stable_news_ids=["source_title:abc"],
+        input_hash="hash-b",
+    )
+    different_news = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=["n1"],
+        stable_news_ids=["source_title:def"],
+        input_hash="hash-a",
+    )
+
+    assert first == same_stable_news
+    assert different_news != first
+
+
 @pytest.mark.parametrize(
     ("raw_event_key", "expected"),
     [
-        ("BTC_price_volatility", "btc_price_volatility"),
-        ("bitcoin_price_volatility", "btc_price_volatility"),
-        ("btc_price_volatility_2026-05-25", "btc_price_volatility"),
-        ("Bitcoin-options-Nadaq", "btc_options_nasdaq"),
+        ("BTC_price_volatility", "btc_volatility"),
+        ("bitcoin_price_volatility", "btc_volatility"),
+        ("btc_price_volatility_2026-05-25", "btc_volatility"),
+        ("Bitcoin-options-Nadaq", "btc_derivatives_positioning"),
     ],
 )
 def test_canonical_event_key_normalizes_common_llm_variants(raw_event_key, expected):
     result = canonicalize_event_key("btc", raw_event_key)
 
     assert result.canonical_event_key == expected
+
+
+@pytest.mark.parametrize(
+    ("symbol", "raw_event_key"),
+    [
+        ("eth", "eth_price_drop_5pct"),
+        ("eth", "eth_price_drop_5_percent"),
+        ("eth", "eth_price_drop"),
+        ("eth", "market_drop_eth"),
+        ("btc", "btc_selloff_prediction"),
+        ("btc", "btc_price_test_low"),
+        ("btc", "btc_price_test_february_low"),
+        ("btc", "btc_price_drop"),
+        ("ton", "ton_price_drop"),
+        ("ton", "ton_price_decline"),
+    ],
+)
+def test_semantic_event_family_normalizes_equivalent_downtrend_keys(symbol, raw_event_key):
+    result = canonicalize_event_key(symbol, raw_event_key)
+
+    assert result.semantic_family == "price_downtrend"
+    assert result.canonical_event_key == f"{symbol}_price_downtrend"
+
+
+def test_semantic_event_family_uses_context_for_ambiguous_movement_key():
+    result = canonicalize_event_key(
+        "ton",
+        "ton_price_movement",
+        title="TON price weakened again",
+        message_body="TON moved lower while market pressure remains elevated.",
+    )
+
+    assert result.semantic_family == "price_downtrend"
+    assert result.canonical_event_key == "ton_price_downtrend"
+
+
+def test_semantic_event_family_keeps_distinct_drivers_separate():
+    assert normalize_event_semantic_family("btc", "btc_etf_outflows") == "etf_flows"
+    assert normalize_event_semantic_family("btc", "btc_liquidation_cascade") == "liquidations"
+    assert canonicalize_event_key("btc", "btc_options_expiry").canonical_event_key == (
+        "btc_derivatives_positioning"
+    )
+    assert canonicalize_event_key("btc", "btc_low_volatility").canonical_event_key == (
+        "btc_volatility"
+    )
 
 
 def test_canonical_event_key_replaces_random_analysis_key_with_stable_fallback():
@@ -238,6 +359,43 @@ def test_event_alert_related_context_uses_clickable_article_entities():
         "Bitcoin ETF flows &amp; custody &lt;update&gt;</a>"
         in payload["html_text"]
     )
+
+
+def test_analysed_window_minutes_uses_interval_and_payload_points():
+    assert alerts.get_analysed_window_minutes(1800, 6) == 180
+    assert alerts.get_analysed_window_minutes(300, 6) == 30
+
+
+def test_event_alert_payload_uses_analysed_window_change_not_24h():
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(),
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "chg_since_msg": 1.2,
+                "analysed_window_minutes": 180,
+                "chg_window": -2.4,
+                "chg24h": -9.9,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    html_message = payload["html_text"] or ""
+    assert "Since last BTC alert: +1.20%" in message
+    assert "3h change: -2.40%" in message
+    assert "24h change" not in message
+    assert "Price change" not in message
+    assert "chg24h" not in message
+    assert "Data:" not in message
+    assert "Debug:" not in message
+    assert "move=" not in message
+    assert "Not financial advice." in message
+    assert "Since last BTC alert: +1.20%" in html_message
+    assert "3h change: -2.40%" in html_message
+    assert "24h change" not in html_message
+    assert "Price change" not in html_message
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
@@ -330,11 +488,23 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
                     for index in range(5)
                 ]
             ),
+            event_analysis_interval_seconds=1800,
         )
 
-        assert set(payload["market"]) == {"price", "snapshots", "chg24h", "chg_since_msg"}
+        assert set(payload["market"]) == {
+            "price",
+            "snapshots",
+            "payload_points",
+            "analysed_window_minutes",
+            "chg_window",
+            "chg24h",
+            "chg_since_msg",
+        }
         assert "market_data" not in payload
         assert "candidate_news" not in payload
+        assert payload["market"]["payload_points"] == 6
+        assert payload["market"]["analysed_window_minutes"] == 180
+        assert payload["market"]["chg_window"] == 12.0
         snapshots = payload["market"]["snapshots"]
         assert len(snapshots) == 6
         assert snapshots[-1]["p"] == 111.0
@@ -352,6 +522,216 @@ async def test_event_analysis_input_compacts_snapshots_and_news(monkeypatch):
             "audience": "General retail crypto holder.",
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         }
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_ignores_stale_reference_snapshot(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 5, 11, 40, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.93,
+                change_24h=-1.0,
+                checked_at=datetime(2026, 6, 2, 15, 47, tzinfo=timezone.utc),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.55,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=160),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.545,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=70),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="ton",
+                price=1.54,
+                change_24h=-1.0,
+                checked_at=now - timedelta(minutes=5),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_ton_stale_reference",
+            symbol="ton",
+            current_price=1.54,
+            change_24h=-1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        market = payload["market"]
+        assert market["analysed_window_minutes"] == 180
+        assert market["chg_window"] == pytest.approx(-0.6452)
+        assert market["chg_window"] != pytest.approx(-20.2073)
+        assert all(snapshot["p"] != 1.93 for snapshot in market["snapshots"])
+        assert all(snapshot["m"] >= -180 for snapshot in market["snapshots"])
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_uses_fresh_boundary_reference(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=90.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=210),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=95.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=150),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=99.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=30),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_fresh_reference",
+            symbol="btc",
+            current_price=99.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        snapshots = payload["market"]["snapshots"]
+        assert payload["market"]["chg_window"] == 10.0
+        assert snapshots[0] == {"m": -210, "p": 90.0}
+        assert snapshots[-1] == {"m": -30, "p": 99.0}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_reports_unknown_change_without_snapshots(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_no_snapshots",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={"last_price": 50.0},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        assert payload["market"]["chg_window"] is None
+        assert payload["market"]["snapshots"] == [{"m": 0, "p": 100.0}]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_input_excludes_future_snapshots(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=100.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=60),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=1000.0,
+                change_24h=1.0,
+                checked_at=now + timedelta(minutes=5),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_future_snapshot",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        assert payload["market"]["chg_window"] == 0.0
+        assert all(snapshot["m"] <= 0 for snapshot in payload["market"]["snapshots"])
+        assert all(snapshot["p"] != 1000.0 for snapshot in payload["market"]["snapshots"])
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_window_market_context_ignores_stale_reference_for_peak(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=80.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(days=3),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=100.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=20),
+            )
+
+        previous_price, peak = await alerts._resolve_window_market_context(
+            symbol="btc",
+            current_price=100.0,
+            fallback_previous_price=99.0,
+            window_seconds=3600,
+            now=now,
+        )
+
+        assert previous_price == 100.0
+        assert peak == 0.0
     finally:
         await engine.dispose()
 
@@ -379,6 +759,7 @@ async def test_ton_event_analysis_payload_excludes_btc_only_news_without_direct_
         now=now,
         state={"last_price": 6.0},
         candidate_news=candidate_news,
+        event_analysis_interval_seconds=1800,
     )
 
     titles = [item["title"] for item in payload["news"]]
@@ -411,6 +792,7 @@ async def test_sol_event_analysis_payload_excludes_bitcoin_etf_only_news(monkeyp
         now=now,
         state={"last_price": 178.0},
         candidate_news=candidate_news,
+        event_analysis_interval_seconds=1800,
     )
 
     titles = [item["title"] for item in payload["news"]]
@@ -448,7 +830,7 @@ async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
     monkeypatch.setattr(
         alerts,
         "_get_or_create_event_alert_market_event",
-        AsyncMock(return_value=(456, "btc_downward_pressure_2026_05_20")),
+        AsyncMock(return_value=(456, "btc_downward_pressure_2026_05_20", "instance-a", False)),
     )
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
@@ -644,7 +1026,7 @@ async def test_event_analysis_accepts_advice_like_possible_action(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_alert_empty_llm_event_key_is_canonicalized_to_fallback(monkeypatch):
+async def test_alert_empty_llm_event_key_is_canonicalized_to_backend_family(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
@@ -676,7 +1058,7 @@ async def test_alert_empty_llm_event_key_is_canonicalized_to_fallback(monkeypatc
         decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
         assert decision is not None
-        assert decision.event_key == "btc_volatility_returns_bitcoin_price_action_became_choppy"
+        assert decision.event_key == "btc_volatility"
         assert analysis_id is not None
         async with session_local() as session:
             row = await session.scalar(select(EventAiAnalysis))
@@ -804,7 +1186,10 @@ async def test_event_alert_recipient_selection_bypasses_user_frequency(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(monkeypatch):
+async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(
+    monkeypatch,
+    caplog,
+):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
     try:
@@ -827,16 +1212,20 @@ async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(mon
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         recipients = [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
 
-        assert (
-            await alerts._filter_event_recipients_for_cooldown(
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            normal_filtered = await alerts._filter_event_recipients_for_cooldown(
                 recipients,
                 symbol="btc",
                 urgency="normal",
                 cooldown_seconds=3600,
                 now=now,
             )
-            == []
-        )
+        assert normal_filtered == []
+        assert "event_alert_suppressed" in caplog.text
+        assert "suppression_reason=exact_cooldown" in caplog.text
+        assert "cooldown_remaining_seconds=900" in caplog.text
+        caplog.clear()
+
         assert await alerts._filter_event_recipients_for_cooldown(
             recipients,
             symbol="btc",
@@ -844,12 +1233,16 @@ async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(mon
             cooldown_seconds=3600,
             now=now,
         ) == recipients
+        assert "event_alert_suppressed" not in caplog.text
     finally:
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key(monkeypatch):
+async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key(
+    monkeypatch,
+    caplog,
+):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
     try:
@@ -868,17 +1261,274 @@ async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         recipients = [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
 
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            filtered = await alerts._filter_event_recipients_for_cooldown(
+                recipients,
+                symbol="btc",
+                urgency="normal",
+                cooldown_seconds=0,
+                canonical_event_key="btc_price_volatility",
+                semantic_cooldown_seconds=4 * 3600,
+                now=now,
+            )
+
+        assert filtered == []
+        assert "event_alert_semantic_cooldown_check" in caplog.text
+        assert "allowed=False" in caplog.text
+        assert "event_alert_suppressed" in caplog.text
+        assert "suppression_reason=semantic_cooldown" in caplog.text
+        assert "cooldown_remaining_seconds=10800" in caplog.text
+        assert "user_id=" not in caplog.text
+        assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_suppresses_different_keys_in_same_family(
+    monkeypatch,
+    caplog,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            previous = canonicalize_event_key("btc", "btc_price_drop")
+            current = canonicalize_event_key("btc", "btc_selloff_prediction")
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=previous.canonical_event_key,
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            filtered = await alerts._filter_event_recipients_for_cooldown(
+                [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+                symbol="btc",
+                urgency="normal",
+                cooldown_seconds=0,
+                canonical_event_key=current.canonical_event_key,
+                semantic_family=current.semantic_family,
+                semantic_cooldown_seconds=4 * 3600,
+                now=now,
+            )
+
+        assert previous.canonical_event_key == current.canonical_event_key
+        assert current.semantic_family == "price_downtrend"
+        assert filtered == []
+        assert "semantic_family=price_downtrend" in caplog.text
+        assert "suppression_reason=semantic_cooldown" in caplog.text
+        assert "user_id=" not in caplog.text
+        assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_allows_same_family_urgency_increase(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            event_key = canonicalize_event_key("btc", "btc_price_drop").canonical_event_key
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-3.0,
+                created_at=now - timedelta(minutes=10),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
         filtered = await alerts._filter_event_recipients_for_cooldown(
-            recipients,
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
             symbol="btc",
-            urgency="normal",
-            cooldown_seconds=0,
-            canonical_event_key="btc_price_volatility",
+            urgency="high",
+            cooldown_seconds=1800,
+            canonical_event_key=event_key,
+            semantic_family="price_downtrend",
+            current_movement_percent=-3.1,
             semantic_cooldown_seconds=4 * 3600,
             now=now,
         )
 
-        assert filtered == []
+        assert filtered == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_allows_material_movement_increase(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            event_key = canonicalize_event_key("btc", "btc_price_drop").canonical_event_key
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-3.0,
+                created_at=now - timedelta(minutes=10),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        filtered = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=1800,
+            canonical_event_key=event_key,
+            semantic_family="price_downtrend",
+            current_movement_percent=-5.5,
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert filtered == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_allows_new_news_driver(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            event_key = canonicalize_event_key("btc", "btc_price_drop").canonical_event_key
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["source_title:old"],
+                created_at=now - timedelta(minutes=10),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        filtered = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=1800,
+            canonical_event_key=event_key,
+            semantic_family="price_downtrend",
+            current_movement_percent=-3.1,
+            current_stable_news_ids=["source_title:old", "source_title:new"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert filtered == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_suppresses_same_family_without_escalation(
+    monkeypatch,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            event_key = canonicalize_event_key("btc", "btc_price_drop").canonical_event_key
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["source_title:old"],
+                created_at=now - timedelta(minutes=10),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=1800,
+            canonical_event_key=event_key,
+            semantic_family="price_downtrend",
+            current_movement_percent=-4.0,
+            current_stable_news_ids=["source_title:old"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+            return_summary=True,
+        )
+
+        assert result.recipients == []
+        assert result.suppression_reason_counts == {"semantic_cooldown": 1}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_recipient_cooldown_filter_can_return_suppression_summary(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type="event_alert",
+                    message="previous",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=1800,
+            now=now,
+            return_summary=True,
+        )
+
+        assert result.recipients == []
+        assert result.suppression_reason_counts == {"exact_cooldown": 1}
     finally:
         await engine.dispose()
 

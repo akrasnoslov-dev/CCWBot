@@ -9,6 +9,7 @@ from bot.keyboards import (
     build_admin_keyboard,
     build_admin_logs_keyboard,
     build_admin_premium_keyboard,
+    build_interval_keyboard,
 )
 from main import register_handlers
 
@@ -24,9 +25,28 @@ def _callback_values(markup):
 
 def test_admin_alert_settings_keyboard_has_no_threshold_controls():
     callbacks = _callback_values(build_admin_alert_settings_keyboard())
+    labels = [
+        button.text
+        for row in build_admin_alert_settings_keyboard().inline_keyboard
+        for button in row
+    ]
 
     assert callbacks == ["admin:current", "admin:interval_menu", "admin:back"]
+    assert labels == ["Current settings", "Event analysis interval", "Back"]
     assert all("threshold" not in callback for callback in callbacks)
+
+
+def test_interval_keyboard_only_offers_supported_event_analysis_cadence():
+    buttons = [
+        (button.text, button.callback_data)
+        for row in build_interval_keyboard().inline_keyboard
+        for button in row
+    ]
+
+    assert buttons == [
+        ("1800 sec", "admin:set_interval:1800"),
+        ("Back", "admin:alert_settings"),
+    ]
 
 
 def test_admin_keyboard_has_expected_top_level_items():

@@ -91,13 +91,18 @@ alerts and backend filtering opportunities:
 * `evidence/db/event_analysis_decision_timeline.json` shows sanitized LLM decision flow.
 * `evidence/db/alert_content_fingerprints.json` shows exact repeated content hash groups.
 * `evidence/db/alert_similarity_groups.json` shows near-similar alert groups.
+* `evidence/db/aggregate_metrics.json` query `event_alert_llm_estimates` shows sanitized
+  Event Alert cadence, payload points, analysed window, and estimated LLM calls per hour/day.
 * `evidence/db/backend_suppression_effectiveness.json` shows inferred cooldown/dedup effectiveness.
+* `evidence/logs/pattern_counts.json` shows logged Event Alert suppression reasons in
+  `suppression_reason_counts` when the runtime emitted `ops_event=event_alert_suppression`.
 * `evidence/db/event_identity_quality.json` shows weak event-key or event-identity signals.
 
 Do not quote alert text or LLM output. Use hashes, group ids, counts, symbols,
 event keys, time windows, and safe terms only. Treat content hashes as bundle-local;
-do not compare them across bundles. Treat suppression evidence as inferred unless a
-future bundle contains durable suppression rows.
+do not compare them across bundles. Treat database suppression effectiveness as inferred;
+logged `suppression_reason_counts` are direct operational-log evidence but still not durable
+database rows.
 
 ## Privacy and safety rules
 

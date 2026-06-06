@@ -63,7 +63,7 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Subscribed coins", callback_data="watchlist:open")],
-            [InlineKeyboardButton("Alert frequency", callback_data="watchlist:open")],
+            [InlineKeyboardButton("Heartbeat frequency", callback_data="watchlist:open")],
         ]
     )
 
@@ -92,7 +92,7 @@ def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Current settings", callback_data="admin:current")],
-            [InlineKeyboardButton("Check interval", callback_data="admin:interval_menu")],
+            [InlineKeyboardButton("Event analysis interval", callback_data="admin:interval_menu")],
             [InlineKeyboardButton("Back", callback_data="admin:back")],
         ]
     )
@@ -122,9 +122,7 @@ def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
 def build_interval_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("60 sec", callback_data="admin:set_interval:60")],
-            [InlineKeyboardButton("300 sec", callback_data="admin:set_interval:300")],
-            [InlineKeyboardButton("600 sec", callback_data="admin:set_interval:600")],
+            [InlineKeyboardButton("1800 sec", callback_data="admin:set_interval:1800")],
             [InlineKeyboardButton("Back", callback_data="admin:alert_settings")],
         ]
     )

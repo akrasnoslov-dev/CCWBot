@@ -3,10 +3,12 @@
 .env.production
 .git
 .venv
+.cache/
 __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+pytest-cache-files-*/
 logs/*.log
 logs/*.log.*
 reports/ops-agent/bundles/

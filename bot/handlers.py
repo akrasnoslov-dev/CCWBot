@@ -47,6 +47,7 @@ from bot.settings import (
     get_db_alert_settings,
     get_runtime_error_file_logging_enabled,
     get_state_alert_settings,
+    normalize_automatic_check_interval_seconds,
     save_error_file_logging_enabled,
     save_interval_setting,
 )
@@ -69,7 +70,8 @@ logger = logging.getLogger(__name__)
 def _format_admin_alert_settings(alert_settings: dict) -> str:
     return (
         "Current alert settings\n\n"
-        f"Check interval: {alert_settings['automatic_check_interval_seconds']} seconds\n"
+        "Event Alert analysis interval: "
+        f"{alert_settings['automatic_check_interval_seconds']} seconds\n"
         "Event decision: Groq LLM JSON analysis\n"
         "Movement thresholds: disabled for automatic event alerts"
     )
@@ -382,24 +384,26 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not context.args:
         await update.message.reply_text(
-            "Please provide interval in seconds.\n\nExample:\n/setinterval 300"
+            "Please provide interval in seconds.\n\nExample:\n/setinterval 1800"
         )
         return
     try:
         interval = int(context.args[0])
     except ValueError:
         await update.message.reply_text(
-            "Interval must be a whole number.\n\nExample:\n/setinterval 300"
+            "Interval must be a whole number.\n\nExample:\n/setinterval 1800"
         )
         return
     if interval <= 0:
         await update.message.reply_text("Interval must be greater than 0.")
         return
 
-    await save_interval_setting(interval)
-    schedule_automatic_market_check(context.application, interval)
+    applied_interval = normalize_automatic_check_interval_seconds(interval)
+    await save_interval_setting(applied_interval)
+    schedule_automatic_market_check(context.application, applied_interval)
+    interval = applied_interval
     await update.message.reply_text(
-        f"Automatic market check interval updated to {interval} seconds ✅ Applied immediately."
+        f"Event Alert analysis interval updated to {interval} seconds ✅ Applied immediately."
     )
 
 
@@ -528,13 +532,16 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             if data == "admin:interval_menu":
                 await query.message.reply_text(
-                    "Choose a new check interval:", reply_markup=build_interval_keyboard()
+                    "Choose a new Event Alert analysis interval:",
+                    reply_markup=build_interval_keyboard(),
                 )
                 return
             if data.startswith("admin:set_interval:"):
                 interval = int(data.rsplit(":", maxsplit=1)[1])
-                await save_interval_setting(interval)
-                schedule_automatic_market_check(context.application, interval)
+                applied_interval = normalize_automatic_check_interval_seconds(interval)
+                await save_interval_setting(applied_interval)
+                schedule_automatic_market_check(context.application, applied_interval)
+                interval = applied_interval
                 await query.message.reply_text(
                     f"Automatic check interval updated to {interval} seconds. Applied immediately."
                 )
@@ -571,21 +578,24 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Current alert settings ⚙️\n\n"
                 "Event decision: Groq LLM JSON analysis\n"
                 "Movement thresholds: disabled for automatic Event Alerts\n"
-                "Automatic market check interval: "
+                "Event Alert analysis interval: "
                 f"{alert_settings['automatic_check_interval_seconds']} seconds"
             )
             return
         if data == "settings:interval_menu":
             await query.message.reply_text(
-                "Choose a new check interval:", reply_markup=build_interval_keyboard()
+                "Choose a new Event Alert analysis interval:",
+                reply_markup=build_interval_keyboard(),
             )
             return
         if data.startswith("settings:set_interval:"):
             interval = int(data.rsplit(":", maxsplit=1)[1])
-            await save_interval_setting(interval)
-            schedule_automatic_market_check(context.application, interval)
+            applied_interval = normalize_automatic_check_interval_seconds(interval)
+            await save_interval_setting(applied_interval)
+            schedule_automatic_market_check(context.application, applied_interval)
+            interval = applied_interval
             await query.message.reply_text(
-                f"Automatic market check interval updated to {interval} seconds ✅ "
+                f"Event Alert analysis interval updated to {interval} seconds ✅ "
                 "Applied immediately."
             )
             return

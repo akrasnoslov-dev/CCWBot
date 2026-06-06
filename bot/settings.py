@@ -4,13 +4,18 @@ from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 from bot.storage import load_state, save_state
 
 DEFAULT_BTC_ALERT_THRESHOLD_PERCENT = 2.0
-DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS = 600
+DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS = 1800
 DEFAULT_MAJOR_MOVEMENT_THRESHOLD_PERCENT = 1.0
 DEFAULT_ALT_MOVEMENT_THRESHOLD_PERCENT = 2.0
 DEFAULT_MAJOR_24H_MEDIUM_THRESHOLD_PERCENT = 3.0
 DEFAULT_MAJOR_24H_HIGH_THRESHOLD_PERCENT = 5.0
 DEFAULT_ALT_24H_MEDIUM_THRESHOLD_PERCENT = 5.0
 DEFAULT_ALT_24H_HIGH_THRESHOLD_PERCENT = 8.0
+
+
+def normalize_automatic_check_interval_seconds(interval_seconds: int | None) -> int:
+    _ = interval_seconds
+    return DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
 
 
 def _threshold_defaults() -> dict:
@@ -32,7 +37,7 @@ def get_state_alert_settings(state: dict) -> dict:
                 state.get("price_move_alert_percent", DEFAULT_MAJOR_MOVEMENT_THRESHOLD_PERCENT),
             )
         ),
-        "automatic_check_interval_seconds": int(
+        "automatic_check_interval_seconds": normalize_automatic_check_interval_seconds(
             state.get("automatic_check_interval_seconds", AUTOMATIC_CHECK_INTERVAL_SECONDS)
         ),
     }
@@ -54,7 +59,9 @@ async def get_db_alert_settings() -> dict:
         )
     return {
         "price_move_alert_percent": settings["btc_alert_threshold_percent"],
-        "automatic_check_interval_seconds": settings["automatic_check_interval_seconds"],
+        "automatic_check_interval_seconds": normalize_automatic_check_interval_seconds(
+            settings["automatic_check_interval_seconds"]
+        ),
         **{key: settings[key] for key in _threshold_defaults()},
     }
 
@@ -132,6 +139,7 @@ async def save_alert_threshold_setting(key: str, value: float) -> None:
 
 
 async def save_interval_setting(interval: int) -> None:
+    interval = normalize_automatic_check_interval_seconds(interval)
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
             await update_app_settings(
