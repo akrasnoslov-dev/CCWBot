@@ -901,7 +901,7 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
     monkeypatch.setattr(
         alerts,
         "_get_or_create_event_alert_market_event",
-        AsyncMock(return_value=(123, "btc:event")),
+        AsyncMock(return_value=(123, "btc:event", "instance-a", False)),
     )
     monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
@@ -957,7 +957,12 @@ async def test_automatic_price_check_uses_product_analysis_for_each_event_group(
     monkeypatch.setattr(
         alerts,
         "_get_or_create_event_alert_market_event",
-        AsyncMock(side_effect=[(123, "btc:event:1"), (124, "btc:event:2")]),
+        AsyncMock(
+            side_effect=[
+                (123, "btc:event:1", "instance-a", False),
+                (124, "btc:event:2", "instance-b", False),
+            ]
+        ),
     )
     monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", AsyncMock(return_value=True))

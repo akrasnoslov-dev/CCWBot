@@ -29,7 +29,7 @@ LIMIT 100;
 ```sql
 SELECT
   symbol,
-  event_key,
+  event_key AS canonical_event_key,
   COUNT(*) AS market_events,
   MIN(detected_at) AS first_seen_at,
   MAX(detected_at) AS last_seen_at
@@ -38,6 +38,11 @@ WHERE event_type = 'event_alert'
 GROUP BY symbol, event_key
 ORDER BY market_events DESC, last_seen_at DESC;
 ```
+
+`market_events.event_key` is the backend canonical semantic key, not necessarily the raw LLM key.
+For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
+`market_drop_btc` normalize to `btc_price_downtrend`. The raw key and semantic family are emitted
+in event-analysis logs and persisted in alert numeric context where available.
 
 ## Duplicate/Suppressed Analysis
 
@@ -59,7 +64,11 @@ ORDER BY last_sent_at DESC;
 ```
 
 Suppressed semantic duplicates are logged as `event_alert_suppressed` with
-`suppression_reason=semantic_cooldown`.
+`suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
+semantic family key, so minor raw-key wording drift does not bypass the cooldown. Same-family
+events can still deliver inside the semantic cooldown when urgency increased, the absolute
+analysed-window movement grew by at least 2.5 percentage points, or stable related-news identity
+shows a new news driver.
 
 ## Event Alert Suppression Reasons
 
@@ -68,9 +77,15 @@ Telegram messages. Suppression logs use:
 
 ```text
 ops_event=event_alert_suppression symbol=BTC raw_event_key=... canonical_event_key=...
-semantic_family=None event_instance_key=... delivery_count=0 suppression_count=1
+semantic_family=price_downtrend event_instance_key=... delivery_count=0 suppression_count=1
 suppression_reason=semantic_cooldown analysed_window_minutes=180
 ```
+
+Market-only event instance keys are built from symbol, canonical semantic key, rounded UTC time
+bucket, urgency, and a coarse movement bucket. News-linked event instance keys use stable selected
+news identities instead of temporary `n1`/`n2` labels. Small payload or input-hash changes should
+not create new event identities; severity increases, materially larger movement buckets, and
+distinct news drivers may create new identities.
 
 Stable `suppression_reason` values include:
 
