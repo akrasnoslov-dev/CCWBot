@@ -65,7 +65,10 @@ ORDER BY last_sent_at DESC;
 
 Suppressed semantic duplicates are logged as `event_alert_suppressed` with
 `suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
-semantic family key, so minor raw-key wording drift does not bypass the cooldown.
+semantic family key, so minor raw-key wording drift does not bypass the cooldown. Same-family
+events can still deliver inside the semantic cooldown when urgency increased, the absolute
+analysed-window movement grew by at least 2.5 percentage points, or stable related-news identity
+shows a new news driver.
 
 ## Event Alert Suppression Reasons
 

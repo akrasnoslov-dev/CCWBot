@@ -63,9 +63,9 @@ from bot.db.database import (
     get_active_users_with_alert_preferences,
     get_last_sent_alert,
     get_last_sent_alert_at,
-    get_last_sent_event_alert_at_for_event_key,
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
+    get_latest_sent_event_alert_for_event_key,
     get_latest_success_event_ai_analysis,
     get_market_event_by_instance_key,
     get_or_create_market_event,
@@ -147,6 +147,7 @@ NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL = 1
 NEWS_DRIVEN_ALERT_SOURCE = "news_driven_alert"
 NEWS_DRIVEN_ALERT_MODEL = "deterministic-news-driven-alerts-v1"
 EVENT_ANALYSIS_PAYLOAD_POINTS = 6
+EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
 SUPPRESSION_EXACT_COOLDOWN = "exact_cooldown"
 SUPPRESSION_SEMANTIC_COOLDOWN = "semantic_cooldown"
 SUPPRESSION_USER_FREQUENCY_COOLDOWN = "user_frequency_cooldown"
@@ -410,6 +411,15 @@ def _stable_market_identity_details(
 
 
 def _stable_market_movement_bucket(input_payload: dict) -> str:
+    movement = _event_movement_percent_from_payload(input_payload)
+    if movement is None:
+        return "unknown"
+    bucket = int(abs(movement) // EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT)
+    bucket *= EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
+    return f"{bucket:.1f}"
+
+
+def _event_movement_percent_from_payload(input_payload: dict) -> float | None:
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     value = (
         market_data.get("chg_window")
@@ -419,11 +429,54 @@ def _stable_market_movement_bucket(input_payload: dict) -> str:
         or market_data.get("change_24h_percent")
     )
     try:
-        movement = abs(float(value))
+        return float(value)
     except (TypeError, ValueError):
-        return "unknown"
-    bucket = int(movement // 2.5) * 2.5
-    return f"{bucket:.1f}"
+        return None
+
+
+def _urgency_rank(value: str | None) -> int:
+    return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)
+
+
+def _event_semantic_cooldown_allows_escalation(
+    previous_alert,
+    *,
+    current_urgency: str | None,
+    current_movement_percent: float | None,
+    current_stable_news_ids: list[str],
+) -> tuple[bool, str | None]:
+    previous_context = _numeric_context_payload(getattr(previous_alert, "numeric_context", None))
+    previous_urgency = str(previous_context.get("notification_severity") or "").strip().lower()
+    previous_urgency_rank = _urgency_rank(previous_urgency)
+    if previous_urgency_rank > 0 and _urgency_rank(current_urgency) > previous_urgency_rank:
+        return True, "urgency_increased"
+
+    previous_movement = _optional_float(previous_context.get("analysed_window_change_percent"))
+    if (
+        previous_movement is not None
+        and current_movement_percent is not None
+        and abs(current_movement_percent)
+        >= abs(previous_movement) + EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
+    ):
+        return True, "material_movement_increased"
+
+    previous_news_ids = {
+        str(item)
+        for item in previous_context.get("stable_related_news_ids") or []
+        if str(item).strip()
+    }
+    current_news_ids = {str(item) for item in current_stable_news_ids if str(item).strip()}
+    if current_news_ids - previous_news_ids:
+        return True, "new_news_driver"
+
+    return False, None
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _analysed_window_minutes_from_payload(input_payload: dict | None) -> int | None:
@@ -1479,6 +1532,10 @@ def _event_numeric_context(
             "raw_event_key": _raw_event_key_from_payload(input_payload, decision),
             "semantic_family": _semantic_family_from_payload(input_payload),
             "event_instance_key": event_instance_key,
+            "stable_related_news_ids": _stable_related_news_ids(
+                input_payload,
+                decision.related_news_ids,
+            ),
             "confidence": decision.confidence,
         }
     )
@@ -2257,6 +2314,7 @@ async def _deliver_news_driven_alert_for_symbol(
         cooldown_seconds=cooldown_seconds,
         canonical_event_key=event_key,
         semantic_family="news_catalyst",
+        current_stable_news_ids=[_news_driven_identity(news_item)],
         now=now,
     )
     if not recipients:
@@ -2980,6 +3038,8 @@ async def _filter_event_recipients_for_cooldown(
     cooldown_seconds: int,
     canonical_event_key: str | None = None,
     semantic_family: str | None = None,
+    current_movement_percent: float | None = None,
+    current_stable_news_ids: list[str] | None = None,
     semantic_cooldown_seconds: int = EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
     now: datetime,
     return_summary: bool = False,
@@ -3004,15 +3064,19 @@ async def _filter_event_recipients_for_cooldown(
                 filtered.append(recipient)
                 continue
             if canonical_event_key and semantic_cooldown_seconds > 0:
-                last_semantic_sent_at = await get_last_sent_event_alert_at_for_event_key(
+                previous_semantic_alert = await get_latest_sent_event_alert_for_event_key(
                     session,
                     user_id=recipient.user_id,
                     symbol=symbol,
                     canonical_event_key=canonical_event_key,
                     alert_type=EVENT_ALERT_TYPE,
                 )
+                last_semantic_sent_at = (
+                    previous_semantic_alert.created_at if previous_semantic_alert else None
+                )
                 semantic_allowed = True
                 semantic_remaining = 0
+                semantic_allow_reason = None
                 if last_semantic_sent_at is not None:
                     if last_semantic_sent_at.tzinfo is None:
                         last_semantic_sent_at = last_semantic_sent_at.replace(
@@ -3023,9 +3087,20 @@ async def _filter_event_recipients_for_cooldown(
                     ).total_seconds()
                     semantic_remaining = max(0, int(semantic_cooldown_seconds - elapsed))
                     semantic_allowed = elapsed >= semantic_cooldown_seconds
+                    if not semantic_allowed:
+                        (
+                            semantic_allowed,
+                            semantic_allow_reason,
+                        ) = _event_semantic_cooldown_allows_escalation(
+                            previous_semantic_alert,
+                            current_urgency=urgency,
+                            current_movement_percent=current_movement_percent,
+                            current_stable_news_ids=current_stable_news_ids or [],
+                        )
                 logger.debug(
                     "event_alert_semantic_cooldown_check symbol=%s canonical_event_key=%s "
-                    "semantic_family=%s last_sent_at=%s cooldown_seconds=%s allowed=%s",
+                    "semantic_family=%s last_sent_at=%s cooldown_seconds=%s allowed=%s "
+                    "allow_reason=%s",
                     normalize_symbol(symbol),
                     canonical_event_key,
                     semantic_family,
@@ -3036,6 +3111,7 @@ async def _filter_event_recipients_for_cooldown(
                     ),
                     semantic_cooldown_seconds,
                     semantic_allowed,
+                    semantic_allow_reason,
                 )
                 if not semantic_allowed:
                     _count_suppression(
@@ -3052,6 +3128,9 @@ async def _filter_event_recipients_for_cooldown(
                         SUPPRESSION_SEMANTIC_COOLDOWN,
                         semantic_remaining,
                     )
+                    continue
+                if semantic_allow_reason:
+                    filtered.append(recipient)
                     continue
             if effective_cooldown <= 0:
                 filtered.append(recipient)
@@ -4776,6 +4855,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 cooldown_seconds=int(alert_settings.get("automatic_check_interval_seconds", 300)),
                 canonical_event_key=decision.event_key,
                 semantic_family=_semantic_family_from_payload(input_payload),
+                current_movement_percent=_event_movement_percent_from_payload(input_payload),
+                current_stable_news_ids=_stable_related_news_ids(
+                    input_payload,
+                    decision.related_news_ids,
+                ),
                 now=now,
                 return_summary=True,
             )

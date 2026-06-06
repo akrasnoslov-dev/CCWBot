@@ -204,10 +204,13 @@ LLM choosing the canonical name.
 
 Cooldown checks use `symbol + semantic family` through the canonical event key stored on
 `market_events.event_key`. For example, `btc_price_drop` and `btc_selloff_prediction` both cool
-down as `BTC + price_downtrend`. Operators can inspect `raw_event_key`, `canonical_event_key`,
-`semantic_family`, `event_instance_key`, `delivery_count`, `suppression_count`, and
-`suppression_reason` in logs and stored numeric context; these diagnostic fields are not included
-in Telegram alert text.
+down as `BTC + price_downtrend`. Same-family alerts are suppressed only when the new event has
+the same or lower urgency, no materially larger analysed-window movement, and no new stable
+related-news driver. A higher urgency, an absolute movement increase of at least 2.5 percentage
+points, or a new stable related-news identity bypasses the semantic cooldown. Operators can inspect
+`raw_event_key`, `canonical_event_key`, `semantic_family`, `event_instance_key`, `delivery_count`,
+`suppression_count`, and `suppression_reason` in logs and stored numeric context; these diagnostic
+fields are not included in Telegram alert text.
 
 Market event instance identity uses stable components: symbol, canonical semantic key, a rounded
 UTC time bucket, stable selected-news identities, and for market-only events a coarse urgency and
