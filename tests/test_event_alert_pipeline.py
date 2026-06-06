@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram import MessageEntity
 
 import bot.alerts as alerts
-from bot.alerting.event_analysis import canonicalize_event_key
+from bot.alerting.event_analysis import canonicalize_event_key, normalize_event_semantic_family
 from bot.db.database import (
     Alert,
     Base,
@@ -151,19 +151,129 @@ def test_event_instance_key_reuses_same_bucket_and_splits_distinct_occurrences()
     assert no_news_different_input != first
 
 
+def test_event_instance_key_uses_stable_market_only_family_identity():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+    same_bucket_different_input = alerts._build_event_instance_key(
+        symbol="BTC",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:45:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-b",
+    )
+    next_bucket = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T22:00:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+    different_family = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_etf_flows",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=[],
+        input_hash="hash-a",
+    )
+
+    assert first == same_bucket_different_input
+    assert next_bucket != first
+    assert different_family != first
+
+
+def test_event_instance_key_uses_stable_news_identity_not_temporary_news_ids():
+    first = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=["n1"],
+        stable_news_ids=["source_title:abc"],
+        input_hash="hash-a",
+    )
+    same_stable_news = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:45:00+00:00",
+        related_news_ids=["n2"],
+        stable_news_ids=["source_title:abc"],
+        input_hash="hash-b",
+    )
+    different_news = alerts._build_event_instance_key(
+        symbol="btc",
+        event_key="btc_price_downtrend",
+        timestamp_value="2026-06-03T21:15:00+00:00",
+        related_news_ids=["n1"],
+        stable_news_ids=["source_title:def"],
+        input_hash="hash-a",
+    )
+
+    assert first == same_stable_news
+    assert different_news != first
+
+
 @pytest.mark.parametrize(
     ("raw_event_key", "expected"),
     [
-        ("BTC_price_volatility", "btc_price_volatility"),
-        ("bitcoin_price_volatility", "btc_price_volatility"),
-        ("btc_price_volatility_2026-05-25", "btc_price_volatility"),
-        ("Bitcoin-options-Nadaq", "btc_options_nasdaq"),
+        ("BTC_price_volatility", "btc_volatility"),
+        ("bitcoin_price_volatility", "btc_volatility"),
+        ("btc_price_volatility_2026-05-25", "btc_volatility"),
+        ("Bitcoin-options-Nadaq", "btc_derivatives_positioning"),
     ],
 )
 def test_canonical_event_key_normalizes_common_llm_variants(raw_event_key, expected):
     result = canonicalize_event_key("btc", raw_event_key)
 
     assert result.canonical_event_key == expected
+
+
+@pytest.mark.parametrize(
+    ("symbol", "raw_event_key"),
+    [
+        ("eth", "eth_price_drop_5pct"),
+        ("eth", "eth_price_drop_5_percent"),
+        ("eth", "eth_price_drop"),
+        ("eth", "market_drop_eth"),
+        ("btc", "btc_selloff_prediction"),
+        ("btc", "btc_price_test_low"),
+        ("btc", "btc_price_test_february_low"),
+        ("btc", "btc_price_drop"),
+        ("ton", "ton_price_drop"),
+        ("ton", "ton_price_decline"),
+    ],
+)
+def test_semantic_event_family_normalizes_equivalent_downtrend_keys(symbol, raw_event_key):
+    result = canonicalize_event_key(symbol, raw_event_key)
+
+    assert result.semantic_family == "price_downtrend"
+    assert result.canonical_event_key == f"{symbol}_price_downtrend"
+
+
+def test_semantic_event_family_uses_context_for_ambiguous_movement_key():
+    result = canonicalize_event_key(
+        "ton",
+        "ton_price_movement",
+        title="TON price weakened again",
+        message_body="TON moved lower while market pressure remains elevated.",
+    )
+
+    assert result.semantic_family == "price_downtrend"
+    assert result.canonical_event_key == "ton_price_downtrend"
+
+
+def test_semantic_event_family_keeps_distinct_drivers_separate():
+    assert normalize_event_semantic_family("btc", "btc_etf_outflows") == "etf_flows"
+    assert normalize_event_semantic_family("btc", "btc_liquidation_cascade") == "liquidations"
+    assert canonicalize_event_key("btc", "btc_options_expiry").canonical_event_key == (
+        "btc_derivatives_positioning"
+    )
+    assert canonicalize_event_key("btc", "btc_low_volatility").canonical_event_key == (
+        "btc_volatility"
+    )
 
 
 def test_canonical_event_key_replaces_random_analysis_key_with_stable_fallback():
@@ -709,7 +819,7 @@ async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
     monkeypatch.setattr(
         alerts,
         "_get_or_create_event_alert_market_event",
-        AsyncMock(return_value=(456, "btc_downward_pressure_2026_05_20")),
+        AsyncMock(return_value=(456, "btc_downward_pressure_2026_05_20", "instance-a", False)),
     )
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
@@ -905,7 +1015,7 @@ async def test_event_analysis_accepts_advice_like_possible_action(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_alert_empty_llm_event_key_is_canonicalized_to_fallback(monkeypatch):
+async def test_alert_empty_llm_event_key_is_canonicalized_to_backend_family(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
@@ -937,7 +1047,7 @@ async def test_alert_empty_llm_event_key_is_canonicalized_to_fallback(monkeypatc
         decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
         assert decision is not None
-        assert decision.event_key == "btc_volatility_returns_bitcoin_price_action_became_choppy"
+        assert decision.event_key == "btc_volatility"
         assert analysis_id is not None
         async with session_local() as session:
             row = await session.scalar(select(EventAiAnalysis))
@@ -1157,6 +1267,53 @@ async def test_semantic_event_alert_cooldown_suppresses_same_user_symbol_and_key
         assert "event_alert_suppressed" in caplog.text
         assert "suppression_reason=semantic_cooldown" in caplog.text
         assert "cooldown_remaining_seconds=10800" in caplog.text
+        assert "user_id=" not in caplog.text
+        assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_suppresses_different_keys_in_same_family(
+    monkeypatch,
+    caplog,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            previous = canonicalize_event_key("btc", "btc_price_drop")
+            current = canonicalize_event_key("btc", "btc_selloff_prediction")
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key=previous.canonical_event_key,
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            filtered = await alerts._filter_event_recipients_for_cooldown(
+                [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+                symbol="btc",
+                urgency="normal",
+                cooldown_seconds=0,
+                canonical_event_key=current.canonical_event_key,
+                semantic_family=current.semantic_family,
+                semantic_cooldown_seconds=4 * 3600,
+                now=now,
+            )
+
+        assert previous.canonical_event_key == current.canonical_event_key
+        assert current.semantic_family == "price_downtrend"
+        assert filtered == []
+        assert "semantic_family=price_downtrend" in caplog.text
+        assert "suppression_reason=semantic_cooldown" in caplog.text
         assert "user_id=" not in caplog.text
         assert "chat_id=" not in caplog.text
     finally:

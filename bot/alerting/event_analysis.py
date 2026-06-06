@@ -71,6 +71,7 @@ _SYMBOL_ALIASES = {
 class CanonicalEventKey:
     raw_event_key: str | None
     canonical_event_key: str
+    semantic_family: str | None
     reason: str
 
 
@@ -90,21 +91,166 @@ def canonicalize_event_key(
         canonical = canonical.replace("nadaq", "nasdaq")
         canonical = _strip_date_suffix(canonical)
         canonical = _collapse_event_key(canonical)
+    semantic_family = normalize_event_semantic_family(
+        normalized_symbol,
+        canonical or raw,
+        title=title,
+        message_body=message_body,
+    )
     if not canonical:
         return CanonicalEventKey(
             raw or None,
-            _fallback_event_key(normalized_symbol, title, message_body),
+            _semantic_event_key(normalized_symbol, semantic_family)
+            or _fallback_event_key(normalized_symbol, title, message_body),
+            semantic_family,
             "fallback_empty",
         )
     if _is_random_event_key(normalized_symbol, canonical):
         return CanonicalEventKey(
             raw or None,
-            _fallback_event_key(normalized_symbol, title, message_body),
+            _semantic_event_key(normalized_symbol, semantic_family)
+            or _fallback_event_key(normalized_symbol, title, message_body),
+            semantic_family,
             "fallback_random",
+        )
+    if semantic_family:
+        semantic_event_key = _semantic_event_key(normalized_symbol, semantic_family)
+        return CanonicalEventKey(
+            raw or None,
+            semantic_event_key,
+            semantic_family,
+            "semantic_family",
         )
     if canonical == raw:
         reason = "unchanged"
-    return CanonicalEventKey(raw or None, canonical, reason)
+    return CanonicalEventKey(raw or None, canonical, None, reason)
+
+
+def normalize_event_semantic_family(
+    symbol: str,
+    raw_event_key: str | None,
+    *,
+    title: str | None = None,
+    message_body: str | None = None,
+) -> str | None:
+    """Map raw event wording to a deterministic backend-owned semantic family."""
+    normalized_symbol = normalize_symbol(symbol)
+    parts = [
+        _normalize_event_key_text(str(raw_event_key or "")),
+        _normalize_event_key_text(str(title or "")),
+        _normalize_event_key_text(str(message_body or "")),
+    ]
+    text = _replace_symbol_aliases(_collapse_event_key("_".join(part for part in parts if part)))
+    tokens = {token for token in text.split("_") if token and token != normalized_symbol}
+    phrases = f"_{text}_"
+
+    if _contains_any_phrase(
+        phrases,
+        {"etf_flow", "etf_flows", "fund_flow", "fund_flows", "inflow", "outflow"},
+    ) or tokens.intersection({"etf", "inflow", "inflows", "outflow", "outflows"}):
+        return "etf_flows"
+
+    if tokens.intersection({"liquidation", "liquidations", "leverage", "deleveraging"}):
+        return "liquidations"
+
+    if tokens.intersection({"regulation", "regulatory", "sec", "policy", "lawsuit"}):
+        return "regulatory"
+
+    if tokens.intersection({"option", "options", "derivative", "derivatives", "futures"}):
+        return "derivatives_positioning"
+
+    if _contains_any_phrase(phrases, {"hash_rate", "hashrate"}) or tokens.intersection(
+        {"mining", "miner", "miners", "hashrate", "difficulty"}
+    ):
+        return "network_mining"
+
+    if tokens.intersection({"volatility", "volatile", "choppy", "whipsaw"}):
+        return "volatility"
+
+    if _contains_any_phrase(
+        phrases,
+        {
+            "price_drop",
+            "price_decline",
+            "price_down",
+            "price_pressure",
+            "market_drop",
+            "selloff",
+            "sell_off",
+            "downward_pressure",
+            "downside_pressure",
+            "price_test_low",
+            "price_test_february_low",
+            "test_low",
+            "price_movement_lower",
+            "market_movement_lower",
+        },
+    ) or tokens.intersection(
+        {
+            "decline",
+            "declines",
+            "declined",
+            "declining",
+            "drop",
+            "drops",
+            "dropped",
+            "dropping",
+            "fall",
+            "falls",
+            "falling",
+            "fell",
+            "selloff",
+            "sell",
+            "slump",
+            "weak",
+            "weakened",
+            "weakening",
+            "bearish",
+        }
+    ):
+        return "price_downtrend"
+
+    if _contains_any_phrase(
+        phrases,
+        {
+            "price_rally",
+            "market_rally",
+            "price_rebound",
+            "price_breakout",
+            "upward_pressure",
+            "upside_pressure",
+        },
+    ) or tokens.intersection(
+        {
+            "rally",
+            "rallies",
+            "rebound",
+            "rebounds",
+            "surge",
+            "surges",
+            "breakout",
+            "higher",
+            "strength",
+            "strengthening",
+            "bullish",
+        }
+    ):
+        return "price_uptrend"
+
+    if tokens.intersection({"news", "headline", "headlines", "catalyst"}):
+        return "news_catalyst"
+
+    return None
+
+
+def _semantic_event_key(symbol: str, semantic_family: str | None) -> str | None:
+    if not semantic_family:
+        return None
+    return f"{normalize_symbol(symbol)}_{semantic_family}"
+
+
+def _contains_any_phrase(text: str, phrases: set[str]) -> bool:
+    return any(f"_{phrase}_" in text for phrase in phrases)
 
 
 def with_canonical_event_key(

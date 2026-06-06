@@ -2683,6 +2683,17 @@ async def get_or_create_market_event(
     return market_event
 
 
+async def get_market_event_by_instance_key(
+    session: AsyncSession,
+    *,
+    event_instance_key: str,
+) -> MarketEvent | None:
+    """Return an existing market event by stable event instance key."""
+    return await session.scalar(
+        select(MarketEvent).where(MarketEvent.event_instance_key == event_instance_key).limit(1)
+    )
+
+
 async def get_event_ai_analysis(
     session: AsyncSession, *, market_event_id: int, input_hash: str
 ) -> EventAiAnalysis | None:
