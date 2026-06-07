@@ -44,6 +44,9 @@ them when required, or explain why they were not needed. See
 - SQLAlchemy models, metadata, DB initialization, and compatibility re-exports live in
   `bot/db/database.py`. Runtime persistence operations are split by domain in `bot/db/`
   modules such as users, premium, prices, news, alerts, reports, and LLM usage.
+- Telegram handlers live in the `bot/handlers/` package. Command and callback
+  implementations are split by UX domain, while `bot/handlers/registration.py` keeps startup
+  registration centralized for `bot/runtime/telegram_app.py`.
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
