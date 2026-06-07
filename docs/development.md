@@ -78,6 +78,9 @@ them when required, or explain why they were not needed. See
 - Automatic alert threshold remains one global admin-controlled value for all coins.
 - Saved non-BTC watchlist choices remain stored when Premium expires, but non-BTC deliveries
   are blocked until Premium is active again.
+- Alert orchestration remains in `bot/alerts.py`. Deterministic event identity, analysed-window,
+  and news relevance helpers live under `bot/alerting/`; they must not perform Telegram delivery,
+  recipient lookup, LLM calls, or database writes.
 - Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
   outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
   wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal

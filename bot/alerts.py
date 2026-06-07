@@ -4,12 +4,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from html import escape
 from time import perf_counter
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from uuid import uuid4
+from urllib.parse import urlsplit
 
 import httpx
 from telegram import MessageEntity
@@ -17,6 +15,8 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, ContextTypes
 
+from bot.alerting import event_identity as _event_identity
+from bot.alerting import news_context as _news_context
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -122,6 +122,77 @@ from bot.settings import (
 from bot.storage import load_state, save_state
 from bot.telegram_errors import is_bot_blocked_error
 
+EVENT_ANALYSIS_PAYLOAD_POINTS = _event_identity.EVENT_ANALYSIS_PAYLOAD_POINTS
+EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT = (
+    _event_identity.EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
+)
+AnalysedWindowReference = _event_identity.AnalysedWindowReference
+_analysed_window_minutes_from_payload = _event_identity._analysed_window_minutes_from_payload
+_automatic_market_check_job_name = _event_identity._automatic_market_check_job_name
+_build_event_analysis_id = _event_identity._build_event_analysis_id
+_build_event_instance_key = _event_identity._build_event_instance_key
+_build_market_heartbeat_id = _event_identity._build_market_heartbeat_id
+_build_news_driven_event_instance_key = _event_identity._build_news_driven_event_instance_key
+_build_news_driven_event_key = _event_identity._build_news_driven_event_key
+_calculate_price_change = _event_identity._calculate_price_change
+_event_alert_change_label = _event_identity._event_alert_change_label
+_event_input_hash = _event_identity._event_input_hash
+_event_instance_bucket = _event_identity._event_instance_bucket
+_event_instance_key_for_decision = _event_identity._event_instance_key_for_decision
+_event_movement_percent_from_payload = _event_identity._event_movement_percent_from_payload
+_event_semantic_cooldown_allows_escalation = (
+    _event_identity._event_semantic_cooldown_allows_escalation
+)
+_format_analysed_window_label = _event_identity._format_analysed_window_label
+_json_dumps = _event_identity._json_dumps
+_numeric_context_payload = _event_identity._numeric_context_payload
+_optional_float = _event_identity._optional_float
+_raw_event_key_from_payload = _event_identity._raw_event_key_from_payload
+_seconds_until_next_symbol_check = _event_identity._seconds_until_next_symbol_check
+_select_analysed_window_reference = _event_identity._select_analysed_window_reference
+_semantic_family_from_payload = _event_identity._semantic_family_from_payload
+_stable_float = _event_identity._stable_float
+_stable_market_identity_details = _event_identity._stable_market_identity_details
+_stable_market_movement_bucket = _event_identity._stable_market_movement_bucket
+_stable_related_news_ids = _event_identity._stable_related_news_ids
+_symbol_stagger_offsets_seconds = _event_identity._symbol_stagger_offsets_seconds
+_urgency_rank = _event_identity._urgency_rank
+_utc_checked_at = _event_identity._utc_checked_at
+get_analysed_window_minutes = _event_identity.get_analysed_window_minutes
+
+BTC_ONLY_NEWS_TERMS = _news_context.BTC_ONLY_NEWS_TERMS
+CLEAR_MARKET_WIDE_NEWS_TERMS = _news_context.CLEAR_MARKET_WIDE_NEWS_TERMS
+COIN_ALIASES = _news_context.COIN_ALIASES
+COMPANY_BACKGROUND_NEWS_TERMS = _news_context.COMPANY_BACKGROUND_NEWS_TERMS
+CRITICAL_NEWS_CATEGORIES = _news_context.CRITICAL_NEWS_CATEGORIES
+GENERIC_NEWS_TERMS = _news_context.GENERIC_NEWS_TERMS
+MARKET_MOVING_NEWS_TERMS = _news_context.MARKET_MOVING_NEWS_TERMS
+MARKET_WIDE_NEWS_TERMS = _news_context.MARKET_WIDE_NEWS_TERMS
+MATERIAL_NEWS_TERMS = _news_context.MATERIAL_NEWS_TERMS
+_candidate_news_relevance_label = _news_context._candidate_news_relevance_label
+_coin_name = _news_context._coin_name
+_format_candidate_news = _news_context._format_candidate_news
+_is_clearly_market_wide_news = _news_context._is_clearly_market_wide_news
+_log_news_selection_summary = _news_context._log_news_selection_summary
+_matches_symbol_alias = _news_context._matches_symbol_alias
+_mentions_btc = _news_context._mentions_btc
+_news_driven_identity = _news_context._news_driven_identity
+_news_id = _news_context._news_id
+_news_metadata_matches_symbol = _news_context._news_metadata_matches_symbol
+_news_search_text = _news_context._news_search_text
+_news_sort_key = _news_context._news_sort_key
+_news_symbols = _news_context._news_symbols
+_news_text = _news_context._news_text
+_news_within_hours = _news_context._news_within_hours
+_parse_news_datetime = _news_context._parse_news_datetime
+_sort_news_fresh_first = _news_context._sort_news_fresh_first
+_stable_news_link = _news_context._stable_news_link
+classify_news_relevance = _news_context.classify_news_relevance
+filter_news_for_symbol = _news_context.filter_news_for_symbol
+is_generic_news_item = _news_context.is_generic_news_item
+is_material_news_item = _news_context.is_material_news_item
+re_search_word = _news_context.re_search_word
+
 logger = logging.getLogger(__name__)
 
 PRODUCT_ALERT_TYPES = {
@@ -146,8 +217,6 @@ NEWS_DRIVEN_ALERT_MAX_AGE_HOURS = 6
 NEWS_DRIVEN_ALERT_MAX_PER_SYMBOL = 1
 NEWS_DRIVEN_ALERT_SOURCE = "news_driven_alert"
 NEWS_DRIVEN_ALERT_MODEL = "deterministic-news-driven-alerts-v1"
-EVENT_ANALYSIS_PAYLOAD_POINTS = 6
-EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
 SUPPRESSION_EXACT_COOLDOWN = "exact_cooldown"
 SUPPRESSION_SEMANTIC_COOLDOWN = "semantic_cooldown"
 SUPPRESSION_USER_FREQUENCY_COOLDOWN = "user_frequency_cooldown"
@@ -171,183 +240,16 @@ SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_UNKNOWN,
 }
 
-
 @dataclass(frozen=True)
 class AlertRecipient:
     chat_id: int
     user_id: int | None = None
     alert_frequency_seconds: int | None = field(default=None, compare=False)
 
-
 @dataclass(frozen=True)
 class EventRecipientFilterResult:
     recipients: list[AlertRecipient]
     suppression_reason_counts: dict[str, int]
-
-
-COIN_ALIASES = {
-    "btc": ("btc", "bitcoin"),
-    "eth": ("eth", "ethereum", "ether"),
-    "sol": ("sol", "solana"),
-    "xrp": ("xrp", "ripple"),
-    "bnb": ("bnb", "binance coin", "binancecoin"),
-    "doge": ("doge", "dogecoin"),
-    "ada": ("ada", "cardano"),
-    "ton": ("ton", "toncoin", "the open network"),
-    "link": ("link", "chainlink"),
-    "trx": ("trx", "tron"),
-}
-MARKET_WIDE_NEWS_TERMS = (
-    "crypto market",
-    "cryptocurrency market",
-    "cryptocurrencies",
-    "digital asset",
-    "digital assets",
-    "market-wide",
-    "market wide",
-    "broader crypto",
-    "broader cryptocurrency",
-    "broader market",
-    "altcoin",
-    "altcoins",
-    "crypto assets",
-    "crypto prices",
-    "crypto selloff",
-    "crypto sell-off",
-    "crypto rally",
-    "regulation",
-    "regulatory",
-    "sec",
-    "fed",
-    "federal reserve",
-    "interest rate",
-    "rates",
-    "macro",
-    "inflation",
-    "exchange",
-    "hack",
-    "etf",
-    "dominance",
-)
-BTC_ONLY_NEWS_TERMS = ("bitcoin", "btc")
-CLEAR_MARKET_WIDE_NEWS_TERMS = (
-    "crypto market",
-    "cryptocurrency market",
-    "cryptocurrencies",
-    "digital asset",
-    "digital assets",
-    "market-wide",
-    "market wide",
-    "broader crypto",
-    "broader cryptocurrency",
-    "broader market",
-    "altcoin",
-    "altcoins",
-    "crypto assets",
-    "crypto prices",
-    "crypto selloff",
-    "crypto sell-off",
-    "crypto rally",
-    "market-wide selloff",
-    "market-wide rally",
-)
-MATERIAL_NEWS_TERMS = (
-    "approval",
-    "approved",
-    "rejection",
-    "rejected",
-    "etf flow",
-    "etf inflow",
-    "etf outflow",
-    "law passed",
-    "bill passed",
-    "regulation passed",
-    "enforcement action",
-    "lawsuit",
-    "settlement",
-    "major exchange",
-    "outage",
-    "hack",
-    "bankruptcy",
-    "exploit",
-    "liquidation cascade",
-    "central bank",
-    "government statement",
-    "institutional adoption",
-    "institutional exit",
-)
-GENERIC_NEWS_TERMS = (
-    "analysis",
-    "analyst",
-    "bear trap",
-    "euphoria",
-    "prediction",
-    "price target",
-    "could",
-    "may",
-    "might",
-    "sentiment",
-    "speculation",
-    "commentary",
-)
-COMPANY_BACKGROUND_NEWS_TERMS = (
-    "sued",
-    "lawsuit",
-    "pre-bankruptcy transfer",
-    "transfers from",
-    "revenue",
-    "earnings",
-    "hosting business",
-    "treasury",
-)
-CRITICAL_NEWS_CATEGORIES = {"regulation", "exchange", "security", "macro", "etf"}
-MARKET_MOVING_NEWS_TERMS = MATERIAL_NEWS_TERMS + (
-    "sec",
-    "federal reserve",
-    "fed decision",
-    "rate decision",
-    "emergency",
-    "halt",
-    "halts",
-    "freeze",
-    "frozen",
-    "sanction",
-    "sanctions",
-    "ban",
-    "banned",
-    "approval",
-    "approved",
-)
-
-
-def _stable_float(value: float | None, digits: int) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
-
-
-def get_analysed_window_minutes(
-    event_analysis_interval_seconds: int,
-    payload_points: int = EVENT_ANALYSIS_PAYLOAD_POINTS,
-) -> int:
-    seconds = max(1, int(event_analysis_interval_seconds)) * max(1, int(payload_points))
-    return max(1, (seconds + 59) // 60)
-
-
-def _format_analysed_window_label(minutes: int | None) -> str:
-    if minutes is None:
-        return "n/a"
-    minutes = max(1, int(minutes))
-    if minutes % 60 == 0:
-        return f"{minutes // 60}h"
-    return f"{minutes}m"
-
-
-def _event_alert_change_label(analysed_window_label: str) -> str:
-    if analysed_window_label == "n/a":
-        return "Analysed-window change"
-    return f"{analysed_window_label} change"
-
 
 def _count_suppression(
     counts: dict[str, int],
@@ -355,148 +257,6 @@ def _count_suppression(
 ) -> None:
     normalized_reason = reason if reason in SUPPRESSION_REASON_VALUES else SUPPRESSION_UNKNOWN
     counts[normalized_reason] = counts.get(normalized_reason, 0) + 1
-
-
-def _event_instance_key_for_decision(
-    *,
-    decision: EventAnalysisDecision,
-    input_payload: dict,
-) -> str | None:
-    if not decision.event_key:
-        return None
-    return _build_event_instance_key(
-        symbol=decision.symbol,
-        event_key=decision.event_key,
-        timestamp_value=input_payload.get("timestamp_utc"),
-        related_news_ids=decision.related_news_ids,
-        stable_news_ids=_stable_related_news_ids(input_payload, decision.related_news_ids),
-        market_identity_details=_stable_market_identity_details(input_payload, decision),
-    )
-
-
-def _semantic_family_from_payload(input_payload: dict | None) -> str | None:
-    if not input_payload:
-        return None
-    value = input_payload.get("semantic_family")
-    return str(value).strip() if value else None
-
-
-def _stable_related_news_ids(input_payload: dict, related_news_ids: list[str]) -> list[str]:
-    if not related_news_ids:
-        return []
-    news_items = input_payload.get("news", input_payload.get("candidate_news", []))
-    if not isinstance(news_items, list):
-        return sorted(str(news_id) for news_id in related_news_ids)
-    by_id = {str(item.get("news_id") or ""): item for item in news_items if isinstance(item, dict)}
-    stable_ids = []
-    for news_id in related_news_ids:
-        item = by_id.get(str(news_id))
-        if not item:
-            stable_ids.append(str(news_id))
-            continue
-        stable_ids.append(make_news_key({"link": item.get("url"), **item}) or str(news_id))
-    return sorted(stable_ids)
-
-
-def _stable_market_identity_details(
-    input_payload: dict,
-    decision: EventAnalysisDecision,
-) -> list[str]:
-    if decision.related_news_ids:
-        return []
-    return [
-        f"urgency:{decision.urgency or 'unknown'}",
-        f"movement:{_stable_market_movement_bucket(input_payload)}",
-    ]
-
-
-def _stable_market_movement_bucket(input_payload: dict) -> str:
-    movement = _event_movement_percent_from_payload(input_payload)
-    if movement is None:
-        return "unknown"
-    bucket = int(abs(movement) // EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT)
-    bucket *= EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
-    return f"{bucket:.1f}"
-
-
-def _event_movement_percent_from_payload(input_payload: dict) -> float | None:
-    market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    value = (
-        market_data.get("chg_window")
-        or market_data.get("chg_since_msg")
-        or market_data.get("change_since_last_user_visible_message_percent")
-        or market_data.get("chg24h")
-        or market_data.get("change_24h_percent")
-    )
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _urgency_rank(value: str | None) -> int:
-    return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)
-
-
-def _event_semantic_cooldown_allows_escalation(
-    previous_alert,
-    *,
-    current_urgency: str | None,
-    current_movement_percent: float | None,
-    current_stable_news_ids: list[str],
-) -> tuple[bool, str | None]:
-    previous_context = _numeric_context_payload(getattr(previous_alert, "numeric_context", None))
-    previous_urgency = str(previous_context.get("notification_severity") or "").strip().lower()
-    previous_urgency_rank = _urgency_rank(previous_urgency)
-    if previous_urgency_rank > 0 and _urgency_rank(current_urgency) > previous_urgency_rank:
-        return True, "urgency_increased"
-
-    previous_movement = _optional_float(previous_context.get("analysed_window_change_percent"))
-    if (
-        previous_movement is not None
-        and current_movement_percent is not None
-        and abs(current_movement_percent)
-        >= abs(previous_movement) + EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
-    ):
-        return True, "material_movement_increased"
-
-    previous_news_ids = {
-        str(item)
-        for item in previous_context.get("stable_related_news_ids") or []
-        if str(item).strip()
-    }
-    current_news_ids = {str(item) for item in current_stable_news_ids if str(item).strip()}
-    if current_news_ids - previous_news_ids:
-        return True, "new_news_driver"
-
-    return False, None
-
-
-def _optional_float(value: object) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _analysed_window_minutes_from_payload(input_payload: dict | None) -> int | None:
-    if not input_payload:
-        return None
-    market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    value = market_data.get("analysed_window_minutes")
-    if value is None:
-        return None
-    return int(value)
-
-
-def _raw_event_key_from_payload(
-    input_payload: dict | None,
-    decision: EventAnalysisDecision,
-) -> str | None:
-    if not input_payload:
-        return decision.event_key
-    return input_payload.get("raw_event_key") or decision.event_key
-
 
 def _log_event_alert_suppression(
     *,
@@ -531,133 +291,10 @@ def _log_event_alert_suppression(
         analysed_window_minutes,
     )
 
-
 def _primary_suppression_reason(counts: dict[str, int]) -> str | None:
     if not counts:
         return None
     return max(counts.items(), key=lambda item: item[1])[0]
-
-
-def _calculate_price_change(current_price: float, reference_price: float | None) -> float | None:
-    if reference_price is None or reference_price == 0:
-        return None
-    return calculate_price_change_percent(reference_price, current_price)
-
-
-def _utc_checked_at(snapshot) -> datetime:
-    checked_at = snapshot.checked_at
-    if checked_at.tzinfo is None:
-        checked_at = checked_at.replace(tzinfo=timezone.utc)
-    return checked_at.astimezone(timezone.utc)
-
-
-@dataclass(frozen=True)
-class AnalysedWindowReference:
-    reference_price: float | None
-    reference_snapshot: object | None
-    window_snapshots: list
-
-
-def _select_analysed_window_reference(
-    *,
-    reference,
-    snapshots: list,
-    since: datetime,
-    now: datetime,
-    max_reference_age: timedelta,
-) -> AnalysedWindowReference:
-    since_utc = since.astimezone(timezone.utc)
-    now_utc = now.astimezone(timezone.utc)
-    earliest_reference_at = since_utc - max_reference_age
-    window_snapshots = [
-        snapshot
-        for snapshot in snapshots
-        if since_utc <= _utc_checked_at(snapshot) <= now_utc
-    ]
-
-    if reference is not None:
-        reference_time = _utc_checked_at(reference)
-        if earliest_reference_at <= reference_time <= since_utc:
-            return AnalysedWindowReference(
-                reference_price=float(reference.price),
-                reference_snapshot=reference,
-                window_snapshots=[
-                    snapshot
-                    for snapshot in window_snapshots
-                    if _utc_checked_at(snapshot) > reference_time
-                ],
-            )
-
-    if window_snapshots:
-        return AnalysedWindowReference(
-            reference_price=float(window_snapshots[0].price),
-            reference_snapshot=None,
-            window_snapshots=window_snapshots,
-        )
-    return AnalysedWindowReference(
-        reference_price=None,
-        reference_snapshot=None,
-        window_snapshots=[],
-    )
-
-
-def _automatic_market_check_job_name(symbol: str) -> str:
-    return f"{AUTOMATIC_MARKET_CHECK_JOB_NAME}:{normalize_symbol(symbol)}"
-
-
-def _symbol_stagger_offsets_seconds(
-    *,
-    symbols: tuple[str, ...] | list[str],
-    interval_seconds: int,
-) -> dict[str, int]:
-    interval = max(1, int(interval_seconds))
-    normalized_symbols = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols))
-    if not normalized_symbols:
-        return {}
-    bucket_count = max(len(normalized_symbols), EVENT_ANALYSIS_PAYLOAD_POINTS)
-    return {
-        symbol: (index * interval) // bucket_count
-        for index, symbol in enumerate(normalized_symbols)
-    }
-
-
-def _seconds_until_next_symbol_check(
-    *,
-    symbol: str,
-    interval_seconds: int,
-    now: datetime | None = None,
-    symbols: tuple[str, ...] | list[str] = SUPPORTED_SYMBOLS,
-) -> int:
-    now = now or datetime.now(timezone.utc)
-    interval = max(1, int(interval_seconds))
-    offset = _symbol_stagger_offsets_seconds(
-        symbols=symbols,
-        interval_seconds=interval,
-    ).get(normalize_symbol(symbol), 0)
-    seconds_since_hour = now.minute * 60 + now.second
-    if now.microsecond:
-        seconds_since_hour += 1
-    cycle_position = seconds_since_hour % interval
-    return (offset - cycle_position) % interval
-
-
-def _stable_news_link(link: str) -> str:
-    parsed = urlsplit(link.strip())
-    query_params = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith("utm_")
-    ]
-    return urlunsplit(
-        (
-            parsed.scheme.lower(),
-            parsed.netloc.lower(),
-            parsed.path.rstrip("/") or parsed.path,
-            urlencode(sorted(query_params)),
-            "",
-        )
-    )
-
 
 def _build_price_movement_event_key(
     *,
@@ -685,335 +322,6 @@ def _build_price_movement_event_key(
     encoded = json.dumps(key_parts, sort_keys=True, separators=(",", ":"))
     normalized_symbol = normalize_symbol(symbol)
     return f"{normalized_symbol}:{event_type}:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
-
-
-def _coin_name(symbol: str) -> str:
-    return str(SUPPORTED_COINS[normalize_symbol(symbol)]["name"])
-
-
-def _news_search_text(news_item: dict) -> str:
-    title = str(news_item.get("title") or "")
-    summary = str(news_item.get("summary") or "")
-    return f" {title} {summary} ".lower()
-
-
-def _matches_symbol_alias(symbol: str, text: str) -> bool:
-    aliases = COIN_ALIASES.get(normalize_symbol(symbol), (normalize_symbol(symbol),))
-    return any(re_search_word(alias.lower(), text) for alias in aliases)
-
-
-def _news_metadata_matches_symbol(symbol: str, news_item: dict) -> bool:
-    normalized_symbol = normalize_symbol(symbol)
-    primary_symbol = str(news_item.get("primary_symbol") or "").strip().lower()
-    if primary_symbol == normalized_symbol:
-        return True
-    related_symbols = news_item.get("related_symbols")
-    if not isinstance(related_symbols, list):
-        return False
-    return normalized_symbol in {
-        str(item or "").strip().lower() for item in related_symbols if str(item or "").strip()
-    }
-
-
-def _mentions_btc(text: str) -> bool:
-    return any(re_search_word(term, text) for term in BTC_ONLY_NEWS_TERMS)
-
-
-def _is_clearly_market_wide_news(text: str) -> bool:
-    return any(term in text for term in CLEAR_MARKET_WIDE_NEWS_TERMS)
-
-
-def classify_news_relevance(symbol: str, news_item: dict) -> str:
-    """Classify RSS item relevance before it reaches the LLM."""
-    normalized_symbol = normalize_symbol(symbol)
-    if _news_metadata_matches_symbol(normalized_symbol, news_item):
-        return "direct"
-    text = _news_search_text(news_item)
-    if _matches_symbol_alias(normalized_symbol, text):
-        return "direct"
-    if any(term in text for term in MARKET_WIDE_NEWS_TERMS):
-        if normalized_symbol != "btc" and _mentions_btc(text):
-            if not _is_clearly_market_wide_news(text):
-                return "irrelevant"
-        return "market_wide"
-    return "irrelevant"
-
-
-def is_material_news_item(news_item: dict) -> bool:
-    text = _news_search_text(news_item)
-    return any(term in text for term in MATERIAL_NEWS_TERMS)
-
-
-def is_generic_news_item(news_item: dict) -> bool:
-    text = _news_search_text(news_item)
-    return any(term in text for term in GENERIC_NEWS_TERMS)
-
-
-def re_search_word(term: str, text: str) -> bool:
-    escaped = re.escape(term)
-    if re.fullmatch(r"[a-z0-9]+", term):
-        return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
-    return term in text
-
-
-def filter_news_for_symbol(
-    symbol: str,
-    news_items: list[dict],
-    *,
-    max_direct: int = 5,
-    max_market_wide: int = 3,
-) -> list[dict]:
-    direct: list[dict] = []
-    market_wide: list[dict] = []
-    for item in _sort_news_fresh_first(news_items):
-        relevance = classify_news_relevance(symbol, item)
-        if relevance == "direct" and len(direct) < max_direct:
-            direct.append({**item, "relevance_label": "direct_symbol"})
-        elif relevance == "market_wide" and len(market_wide) < max_market_wide:
-            market_wide.append({**item, "relevance_label": "market_wide"})
-    return direct + market_wide
-
-
-def _candidate_news_relevance_label(symbol: str | None, item: dict) -> str:
-    explicit_label = str(item.get("relevance_label") or "").strip().lower()
-    if explicit_label:
-        return explicit_label
-    if not symbol:
-        return ""
-    relevance = classify_news_relevance(symbol, item)
-    if relevance == "direct":
-        return "direct_symbol"
-    if relevance == "market_wide":
-        return "market_wide"
-    return "irrelevant"
-
-
-def _log_news_selection_summary(
-    *,
-    symbol: str,
-    source: str,
-    raw_news_items: list[dict],
-    selected_news_items: list[dict],
-    fallback_used: bool,
-    selection_stats: dict[str, int] | None = None,
-) -> None:
-    direct_count = 0
-    market_wide_count = 0
-    irrelevant_count = 0
-    for item in raw_news_items:
-        relevance = classify_news_relevance(symbol, item)
-        if relevance == "direct":
-            direct_count += 1
-        elif relevance == "market_wide":
-            market_wide_count += 1
-        else:
-            irrelevant_count += 1
-    selected_titles = [
-        _truncate_text(str(item.get("title") or "").strip(), 90)
-        for item in selected_news_items
-        if str(item.get("title") or "").strip()
-    ]
-    selected_labels = [
-        _candidate_news_relevance_label(symbol, item) for item in selected_news_items
-    ]
-    logger.info(
-        "related_news_selection symbol=%s source=%s candidate_count=%s "
-        "direct_news_count=%s market_wide_news_count=%s irrelevant_filtered_count=%s "
-        "selected_count=%s selected_news_titles=%s selected_news_relevance_labels=%s "
-        "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
-        normalize_symbol(symbol).upper(),
-        source,
-        len(raw_news_items),
-        direct_count,
-        market_wide_count,
-        irrelevant_count,
-        len(selected_news_items),
-        selected_titles,
-        selected_labels,
-        (selection_stats or {}).get("noise_filtered_count", 0),
-        (selection_stats or {}).get("dedup_filtered_count", 0),
-        fallback_used,
-    )
-
-
-def _sort_news_fresh_first(news_items: list[dict]) -> list[dict]:
-    return sorted(news_items, key=_news_sort_key, reverse=True)
-
-
-def _news_sort_key(item: dict) -> tuple[int, str]:
-    parsed = _parse_news_datetime(item)
-    timestamp = int(parsed.timestamp()) if parsed else 0
-    return timestamp, make_news_key(item)
-
-
-def _parse_news_datetime(item: dict) -> datetime | None:
-    raw_value = (
-        item.get("published_at_utc")
-        or item.get("published_at")
-        or item.get("published")
-        or item.get("updated")
-        or ""
-    )
-    if isinstance(raw_value, datetime):
-        parsed = raw_value
-    else:
-        value = str(raw_value).strip()
-        if not value:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            try:
-                parsed = parsedate_to_datetime(value)
-            except (TypeError, ValueError):
-                return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _news_within_hours(news_items: list[dict], *, now: datetime, hours: int) -> list[dict]:
-    cutoff = now.astimezone(timezone.utc) - timedelta(hours=hours)
-    recent = []
-    for item in news_items:
-        published_at = _parse_news_datetime(item)
-        if published_at is None or published_at >= cutoff:
-            recent.append(item)
-    return recent
-
-
-def _build_event_analysis_id(symbol: str) -> str:
-    return f"{EVENT_ANALYSIS_TYPE}_{normalize_symbol(symbol)}_{uuid4().hex}"
-
-
-def _build_market_heartbeat_id(symbol: str) -> str:
-    return f"{MARKET_HEARTBEAT_ANALYSIS_TYPE}_{normalize_symbol(symbol)}_{uuid4().hex}"
-
-
-def _json_dumps(payload: dict | list) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _event_input_hash(input_payload: dict) -> str:
-    return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
-
-
-def _event_instance_bucket(timestamp_value: object, *, bucket_minutes: int = 60) -> str:
-    if isinstance(timestamp_value, datetime):
-        timestamp = timestamp_value
-    else:
-        try:
-            timestamp = datetime.fromisoformat(str(timestamp_value).replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            timestamp = datetime.now(timezone.utc)
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    timestamp = timestamp.astimezone(timezone.utc)
-    bucket_seconds = bucket_minutes * 60
-    bucket_epoch = int(timestamp.timestamp()) // bucket_seconds * bucket_seconds
-    return datetime.fromtimestamp(bucket_epoch, tz=timezone.utc).isoformat()
-
-
-def _build_event_instance_key(
-    *,
-    symbol: str,
-    event_key: str,
-    timestamp_value: object,
-    related_news_ids: list[str],
-    input_hash: str | None = None,
-    stable_news_ids: list[str] | None = None,
-    market_identity_details: list[str] | None = None,
-) -> str:
-    stable_ids = stable_news_ids or []
-    news_or_input = ",".join(sorted(str(news_id) for news_id in stable_ids or related_news_ids))
-    if not news_or_input:
-        details = ",".join(sorted(str(item) for item in market_identity_details or []))
-        news_or_input = f"market_only:{details}" if details else "market_only"
-    raw_key = "|".join(
-        (
-            normalize_symbol(symbol),
-            event_key,
-            _event_instance_bucket(timestamp_value),
-            news_or_input,
-        )
-    )
-    return sha256(raw_key.encode("utf-8")).hexdigest()
-
-
-def _build_news_driven_event_key(*, symbol: str, news_item: dict) -> str:
-    identity = _news_driven_identity(news_item)
-    encoded = json.dumps(
-        {"symbol": normalize_symbol(symbol), "identity": identity},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return f"news:{normalize_symbol(symbol)}:{sha256(encoded.encode('utf-8')).hexdigest()[:24]}"
-
-
-def _build_news_driven_event_instance_key(
-    *,
-    symbol: str,
-    event_key: str,
-    news_item: dict,
-) -> str:
-    identity = _news_driven_identity(news_item)
-    dedup_group_id = str(news_item.get("dedup_group_id") or "").strip()
-    bucket = (
-        "dedup_group"
-        if dedup_group_id
-        else _event_instance_bucket(news_item.get("published_at"), bucket_minutes=60)
-    )
-    raw_key = "|".join(
-        (
-            normalize_symbol(symbol),
-            event_key,
-            bucket,
-            identity,
-        )
-    )
-    return sha256(raw_key.encode("utf-8")).hexdigest()
-
-
-def _news_id(index: int) -> str:
-    return f"n{index + 1}"
-
-
-def _format_candidate_news(
-    news_items: list[dict],
-    *,
-    preserve_order: bool = False,
-    symbol: str | None = None,
-) -> list[dict]:
-    candidates: list[dict] = []
-    seen_keys: set[str] = set()
-    ordered_items = news_items if preserve_order else _sort_news_fresh_first(news_items)
-    for item in ordered_items:
-        title = str(item.get("title") or "").strip()
-        if not title:
-            continue
-        stable_key = make_news_key(item)
-        dedupe_key = stable_key or title.lower()
-        if dedupe_key in seen_keys:
-            continue
-        seen_keys.add(dedupe_key)
-        candidates.append(
-            {
-                "news_id": _news_id(len(candidates)),
-                "source": str(item.get("source") or "").strip() or "Unknown source",
-                "title": title,
-                "published_at": str(
-                    item.get("published_at")
-                    or item.get("published_at_utc")
-                    or item.get("published")
-                    or ""
-                ),
-                "url": str(item.get("url") or item.get("link") or "").strip(),
-                "summary": str(item.get("summary") or "").strip(),
-                "relevance_label": _candidate_news_relevance_label(symbol, item),
-            }
-        )
-    return candidates
-
 
 async def _select_related_news_context(
     symbol: str,
@@ -1090,13 +398,11 @@ async def _select_related_news_context(
     )
     return filtered_news, raw_news_items, False
 
-
 def _truncate_text(value: str, max_chars: int) -> str:
     cleaned = " ".join(str(value or "").split()).strip()
     if len(cleaned) <= max_chars:
         return cleaned
     return cleaned[: max_chars - 1].rstrip(" ,;:") + "."
-
 
 def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
     compacted = []
@@ -1108,7 +414,6 @@ def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> li
             }
         )
     return compacted
-
 
 def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) -> list[dict]:
     compacted = []
@@ -1125,7 +430,6 @@ def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) 
         )
     return compacted
 
-
 def _select_representative_snapshots(
     snapshots_payload: list[dict], *, limit: int = 6
 ) -> list[dict]:
@@ -1141,7 +445,6 @@ def _select_representative_snapshots(
     selected_indices.add(last_index)
     selected = [snapshots_payload[index] for index in sorted(selected_indices)]
     return selected[-limit:]
-
 
 def _compact_event_snapshot(snapshot: dict, *, now: datetime) -> dict:
     raw_timestamp = snapshot.get("timestamp_utc")
@@ -1160,14 +463,11 @@ def _compact_event_snapshot(snapshot: dict, *, now: datetime) -> dict:
         "p": _stable_float(float(snapshot["price_usd"]), 2),
     }
 
-
 def _compact_event_snapshots(snapshots_payload: list[dict], *, now: datetime) -> list[dict]:
     return [_compact_event_snapshot(snapshot, now=now) for snapshot in snapshots_payload]
 
-
 def _snapshot_price(snapshot) -> float:
     return float(snapshot.price)
-
 
 def _snapshot_change_percent(current_price: float, reference) -> float | None:
     if reference is None:
@@ -1176,7 +476,6 @@ def _snapshot_change_percent(current_price: float, reference) -> float | None:
     if reference_price == 0:
         return None
     return calculate_price_change_percent(reference_price, current_price)
-
 
 def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
     cutoff_utc = cutoff.astimezone(timezone.utc)
@@ -1191,7 +490,6 @@ def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
         <= cutoff_utc
     ]
     return eligible[-1] if eligible else None
-
 
 def _related_news_by_id(
     candidate_news: list[dict],
@@ -1218,28 +516,22 @@ def _related_news_by_id(
         )
     return mapped_items
 
-
 def _format_optional_percent(value: float | None) -> str:
     return "n/a" if value is None else f"{value:+.2f}%"
-
 
 def _format_optional_price(value: float | None) -> str:
     return "n/a" if value is None else f"${value:,.2f}"
 
-
 def _coin_fallback_emoji(symbol: str) -> str:
     return coin_fallback_emoji(symbol)
-
 
 def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
     cleaned = " ".join(str(value or "").split()).strip()
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
     return cleaned or fallback
 
-
 def _utf16_length(value: str) -> int:
     return len(value.encode("utf-16-le")) // 2
-
 
 def _safe_telegram_link_url(value: str | None) -> str | None:
     url = str(value or "").strip()
@@ -1249,7 +541,6 @@ def _safe_telegram_link_url(value: str | None) -> str | None:
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         return None
     return url
-
 
 def _format_related_context(related_news: list[dict], *, empty_text: str) -> str:
     if not related_news:
@@ -1268,7 +559,6 @@ def _format_related_context(related_news: list[dict], *, empty_text: str) -> str
             continue
         lines.append(f"\u2022 {display_text}")
     return "\n".join(lines) if lines else empty_text
-
 
 def _format_event_related_context(
     related_news: list[dict], *, empty_text: str
@@ -1324,7 +614,6 @@ def _format_event_related_context(
         return empty_text, [], None
     return "\n".join(lines), link_entities, "\n".join(html_lines)
 
-
 def _format_market_heartbeat_related_context(
     related_news: list[dict], *, empty_text: str
 ) -> tuple[str, str | None]:
@@ -1359,7 +648,6 @@ def _format_market_heartbeat_related_context(
         return empty_text, None
     return "\n".join(plain_lines), "\n".join(html_lines)
 
-
 def _build_market_heartbeat_html_message(
     *,
     icon_html: str,
@@ -1386,7 +674,6 @@ def _build_market_heartbeat_html_message(
         f"{escape(possible_action)}\n\n"
         "Not financial advice."
     )
-
 
 def _build_event_alert_html_message(
     *,
@@ -1417,14 +704,12 @@ def _build_event_alert_html_message(
         "Not financial advice."
     )
 
-
 def _build_html_message_from_plain_with_icon(
     *, plain_text: str, plain_icon: str, icon_html: str
 ) -> str:
     if plain_text.startswith(plain_icon):
         return f"{icon_html}{escape(plain_text[len(plain_icon) :])}"
     return escape(plain_text)
-
 
 def _build_event_alert_payload(
     *,
@@ -1505,7 +790,6 @@ def _build_event_alert_payload(
         )
     return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
 
-
 def _event_numeric_context(
     input_payload: dict,
     decision: EventAnalysisDecision,
@@ -1540,7 +824,6 @@ def _event_numeric_context(
         }
     )
 
-
 def _heartbeat_numeric_context(
     *,
     symbol: str,
@@ -1561,7 +844,6 @@ def _heartbeat_numeric_context(
             "confidence": confidence,
         }
     )
-
 
 def _build_market_heartbeat_payload(
     *,
@@ -1616,7 +898,6 @@ def _build_market_heartbeat_payload(
         )
     return {"plain_text": message, "html_text": html_message, "entities": entities}
 
-
 def _heartbeat_related_news(heartbeat) -> list[dict]:
     try:
         raw_input = json.loads(str(heartbeat.raw_input_json or "{}"))
@@ -1633,7 +914,6 @@ def _heartbeat_related_news(heartbeat) -> list[dict]:
         related_news_ids = []
     return _related_news_by_id(candidate_news, [str(item) for item in related_news_ids])
 
-
 def _is_fresh_heartbeat(heartbeat, *, now: datetime, max_age_seconds: int = 7200) -> bool:
     generated_at = getattr(heartbeat, "generated_at", None)
     if generated_at is None:
@@ -1641,7 +921,6 @@ def _is_fresh_heartbeat(heartbeat, *, now: datetime, max_age_seconds: int = 7200
     if generated_at.tzinfo is None:
         generated_at = generated_at.replace(tzinfo=timezone.utc)
     return (now - generated_at.astimezone(timezone.utc)).total_seconds() <= max_age_seconds
-
 
 def _build_alert_ai_input_hash(
     *,
@@ -1680,13 +959,11 @@ def _build_alert_ai_input_hash(
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()
 
-
 def _enabled_subscription_by_symbol(user) -> dict[str, bool]:
     return {
         normalize_symbol(row.symbol): bool(row.is_enabled)
         for row in getattr(user, "coin_subscriptions", [])
     }
-
 
 async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
     """Resolve globally needed symbols from active eligible watchlists."""
@@ -1706,7 +983,6 @@ async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
                     continue
                 enabled_symbols.add(symbol)
     return [symbol for symbol in SUPPORTED_SYMBOLS if symbol in enabled_symbols]
-
 
 async def get_alert_recipients(
     symbol: str,
@@ -1758,7 +1034,6 @@ async def get_alert_recipients(
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
 
-
 async def _get_or_create_price_movement_market_event(
     *,
     symbol: str,
@@ -1798,7 +1073,6 @@ async def _get_or_create_price_movement_market_event(
         )
         return market_event.id, event_key
 
-
 def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
     candidates = _build_news_candidates(symbol, news_items)
     if any(item["relevance"] == "strong" for item in candidates):
@@ -1808,7 +1082,6 @@ def _classify_news_context(symbol: str, news_items: list[dict]) -> str:
     if candidates:
         return "weak"
     return "none"
-
 
 def _build_news_candidates(symbol: str, news_items: list[dict]) -> list[dict]:
     candidates: list[dict] = []
@@ -1853,7 +1126,6 @@ def _build_news_candidates(symbol: str, news_items: list[dict]) -> list[dict]:
         )
     return candidates
 
-
 def _classify_btc_news_candidate(
     item: dict,
     raw_relevance: str,
@@ -1875,7 +1147,6 @@ def _classify_btc_news_candidate(
         return "medium"
     return "weak"
 
-
 def _btc_is_secondary_context(text: str) -> bool:
     secondary_patterns = (
         ("soluna", "revenue"),
@@ -1884,7 +1155,6 @@ def _btc_is_secondary_context(text: str) -> bool:
         ("xrp", "solana", "bitcoin outflows"),
     )
     return any(all(term in text for term in pattern) for pattern in secondary_patterns)
-
 
 def _btc_market_wide_is_material(text: str) -> bool:
     return any(
@@ -1904,7 +1174,6 @@ def _btc_market_wide_is_material(text: str) -> bool:
             "bitcoin dominance",
         )
     )
-
 
 def _btc_has_strong_market_focus(text: str) -> bool:
     if any(
@@ -1933,7 +1202,6 @@ def _btc_has_strong_market_focus(text: str) -> bool:
         term in text for term in ("hashrate", "hash rate", "difficulty", "market impact")
     )
 
-
 def _coin_is_secondary_context(symbol: str, item: dict) -> bool:
     title = str(item.get("title") or "")
     summary = str(item.get("summary") or "")
@@ -1941,7 +1209,6 @@ def _coin_is_secondary_context(symbol: str, item: dict) -> bool:
     if symbol == "sol" and "xrp" in text and "solana" in text and "bitcoin" in text:
         return False
     return False
-
 
 def _news_relevance_reason(symbol: str, relevance: str, raw_relevance: str) -> str:
     if relevance == "strong":
@@ -1952,7 +1219,6 @@ def _news_relevance_reason(symbol: str, relevance: str, raw_relevance: str) -> s
         return f"Weak {symbol.upper()} mention without clear market catalyst"
     return "Broad crypto market context"
 
-
 def _useful_news_candidates(candidates: list[dict] | None) -> list[dict]:
     return [
         item
@@ -1960,38 +1226,9 @@ def _useful_news_candidates(candidates: list[dict] | None) -> list[dict]:
         if str(item.get("relevance") or "").strip().lower() in {"medium", "strong"}
     ]
 
-
-def _news_driven_identity(news_item: dict) -> str:
-    return str(
-        news_item.get("dedup_group_id")
-        or news_item.get("news_key")
-        or news_item.get("news_item_id")
-        or make_news_key(news_item)
-    ).strip()
-
-
-def _news_symbols(news_item: dict, field_name: str) -> set[str]:
-    raw_values = news_item.get(field_name)
-    if not isinstance(raw_values, list):
-        return set()
-    return {
-        normalized
-        for item in raw_values
-        if (normalized := normalize_symbol(str(item or "")))
-    }
-
-
-def _news_text(news_item: dict) -> str:
-    return " ".join(
-        str(news_item.get(field_name) or "")
-        for field_name in ("title", "summary", "source")
-    ).lower()
-
-
 def _is_clearly_market_moving_news(news_item: dict) -> bool:
     text = _news_text(news_item)
     return any(term in text for term in MARKET_MOVING_NEWS_TERMS)
-
 
 def _news_symbol_match_strength(symbol: str, news_item: dict) -> str | None:
     normalized_symbol = normalize_symbol(symbol)
@@ -2002,7 +1239,6 @@ def _news_symbol_match_strength(symbol: str, news_item: dict) -> str | None:
     if normalized_symbol in _news_symbols(news_item, "matched_symbols"):
         return "related"
     return None
-
 
 def _news_item_can_trigger_standalone_alert(symbol: str, news_item: dict) -> bool:
     if normalize_symbol(symbol) not in SUPPORTED_SYMBOLS:
@@ -2037,7 +1273,6 @@ def _news_item_can_trigger_standalone_alert(symbol: str, news_item: dict) -> boo
         and not is_generic_news_item(news_item)
     )
 
-
 def _news_driven_candidate_rank(symbol: str, news_item: dict) -> tuple[int, int, int, int, int]:
     impact_rank = {"critical": 3, "high": 2, "medium": 1, "low": 0}
     match_rank = 2 if _news_symbol_match_strength(symbol, news_item) == "primary" else 1
@@ -2051,7 +1286,6 @@ def _news_driven_candidate_rank(symbol: str, news_item: dict) -> tuple[int, int,
         relevance_score if relevance_score > 0 else 0,
         int(published_at.timestamp()) if published_at else 0,
     )
-
 
 def _select_news_driven_alert_candidates(
     news_items: list[dict],
@@ -2083,12 +1317,10 @@ def _select_news_driven_alert_candidates(
         selected_by_symbol[symbol] = ranked[:max_per_symbol]
     return selected_by_symbol
 
-
 def _format_news_driven_summary(news_item: dict) -> str:
     summary = str(news_item.get("summary") or "").strip()
     title = str(news_item.get("title") or "").strip()
     return _truncate_text(summary or title, 220)
-
 
 def _build_news_driven_event_decision(
     *,
@@ -2118,7 +1350,6 @@ def _build_news_driven_event_decision(
         confidence="medium",
         reason_for_no_alert=None,
     )
-
 
 def _build_news_driven_event_input(
     *,
@@ -2155,7 +1386,6 @@ def _build_news_driven_event_input(
         },
     }
 
-
 def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
     market_data = input_payload.get("market", {})
     return _json_dumps(
@@ -2172,7 +1402,6 @@ def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
             "category": str(news_item.get("category") or "").strip().lower() or None,
         }
     )
-
 
 async def _get_or_create_news_driven_market_event(
     *,
@@ -2204,7 +1433,6 @@ async def _get_or_create_news_driven_market_event(
             detected_at=datetime.now(timezone.utc),
         )
         return event.id, event.event_instance_key
-
 
 async def _save_news_driven_event_analysis(
     *,
@@ -2252,7 +1480,6 @@ async def _save_news_driven_event_analysis(
             plain_text=plain_text,
         )
         return analysis.id if analysis else None
-
 
 async def _deliver_news_driven_alert_for_symbol(
     app: Application,
@@ -2337,7 +1564,6 @@ async def _deliver_news_driven_alert_for_symbol(
         thresholds_used=None,
     )
 
-
 async def _load_news_driven_alert_candidates(
     symbols: list[str],
     *,
@@ -2368,10 +1594,8 @@ async def _load_news_driven_alert_candidates(
         )
     return candidates
 
-
 def _market_condition_can_alert(evaluation: SeverityEvaluation) -> bool:
     return evaluation.severity in {AlertSeverity.HIGH, AlertSeverity.EXTREME}
-
 
 def _window_label(seconds: int) -> str:
     if seconds == 3600:
@@ -2386,7 +1610,6 @@ def _window_label(seconds: int) -> str:
         return f"{seconds // 60}m"
     return f"{seconds}s"
 
-
 def _severity_from_decision(decision: AlertDecision) -> SeverityEvaluation:
     severity = decision.backend_severity_ceiling
     alert_type = decision.alert_type or AlertType.PRICE_MOVEMENT
@@ -2395,7 +1618,6 @@ def _severity_from_decision(decision: AlertDecision) -> SeverityEvaluation:
         primary_alert_type=alert_type,
         signals=decision.signals,
     )
-
 
 def _format_thresholds_for_storage(thresholds) -> str:
     return json.dumps(
@@ -2406,7 +1628,6 @@ def _format_thresholds_for_storage(thresholds) -> str:
         },
         sort_keys=True,
     )
-
 
 def _format_numeric_context_for_storage(
     *,
@@ -2428,7 +1649,6 @@ def _format_numeric_context_for_storage(
         },
         sort_keys=True,
     )
-
 
 def _format_signal_context_for_storage(
     context: SignalContext,
@@ -2483,7 +1703,6 @@ def _format_signal_context_for_storage(
         sort_keys=True,
     )
 
-
 async def _resolve_window_market_context(
     *,
     symbol: str,
@@ -2522,7 +1741,6 @@ async def _resolve_window_market_context(
     if peak is None and previous_price:
         peak = abs(calculate_price_change_percent(previous_price, current_price))
     return previous_price, peak
-
 
 async def _build_event_analysis_input(
     *,
@@ -2665,7 +1883,6 @@ async def _build_event_analysis_input(
         },
     }
 
-
 async def _build_market_heartbeat_input(
     *,
     heartbeat_id: str,
@@ -2728,7 +1945,6 @@ async def _build_market_heartbeat_input(
         },
     }
 
-
 async def _save_market_heartbeat_attempt(
     *,
     input_payload: dict,
@@ -2755,7 +1971,6 @@ async def _save_market_heartbeat_attempt(
             error_message=error_message,
         )
         return heartbeat.id if heartbeat else None
-
 
 async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
@@ -2824,7 +2039,6 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         decision=decision,
     )
 
-
 async def _save_event_analysis_attempt(
     *,
     input_payload: dict,
@@ -2866,7 +2080,6 @@ async def _save_event_analysis_attempt(
             plain_text=plain_text,
         )
         return analysis.id if analysis else None
-
 
 async def _create_event_analysis_decision(
     input_payload: dict,
@@ -2969,7 +2182,6 @@ async def _create_event_analysis_decision(
     )
     return decision, analysis_id
 
-
 def _normalize_event_analysis_result_for_validation(result: object) -> object:
     if not isinstance(result, dict) or result.get("should_alert") is not False:
         return result
@@ -2981,7 +2193,6 @@ def _normalize_event_analysis_result_for_validation(result: object) -> object:
         if isinstance(value, str) and not value.strip():
             normalized[field_name] = None
     return normalized
-
 
 async def _get_or_create_event_alert_market_event(
     *,
@@ -3028,7 +2239,6 @@ async def _get_or_create_event_alert_market_event(
             detected_at=datetime.now(timezone.utc),
         )
         return event.id, event.event_key, event.event_instance_key, False
-
 
 async def _filter_event_recipients_for_cooldown(
     recipients: list[AlertRecipient],
@@ -3167,13 +2377,11 @@ async def _filter_event_recipients_for_cooldown(
         )
     return filtered
 
-
 def _strip_existing_alert_title(plain_text: str) -> str:
     lines = plain_text.strip().splitlines()
     if lines and any(term in lines[0].lower() for term in ("alert", "signal")):
         return "\n".join(lines[1:]).strip()
     return plain_text.strip()
-
 
 def _coin_display_line(symbol: str) -> str:
     display_symbol = normalize_symbol(symbol).upper()
@@ -3184,7 +2392,6 @@ def _coin_display_line(symbol: str) -> str:
     if coin_name.lower() == display_symbol.lower():
         return f"Coin: {display_symbol}"
     return f"Coin: {display_symbol} / {coin_name}"
-
 
 def _remove_user_facing_risk_level(plain_text: str) -> str:
     body = _strip_existing_alert_title(plain_text)
@@ -3218,7 +2425,6 @@ def _remove_user_facing_risk_level(plain_text: str) -> str:
     cleaned = "\n".join(cleaned_lines).strip()
     return re.sub(r"\n{3,}", "\n\n", cleaned)
 
-
 def _apply_severity_header(
     alert_payload: dict,
     *,
@@ -3239,7 +2445,6 @@ def _apply_severity_header(
     updated_plain_text = sanitize_alert_message(f"{header}\n{body}")
     return {"plain_text": updated_plain_text, "html_text": None}
 
-
 def severity_label_text(severity: AlertSeverity) -> str:
     if severity is AlertSeverity.EXTREME:
         return "High"
@@ -3249,14 +2454,12 @@ def severity_label_text(severity: AlertSeverity) -> str:
         AlertSeverity.HIGH: "High",
     }[severity]
 
-
 def severity_icon_text(severity: AlertSeverity) -> str:
     if severity is AlertSeverity.INFO:
         return "\U0001f7e2"
     if severity is AlertSeverity.WATCH:
         return "\U0001f7e1"
     return "\U0001f534"
-
 
 def normalize_llm_severity(value: str | None) -> str | None:
     if value is None:
@@ -3273,7 +2476,6 @@ def normalize_llm_severity(value: str | None) -> str | None:
         return "low"
     return normalized
 
-
 def _notification_type_label(notification_type: NotificationType | str) -> str:
     normalized = NotificationType(notification_type)
     return {
@@ -3283,12 +2485,10 @@ def _notification_type_label(notification_type: NotificationType | str) -> str:
         NotificationType.NO_ALERT: "Market Update",
     }[normalized]
 
-
 def _format_percent(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:+.2f}%"
-
 
 def _build_product_notification_payload(
     context: SignalContext,
@@ -3376,7 +2576,6 @@ def _build_product_notification_payload(
         )
     return {"plain_text": plain_text, "html_text": html_text, "entities": entities}
 
-
 def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
     if decision.trigger_source is TriggerSource.FAST_MOVEMENT:
         return context.latest_5m_change_percent
@@ -3399,7 +2598,6 @@ def _alert_move_percent(context: SignalContext, decision: NotificationDecision) 
         )
     return context.user_period_change_percent
 
-
 def _visible_news_candidates_for_message(
     context: SignalContext,
     decision: NotificationDecision,
@@ -3413,7 +2611,6 @@ def _visible_news_candidates_for_message(
         if str(item.get("relevance") or "").strip().lower() == "strong"
     ]
 
-
 def _is_user_visible_news(news_relevance_score: str | None) -> bool:
     return (news_relevance_score or "").strip().lower() in {
         "relevant",
@@ -3422,7 +2619,6 @@ def _is_user_visible_news(news_relevance_score: str | None) -> bool:
         "strong",
         "high",
     }
-
 
 def _summary_sentence(
     symbol: str,
@@ -3475,7 +2671,6 @@ def _summary_sentence(
     if visible_move < 0:
         return f"{symbol} is moving down faster than usual."
     return f"{symbol} market conditions changed."
-
 
 def _market_update_timeframe_summary(
     symbol: str,
@@ -3539,12 +2734,10 @@ def _market_update_timeframe_summary(
 
     return f"{symbol} is relatively calm over the last {period_label}."
 
-
 def _movement_direction(value: float, *, calm_threshold: float) -> str:
     if abs(value) < calm_threshold:
         return "neutral"
     return "up" if value > 0 else "down"
-
 
 def _trend_strength(change_24h: float) -> str:
     if change_24h <= -5.0:
@@ -3561,7 +2754,6 @@ def _trend_strength(change_24h: float) -> str:
         return "slightly positive"
     return "calm"
 
-
 def _notification_severity_to_alert_severity(severity: NotificationSeverity) -> AlertSeverity:
     return {
         NotificationSeverity.LOW: AlertSeverity.INFO,
@@ -3570,13 +2762,11 @@ def _notification_severity_to_alert_severity(severity: NotificationSeverity) -> 
         NotificationSeverity.EXTREME: AlertSeverity.EXTREME,
     }[severity]
 
-
 async def _send_alert_to_recipient(
     app: Application, recipient: AlertRecipient, alert_payload: dict
 ) -> tuple[bool, str | None]:
     sent, error_message, _ = await _send_alert_to_recipient_once(app, recipient, alert_payload)
     return sent, error_message
-
 
 async def _send_alert_to_recipient_once(
     app: Application, recipient: AlertRecipient, alert_payload: dict
@@ -3610,14 +2800,12 @@ async def _send_alert_to_recipient_once(
         return False, str(error), error
     return True, None, None
 
-
 def _is_permanent_telegram_delivery_error(error: BaseException | str | None) -> bool:
     if error is None:
         return False
     if isinstance(error, (BadRequest, Forbidden)):
         return True
     return is_bot_blocked_error(error)
-
 
 def _is_transient_telegram_delivery_error(error: BaseException | str | None) -> bool:
     if error is None or _is_permanent_telegram_delivery_error(error):
@@ -3641,7 +2829,6 @@ def _is_transient_telegram_delivery_error(error: BaseException | str | None) -> 
     )
     return any(term in message for term in transient_terms)
 
-
 def _retry_after_seconds(error: BaseException | str | None) -> int | None:
     retry_after = getattr(error, "retry_after", None)
     if retry_after is None:
@@ -3651,7 +2838,6 @@ def _retry_after_seconds(error: BaseException | str | None) -> int | None:
     except (TypeError, ValueError):
         return None
 
-
 def _delivery_retry_delay_seconds(error: BaseException | str | None, attempt_number: int) -> int:
     telegram_delay = _retry_after_seconds(error)
     if telegram_delay is not None:
@@ -3660,7 +2846,6 @@ def _delivery_retry_delay_seconds(error: BaseException | str | None, attempt_num
     if index >= len(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS):
         return int(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS[-1])
     return int(TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS[index])
-
 
 async def _send_alert_to_recipient_with_retry(
     app: Application,
@@ -3705,7 +2890,6 @@ async def _send_alert_to_recipient_with_retry(
         await asyncio.sleep(delay_seconds)
     return False, last_error
 
-
 async def _disable_recipient_if_bot_blocked(
     recipient: AlertRecipient,
     error_message: str | None,
@@ -3728,7 +2912,6 @@ async def _disable_recipient_if_bot_blocked(
         if user is not None:
             logger.info("ops_event=user_deactivated_after_delivery_failure")
 
-
 def _prefix_for_utf16_length(text: str, utf16_length: int) -> str:
     consumed = 0
     chars: list[str] = []
@@ -3740,7 +2923,6 @@ def _prefix_for_utf16_length(text: str, utf16_length: int) -> str:
     if consumed != utf16_length:
         return ""
     return "".join(chars)
-
 
 def _preserve_leading_entities_after_sanitize(
     *,
@@ -3760,7 +2942,6 @@ def _preserve_leading_entities_after_sanitize(
             return None
     return entities
 
-
 def _sanitize_alert_payload(alert_payload: dict) -> dict:
     plain_text = str(alert_payload.get("plain_text", ""))
     sanitized_plain_text = sanitize_alert_message(plain_text)
@@ -3774,7 +2955,6 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
             sanitized_text=sanitized_plain_text,
         )
     return {"plain_text": sanitized_plain_text, "html_text": html_text, "entities": entities}
-
 
 async def _record_alert_delivery(
     *,
@@ -3820,7 +3000,6 @@ async def _record_alert_delivery(
             fallback_mode=fallback_mode,
         )
 
-
 async def _save_price_state(
     *,
     symbol: str,
@@ -3865,7 +3044,6 @@ async def _save_price_state(
     if last_alert_at is not None:
         state["last_alert_at"] = checked_at
     save_state(state)
-
 
 async def _deliver_market_event_alert(
     app: Application,
@@ -4050,7 +3228,6 @@ async def _deliver_market_event_alert(
     )
     return delivered
 
-
 async def _get_due_market_heartbeat_recipients(
     *,
     symbol: str,
@@ -4115,7 +3292,6 @@ async def _get_due_market_heartbeat_recipients(
                 )
             )
     return due
-
 
 async def _deliver_market_heartbeat(
     app: Application,
@@ -4254,7 +3430,6 @@ async def _deliver_market_heartbeat(
     )
     return delivered
 
-
 def schedule_automatic_market_check(app: Application, interval_seconds: int) -> None:
     interval_seconds = normalize_automatic_check_interval_seconds(interval_seconds)
     job_names = [AUTOMATIC_MARKET_CHECK_JOB_NAME] + [
@@ -4286,11 +3461,9 @@ def schedule_automatic_market_check(app: Application, interval_seconds: int) -> 
         f"interval_seconds={interval_seconds} symbol_first_delays={','.join(scheduled_symbols)}"
     )
 
-
 def schedule_automatic_btc_check(app: Application, interval_seconds: int) -> None:
     """Compatibility wrapper for older imports; schedules the market-wide check."""
     schedule_automatic_market_check(app, interval_seconds)
-
 
 def schedule_market_heartbeat_generation(app: Application) -> None:
     for job in app.job_queue.get_jobs_by_name(MARKET_HEARTBEAT_JOB_NAME):
@@ -4303,7 +3476,6 @@ def schedule_market_heartbeat_generation(app: Application) -> None:
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
     )
     log("ops_event=heartbeat_generation_scheduled interval_seconds=3600")
-
 
 def schedule_report_cache_generation(app: Application) -> None:
     for job_name in (DAILY_REPORT_CACHE_JOB_NAME, WEEKLY_REPORT_CACHE_JOB_NAME):
@@ -4329,7 +3501,6 @@ def schedule_report_cache_generation(app: Application) -> None:
         "daily_interval_seconds=14400 weekly_interval_seconds=86400"
     )
 
-
 def schedule_seen_news_cleanup(app: Application) -> None:
     for job in app.job_queue.get_jobs_by_name(SEEN_NEWS_CLEANUP_JOB_NAME):
         job.schedule_removal()
@@ -4344,7 +3515,6 @@ def schedule_seen_news_cleanup(app: Application) -> None:
     )
     log(f"Seen news cleanup scheduled daily; keeping latest {SEEN_NEWS_KEEP_LATEST}.")
 
-
 async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
@@ -4354,7 +3524,6 @@ async def cleanup_seen_news_job(context: ContextTypes.DEFAULT_TYPE):
         log(f"Seen news cleanup removed {deleted_count} rows.")
     except Exception as error:
         log(f"Seen news cleanup error: {error}")
-
 
 async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -4421,7 +3590,6 @@ async def generate_market_heartbeats(context: ContextTypes.DEFAULT_TYPE):
             f"error_class={type(error).__name__}"
         )
 
-
 def _parse_state_alert_at(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -4433,7 +3601,6 @@ def _parse_state_alert_at(value: str | None) -> datetime | None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
 
-
 def _last_alert_direction(alert_row) -> str | None:
     if not alert_row or not getattr(alert_row, "numeric_context", None):
         return None
@@ -4443,7 +3610,6 @@ def _last_alert_direction(alert_row) -> str | None:
         return None
     direction = context.get("notification_direction")
     return str(direction) if direction else None
-
 
 def _numeric_context_value(numeric_context: str | None, key: str) -> float | None:
     if not numeric_context:
@@ -4457,7 +3623,6 @@ def _numeric_context_value(numeric_context: str | None, key: str) -> float | Non
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
-
 
 async def _persist_successful_product_alert_state(
     *,
@@ -4513,7 +3678,6 @@ async def _persist_successful_product_alert_state(
             now.isoformat(),
         )
 
-
 def _direction_from_numeric_context(numeric_context: str | None) -> str | None:
     if not numeric_context:
         return None
@@ -4523,17 +3687,6 @@ def _direction_from_numeric_context(numeric_context: str | None) -> str | None:
         return None
     direction = payload.get("notification_direction")
     return str(direction) if direction else None
-
-
-def _numeric_context_payload(numeric_context: str | None) -> dict:
-    if not numeric_context:
-        return {}
-    try:
-        payload = json.loads(numeric_context)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
 
 def _should_skip_near_duplicate_market_update(
     *,
@@ -4586,7 +3739,6 @@ def _should_skip_near_duplicate_market_update(
         current_score,
     )
     return True
-
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application
