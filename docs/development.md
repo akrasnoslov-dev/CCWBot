@@ -41,6 +41,9 @@ them when required, or explain why they were not needed. See
   This keeps internal services off the public internet while preserving host-local checks and
   SSH-tunnel database access.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
+- SQLAlchemy models, metadata, DB initialization, and compatibility re-exports live in
+  `bot/db/database.py`. Runtime persistence operations are split by domain in `bot/db/`
+  modules such as users, premium, prices, news, alerts, reports, and LLM usage.
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
