@@ -105,6 +105,34 @@ The ops-agent log collector aggregates these in
 `period_matched_suppression_reason_counts`, and
 `tail_context_suppression_reason_counts`.
 
+## Telegram Topic Routes
+
+Configured forum topic routes are operator settings, not user entitlements:
+
+```sql
+SELECT
+  symbol,
+  chat_id,
+  message_thread_id,
+  created_at,
+  updated_at
+FROM coin_topic_routes
+ORDER BY symbol;
+```
+
+Topic delivery logs are safe operational logs and do not include Telegram message text:
+
+```text
+ops_event=coin_topic_route_configured symbol=BTC chat_id=-1001234567890 message_thread_id=42
+ops_event=coin_topic_route_cleared symbol=BTC
+ops_event=topic_delivery_attempted symbol=BTC alert_type=event_alert market_event_id=...
+ops_event=topic_delivery_succeeded symbol=BTC alert_type=event_alert market_event_id=...
+ops_event=topic_delivery_failed symbol=BTC alert_type=event_alert market_event_id=...
+```
+
+If no route exists for a symbol, private delivery and fallback behavior are unchanged. Topic
+routes do not change Premium/private eligibility and do not add per-recipient LLM calls.
+
 ## LLM Outcomes By Symbol
 
 ```sql

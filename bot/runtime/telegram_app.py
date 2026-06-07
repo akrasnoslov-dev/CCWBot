@@ -12,6 +12,7 @@ from bot.handlers import (
     admin,
     button_router,
     chat_id,
+    clear_topic,
     daily_report,
     error_logging_off,
     error_logging_on,
@@ -24,9 +25,11 @@ from bot.handlers import (
     reports,
     revoke_premium,
     set_interval,
+    set_topic,
     settings,
     start,
     subscribe,
+    topics,
     user_id,
     watchlist,
     weekly_report,
@@ -53,6 +56,9 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("dailyreport", daily_report))
     app.add_handler(CommandHandler("weeklyreport", weekly_report))
     app.add_handler(CommandHandler("setinterval", set_interval))
+    app.add_handler(CommandHandler("settopic", set_topic))
+    app.add_handler(CommandHandler("cleartopic", clear_topic))
+    app.add_handler(CommandHandler("topics", topics))
     app.add_handler(CommandHandler("grantpremium", grant_premium))
     app.add_handler(CommandHandler("revokepremium", revoke_premium))
     app.add_handler(CommandHandler("error_logging_on", error_logging_on))

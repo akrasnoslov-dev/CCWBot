@@ -20,8 +20,8 @@ analysis.
 - Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - User `/settings` for watchlist and heartbeat frequency, plus admin-only `/admin`,
-  `/chatid`, `/grantpremium`, and `/revokepremium` commands. System status is available
-  from `/admin`.
+  `/chatid`, `/settopic`, `/cleartopic`, `/topics`, `/grantpremium`, and `/revokepremium`
+  commands. System status is available from `/admin`.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -164,6 +164,29 @@ again after renewal.
 Premium access is based primarily on `active_until > now`. Manual admin grants use
 `/grantpremium <telegram_user_id> <days>`, and revokes use `/revokepremium <telegram_user_id>`.
 Revoking Premium preserves saved coin choices.
+
+## Telegram Forum Topic Routing
+
+Topic routing is optional and additive. Admins can route coin-specific automatic Event Alerts
+for `btc`, `eth`, `ton`, and `sol` into manually created Telegram forum topics:
+
+```text
+/settopic btc -1001234567890 42
+/cleartopic btc
+/topics
+```
+
+Create the supergroup/forum topics manually in Telegram first; the bot does not create or delete
+topics. Use `/chatid` in the target group to get the group `chat_id`. To get
+`message_thread_id`, send a test message in the topic, then inspect the received Telegram
+`message.message_thread_id` with a local admin-only `getUpdates` check or another trusted
+Telegram admin tool. Do not paste bot tokens or raw updates into PRs or logs.
+
+When a route exists, that coin's automatic Event Alerts are also sent to the configured
+`chat_id` with `message_thread_id`. When no route exists, delivery behaves as before. Private
+delivery is not replaced: BTC remains free, and non-BTC private automatic alerts still require
+active Premium plus an enabled watchlist. Topic routes do not grant Premium or change payment
+logic.
 
 ## Market Heartbeat And Coin Icons
 

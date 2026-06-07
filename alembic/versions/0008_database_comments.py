@@ -26,6 +26,7 @@ TABLE_COMMENTS = {
     "user_symbol_alert_state": (
         "Per-user per-symbol alert timestamps used by automatic monitoring."
     ),
+    "coin_topic_routes": "Admin-configured Telegram forum topic destinations for coin alerts.",
     "payments": "Payment events processed for Premium entitlement activation.",
     "app_settings": "Global bot settings controlled by admins.",
     "price_state": "Latest stored market snapshot used to detect price movements.",
@@ -116,6 +117,14 @@ COLUMN_COMMENTS = {
         ),
         "created_at": "When this state row was created.",
         "updated_at": "When this state row was last updated.",
+    },
+    "coin_topic_routes": {
+        "id": "Internal route row id.",
+        "symbol": "Lowercase coin symbol routed to this forum topic.",
+        "chat_id": "Telegram group chat id that owns the forum topic.",
+        "message_thread_id": "Telegram forum topic message thread id for this coin.",
+        "created_at": "When this topic route was created.",
+        "updated_at": "When this topic route was last updated.",
     },
     "payments": {
         "id": "Internal payment row id.",

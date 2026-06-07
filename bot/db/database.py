@@ -354,6 +354,35 @@ class UserSymbolAlertState(Base):
     )
 
 
+class CoinTopicRoute(Base):
+    __tablename__ = "coin_topic_routes"
+    __table_args__ = (
+        UniqueConstraint("symbol", name="uq_coin_topic_routes_symbol"),
+        CheckConstraint("symbol = lower(symbol)", name="ck_coin_topic_routes_symbol_lower"),
+        {"comment": "Admin-configured Telegram forum topic destinations for coin alerts."},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal route row id.")
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Lowercase coin symbol routed to this forum topic."
+    )
+    chat_id: Mapped[int] = mapped_column(
+        BigInteger, comment="Telegram group chat id that owns the forum topic."
+    )
+    message_thread_id: Mapped[int] = mapped_column(
+        BigInteger, comment="Telegram forum topic message thread id for this coin."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this topic route was created."
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this topic route was last updated.",
+    )
+
+
 class Payment(Base):
     __tablename__ = "payments"
     __table_args__ = (
@@ -2063,6 +2092,71 @@ async def upsert_user_symbol_alert_state(
     return row
 
 
+async def get_coin_topic_route(session: AsyncSession, symbol: str) -> CoinTopicRoute | None:
+    """Return the configured Telegram forum route for a lowercase symbol."""
+    normalized_symbol = normalize_symbol(symbol)
+    return await session.scalar(
+        select(CoinTopicRoute)
+        .where(CoinTopicRoute.symbol == normalized_symbol)
+        .order_by(CoinTopicRoute.id.asc())
+        .limit(1)
+    )
+
+
+async def list_coin_topic_routes(session: AsyncSession) -> list[CoinTopicRoute]:
+    """Return all configured Telegram forum topic routes."""
+    rows = await session.scalars(
+        select(CoinTopicRoute).order_by(CoinTopicRoute.symbol.asc(), CoinTopicRoute.id.asc())
+    )
+    return list(rows.all())
+
+
+async def upsert_coin_topic_route(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    chat_id: int,
+    message_thread_id: int,
+) -> CoinTopicRoute:
+    """Create or update one Telegram forum topic route for a coin."""
+    normalized_symbol = normalize_symbol(symbol)
+    row = await get_coin_topic_route(session, normalized_symbol)
+    if row is None:
+        row = CoinTopicRoute(
+            symbol=normalized_symbol,
+            chat_id=int(chat_id),
+            message_thread_id=int(message_thread_id),
+        )
+        session.add(row)
+    else:
+        row.chat_id = int(chat_id)
+        row.message_thread_id = int(message_thread_id)
+        row.updated_at = utc_now()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        row = await get_coin_topic_route(session, normalized_symbol)
+        if row is None:
+            raise
+        row.chat_id = int(chat_id)
+        row.message_thread_id = int(message_thread_id)
+        row.updated_at = utc_now()
+        await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def delete_coin_topic_route(session: AsyncSession, symbol: str) -> bool:
+    """Delete the Telegram forum topic route for a coin if it exists."""
+    row = await get_coin_topic_route(session, symbol)
+    if row is None:
+        return False
+    await session.delete(row)
+    await session.commit()
+    return True
+
+
 async def was_news_seen(session: AsyncSession, news_key: str) -> bool:
     """Return True when a news key already exists in seen_news."""
     if not news_key:
@@ -2438,6 +2532,23 @@ async def get_alert_delivery(
     )
 
 
+async def get_topic_alert_delivery(
+    session: AsyncSession,
+    *,
+    sent_to_chat_id: int,
+    symbol: str,
+    market_event_id: int,
+) -> Alert | None:
+    return await session.scalar(
+        select(Alert)
+        .where(Alert.user_id.is_(None))
+        .where(Alert.sent_to_chat_id == int(sent_to_chat_id))
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.market_event_id == market_event_id)
+        .limit(1)
+    )
+
+
 async def get_market_heartbeat_delivery(
     session: AsyncSession,
     *,
@@ -2535,6 +2646,91 @@ async def reserve_alert_delivery(
         existing = await get_alert_delivery(
             session,
             user_id=user_id,
+            symbol=symbol,
+            market_event_id=market_event_id,
+        )
+        if existing is None:
+            raise
+        return existing, existing.status == "failed"
+    await session.refresh(alert)
+    return alert, True
+
+
+async def reserve_topic_alert_delivery(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    sent_to_chat_id: int,
+    market_event_id: int,
+    event_ai_analysis_id: int | None,
+    message: str,
+    trigger_reason: str | None = None,
+    trigger_source: str | None = None,
+    numeric_context: str | None = None,
+    thresholds_used: str | None = None,
+    llm_severity: str | None = None,
+    llm_reasoning_summary: str | None = None,
+    fallback_mode: bool = False,
+) -> tuple[Alert, bool]:
+    """Reserve one admin-configured topic delivery before sending."""
+    existing = await get_topic_alert_delivery(
+        session,
+        sent_to_chat_id=sent_to_chat_id,
+        symbol=symbol,
+        market_event_id=market_event_id,
+    )
+    if existing:
+        if existing.status in {"sent", "pending", "retry_pending"}:
+            return existing, False
+        if existing.final_failed_at is not None:
+            return existing, False
+        existing.status = "pending"
+        existing.error_message = None
+        existing.retry_count = 0
+        existing.last_error = None
+        existing.next_retry_at = None
+        existing.final_failed_at = None
+        existing.message = message
+        existing.alert_type = alert_type
+        existing.sent_to_chat_id = sent_to_chat_id
+        existing.event_ai_analysis_id = event_ai_analysis_id
+        existing.trigger_reason = trigger_reason
+        existing.trigger_source = trigger_source
+        existing.numeric_context = numeric_context
+        existing.thresholds_used = thresholds_used
+        existing.llm_severity = normalize_stored_severity(llm_severity)
+        existing.llm_reasoning_summary = llm_reasoning_summary
+        existing.fallback_mode = fallback_mode
+        await session.commit()
+        await session.refresh(existing)
+        return existing, True
+
+    alert = Alert(
+        symbol=symbol.upper(),
+        alert_type=alert_type,
+        message=message,
+        sent_to_chat_id=sent_to_chat_id,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        user_id=None,
+        status="pending",
+        trigger_reason=trigger_reason,
+        trigger_source=trigger_source,
+        numeric_context=numeric_context,
+        thresholds_used=thresholds_used,
+        llm_severity=normalize_stored_severity(llm_severity),
+        llm_reasoning_summary=llm_reasoning_summary,
+        fallback_mode=fallback_mode,
+    )
+    session.add(alert)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await get_topic_alert_delivery(
+            session,
+            sent_to_chat_id=sent_to_chat_id,
             symbol=symbol,
             market_event_id=market_event_id,
         )

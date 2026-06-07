@@ -17,6 +17,7 @@ from bot.db.database import (
     get_latest_event_analysis_by_statuses,
     get_price_state,
 )
+from bot.domain.supported_coins import SUPPORTED_SYMBOLS, is_supported_symbol, normalize_symbol
 from bot.error_logging import (
     build_sanitized_log_exports,
     disable_error_file_logging,
@@ -52,6 +53,11 @@ from bot.settings import (
     save_interval_setting,
 )
 from bot.storage import load_state
+from bot.topic_routing import (
+    clear_runtime_coin_topic_route,
+    list_runtime_coin_topic_routes,
+    save_runtime_coin_topic_route,
+)
 from bot.watchlist import (
     grant_premium_command,
     handle_watchlist_callback,
@@ -147,6 +153,35 @@ def _premium_revoke_usage_text() -> str:
         "/revokepremium 123456789\n"
         "/revokepremium me"
     )
+
+
+def _supported_topic_symbols_text() -> str:
+    return ", ".join(symbol.upper() for symbol in SUPPORTED_SYMBOLS)
+
+
+def _topic_usage_text() -> str:
+    return (
+        "Usage:\n"
+        "/settopic <symbol> <chat_id> <message_thread_id>\n\n"
+        "Example:\n"
+        "/settopic btc -1001234567890 42"
+    )
+
+
+def _parse_topic_symbol(value: str | None) -> str | None:
+    if value is None:
+        return None
+    symbol = normalize_symbol(value)
+    return symbol if is_supported_symbol(symbol) else None
+
+
+def _parse_integer_arg(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 async def _set_error_logging_enabled(enabled: bool) -> str:
@@ -360,6 +395,81 @@ async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Sorry, only the bot admin can view chat ID.")
         return
     await update.message.reply_text(f"Your chat ID is: {update.effective_chat.id}")
+
+
+@log_request("/settopic")
+async def set_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can configure topics.")
+        return
+    if len(context.args) != 3:
+        await update.message.reply_text(_topic_usage_text())
+        return
+
+    symbol = _parse_topic_symbol(context.args[0])
+    if symbol is None:
+        await update.message.reply_text(
+            f"Unsupported symbol. Supported symbols: {_supported_topic_symbols_text()}."
+        )
+        return
+    chat_id_value = _parse_integer_arg(context.args[1])
+    message_thread_id = _parse_integer_arg(context.args[2])
+    if chat_id_value is None or message_thread_id is None:
+        await update.message.reply_text("Chat ID and topic ID must be whole numbers.")
+        return
+
+    await save_runtime_coin_topic_route(
+        symbol=symbol,
+        chat_id=chat_id_value,
+        message_thread_id=message_thread_id,
+    )
+    await update.message.reply_text(f"{symbol.upper()} topic routing saved.")
+
+
+@log_request("/cleartopic")
+async def clear_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can configure topics.")
+        return
+    if len(context.args) != 1:
+        await update.message.reply_text("Usage:\n/cleartopic <symbol>\n\nExample:\n/cleartopic btc")
+        return
+
+    symbol = _parse_topic_symbol(context.args[0])
+    if symbol is None:
+        await update.message.reply_text(
+            f"Unsupported symbol. Supported symbols: {_supported_topic_symbols_text()}."
+        )
+        return
+    removed = await clear_runtime_coin_topic_route(symbol)
+    if removed:
+        await update.message.reply_text(f"{symbol.upper()} topic routing cleared.")
+    else:
+        await update.message.reply_text(f"No {symbol.upper()} topic routing was configured.")
+
+
+@log_request("/topics")
+async def topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can view topics.")
+        return
+
+    routes = await list_runtime_coin_topic_routes()
+    if not routes:
+        await update.message.reply_text("No topic routing is configured.")
+        return
+    by_symbol = {route.symbol: route for route in routes}
+    lines = ["Configured topics"]
+    for symbol in SUPPORTED_SYMBOLS:
+        route = by_symbol.get(symbol)
+        if route:
+            lines.append(
+                f"{symbol.upper()}: chat {route.chat_id}, topic {route.message_thread_id}"
+            )
+    await update.message.reply_text("\n".join(lines))
 
 
 @log_request("/settings")

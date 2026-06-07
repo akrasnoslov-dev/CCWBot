@@ -109,6 +109,9 @@ def test_legacy_alert_commands_are_not_registered():
     assert "myplan" in commands
     assert "subscribe" in commands
     assert "setinterval" in commands
+    assert "settopic" in commands
+    assert "cleartopic" in commands
+    assert "topics" in commands
     assert "status" not in commands
     assert "grantpremium" in commands
     assert "revokepremium" in commands

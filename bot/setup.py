@@ -22,6 +22,9 @@ async def setup_bot_commands(app: Application) -> None:
     if TELEGRAM_ADMIN_USER_ID:
         admin_commands = default_commands + [
             BotCommand("admin", "Open admin menu"),
+            BotCommand("settopic", "Route coin alerts to a topic"),
+            BotCommand("cleartopic", "Clear coin topic routing"),
+            BotCommand("topics", "List coin topic routing"),
         ]
         try:
             admin_chat_id = int(TELEGRAM_ADMIN_USER_ID)

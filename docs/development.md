@@ -70,6 +70,10 @@ them when required, or explain why they were not needed. See
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
   them in `/watchlist`.
+- Optional Telegram forum topic routing is configured by admins with `/settopic <symbol>
+  <chat_id> <message_thread_id>`, `/cleartopic <symbol>`, and `/topics`. Routes are additive
+  delivery targets for automatic Event Alerts and must not replace private delivery or change
+  Premium/payment entitlement logic.
 - User heartbeat frequency controls regular Market Heartbeat delivery only. Event Alerts can
   arrive separately when market events are detected, subject to backend cooldowns and LLM
   decisioning.

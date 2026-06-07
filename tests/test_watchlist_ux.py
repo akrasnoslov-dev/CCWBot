@@ -271,6 +271,9 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "reports",
         "plan",
         "admin",
+        "settopic",
+        "cleartopic",
+        "topics",
     ]
     assert "watchlist" not in default_commands
     assert "watchlist" not in admin_commands
@@ -287,6 +290,9 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "weeklyreport" not in default_commands
     assert "chatid" not in default_commands
     assert "setinterval" not in default_commands
+    assert "settopic" not in default_commands
+    assert "cleartopic" not in default_commands
+    assert "topics" not in default_commands
     assert "admin" in admin_commands
     assert "grantpremium" not in admin_commands
     assert "revokepremium" not in admin_commands

@@ -76,6 +76,7 @@ from bot.db.database import (
     mark_user_bot_blocked,
     reserve_alert_delivery,
     reserve_market_heartbeat_delivery,
+    reserve_topic_alert_delivery,
     save_alert,
     save_event_llm_analysis,
     save_market_heartbeat,
@@ -121,6 +122,7 @@ from bot.settings import (
 )
 from bot.storage import load_state, save_state
 from bot.telegram_errors import is_bot_blocked_error
+from bot.topic_routing import CoinTopicRouteConfig, get_runtime_coin_topic_route
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +179,7 @@ class AlertRecipient:
     chat_id: int
     user_id: int | None = None
     alert_frequency_seconds: int | None = field(default=None, compare=False)
+    message_thread_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1691,12 +1694,20 @@ def _enabled_subscription_by_symbol(user) -> dict[str, bool]:
 async def resolve_symbols_to_check(now: datetime | None = None) -> list[str]:
     """Resolve globally needed symbols from active eligible watchlists."""
     now = now or datetime.now(timezone.utc)
+    topic_symbols = {
+        symbol
+        for symbol in SUPPORTED_SYMBOLS
+        if await get_runtime_coin_topic_route(symbol) is not None
+    }
     if not DB_ENABLED or not DB_SESSION_LOCAL:
-        return [DEFAULT_SYMBOL] if TELEGRAM_CHAT_ID else []
+        symbols = set(topic_symbols)
+        if TELEGRAM_CHAT_ID:
+            symbols.add(DEFAULT_SYMBOL)
+        return [symbol for symbol in SUPPORTED_SYMBOLS if symbol in symbols]
 
     async with DB_SESSION_LOCAL() as session:
         users = await get_active_users_with_alert_preferences(session)
-        enabled_symbols: set[str] = set()
+        enabled_symbols: set[str] = set(topic_symbols)
         for user in users:
             enabled_by_symbol = _enabled_subscription_by_symbol(user)
             for symbol in SUPPORTED_SYMBOLS:
@@ -1757,6 +1768,35 @@ async def get_alert_recipients(
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
         return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
     return []
+
+
+def _topic_recipient(route: CoinTopicRouteConfig) -> AlertRecipient:
+    return AlertRecipient(
+        chat_id=route.chat_id,
+        user_id=None,
+        message_thread_id=route.message_thread_id,
+    )
+
+
+async def _with_topic_recipient(
+    recipients: list[AlertRecipient],
+    *,
+    symbol: str,
+    event_type: str,
+) -> list[AlertRecipient]:
+    if event_type != EVENT_ALERT_TYPE:
+        return recipients
+    route = await get_runtime_coin_topic_route(symbol)
+    if route is None:
+        return recipients
+    topic = _topic_recipient(route)
+    for recipient in recipients:
+        if (
+            recipient.chat_id == topic.chat_id
+            and recipient.message_thread_id == topic.message_thread_id
+        ):
+            return recipients
+    return [*recipients, topic]
 
 
 async def _get_or_create_price_movement_market_event(
@@ -2317,7 +2357,7 @@ async def _deliver_news_driven_alert_for_symbol(
         current_stable_news_ids=[_news_driven_identity(news_item)],
         now=now,
     )
-    if not recipients:
+    if not recipients and await get_runtime_coin_topic_route(symbol) is None:
         logger.info("%s news-driven event alert suppressed by backend cooldown.", symbol.upper())
         return False
     return await _deliver_market_event_alert(
@@ -3585,6 +3625,9 @@ async def _send_alert_to_recipient_once(
     html_text = alert_payload.get("html_text")
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
+    thread_kwargs = {}
+    if recipient.message_thread_id is not None:
+        thread_kwargs["message_thread_id"] = recipient.message_thread_id
     try:
         if html_text:
             try:
@@ -3592,17 +3635,22 @@ async def _send_alert_to_recipient_once(
                     chat_id=recipient.chat_id,
                     text=str(html_text),
                     parse_mode=ParseMode.HTML,
+                    **thread_kwargs,
                 )
             except Exception as error:
                 if is_bot_blocked_error(error):
                     raise
                 log(f"HTML alert send failed; falling back to plain text: {error}")
-                fallback_kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+                fallback_kwargs = {
+                    "chat_id": recipient.chat_id,
+                    "text": plain_text,
+                    **thread_kwargs,
+                }
                 if entities:
                     fallback_kwargs["entities"] = entities
                 await app.bot.send_message(**fallback_kwargs)
         else:
-            kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+            kwargs = {"chat_id": recipient.chat_id, "text": plain_text, **thread_kwargs}
             if entities:
                 kwargs["entities"] = entities
             await app.bot.send_message(**kwargs)
@@ -3710,6 +3758,8 @@ async def _disable_recipient_if_bot_blocked(
     recipient: AlertRecipient,
     error_message: str | None,
 ) -> None:
+    if recipient.user_id is None:
+        return
     if not is_bot_blocked_error(error_message):
         if error_message:
             logger.info(
@@ -3897,6 +3947,11 @@ async def _deliver_market_event_alert(
             symbol=normalized_symbol,
             event_type=event_type,
         )
+    recipients = await _with_topic_recipient(
+        list(recipients),
+        symbol=normalized_symbol,
+        event_type=event_type,
+    )
     if not recipients:
         log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
         _log_event_alert_suppression(
@@ -3930,6 +3985,9 @@ async def _deliver_market_event_alert(
     sent_count = 0
     skipped_count = 0
     for recipient in recipients:
+        is_topic_recipient = recipient.message_thread_id is not None
+        alert_id = None
+        should_send = True
         if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None and market_event_id:
             async with DB_SESSION_LOCAL() as session:
                 alert_row, should_send = await reserve_alert_delivery(
@@ -3959,17 +4017,68 @@ async def _deliver_market_event_alert(
                         trigger_source,
                         market_event_id,
                     )
-            if not should_send:
-                skipped_count += 1
-                continue
+        elif DB_ENABLED and DB_SESSION_LOCAL and is_topic_recipient and market_event_id:
+            async with DB_SESSION_LOCAL() as session:
+                alert_row, should_send = await reserve_topic_alert_delivery(
+                    session,
+                    symbol=normalized_symbol,
+                    alert_type=event_type,
+                    sent_to_chat_id=recipient.chat_id,
+                    market_event_id=market_event_id,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                    message=plain_text,
+                    trigger_reason=trigger_reason,
+                    trigger_source=trigger_source,
+                    numeric_context=numeric_context,
+                    thresholds_used=thresholds_used,
+                    llm_severity=stored_severity,
+                    llm_reasoning_summary=trigger_reason,
+                    fallback_mode="AI analysis is temporarily unavailable" in plain_text,
+                )
+                alert_id = alert_row.id
+                if should_send:
+                    logger.info(
+                        "ops_event=topic_delivery_reserved symbol=%s alert_type=%s "
+                        "market_event_id=%s chat_id=%s message_thread_id=%s",
+                        normalized_symbol.upper(),
+                        event_type,
+                        market_event_id,
+                        recipient.chat_id,
+                        recipient.message_thread_id,
+                    )
         else:
             alert_id = None
+        if not should_send:
+            skipped_count += 1
+            continue
+        if is_topic_recipient:
+            logger.info(
+                "ops_event=topic_delivery_attempted symbol=%s alert_type=%s "
+                "market_event_id=%s chat_id=%s message_thread_id=%s",
+                normalized_symbol.upper(),
+                event_type,
+                market_event_id,
+                recipient.chat_id,
+                recipient.message_thread_id,
+            )
         sent, error_message = await _send_alert_to_recipient_with_retry(
             app,
             recipient,
             alert_payload,
             alert_id=alert_id,
         )
+        if is_topic_recipient:
+            logger.info(
+                "ops_event=topic_delivery_%s symbol=%s alert_type=%s "
+                "market_event_id=%s chat_id=%s message_thread_id=%s error_class=%s",
+                "succeeded" if sent else "failed",
+                normalized_symbol.upper(),
+                event_type,
+                market_event_id,
+                recipient.chat_id,
+                recipient.message_thread_id,
+                None if sent else type(error_message).__name__,
+            )
         if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
             async with DB_SESSION_LOCAL() as session:
                 await update_alert_delivery_status(
@@ -4647,7 +4756,8 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 now=now,
                 bypass_frequency=True,
             )
-            if not candidate_recipients:
+            topic_route = await get_runtime_coin_topic_route(symbol)
+            if not candidate_recipients and topic_route is None:
                 log(f"No subscribed recipients for {symbol.upper()} automatic alerts.")
                 _log_event_alert_suppression(
                     symbol=symbol,
@@ -4864,7 +4974,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 return_summary=True,
             )
             recipients = recipient_filter.recipients
-            if not recipients:
+            if not recipients and topic_route is None:
                 suppression_reason = (
                     _primary_suppression_reason(recipient_filter.suppression_reason_counts)
                     or SUPPRESSION_UNKNOWN
