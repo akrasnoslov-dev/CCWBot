@@ -24,4 +24,3 @@ state.json
 backups/
 pgdata/
 postgres-data/
-.tmp/
