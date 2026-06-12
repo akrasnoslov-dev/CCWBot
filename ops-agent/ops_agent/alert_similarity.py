@@ -12,6 +12,7 @@ from typing import Any
 from ops_agent.schemas import Period
 
 PRIVACY_MODE = "no_raw_text_bundle_local_hashes"
+SEVERE_QUALITY_ISSUES = {"contains_n_a", "missing_numeric_market_context"}
 
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 MONEY_RE = re.compile(r"[$€£]?\b\d+(?:[.,]\d+)*(?:\s?(?:usd|eur|gbp))?\b", re.IGNORECASE)
@@ -380,10 +381,20 @@ def _alert_quality(
     payload = _base_payload(period, warnings)
     groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     total_event_alert_deliveries = 0
+    affected_event_alert_deliveries = 0
+    severe_affected_event_alert_deliveries = 0
+    quality_issue_occurrences = 0
     for row in rows:
+        issues = row.get("quality_issues") or []
+        delivery_count = _int(row.get("delivery_count"))
         if str(row.get("alert_type") or "") == "event_alert":
-            total_event_alert_deliveries += _int(row.get("delivery_count"))
-        for issue in row.get("quality_issues") or []:
+            total_event_alert_deliveries += delivery_count
+            if issues:
+                affected_event_alert_deliveries += delivery_count
+            if SEVERE_QUALITY_ISSUES.intersection(issues):
+                severe_affected_event_alert_deliveries += delivery_count
+        quality_issue_occurrences += delivery_count * len(issues)
+        for issue in issues:
             key = (
                 str(issue),
                 row["symbol"],
@@ -450,12 +461,17 @@ def _alert_quality(
             }
         )
     payload["total_event_alert_deliveries"] = total_event_alert_deliveries
+    payload["affected_event_alert_deliveries"] = affected_event_alert_deliveries
+    payload["severe_affected_event_alert_deliveries"] = severe_affected_event_alert_deliveries
+    payload["quality_issue_occurrences"] = quality_issue_occurrences
     payload["issues"] = sorted(
         issue_rows,
         key=lambda item: (-item["delivery_count"], item["issue"], item["symbol"]),
     )
     payload["limitations"] = [
         "affected_users_estimate may count the same user more than once across grouped rows",
+        "issue rows are issue occurrences; affected_event_alert_deliveries counts each "
+        "affected Event Alert delivery once",
         "raw Telegram message text is not exported; issue labels are derived during collection",
     ]
     return payload

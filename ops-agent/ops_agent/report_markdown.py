@@ -153,7 +153,6 @@ def _findings(
     findings: list[ReportFinding] = []
     quality = _payload(evidence, "evidence/db/alert_quality.json")
     quality_issues = list(quality.get("issues") or [])
-    bad_deliveries = sum(_int(row.get("delivery_count")) for row in quality_issues)
     severe_quality = [
         row
         for row in quality_issues
@@ -162,11 +161,20 @@ def _findings(
     if severe_quality:
         affected = sum(_int(row.get("affected_users_estimate")) for row in severe_quality)
         denominator = _int(quality.get("total_event_alert_deliveries"))
+        affected_deliveries = _int(quality.get("severe_affected_event_alert_deliveries"))
+        issue_occurrences = sum(_int(row.get("delivery_count")) for row in severe_quality)
+        if not affected_deliveries and issue_occurrences and denominator:
+            affected_deliveries = min(issue_occurrences, denominator)
+        if denominator:
+            affected_deliveries = min(affected_deliveries, denominator)
         findings.append(
             ReportFinding(
                 title="Event Alerts with missing or placeholder market context",
                 severity="critical",
-                evidence=_count_pct(bad_deliveries, denominator, "Event Alert deliveries"),
+                evidence=(
+                    f"{_count_pct(affected_deliveries, denominator, 'unique affected Event Alert deliveries')} "
+                    f"({issue_occurrences} grouped issue occurrences)"
+                ),
                 user_impact=(
                     f"{affected} affected-user estimate from grouped alert evidence; "
                     "exact distinct user count may be lower."
@@ -248,7 +256,7 @@ def _user_impact_table(evidence: dict[str, Any]) -> list[str]:
     return [
         "| Metric | Count | Notes |",
         "|---|---:|---|",
-        f"| Active users during report period | {_int(row.get('active_users_current'))} | Current active-user count from DB. |",
+        f"| Current active users | {_int(row.get('active_users_current'))} | Current active-user count from DB. |",
         f"| Users who received Event Alerts | {_int(row.get('users_received_event_alerts'))} | Distinct recipients in `alerts`. |",
         f"| Users who received Heartbeats | {_int(row.get('users_received_heartbeats'))} | Distinct recipients with heartbeat-linked alerts. |",
         f"| Users affected by delivery failures | {_int(row.get('users_affected_by_delivery_failures'))} | Distinct users with failed or retry-pending delivery rows. |",

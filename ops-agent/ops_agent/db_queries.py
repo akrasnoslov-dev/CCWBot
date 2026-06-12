@@ -272,9 +272,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "(SELECT count(*) FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until) AS ai_analyses, "
         "(SELECT count(*) FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until AND should_alert = true) AS should_alert_true, "
         "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert') AS alert_records_created, "
-        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until) AS telegram_delivery_attempts, "
-        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND status = 'sent') AS telegram_delivered, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert') AS telegram_delivery_attempts, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert' AND status = 'sent') AS telegram_delivered, "
         "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until "
+        "AND alert_type = 'event_alert' "
         "AND (status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL)) AS telegram_failed",
     ),
     DbQuery(

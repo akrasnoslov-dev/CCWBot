@@ -46,6 +46,16 @@ def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     assert "estimated_event_alert_llm_calls_per_day" in query.sql
 
 
+def test_delivery_funnel_downstream_counts_are_event_alert_only():
+    query = next(query for query in QUERIES if query.name == "delivery_funnel")
+
+    assert query.sql.count("alert_type = 'event_alert'") >= 4
+    assert "AS alert_records_created" in query.sql
+    assert "AS telegram_delivery_attempts" in query.sql
+    assert "AS telegram_delivered" in query.sql
+    assert "AS telegram_failed" in query.sql
+
+
 def test_alert_repetition_detectors_unknown_when_evidence_missing():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),

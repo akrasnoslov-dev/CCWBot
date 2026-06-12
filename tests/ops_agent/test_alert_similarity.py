@@ -126,6 +126,10 @@ def test_alert_quality_groups_placeholder_and_missing_market_context():
     assert ("contains_unavailable", "news") in issues
     assert ("missing_numeric_market_context", "news") in issues
     assert ("empty_related_context", "news") in issues
+    assert quality["total_event_alert_deliveries"] == 84
+    assert quality["affected_event_alert_deliveries"] == 84
+    assert quality["severe_affected_event_alert_deliveries"] == 84
+    assert quality["quality_issue_occurrences"] > quality["affected_event_alert_deliveries"]
     assert "Since last BTC alert" not in json.dumps(quality)
 
 
