@@ -52,7 +52,7 @@ async def test_database_comments_migration_applies_to_head(tmp_path):
     session = session_local()
     try:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert revision == "0020_news_items"
+        assert revision == "0021_alert_delivery_outcomes"
     finally:
         await session.close()
         await engine.dispose()

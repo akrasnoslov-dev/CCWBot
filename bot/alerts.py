@@ -77,6 +77,7 @@ from bot.db.database import (
     reserve_alert_delivery,
     reserve_market_heartbeat_delivery,
     save_alert,
+    save_alert_delivery_outcome,
     save_event_llm_analysis,
     save_market_heartbeat,
     save_price_snapshot,
@@ -239,6 +240,28 @@ SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_STALE_HEARTBEAT,
     SUPPRESSION_UNKNOWN,
 }
+OUTCOME_DELIVERED = "delivered"
+OUTCOME_SUPPRESSED = "suppressed"
+OUTCOME_FILTERED = "filtered"
+OUTCOME_FAILED = "failed"
+OUTCOME_RATE_LIMITED = "rate_limited"
+OUTCOME_COOLDOWN = "cooldown"
+OUTCOME_NOT_SCHEDULED = "not_scheduled"
+OUTCOME_NO_ELIGIBLE_RECIPIENTS = "no_eligible_recipients"
+REASON_DELIVERED = "delivered"
+REASON_DUPLICATE_EVENT = "duplicate_event"
+REASON_SIMILAR_EVENT_SUPPRESSED = "similar_event_suppressed"
+REASON_USER_NOT_ELIGIBLE = "user_not_eligible"
+REASON_PREMIUM_REQUIRED = "premium_required"
+REASON_WATCHLIST_DISABLED = "watchlist_disabled"
+REASON_COOLDOWN_ACTIVE = "cooldown_active"
+REASON_TELEGRAM_SEND_FAILED = "telegram_send_failed"
+REASON_LLM_RATE_LIMITED = "llm_rate_limited"
+REASON_LLM_INVALID_RESPONSE = "llm_invalid_response"
+REASON_NO_RECIPIENTS = "no_recipients"
+REASON_DELIVERY_NOT_SCHEDULED = "delivery_not_scheduled"
+REASON_ALREADY_DELIVERED = "already_delivered"
+REASON_SEVERITY_BELOW_THRESHOLD = "severity_below_threshold"
 
 @dataclass(frozen=True)
 class AlertRecipient:
@@ -247,9 +270,23 @@ class AlertRecipient:
     alert_frequency_seconds: int | None = field(default=None, compare=False)
 
 @dataclass(frozen=True)
+class RecipientOutcome:
+    recipient: AlertRecipient
+    status: str
+    reason_code: str
+    eligible: bool
+    detail: str | None = None
+
+@dataclass(frozen=True)
 class EventRecipientFilterResult:
     recipients: list[AlertRecipient]
     suppression_reason_counts: dict[str, int]
+    suppressed: list[RecipientOutcome] = field(default_factory=list)
+
+@dataclass(frozen=True)
+class AlertRecipientResolution:
+    recipients: list[AlertRecipient]
+    filtered: list[RecipientOutcome] = field(default_factory=list)
 
 def _count_suppression(
     counts: dict[str, int],
@@ -1009,21 +1046,68 @@ async def get_alert_recipients(
     bypass_frequency: bool = False,
 ) -> list[AlertRecipient]:
     """Resolve eligible recipients once for one market event."""
+    resolution = await resolve_alert_recipient_outcomes(
+        symbol=symbol,
+        event_type=event_type,
+        now=now,
+        bypass_frequency=bypass_frequency,
+    )
+    return resolution.recipients
+
+async def resolve_alert_recipient_outcomes(
+    symbol: str,
+    event_type: str,
+    *,
+    now: datetime | None = None,
+    bypass_frequency: bool = False,
+) -> AlertRecipientResolution:
+    """Resolve recipients and preserve queryable reasons for filtered users."""
     normalized_symbol = normalize_symbol(symbol)
     if event_type not in DELIVERABLE_ALERT_TYPES or normalized_symbol not in SUPPORTED_COINS:
-        return []
+        return AlertRecipientResolution(recipients=[])
     if DB_ENABLED and DB_SESSION_LOCAL:
         now = now or datetime.now(timezone.utc)
         recipients = []
+        filtered: list[RecipientOutcome] = []
         seen_chat_ids = set()
         async with DB_SESSION_LOCAL() as session:
             for user in await get_active_users_with_alert_preferences(session):
+                base_recipient = AlertRecipient(
+                    chat_id=int(user.telegram_chat_id or 0),
+                    user_id=user.id,
+                    alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                )
                 if user.telegram_chat_id is None:
+                    filtered.append(
+                        RecipientOutcome(
+                            recipient=base_recipient,
+                            status=OUTCOME_FILTERED,
+                            reason_code=REASON_USER_NOT_ELIGIBLE,
+                            eligible=False,
+                            detail="missing_telegram_chat",
+                        )
+                    )
                     continue
                 enabled_by_symbol = _enabled_subscription_by_symbol(user)
                 if not enabled_by_symbol.get(normalized_symbol, False):
+                    filtered.append(
+                        RecipientOutcome(
+                            recipient=base_recipient,
+                            status=OUTCOME_FILTERED,
+                            reason_code=REASON_WATCHLIST_DISABLED,
+                            eligible=False,
+                        )
+                    )
                     continue
                 if not is_coin_unlocked_for_user(user, normalized_symbol, now):
+                    filtered.append(
+                        RecipientOutcome(
+                            recipient=base_recipient,
+                            status=OUTCOME_FILTERED,
+                            reason_code=REASON_PREMIUM_REQUIRED,
+                            eligible=False,
+                        )
+                    )
                     continue
                 last_sent_at = await get_last_sent_alert_at(
                     session,
@@ -1033,9 +1117,26 @@ async def get_alert_recipients(
                 if not bypass_frequency and not can_deliver_now(
                     user, normalized_symbol, now, last_sent_at
                 ):
+                    filtered.append(
+                        RecipientOutcome(
+                            recipient=base_recipient,
+                            status=OUTCOME_COOLDOWN,
+                            reason_code=REASON_COOLDOWN_ACTIVE,
+                            eligible=False,
+                        )
+                    )
                     continue
                 chat_id = int(user.telegram_chat_id)
                 if chat_id in seen_chat_ids:
+                    filtered.append(
+                        RecipientOutcome(
+                            recipient=base_recipient,
+                            status=OUTCOME_FILTERED,
+                            reason_code=REASON_USER_NOT_ELIGIBLE,
+                            eligible=False,
+                            detail="duplicate_chat_id",
+                        )
+                    )
                     continue
                 seen_chat_ids.add(chat_id)
                 recipients.append(
@@ -1045,11 +1146,11 @@ async def get_alert_recipients(
                         alert_frequency_seconds=get_effective_frequency_seconds(user, now),
                     )
                 )
-        return recipients
+        return AlertRecipientResolution(recipients=recipients, filtered=filtered)
 
     if normalized_symbol == DEFAULT_SYMBOL and TELEGRAM_CHAT_ID:
-        return [AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))]
-    return []
+        return AlertRecipientResolution(recipients=[AlertRecipient(chat_id=int(TELEGRAM_CHAT_ID))])
+    return AlertRecipientResolution(recipients=[])
 
 async def _get_or_create_price_movement_market_event(
     *,
@@ -1571,9 +1672,45 @@ async def _deliver_news_driven_alert_for_symbol(
         semantic_family="news_catalyst",
         current_stable_news_ids=[_news_driven_identity(news_item)],
         now=now,
+        return_summary=True,
     )
-    if not recipients:
+    await _record_recipient_outcomes(
+        recipients.suppressed,
+        symbol=symbol,
+        alert_type=EVENT_ALERT_TYPE,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        trigger_source=NEWS_DRIVEN_ALERT_SOURCE,
+        event_instance_key=event_instance_key,
+        semantic_family="news_catalyst",
+    )
+    recipients_to_deliver = recipients.recipients
+    if not recipients_to_deliver:
         logger.info("%s news-driven event alert suppressed by backend cooldown.", symbol.upper())
+        suppression_reason = (
+            _primary_suppression_reason(recipients.suppression_reason_counts)
+            or SUPPRESSION_UNKNOWN
+        )
+        await _record_alert_delivery_outcome(
+            symbol=symbol,
+            alert_type=EVENT_ALERT_TYPE,
+            status=(
+                OUTCOME_SUPPRESSED
+                if suppression_reason == SUPPRESSION_SEMANTIC_COOLDOWN
+                else OUTCOME_COOLDOWN
+            ),
+            reason_code=(
+                REASON_SIMILAR_EVENT_SUPPRESSED
+                if suppression_reason == SUPPRESSION_SEMANTIC_COOLDOWN
+                else REASON_COOLDOWN_ACTIVE
+            ),
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            trigger_source=NEWS_DRIVEN_ALERT_SOURCE,
+            event_instance_key=event_instance_key,
+            semantic_family="news_catalyst",
+            detail=suppression_reason,
+        )
         return False
     return await _deliver_market_event_alert(
         app,
@@ -1581,7 +1718,7 @@ async def _deliver_news_driven_alert_for_symbol(
         alert_payload=alert_payload,
         market_event_id=market_event_id,
         event_ai_analysis_id=event_ai_analysis_id,
-        recipients=recipients,
+        recipients=recipients_to_deliver,
         event_type=EVENT_ALERT_TYPE,
         trigger_reason=decision.title,
         trigger_source=NEWS_DRIVEN_ALERT_SOURCE,
@@ -2120,12 +2257,21 @@ async def _create_event_analysis_decision(
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
     except LLMRateLimitBackoffActive as error:
-        await _save_event_analysis_attempt(
+        analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=None,
             status="skipped_due_to_rate_limit",
             error_message=str(error),
             error_reason=classify_ai_error_reason(error),
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_RATE_LIMITED,
+            reason_code=REASON_LLM_RATE_LIMITED,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            detail="event_analysis_backoff_active",
         )
         _log_event_alert_suppression(
             symbol=str(input_payload["symbol"]),
@@ -2138,12 +2284,21 @@ async def _create_event_analysis_decision(
         raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
         status = "invalid_json" if reason == "invalid JSON" else "llm_error"
-        await _save_event_analysis_attempt(
+        analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,
             status=status,
             error_message=str(error),
             error_reason=reason,
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_FAILED,
+            reason_code=REASON_LLM_INVALID_RESPONSE,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            detail=reason,
         )
         logger.warning(
             "%s event analysis failed: %s",
@@ -2170,13 +2325,22 @@ async def _create_event_analysis_decision(
             error_reason=classify_ai_error_reason(schema_error),
             error_message=str(error),
         )
-        await _save_event_analysis_attempt(
+        analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,
             status="schema_error",
             parsed_result=normalized_parsed,
             error_message=str(error),
             error_reason=classify_ai_error_reason(schema_error),
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_FAILED,
+            reason_code=REASON_LLM_INVALID_RESPONSE,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            detail=classify_ai_error_reason(schema_error),
         )
         logger.warning(
             "%s event analysis schema validation failed: %s",
@@ -2284,17 +2448,26 @@ async def _filter_event_recipients_for_cooldown(
 ) -> list[AlertRecipient] | EventRecipientFilterResult:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         if return_summary:
-            return EventRecipientFilterResult(recipients=recipients, suppression_reason_counts={})
+            return EventRecipientFilterResult(
+                recipients=recipients,
+                suppression_reason_counts={},
+                suppressed=[],
+            )
         return recipients
     effective_cooldown = int(cooldown_seconds)
     if urgency == "high":
         effective_cooldown = min(effective_cooldown, 30 * 60)
     if effective_cooldown <= 0 and (not canonical_event_key or semantic_cooldown_seconds <= 0):
         if return_summary:
-            return EventRecipientFilterResult(recipients=recipients, suppression_reason_counts={})
+            return EventRecipientFilterResult(
+                recipients=recipients,
+                suppression_reason_counts={},
+                suppressed=[],
+            )
         return recipients
 
     filtered: list[AlertRecipient] = []
+    suppressed: list[RecipientOutcome] = []
     suppression_reason_counts: dict[str, int] = {}
     async with DB_SESSION_LOCAL() as session:
         for recipient in recipients:
@@ -2356,6 +2529,15 @@ async def _filter_event_recipients_for_cooldown(
                         suppression_reason_counts,
                         SUPPRESSION_SEMANTIC_COOLDOWN,
                     )
+                    suppressed.append(
+                        RecipientOutcome(
+                            recipient=recipient,
+                            status=OUTCOME_SUPPRESSED,
+                            reason_code=REASON_SIMILAR_EVENT_SUPPRESSED,
+                            eligible=False,
+                            detail=SUPPRESSION_SEMANTIC_COOLDOWN,
+                        )
+                    )
                     logger.debug(
                         "event_alert_suppressed symbol=%s canonical_event_key=%s "
                         "semantic_family=%s suppression_reason=%s "
@@ -2389,6 +2571,15 @@ async def _filter_event_recipients_for_cooldown(
                 filtered.append(recipient)
                 continue
             _count_suppression(suppression_reason_counts, SUPPRESSION_EXACT_COOLDOWN)
+            suppressed.append(
+                RecipientOutcome(
+                    recipient=recipient,
+                    status=OUTCOME_COOLDOWN,
+                    reason_code=REASON_COOLDOWN_ACTIVE,
+                    eligible=False,
+                    detail=SUPPRESSION_EXACT_COOLDOWN,
+                )
+            )
             logger.debug(
                 "event_alert_suppressed symbol=%s canonical_event_key=%s "
                 "semantic_family=%s suppression_reason=%s cooldown_remaining_seconds=%s",
@@ -2402,6 +2593,7 @@ async def _filter_event_recipients_for_cooldown(
         return EventRecipientFilterResult(
             recipients=filtered,
             suppression_reason_counts=suppression_reason_counts,
+            suppressed=suppressed,
         )
     return filtered
 
@@ -3028,6 +3220,73 @@ async def _record_alert_delivery(
             fallback_mode=fallback_mode,
         )
 
+async def _record_alert_delivery_outcome(
+    *,
+    symbol: str,
+    alert_type: str,
+    status: str,
+    reason_code: str,
+    market_event_id: int | None = None,
+    event_ai_analysis_id: int | None = None,
+    alert_id: int | None = None,
+    recipient: AlertRecipient | None = None,
+    recipient_eligible: bool | None = None,
+    trigger_source: str | None = None,
+    event_instance_key: str | None = None,
+    semantic_family: str | None = None,
+    detail: str | None = None,
+) -> None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return
+    async with DB_SESSION_LOCAL() as session:
+        await save_alert_delivery_outcome(
+            session,
+            symbol=symbol,
+            alert_type=alert_type,
+            status=status,
+            reason_code=reason_code,
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            alert_id=alert_id,
+            user_id=recipient.user_id if recipient else None,
+            sent_to_chat_id=(
+                recipient.chat_id if recipient and recipient.chat_id != 0 else None
+            ),
+            recipient_considered=recipient is not None,
+            recipient_eligible=recipient_eligible,
+            trigger_source=trigger_source,
+            event_instance_key=event_instance_key,
+            semantic_family=semantic_family,
+            detail=detail,
+        )
+
+async def _record_recipient_outcomes(
+    outcomes: list[RecipientOutcome],
+    *,
+    symbol: str,
+    alert_type: str,
+    market_event_id: int | None,
+    event_ai_analysis_id: int | None,
+    trigger_source: str | None = None,
+    event_instance_key: str | None = None,
+    semantic_family: str | None = None,
+) -> None:
+    for outcome in outcomes:
+        await _record_alert_delivery_outcome(
+            symbol=symbol,
+            alert_type=alert_type,
+            status=outcome.status,
+            reason_code=outcome.reason_code,
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            recipient=outcome.recipient,
+            recipient_eligible=outcome.eligible,
+            trigger_source=trigger_source,
+            event_instance_key=event_instance_key,
+            semantic_family=semantic_family,
+            detail=outcome.detail,
+        )
+
 async def _save_price_state(
     *,
     symbol: str,
@@ -3105,6 +3364,17 @@ async def _deliver_market_event_alert(
         )
     if not recipients:
         log(f"No eligible recipients for {normalized_symbol.upper()} price movement alert.")
+        await _record_alert_delivery_outcome(
+            symbol=normalized_symbol,
+            alert_type=event_type,
+            status=OUTCOME_NO_ELIGIBLE_RECIPIENTS,
+            reason_code=REASON_NO_RECIPIENTS,
+            market_event_id=market_event_id,
+            event_ai_analysis_id=event_ai_analysis_id,
+            trigger_source=trigger_source,
+            event_instance_key=event_instance_key,
+            semantic_family=semantic_family,
+        )
         _log_event_alert_suppression(
             symbol=normalized_symbol,
             suppression_reason=SUPPRESSION_NO_ELIGIBLE_RECIPIENT,
@@ -3166,6 +3436,31 @@ async def _deliver_market_event_alert(
                         market_event_id,
                     )
             if not should_send:
+                outcome_status = (
+                    OUTCOME_SUPPRESSED
+                    if alert_row.status == "sent"
+                    else OUTCOME_NOT_SCHEDULED
+                )
+                reason_code = (
+                    REASON_ALREADY_DELIVERED
+                    if alert_row.status == "sent"
+                    else REASON_DELIVERY_NOT_SCHEDULED
+                )
+                await _record_alert_delivery_outcome(
+                    symbol=normalized_symbol,
+                    alert_type=event_type,
+                    status=outcome_status,
+                    reason_code=reason_code,
+                    market_event_id=market_event_id,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                    alert_id=alert_row.id,
+                    recipient=recipient,
+                    recipient_eligible=False,
+                    trigger_source=trigger_source,
+                    event_instance_key=event_instance_key,
+                    semantic_family=semantic_family,
+                    detail=f"existing_alert_status:{alert_row.status}",
+                )
                 skipped_count += 1
                 continue
         else:
@@ -3193,6 +3488,21 @@ async def _deliver_market_event_alert(
                     last_error=error_message,
                     final_failed_at=None if sent else datetime.now(timezone.utc),
                 )
+            await _record_alert_delivery_outcome(
+                symbol=normalized_symbol,
+                alert_type=event_type,
+                status=OUTCOME_DELIVERED if sent else OUTCOME_FAILED,
+                reason_code=REASON_DELIVERED if sent else REASON_TELEGRAM_SEND_FAILED,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                alert_id=alert_id,
+                recipient=recipient,
+                recipient_eligible=True,
+                trigger_source=trigger_source,
+                event_instance_key=event_instance_key,
+                semantic_family=semantic_family,
+                detail=None if sent else _truncate_text(str(error_message or ""), 255),
+            )
         else:
             await _record_alert_delivery(
                 symbol=normalized_symbol,
@@ -3210,6 +3520,20 @@ async def _deliver_market_event_alert(
                 llm_severity=stored_severity,
                 llm_reasoning_summary=trigger_reason,
                 fallback_mode="AI analysis is temporarily unavailable" in plain_text,
+            )
+            await _record_alert_delivery_outcome(
+                symbol=normalized_symbol,
+                alert_type=event_type,
+                status=OUTCOME_DELIVERED if sent else OUTCOME_FAILED,
+                reason_code=REASON_DELIVERED if sent else REASON_TELEGRAM_SEND_FAILED,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                recipient=recipient,
+                recipient_eligible=True,
+                trigger_source=trigger_source,
+                event_instance_key=event_instance_key,
+                semantic_family=semantic_family,
+                detail=None if sent else _truncate_text(str(error_message or ""), 255),
             )
         if sent:
             delivered = True
@@ -3821,14 +4145,23 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             else:
                 last_alert_at = _parse_state_alert_at(state.get("last_alert_at"))
 
-            candidate_recipients = await get_alert_recipients(
+            recipient_resolution = await resolve_alert_recipient_outcomes(
                 symbol=symbol,
                 event_type=EVENT_ALERT_TYPE,
                 now=now,
                 bypass_frequency=True,
             )
+            candidate_recipients = recipient_resolution.recipients
             if not candidate_recipients:
                 log(f"No subscribed recipients for {symbol.upper()} automatic alerts.")
+                await _record_alert_delivery_outcome(
+                    symbol=symbol,
+                    alert_type=EVENT_ALERT_TYPE,
+                    status=OUTCOME_NO_ELIGIBLE_RECIPIENTS,
+                    reason_code=REASON_NO_RECIPIENTS,
+                    trigger_source=EVENT_ANALYSIS_TYPE,
+                    detail="no_recipients_before_event_analysis",
+                )
                 _log_event_alert_suppression(
                     symbol=symbol,
                     suppression_reason=SUPPRESSION_NO_ELIGIBLE_RECIPIENT,
@@ -4029,6 +4362,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                             plain_text=alert_payload["plain_text"],
                         )
                         event_ai_analysis_id = analysis.id if analysis else event_ai_analysis_id
+            await _record_recipient_outcomes(
+                recipient_resolution.filtered,
+                symbol=symbol,
+                alert_type=EVENT_ALERT_TYPE,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                trigger_source=EVENT_ANALYSIS_TYPE,
+                event_instance_key=event_instance_key,
+                semantic_family=_semantic_family_from_payload(input_payload),
+            )
 
             recipient_filter = await _filter_event_recipients_for_cooldown(
                 candidate_recipients,
@@ -4046,6 +4389,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 return_summary=True,
             )
             recipients = recipient_filter.recipients
+            await _record_recipient_outcomes(
+                recipient_filter.suppressed,
+                symbol=symbol,
+                alert_type=EVENT_ALERT_TYPE,
+                market_event_id=market_event_id,
+                event_ai_analysis_id=event_ai_analysis_id,
+                trigger_source=EVENT_ANALYSIS_TYPE,
+                event_instance_key=event_instance_key,
+                semantic_family=_semantic_family_from_payload(input_payload),
+            )
             if not recipients:
                 suppression_reason = (
                     _primary_suppression_reason(recipient_filter.suppression_reason_counts)
@@ -4053,6 +4406,26 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 )
                 suppression_count = sum(recipient_filter.suppression_reason_counts.values())
                 logger.info("%s event alert suppressed by backend cooldown.", symbol.upper())
+                await _record_alert_delivery_outcome(
+                    symbol=symbol,
+                    alert_type=EVENT_ALERT_TYPE,
+                    status=(
+                        OUTCOME_SUPPRESSED
+                        if suppression_reason == SUPPRESSION_SEMANTIC_COOLDOWN
+                        else OUTCOME_COOLDOWN
+                    ),
+                    reason_code=(
+                        REASON_SIMILAR_EVENT_SUPPRESSED
+                        if suppression_reason == SUPPRESSION_SEMANTIC_COOLDOWN
+                        else REASON_COOLDOWN_ACTIVE
+                    ),
+                    market_event_id=market_event_id,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                    trigger_source=EVENT_ANALYSIS_TYPE,
+                    event_instance_key=event_instance_key,
+                    semantic_family=_semantic_family_from_payload(input_payload),
+                    detail=suppression_reason,
+                )
                 _log_event_alert_suppression(
                     symbol=symbol,
                     suppression_reason=suppression_reason,

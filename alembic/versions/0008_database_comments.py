@@ -33,6 +33,10 @@ TABLE_COMMENTS = {
     "seen_news": "RSS/news items already processed for deduplication.",
     "news_items": "Structured RSS news intelligence cached before alert selection.",
     "alerts": "One delivery record per recipient for a market alert.",
+    "alert_delivery_outcomes": (
+        "Queryable alert decision outcome for a market event, recipient, or "
+        "event-level non-delivery reason."
+    ),
     "market_events": "Deduplicated market movements that can trigger many deliveries.",
     "event_ai_analyses": "One reusable AI analysis for a market event and exact input payload.",
     "market_heartbeats": "Cached AI market heartbeat updates generated independently of delivery.",
@@ -258,6 +262,27 @@ COLUMN_COMMENTS = {
             "Whether this delivery used a deterministic fallback instead of AI analysis."
         ),
         "created_at": "When this delivery row was created.",
+    },
+    "alert_delivery_outcomes": {
+        "id": "Internal alert delivery outcome row id.",
+        "symbol": "Uppercase coin symbol for this alert outcome.",
+        "alert_type": "Alert category this outcome belongs to.",
+        "market_event_id": "Market event this outcome explains, when one exists.",
+        "event_ai_analysis_id": "AI analysis this outcome explains, when one exists.",
+        "alert_id": "Delivery row this outcome summarizes, when Telegram delivery was attempted.",
+        "user_id": "Recipient user considered for this alert outcome, if recipient-specific.",
+        "sent_to_chat_id": "Telegram chat id considered for this outcome, when available.",
+        "status": "Queryable outcome status such as delivered, filtered, suppressed, or failed.",
+        "reason_code": "Machine-readable reason code for this outcome.",
+        "recipient_considered": "Whether a concrete recipient was evaluated for this alert.",
+        "recipient_eligible": (
+            "Whether the considered recipient was eligible for Telegram delivery."
+        ),
+        "trigger_source": "Machine-readable signal source for this outcome.",
+        "event_instance_key": "Stable idempotency key for the market event.",
+        "semantic_family": "Canonical semantic family used for suppression.",
+        "detail": "Sanitized secondary diagnostic detail for operators.",
+        "created_at": "When this outcome row was created.",
     },
     "market_events": {
         "id": "Internal market event row id.",
