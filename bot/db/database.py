@@ -777,6 +777,92 @@ class Alert(Base):
     )
 
 
+class AlertDeliveryOutcome(Base):
+    __tablename__ = "alert_delivery_outcomes"
+    __table_args__ = (
+        Index("ix_alert_delivery_outcomes_event_status", "market_event_id", "status"),
+        {
+            "comment": (
+                "Queryable alert decision outcome for a market event, recipient, or "
+                "event-level non-delivery reason."
+            )
+        },
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal alert delivery outcome row id."
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(32), index=True, comment="Uppercase coin symbol for this alert outcome."
+    )
+    alert_type: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Alert category this outcome belongs to."
+    )
+    market_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_events.id"),
+        nullable=True,
+        index=True,
+        comment="Market event this outcome explains, when one exists.",
+    )
+    event_ai_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("event_ai_analyses.id"),
+        nullable=True,
+        index=True,
+        comment="AI analysis this outcome explains, when one exists.",
+    )
+    alert_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alerts.id"),
+        nullable=True,
+        index=True,
+        comment="Delivery row this outcome summarizes, when Telegram delivery was attempted.",
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+        comment="Recipient user considered for this alert outcome, if recipient-specific.",
+    )
+    sent_to_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        index=True,
+        comment="Telegram chat id considered for this outcome, when available.",
+    )
+    status: Mapped[str] = mapped_column(
+        String(64),
+        index=True,
+        comment="Queryable outcome status such as delivered, filtered, suppressed, or failed.",
+    )
+    reason_code: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Machine-readable reason code for this outcome."
+    )
+    recipient_considered: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="Whether a concrete recipient was evaluated for this alert.",
+    )
+    recipient_eligible: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+        comment="Whether the considered recipient was eligible for Telegram delivery.",
+    )
+    trigger_source: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Machine-readable signal source for this outcome."
+    )
+    event_instance_key: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Stable idempotency key for the market event."
+    )
+    semantic_family: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="Canonical semantic family used for suppression."
+    )
+    detail: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Sanitized secondary diagnostic detail for operators."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this outcome row was created."
+    )
+
+
 class MarketEvent(Base):
     __tablename__ = "market_events"
     __table_args__ = (
@@ -1234,6 +1320,7 @@ _REEXPORTS = {
         "reserve_alert_delivery",
         "reserve_market_heartbeat_delivery",
         "update_alert_delivery_status",
+        "save_alert_delivery_outcome",
         "get_or_create_market_event",
         "get_market_event_by_instance_key",
         "get_event_ai_analysis",

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.database import (
     Alert,
+    AlertDeliveryOutcome,
     EventAiAnalysis,
     MarketEvent,
     MarketHeartbeat,
@@ -418,6 +419,49 @@ async def update_alert_delivery_status(
     await session.commit()
     await session.refresh(alert)
     return alert
+
+
+
+async def save_alert_delivery_outcome(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    status: str,
+    reason_code: str,
+    market_event_id: int | None = None,
+    event_ai_analysis_id: int | None = None,
+    alert_id: int | None = None,
+    user_id: int | None = None,
+    sent_to_chat_id: int | None = None,
+    recipient_considered: bool = False,
+    recipient_eligible: bool | None = None,
+    trigger_source: str | None = None,
+    event_instance_key: str | None = None,
+    semantic_family: str | None = None,
+    detail: str | None = None,
+) -> AlertDeliveryOutcome:
+    outcome = AlertDeliveryOutcome(
+        symbol=symbol.upper(),
+        alert_type=alert_type,
+        market_event_id=market_event_id,
+        event_ai_analysis_id=event_ai_analysis_id,
+        alert_id=alert_id,
+        user_id=user_id,
+        sent_to_chat_id=sent_to_chat_id,
+        status=status,
+        reason_code=reason_code,
+        recipient_considered=recipient_considered,
+        recipient_eligible=recipient_eligible,
+        trigger_source=trigger_source,
+        event_instance_key=event_instance_key,
+        semantic_family=semantic_family,
+        detail=detail,
+    )
+    session.add(outcome)
+    await session.commit()
+    await session.refresh(outcome)
+    return outcome
 
 
 

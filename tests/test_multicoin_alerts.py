@@ -10,6 +10,7 @@ import bot.alerts as alerts
 import bot.settings as settings
 from bot.db.database import (
     Alert,
+    AlertDeliveryOutcome,
     Base,
     EventAiAnalysis,
     User,
@@ -394,6 +395,18 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
         ]
         async with SessionLocal() as session:
             assert await session.scalar(select(func.count()).select_from(Alert)) == 2
+            assert (
+                await session.scalar(select(func.count()).select_from(AlertDeliveryOutcome))
+                == 2
+            )
+            assert {
+                row.status
+                for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
+            } == {"delivered"}
+            assert {
+                row.reason_code
+                for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
+            } == {"delivered"}
     finally:
         await engine.dispose()
 
@@ -486,20 +499,31 @@ async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monke
 
 @pytest.mark.asyncio
 async def test_deliver_market_event_alert_respects_empty_recipient_list(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
     get_recipients = AsyncMock(side_effect=AssertionError("recipients should not be queried"))
     monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
 
-    delivered = await alerts._deliver_market_event_alert(
-        SimpleNamespace(bot=SimpleNamespace()),
-        symbol="btc",
-        alert_payload={"plain_text": "BTC movement alert\n\nNot financial advice."},
-        market_event_id=123,
-        event_ai_analysis_id=456,
-        recipients=[],
-    )
+    try:
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(bot=SimpleNamespace()),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC movement alert\n\nNot financial advice."},
+            market_event_id=None,
+            event_ai_analysis_id=None,
+            recipients=[],
+        )
 
-    assert delivered is False
-    get_recipients.assert_not_awaited()
+        assert delivered is False
+        get_recipients.assert_not_awaited()
+        async with SessionLocal() as session:
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+            assert outcome.status == "no_eligible_recipients"
+            assert outcome.reason_code == "no_recipients"
+            assert outcome.recipient_considered is False
+    finally:
+        await engine.dispose()
 
 
 def test_schedule_automatic_price_check_coalesces_overlapping_runs():
@@ -822,7 +846,7 @@ def test_direct_btc_support_article_is_user_visible():
 @pytest.mark.asyncio
 async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
     save_price_state = AsyncMock()
-    get_recipients = AsyncMock(return_value=[])
+    resolve_recipients = AsyncMock(return_value=alerts.AlertRecipientResolution(recipients=[]))
     fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
     create_market_event = AsyncMock(
         side_effect=AssertionError("market event should not be created")
@@ -844,7 +868,7 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
         "get_state_alert_settings",
         lambda state: {"price_move_alert_percent": 2.0},
     )
-    monkeypatch.setattr(alerts, "get_alert_recipients", get_recipients)
+    monkeypatch.setattr(alerts, "resolve_alert_recipient_outcomes", resolve_recipients)
     monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
     monkeypatch.setattr(alerts, "_get_or_create_price_movement_market_event", create_market_event)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
@@ -852,12 +876,66 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    get_recipients.assert_awaited_once()
+    resolve_recipients.assert_awaited_once()
     fetch_news.assert_not_awaited()
     create_market_event.assert_not_awaited()
     deliver_alert.assert_not_awaited()
     save_price_state.assert_awaited_once()
     assert save_price_state.await_args.kwargs["last_alert_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_automatic_price_check_persists_filtered_outcomes_before_ai(monkeypatch):
+    fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
+    create_decision = AsyncMock(side_effect=AssertionError("LLM should not be called"))
+    create_market_event = AsyncMock(
+        side_effect=AssertionError("market event should not be created")
+    )
+    deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["eth"]))
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={"eth": {"price": 3000.0, "change_24h": 1.0, "change_7d": None}}
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
+        monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
+        monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
+        monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
+
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+        fetch_news.assert_not_awaited()
+        create_decision.assert_not_awaited()
+        create_market_event.assert_not_awaited()
+        deliver_alert.assert_not_awaited()
+        async with SessionLocal() as session:
+            outcomes = (await session.scalars(select(AlertDeliveryOutcome))).all()
+
+        assert [(row.status, row.reason_code, row.user_id) for row in outcomes] == [
+            ("filtered", "watchlist_disabled", user.id),
+            ("no_eligible_recipients", "no_recipients", None),
+        ]
+        assert outcomes[0].recipient_considered is True
+        assert outcomes[0].recipient_eligible is False
+        assert outcomes[1].recipient_considered is False
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -896,7 +974,11 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         "get_state_alert_settings",
         lambda state: {"automatic_check_interval_seconds": 300},
     )
-    monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=recipients))
+    monkeypatch.setattr(
+        alerts,
+        "resolve_alert_recipient_outcomes",
+        AsyncMock(return_value=alerts.AlertRecipientResolution(recipients=recipients)),
+    )
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
@@ -952,7 +1034,11 @@ async def test_automatic_price_check_uses_product_analysis_for_each_event_group(
             "automatic_check_interval_seconds": 300,
         },
     )
-    monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=[recipient]))
+    monkeypatch.setattr(
+        alerts,
+        "resolve_alert_recipient_outcomes",
+        AsyncMock(return_value=alerts.AlertRecipientResolution(recipients=[recipient])),
+    )
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,

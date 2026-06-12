@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import bot.alerts as alerts
 from bot.db.database import (
     Alert,
+    AlertDeliveryOutcome,
     Base,
     User,
     backfill_blocked_users_from_alerts,
@@ -96,6 +97,9 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
         async with SessionLocal() as session:
             reloaded = await session.get(User, user.id)
             alert = await session.scalar(select(Alert).where(Alert.user_id == user.id))
+            outcome = await session.scalar(
+                select(AlertDeliveryOutcome).where(AlertDeliveryOutcome.user_id == user.id)
+            )
             assert reloaded.is_active is False
             assert reloaded.bot_blocked is True
             assert reloaded.blocked_at is not None
@@ -103,6 +107,10 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
             assert alert.retry_count == 1
             assert alert.final_failed_at is not None
             assert "Forbidden: bot was blocked by the user" in alert.error_message
+            assert outcome.status == "failed"
+            assert outcome.reason_code == "telegram_send_failed"
+            assert outcome.recipient_considered is True
+            assert outcome.recipient_eligible is True
     finally:
         await engine.dispose()
 
