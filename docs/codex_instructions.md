@@ -1,7 +1,6 @@
 # Codex Instructions
 
-Follow `AGENTS.md` first. This file is a short root-level context pointer for ChatGPT/Codex
-sessions.
+Follow `AGENTS.md` first. This file is a short context pointer for ChatGPT/Codex sessions.
 
 Before non-trivial work:
 
@@ -18,6 +17,8 @@ Safe defaults:
 - Never commit `.env`, local state, caches, logs, reports, DB dumps, or secrets.
 - Do not change product behavior unless explicitly requested.
 - Do not rename `bot/services/ai_agent_groq.py`.
+- Put new project/process documentation under `docs/`; keep only `README.md` and `AGENTS.md`
+  at the repository root.
 
 Product guardrails:
 

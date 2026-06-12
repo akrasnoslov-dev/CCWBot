@@ -450,7 +450,7 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 - Explicit Telegram Stars cancellation/refund event handling when Telegram support is clear.
 - Additional provider abstraction when there is a clear product need.
 
-More developer notes are in [docs/development.md](docs/development.md).
-Read-only operational SQL snippets are in [docs/observability.md](docs/observability.md).
-Codex agent routing and review rules are in
-[docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).
+Documentation index: [docs/README.md](docs/README.md).
+Developer notes: [docs/development.md](docs/development.md).
+Read-only operational SQL snippets: [docs/observability.md](docs/observability.md).
+Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).

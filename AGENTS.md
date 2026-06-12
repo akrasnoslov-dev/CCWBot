@@ -135,6 +135,8 @@ Optional agent examples:
 - Do not rename `ai_agent_groq.py` unless explicitly requested.
 - `python main.py` and Docker Compose startup must keep working.
 - Update docs when setup, config, commands, dependencies, architecture, or behaviour changes.
+- Keep project and process documentation under `docs/`. Root `README.md` is the public entry
+  point, and root `AGENTS.md` stays at the repository root for agent tooling.
 
 ## Verification
 Default checks:

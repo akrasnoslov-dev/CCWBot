@@ -34,11 +34,13 @@ Current product behavior:
 Primary context files:
 
 - `AGENTS.md`
-- `CODEX_INSTRUCTIONS.md`
-- `RELEASE_CHECKLIST.md`
-- `DEV_OPS_GUIDE.md`
+- `docs/README.md`
+- `docs/codex_instructions.md`
+- `docs/release_checklist.md`
+- `docs/dev_ops_guide.md`
 - `README.md`
 - `docs/development.md`
 - `docs/codex_agent_workflow.md`
 - `docs/observability.md`
 - `docs/llm_usage.md`
+- `docs/ops_agent_service.md`
