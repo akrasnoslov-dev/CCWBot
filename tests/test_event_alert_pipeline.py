@@ -11,6 +11,7 @@ import bot.alerts as alerts
 from bot.alerting.event_analysis import canonicalize_event_key, normalize_event_semantic_family
 from bot.db.database import (
     Alert,
+    AlertDeliveryOutcome,
     Base,
     EventAiAnalysis,
     MarketEvent,
@@ -21,6 +22,13 @@ from bot.db.database import (
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
+
+FORBIDDEN_EVENT_PLACEHOLDERS = ("n/a", "null", "unknown", "unavailable")
+
+
+def assert_no_event_placeholders(message: str):
+    lowered = message.lower()
+    assert all(value not in lowered for value in FORBIDDEN_EVENT_PLACEHOLDERS)
 
 
 async def build_session_factory():
@@ -396,6 +404,33 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
     assert "3h change: -2.40%" in html_message
     assert "24h change" not in html_message
     assert "Price change" not in html_message
+    assert_no_event_placeholders(message)
+
+
+def test_event_alert_payload_hides_missing_market_context_fields():
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(),
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "chg_since_msg": None,
+                "chg24h": -9.9,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    html_message = payload["html_text"] or ""
+    assert "Price: $100,000.00" in message
+    assert "Since last BTC alert:" not in message
+    assert "market move:" not in message
+    assert "change:" not in message
+    assert "24h change" not in message
+    assert_no_event_placeholders(message)
+    assert "Since last BTC alert:" not in html_message
+    assert "market move:" not in html_message
+    assert_no_event_placeholders(html_message)
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
@@ -820,7 +855,11 @@ async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
         "get_state_alert_settings",
         lambda state: {"automatic_check_interval_seconds": 300},
     )
-    monkeypatch.setattr(alerts, "get_alert_recipients", AsyncMock(return_value=recipients))
+    monkeypatch.setattr(
+        alerts,
+        "resolve_alert_recipient_outcomes",
+        AsyncMock(return_value=alerts.AlertRecipientResolution(recipients=recipients)),
+    )
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         alerts,
@@ -863,8 +902,12 @@ async def test_llm_should_alert_false_creates_no_delivery(monkeypatch):
     )
     monkeypatch.setattr(
         alerts,
-        "get_alert_recipients",
-        AsyncMock(return_value=[alerts.AlertRecipient(chat_id=2001, user_id=1)]),
+        "resolve_alert_recipient_outcomes",
+        AsyncMock(
+            return_value=alerts.AlertRecipientResolution(
+                recipients=[alerts.AlertRecipient(chat_id=2001, user_id=1)]
+            )
+        ),
     )
     monkeypatch.setattr(alerts, "fetch_news_context", AsyncMock(return_value=[]))
     monkeypatch.setattr(
@@ -1186,6 +1229,46 @@ async def test_event_alert_recipient_selection_bypasses_user_frequency(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_filtered_recipient_outcome_records_watchlist_reason(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        resolution = await alerts.resolve_alert_recipient_outcomes(
+            symbol="eth",
+            event_type=alerts.EVENT_ALERT_TYPE,
+            now=now,
+            bypass_frequency=True,
+        )
+        assert resolution.recipients == []
+        assert resolution.filtered
+
+        await alerts._record_recipient_outcomes(
+            resolution.filtered,
+            symbol="eth",
+            alert_type=alerts.EVENT_ALERT_TYPE,
+            market_event_id=None,
+            event_ai_analysis_id=None,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+        )
+
+        async with session_local() as session:
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+            assert outcome.user_id == user.id
+            assert outcome.status == "filtered"
+            assert outcome.reason_code == "watchlist_disabled"
+            assert outcome.recipient_considered is True
+            assert outcome.recipient_eligible is False
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_normal_urgency_respects_cooldown_and_high_urgency_shortens_it(
     monkeypatch,
     caplog,
@@ -1491,6 +1574,20 @@ async def test_semantic_event_alert_cooldown_suppresses_same_family_without_esca
 
         assert result.recipients == []
         assert result.suppression_reason_counts == {"semantic_cooldown": 1}
+        await alerts._record_recipient_outcomes(
+            result.suppressed,
+            symbol="btc",
+            alert_type=alerts.EVENT_ALERT_TYPE,
+            market_event_id=None,
+            event_ai_analysis_id=None,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+            semantic_family="price_downtrend",
+        )
+        async with session_local() as session:
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+            assert outcome.status == "suppressed"
+            assert outcome.reason_code == "similar_event_suppressed"
+            assert outcome.semantic_family == "price_downtrend"
     finally:
         await engine.dispose()
 
@@ -1529,6 +1626,20 @@ async def test_event_recipient_cooldown_filter_can_return_suppression_summary(mo
 
         assert result.recipients == []
         assert result.suppression_reason_counts == {"exact_cooldown": 1}
+        await alerts._record_recipient_outcomes(
+            result.suppressed,
+            symbol="btc",
+            alert_type=alerts.EVENT_ALERT_TYPE,
+            market_event_id=None,
+            event_ai_analysis_id=None,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+        )
+        async with session_local() as session:
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+            assert outcome.status == "cooldown"
+            assert outcome.reason_code == "cooldown_active"
+            assert outcome.recipient_considered is True
+            assert outcome.recipient_eligible is False
     finally:
         await engine.dispose()
 

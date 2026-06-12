@@ -41,6 +41,12 @@ them when required, or explain why they were not needed. See
   This keeps internal services off the public internet while preserving host-local checks and
   SSH-tunnel database access.
 - PostgreSQL is the primary store when `DATABASE_URL` is configured.
+- SQLAlchemy models, metadata, DB initialization, and compatibility re-exports live in
+  `bot/db/database.py`. Runtime persistence operations are split by domain in `bot/db/`
+  modules such as users, premium, prices, news, alerts, reports, and LLM usage.
+- Telegram handlers live in the `bot/handlers/` package. Command and callback
+  implementations are split by UX domain, while `bot/handlers/registration.py` keeps startup
+  registration centralized for `bot/runtime/telegram_app.py`.
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
@@ -55,8 +61,8 @@ them when required, or explain why they were not needed. See
   points = 3 hours by default. The analysed-window baseline ignores stale snapshots outside
   one automatic check interval before the window start; if no fresh baseline exists, the
   message leaves the analysed-window change unknown instead of reusing old market data.
-- Manual `/price` checks support `btc`, `eth`, `sol`, `xrp`, `bnb`, `doge`, `ada`,
-  `ton`, `link`, and `trx`. `usdt` is not supported.
+- Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
+  `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
@@ -78,11 +84,14 @@ them when required, or explain why they were not needed. See
 - Automatic alert threshold remains one global admin-controlled value for all coins.
 - Saved non-BTC watchlist choices remain stored when Premium expires, but non-BTC deliveries
   are blocked until Premium is active again.
+- Alert orchestration remains in `bot/alerts.py`. Deterministic event identity, analysed-window,
+  and news relevance helpers live under `bot/alerting/`; they must not perform Telegram delivery,
+  recipient lookup, LLM calls, or database writes.
 - Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
   outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
   wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal
   availability, limits, exchange rate, fees, and regional restrictions are controlled by
   Telegram/Fragment and may change.
-- Explicit subscription cancellation/refund events are not automated in this PR. Entitlement
+- Explicit subscription cancellation/refund events are not automated. Entitlement
   remains based on `user_premium_subscriptions.active_until > now` and naturally expires when
   renewals stop.

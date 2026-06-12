@@ -106,3 +106,50 @@ WHERE status = 'rate_limit'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+Event-analysis rate-limit delivery outcomes:
+
+```sql
+SELECT
+  ado.created_at,
+  ado.symbol,
+  ado.status,
+  ado.reason_code,
+  eaa.status AS analysis_status,
+  eaa.error_reason,
+  eaa.model
+FROM alert_delivery_outcomes ado
+LEFT JOIN event_ai_analyses eaa ON eaa.id = ado.event_ai_analysis_id
+WHERE ado.reason_code = 'llm_rate_limited'
+ORDER BY ado.created_at DESC
+LIMIT 50;
+```
+
+LLM stages affected by rate limits:
+
+```sql
+SELECT
+  call_type,
+  model,
+  status,
+  error_reason,
+  count(*) AS calls,
+  max(created_at) AS latest_at,
+  max(retry_after) AS latest_retry_after
+FROM llm_usage_logs
+WHERE created_at >= now() - interval '48 hours'
+  AND (status = 'rate_limit' OR error_reason ILIKE '%rate%')
+GROUP BY call_type, model, status, error_reason
+ORDER BY calls DESC, latest_at DESC;
+```
+
+Avoidable LLM-call checks:
+
+- `event_analysis` should only run once per symbol check, before recipient delivery and outside
+  recipient loops.
+- Event analysis is skipped when no eligible recipients exist for the symbol.
+- Active Groq backoff skips are persisted as `event_ai_analyses.status =
+  'skipped_due_to_rate_limit'` and `alert_delivery_outcomes.reason_code =
+  'llm_rate_limited'`.
+- Market Heartbeat generation remains separate from Event Alerts; heartbeat cadence should not
+  suppress Event Alerts.

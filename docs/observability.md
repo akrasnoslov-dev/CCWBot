@@ -24,6 +24,88 @@ ORDER BY a.created_at DESC
 LIMIT 100;
 ```
 
+## Delivery Outcome Tracking
+
+`alert_delivery_outcomes` is the queryable decision ledger for Event Alerts. `alerts` remains the
+Telegram delivery table; outcome rows explain recipient filtering, cooldown suppression, delivery
+success/failure, LLM rate-limit skips, and event-level no-recipient cases.
+
+Outcome statuses:
+
+- `delivered`
+- `suppressed`
+- `filtered`
+- `failed`
+- `rate_limited`
+- `cooldown`
+- `not_scheduled`
+- `no_eligible_recipients`
+
+Common reason codes:
+
+- `delivered`
+- `duplicate_event`
+- `similar_event_suppressed`
+- `user_not_eligible`
+- `premium_required`
+- `watchlist_disabled`
+- `cooldown_active`
+- `telegram_send_failed`
+- `llm_rate_limited`
+- `llm_invalid_response`
+- `no_recipients`
+- `delivery_not_scheduled`
+- `already_delivered`
+- `severity_below_threshold`
+
+For a market event, trace analysis, recipient decisions, and delivery outcomes:
+
+```sql
+SELECT
+  me.id AS market_event_id,
+  me.symbol,
+  me.event_key,
+  me.event_instance_key,
+  eaa.id AS event_ai_analysis_id,
+  eaa.status AS analysis_status,
+  eaa.should_alert,
+  ado.user_id,
+  ado.recipient_considered,
+  ado.recipient_eligible,
+  ado.status AS outcome_status,
+  ado.reason_code,
+  a.status AS delivery_status,
+  ado.created_at AS outcome_at
+FROM market_events me
+LEFT JOIN event_ai_analyses eaa ON eaa.market_event_id = me.id
+LEFT JOIN alert_delivery_outcomes ado ON ado.market_event_id = me.id
+LEFT JOIN alerts a ON a.id = ado.alert_id
+WHERE me.id = :market_event_id
+ORDER BY ado.created_at, ado.id;
+```
+
+Find future `should_alert=true` cases with no successful delivery and their explicit reason:
+
+```sql
+SELECT
+  me.id AS market_event_id,
+  me.symbol,
+  me.event_key,
+  eaa.id AS event_ai_analysis_id,
+  eaa.created_at AS analysis_at,
+  coalesce(ado.status, 'missing_outcome') AS outcome_status,
+  coalesce(ado.reason_code, 'missing_outcome') AS reason_code,
+  count(a.id) FILTER (WHERE a.status = 'sent') AS sent_deliveries
+FROM event_ai_analyses eaa
+JOIN market_events me ON me.id = eaa.market_event_id
+LEFT JOIN alert_delivery_outcomes ado ON ado.event_ai_analysis_id = eaa.id
+LEFT JOIN alerts a ON a.event_ai_analysis_id = eaa.id
+WHERE eaa.should_alert = true
+GROUP BY me.id, me.symbol, me.event_key, eaa.id, eaa.created_at, ado.status, ado.reason_code
+HAVING count(a.id) FILTER (WHERE a.status = 'sent') = 0
+ORDER BY eaa.created_at DESC;
+```
+
 ## Event Key Frequency
 
 ```sql
@@ -40,6 +122,8 @@ ORDER BY market_events DESC, last_seen_at DESC;
 ```
 
 `market_events.event_key` is the backend canonical semantic key, not necessarily the raw LLM key.
+Semantic family normalization, stable event identity, and similarity cooldown checks existed
+before `alert_delivery_outcomes`; outcome rows now make those decisions queryable in the database.
 For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
 `market_drop_btc` normalize to `btc_price_downtrend`. The raw key and semantic family are emitted
 in event-analysis logs and persisted in alert numeric context where available.
@@ -63,7 +147,8 @@ HAVING COUNT(*) > 1
 ORDER BY last_sent_at DESC;
 ```
 
-Suppressed semantic duplicates are logged as `event_alert_suppressed` with
+Suppressed semantic duplicates are persisted as `alert_delivery_outcomes.reason_code =
+'similar_event_suppressed'` and logged as `event_alert_suppressed` with
 `suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
 semantic family key, so minor raw-key wording drift does not bypass the cooldown. Same-family
 events can still deliver inside the semantic cooldown when urgency increased, the absolute
@@ -72,8 +157,8 @@ shows a new news driver.
 
 ## Event Alert Suppression Reasons
 
-Event Alert suppression diagnostics are operational-log only and must not be copied into
-Telegram messages. Suppression logs use:
+Event Alert suppression diagnostics are persisted in `alert_delivery_outcomes` and also emitted to
+operational logs. These diagnostics must not be copied into Telegram messages. Suppression logs use:
 
 ```text
 ops_event=event_alert_suppression symbol=BTC raw_event_key=... canonical_event_key=...
@@ -104,6 +189,55 @@ The ops-agent log collector aggregates these in
 `evidence/logs/pattern_counts.json` under `suppression_reason_counts`,
 `period_matched_suppression_reason_counts`, and
 `tail_context_suppression_reason_counts`.
+
+## Multiple AI Analyses Per Market Event
+
+The expected invariant is:
+
+```text
+1 coin market event = 1 AI analysis = many alert deliveries
+```
+
+Use this read-only diagnostic to quantify possible duplicate analyses:
+
+```sql
+WITH analysis_counts AS (
+  SELECT
+    me.id AS market_event_id,
+    me.symbol,
+    me.event_key,
+    me.event_instance_key,
+    count(eaa.id) AS analysis_count,
+    count(eaa.id) FILTER (WHERE eaa.status IN ('success', 'completed')) AS successful_analyses,
+    sum(coalesce(eaa.total_tokens, 0)) AS event_analysis_tokens
+  FROM market_events me
+  JOIN event_ai_analyses eaa ON eaa.market_event_id = me.id
+  GROUP BY me.id, me.symbol, me.event_key, me.event_instance_key
+)
+SELECT *
+FROM analysis_counts
+WHERE analysis_count > 1
+ORDER BY analysis_count DESC, event_analysis_tokens DESC, market_event_id DESC;
+```
+
+Estimate duplicated LLM usage impact:
+
+```sql
+WITH duplicate_events AS (
+  SELECT market_event_id
+  FROM event_ai_analyses
+  WHERE market_event_id IS NOT NULL
+  GROUP BY market_event_id
+  HAVING count(*) > 1
+)
+SELECT
+  count(DISTINCT eaa.market_event_id) AS market_events_with_multiple_analyses,
+  count(eaa.id) AS total_analysis_rows,
+  greatest(count(eaa.id) - count(DISTINCT eaa.market_event_id), 0) AS extra_analysis_rows,
+  sum(coalesce(eaa.total_tokens, 0)) AS total_tokens_on_affected_events
+FROM event_ai_analyses eaa
+JOIN duplicate_events de ON de.market_event_id = eaa.market_event_id;
+```
 
 ## LLM Outcomes By Symbol
 

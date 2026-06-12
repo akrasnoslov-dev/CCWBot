@@ -189,15 +189,20 @@ During automatic processing, the bot checks each eligible user and coin. If a se
 frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
 no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
 enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.
-Event Alert suppression diagnostics are written only to operational logs and ops-agent
-evidence, never to Telegram messages. Suppression reasons use stable values such as
-`exact_cooldown`, `semantic_cooldown`, `no_eligible_recipient`, `delivery_failed`, and
-`llm_rate_limited`.
+Event Alert delivery decisions are persisted in `alert_delivery_outcomes` and also logged for
+ops-agent evidence, never shown in Telegram messages. The table records queryable statuses such
+as `delivered`, `filtered`, `suppressed`, `cooldown`, `failed`, `rate_limited`,
+`not_scheduled`, and `no_eligible_recipients`. Reason codes use stable values such as
+`watchlist_disabled`, `premium_required`, `cooldown_active`,
+`similar_event_suppressed`, `telegram_send_failed`, `llm_rate_limited`, and
+`no_recipients`.
 
-Event Alert identity is backend-normalized before cooldown checks and persistence. The LLM may
-return raw keys such as `btc_price_drop`, `btc_selloff_prediction`, or `market_drop_btc`, but the
-backend maps equivalent wording to deterministic semantic families such as
-`btc_price_downtrend`. Other explicit families include `price_uptrend`, `volatility`,
+Event Alert identity is backend-normalized before cooldown checks and persistence. Semantic
+family normalization, stable event identity, similarity cooldown checks, and
+`alert_delivery_outcomes` make suppression decisions queryable in the database.
+The LLM may return raw keys such as `btc_price_drop`, `btc_selloff_prediction`, or
+`market_drop_btc`, but the backend maps equivalent wording to deterministic semantic families
+such as `btc_price_downtrend`. Other explicit families include `price_uptrend`, `volatility`,
 `etf_flows`, `liquidations`, `regulatory`, `derivatives_positioning`, `network_mining`, and
 `news_catalyst`. These rules live in `bot/alerting/event_analysis.py` and do not depend on the
 LLM choosing the canonical name.
@@ -209,8 +214,8 @@ the same or lower urgency, no materially larger analysed-window movement, and no
 related-news driver. A higher urgency, an absolute movement increase of at least 2.5 percentage
 points, or a new stable related-news identity bypasses the semantic cooldown. Operators can inspect
 `raw_event_key`, `canonical_event_key`, `semantic_family`, `event_instance_key`, `delivery_count`,
-`suppression_count`, and `suppression_reason` in logs and stored numeric context; these diagnostic
-fields are not included in Telegram alert text.
+`suppression_count`, and `suppression_reason` in logs, stored numeric context, and
+`alert_delivery_outcomes`; these diagnostic fields are not included in Telegram alert text.
 
 Market event instance identity uses stable components: symbol, canonical semantic key, a rounded
 UTC time bucket, stable selected-news identities, and for market-only events a coarse urgency and
@@ -442,11 +447,10 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 
 ## Roadmap
 
-- Per-user subscriptions.
-- Telegram Stars payment flow.
+- Explicit Telegram Stars cancellation/refund event handling when Telegram support is clear.
 - Additional provider abstraction when there is a clear product need.
 
-More developer notes are in [docs/development.md](docs/development.md).
-Read-only operational SQL snippets are in [docs/observability.md](docs/observability.md).
-Codex agent routing and review rules are in
-[docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).
+Documentation index: [docs/README.md](docs/README.md).
+Developer notes: [docs/development.md](docs/development.md).
+Read-only operational SQL snippets: [docs/observability.md](docs/observability.md).
+Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).

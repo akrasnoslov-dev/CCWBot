@@ -30,6 +30,33 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM users",
     ),
     DbQuery(
+        "user_impact_summary",
+        "evidence/db/aggregate_metrics.json",
+        "WITH period_alerts AS ("
+        "SELECT a.user_id, a.alert_type, a.status, a.market_heartbeat_id, a.market_event_id, "
+        "a.message, me.price_change_percent, me.last_24h_change, me.last_7d_change "
+        "FROM alerts a LEFT JOIN market_events me ON me.id = a.market_event_id "
+        "WHERE a.created_at >= :since AND a.created_at < :until), "
+        "duplicate_delivery_users AS ("
+        "SELECT user_id FROM period_alerts WHERE market_event_id IS NOT NULL "
+        "GROUP BY user_id, market_event_id HAVING count(*) > 1) "
+        "SELECT count(DISTINCT u.id) FILTER (WHERE u.is_active) AS active_users_current, "
+        "count(DISTINCT pa.user_id) FILTER (WHERE pa.alert_type = 'event_alert') AS users_received_event_alerts, "
+        "count(DISTINCT pa.user_id) FILTER (WHERE pa.market_heartbeat_id IS NOT NULL OR pa.alert_type = 'heartbeat') AS users_received_heartbeats, "
+        "count(DISTINCT pa.user_id) FILTER (WHERE pa.status IN ('failed', 'retry_pending')) AS users_affected_by_delivery_failures, "
+        "(SELECT count(DISTINCT user_id) FROM duplicate_delivery_users) AS users_affected_by_duplicate_alerts, "
+        "count(DISTINCT pa.user_id) FILTER (WHERE pa.alert_type = 'event_alert' AND ("
+        "lower(coalesce(pa.message, '')) LIKE '%n/a%' "
+        "OR lower(coalesce(pa.message, '')) LIKE '%unknown%' "
+        "OR lower(coalesce(pa.message, '')) LIKE '%unavailable%' "
+        "OR lower(coalesce(pa.message, '')) LIKE '%null%' "
+        "OR pa.price_change_percent IS NULL "
+        "OR pa.last_24h_change IS NULL "
+        "OR pa.last_7d_change IS NULL"
+        ")) AS users_affected_by_content_quality_issues "
+        "FROM users u LEFT JOIN period_alerts pa ON pa.user_id = u.id",
+    ),
+    DbQuery(
         "watchlist_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, is_enabled, count(*) AS users FROM user_coin_subscriptions "
@@ -235,6 +262,46 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) AS failed "
         "FROM alerts WHERE created_at >= :since AND created_at < :until "
         "GROUP BY symbol, alert_type, coalesce(status, 'unknown'), trigger_source, fallback_mode "
+        "ORDER BY deliveries DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "delivery_funnel",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT "
+        "(SELECT count(*) FROM market_events WHERE detected_at >= :since AND detected_at < :until) AS market_events, "
+        "(SELECT count(*) FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until) AS ai_analyses, "
+        "(SELECT count(*) FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until AND should_alert = true) AS should_alert_true, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert') AS alert_records_created, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert') AS telegram_delivery_attempts, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until AND alert_type = 'event_alert' AND status = 'sent') AS telegram_delivered, "
+        "(SELECT count(*) FROM alerts WHERE created_at >= :since AND created_at < :until "
+        "AND alert_type = 'event_alert' "
+        "AND (status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL)) AS telegram_failed",
+    ),
+    DbQuery(
+        "alert_quality_summary",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT lower(coalesce(a.symbol, 'unknown')) AS symbol, "
+        "coalesce(a.trigger_source, 'unknown') AS trigger_source, "
+        "coalesce(a.alert_type, 'unknown') AS alert_type, "
+        "count(*) AS deliveries, "
+        "count(DISTINCT a.user_id) AS affected_users, "
+        "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%n/a%') AS contains_n_a, "
+        "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%unknown%') AS contains_unknown, "
+        "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%unavailable%') AS contains_unavailable, "
+        "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%null%') AS contains_null, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
+        "me.price_change_percent IS NULL OR me.last_24h_change IS NULL OR me.last_7d_change IS NULL"
+        ")) AS missing_numeric_market_context, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
+        "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
+        ")) AS empty_related_context, "
+        "count(*) FILTER (WHERE a.message IS NULL OR length(trim(a.message)) = 0) AS malformed_formatting "
+        "FROM alerts a "
+        "LEFT JOIN market_events me ON me.id = a.market_event_id "
+        "LEFT JOIN event_ai_analyses eai ON eai.id = a.event_ai_analysis_id "
+        "WHERE a.created_at >= :since AND a.created_at < :until "
+        "GROUP BY lower(coalesce(a.symbol, 'unknown')), coalesce(a.trigger_source, 'unknown'), coalesce(a.alert_type, 'unknown') "
         "ORDER BY deliveries DESC LIMIT :limit",
     ),
     DbQuery(

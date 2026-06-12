@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
-from bot.db.database import Base, EventAiAnalysis
+from bot.db.database import AlertDeliveryOutcome, Base, EventAiAnalysis
 from bot.services import ai_agent_groq
 from bot.services.ai_agent_groq import AIGroqRateLimitError, LLMRateLimitBackoffActive
 
@@ -105,8 +105,12 @@ async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch)
         blocked_create.assert_not_awaited()
         async with session_local() as session:
             row = await session.scalar(select(EventAiAnalysis))
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
         assert row.status == "skipped_due_to_rate_limit"
         assert row.status != "no_alert"
+        assert outcome.status == "rate_limited"
+        assert outcome.reason_code == "llm_rate_limited"
+        assert outcome.event_ai_analysis_id == row.id
     finally:
         await engine.dispose()
 

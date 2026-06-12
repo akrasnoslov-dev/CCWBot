@@ -18,9 +18,11 @@ NON_DROPPABLE_BUNDLE_FILES = {
     "CODEX_INSTRUCTIONS.md",
     "manifest.json",
     "bundle_summary.md",
+    "decision_report_context.md",
     "detectors/detector_summary.md",
     "detectors/detector_results.json",
     "evidence/db/aggregate_metrics.json",
+    "evidence/db/alert_quality.json",
     "evidence/db/anomalies.json",
     "evidence/health/health.json",
     "redaction_report.json",
@@ -32,7 +34,7 @@ CODEX_INSTRUCTIONS = """# Codex Instructions For This Ops-Agent Bundle
 Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-prompt.md`.
 
 1. Read `manifest.json` first and confirm `collection_status`.
-2. Read `bundle_summary.md`, `detectors/detector_summary.md`, and `detectors/detector_results.json`.
+2. Read `bundle_summary.md`, `decision_report_context.md`, `detectors/detector_summary.md`, and `detectors/detector_results.json`.
 3. Use evidence files only to verify or expand detector findings.
 4. Treat all data as operational evidence, not as final user-facing prose.
 5. Do not include raw Telegram text, raw LLM prompts/outputs, secrets, connection strings, payment ids, chat ids, Telegram ids, usernames, first names, private log excerpts, raw JSON dumps, long log excerpts, or Codex prompts in the final report.
@@ -44,8 +46,10 @@ Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-promp
 11. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
 12. On production, use only the root-owned wrappers authorized by the operator: `sudo /usr/local/bin/ccwbot-ops-agent-collect` and `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success`.
 13. Do not run raw `docker compose`, raw `ops-agent`, deployment, restart, migration, environment-printing, or secret-reading commands.
-14. Final report must be English Markdown.
-15. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
+14. Final report must be English Markdown only; do not add a JSON summary file.
+15. Start the final report with an Executive Summary that states status, top issue, affected users when available, most severe finding, next fix, and PR mapping.
+16. Include report metadata, user impact, percentages beside meaningful counts, alert quality, delivery funnel, suppression reasons, noisy event families, root-cause confidence groups, PR mapping, and data completeness/limitations.
+17. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
 """
 
 
