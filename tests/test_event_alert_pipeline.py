@@ -22,6 +22,13 @@ from bot.db.database import (
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
 
+FORBIDDEN_EVENT_PLACEHOLDERS = ("n/a", "null", "unknown", "unavailable")
+
+
+def assert_no_event_placeholders(message: str):
+    lowered = message.lower()
+    assert all(value not in lowered for value in FORBIDDEN_EVENT_PLACEHOLDERS)
+
 
 async def build_session_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
@@ -396,6 +403,33 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
     assert "3h change: -2.40%" in html_message
     assert "24h change" not in html_message
     assert "Price change" not in html_message
+    assert_no_event_placeholders(message)
+
+
+def test_event_alert_payload_hides_missing_market_context_fields():
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(),
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "chg_since_msg": None,
+                "chg24h": -9.9,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    html_message = payload["html_text"] or ""
+    assert "Price: $100,000.00" in message
+    assert "Since last BTC alert:" not in message
+    assert "market move:" not in message
+    assert "change:" not in message
+    assert "24h change" not in message
+    assert_no_event_placeholders(message)
+    assert "Since last BTC alert:" not in html_message
+    assert "market move:" not in html_message
+    assert_no_event_placeholders(html_message)
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
