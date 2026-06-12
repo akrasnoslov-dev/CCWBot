@@ -197,10 +197,12 @@ as `delivered`, `filtered`, `suppressed`, `cooldown`, `failed`, `rate_limited`,
 `similar_event_suppressed`, `telegram_send_failed`, `llm_rate_limited`, and
 `no_recipients`.
 
-Event Alert identity is backend-normalized before cooldown checks and persistence. The LLM may
-return raw keys such as `btc_price_drop`, `btc_selloff_prediction`, or `market_drop_btc`, but the
-backend maps equivalent wording to deterministic semantic families such as
-`btc_price_downtrend`. Other explicit families include `price_uptrend`, `volatility`,
+Event Alert identity is backend-normalized before cooldown checks and persistence. Semantic
+family normalization, stable event identity, and similarity cooldown checks existed before
+`alert_delivery_outcomes`; this PR makes their suppression decisions queryable in the database.
+The LLM may return raw keys such as `btc_price_drop`, `btc_selloff_prediction`, or
+`market_drop_btc`, but the backend maps equivalent wording to deterministic semantic families
+such as `btc_price_downtrend`. Other explicit families include `price_uptrend`, `volatility`,
 `etf_flows`, `liquidations`, `regulatory`, `derivatives_positioning`, `network_mining`, and
 `news_catalyst`. These rules live in `bot/alerting/event_analysis.py` and do not depend on the
 LLM choosing the canonical name.

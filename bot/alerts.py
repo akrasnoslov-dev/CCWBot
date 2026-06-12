@@ -4154,6 +4154,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             candidate_recipients = recipient_resolution.recipients
             if not candidate_recipients:
                 log(f"No subscribed recipients for {symbol.upper()} automatic alerts.")
+                await _record_recipient_outcomes(
+                    recipient_resolution.filtered,
+                    symbol=symbol,
+                    alert_type=EVENT_ALERT_TYPE,
+                    market_event_id=None,
+                    event_ai_analysis_id=None,
+                    trigger_source=EVENT_ANALYSIS_TYPE,
+                )
                 await _record_alert_delivery_outcome(
                     symbol=symbol,
                     alert_type=EVENT_ALERT_TYPE,

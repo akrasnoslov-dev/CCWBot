@@ -781,7 +781,6 @@ class AlertDeliveryOutcome(Base):
     __tablename__ = "alert_delivery_outcomes"
     __table_args__ = (
         Index("ix_alert_delivery_outcomes_event_status", "market_event_id", "status"),
-        Index("ix_alert_delivery_outcomes_reason", "reason_code"),
         {
             "comment": (
                 "Queryable alert decision outcome for a market event, recipient, or "

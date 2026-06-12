@@ -158,11 +158,6 @@ def upgrade() -> None:
         ["market_event_id"],
     )
     op.create_index(
-        "ix_alert_delivery_outcomes_reason",
-        "alert_delivery_outcomes",
-        ["reason_code"],
-    )
-    op.create_index(
         "ix_alert_delivery_outcomes_reason_code",
         "alert_delivery_outcomes",
         ["reason_code"],
@@ -198,7 +193,6 @@ def downgrade() -> None:
         table_name="alert_delivery_outcomes",
     )
     op.drop_index("ix_alert_delivery_outcomes_reason_code", table_name="alert_delivery_outcomes")
-    op.drop_index("ix_alert_delivery_outcomes_reason", table_name="alert_delivery_outcomes")
     op.drop_index(
         "ix_alert_delivery_outcomes_market_event_id",
         table_name="alert_delivery_outcomes",

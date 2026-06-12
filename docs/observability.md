@@ -122,6 +122,8 @@ ORDER BY market_events DESC, last_seen_at DESC;
 ```
 
 `market_events.event_key` is the backend canonical semantic key, not necessarily the raw LLM key.
+Semantic family normalization, stable event identity, and similarity cooldown checks existed
+before `alert_delivery_outcomes`; this PR makes those decisions queryable in the database.
 For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
 `market_drop_btc` normalize to `btc_price_downtrend`. The raw key and semantic family are emitted
 in event-analysis logs and persisted in alert numeric context where available.
@@ -145,7 +147,8 @@ HAVING COUNT(*) > 1
 ORDER BY last_sent_at DESC;
 ```
 
-Suppressed semantic duplicates are logged as `event_alert_suppressed` with
+Suppressed semantic duplicates are persisted as `alert_delivery_outcomes.reason_code =
+'similar_event_suppressed'` and logged as `event_alert_suppressed` with
 `suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
 semantic family key, so minor raw-key wording drift does not bypass the cooldown. Same-family
 events can still deliver inside the semantic cooldown when urgency increased, the absolute

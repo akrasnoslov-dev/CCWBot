@@ -885,6 +885,60 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_automatic_price_check_persists_filtered_outcomes_before_ai(monkeypatch):
+    fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
+    create_decision = AsyncMock(side_effect=AssertionError("LLM should not be called"))
+    create_market_event = AsyncMock(
+        side_effect=AssertionError("market event should not be created")
+    )
+    deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
+
+    engine, SessionLocal = await build_session_factory()
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1001, 2001)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+        monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["eth"]))
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={"eth": {"price": 3000.0, "change_24h": 1.0, "change_7d": None}}
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
+        monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
+        monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
+        monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
+
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+        fetch_news.assert_not_awaited()
+        create_decision.assert_not_awaited()
+        create_market_event.assert_not_awaited()
+        deliver_alert.assert_not_awaited()
+        async with SessionLocal() as session:
+            outcomes = (await session.scalars(select(AlertDeliveryOutcome))).all()
+
+        assert [(row.status, row.reason_code, row.user_id) for row in outcomes] == [
+            ("filtered", "watchlist_disabled", user.id),
+            ("no_eligible_recipients", "no_recipients", None),
+        ]
+        assert outcomes[0].recipient_considered is True
+        assert outcomes[0].recipient_eligible is False
+        assert outcomes[1].recipient_considered is False
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipients(monkeypatch):
     recipients = [
         alerts.AlertRecipient(chat_id=2001, user_id=1),
