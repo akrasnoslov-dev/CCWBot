@@ -23,6 +23,7 @@ RANDOM_KEY_RE = re.compile(
     r"[_-]?[0-9a-f]{12})$",
     re.IGNORECASE,
 )
+NA_RE = re.compile(r"(?<![a-z0-9])n/a(?![a-z0-9])", re.IGNORECASE)
 
 STOPWORDS = {
     "alert",
@@ -215,6 +216,7 @@ def build_alert_evidence_payloads(
         "evidence/db/alert_delivery_distribution.json": _delivery_distribution(
             indexed, period, warnings
         ),
+        "evidence/db/alert_quality.json": _alert_quality(indexed, period, warnings),
         "evidence/db/event_analysis_decision_timeline.json": _decision_timeline(
             indexed, period, warnings
         ),
@@ -249,6 +251,11 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     sent_delivery_count = _int(row.get("sent_delivery_count"))
     first_delivery_at = _iso(row.get("first_delivery_at"))
     last_delivery_at = _iso(row.get("last_delivery_at"))
+    quality_issues = _quality_issues(
+        row,
+        full_text=full_text,
+        related_news_count=len(related_news),
+    )
     return {
         "symbol": str(row.get("symbol") or row.get("analysis_symbol") or "UNKNOWN").upper(),
         "alert_type": row.get("alert_type"),
@@ -281,7 +288,40 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "last_24h_change": _float(row.get("last_24h_change")),
         "last_7d_change": _float(row.get("last_7d_change")),
         "related_news_count": len(related_news),
+        "quality_issues": quality_issues,
     }
+
+
+def _quality_issues(
+    row: dict[str, Any], *, full_text: str, related_news_count: int
+) -> list[str]:
+    lowered = full_text.lower()
+    issues: list[str] = []
+    if NA_RE.search(lowered):
+        issues.append("contains_n_a")
+    for token, issue in (
+        ("unknown", "contains_unknown"),
+        ("unavailable", "contains_unavailable"),
+        ("null", "contains_null"),
+    ):
+        if token in lowered:
+            issues.append(issue)
+    is_event_alert = str(row.get("alert_type") or "") == "event_alert" or row.get(
+        "market_event_id"
+    ) is not None
+    if is_event_alert and (
+        row.get("price_change_percent") is None
+        or row.get("last_24h_change") is None
+        or row.get("last_7d_change") is None
+        or "contains_n_a" in issues
+    ):
+        issues.append("missing_numeric_market_context")
+    if is_event_alert and related_news_count == 0:
+        issues.append("empty_related_context")
+    alert_message = str(row.get("alert_message") or "")
+    if not alert_message.strip() or alert_message.count("**") % 2:
+        issues.append("malformed_formatting")
+    return sorted(set(issues))
 
 
 def _delivery_distribution(
@@ -330,6 +370,93 @@ def _delivery_distribution(
     payload["symbols"] = [
         {"symbol": symbol, "sent_deliveries": count}
         for symbol, count in sorted(symbol_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    return payload
+
+
+def _alert_quality(
+    rows: list[dict[str, Any]], period: Period, warnings: list[str]
+) -> dict[str, Any]:
+    payload = _base_payload(period, warnings)
+    groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    total_event_alert_deliveries = 0
+    for row in rows:
+        if str(row.get("alert_type") or "") == "event_alert":
+            total_event_alert_deliveries += _int(row.get("delivery_count"))
+        for issue in row.get("quality_issues") or []:
+            key = (
+                str(issue),
+                row["symbol"],
+                str(row.get("trigger_source") or "unknown"),
+                str(row.get("alert_type") or "unknown"),
+            )
+            group = groups.setdefault(
+                key,
+                {
+                    "issue": issue,
+                    "symbol": row["symbol"],
+                    "trigger_source": row.get("trigger_source") or "unknown",
+                    "alert_type": row.get("alert_type") or "unknown",
+                    "delivery_count": 0,
+                    "sent_deliveries": 0,
+                    "affected_users_estimate": 0,
+                    "market_events": set(),
+                    "analyses": set(),
+                    "first_seen_at": None,
+                    "last_seen_at": None,
+                    "safe_terms": Counter(),
+                    "sample_event_refs": [],
+                },
+            )
+            group["delivery_count"] += _int(row.get("delivery_count"))
+            group["sent_deliveries"] += _int(row.get("sent_delivery_count"))
+            group["affected_users_estimate"] += _int(row.get("distinct_recipient_count"))
+            if row.get("market_event_ref"):
+                group["market_events"].add(row["market_event_ref"])
+                if len(group["sample_event_refs"]) < 5:
+                    group["sample_event_refs"].append(row["market_event_ref"])
+            if row.get("analysis_ref"):
+                group["analyses"].add(row["analysis_ref"])
+            group["safe_terms"].update(row.get("safe_terms") or [])
+            _extend_time_range(
+                group,
+                row.get("first_delivery_at") or row.get("analysis_created_at"),
+            )
+            _extend_time_range(group, row.get("last_delivery_at") or row.get("analysis_created_at"))
+
+    issue_rows = []
+    for group in groups.values():
+        deliveries = _int(group["delivery_count"])
+        issue_rows.append(
+            {
+                "issue": group["issue"],
+                "symbol": group["symbol"],
+                "trigger_source": group["trigger_source"],
+                "alert_type": group["alert_type"],
+                "delivery_count": deliveries,
+                "sent_deliveries": group["sent_deliveries"],
+                "affected_users_estimate": group["affected_users_estimate"],
+                "market_events": len(group["market_events"]),
+                "analyses": len(group["analyses"]),
+                "share_of_event_alert_deliveries": (
+                    round(deliveries / total_event_alert_deliveries, 4)
+                    if total_event_alert_deliveries
+                    else None
+                ),
+                "first_seen_at": group["first_seen_at"],
+                "last_seen_at": group["last_seen_at"],
+                "safe_terms": [term for term, _ in group["safe_terms"].most_common(5)],
+                "sample_event_refs": group["sample_event_refs"],
+            }
+        )
+    payload["total_event_alert_deliveries"] = total_event_alert_deliveries
+    payload["issues"] = sorted(
+        issue_rows,
+        key=lambda item: (-item["delivery_count"], item["issue"], item["symbol"]),
+    )
+    payload["limitations"] = [
+        "affected_users_estimate may count the same user more than once across grouped rows",
+        "raw Telegram message text is not exported; issue labels are derived during collection",
     ]
     return payload
 

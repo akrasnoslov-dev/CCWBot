@@ -30,7 +30,7 @@ sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
 sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-mark-report-success
 ```
 
-The collect wrapper allows only `ops-agent collect` with `--period auto|Nh`, `--since <UTC timestamp>`, `--until <UTC timestamp|now>`, and `--no-state-update`. It rejects unsupported flags such as raw LLM samples, protected identity maps, custom output directories, shell fragments, deployment commands, restarts, migrations, environment printing, and secret-reading commands.
+The collect wrapper allows only `ops-agent collect` with `--period auto|Nh`, `--since <UTC ISO timestamp>`, `--until <UTC ISO timestamp|now>`, and `--no-state-update`. UTC timestamps must use `YYYY-MM-DDTHH:MM:SSZ`, for example `2026-06-06T00:00:00Z`; ambiguous dates such as `06/06/2026` are rejected. The wrapper rejects unsupported flags such as raw LLM samples, protected identity maps, custom output directories, shell fragments, deployment commands, restarts, migrations, environment printing, and secret-reading commands.
 
 The mark-success wrapper allows only `ops-agent mark-report-success` with one bundle path under `/opt/CCWBot/reports/ops-agent/bundles/` or `/app/reports/ops-agent/bundles/`, one Markdown report path under `/opt/CCWBot/reports/ops-agent/reports/` or `/app/reports/ops-agent/reports/`, and optional `--accept-partial`.
 
@@ -101,18 +101,20 @@ sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --unti
 ```
 
 Explicit periods must have `since < until` and must not exceed 720 hours.
+Use UTC ISO input only: `YYYY-MM-DDTHH:MM:SSZ`. Do not use slash-form dates.
 
 The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
 
 1. `CODEX_INSTRUCTIONS.md`
 2. `manifest.json`
 3. `bundle_summary.md`
-4. `detectors/detector_summary.md`
-5. `detectors/detector_results.json`
-6. `redaction_report.json`
-7. `limits.json`
+4. `decision_report_context.md`
+5. `detectors/detector_summary.md`
+6. `detectors/detector_results.json`
+7. `redaction_report.json`
+8. `limits.json`
 
-Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
+Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. The generated `decision_report_context.md` is Markdown-only decision context; use it to start the final report, then verify important claims against detectors and evidence. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
 Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped period-matched excerpts from unscoped tail-context excerpts and include skipped/unparseable counts. Period-matched logs are stronger evidence for the requested report period.
 
@@ -148,7 +150,7 @@ OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
 
 1. Run collection with the safe production command.
 2. Read the printed JSON and open the bundle path.
-3. Have Codex write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
+3. Read `decision_report_context.md`, then have Codex write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
 4. Run the safe mark-success wrapper only after the written report exists. The command validates the bundle before advancing state, rejects paths outside ops-agent report/bundle directories, and refuses tampered bundles.
 
 Safe production command:
@@ -205,6 +207,7 @@ raw LLM outputs, Telegram ids, chat ids, usernames, secrets, or connection strin
 Generated files include:
 
 * `evidence/db/alert_delivery_distribution.json`
+* `evidence/db/alert_quality.json`
 * `evidence/db/event_analysis_decision_timeline.json`
 * `evidence/db/alert_content_fingerprints.json`
 * `evidence/db/alert_similarity_groups.json`

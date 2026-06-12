@@ -15,7 +15,13 @@ def utc_now() -> datetime:
 
 
 def parse_timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(
+            "timestamp must use UTC ISO format YYYY-MM-DDTHH:MM:SSZ, "
+            "for example 2026-06-06T00:00:00Z; slash dates are not accepted"
+        ) from error
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 

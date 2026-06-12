@@ -25,7 +25,7 @@ Hard boundaries:
 3. Codex runs `ops-agent` locally through Docker Compose.
 4. `ops-agent` collects operational evidence from PostgreSQL, file logs, health/status sources, and its own state.
 5. `ops-agent` sanitizes, compacts, groups, detects known issues, and exports a diagnostic bundle.
-6. Codex reads the bundle according to `CODEX_INSTRUCTIONS.md` and `docs/ops-agent-report-codex-prompt.md`.
+6. Codex reads the bundle according to `CODEX_INSTRUCTIONS.md`, `decision_report_context.md`, and `docs/ops-agent-report-codex-prompt.md`.
 7. Codex performs final analysis and writes the final Markdown operational report.
 8. Codex saves the report under `/opt/CCWBot/reports/ops-agent/reports/`.
 9. Codex runs `mark-report-success` only after a report is written and the bundle is complete, unless the operator explicitly accepts a partial report.
@@ -146,6 +146,7 @@ reports/ops-agent/bundles/<UTC>_<bundle_id>/
   CODEX_INSTRUCTIONS.md
   manifest.json
   bundle_summary.md
+  decision_report_context.md
   redaction_report.json
   limits.json
   detectors/
@@ -241,6 +242,7 @@ Always include:
 * `CODEX_INSTRUCTIONS.md`
 * `manifest.json`
 * `bundle_summary.md`
+* `decision_report_context.md`
 * `detectors/detector_summary.md`
 * `detectors/detector_results.json`
 * `evidence/db/aggregate_metrics.json`
@@ -301,15 +303,16 @@ Required content:
 Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-prompt.md`.
 
 1. Read `manifest.json` first and confirm `collection_status`.
-2. Read `bundle_summary.md`, `detectors/detector_summary.md`, and `detectors/detector_results.json`.
+2. Read `bundle_summary.md`, `decision_report_context.md`, `detectors/detector_summary.md`, and `detectors/detector_results.json`.
 3. Use evidence files only to verify or expand detector findings.
 4. Treat all data as operational evidence, not as final user-facing prose.
 5. Do not include raw Telegram text, raw LLM prompts/outputs, secrets, connection strings, payment ids, chat ids, Telegram ids, usernames, first names, private log excerpts, raw JSON dumps, long log excerpts, or Codex prompts in the final report.
 6. Use user references only as redacted refs such as `user_ref:u_7c91b2`.
 7. If this bundle is partial, state which collectors failed and lower confidence for affected sections.
 8. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
-9. Final report must be English Markdown.
-10. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
+9. Final report must be English Markdown only; do not add a JSON summary file.
+10. Start the final report with decision fields: status, top issue, affected users when available, most severe finding, recommended next fix, and PR mapping.
+11. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
 ```
 
 ## Static Reusable Codex Prompt
@@ -320,7 +323,7 @@ Add the reusable prompt at:
 docs/ops-agent-report-codex-prompt.md
 ```
 
-The file defines Codex's report-analysis role, required reading order, partial bundle handling, privacy rules, final report structure, severity rules, confidence rules, writing style, and report success flow.
+The file defines Codex's report-analysis role, required reading order, partial bundle handling, privacy rules, decision-oriented final report structure, severity rules, confidence rules, writing style, and report success flow.
 
 The approved text is stored in that file.
 
@@ -363,10 +366,10 @@ Detector threshold defaults:
 
 Use these levels in detector output and final reports:
 
-* `critical`: bot likely down, health unavailable with no recent successful activity, payment corruption, widespread delivery failure, or repeated LLM/report failure blocking core function.
-* `high`: user-visible degradation, repeated delivery failures, stale market data, failed reports, active blocked users, duplicate deliveries, premium/payment inconsistency.
-* `medium`: partial degradation, rate-limit pressure, stale heartbeats, news intelligence failures, non-widespread exceptions.
-* `low`: noisy logs, isolated failures, cleanup suggestions.
+* `critical`: user-facing broken messages, misleading/unusable alerts, high delivery failure rate, bot likely down, health unavailable with no recent successful activity, payment corruption, widespread delivery failure, or repeated LLM/report failure blocking core function.
+* `high`: duplicate/noisy alerts affecting many users, user-visible degradation, repeated delivery failures, stale market data, failed reports, active blocked users, duplicate deliveries, premium/payment inconsistency.
+* `medium`: internal inconsistency, degraded observability, partial degradation, rate-limit pressure, stale heartbeats, news intelligence failures, non-widespread exceptions, or limited user impact.
+* `low`: report-only issue, documentation gap, minor formatting issue, noisy logs, isolated failures, cleanup suggestions.
 * `info`: normal metrics and no-action observations.
 
 ## PostgreSQL Read-Only Role
@@ -668,7 +671,7 @@ sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --unti
 Explicit periods must have `since < until` and must not exceed 720 hours.
 
 3. Read stdout JSON.
-4. Read the bundle in the required order.
+4. Read the bundle in the required order, including `decision_report_context.md`.
 5. Write the final report under `/opt/CCWBot/reports/ops-agent/reports/`.
 6. Run the safe mark-success wrapper only if the report was written and the bundle is complete, unless the operator explicitly accepts a partial report:
 
@@ -771,6 +774,7 @@ ops-agent collect --period auto --output-dir <tmp>
    * `CODEX_INSTRUCTIONS.md`
    * `manifest.json`
    * `bundle_summary.md`
+   * `decision_report_context.md`
    * `detectors/detector_summary.md`
    * `detectors/detector_results.json`
    * `redaction_report.json`

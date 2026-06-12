@@ -31,6 +31,9 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_heartbeats_freshness" in query_names
     assert "event_ai_analysis_invariant_checks" in query_names
     assert "event_alert_llm_estimates" in query_names
+    assert "user_impact_summary" in query_names
+    assert "delivery_funnel" in query_names
+    assert "alert_quality_summary" in query_names
 
 
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():

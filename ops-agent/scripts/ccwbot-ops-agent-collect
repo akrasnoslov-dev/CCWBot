@@ -56,26 +56,26 @@ while [ "$#" -gt 0 ]; do
     --since)
       shift
       [ "$#" -gt 0 ] || reject "--since requires a value"
-      is_utc_timestamp "$1" || reject "--since must be UTC ISO-8601 ending in Z"
+      is_utc_timestamp "$1" || reject "--since must use UTC ISO format YYYY-MM-DDTHH:MM:SSZ, for example 2026-06-06T00:00:00Z; slash dates are not accepted"
       since=$1
       ;;
     --since=*)
       value=${1#--since=}
-      is_utc_timestamp "$value" || reject "--since must be UTC ISO-8601 ending in Z"
+      is_utc_timestamp "$value" || reject "--since must use UTC ISO format YYYY-MM-DDTHH:MM:SSZ, for example 2026-06-06T00:00:00Z; slash dates are not accepted"
       since=$value
       ;;
     --until)
       shift
       [ "$#" -gt 0 ] || reject "--until requires a value"
       if [ "$1" != "now" ]; then
-        is_utc_timestamp "$1" || reject "--until must be now or UTC ISO-8601 ending in Z"
+        is_utc_timestamp "$1" || reject "--until must be now or UTC ISO format YYYY-MM-DDTHH:MM:SSZ, for example 2026-06-08T07:58:05Z; slash dates are not accepted"
       fi
       until=$1
       ;;
     --until=*)
       value=${1#--until=}
       if [ "$value" != "now" ]; then
-        is_utc_timestamp "$value" || reject "--until must be now or UTC ISO-8601 ending in Z"
+        is_utc_timestamp "$value" || reject "--until must be now or UTC ISO format YYYY-MM-DDTHH:MM:SSZ, for example 2026-06-08T07:58:05Z; slash dates are not accepted"
       fi
       until=$value
       ;;

@@ -147,6 +147,7 @@ async def collect_db(
     if warning:
         for file_name in {
             "evidence/db/aggregate_metrics.json",
+            "evidence/db/alert_quality.json",
             "evidence/db/anomalies.json",
             "evidence/db/recent_market_events.json",
             "evidence/db/recent_alert_failures.json",
@@ -283,6 +284,7 @@ async def collect_db(
                 message = redact_error_message(error, mapper, redaction_report)
                 for file_name in {
                     "evidence/db/alert_delivery_distribution.json",
+                    "evidence/db/alert_quality.json",
                     "evidence/db/event_analysis_decision_timeline.json",
                     "evidence/db/alert_content_fingerprints.json",
                     "evidence/db/alert_similarity_groups.json",

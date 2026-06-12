@@ -34,10 +34,11 @@ Start with the bundle-specific instructions and metadata:
 1. `CODEX_INSTRUCTIONS.md`
 2. `manifest.json`
 3. `bundle_summary.md`
-4. `detectors/detector_summary.md`
-5. `detectors/detector_results.json`
-6. `redaction_report.json`
-7. `limits.json`
+4. `decision_report_context.md`
+5. `detectors/detector_summary.md`
+6. `detectors/detector_results.json`
+7. `redaction_report.json`
+8. `limits.json`
 
 Only then inspect referenced `evidence/**` files when needed to verify or expand a finding.
 
@@ -137,55 +138,174 @@ Use these refs only when user-specific remediation is actually needed. Prefer ag
 
 ## Final report format
 
-Write the final report in English Markdown using this structure:
+Write the final report in English Markdown only. Do not create a JSON summary file.
+Use `decision_report_context.md` as the starting structure, then verify important
+claims against detector results and evidence files. Do not copy uncertainty as fact.
+
+Write the final report using this structure:
 
 ```markdown
 # CCWBot Operational Report
 
-Period: ...
-Generated from bundle: ...
-
 ## Executive Summary
+
+Status: healthy / needs attention / degraded
+Top issue: ...
+Affected users: ...
+Most severe finding: ...
+Recommended next fix: ...
+PR mapping: ...
+
+## Report Metadata
+
+Report window start: ...
+Report window end: ...
+Generated at: ...
+Environment/source: ...
+Data sources used: ...
+Command/date input caveat: ...
+
+## User Impact
+
+| Metric | Count | Notes |
+|---|---:|---|
 
 ## Severity Table
 
 | Severity | Finding | Impact | Confidence |
 |---|---|---|---|
 
-## Critical Findings
+## Alert Quality
+
+## Delivery Funnel
+
+| Stage | Count | Conversion |
+|---|---:|---:|
+
+## Suppression Reasons
+
+## Top Noisy Event Families
+
+## Confirmed Findings
 
 ### Finding title
-**Problem:**  
-**Evidence:**  
-**Likely cause:**  
-**Suggested solution:**  
+**Severity:** critical / high / medium / low
+**Evidence:**
+**User impact:**
+**Recommended action:**
 **Confidence:** high / medium / low
 
-## High Findings
+### PR Mapping
 
-## Medium Findings
+- Proposed fix: ...
+- Covered by: PR2 suppression observability / PR3 semantic identity / separate n/a Event Alert fix / new work
+- New work required: yes/no
 
-## Low / Informational Findings
+## Likely Findings
 
-## Operational Metrics
+## Unknown / Needs Investigation
 
-## Collection Gaps
+## Data Completeness and Limitations
+
+- Market events available: yes/no
+- AI analyses available: yes/no
+- Alert delivery records available: yes/no
+- Telegram failure details available: yes/no
+- Warning/error logs available: yes/no
+- Suppression reason data available: yes/no
+- Semantic family data available: yes/no
+
+Limitations:
+- ...
 
 ## Recommended Next Actions
 
 ## Evidence Appendix
 ```
 
-If there are no findings for a severity section, write `No findings.`
+If there are no findings for a section, write `No findings.`
+
+## Required decision fields
+
+The Executive Summary must answer:
+
+* what happened;
+* how many users were affected, when available;
+* how severe the problem is;
+* what should be fixed first;
+* whether planned work covers the fix or new work is required.
+
+Major findings must include Severity, Evidence, User impact, Recommended action,
+and PR mapping.
+
+Use these planned-work mappings when supported by evidence:
+
+* PR2: suppression observability/reasons, alert wording clarity, docs updates.
+* PR3: semantic event family normalization, stable event identity, filtered alert history, optional Telegram topics per coin backlog.
+* Separate n/a Event Alert fix: news-driven alerts must populate the same market context as regular `event_analysis` alerts so users never see `n/a`, `unknown`, `unavailable`, or `null` in Event Alert messages.
+
+## Percentages and missing data
+
+Show percentages next to counts when a meaningful denominator exists, for example:
+
+* failed deliveries: `X / Y attempts, Z%`;
+* alerts containing `n/a`: `X / Y Event Alerts, Z%`;
+* duplicate analyses: `X / Y analyses, Z%`;
+* affected events: `X / Y market events, Z%`.
+
+If the denominator is zero or unavailable, write `not available` with a short
+reason. Do not invent paid/free breakdowns or missing user counts.
+
+## Alert Quality
+
+The Alert Quality section must make user-facing Event Alert content issues obvious.
+Group issues by symbol, trigger source, and alert type where available.
+
+Track at minimum:
+
+* alerts containing `n/a`;
+* alerts containing `unknown`;
+* alerts containing `unavailable`;
+* alerts containing `null`;
+* alerts with missing numeric market context;
+* alerts with empty related context;
+* malformed formatting.
+
+Do not expose private Telegram message text. Use counts, percentages, symbols,
+trigger sources, alert types, hashes, refs, and safe terms only.
+
+## Delivery Funnel
+
+Show the alert pipeline from market events to Telegram delivery outcomes. If a
+stage cannot be calculated reliably, show `not available` and explain why.
+
+## Suppression and noisy families
+
+If suppression reason or semantic family data is unavailable, state that as a known
+limitation. Do not leave these sections empty without explanation.
+
+For noisy event families, include the available semantic family or bundle-local
+semantic group id, event key, event instance reference, symbol, trigger source,
+count, affected users when available, and safe evidence summary.
+
+## Root-cause confidence
+
+Separate findings into:
+
+* `Confirmed`: direct evidence proves the issue.
+* `Likely`: strong evidence exists, but one or more links are not fully proven.
+* `Unknown / Needs Investigation`: a symptom exists, but evidence is insufficient.
+
+Avoid speculative conclusions written as facts.
 
 ## Severity rules
 
 Use these severity levels:
 
-* `critical`: bot likely down, health unavailable with no recent successful activity, payment corruption, widespread delivery failure, or repeated LLM/report failure blocking core function.
-* `high`: user-visible degradation, repeated delivery failures, stale market data, failed reports, active blocked users, duplicate deliveries, premium/payment inconsistency.
-* `medium`: partial degradation, rate-limit pressure, stale heartbeats, news intelligence failures, non-widespread exceptions.
-* `low`: noisy logs, isolated failures, cleanup suggestions.
+* `critical`: user-facing broken messages, misleading/unusable alerts, high delivery failure rate, bot likely down, health unavailable with no recent successful activity, payment corruption, widespread delivery failure, or repeated LLM/report failure blocking core function.
+* `high`: duplicate/noisy alerts affecting many users, user-visible degradation, repeated delivery failures, stale market data, failed reports, active blocked users, duplicate deliveries, premium/payment inconsistency.
+* `medium`: internal inconsistency, degraded observability, partial degradation, rate-limit pressure, stale heartbeats, news intelligence failures, non-widespread exceptions, or limited user impact.
+* `low`: report-only issue, documentation gap, minor formatting issue, noisy logs, isolated failures, cleanup suggestions.
 * `info`: normal metrics and no-action observations.
 
 ## Confidence rules
