@@ -1,5 +1,8 @@
 # CCWBot Ops-Agent Implementation Plan
 
+Historical note: this document records the design contract and phased plan for the ops-agent
+work. Current operator commands and day-to-day usage live in `ops-agent/README.md`.
+
 ## Purpose
 
 `ops-agent` is a production-local diagnostic bundle collector for CCWBot. It is not the final analyst, does not use an LLM, does not write the final operational report, and does not apply fixes.

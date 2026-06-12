@@ -198,8 +198,8 @@ as `delivered`, `filtered`, `suppressed`, `cooldown`, `failed`, `rate_limited`,
 `no_recipients`.
 
 Event Alert identity is backend-normalized before cooldown checks and persistence. Semantic
-family normalization, stable event identity, and similarity cooldown checks existed before
-`alert_delivery_outcomes`; this PR makes their suppression decisions queryable in the database.
+family normalization, stable event identity, similarity cooldown checks, and
+`alert_delivery_outcomes` make suppression decisions queryable in the database.
 The LLM may return raw keys such as `btc_price_drop`, `btc_selloff_prediction`, or
 `market_drop_btc`, but the backend maps equivalent wording to deterministic semantic families
 such as `btc_price_downtrend`. Other explicit families include `price_uptrend`, `volatility`,
@@ -447,8 +447,7 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 
 ## Roadmap
 
-- Per-user subscriptions.
-- Telegram Stars payment flow.
+- Explicit Telegram Stars cancellation/refund event handling when Telegram support is clear.
 - Additional provider abstraction when there is a clear product need.
 
 More developer notes are in [docs/development.md](docs/development.md).

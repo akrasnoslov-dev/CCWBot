@@ -123,7 +123,7 @@ ORDER BY market_events DESC, last_seen_at DESC;
 
 `market_events.event_key` is the backend canonical semantic key, not necessarily the raw LLM key.
 Semantic family normalization, stable event identity, and similarity cooldown checks existed
-before `alert_delivery_outcomes`; this PR makes those decisions queryable in the database.
+before `alert_delivery_outcomes`; outcome rows now make those decisions queryable in the database.
 For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
 `market_drop_btc` normalize to `btc_price_downtrend`. The raw key and semantic family are emitted
 in event-analysis logs and persisted in alert numeric context where available.
