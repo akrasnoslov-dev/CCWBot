@@ -56,7 +56,7 @@ async def create_user(session, telegram_user_id, chat_id, *, is_active=True):
 @pytest.mark.asyncio
 async def test_resolve_symbols_to_check_uses_enabled_active_eligible_users(monkeypatch):
     engine, SessionLocal = await build_session_factory()
-    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     try:
         async with SessionLocal() as session:
             free_user = await create_user(session, 1001, 2001)
@@ -353,7 +353,7 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
             sent_messages.append((chat_id, text, parse_mode))
 
     engine, SessionLocal = await build_session_factory()
-    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     try:
         async with SessionLocal() as session:
             first = await create_user(session, 1001, 2001)

@@ -613,7 +613,7 @@ async def test_unlocked_coin_callback_updates_db_and_edits_message(monkeypatch):
             session,
             telegram_user_id=7287293904,
             days=30,
-            now=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            now=datetime.now(timezone.utc),
         )
         monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
         monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(session))
