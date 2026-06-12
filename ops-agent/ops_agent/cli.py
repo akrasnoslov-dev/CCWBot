@@ -14,6 +14,7 @@ from ops_agent.collectors.logs import collect_logs
 from ops_agent.config import load_config
 from ops_agent.detectors import detector_payload, detector_summary, run_detectors
 from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message
+from ops_agent.report_markdown import render_decision_report_context
 from ops_agent.retention import apply_retention
 from ops_agent.state import (
     load_state,
@@ -111,7 +112,9 @@ async def _collect(args: argparse.Namespace) -> int:
         protected_identity_map = True
 
     results = run_detectors(evidence, period)
-    writer.write_json("detectors/detector_results.json", detector_payload(period, results))
+    detector_results = detector_payload(period, results)
+    writer.write_json("detectors/detector_results.json", detector_results)
+    evidence["detectors/detector_results.json"] = detector_results
     writer.write_text("detectors/detector_summary.md", detector_summary(results))
     detector_status_counts: dict[str, int] = {}
     for result in results:
@@ -120,6 +123,16 @@ async def _collect(args: argparse.Namespace) -> int:
 
     partial = any(status.status != "ok" for status in writer.collector_status)
     collection_status = "partial" if partial else "complete"
+    writer.write_text(
+        "decision_report_context.md",
+        render_decision_report_context(
+            period=period,
+            evidence=evidence,
+            detector_results=results,
+            collection_status=collection_status,
+            bundle_id=writer.bundle_id,
+        ),
+    )
     collection_status = writer.finalize(
         collection_status=collection_status,
         redaction_report=redaction_report,

@@ -88,6 +88,51 @@ def test_alert_evidence_uses_hashes_without_raw_alert_text():
     assert "analysis_content_ref:h_" in encoded
 
 
+def test_alert_quality_groups_placeholder_and_missing_market_context():
+    payloads = build_alert_evidence_payloads(
+        [
+            _row(
+                alert_message=(
+                    "BTC Event Alert. Since last BTC alert: n/a. "
+                    "Analysed-window change: n/a. Not financial advice."
+                ),
+                trigger_source="news",
+                related_news_ids="[]",
+                delivery_count=82,
+                sent_delivery_count=82,
+                distinct_recipient_count=82,
+                price_change_percent=None,
+            ),
+            _row(
+                market_event_id=11,
+                event_ai_analysis_id=101,
+                alert_message="BTC context unavailable and unknown. Not financial advice.",
+                trigger_source="news",
+                delivery_count=2,
+                sent_delivery_count=2,
+                distinct_recipient_count=2,
+            ),
+        ],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    quality = payloads["evidence/db/alert_quality.json"]
+    issues = {(row["issue"], row["trigger_source"]) for row in quality["issues"]}
+
+    assert ("contains_n_a", "news") in issues
+    assert ("contains_unknown", "news") in issues
+    assert ("contains_unavailable", "news") in issues
+    assert ("missing_numeric_market_context", "news") in issues
+    assert ("empty_related_context", "news") in issues
+    assert quality["total_event_alert_deliveries"] == 84
+    assert quality["affected_event_alert_deliveries"] == 84
+    assert quality["severe_affected_event_alert_deliveries"] == 84
+    assert quality["quality_issue_occurrences"] > quality["affected_event_alert_deliveries"]
+    assert "Since last BTC alert" not in json.dumps(quality)
+
+
 def test_exact_and_similar_alert_groups_are_derived():
     rows = [
         _row(

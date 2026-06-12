@@ -31,6 +31,9 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_heartbeats_freshness" in query_names
     assert "event_ai_analysis_invariant_checks" in query_names
     assert "event_alert_llm_estimates" in query_names
+    assert "user_impact_summary" in query_names
+    assert "delivery_funnel" in query_names
+    assert "alert_quality_summary" in query_names
 
 
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
@@ -41,6 +44,16 @@ def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     assert "analysed_window_minutes" in query.sql
     assert "estimated_event_alert_llm_calls_per_hour" in query.sql
     assert "estimated_event_alert_llm_calls_per_day" in query.sql
+
+
+def test_delivery_funnel_downstream_counts_are_event_alert_only():
+    query = next(query for query in QUERIES if query.name == "delivery_funnel")
+
+    assert query.sql.count("alert_type = 'event_alert'") >= 4
+    assert "AS alert_records_created" in query.sql
+    assert "AS telegram_delivery_attempts" in query.sql
+    assert "AS telegram_delivered" in query.sql
+    assert "AS telegram_failed" in query.sql
 
 
 def test_alert_repetition_detectors_unknown_when_evidence_missing():

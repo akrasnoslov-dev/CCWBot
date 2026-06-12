@@ -11,7 +11,7 @@ from ops_agent.cli import _mark_report_success, _validate_bundle, build_parser
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import Period
-from ops_agent.state import load_state, resolve_period
+from ops_agent.state import load_state, parse_timestamp, resolve_period
 
 
 def _write_mandatory_evidence(writer: BundleWriter) -> None:
@@ -19,10 +19,12 @@ def _write_mandatory_evidence(writer: BundleWriter) -> None:
         "evidence/db/aggregate_metrics.json",
         {"schema_version": 1, "queries": {}},
     )
+    writer.write_json("evidence/db/alert_quality.json", {"schema_version": 1, "issues": []})
     writer.write_json("evidence/db/anomalies.json", {"schema_version": 1, "queries": {}})
     writer.write_json("evidence/health/health.json", {"schema_version": 1, "status": "ok"})
     writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
     writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+    writer.write_text("decision_report_context.md", "# Decision Context\n")
 
 
 def test_cli_parses_collect_auto():
@@ -68,6 +70,11 @@ def test_resolve_period_rejects_reversed_or_overlong_explicit_window():
         )
 
 
+def test_parse_timestamp_rejects_ambiguous_slash_dates_with_operator_message():
+    with pytest.raises(ValueError, match="YYYY-MM-DDTHH:MM:SSZ"):
+        parse_timestamp("06/06/2026")
+
+
 def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
     compose = Path("ops-agent/docker-compose.ops-agent.yml").read_text(encoding="utf-8")
 
@@ -87,6 +94,8 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "--since" in script
     assert "--until" in script
     assert "--no-state-update" in script
+    assert "YYYY-MM-DDTHH:MM:SSZ" in script
+    assert "slash dates are not accepted" in script
     assert "--include-raw-llm-samples" not in script
     assert "--include-protected-identity-map" not in script
     assert "--output-dir" not in script
@@ -163,6 +172,7 @@ def test_bundle_manifest_contains_required_files(tmp_path):
     inventory_paths = {item["path"] for item in manifest["file_inventory"]}
     assert "CODEX_INSTRUCTIONS.md" in inventory_paths
     assert "bundle_summary.md" in inventory_paths
+    assert "decision_report_context.md" in inventory_paths
     assert manifest["collection_status"] == "complete"
 
 
