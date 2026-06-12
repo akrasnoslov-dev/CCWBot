@@ -680,21 +680,16 @@ def _build_event_alert_html_message(
     icon_html: str,
     symbol: str,
     title: str,
-    price_text: str,
-    since_last_text: str,
-    analysed_window_label: str,
-    analysed_window_change_text: str,
+    market_context_html: str,
     message_body: str,
     related_section_html: str,
     possible_action: str,
 ) -> str:
+    market_section = f"{market_context_html}\n\n" if market_context_html else ""
     return (
         f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
         f"{escape(title)}\n\n"
-        f"Price: {escape(price_text)}\n"
-        f"Since last {escape(symbol)} alert: {escape(since_last_text)}\n"
-        f"{escape(_event_alert_change_label(analysed_window_label))}: "
-        f"{escape(analysed_window_change_text)}\n\n"
+        f"{market_section}"
         "Situation:\n"
         f"{escape(message_body)}\n\n"
         "Related context:\n"
@@ -710,6 +705,31 @@ def _build_html_message_from_plain_with_icon(
     if plain_text.startswith(plain_icon):
         return f"{icon_html}{escape(plain_text[len(plain_icon) :])}"
     return escape(plain_text)
+
+
+def _event_alert_market_context_lines(
+    *,
+    symbol: str,
+    price: float | None,
+    change_since_message: float | None,
+    analysed_window_minutes: int | None,
+    analysed_window_change: float | None,
+) -> list[str]:
+    lines: list[str] = []
+    if price is not None:
+        lines.append(f"Price: {_format_optional_price(price)}")
+    if change_since_message is not None:
+        lines.append(
+            f"Since last {symbol} alert: {_format_optional_percent(change_since_message)}"
+        )
+    if analysed_window_minutes is not None and analysed_window_change is not None:
+        analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
+        if analysed_window_label != "n/a":
+            lines.append(
+                f"{_event_alert_change_label(analysed_window_label)}: "
+                f"{_format_optional_percent(analysed_window_change)}"
+            )
+    return lines
 
 def _build_event_alert_payload(
     *,
@@ -738,20 +758,20 @@ def _build_event_alert_payload(
     )
     analysed_window_minutes = market_data.get("analysed_window_minutes")
     analysed_window_change = market_data.get("chg_window")
-    price_text = _format_optional_price(price)
-    since_last_text = _format_optional_percent(change_since_message)
-    analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
-    analysed_window_change_text = _format_optional_percent(analysed_window_change)
+    market_context_lines = _event_alert_market_context_lines(
+        symbol=symbol,
+        price=price,
+        change_since_message=change_since_message,
+        analysed_window_minutes=analysed_window_minutes,
+        analysed_window_change=analysed_window_change,
+    )
+    market_context_text = "\n".join(market_context_lines)
+    market_context_block = f"{market_context_text}\n\n" if market_context_text else ""
 
     before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
-        f"Price: {price_text}\n"
-        "Since last "
-        f"{symbol} alert: "
-        f"{since_last_text}\n"
-        f"{_event_alert_change_label(analysed_window_label)}: "
-        f"{analysed_window_change_text}\n\n"
+        f"{market_context_block}"
         "Situation:\n"
         f"{message_body}\n\n"
         "Related context:\n"
@@ -780,10 +800,7 @@ def _build_event_alert_payload(
             icon_html=icon_html,
             symbol=symbol,
             title=title,
-            price_text=price_text,
-            since_last_text=since_last_text,
-            analysed_window_label=analysed_window_label,
-            analysed_window_change_text=analysed_window_change_text,
+            market_context_html="\n".join(escape(line) for line in market_context_lines),
             message_body=message_body,
             related_section_html=related_section_html or escape(related_section),
             possible_action=possible_action,
@@ -1359,19 +1376,25 @@ def _build_news_driven_event_input(
     current_price: float,
     change_24h: float,
     now: datetime,
+    market_context: dict | None = None,
 ) -> dict:
     published_at = _parse_news_datetime(news_item) or now
+    source_market = dict(market_context or {})
+    market_payload = {
+        "price": source_market.get("price", _stable_float(float(current_price), 2)),
+        "snapshots": source_market.get("snapshots", []),
+        "chg24h": source_market.get("chg24h", _stable_float(float(change_24h), 4)),
+        "chg_since_msg": source_market.get("chg_since_msg"),
+    }
+    for key in ("payload_points", "analysed_window_minutes", "chg_window"):
+        if key in source_market:
+            market_payload[key] = source_market[key]
     return {
         "analysis_id": analysis_id,
         "symbol": normalize_symbol(symbol).upper(),
         "coin_name": _coin_name(symbol),
         "timestamp_utc": published_at.astimezone(timezone.utc).isoformat(),
-        "market": {
-            "price": _stable_float(float(current_price), 2),
-            "snapshots": [],
-            "chg24h": _stable_float(float(change_24h), 4),
-            "chg_since_msg": None,
-        },
+        "market": market_payload,
         "last_msg": {
             "time": None,
             "type": None,
@@ -1394,6 +1417,9 @@ def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
             "trigger_source": NEWS_DRIVEN_ALERT_SOURCE,
             "semantic_family": "news_catalyst",
             "current_price": market_data.get("price"),
+            "change_since_last_market_update_percent": market_data.get("chg_since_msg"),
+            "analysed_window_minutes": market_data.get("analysed_window_minutes"),
+            "analysed_window_change_percent": market_data.get("chg_window"),
             "twenty_four_hour_change_percent": market_data.get("chg24h"),
             "news_key": str(news_item.get("news_key") or "").strip() or None,
             "dedup_group_id": str(news_item.get("dedup_group_id") or "").strip() or None,
@@ -1488,6 +1514,7 @@ async def _deliver_news_driven_alert_for_symbol(
     news_item: dict,
     current_price: float,
     change_24h: float,
+    event_analysis_input_payload: dict | None = None,
     candidate_recipients: list[AlertRecipient],
     cooldown_seconds: int,
     now: datetime,
@@ -1502,6 +1529,7 @@ async def _deliver_news_driven_alert_for_symbol(
         current_price=current_price,
         change_24h=change_24h,
         now=now,
+        market_context=(event_analysis_input_payload or {}).get("market"),
     )
     decision = _build_news_driven_event_decision(
         symbol=symbol,
@@ -3856,6 +3884,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         news_item=news_item,
                         current_price=current_price,
                         change_24h=change_24h,
+                        event_analysis_input_payload=input_payload,
                         candidate_recipients=candidate_recipients,
                         cooldown_seconds=int(
                             alert_settings.get("automatic_check_interval_seconds", 300)
@@ -3917,6 +3946,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                         news_item=news_item,
                         current_price=current_price,
                         change_24h=change_24h,
+                        event_analysis_input_payload=input_payload,
                         candidate_recipients=candidate_recipients,
                         cooldown_seconds=int(
                             alert_settings.get("automatic_check_interval_seconds", 300)

@@ -15,9 +15,17 @@ from bot.db.database import (
     User,
     ensure_default_coin_subscriptions,
     grant_user_premium,
+    save_price_snapshot,
     set_user_coin_subscription,
     upsert_news_item,
 )
+
+FORBIDDEN_EVENT_PLACEHOLDERS = ("n/a", "null", "unknown", "unavailable")
+
+
+def assert_no_event_placeholders(message: str):
+    lowered = message.lower()
+    assert all(value not in lowered for value in FORBIDDEN_EVENT_PLACEHOLDERS)
 
 
 async def build_session_factory():
@@ -198,6 +206,7 @@ async def test_high_impact_btc_news_produces_event_alert_candidate(monkeypatch):
         assert "BTC Event Alert" in sent_messages[0][1]
         assert "High-impact news detected for BTC" in sent_messages[0][1]
         assert "Not financial advice." in sent_messages[0][1]
+        assert_no_event_placeholders(sent_messages[0][1])
         async with session_local() as session:
             event = await session.scalar(select(MarketEvent))
             assert event is not None
@@ -376,6 +385,99 @@ async def test_duplicate_dedup_group_and_repeated_cycles_are_idempotent(monkeypa
         async with session_local() as session:
             assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 1
             assert await session.scalar(select(func.count()).select_from(Alert)) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_news_driven_alert_uses_shared_market_context_when_available(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+    news_item = {
+        "news_item_id": 1,
+        "news_key": "btc",
+        "dedup_group_id": "btc-etf",
+        "title": "Bitcoin ETF approval draws major exchange flows",
+        "source": "Example News",
+        "url": "https://example.test/btc",
+        "published_at": now,
+        "summary": "High-impact news to watch.",
+        "primary_symbol": "btc",
+        "related_symbols": ["btc"],
+        "matched_symbols": ["btc"],
+        "category": "etf",
+        "impact_level": "high",
+    }
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session, 1001, 2001)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=alerts.EVENT_ALERT_TYPE,
+                    message="previous BTC event alert",
+                    sent_to_chat_id=2001,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(hours=2),
+                    numeric_context=alerts._json_dumps({"current_price": 95.0}),
+                )
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=90.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=60),
+            )
+            await save_price_snapshot(
+                session,
+                symbol="btc",
+                price=98.0,
+                change_24h=1.0,
+                checked_at=now - timedelta(minutes=20),
+            )
+            await session.commit()
+
+        event_input = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_shared_context",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=600,
+        )
+        news_input = alerts._build_news_driven_event_input(
+            analysis_id="news_driven_alert_btc_shared_context",
+            symbol="btc",
+            news_item=news_item,
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            market_context=event_input["market"],
+        )
+        decision = alerts._build_news_driven_event_decision(
+            symbol="btc",
+            news_item=news_item,
+            event_key=alerts._build_news_driven_event_key(symbol="btc", news_item=news_item),
+        )
+        payload = alerts._build_event_alert_payload(
+            decision=decision,
+            input_payload=news_input,
+            related_news=news_input["news"],
+        )
+
+        assert news_input["market"]["analysed_window_minutes"] == 60
+        assert news_input["market"]["chg_window"] == event_input["market"]["chg_window"]
+        assert news_input["market"]["chg_since_msg"] == event_input["market"]["chg_since_msg"]
+        assert "Price: $100.00" in payload["plain_text"]
+        assert "Since last BTC alert: +5.26%" in payload["plain_text"]
+        assert "1h change: +11.11%" in payload["plain_text"]
+        assert_no_event_placeholders(payload["plain_text"])
     finally:
         await engine.dispose()
 
