@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from alembic.config import Config
@@ -328,6 +329,99 @@ async def test_attach_analysis_reuses_existing_success_for_market_event():
                 market_event_id=market_event.id,
             )
         ).id == canonical.id
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_save_event_llm_analysis_integrity_race_returns_existing_success(monkeypatch):
+    from bot.db import alerts as alert_db
+
+    engine, session = await build_session()
+    try:
+        market_event = await get_or_create_market_event(
+            session,
+            symbol="BTC",
+            event_type="event_alert",
+            event_key="btc_volatility_race",
+            event_instance_key="btc:volatility:race",
+            price=65000.0,
+            price_change_percent=1.5,
+        )
+        canonical = EventAiAnalysis(
+            market_event_id=market_event.id,
+            analysis_id="event_analysis_btc_race_canonical",
+            symbol="BTC",
+            analysis_type="event_analysis",
+            provider="groq",
+            model="llama-test",
+            input_hash="canonical-race-hash",
+            status="success",
+            should_alert=True,
+            plain_text="Canonical text. Not financial advice.",
+        )
+        session.add(canonical)
+        await session.commit()
+        await session.refresh(canonical)
+        canonical_id = canonical.id
+        market_event_id = market_event.id
+
+        integrity_error = IntegrityError("insert", {}, Exception("duplicate attached analysis"))
+        monkeypatch.setattr(session, "commit", AsyncMock(side_effect=integrity_error))
+
+        lookup_count = 0
+
+        async def lookup_existing_success(session_arg, *, market_event_id):
+            nonlocal lookup_count
+            lookup_count += 1
+            if lookup_count == 1:
+                return None
+            return await session_arg.scalar(
+                select(EventAiAnalysis)
+                .where(EventAiAnalysis.market_event_id == market_event_id)
+                .where(EventAiAnalysis.analysis_type == "event_analysis")
+                .where(EventAiAnalysis.status == "success")
+                .where(EventAiAnalysis.should_alert.is_(True))
+                .limit(1)
+            )
+
+        lookup = AsyncMock(side_effect=lookup_existing_success)
+        monkeypatch.setattr(alert_db, "get_latest_success_event_ai_analysis", lookup)
+
+        result = await alert_db.save_event_llm_analysis(
+            session,
+            analysis_id="event_analysis_btc_race_fresh",
+            symbol="BTC",
+            input_hash="fresh-race-hash",
+            raw_input_json="{}",
+            raw_output_json="{}",
+            status="success",
+            provider="groq",
+            model="llama-test",
+            analysis_type="event_analysis",
+            market_event_id=market_event_id,
+            should_alert=True,
+            plain_text="Fresh text. Not financial advice.",
+        )
+
+        assert result.id == canonical_id
+        assert lookup.await_count == 2
+        fresh = await session.scalar(
+            select(EventAiAnalysis).where(
+                EventAiAnalysis.analysis_id == "event_analysis_btc_race_fresh"
+            )
+        )
+        attached_count = await session.scalar(
+            select(func.count())
+            .select_from(EventAiAnalysis)
+            .where(EventAiAnalysis.market_event_id == market_event_id)
+            .where(EventAiAnalysis.analysis_type == "event_analysis")
+            .where(EventAiAnalysis.status.in_(["success", "completed"]))
+            .where(EventAiAnalysis.should_alert.is_(True))
+        )
+        assert fresh is None
+        assert attached_count == 1
     finally:
         await session.close()
         await engine.dispose()

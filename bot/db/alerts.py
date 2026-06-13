@@ -699,11 +699,26 @@ async def save_event_llm_analysis(
     session.add(analysis)
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await session.rollback()
-        return await session.scalar(
+        existing = await session.scalar(
             select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
         )
+        if existing is not None:
+            return existing
+        if (
+            market_event_id is not None
+            and analysis_type == EVENT_ANALYSIS_TYPE
+            and status in SUCCESS_ANALYSIS_STATUSES
+            and should_alert is True
+        ):
+            existing_success = await get_latest_success_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+            )
+            if existing_success is not None:
+                return existing_success
+        raise error
     await session.refresh(analysis)
     return analysis
 
