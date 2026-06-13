@@ -75,6 +75,10 @@ def render_decision_report_context(
         "",
         *_alert_quality(evidence),
         "",
+        "## Event Alert Regression Checks",
+        "",
+        *_event_alert_regression_checks(evidence, detector_results),
+        "",
         "## Suppression Reasons",
         "",
         *_suppression_reasons(evidence),
@@ -112,6 +116,16 @@ def render_decision_report_context(
 
 def _query_rows(evidence: dict[str, Any], query_name: str) -> list[dict[str, Any]]:
     payload = evidence.get("evidence/db/aggregate_metrics.json")
+    if not isinstance(payload, dict):
+        return []
+    query = (payload.get("queries") or {}).get(query_name)
+    return list((query or {}).get("rows") or []) if isinstance(query, dict) else []
+
+
+def _query_rows_from(
+    evidence: dict[str, Any], file_name: str, query_name: str
+) -> list[dict[str, Any]]:
+    payload = evidence.get(file_name)
     if not isinstance(payload, dict):
         return []
     query = (payload.get("queries") or {}).get(query_name)
@@ -156,7 +170,12 @@ def _findings(
     severe_quality = [
         row
         for row in quality_issues
-        if row.get("issue") in {"contains_n_a", "missing_numeric_market_context"}
+        if row.get("issue") in {
+            "contains_n_a",
+            "contains_unknown",
+            "contains_unavailable",
+            "contains_null",
+        }
     ]
     if severe_quality:
         affected = sum(_int(row.get("affected_users_estimate")) for row in severe_quality)
@@ -180,9 +199,32 @@ def _findings(
                     "exact distinct user count may be lower."
                 ),
                 recommended_action=(
-                    "Fix news-driven Event Alert payload market-context population."
+                    "Fix Event Alert formatting so missing values are omitted instead of rendered."
                 ),
-                pr_mapping="Covered by separate n/a Event Alert fix; new work required if no PR exists.",
+                pr_mapping="Event Alert cleanup regression checks",
+                confidence="high",
+            )
+        )
+    old_label_quality = [
+        row for row in quality_issues if str(row.get("issue") or "").startswith("old_")
+    ]
+    if old_label_quality:
+        affected = sum(_int(row.get("affected_users_estimate")) for row in old_label_quality)
+        issue_occurrences = sum(_int(row.get("delivery_count")) for row in old_label_quality)
+        findings.append(
+            ReportFinding(
+                title="Event Alerts with old or confusing percentage labels",
+                severity="high",
+                evidence=f"{issue_occurrences} grouped old-label occurrences",
+                user_impact=(
+                    f"{affected} affected-user estimate from grouped alert evidence; "
+                    "exact distinct user count may be lower."
+                ),
+                recommended_action=(
+                    "Migrate Event Alert copy to `Since last alert/message` and "
+                    "`<window> market move` labels."
+                ),
+                pr_mapping="Event Alert cleanup regression checks",
                 confidence="high",
             )
         )
@@ -334,6 +376,104 @@ def _alert_quality(evidence: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _event_alert_regression_checks(
+    evidence: dict[str, Any], detector_results: list[DetectorResult]
+) -> list[str]:
+    regression_payload = _payload(evidence, "evidence/db/event_alert_regression_checks.json")
+    duplicate_rows = _query_rows_from(
+        evidence,
+        "evidence/db/anomalies.json",
+        "event_ai_analysis_invariant_checks",
+    )
+    gap_rows = _query_rows_from(
+        evidence,
+        "evidence/db/anomalies.json",
+        "event_alert_delivery_explanation_gaps",
+    )
+    detector_by_id = {result.id: result for result in detector_results}
+    cooldown = detector_by_id.get("cooldown_effectiveness_gap")
+    delivery_gap = detector_by_id.get("event_alert_delivery_explanation_gaps")
+
+    duplicate_count = len(duplicate_rows)
+    duplicate_samples = [
+        str(row.get("market_event_id"))
+        for row in duplicate_rows[:5]
+        if row.get("market_event_id") is not None
+    ]
+    duplicate_symbols = sorted(
+        {
+            str(row.get("symbol")).upper()
+            for row in duplicate_rows
+            if row.get("symbol") is not None
+        }
+    )
+    placeholder_counts = regression_payload.get("placeholder_issue_counts") or {}
+    old_label_counts = regression_payload.get("old_label_issue_counts") or {}
+    repeat_noise_groups = _int(regression_payload.get("same_family_repeat_noise_groups"))
+    allowed_repeat_groups = _int(
+        regression_payload.get("same_family_allowed_escalation_groups")
+    )
+    gap_count = sum(_int(row.get("gap_count")) for row in gap_rows)
+
+    status = "OK"
+    if duplicate_count or gap_count or placeholder_counts or old_label_counts:
+        status = "Critical"
+    elif repeat_noise_groups:
+        status = "Warning"
+
+    lines = [f"Status: {status}"]
+    if not any(
+        [duplicate_count, gap_count, placeholder_counts, old_label_counts, repeat_noise_groups]
+    ):
+        return lines + [
+            "OK - no duplicate attached analyses, same-family repeat noise, unexplained delivery gaps, placeholder text, or old percentage labels were found in collected evidence."
+        ]
+
+    lines.extend(
+        [
+            "| Check | Count | Interpretation | Recommended next action |",
+            "|---|---:|---|---|",
+            (
+                f"| Duplicate attached successful event analyses | {duplicate_count} | "
+                f"{'Critical invariant regression' if duplicate_count else 'OK'} | "
+                "Keep one successful attached analysis per market event. |"
+            ),
+            (
+                f"| Same-family repeats without escalation | {repeat_noise_groups} | "
+                f"{'Likely alert noise' if repeat_noise_groups else 'OK'}; "
+                f"{allowed_repeat_groups} escalation groups were counted separately. | "
+                "Inspect semantic cooldown and escalation evidence. |"
+            ),
+            (
+                f"| should_alert=true without delivery explanation | {gap_count} | "
+                f"{'Observability gap' if gap_count else 'OK'} | "
+                "Ensure delivery, suppression, failure, rate-limit, or no-recipient outcomes are persisted. |"
+            ),
+            (
+                f"| Bad placeholder text | {sum(_int(value) for value in placeholder_counts.values())} | "
+                f"{'User-facing copy regression' if placeholder_counts else 'OK'} | "
+                "Omit missing numeric fields instead of rendering placeholders. |"
+            ),
+            (
+                f"| Old/confusing percentage labels | {sum(_int(value) for value in old_label_counts.values())} | "
+                f"{'User-facing copy regression' if old_label_counts else 'OK'} | "
+                "Use `Since last alert/message` and `<window> market move`. |"
+            ),
+        ]
+    )
+    if duplicate_samples or duplicate_symbols:
+        lines.append(
+            "Samples: duplicate market_event_ids "
+            f"{', '.join(duplicate_samples) or 'not available'}; symbols "
+            f"{', '.join(duplicate_symbols) or 'not available'}."
+        )
+    if cooldown and cooldown.status == "unknown":
+        lines.append(f"Cooldown repeat evidence gap: {cooldown.evidence_gap}")
+    if delivery_gap and delivery_gap.status == "unknown":
+        lines.append(f"Delivery explanation evidence gap: {delivery_gap.evidence_gap}")
+    return lines
+
+
 def _suppression_reasons(evidence: dict[str, Any]) -> list[str]:
     payload = _payload(evidence, "evidence/logs/pattern_counts.json")
     reasons = payload.get("period_matched_suppression_reason_counts")
@@ -454,6 +594,8 @@ def _detector_user_impact(result: DetectorResult) -> str:
 def _recommended_action(detector_id: str) -> str:
     if detector_id in {"cooldown_effectiveness_gap", "repeated_alert_content", "similar_alert_groups"}:
         return "Implement or tune suppression observability and semantic cooldown behavior."
+    if detector_id == "event_alert_delivery_explanation_gaps":
+        return "Persist an explicit delivery, suppression, failure, rate-limit, or no-recipient outcome."
     if detector_id in {"weak_event_identity", "duplicate_market_events"}:
         return "Normalize semantic event identity and stable event keys."
     if detector_id == "failed_telegram_deliveries":
@@ -470,4 +612,6 @@ def _pr_mapping(detector_id: str) -> str:
         return "PR3 semantic identity"
     if detector_id == "failed_telegram_deliveries":
         return "new work"
+    if detector_id == "event_alert_delivery_explanation_gaps":
+        return "Event Alert cleanup regression checks"
     return "new work"

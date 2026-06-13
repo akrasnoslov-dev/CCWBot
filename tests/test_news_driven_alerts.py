@@ -475,8 +475,9 @@ async def test_news_driven_alert_uses_shared_market_context_when_available(monke
         assert news_input["market"]["chg_window"] == event_input["market"]["chg_window"]
         assert news_input["market"]["chg_since_msg"] == event_input["market"]["chg_since_msg"]
         assert "Price: $100.00" in payload["plain_text"]
-        assert "Since last BTC alert: +5.26%" in payload["plain_text"]
-        assert "1h change: +11.11%" in payload["plain_text"]
+        assert "Since last alert/message: +5.26%" in payload["plain_text"]
+        assert "Since last BTC alert" not in payload["plain_text"]
+        assert "1h market move: +11.11%" in payload["plain_text"]
         assert_no_event_placeholders(payload["plain_text"])
     finally:
         await engine.dispose()

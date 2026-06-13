@@ -12,7 +12,13 @@ from typing import Any
 from ops_agent.schemas import Period
 
 PRIVACY_MODE = "no_raw_text_bundle_local_hashes"
-SEVERE_QUALITY_ISSUES = {"contains_n_a", "missing_numeric_market_context"}
+SEVERE_QUALITY_ISSUES = {
+    "contains_n_a",
+    "contains_unknown",
+    "contains_unavailable",
+    "contains_null",
+}
+EVENT_REGRESSION_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
 
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 MONEY_RE = re.compile(r"[$€£]?\b\d+(?:[.,]\d+)*(?:\s?(?:usd|eur|gbp))?\b", re.IGNORECASE)
@@ -119,6 +125,18 @@ def _parse_json_list(value: Any) -> list[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
+def _parse_json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _iso(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat().replace("+00:00", "Z")
@@ -213,11 +231,18 @@ def build_alert_evidence_payloads(
         warnings.append("alert evidence reached row cap; repetition analysis may be incomplete")
 
     indexed = [_indexed_row(row, hasher) for row in rows]
+    quality_payload = _alert_quality(indexed, period, warnings)
+    suppression_payload = _suppression_effectiveness(
+        indexed,
+        period,
+        semantic_cooldown_seconds=semantic_cooldown_seconds,
+        warnings=warnings,
+    )
     return {
         "evidence/db/alert_delivery_distribution.json": _delivery_distribution(
             indexed, period, warnings
         ),
-        "evidence/db/alert_quality.json": _alert_quality(indexed, period, warnings),
+        "evidence/db/alert_quality.json": quality_payload,
         "evidence/db/event_analysis_decision_timeline.json": _decision_timeline(
             indexed, period, warnings
         ),
@@ -227,14 +252,15 @@ def build_alert_evidence_payloads(
         "evidence/db/alert_similarity_groups.json": _similarity_groups(
             indexed, period, warnings
         ),
-        "evidence/db/backend_suppression_effectiveness.json": _suppression_effectiveness(
-            indexed,
-            period,
-            semantic_cooldown_seconds=semantic_cooldown_seconds,
-            warnings=warnings,
-        ),
+        "evidence/db/backend_suppression_effectiveness.json": suppression_payload,
         "evidence/db/event_identity_quality.json": _event_identity_quality(
             indexed, period, warnings
+        ),
+        "evidence/db/event_alert_regression_checks.json": _event_alert_regression_checks(
+            quality_payload,
+            suppression_payload,
+            period,
+            warnings,
         ),
     }
 
@@ -248,6 +274,7 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     analysis_basis = normalized_analysis or str(row.get("input_hash") or "")
     event_key = row.get("event_key") or row.get("analysis_event_key")
     related_news = _parse_json_list(row.get("related_news_ids"))
+    numeric_context = _parse_json_dict(row.get("alert_numeric_context"))
     delivery_count = _int(row.get("delivery_count"))
     sent_delivery_count = _int(row.get("sent_delivery_count"))
     first_delivery_at = _iso(row.get("first_delivery_at"))
@@ -265,8 +292,11 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "should_alert": row.get("should_alert"),
         "analysis_status": row.get("analysis_status"),
         "event_key": event_key,
+        "semantic_family": row.get("semantic_family")
+        or numeric_context.get("semantic_family")
+        or None,
         "analysis_event_key": row.get("analysis_event_key"),
-        "urgency": row.get("urgency"),
+        "urgency": row.get("urgency") or numeric_context.get("notification_severity"),
         "confidence": row.get("confidence"),
         "market_event_ref": _event_ref(hasher, row.get("market_event_id")),
         "analysis_ref": _analysis_ref(hasher, row.get("event_ai_analysis_id")),
@@ -286,8 +316,16 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "analysis_created_at": _iso(row.get("analysis_created_at")),
         "detected_at": _iso(row.get("detected_at")),
         "price_change_percent": _float(row.get("price_change_percent")),
+        "analysed_window_change_percent": _float(
+            numeric_context.get("analysed_window_change_percent")
+        ),
         "last_24h_change": _float(row.get("last_24h_change")),
         "last_7d_change": _float(row.get("last_7d_change")),
+        "stable_related_news_ids": [
+            str(item)
+            for item in numeric_context.get("stable_related_news_ids") or []
+            if str(item).strip()
+        ],
         "related_news_count": len(related_news),
         "quality_issues": quality_issues,
     }
@@ -310,13 +348,16 @@ def _quality_issues(
     is_event_alert = str(row.get("alert_type") or "") == "event_alert" or row.get(
         "market_event_id"
     ) is not None
-    if is_event_alert and (
-        row.get("price_change_percent") is None
-        or row.get("last_24h_change") is None
-        or row.get("last_7d_change") is None
-        or "contains_n_a" in issues
-    ):
-        issues.append("missing_numeric_market_context")
+    if is_event_alert and "since last btc alert" in lowered:
+        issues.append("old_since_last_btc_alert_label")
+    if is_event_alert and "analysed-window change" in lowered:
+        issues.append("old_analysed_window_change_label")
+    if is_event_alert and "price change" in lowered:
+        issues.append("old_generic_price_change_label")
+    if is_event_alert and ("btc change" in lowered or "market change" in lowered):
+        issues.append("old_generic_market_change_label")
+    if is_event_alert and "24h change" in lowered:
+        issues.append("old_24h_change_label")
     if is_event_alert and related_news_count == 0:
         issues.append("empty_related_context")
     alert_message = str(row.get("alert_message") or "")
@@ -634,27 +675,33 @@ def _suppression_effectiveness(
     for row in rows:
         if row.get("should_alert") is not True or not row.get("event_key"):
             continue
-        key = (row["symbol"], str(row["event_key"]))
+        family_key = str(row.get("semantic_family") or row.get("event_key"))
+        key = (row["symbol"], family_key)
         group = groups.setdefault(
             key,
             {
                 "symbol": row["symbol"],
                 "event_key": row["event_key"],
+                "semantic_family": row.get("semantic_family"),
                 "cooldown_type": "semantic_event_key",
                 "configured_seconds": semantic_cooldown_seconds,
                 "llm_should_alert_events": 0,
                 "delivered_events": 0,
                 "likely_suppressed_events": 0,
                 "delivered_inside_cooldown_candidates": 0,
+                "delivered_inside_cooldown_allowed_escalations": 0,
+                "allowed_escalation_reasons": Counter(),
                 "first_seen_at": None,
                 "last_seen_at": None,
                 "confidence": "medium",
                 "note": "suppression inferred from DB; no durable suppression row exists",
+                "_delivered_rows": [],
             },
         )
         group["llm_should_alert_events"] += 1
         if _int(row.get("sent_delivery_count")) > 0:
             group["delivered_events"] += 1
+            group["_delivered_rows"].append(row)
         else:
             group["likely_suppressed_events"] += 1
         _extend_time_range(group, row.get("first_delivery_at") or row.get("analysis_created_at"))
@@ -663,8 +710,27 @@ def _suppression_effectiveness(
     for group in groups.values():
         if semantic_cooldown_seconds <= 0:
             continue
-        if group["delivered_events"] > 1 and _window_seconds(group) < semantic_cooldown_seconds:
-            group["delivered_inside_cooldown_candidates"] = group["delivered_events"] - 1
+        delivered_rows = sorted(
+            group.pop("_delivered_rows", []),
+            key=lambda item: str(
+                item.get("first_delivery_at") or item.get("analysis_created_at") or ""
+            ),
+        )
+        previous = None
+        for row in delivered_rows:
+            if previous is not None and _rows_inside_cooldown(
+                previous,
+                row,
+                semantic_cooldown_seconds=semantic_cooldown_seconds,
+            ):
+                allowed, reason = _delivery_escalation_allowed(previous, row)
+                if allowed:
+                    group["delivered_inside_cooldown_allowed_escalations"] += 1
+                    group["allowed_escalation_reasons"][str(reason)] += 1
+                else:
+                    group["delivered_inside_cooldown_candidates"] += 1
+            previous = row
+        group["allowed_escalation_reasons"] = dict(group["allowed_escalation_reasons"])
     payload["suppression_groups"] = sorted(
         groups.values(),
         key=lambda item: (
@@ -674,6 +740,90 @@ def _suppression_effectiveness(
         ),
     )
     return payload
+
+
+def _event_alert_regression_checks(
+    quality_payload: dict[str, Any],
+    suppression_payload: dict[str, Any],
+    period: Period,
+    warnings: list[str],
+) -> dict[str, Any]:
+    payload = _base_payload(period, warnings)
+    issue_counts = {
+        str(row.get("issue")): _int(row.get("delivery_count"))
+        for row in quality_payload.get("issues") or []
+    }
+    placeholder_issues = {
+        issue: count
+        for issue, count in issue_counts.items()
+        if issue in {"contains_n_a", "contains_unknown", "contains_unavailable", "contains_null"}
+    }
+    old_label_issues = {
+        issue: count for issue, count in issue_counts.items() if issue.startswith("old_")
+    }
+    noisy_repeat_groups = [
+        row
+        for row in suppression_payload.get("suppression_groups") or []
+        if _int(row.get("delivered_inside_cooldown_candidates")) > 0
+    ]
+    allowed_repeat_groups = [
+        row
+        for row in suppression_payload.get("suppression_groups") or []
+        if _int(row.get("delivered_inside_cooldown_allowed_escalations")) > 0
+    ]
+    critical = bool(placeholder_issues or old_label_issues)
+    warning = bool(noisy_repeat_groups)
+    payload.update(
+        {
+            "status": "critical" if critical else "warning" if warning else "ok",
+            "placeholder_issue_counts": placeholder_issues,
+            "old_label_issue_counts": old_label_issues,
+            "same_family_repeat_noise_groups": len(noisy_repeat_groups),
+            "same_family_allowed_escalation_groups": len(allowed_repeat_groups),
+            "sample_repeat_groups": noisy_repeat_groups[:5],
+            "sample_allowed_escalation_groups": allowed_repeat_groups[:5],
+        }
+    )
+    return payload
+
+
+def _rows_inside_cooldown(
+    previous: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    semantic_cooldown_seconds: int,
+) -> bool:
+    previous_at = previous.get("first_delivery_at") or previous.get("analysis_created_at")
+    current_at = current.get("first_delivery_at") or current.get("analysis_created_at")
+    minutes = _minutes_between(previous_at, current_at)
+    if minutes is None:
+        return False
+    return minutes * 60 < semantic_cooldown_seconds
+
+
+def _delivery_escalation_allowed(
+    previous: dict[str, Any], current: dict[str, Any]
+) -> tuple[bool, str | None]:
+    if _urgency_rank(current.get("urgency")) > _urgency_rank(previous.get("urgency")):
+        return True, "urgency_increased"
+    previous_movement = _float(previous.get("analysed_window_change_percent"))
+    current_movement = _float(current.get("analysed_window_change_percent"))
+    if (
+        previous_movement is not None
+        and current_movement is not None
+        and abs(current_movement)
+        >= abs(previous_movement) + EVENT_REGRESSION_MATERIAL_MOVEMENT_DELTA_PERCENT
+    ):
+        return True, "material_movement_increased"
+    previous_news = {str(item) for item in previous.get("stable_related_news_ids") or []}
+    current_news = {str(item) for item in current.get("stable_related_news_ids") or []}
+    if current_news - previous_news:
+        return True, "new_news_driver"
+    return False, None
+
+
+def _urgency_rank(value: Any) -> int:
+    return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)
 
 
 def _event_identity_quality(

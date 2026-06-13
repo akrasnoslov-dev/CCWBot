@@ -34,6 +34,7 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "user_impact_summary" in query_names
     assert "delivery_funnel" in query_names
     assert "alert_quality_summary" in query_names
+    assert "event_alert_delivery_explanation_gaps" in query_names
 
 
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
@@ -54,6 +55,34 @@ def test_delivery_funnel_downstream_counts_are_event_alert_only():
     assert "AS telegram_delivery_attempts" in query.sql
     assert "AS telegram_delivered" in query.sql
     assert "AS telegram_failed" in query.sql
+
+
+def test_event_ai_invariant_query_scopes_to_attached_successful_event_analyses():
+    query = next(query for query in QUERIES if query.name == "event_ai_analysis_invariant_checks")
+
+    assert "market_event_id IS NOT NULL" in query.sql
+    assert "coalesce(analysis_type, 'event_analysis') = 'event_analysis'" in query.sql
+    assert "status IN ('success', 'completed')" in query.sql
+
+
+def test_event_alert_delivery_explanation_gap_query_accepts_expected_outcomes():
+    query = next(
+        query for query in QUERIES if query.name == "event_alert_delivery_explanation_gaps"
+    )
+
+    assert "should_alert = true" in query.sql
+    assert "status = 'sent'" in query.sql
+    for expected_status in (
+        "delivered",
+        "suppressed",
+        "cooldown",
+        "failed",
+        "rate_limited",
+        "no_eligible_recipients",
+        "filtered",
+        "not_scheduled",
+    ):
+        assert expected_status in query.sql
 
 
 def test_alert_repetition_detectors_unknown_when_evidence_missing():
@@ -352,6 +381,37 @@ def test_no_delivery_classification_triggers_for_true_alert_gap():
     detector = results["market_events_without_alert_deliveries"]
     assert detector.status == "triggered"
     assert detector.metrics["delivery_gap_should_alert_true"] == 2
+
+
+def test_event_alert_delivery_explanation_gap_detector_triggers():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "event_alert_delivery_explanation_gaps": {
+                    "rows": [
+                        {
+                            "anomaly": "should_alert_true_without_delivery_explanation",
+                            "gap_count": 3,
+                            "affected_market_events": 2,
+                        }
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["event_alert_delivery_explanation_gaps"]
+    assert detector.status == "triggered"
+    assert detector.metrics["should_alert_true_without_delivery_explanation"] == 3
 
 
 def test_no_delivery_classification_unknown_when_reason_missing():

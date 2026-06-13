@@ -50,9 +50,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "OR lower(coalesce(pa.message, '')) LIKE '%unknown%' "
         "OR lower(coalesce(pa.message, '')) LIKE '%unavailable%' "
         "OR lower(coalesce(pa.message, '')) LIKE '%null%' "
-        "OR pa.price_change_percent IS NULL "
-        "OR pa.last_24h_change IS NULL "
-        "OR pa.last_7d_change IS NULL"
+        "OR lower(coalesce(pa.message, '')) LIKE '%since last btc alert%' "
+        "OR lower(coalesce(pa.message, '')) LIKE '%analysed-window change%' "
+        "OR lower(coalesce(pa.message, '')) LIKE '%price change%'"
         ")) AS users_affected_by_content_quality_issues "
         "FROM users u LEFT JOIN period_alerts pa ON pa.user_id = u.id",
     ),
@@ -242,6 +242,8 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) AS analysis_count, count(DISTINCT input_hash) AS input_hashes, "
         "(array_agg(id ORDER BY created_at ASC, id ASC))[1:5] AS sample_analysis_ids "
         "FROM event_ai_analyses WHERE market_event_id IS NOT NULL "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
+        "AND status IN ('success', 'completed') "
         "AND created_at >= :since AND created_at < :until "
         "GROUP BY symbol, market_event_id HAVING count(*) > 1 OR count(DISTINCT input_hash) > 1 "
         "ORDER BY analysis_count DESC LIMIT :anomaly_limit",
@@ -290,9 +292,12 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%unknown%') AS contains_unknown, "
         "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%unavailable%') AS contains_unavailable, "
         "count(*) FILTER (WHERE lower(coalesce(a.message, '')) LIKE '%null%') AS contains_null, "
-        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
-        "me.price_change_percent IS NULL OR me.last_24h_change IS NULL OR me.last_7d_change IS NULL"
-        ")) AS missing_numeric_market_context, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
+        "AND lower(coalesce(a.message, '')) LIKE '%since last btc alert%') AS old_since_last_btc_alert_label, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
+        "AND lower(coalesce(a.message, '')) LIKE '%analysed-window change%') AS old_analysed_window_change_label, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
+        "AND lower(coalesce(a.message, '')) LIKE '%price change%') AS old_generic_price_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
         "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
         ")) AS empty_related_context, "
@@ -303,6 +308,41 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHERE a.created_at >= :since AND a.created_at < :until "
         "GROUP BY lower(coalesce(a.symbol, 'unknown')), coalesce(a.trigger_source, 'unknown'), coalesce(a.alert_type, 'unknown') "
         "ORDER BY deliveries DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "event_alert_delivery_explanation_gaps",
+        "evidence/db/anomalies.json",
+        "WITH candidate_analyses AS ("
+        "SELECT id, market_event_id, symbol, event_key, created_at FROM event_ai_analyses "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
+        "AND status IN ('success', 'completed') AND should_alert = true), "
+        "sent_delivery AS ("
+        "SELECT event_ai_analysis_id, market_event_id, count(*) AS sent_count "
+        "FROM alerts WHERE alert_type = 'event_alert' AND status = 'sent' "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY event_ai_analysis_id, market_event_id), "
+        "explained_outcomes AS ("
+        "SELECT event_ai_analysis_id, market_event_id, count(*) AS explained_count "
+        "FROM alert_delivery_outcomes WHERE alert_type = 'event_alert' "
+        "AND created_at >= :since AND created_at < :until "
+        "AND status IN ('delivered', 'suppressed', 'cooldown', 'failed', 'rate_limited', "
+        "'no_eligible_recipients', 'filtered', 'not_scheduled') "
+        "GROUP BY event_ai_analysis_id, market_event_id), "
+        "gaps AS ("
+        "SELECT ca.* FROM candidate_analyses ca "
+        "LEFT JOIN sent_delivery sd ON sd.event_ai_analysis_id = ca.id "
+        "OR (sd.event_ai_analysis_id IS NULL AND sd.market_event_id = ca.market_event_id) "
+        "LEFT JOIN explained_outcomes eo ON eo.event_ai_analysis_id = ca.id "
+        "OR (eo.event_ai_analysis_id IS NULL AND eo.market_event_id = ca.market_event_id) "
+        "WHERE coalesce(sd.sent_count, 0) = 0 AND coalesce(eo.explained_count, 0) = 0) "
+        "SELECT 'should_alert_true_without_delivery_explanation' AS anomaly, count(*) AS gap_count, "
+        "count(DISTINCT market_event_id) AS affected_market_events, "
+        "array_agg(DISTINCT symbol ORDER BY symbol)[1:10] AS symbols, "
+        "(array_agg(jsonb_build_object('event_ai_analysis_id', id, 'market_event_id', market_event_id, "
+        "'symbol', symbol, 'event_key', event_key, 'created_at', created_at) "
+        "ORDER BY created_at DESC, id DESC))[1:5] AS sample_analyses "
+        "FROM gaps HAVING count(*) > 0",
     ),
     DbQuery(
         "alerts_failures",

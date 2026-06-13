@@ -565,10 +565,53 @@ def _format_optional_price(value: float | None) -> str:
 def _coin_fallback_emoji(symbol: str) -> str:
     return coin_fallback_emoji(symbol)
 
-def _sanitize_event_text(value: str | None, fallback: str = "") -> str:
+EVENT_ALERT_PLACEHOLDER_TEXT_RE = re.compile(
+    r"(?i)(?<![a-z0-9])(?:n/a|null|unknown|unavailable)(?![a-z0-9])"
+)
+
+
+def _sanitize_event_text(
+    value: str | None,
+    fallback: str = "",
+    *,
+    omit_placeholders: bool = False,
+) -> str:
     cleaned = " ".join(str(value or "").split()).strip()
     cleaned = re.sub(r"(?i)\bnot financial advice\.?", "", cleaned).strip()
+    if omit_placeholders and EVENT_ALERT_PLACEHOLDER_TEXT_RE.search(cleaned):
+        return fallback
     return cleaned or fallback
+
+
+DRAMATIC_EVENT_WORD_REPLACEMENTS = (
+    (re.compile(r"(?i)\bbloodbath\b"), "stress"),
+    (re.compile(r"(?i)\bmeltdown\b"), "stress"),
+    (re.compile(r"(?i)\bpanic(?:s|ked|king)?\b"), "stress"),
+    (re.compile(r"(?i)\bcrash(?:es|ed|ing)?\b"), "move"),
+    (re.compile(r"(?i)\bcollapse(?:s|d)?\b"), "move"),
+    (re.compile(r"(?i)\bplung(?:e|es|ed|ing)\b"), "move lower"),
+    (re.compile(r"(?i)\bsurg(?:e|es|ed|ing)\b"), "move higher"),
+    (re.compile(r"(?i)\bexplod(?:e|es|ed|ing)\b"), "move higher"),
+    (re.compile(r"(?i)\bmoon(?:s|ed|ing)?\b"), "move higher"),
+    (re.compile(r"(?i)\bskyrocket(?:s|ed|ing)?\b"), "move higher"),
+)
+
+
+def _small_analysed_window_move(analysed_window_change: object) -> bool:
+    movement = _optional_float(analysed_window_change)
+    return (
+        movement is not None
+        and abs(movement) < EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
+    )
+
+
+def _guard_small_move_dramatic_event_text(value: str, *, small_move: bool) -> str:
+    if not small_move:
+        return value
+    guarded = value
+    for pattern, replacement in DRAMATIC_EVENT_WORD_REPLACEMENTS:
+        guarded = pattern.sub(replacement, guarded)
+    return " ".join(guarded.split()).strip()
 
 def _utf16_length(value: str) -> int:
     return len(value.encode("utf-16-le")) // 2
@@ -760,7 +803,7 @@ def _event_alert_market_context_lines(
         lines.append(f"Price: {_format_optional_price(price)}")
     if change_since_message is not None:
         lines.append(
-            f"Since last {symbol} alert: {_format_optional_percent(change_since_message)}"
+            f"Since last alert/message: {_format_optional_percent(change_since_message)}"
         )
     if analysed_window_minutes is not None and analysed_window_change is not None:
         analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
@@ -781,11 +824,31 @@ def _build_event_alert_payload(
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     icon, entities = build_coin_icon_prefix(symbol)
     icon_html = build_coin_icon_html(symbol)
-    title = _sanitize_event_text(decision.title, f"{symbol} market event")
-    message_body = _sanitize_event_text(decision.message_body, "Market conditions changed.")
-    possible_action = _sanitize_event_text(
-        decision.possible_action,
-        "Review the situation calmly and avoid impulsive decisions.",
+    analysed_window_change = market_data.get("chg_window")
+    small_move = _small_analysed_window_move(analysed_window_change)
+    title = _guard_small_move_dramatic_event_text(
+        _sanitize_event_text(
+            decision.title,
+            f"{symbol} market event",
+            omit_placeholders=True,
+        ),
+        small_move=small_move,
+    )
+    message_body = _guard_small_move_dramatic_event_text(
+        _sanitize_event_text(
+            decision.message_body,
+            "Market conditions changed.",
+            omit_placeholders=True,
+        ),
+        small_move=small_move,
+    )
+    possible_action = _guard_small_move_dramatic_event_text(
+        _sanitize_event_text(
+            decision.possible_action,
+            "Review the situation calmly and avoid impulsive decisions.",
+            omit_placeholders=True,
+        ),
+        small_move=small_move,
     )
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
@@ -797,7 +860,6 @@ def _build_event_alert_payload(
         market_data.get("change_since_last_user_visible_message_percent"),
     )
     analysed_window_minutes = market_data.get("analysed_window_minutes")
-    analysed_window_change = market_data.get("chg_window")
     market_context_lines = _event_alert_market_context_lines(
         symbol=symbol,
         price=price,

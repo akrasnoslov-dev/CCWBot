@@ -160,6 +160,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     analysis_invariant_rows = _query_rows(
         evidence, anomalies, "event_ai_analysis_invariant_checks"
     )
+    delivery_explanation_gap_rows = _query_rows(
+        evidence, anomalies, "event_alert_delivery_explanation_gaps"
+    )
     blocked_users = _query_rows(evidence, anomalies, "blocked_users_still_active")
     payment_inconsistencies = _query_rows(evidence, anomalies, "premium_payment_inconsistencies")
     news_rows = _query_rows(evidence, "evidence/db/recent_news_failures.json", "news_items_recent_high_impact")
@@ -335,6 +338,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ((duplicate_event_payload or {}).get("parameters") or {}).get("bucket_minutes") or 15
     )
     no_delivery = _no_delivery_metrics(no_delivery_rows)
+    delivery_explanation_gap_count = sum(
+        _int(row.get("gap_count")) for row in delivery_explanation_gap_rows
+    )
 
     interval_seconds = max(
         (
@@ -487,6 +493,18 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             "Market events without deliveries are classified before treating them as failures",
             ["evidence/db/anomalies.json"],
             no_delivery,
+        ),
+        db_result(
+            "event_alert_delivery_explanation_gaps",
+            "high" if delivery_explanation_gap_count else "info",
+            [(anomalies, "event_alert_delivery_explanation_gaps")],
+            "triggered" if delivery_explanation_gap_count else "clear",
+            f"{delivery_explanation_gap_count} should_alert=true analyses lack delivery or outcome explanation",
+            ["evidence/db/anomalies.json"],
+            {
+                "should_alert_true_without_delivery_explanation": delivery_explanation_gap_count,
+                "sample_groups": delivery_explanation_gap_rows[:5],
+            },
         ),
         db_result(
             "repeated_llm_failures_or_rate_limits",

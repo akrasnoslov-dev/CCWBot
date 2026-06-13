@@ -60,8 +60,13 @@ delivery_rollup AS (
         (array_agg(a.alert_type ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_type,
         (array_agg(a.trigger_source ORDER BY a.created_at DESC, a.id DESC))[1] AS trigger_source,
         (array_agg(a.status ORDER BY a.created_at DESC, a.id DESC))[1] AS status,
-        (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_message
+        (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_message,
+        (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
+            AS alert_numeric_context,
+        (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
+            FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family
     FROM alerts a
+    LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id
     WHERE a.created_at >= :since
       AND a.created_at < :until
       AND (a.alert_type = 'event_alert' OR a.event_ai_analysis_id IS NOT NULL)
@@ -105,7 +110,9 @@ SELECT
     dr.alert_type,
     dr.trigger_source,
     dr.status,
-    dr.alert_message
+    dr.alert_message,
+    dr.alert_numeric_context,
+    dr.semantic_family
 FROM recent_analyses ra
 LEFT JOIN market_events me ON me.id = ra.market_event_id
 LEFT JOIN delivery_rollup dr
@@ -153,6 +160,7 @@ async def collect_db(
             "evidence/db/recent_alert_failures.json",
             "evidence/db/recent_llm_failures.json",
             "evidence/db/recent_news_failures.json",
+            "evidence/db/event_alert_regression_checks.json",
         }:
             grouped[file_name]["warnings"].append(warning)
         return grouped, [{"name": "db", "status": "skipped", "error": warning}]
@@ -290,6 +298,7 @@ async def collect_db(
                     "evidence/db/alert_similarity_groups.json",
                     "evidence/db/backend_suppression_effectiveness.json",
                     "evidence/db/event_identity_quality.json",
+                    "evidence/db/event_alert_regression_checks.json",
                 }:
                     grouped[file_name]["warnings"].append(f"alert_repetition_evidence: {message}")
                 statuses.append(

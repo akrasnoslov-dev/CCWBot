@@ -199,6 +199,33 @@ The ops-agent log collector aggregates these in
 `period_matched_suppression_reason_counts`, and
 `tail_context_suppression_reason_counts`.
 
+## Event Alert User-Facing Copy Checks
+
+Event Alert percentage labels distinguish two different movements:
+
+- `Since last alert/message`: movement since the last user-visible alert/message context.
+- `<window> market move`: analysed-window movement, using the actual payload window such as
+  `30m market move`, `1h market move`, or `3h market move`.
+
+If an Event Alert numeric field is missing, the line is omitted. User-facing Event Alert bodies
+must not render placeholder text such as `n/a`, `unknown`, `unavailable`, or `null`. Event Alert
+bodies should also avoid old/confusing labels such as `Since last BTC alert`,
+`Analysed-window change`, or generic `Price change`.
+
+When the analysed-window move is below the semantic material-movement threshold, backend formatting
+applies a narrow deterministic wording guard for dramatic terms such as crash, surge, collapse,
+panic, bloodbath, explosion, moon, and meltdown. This guard only affects Event Alert text; it does
+not change market-event identity, recipient eligibility, cooldown decisions, or LLM call placement.
+
+The ops-agent decision context now includes `## Event Alert Regression Checks`. Interpret it as:
+
+- `OK`: no collected duplicate attached analyses, unexplained `should_alert=true` gaps,
+  same-family repeat noise, bad placeholders, or old labels.
+- `Warning`: likely same-family repeat noise was found, while allowed escalation groups are
+  counted separately.
+- `Critical`: duplicate attached successful analyses, unexplained `should_alert=true` gaps,
+  user-facing placeholders, or old confusing labels were found.
+
 ## Multiple AI Analyses Per Market Event
 
 The expected invariant is:

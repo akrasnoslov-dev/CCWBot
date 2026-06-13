@@ -44,8 +44,8 @@ def _format_analysed_window_label(minutes: int | None) -> str:
 
 def _event_alert_change_label(analysed_window_label: str) -> str:
     if analysed_window_label == "n/a":
-        return "Analysed-window change"
-    return f"{analysed_window_label} change"
+        return "Analysed-window market move"
+    return f"{analysed_window_label} market move"
 
 def _event_instance_key_for_decision(
     *,

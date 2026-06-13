@@ -67,6 +67,29 @@ def test_decision_report_context_renders_required_decision_sections():
                 }
             ],
         },
+        "evidence/db/event_alert_regression_checks.json": {
+            "status": "critical",
+            "placeholder_issue_counts": {"contains_n_a": 451},
+            "old_label_issue_counts": {"old_since_last_btc_alert_label": 451},
+            "same_family_repeat_noise_groups": 1,
+            "same_family_allowed_escalation_groups": 1,
+        },
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "event_ai_analysis_invariant_checks": {
+                    "rows": [
+                        {
+                            "symbol": "BTC",
+                            "market_event_id": 100,
+                            "analysis_count": 2,
+                        }
+                    ]
+                },
+                "event_alert_delivery_explanation_gaps": {
+                    "rows": [{"gap_count": 2, "affected_market_events": 2}]
+                },
+            }
+        },
         "evidence/db/alert_similarity_groups.json": {"groups": []},
     }
     markdown = render_decision_report_context(
@@ -85,6 +108,24 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "Active users during report period" not in markdown
     assert "451 / 451 unique affected Event Alert deliveries, 100.0%" in markdown
     assert "| contains_n_a | BTC | news | event_alert | 451 | 100.0% | 82 |" in markdown
+    assert "## Event Alert Regression Checks" in markdown
+    assert "Status: Critical" in markdown
+    duplicate_row = (
+        "| Duplicate attached successful event analyses | 1 | "
+        "Critical invariant regression |"
+    )
+    repeat_row = (
+        "| Same-family repeats without escalation | 1 | Likely alert noise; "
+        "1 escalation groups were counted separately. |"
+    )
+    delivery_gap_row = (
+        "| should_alert=true without delivery explanation | 2 | Observability gap |"
+    )
+    assert duplicate_row in markdown
+    assert repeat_row in markdown
+    assert delivery_gap_row in markdown
+    assert "| Bad placeholder text | 451 | User-facing copy regression |" in markdown
+    assert "| Old/confusing percentage labels | 451 | User-facing copy regression |" in markdown
     assert "| Telegram failed | 2 | 0.4% |" in markdown
     assert "| semantic_cooldown | 7 | 100.0% |" in markdown
     assert "## Confirmed Findings" in markdown
@@ -179,7 +220,7 @@ def test_quality_summary_evidence_uses_unique_affected_deliveries_not_issue_occu
                     "affected_users_estimate": 10,
                 },
                 {
-                    "issue": "missing_numeric_market_context",
+                    "issue": "old_since_last_btc_alert_label",
                     "symbol": "BTC",
                     "trigger_source": "news",
                     "alert_type": "event_alert",
