@@ -92,6 +92,12 @@ them when required, or explain why they were not needed. See
   any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
   sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
   `event_ai_analyses` rows.
+- Event Alert identity is backend-owned after LLM validation. Broad LLM keys such as
+  `news_catalyst`, `price_movement`, and `volatility` are normalized with deterministic rules using
+  the raw key, alert title/body, and selected real related-news title/source/link context. Repeated
+  same-family alerts stay inside the semantic cooldown unless urgency increases, analysed-window
+  movement grows by the configured material delta, or selected stable news identity shows a new
+  driver.
 - Migration `0022_unique_attached_event_analysis` enforces one attached `event_analysis` row per
   `market_event_id`. During upgrade it preserves evidence by setting `market_event_id=NULL` on
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring

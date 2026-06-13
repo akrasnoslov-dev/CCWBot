@@ -125,8 +125,11 @@ ORDER BY market_events DESC, last_seen_at DESC;
 Semantic family normalization, stable event identity, and similarity cooldown checks existed
 before `alert_delivery_outcomes`; outcome rows now make those decisions queryable in the database.
 For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
-`market_drop_btc` normalize to `btc_price_downtrend`. The raw key and semantic family are emitted
-in event-analysis logs and persisted in alert numeric context where available.
+`market_drop_btc` normalize to `btc_price_downtrend`. Generic keys such as `news_catalyst`,
+`price_movement`, and `volatility` are not trusted as final identity when the title/body or
+selected real related-news title/source/link supports a more specific family, such as
+`btc_protocol_security_risk` or `btc_price_level_range`. The raw key and semantic family are
+emitted in event-analysis logs and persisted in alert numeric context where available.
 
 ## Duplicate/Suppressed Analysis
 
@@ -150,10 +153,10 @@ ORDER BY last_sent_at DESC;
 Suppressed semantic duplicates are persisted as `alert_delivery_outcomes.reason_code =
 'similar_event_suppressed'` and logged as `event_alert_suppressed` with
 `suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
-semantic family key, so minor raw-key wording drift does not bypass the cooldown. Same-family
-events can still deliver inside the semantic cooldown when urgency increased, the absolute
-analysed-window movement grew by at least 2.5 percentage points, or stable related-news identity
-shows a new news driver.
+semantic family key, and also checks delivered outcome semantic family where available, so minor
+raw-key wording drift does not bypass the cooldown. Same-family events can still deliver inside the
+semantic cooldown when urgency increased, the absolute analysed-window movement grew by at least
+2.5 percentage points, or stable related-news identity shows a new news driver.
 
 ## Event Alert Suppression Reasons
 
@@ -165,6 +168,12 @@ ops_event=event_alert_suppression symbol=BTC raw_event_key=... canonical_event_k
 semantic_family=price_downtrend event_instance_key=... delivery_count=0 suppression_count=1
 suppression_reason=semantic_cooldown analysed_window_minutes=180
 ```
+
+Debug cooldown checks include sanitized escalation fields such as `urgency_increased`,
+`material_movement_increased`, `new_news_driver`, previous/current movement percentages, and
+previous/current selected-news counts. These fields explain whether same-family delivery was
+allowed through cooldown or denied; they are for logs/outcomes only and must not be copied into
+Telegram messages.
 
 Market-only event instance keys are built from symbol, canonical semantic key, rounded UTC time
 bucket, urgency, and a coarse movement bucket. News-linked event instance keys use stable selected

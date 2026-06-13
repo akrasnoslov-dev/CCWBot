@@ -71,6 +71,7 @@ async def seed_sent_event_alert(
     urgency: str | None = None,
     analysed_window_change_percent: float | None = None,
     stable_related_news_ids: list[str] | None = None,
+    semantic_family: str | None = None,
 ):
     event = MarketEvent(
         symbol=symbol.upper(),
@@ -84,26 +85,44 @@ async def seed_sent_event_alert(
     )
     session.add(event)
     await session.flush()
-    session.add(
-        Alert(
-            symbol=symbol.upper(),
-            alert_type=alerts.EVENT_ALERT_TYPE,
-            message="previous",
-            sent_to_chat_id=chat_id,
-            user_id=user_id,
-            market_event_id=event.id,
-            status="sent",
-            created_at=created_at,
-            numeric_context=alerts._json_dumps(
-                {
-                    "notification_type": alerts.EVENT_ALERT_TYPE,
-                    "notification_severity": urgency,
-                    "analysed_window_change_percent": analysed_window_change_percent,
-                    "stable_related_news_ids": stable_related_news_ids or [],
-                }
-            ),
-        )
+    alert = Alert(
+        symbol=symbol.upper(),
+        alert_type=alerts.EVENT_ALERT_TYPE,
+        message="previous",
+        sent_to_chat_id=chat_id,
+        user_id=user_id,
+        market_event_id=event.id,
+        status="sent",
+        created_at=created_at,
+        numeric_context=alerts._json_dumps(
+            {
+                "notification_type": alerts.EVENT_ALERT_TYPE,
+                "notification_severity": urgency,
+                "analysed_window_change_percent": analysed_window_change_percent,
+                "stable_related_news_ids": stable_related_news_ids or [],
+                "semantic_family": semantic_family,
+            }
+        ),
     )
+    session.add(alert)
+    await session.flush()
+    if semantic_family:
+        session.add(
+            AlertDeliveryOutcome(
+                symbol=symbol.upper(),
+                alert_type=alerts.EVENT_ALERT_TYPE,
+                market_event_id=event.id,
+                alert_id=alert.id,
+                user_id=user_id,
+                sent_to_chat_id=chat_id,
+                status="delivered",
+                reason_code="delivered",
+                recipient_considered=True,
+                recipient_eligible=True,
+                trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+                semantic_family=semantic_family,
+            )
+        )
     await session.commit()
     await session.refresh(event)
     return event
@@ -324,6 +343,117 @@ def test_semantic_event_family_uses_context_for_ambiguous_movement_key():
 
     assert result.semantic_family == "price_downtrend"
     assert result.canonical_event_key == "ton_price_downtrend"
+
+
+@pytest.mark.parametrize("raw_event_key", ["news_catalyst", "volatility", "price_movement"])
+def test_btc_quantum_security_examples_share_backend_family(raw_event_key):
+    result = canonicalize_event_key(
+        "btc",
+        raw_event_key,
+        title="Quantum computing raises Bitcoin security questions",
+        message_body=(
+            "Analysts discussed whether future quantum attacks could affect Bitcoin "
+            "cryptography and protocol security."
+        ),
+        related_news=[
+            {
+                "title": "Bitcoin protocol security debate grows around quantum risk",
+                "source": "Example Markets",
+                "url": "https://example.test/btc-quantum-risk",
+            }
+        ],
+    )
+
+    assert result.semantic_family == "protocol_security_risk"
+    assert result.canonical_event_key == "btc_protocol_security_risk"
+    assert result.canonical_event_key != "btc_news_catalyst"
+
+
+@pytest.mark.parametrize(
+    ("title", "message_body", "expected_family"),
+    [
+        (
+            "BTC breaks above resistance",
+            "Bitcoin moved through a watched resistance level.",
+            "price_uptrend",
+        ),
+        (
+            "BTC breakout through key resistance",
+            "Bitcoin broke through a key resistance area.",
+            "price_uptrend",
+        ),
+        (
+            "BTC rallies above key level",
+            "Bitcoin rallied above a watched market level.",
+            "price_uptrend",
+        ),
+        (
+            "BTC breaks below support",
+            "Bitcoin moved below a watched support level.",
+            "price_downtrend",
+        ),
+        (
+            "BTC drops below support",
+            "Bitcoin dropped below a watched support level.",
+            "price_downtrend",
+        ),
+    ],
+)
+def test_btc_directional_level_breaks_win_over_price_level_range(
+    title,
+    message_body,
+    expected_family,
+):
+    result = canonicalize_event_key(
+        "btc",
+        "price_movement",
+        title=title,
+        message_body=message_body,
+    )
+
+    assert result.semantic_family == expected_family
+    assert result.canonical_event_key == f"btc_{expected_family}"
+
+
+@pytest.mark.parametrize(
+    ("raw_event_key", "title", "message_body"),
+    [
+        (
+            "price_movement",
+            "BTC holds near $63k as traders watch support",
+            "Bitcoin stayed around a key support level without a material breakout.",
+        ),
+        (
+            "volatility",
+            "BTC volatility clusters around resistance",
+            "Bitcoin price action remains near resistance and inside a tight range.",
+        ),
+        (
+            "news_catalyst",
+            "BTC stays around a key level",
+            "Price is hovering near support while the market waits for a new driver.",
+        ),
+        (
+            "price_movement",
+            "BTC remains range-bound near support",
+            "Bitcoin remains range-bound near support without a decisive move.",
+        ),
+    ],
+)
+def test_btc_price_level_examples_share_backend_family(
+    raw_event_key,
+    title,
+    message_body,
+):
+    result = canonicalize_event_key(
+        "btc",
+        raw_event_key,
+        title=title,
+        message_body=message_body,
+    )
+
+    assert result.semantic_family == "price_level_range"
+    assert result.canonical_event_key == "btc_price_level_range"
 
 
 def test_semantic_event_family_keeps_distinct_drivers_separate():
@@ -1674,6 +1804,61 @@ async def test_semantic_event_alert_cooldown_suppresses_different_keys_in_same_f
         assert "suppression_reason=semantic_cooldown" in caplog.text
         assert "user_id=" not in caplog.text
         assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_event_alert_cooldown_suppresses_previous_key_by_family(
+    monkeypatch,
+    caplog,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            current = canonicalize_event_key(
+                "btc",
+                "news_catalyst",
+                title="BTC holds near $63k as traders watch support",
+                message_body="Bitcoin stayed around a key support level.",
+            )
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_volatility",
+                urgency="normal",
+                analysed_window_change_percent=1.0,
+                semantic_family=current.semantic_family,
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        with caplog.at_level("DEBUG", logger="bot.alerts"):
+            filtered = await alerts._filter_event_recipients_for_cooldown(
+                [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+                symbol="btc",
+                urgency="normal",
+                cooldown_seconds=0,
+                canonical_event_key=current.canonical_event_key,
+                semantic_family=current.semantic_family,
+                current_movement_percent=1.2,
+                semantic_cooldown_seconds=4 * 3600,
+                now=now,
+            )
+
+        assert current.semantic_family == "price_level_range"
+        assert current.canonical_event_key == "btc_price_level_range"
+        assert filtered == []
+        assert "semantic_family=price_level_range" in caplog.text
+        assert "material_movement_increased=False" in caplog.text
+        assert "new_news_driver=False" in caplog.text
+        assert "suppression_reason=semantic_cooldown" in caplog.text
     finally:
         await engine.dispose()
 

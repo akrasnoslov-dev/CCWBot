@@ -128,20 +128,39 @@ def _event_semantic_cooldown_allows_escalation(
     current_movement_percent: float | None,
     current_stable_news_ids: list[str],
 ) -> tuple[bool, str | None]:
+    details = _event_semantic_cooldown_escalation_details(
+        previous_alert,
+        current_urgency=current_urgency,
+        current_movement_percent=current_movement_percent,
+        current_stable_news_ids=current_stable_news_ids,
+    )
+    if details["urgency_increased"]:
+        return True, "urgency_increased"
+    if details["material_movement_increased"]:
+        return True, "material_movement_increased"
+    if details["new_news_driver"]:
+        return True, "new_news_driver"
+    return False, None
+
+def _event_semantic_cooldown_escalation_details(
+    previous_alert,
+    *,
+    current_urgency: str | None,
+    current_movement_percent: float | None,
+    current_stable_news_ids: list[str],
+) -> dict[str, object]:
     previous_context = _numeric_context_payload(getattr(previous_alert, "numeric_context", None))
     previous_urgency = str(previous_context.get("notification_severity") or "").strip().lower()
     previous_urgency_rank = _urgency_rank(previous_urgency)
-    if previous_urgency_rank > 0 and _urgency_rank(current_urgency) > previous_urgency_rank:
-        return True, "urgency_increased"
+    current_urgency_rank = _urgency_rank(current_urgency)
 
     previous_movement = _optional_float(previous_context.get("analysed_window_change_percent"))
-    if (
+    material_movement_increased = (
         previous_movement is not None
         and current_movement_percent is not None
         and abs(current_movement_percent)
         >= abs(previous_movement) + EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
-    ):
-        return True, "material_movement_increased"
+    )
 
     previous_news_ids = {
         str(item)
@@ -149,10 +168,20 @@ def _event_semantic_cooldown_allows_escalation(
         if str(item).strip()
     }
     current_news_ids = {str(item) for item in current_stable_news_ids if str(item).strip()}
-    if current_news_ids - previous_news_ids:
-        return True, "new_news_driver"
-
-    return False, None
+    new_news_ids = current_news_ids - previous_news_ids
+    return {
+        "previous_urgency": previous_urgency or None,
+        "current_urgency": str(current_urgency or "").strip().lower() or None,
+        "urgency_increased": (
+            previous_urgency_rank > 0 and current_urgency_rank > previous_urgency_rank
+        ),
+        "previous_movement_percent": previous_movement,
+        "current_movement_percent": current_movement_percent,
+        "material_movement_increased": material_movement_increased,
+        "previous_news_count": len(previous_news_ids),
+        "current_news_count": len(current_news_ids),
+        "new_news_driver": bool(new_news_ids),
+    }
 
 def _optional_float(value: object) -> float | None:
     try:
