@@ -87,6 +87,16 @@ them when required, or explain why they were not needed. See
 - Alert orchestration remains in `bot/alerts.py`. Deterministic event identity, analysed-window,
   and news relevance helpers live under `bot/alerting/`; they must not perform Telegram delivery,
   recipient lookup, LLM calls, or database writes.
+- Event Alert generation must preserve `1 market event = 1 AI analysis = many deliveries`.
+  The LLM event-analysis attempt is created outside recipient loops, a resolved market event reuses
+  any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
+  sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
+  `event_ai_analyses` rows.
+- Migration `0022_unique_attached_event_analysis` enforces one attached `event_analysis` row per
+  `market_event_id`. During upgrade it preserves evidence by setting `market_event_id=NULL` on
+  failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
+  delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
+  exists before deploying this migration.
 - Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
   outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
   wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal

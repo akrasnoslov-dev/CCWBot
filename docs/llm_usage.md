@@ -147,6 +147,12 @@ Avoidable LLM-call checks:
 
 - `event_analysis` should only run once per symbol check, before recipient delivery and outside
   recipient loops.
+- A resolved market event may have at most one attached `event_ai_analyses` row with
+  `analysis_type = 'event_analysis'`; many alert delivery rows should reference that same analysis
+  id.
+- If a repeated check creates a fresh successful LLM attempt for an already-known market event, the
+  fresh attempt must remain unattached and delivery must reuse the existing attached analysis id and
+  sanitized text.
 - Event analysis is skipped when no eligible recipients exist for the symbol.
 - Active Groq backoff skips are persisted as `event_ai_analyses.status =
   'skipped_due_to_rate_limit'` and `alert_delivery_outcomes.reason_code =

@@ -2,9 +2,12 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from alembic import command
 from bot.alerts import (
     AlertRecipient,
     _build_alert_ai_input_hash,
@@ -17,9 +20,11 @@ from bot.db.database import (
     MarketEvent,
     SeenNews,
     User,
+    attach_analysis_to_market_event,
     count_market_events,
     get_active_users_with_chat_ids,
     get_event_ai_analysis,
+    get_latest_success_event_ai_analysis,
     get_or_create_app_settings,
     get_or_create_market_event,
     get_recent_market_events,
@@ -263,6 +268,249 @@ async def test_event_ai_analysis_helpers_save_and_reuse_input_hash():
     finally:
         await session.close()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_attach_analysis_reuses_existing_success_for_market_event():
+    engine, session = await build_session()
+    try:
+        market_event = await get_or_create_market_event(
+            session,
+            symbol="BTC",
+            event_type="event_alert",
+            event_key="btc_volatility",
+            event_instance_key="btc:volatility:instance",
+            price=65000.0,
+            price_change_percent=1.5,
+        )
+        canonical = EventAiAnalysis(
+            market_event_id=market_event.id,
+            analysis_id="event_analysis_btc_canonical",
+            symbol="BTC",
+            analysis_type="event_analysis",
+            provider="groq",
+            model="llama-test",
+            input_hash="canonical-hash",
+            status="success",
+            should_alert=True,
+            plain_text="Canonical text. Not financial advice.",
+        )
+        fresh_attempt = EventAiAnalysis(
+            market_event_id=None,
+            analysis_id="event_analysis_btc_fresh",
+            symbol="BTC",
+            analysis_type="event_analysis",
+            provider="groq",
+            model="llama-test",
+            input_hash="fresh-hash",
+            status="success",
+            should_alert=True,
+            plain_text="Fresh text. Not financial advice.",
+        )
+        session.add_all([canonical, fresh_attempt])
+        await session.commit()
+
+        attached = await attach_analysis_to_market_event(
+            session,
+            analysis_id="event_analysis_btc_fresh",
+            market_event_id=market_event.id,
+            plain_text="Fresh text. Not financial advice.",
+        )
+
+        assert attached.id == canonical.id
+        refreshed_fresh = await session.scalar(
+            select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == "event_analysis_btc_fresh")
+        )
+        assert refreshed_fresh.market_event_id is None
+        assert (
+            await get_latest_success_event_ai_analysis(
+                session,
+                market_event_id=market_event.id,
+            )
+        ).id == canonical.id
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_attached_success_event_analysis_is_rejected():
+    engine, session = await build_session()
+    try:
+        market_event = await get_or_create_market_event(
+            session,
+            symbol="BTC",
+            event_type="event_alert",
+            event_key="btc_reversal",
+            event_instance_key="btc:reversal:instance",
+            price=65000.0,
+            price_change_percent=1.5,
+        )
+        session.add(
+            EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_one",
+                symbol="BTC",
+                analysis_type="event_analysis",
+                provider="groq",
+                model="llama-test",
+                input_hash="one",
+                status="success",
+                should_alert=True,
+            )
+        )
+        await session.commit()
+        session.add(
+            EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_two",
+                symbol="BTC",
+                analysis_type="event_analysis",
+                provider="groq",
+                model="llama-test",
+                input_hash="two",
+                status="success",
+                should_alert=True,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            await session.commit()
+        await session.rollback()
+
+        session.add_all(
+            [
+                EventAiAnalysis(
+                    market_event_id=None,
+                    analysis_id="event_analysis_btc_failed",
+                    symbol="BTC",
+                    analysis_type="event_analysis",
+                    provider="groq",
+                    model="llama-test",
+                    input_hash="failed",
+                    status="llm_error",
+                ),
+                EventAiAnalysis(
+                    market_event_id=None,
+                    analysis_id="event_analysis_btc_no_alert",
+                    symbol="BTC",
+                    analysis_type="event_analysis",
+                    provider="groq",
+                    model="llama-test",
+                    input_hash="no-alert",
+                    status="no_alert",
+                    should_alert=False,
+                ),
+            ]
+        )
+        await session.commit()
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_invariant_migration_detaches_duplicates():
+    tmp_dir = PROJECT_ROOT / ".tmp"
+    tmp_dir.mkdir(exist_ok=True)
+    db_path = tmp_dir / "event_analysis_invariant_migration_test.sqlite"
+    if db_path.exists():
+        db_path.unlink()
+    database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+    alembic_config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    alembic_config.set_main_option("sqlalchemy.url", database_url)
+    alembic_config.attributes["database_url"] = database_url
+    alembic_config.attributes["configure_logger"] = False
+    await asyncio.to_thread(command.upgrade, alembic_config, "0021_alert_delivery_outcomes")
+
+    engine = create_async_engine(database_url, future=True)
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                """
+                INSERT INTO market_events (
+                    id, symbol, event_type, event_key, event_instance_key, price,
+                    previous_price, price_change_percent, detected_at, created_at
+                )
+                VALUES (
+                    1, 'BTC', 'event_alert', 'btc_volatility', 'instance-migration',
+                    65000.0, 64000.0, 1.5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO event_ai_analyses (
+                    id, market_event_id, analysis_id, symbol, analysis_type, provider, model,
+                    input_hash, should_alert, status, plain_text, created_at
+                )
+                VALUES
+                    (
+                        1, 1, 'event_analysis_canonical', 'BTC', 'event_analysis',
+                        'groq', 'llama-test', 'canonical', 1, 'success',
+                        'Canonical text. Not financial advice.', CURRENT_TIMESTAMP
+                    ),
+                    (
+                        2, 1, 'event_analysis_duplicate', 'BTC', 'event_analysis',
+                        'groq', 'llama-test', 'duplicate', 1, 'success',
+                        'Duplicate text. Not financial advice.', CURRENT_TIMESTAMP
+                    ),
+                    (
+                        3, 1, 'event_analysis_no_alert', 'BTC', 'event_analysis',
+                        'groq', 'llama-test', 'no-alert', 0, 'no_alert',
+                        NULL, CURRENT_TIMESTAMP
+                    )
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO alerts (
+                    id, symbol, alert_type, message, sent_to_chat_id, market_event_id,
+                    event_ai_analysis_id, user_id, status, retry_count, created_at
+                )
+                VALUES (
+                    1, 'BTC', 'event_alert', 'Canonical text. Not financial advice.',
+                    2001, 1, 1, NULL, 'sent', 0, CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+    await engine.dispose()
+
+    migrated_engine, SessionLocal = await init_db(database_url)
+    try:
+        async with SessionLocal() as session:
+            attached_ids = list(
+                (
+                    await session.scalars(
+                        select(EventAiAnalysis.id)
+                        .where(EventAiAnalysis.market_event_id == 1)
+                        .where(EventAiAnalysis.analysis_type == "event_analysis")
+                        .order_by(EventAiAnalysis.id)
+                    )
+                ).all()
+            )
+            detached_ids = list(
+                (
+                    await session.scalars(
+                        select(EventAiAnalysis.id)
+                        .where(EventAiAnalysis.market_event_id.is_(None))
+                        .order_by(EventAiAnalysis.id)
+                    )
+                ).all()
+            )
+
+        assert attached_ids == [1]
+        assert detached_ids == [2, 3]
+    finally:
+        await migrated_engine.dispose()
+        if db_path.exists():
+            db_path.unlink()
 
 
 @pytest.mark.asyncio
