@@ -2430,7 +2430,12 @@ async def _get_or_create_event_alert_market_event(
             last_24h_change=market_data.get("chg24h", market_data.get("change_24h_percent")),
             detected_at=datetime.now(timezone.utc),
         )
-        return event.id, event.event_key, event.event_instance_key, False
+        return (
+            event.id,
+            event.event_key,
+            event.event_instance_key,
+            bool(getattr(event, "_ccwbot_reused", False)),
+        )
 
 async def _filter_event_recipients_for_cooldown(
     recipients: list[AlertRecipient],
@@ -4331,7 +4336,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 market_event_id,
                 _,
                 event_instance_key,
-                reused_market_event,
+                _reused_market_event,
             ) = await _get_or_create_event_alert_market_event(
                 decision=decision,
                 input_payload=input_payload,
@@ -4349,17 +4354,14 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             if DB_ENABLED and DB_SESSION_LOCAL and market_event_id is not None:
                 async with DB_SESSION_LOCAL() as session:
-                    existing_analysis = (
-                        await get_latest_success_event_ai_analysis(
-                            session,
-                            market_event_id=market_event_id,
-                        )
-                        if reused_market_event
-                        else None
+                    existing_analysis = await get_latest_success_event_ai_analysis(
+                        session,
+                        market_event_id=market_event_id,
                     )
                     if existing_analysis:
                         event_ai_analysis_id = existing_analysis.id
-                        alert_payload["plain_text"] = existing_analysis.plain_text
+                        if existing_analysis.plain_text:
+                            alert_payload["plain_text"] = existing_analysis.plain_text
                         if existing_analysis.html_text:
                             alert_payload["html_text"] = existing_analysis.html_text
                     else:

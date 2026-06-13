@@ -22,6 +22,9 @@ from bot.db.database import (
     utc_now,
 )
 
+EVENT_ANALYSIS_TYPE = "event_analysis"
+SUCCESS_ANALYSIS_STATUSES = ("success", "completed")
+
 
 async def save_alert(
     session: AsyncSession,
@@ -485,6 +488,7 @@ async def get_or_create_market_event(
         select(MarketEvent).where(MarketEvent.event_instance_key == instance_key).limit(1)
     )
     if existing:
+        existing._ccwbot_reused = True
         return existing
 
     market_event = MarketEvent(
@@ -504,10 +508,15 @@ async def get_or_create_market_event(
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        return await session.scalar(
+        existing = await session.scalar(
             select(MarketEvent).where(MarketEvent.event_instance_key == instance_key).limit(1)
         )
+        if existing is None:
+            raise
+        existing._ccwbot_reused = True
+        return existing
     await session.refresh(market_event)
+    market_event._ccwbot_reused = False
     return market_event
 
 
@@ -546,8 +555,9 @@ async def get_latest_success_event_ai_analysis(
     return await session.scalar(
         select(EventAiAnalysis)
         .where(EventAiAnalysis.market_event_id == market_event_id)
-        .where(EventAiAnalysis.status.in_(["success", "completed"]))
-        .where(EventAiAnalysis.plain_text.isnot(None))
+        .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
+        .where(EventAiAnalysis.status.in_(SUCCESS_ANALYSIS_STATUSES))
+        .where(EventAiAnalysis.should_alert.is_(True))
         .order_by(EventAiAnalysis.id.asc())
         .limit(1)
     )
@@ -640,6 +650,24 @@ async def save_event_llm_analysis(
     )
     if existing:
         return existing
+    if (
+        market_event_id is not None
+        and analysis_type == EVENT_ANALYSIS_TYPE
+        and (status not in SUCCESS_ANALYSIS_STATUSES or should_alert is not True)
+    ):
+        market_event_id = None
+    if (
+        market_event_id is not None
+        and analysis_type == EVENT_ANALYSIS_TYPE
+        and status in SUCCESS_ANALYSIS_STATUSES
+        and should_alert is True
+    ):
+        existing_success = await get_latest_success_event_ai_analysis(
+            session,
+            market_event_id=market_event_id,
+        )
+        if existing_success is not None:
+            return existing_success
 
     analysis = EventAiAnalysis(
         market_event_id=market_event_id,
@@ -671,11 +699,26 @@ async def save_event_llm_analysis(
     session.add(analysis)
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await session.rollback()
-        return await session.scalar(
+        existing = await session.scalar(
             select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
         )
+        if existing is not None:
+            return existing
+        if (
+            market_event_id is not None
+            and analysis_type == EVENT_ANALYSIS_TYPE
+            and status in SUCCESS_ANALYSIS_STATUSES
+            and should_alert is True
+        ):
+            existing_success = await get_latest_success_event_ai_analysis(
+                session,
+                market_event_id=market_event_id,
+            )
+            if existing_success is not None:
+                return existing_success
+        raise error
     await session.refresh(analysis)
     return analysis
 
@@ -689,18 +732,43 @@ async def attach_analysis_to_market_event(
     plain_text: str | None = None,
     html_text: str | None = None,
 ) -> EventAiAnalysis | None:
-    """Attach a previously saved event analysis to the event created from its decision."""
+    """Attach one successful event analysis, reusing the canonical row when present."""
+    existing_success = await get_latest_success_event_ai_analysis(
+        session,
+        market_event_id=market_event_id,
+    )
+    if existing_success is not None:
+        return existing_success
+
     analysis = await session.scalar(
         select(EventAiAnalysis).where(EventAiAnalysis.analysis_id == analysis_id).limit(1)
     )
     if analysis is None:
+        return None
+    if (
+        analysis.analysis_type == EVENT_ANALYSIS_TYPE
+        and (
+            analysis.status not in SUCCESS_ANALYSIS_STATUSES
+            or analysis.should_alert is not True
+        )
+    ):
         return None
     analysis.market_event_id = market_event_id
     if plain_text is not None:
         analysis.plain_text = plain_text
     if html_text is not None:
         analysis.html_text = html_text
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing_success = await get_latest_success_event_ai_analysis(
+            session,
+            market_event_id=market_event_id,
+        )
+        if existing_success is None:
+            raise
+        return existing_success
     await session.refresh(analysis)
     return analysis
 

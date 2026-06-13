@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram import MessageEntity
 
@@ -233,6 +233,48 @@ def test_event_instance_key_uses_stable_news_identity_not_temporary_news_ids():
 
     assert first == same_stable_news
     assert different_news != first
+
+
+@pytest.mark.asyncio
+async def test_event_alert_market_event_reports_reused_after_race_recovery(monkeypatch):
+    class AsyncContextSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    recovered_event = SimpleNamespace(
+        id=10,
+        event_key="btc_downward_pressure_2026_05_20",
+        event_instance_key="instance-race",
+        _ccwbot_reused=True,
+    )
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: AsyncContextSession())
+    monkeypatch.setattr(alerts, "get_market_event_by_instance_key", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        alerts,
+        "get_or_create_market_event",
+        AsyncMock(return_value=recovered_event),
+    )
+    monkeypatch.setattr(
+        alerts,
+        "_event_instance_key_for_decision",
+        lambda *, decision, input_payload: "instance-race",
+    )
+
+    market_event_id, event_key, event_instance_key, reused = (
+        await alerts._get_or_create_event_alert_market_event(
+            decision=event_decision(),
+            input_payload={"market": {"price": 103.0, "chg_since_msg": 3.0}},
+        )
+    )
+
+    assert market_event_id == 10
+    assert event_key == "btc_downward_pressure_2026_05_20"
+    assert event_instance_key == "instance-race"
+    assert reused is True
 
 
 @pytest.mark.parametrize(
@@ -879,6 +921,228 @@ async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
     deliver_alert.assert_awaited_once()
     assert deliver_alert.await_args.kwargs["event_type"] == "event_alert"
     assert "Not financial advice." in deliver_alert.await_args.kwargs["alert_payload"]["plain_text"]
+
+
+@pytest.mark.asyncio
+async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            market_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key="btc_downward_pressure_2026_05_20",
+                event_instance_key="instance-a",
+                price=103.0,
+                previous_price=100.0,
+                price_change_percent=3.0,
+                detected_at=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+            )
+            session.add(market_event)
+            await session.commit()
+            await session.refresh(market_event)
+            canonical = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_canonical",
+                symbol="BTC",
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash="canonical",
+                status="success",
+                should_alert=True,
+                plain_text="Canonical alert text. Not financial advice.",
+            )
+            session.add(canonical)
+            await session.commit()
+            await session.refresh(canonical)
+            canonical_id = canonical.id
+            market_event_id = market_event.id
+            user_id = user.id
+
+        async def create_fresh_attempt(input_payload):
+            async with session_local() as session:
+                fresh = EventAiAnalysis(
+                    market_event_id=None,
+                    analysis_id=str(input_payload["analysis_id"]),
+                    symbol="BTC",
+                    analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                    provider="groq",
+                    model="llama-test",
+                    input_hash="fresh",
+                    status="success",
+                    should_alert=True,
+                    plain_text="Fresh alert text. Not financial advice.",
+                )
+                session.add(fresh)
+                await session.commit()
+                await session.refresh(fresh)
+                return event_decision(), fresh.id
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["btc"]))
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(return_value={"btc": {"price": 103.0, "change_24h": -1.0}}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_load_news_driven_alert_candidates",
+            AsyncMock(return_value={}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_select_related_news_context",
+            AsyncMock(return_value=([], None, False)),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "resolve_alert_recipient_outcomes",
+            AsyncMock(
+                return_value=alerts.AlertRecipientResolution(
+                    recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)]
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_create_event_analysis_decision",
+            AsyncMock(side_effect=create_fresh_attempt),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_get_or_create_event_alert_market_event",
+            AsyncMock(
+                return_value=(
+                    market_event_id,
+                    "btc_downward_pressure_2026_05_20",
+                    "instance-a",
+                    True,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_filter_event_recipients_for_cooldown",
+            AsyncMock(
+                return_value=alerts.EventRecipientFilterResult(
+                    recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)],
+                    suppression_reason_counts={},
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(True, None)),
+        )
+        monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
+
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+        async with session_local() as session:
+            attached_count = await session.scalar(
+                select(func.count())
+                .select_from(EventAiAnalysis)
+                .where(EventAiAnalysis.market_event_id == market_event_id)
+                .where(EventAiAnalysis.analysis_type == alerts.EVENT_ANALYSIS_TYPE)
+            )
+            delivery = await session.scalar(select(Alert).where(Alert.user_id == user_id))
+            fresh = await session.scalar(
+                select(EventAiAnalysis).where(
+                    EventAiAnalysis.analysis_id != "event_analysis_btc_canonical"
+                )
+            )
+
+        assert attached_count == 1
+        assert delivery.event_ai_analysis_id == canonical_id
+        assert "Canonical alert text." in delivery.message
+        assert "Fresh alert text." not in delivery.message
+        assert fresh.market_event_id is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_deliver_market_event_alert_does_not_create_ai_analysis(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            market_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key="btc_downward_pressure_2026_05_20",
+                event_instance_key="instance-delivery-only",
+                price=103.0,
+                previous_price=100.0,
+                price_change_percent=3.0,
+                detected_at=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+            )
+            session.add(market_event)
+            await session.commit()
+            await session.refresh(market_event)
+            analysis = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_delivery_only",
+                symbol="BTC",
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash="delivery-only",
+                status="success",
+                should_alert=True,
+                plain_text="Delivery text. Not financial advice.",
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(analysis)
+            user_id = user.id
+            market_event_id = market_event.id
+            analysis_id = analysis.id
+
+        groq_call = AsyncMock(side_effect=AssertionError("delivery must not call Groq"))
+        save_analysis = AsyncMock(side_effect=AssertionError("delivery must not create analysis"))
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "ask_event_analysis_raw", groq_call)
+        monkeypatch.setattr(alerts, "save_event_llm_analysis", save_analysis)
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(True, None)),
+        )
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(),
+            symbol="btc",
+            alert_payload={"plain_text": "Delivery text. Not financial advice."},
+            market_event_id=market_event_id,
+            event_ai_analysis_id=analysis_id,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)],
+            event_type=alerts.EVENT_ALERT_TYPE,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+        )
+
+        async with session_local() as session:
+            analysis_count = await session.scalar(select(func.count()).select_from(EventAiAnalysis))
+            delivery_count = await session.scalar(select(func.count()).select_from(Alert))
+
+        assert delivered is True
+        assert analysis_count == 1
+        assert delivery_count == 1
+        groq_call.assert_not_awaited()
+        save_analysis.assert_not_awaited()
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
