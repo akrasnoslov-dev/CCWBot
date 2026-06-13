@@ -370,6 +370,52 @@ def test_btc_quantum_security_examples_share_backend_family(raw_event_key):
 
 
 @pytest.mark.parametrize(
+    ("title", "message_body", "expected_family"),
+    [
+        (
+            "BTC breaks above resistance",
+            "Bitcoin moved through a watched resistance level.",
+            "price_uptrend",
+        ),
+        (
+            "BTC breakout through key resistance",
+            "Bitcoin broke through a key resistance area.",
+            "price_uptrend",
+        ),
+        (
+            "BTC rallies above key level",
+            "Bitcoin rallied above a watched market level.",
+            "price_uptrend",
+        ),
+        (
+            "BTC breaks below support",
+            "Bitcoin moved below a watched support level.",
+            "price_downtrend",
+        ),
+        (
+            "BTC drops below support",
+            "Bitcoin dropped below a watched support level.",
+            "price_downtrend",
+        ),
+    ],
+)
+def test_btc_directional_level_breaks_win_over_price_level_range(
+    title,
+    message_body,
+    expected_family,
+):
+    result = canonicalize_event_key(
+        "btc",
+        "price_movement",
+        title=title,
+        message_body=message_body,
+    )
+
+    assert result.semantic_family == expected_family
+    assert result.canonical_event_key == f"btc_{expected_family}"
+
+
+@pytest.mark.parametrize(
     ("raw_event_key", "title", "message_body"),
     [
         (
@@ -386,6 +432,11 @@ def test_btc_quantum_security_examples_share_backend_family(raw_event_key):
             "news_catalyst",
             "BTC stays around a key level",
             "Price is hovering near support while the market waits for a new driver.",
+        ),
+        (
+            "price_movement",
+            "BTC remains range-bound near support",
+            "Bitcoin remains range-bound near support without a decisive move.",
         ),
     ],
 )

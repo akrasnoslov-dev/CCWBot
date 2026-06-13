@@ -216,6 +216,12 @@ def normalize_event_semantic_family(
     ):
         return "network_mining"
 
+    if _contains_price_downtrend_signal(phrases, tokens):
+        return "price_downtrend"
+
+    if _contains_price_uptrend_signal(phrases, tokens):
+        return "price_uptrend"
+
     if _contains_any_phrase(
         phrases,
         {
@@ -280,6 +286,8 @@ def normalize_event_semantic_family(
             "sell_off",
             "downward_pressure",
             "downside_pressure",
+            "break_below",
+            "breaks_below",
             "price_test_low",
             "price_test_february_low",
             "test_low",
@@ -302,6 +310,9 @@ def normalize_event_semantic_family(
             "fell",
             "selloff",
             "sell",
+            "lower",
+            "downward",
+            "downside",
             "slump",
             "weak",
             "weakened",
@@ -318,6 +329,8 @@ def normalize_event_semantic_family(
             "market_rally",
             "price_rebound",
             "price_breakout",
+            "break_above",
+            "breaks_above",
             "upward_pressure",
             "upside_pressure",
         },
@@ -331,6 +344,8 @@ def normalize_event_semantic_family(
             "surges",
             "breakout",
             "higher",
+            "upward",
+            "upside",
             "strength",
             "strengthening",
             "bullish",
@@ -355,6 +370,67 @@ def _semantic_event_key(symbol: str, semantic_family: str | None) -> str | None:
 
 def _contains_any_phrase(text: str, phrases: set[str]) -> bool:
     return any(f"_{phrase}_" in text for phrase in phrases)
+
+
+def _contains_price_downtrend_signal(phrases: str, tokens: set[str]) -> bool:
+    if _contains_any_phrase(
+        phrases,
+        {
+            "price_drop",
+            "price_decline",
+            "price_down",
+            "market_drop",
+            "break_below",
+            "breaks_below",
+            "downward_pressure",
+            "downside_pressure",
+        },
+    ):
+        return True
+    if tokens.intersection(
+        {
+            "drop",
+            "drops",
+            "fall",
+            "falls",
+            "selloff",
+            "lower",
+            "downward",
+            "downside",
+        }
+    ):
+        return True
+    return "breakdown" in tokens and not tokens.intersection({"without", "no", "not"})
+
+
+def _contains_price_uptrend_signal(phrases: str, tokens: set[str]) -> bool:
+    if _contains_any_phrase(
+        phrases,
+        {
+            "price_rally",
+            "market_rally",
+            "price_rebound",
+            "price_breakout",
+            "break_above",
+            "breaks_above",
+            "upward_pressure",
+            "upside_pressure",
+        },
+    ):
+        return True
+    if tokens.intersection(
+        {
+            "rally",
+            "rallies",
+            "surge",
+            "surges",
+            "higher",
+            "upward",
+            "upside",
+        }
+    ):
+        return True
+    return "breakout" in tokens and not tokens.intersection({"without", "no", "not"})
 
 
 def with_canonical_event_key(
