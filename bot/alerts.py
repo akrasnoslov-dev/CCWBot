@@ -144,6 +144,9 @@ _event_movement_percent_from_payload = _event_identity._event_movement_percent_f
 _event_semantic_cooldown_allows_escalation = (
     _event_identity._event_semantic_cooldown_allows_escalation
 )
+_event_semantic_cooldown_escalation_details = (
+    _event_identity._event_semantic_cooldown_escalation_details
+)
 _format_analysed_window_label = _event_identity._format_analysed_window_label
 _json_dumps = _event_identity._json_dumps
 _numeric_context_payload = _event_identity._numeric_context_payload
@@ -2350,7 +2353,10 @@ async def _create_event_analysis_decision(
         return None, None
 
     if decision.should_alert:
-        decision, canonical = with_canonical_event_key(decision)
+        decision, canonical = with_canonical_event_key(
+            decision,
+            related_news=_selected_event_analysis_news(input_payload, decision.related_news_ids),
+        )
         input_payload["raw_event_key"] = canonical.raw_event_key
         input_payload["canonical_event_key"] = canonical.canonical_event_key
         input_payload["semantic_family"] = canonical.semantic_family
@@ -2373,6 +2379,23 @@ async def _create_event_analysis_decision(
         decision=decision,
     )
     return decision, analysis_id
+
+def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[str]) -> list[dict]:
+    if not related_news_ids:
+        return []
+    news_items = input_payload.get("news", input_payload.get("candidate_news", []))
+    if not isinstance(news_items, list):
+        return []
+    by_id = {
+        str(item.get("news_id") or ""): item
+        for item in news_items
+        if isinstance(item, dict)
+    }
+    return [
+        by_id[str(news_id)]
+        for news_id in related_news_ids
+        if str(news_id) in by_id
+    ]
 
 def _normalize_event_analysis_result_for_validation(result: object) -> object:
     if not isinstance(result, dict) or result.get("should_alert") is not False:
@@ -2486,6 +2509,7 @@ async def _filter_event_recipients_for_cooldown(
                     symbol=symbol,
                     canonical_event_key=canonical_event_key,
                     alert_type=EVENT_ALERT_TYPE,
+                    semantic_family=semantic_family,
                 )
                 last_semantic_sent_at = (
                     previous_semantic_alert.created_at if previous_semantic_alert else None
@@ -2493,7 +2517,16 @@ async def _filter_event_recipients_for_cooldown(
                 semantic_allowed = True
                 semantic_remaining = 0
                 semantic_allow_reason = None
+                semantic_escalation_details = {}
                 if last_semantic_sent_at is not None:
+                    semantic_escalation_details = (
+                        _event_semantic_cooldown_escalation_details(
+                            previous_semantic_alert,
+                            current_urgency=urgency,
+                            current_movement_percent=current_movement_percent,
+                            current_stable_news_ids=current_stable_news_ids or [],
+                        )
+                    )
                     if last_semantic_sent_at.tzinfo is None:
                         last_semantic_sent_at = last_semantic_sent_at.replace(
                             tzinfo=timezone.utc
@@ -2516,7 +2549,9 @@ async def _filter_event_recipients_for_cooldown(
                 logger.debug(
                     "event_alert_semantic_cooldown_check symbol=%s canonical_event_key=%s "
                     "semantic_family=%s last_sent_at=%s cooldown_seconds=%s allowed=%s "
-                    "allow_reason=%s",
+                    "allow_reason=%s urgency_increased=%s material_movement_increased=%s "
+                    "new_news_driver=%s previous_movement_percent=%s "
+                    "current_movement_percent=%s previous_news_count=%s current_news_count=%s",
                     normalize_symbol(symbol),
                     canonical_event_key,
                     semantic_family,
@@ -2528,6 +2563,13 @@ async def _filter_event_recipients_for_cooldown(
                     semantic_cooldown_seconds,
                     semantic_allowed,
                     semantic_allow_reason,
+                    semantic_escalation_details.get("urgency_increased"),
+                    semantic_escalation_details.get("material_movement_increased"),
+                    semantic_escalation_details.get("new_news_driver"),
+                    semantic_escalation_details.get("previous_movement_percent"),
+                    semantic_escalation_details.get("current_movement_percent"),
+                    semantic_escalation_details.get("previous_news_count"),
+                    semantic_escalation_details.get("current_news_count"),
                 )
                 if not semantic_allowed:
                     _count_suppression(
@@ -2546,12 +2588,16 @@ async def _filter_event_recipients_for_cooldown(
                     logger.debug(
                         "event_alert_suppressed symbol=%s canonical_event_key=%s "
                         "semantic_family=%s suppression_reason=%s "
-                        "cooldown_remaining_seconds=%s",
+                        "cooldown_remaining_seconds=%s urgency_increased=%s "
+                        "material_movement_increased=%s new_news_driver=%s",
                         normalize_symbol(symbol),
                         canonical_event_key,
                         semantic_family,
                         SUPPRESSION_SEMANTIC_COOLDOWN,
                         semantic_remaining,
+                        semantic_escalation_details.get("urgency_increased"),
+                        semantic_escalation_details.get("material_movement_increased"),
+                        semantic_escalation_details.get("new_news_driver"),
                     )
                     continue
                 if semantic_allow_reason:

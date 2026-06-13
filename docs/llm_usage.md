@@ -150,6 +150,10 @@ Avoidable LLM-call checks:
 - A resolved market event may have at most one attached `event_ai_analyses` row with
   `analysis_type = 'event_analysis'`; many alert delivery rows should reference that same analysis
   id.
+- Backend semantic canonicalization runs after validation and before delivery. It may replace broad
+  LLM keys such as `news_catalyst`, `price_movement`, or `volatility` with deterministic semantic
+  families using the raw key, alert copy, and selected real related-news context; this does not add
+  another LLM call.
 - If a repeated check creates a fresh successful LLM attempt for an already-known market event, the
   fresh attempt must remain unattached and delivery must reuse the existing attached analysis id and
   sanitized text.

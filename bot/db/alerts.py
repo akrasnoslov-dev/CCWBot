@@ -8,7 +8,7 @@ eligibility policy, or schema/model declarations.
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,16 +123,26 @@ async def get_latest_sent_event_alert_for_event_key(
     symbol: str,
     canonical_event_key: str,
     alert_type: str,
+    semantic_family: str | None = None,
 ) -> Alert | None:
-    """Return latest sent delivery row for a user+symbol+canonical event key."""
+    """Return latest sent delivery row for a user+symbol+semantic identity."""
+    identity_filters = [MarketEvent.event_key == canonical_event_key]
+    if semantic_family:
+        identity_filters.append(
+            and_(
+                AlertDeliveryOutcome.semantic_family == semantic_family,
+                AlertDeliveryOutcome.status == "delivered",
+            )
+        )
     statement = (
         select(Alert)
         .join(MarketEvent, Alert.market_event_id == MarketEvent.id)
+        .outerjoin(AlertDeliveryOutcome, AlertDeliveryOutcome.alert_id == Alert.id)
         .where(Alert.user_id == user_id)
         .where(Alert.symbol == symbol.upper())
         .where(Alert.alert_type == alert_type)
         .where(Alert.status == "sent")
-        .where(MarketEvent.event_key == canonical_event_key)
+        .where(or_(*identity_filters))
         .order_by(Alert.created_at.desc(), Alert.id.desc())
         .limit(1)
     )

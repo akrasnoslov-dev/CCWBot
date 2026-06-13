@@ -80,6 +80,7 @@ def canonicalize_event_key(
     raw_event_key: str | None,
     title: str | None = None,
     message_body: str | None = None,
+    related_news: list[dict[str, Any]] | None = None,
 ) -> CanonicalEventKey:
     """Return a stable backend key for semantic event identity."""
     normalized_symbol = normalize_symbol(symbol)
@@ -96,6 +97,7 @@ def canonicalize_event_key(
         canonical or raw,
         title=title,
         message_body=message_body,
+        related_news=related_news,
     )
     if not canonical:
         return CanonicalEventKey(
@@ -132,6 +134,7 @@ def normalize_event_semantic_family(
     *,
     title: str | None = None,
     message_body: str | None = None,
+    related_news: list[dict[str, Any]] | None = None,
 ) -> str | None:
     """Map raw event wording to a deterministic backend-owned semantic family."""
     normalized_symbol = normalize_symbol(symbol)
@@ -140,9 +143,58 @@ def normalize_event_semantic_family(
         _normalize_event_key_text(str(title or "")),
         _normalize_event_key_text(str(message_body or "")),
     ]
+    for item in related_news or []:
+        if not isinstance(item, dict):
+            continue
+        parts.extend(
+            [
+                _normalize_event_key_text(str(item.get("title") or "")),
+                _normalize_event_key_text(str(item.get("source") or "")),
+                _normalize_event_key_text(str(item.get("url") or item.get("link") or "")),
+            ]
+        )
     text = _replace_symbol_aliases(_collapse_event_key("_".join(part for part in parts if part)))
     tokens = {token for token in text.split("_") if token and token != normalized_symbol}
     phrases = f"_{text}_"
+
+    if normalized_symbol == "btc" and (
+        tokens.intersection(
+            {
+                "quantum",
+                "security",
+                "cryptography",
+                "encryption",
+                "protocol",
+                "vulnerability",
+                "vulnerabilities",
+                "exploit",
+                "exploits",
+                "attack",
+                "attacks",
+                "threat",
+                "threats",
+            }
+        )
+        and tokens.intersection(
+            {
+                "quantum",
+                "security",
+                "cryptography",
+                "encryption",
+                "vulnerability",
+                "vulnerabilities",
+                "exploit",
+                "exploits",
+                "attack",
+                "attacks",
+                "threat",
+                "threats",
+                "risk",
+                "risks",
+            }
+        )
+    ):
+        return "protocol_security_risk"
 
     if _contains_any_phrase(
         phrases,
@@ -164,8 +216,57 @@ def normalize_event_semantic_family(
     ):
         return "network_mining"
 
-    if tokens.intersection({"volatility", "volatile", "choppy", "whipsaw"}):
-        return "volatility"
+    if _contains_any_phrase(
+        phrases,
+        {
+            "key_level",
+            "price_level",
+            "near_level",
+            "near_key_level",
+            "support_resistance",
+            "support_level",
+            "resistance_level",
+            "holds_near",
+            "hold_near",
+            "price_holds",
+            "price_hold",
+            "stays_around",
+            "stays_near",
+            "volatility_around",
+            "around_level",
+        },
+    ) or (
+        tokens.intersection(
+            {
+                "near",
+                "around",
+                "hovering",
+                "holds",
+                "hold",
+                "stays",
+                "range",
+                "rangebound",
+                "sideways",
+                "consolidation",
+                "support",
+                "resistance",
+                "level",
+                "levels",
+            }
+        )
+        and tokens.intersection(
+            {
+                "price",
+                "market",
+                "volatility",
+                "support",
+                "resistance",
+                "level",
+                "levels",
+            }
+        )
+    ):
+        return "price_level_range"
 
     if _contains_any_phrase(
         phrases,
@@ -237,6 +338,9 @@ def normalize_event_semantic_family(
     ):
         return "price_uptrend"
 
+    if tokens.intersection({"volatility", "volatile", "choppy", "whipsaw"}):
+        return "volatility"
+
     if tokens.intersection({"news", "headline", "headlines", "catalyst"}):
         return "news_catalyst"
 
@@ -255,12 +359,15 @@ def _contains_any_phrase(text: str, phrases: set[str]) -> bool:
 
 def with_canonical_event_key(
     decision: EventAnalysisDecision,
+    *,
+    related_news: list[dict[str, Any]] | None = None,
 ) -> tuple[EventAnalysisDecision, CanonicalEventKey]:
     canonical = canonicalize_event_key(
         decision.symbol,
         decision.event_key,
         title=decision.title,
         message_body=decision.message_body,
+        related_news=related_news,
     )
     if decision.event_key == canonical.canonical_event_key:
         return decision, canonical
