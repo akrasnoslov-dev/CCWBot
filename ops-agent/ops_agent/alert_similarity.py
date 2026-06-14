@@ -31,6 +31,12 @@ RANDOM_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 NA_RE = re.compile(r"(?<![a-z0-9])n/a(?![a-z0-9])", re.IGNORECASE)
+OLD_GENERIC_PRICE_CHANGE_LABEL_RE = re.compile(
+    r"(?im)^\s*(?:[•*\-]\s*)?price change\s*:"
+)
+OLD_GENERIC_MARKET_CHANGE_LABEL_RE = re.compile(
+    r"(?im)^\s*(?:[•*\-]\s*)?(?:btc|market) change\s*:"
+)
 PLACEHOLDER_ISSUE_PATTERNS = (
     (re.compile(r"(?<![a-z0-9])unknown(?![a-z0-9])", re.IGNORECASE), "contains_unknown"),
     (
@@ -356,9 +362,9 @@ def _quality_issues(
         issues.append("old_since_last_btc_alert_label")
     if is_event_alert and "analysed-window change" in lowered:
         issues.append("old_analysed_window_change_label")
-    if is_event_alert and "price change" in lowered:
+    if is_event_alert and OLD_GENERIC_PRICE_CHANGE_LABEL_RE.search(full_text):
         issues.append("old_generic_price_change_label")
-    if is_event_alert and ("btc change" in lowered or "market change" in lowered):
+    if is_event_alert and OLD_GENERIC_MARKET_CHANGE_LABEL_RE.search(full_text):
         issues.append("old_generic_market_change_label")
     if is_event_alert and "24h change" in lowered:
         issues.append("old_24h_change_label")

@@ -94,6 +94,20 @@ def test_alert_quality_summary_uses_token_boundary_placeholder_regexes():
     assert "~* '(^|[^a-z0-9])null([^a-z0-9]|$)'" in query.sql
 
 
+def test_old_price_change_label_queries_use_line_aware_regex():
+    user_impact = next(query for query in QUERIES if query.name == "user_impact_summary")
+    quality = next(query for query in QUERIES if query.name == "alert_quality_summary")
+
+    expected = (
+        "~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?"
+        "price change[[:space:]]*:'"
+    )
+    assert expected in user_impact.sql
+    assert expected in quality.sql
+    assert "LIKE '%price change%'" not in user_impact.sql
+    assert "LIKE '%price change%'" not in quality.sql
+
+
 def test_alert_repetition_detectors_unknown_when_evidence_missing():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),

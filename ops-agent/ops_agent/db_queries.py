@@ -52,7 +52,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "OR lower(coalesce(pa.message, '')) LIKE '%null%' "
         "OR lower(coalesce(pa.message, '')) LIKE '%since last btc alert%' "
         "OR lower(coalesce(pa.message, '')) LIKE '%analysed-window change%' "
-        "OR lower(coalesce(pa.message, '')) LIKE '%price change%'"
+        "OR coalesce(pa.message, '') ~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?price change[[:space:]]*:'"
         ")) AS users_affected_by_content_quality_issues "
         "FROM users u LEFT JOIN period_alerts pa ON pa.user_id = u.id",
     ),
@@ -297,7 +297,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
         "AND lower(coalesce(a.message, '')) LIKE '%analysed-window change%') AS old_analysed_window_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
-        "AND lower(coalesce(a.message, '')) LIKE '%price change%') AS old_generic_price_change_label, "
+        "AND coalesce(a.message, '') ~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?price change[[:space:]]*:') AS old_generic_price_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
         "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
         ")) AS empty_related_context, "

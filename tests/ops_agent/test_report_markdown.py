@@ -70,7 +70,10 @@ def test_decision_report_context_renders_required_decision_sections():
         "evidence/db/event_alert_regression_checks.json": {
             "status": "critical",
             "placeholder_issue_counts": {"contains_n_a": 451},
-            "old_label_issue_counts": {"old_since_last_btc_alert_label": 451},
+            "old_label_issue_counts": {
+                "old_since_last_btc_alert_label": 451,
+                "old_generic_price_change_label": 3,
+            },
             "same_family_repeat_noise_groups": 1,
             "same_family_allowed_escalation_groups": 1,
         },
@@ -125,7 +128,7 @@ def test_decision_report_context_renders_required_decision_sections():
     assert repeat_row in markdown
     assert delivery_gap_row in markdown
     assert "| Bad placeholder text | 451 | User-facing copy regression |" in markdown
-    assert "| Old/confusing percentage labels | 451 | User-facing copy regression |" in markdown
+    assert "| Old/confusing percentage labels | 454 | User-facing copy regression |" in markdown
     assert "| Telegram failed | 2 | 0.4% |" in markdown
     assert "| semantic_cooldown | 7 | 100.0% |" in markdown
     assert "## Confirmed Findings" in markdown

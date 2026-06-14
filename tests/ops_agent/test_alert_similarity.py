@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
 from ops_agent.alert_similarity import build_alert_evidence_payloads, normalize_alert_text
 from ops_agent.schemas import Period
 
@@ -164,6 +165,53 @@ def test_alert_quality_placeholder_detection_uses_token_boundaries():
 
     assert "contains_null" not in issues
     assert "contains_unknown" not in issues
+
+
+@pytest.mark.parametrize(
+    "alert_message",
+    [
+        "Price change: +1.20%\nNot financial advice.",
+        "• Price change: -2.40%\nNot financial advice.",
+        "- Price change: +0.80%\nNot financial advice.",
+        "BTC Event Alert\n\nPrice change: +1.20%\nNot financial advice.",
+    ],
+)
+def test_alert_quality_detects_old_price_change_label_only_as_label(alert_message):
+    payloads = build_alert_evidence_payloads(
+        [_row(alert_message=alert_message)],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {
+        row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]
+    }
+
+    assert "old_generic_price_change_label" in issues
+
+
+@pytest.mark.parametrize(
+    "alert_message",
+    [
+        "A price change alone is not enough.",
+        "This price change may be related to broader market conditions.",
+        "The price change is still small.",
+    ],
+)
+def test_alert_quality_ignores_price_change_in_normal_sentences(alert_message):
+    payloads = build_alert_evidence_payloads(
+        [_row(alert_message=alert_message)],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {
+        row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]
+    }
+
+    assert "old_generic_price_change_label" not in issues
 
 
 def test_exact_and_similar_alert_groups_are_derived():
