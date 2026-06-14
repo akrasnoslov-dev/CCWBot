@@ -563,8 +563,9 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
 
     message = payload["plain_text"]
     html_message = payload["html_text"] or ""
-    assert "Since last BTC alert: +1.20%" in message
-    assert "3h change: -2.40%" in message
+    assert "Since last alert/message: +1.20%" in message
+    assert "3h market move: -2.40%" in message
+    assert "Since last BTC alert" not in message
     assert "24h change" not in message
     assert "Price change" not in message
     assert "chg24h" not in message
@@ -572,10 +573,41 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
     assert "Debug:" not in message
     assert "move=" not in message
     assert "Not financial advice." in message
-    assert "Since last BTC alert: +1.20%" in html_message
-    assert "3h change: -2.40%" in html_message
+    assert "Since last alert/message: +1.20%" in html_message
+    assert "3h market move: -2.40%" in html_message
+    assert "Since last BTC alert" not in html_message
     assert "24h change" not in html_message
     assert "Price change" not in html_message
+    assert_no_event_placeholders(message)
+
+
+@pytest.mark.parametrize(
+    ("minutes", "expected_label"),
+    [
+        (30, "30m market move"),
+        (45, "45m market move"),
+        (60, "1h market move"),
+        (180, "3h market move"),
+    ],
+)
+def test_event_alert_payload_uses_actual_analysed_window_label(minutes, expected_label):
+    payload = alerts._build_event_alert_payload(
+        decision=event_decision(),
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "analysed_window_minutes": minutes,
+                "chg_window": 1.5,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert f"{expected_label}: +1.50%" in message
+    assert "Analysed-window change" not in message
+    assert "Price change" not in message
+    assert "Since last BTC alert" not in message
     assert_no_event_placeholders(message)
 
 
@@ -595,14 +627,121 @@ def test_event_alert_payload_hides_missing_market_context_fields():
     message = payload["plain_text"]
     html_message = payload["html_text"] or ""
     assert "Price: $100,000.00" in message
+    assert "Since last alert/message:" not in message
     assert "Since last BTC alert:" not in message
     assert "market move:" not in message
     assert "change:" not in message
     assert "24h change" not in message
     assert_no_event_placeholders(message)
+    assert "Since last alert/message:" not in html_message
     assert "Since last BTC alert:" not in html_message
     assert "market move:" not in html_message
     assert_no_event_placeholders(html_message)
+
+
+def test_event_alert_payload_hides_placeholder_text_from_llm_fields():
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_volatility",
+        title="BTC context unknown",
+        message_body="The current driver is unavailable.",
+        related_news_ids=[],
+        possible_action="Review null details later.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"price": 100000.0}},
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "BTC market event" in message
+    assert "Market conditions changed." in message
+    assert "Review the situation calmly and avoid impulsive decisions." in message
+    assert_no_event_placeholders(message)
+
+
+def test_event_alert_small_analysed_window_move_avoids_dramatic_wording():
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_volatility",
+        title="BTC crash panic as price explosion spreads",
+        message_body=(
+            "BTC may collapse, start collapsing, or surge despite a small analysed-window move."
+        ),
+        related_news_ids=[],
+        possible_action="Watch calmly if the market meltdown language gets explosive.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "analysed_window_minutes": 180,
+                "chg_window": 0.7,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"].lower()
+    for term in (
+        "crash",
+        "panic",
+        "explodes",
+        "explosion",
+        "explosive",
+        "collapse",
+        "collapsing",
+        "surge",
+        "meltdown",
+        "bloodbath",
+        "moon",
+    ):
+        assert term not in message
+    assert "3h market move: +0.70%" in payload["plain_text"]
+    assert "Not financial advice." in payload["plain_text"]
+
+
+def test_event_alert_material_analysed_window_move_keeps_dramatic_wording():
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_volatility",
+        title="BTC surge remains notable",
+        message_body="BTC may collapse if the move accelerates.",
+        related_news_ids=[],
+        possible_action="Watch the market calmly.",
+        urgency="high",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "analysed_window_minutes": 180,
+                "chg_window": 2.5,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "BTC surge remains notable" in message
+    assert "BTC may collapse if the move accelerates." in message
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
