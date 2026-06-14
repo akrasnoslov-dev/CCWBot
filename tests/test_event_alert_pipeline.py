@@ -671,10 +671,12 @@ def test_event_alert_small_analysed_window_move_avoids_dramatic_wording():
         symbol="BTC",
         should_alert=True,
         event_key="btc_price_volatility",
-        title="BTC crash panic as price explodes",
-        message_body="BTC may collapse or surge despite a small analysed-window move.",
+        title="BTC crash panic as price explosion spreads",
+        message_body=(
+            "BTC may collapse, start collapsing, or surge despite a small analysed-window move."
+        ),
         related_news_ids=[],
-        possible_action="Watch calmly if the market meltdown language spreads.",
+        possible_action="Watch calmly if the market meltdown language gets explosive.",
         urgency="normal",
         confidence="medium",
         reason_for_no_alert=None,
@@ -697,7 +699,10 @@ def test_event_alert_small_analysed_window_move_avoids_dramatic_wording():
         "crash",
         "panic",
         "explodes",
+        "explosion",
+        "explosive",
         "collapse",
+        "collapsing",
         "surge",
         "meltdown",
         "bloodbath",
@@ -706,6 +711,37 @@ def test_event_alert_small_analysed_window_move_avoids_dramatic_wording():
         assert term not in message
     assert "3h market move: +0.70%" in payload["plain_text"]
     assert "Not financial advice." in payload["plain_text"]
+
+
+def test_event_alert_material_analysed_window_move_keeps_dramatic_wording():
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_volatility",
+        title="BTC surge remains notable",
+        message_body="BTC may collapse if the move accelerates.",
+        related_news_ids=[],
+        possible_action="Watch the market calmly.",
+        urgency="high",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 100000.0,
+                "analysed_window_minutes": 180,
+                "chg_window": 2.5,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "BTC surge remains notable" in message
+    assert "BTC may collapse if the move accelerates." in message
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():

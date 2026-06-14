@@ -588,10 +588,13 @@ DRAMATIC_EVENT_WORD_REPLACEMENTS = (
     (re.compile(r"(?i)\bmeltdown\b"), "stress"),
     (re.compile(r"(?i)\bpanic(?:s|ked|king)?\b"), "stress"),
     (re.compile(r"(?i)\bcrash(?:es|ed|ing)?\b"), "move"),
-    (re.compile(r"(?i)\bcollapse(?:s|d)?\b"), "move"),
+    (re.compile(r"(?i)\bcollaps(?:e|es|ed|ing)\b"), "move"),
     (re.compile(r"(?i)\bplung(?:e|es|ed|ing)\b"), "move lower"),
     (re.compile(r"(?i)\bsurg(?:e|es|ed|ing)\b"), "move higher"),
-    (re.compile(r"(?i)\bexplod(?:e|es|ed|ing)\b"), "move higher"),
+    (
+        re.compile(r"(?i)\b(?:explod(?:e|es|ed|ing)|explosion|explosive(?:s)?)\b"),
+        "move higher",
+    ),
     (re.compile(r"(?i)\bmoon(?:s|ed|ing)?\b"), "move higher"),
     (re.compile(r"(?i)\bskyrocket(?:s|ed|ing)?\b"), "move higher"),
 )
@@ -1587,6 +1590,7 @@ def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
             "analysed_window_minutes": market_data.get("analysed_window_minutes"),
             "analysed_window_change_percent": market_data.get("chg_window"),
             "twenty_four_hour_change_percent": market_data.get("chg24h"),
+            "stable_related_news_ids": [_news_driven_identity(news_item)],
             "news_key": str(news_item.get("news_key") or "").strip() or None,
             "dedup_group_id": str(news_item.get("dedup_group_id") or "").strip() or None,
             "published_at": str(input_payload.get("timestamp_utc") or ""),

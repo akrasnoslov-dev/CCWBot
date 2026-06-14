@@ -142,6 +142,30 @@ def test_alert_quality_groups_placeholder_and_missing_market_context():
     assert regression["old_label_issue_counts"]["old_since_last_btc_alert_label"] == 82
 
 
+def test_alert_quality_placeholder_detection_uses_token_boundaries():
+    payloads = build_alert_evidence_payloads(
+        [
+            _row(
+                alert_message=(
+                    "BTC Event Alert. Nullification risk is known, with no placeholder token."
+                ),
+                delivery_count=1,
+                sent_delivery_count=1,
+            )
+        ],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {
+        row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]
+    }
+
+    assert "contains_null" not in issues
+    assert "contains_unknown" not in issues
+
+
 def test_exact_and_similar_alert_groups_are_derived():
     rows = [
         _row(
@@ -264,3 +288,85 @@ def test_suppression_effectiveness_marks_allowed_escalation_separately():
     assert groups[0]["allowed_escalation_reasons"] == {"urgency_increased": 1}
     assert regression["same_family_repeat_noise_groups"] == 0
     assert regression["same_family_allowed_escalation_groups"] == 1
+
+
+def test_suppression_effectiveness_marks_material_movement_escalation_separately():
+    rows = [
+        _row(
+            first_delivery_at="2026-06-01T10:01:00Z",
+            last_delivery_at="2026-06-01T10:01:00Z",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=-1.0,
+                semantic_family="price_downtrend",
+                stable_related_news_ids=["old"],
+            ),
+        ),
+        _row(
+            market_event_id=11,
+            event_ai_analysis_id=101,
+            event_instance_key="instance-b",
+            input_hash="input-b",
+            analysis_created_at="2026-06-01T11:00:00Z",
+            first_delivery_at="2026-06-01T11:01:00Z",
+            last_delivery_at="2026-06-01T11:01:00Z",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=-3.6,
+                semantic_family="price_downtrend",
+                stable_related_news_ids=["old"],
+            ),
+        ),
+    ]
+
+    payloads = build_alert_evidence_payloads(
+        rows,
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+    groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
+
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
+    assert groups[0]["allowed_escalation_reasons"] == {"material_movement_increased": 1}
+
+
+def test_suppression_effectiveness_marks_new_news_driver_escalation_separately():
+    rows = [
+        _row(
+            first_delivery_at="2026-06-01T10:01:00Z",
+            last_delivery_at="2026-06-01T10:01:00Z",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=-3.0,
+                semantic_family="news_catalyst",
+                stable_related_news_ids=["old"],
+            ),
+        ),
+        _row(
+            market_event_id=11,
+            event_ai_analysis_id=101,
+            event_instance_key="instance-b",
+            input_hash="input-b",
+            analysis_created_at="2026-06-01T11:00:00Z",
+            first_delivery_at="2026-06-01T11:01:00Z",
+            last_delivery_at="2026-06-01T11:01:00Z",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=-3.2,
+                semantic_family="news_catalyst",
+                stable_related_news_ids=["old", "new"],
+            ),
+        ),
+    ]
+
+    payloads = build_alert_evidence_payloads(
+        rows,
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+    groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
+
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
+    assert groups[0]["allowed_escalation_reasons"] == {"new_news_driver": 1}

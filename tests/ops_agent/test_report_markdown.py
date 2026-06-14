@@ -111,8 +111,8 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "## Event Alert Regression Checks" in markdown
     assert "Status: Critical" in markdown
     duplicate_row = (
-        "| Duplicate attached successful event analyses | 1 | "
-        "Critical invariant regression |"
+        "| Affected market events with duplicate attached analyses | 1 | "
+        "Critical invariant regression; 1 extra successful analyses |"
     )
     repeat_row = (
         "| Same-family repeats without escalation | 1 | Likely alert noise; "

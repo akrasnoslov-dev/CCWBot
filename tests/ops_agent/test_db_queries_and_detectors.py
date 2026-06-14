@@ -71,6 +71,7 @@ def test_event_alert_delivery_explanation_gap_query_accepts_expected_outcomes():
     )
 
     assert "should_alert = true" in query.sql
+    assert "AND market_event_id IS NOT NULL" in query.sql
     assert "status = 'sent'" in query.sql
     for expected_status in (
         "delivered",
@@ -83,6 +84,14 @@ def test_event_alert_delivery_explanation_gap_query_accepts_expected_outcomes():
         "not_scheduled",
     ):
         assert expected_status in query.sql
+
+
+def test_alert_quality_summary_uses_token_boundary_placeholder_regexes():
+    query = next(query for query in QUERIES if query.name == "alert_quality_summary")
+
+    assert "~* '(^|[^a-z0-9])unknown([^a-z0-9]|$)'" in query.sql
+    assert "~* '(^|[^a-z0-9])unavailable([^a-z0-9]|$)'" in query.sql
+    assert "~* '(^|[^a-z0-9])null([^a-z0-9]|$)'" in query.sql
 
 
 def test_alert_repetition_detectors_unknown_when_evidence_missing():

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -555,3 +556,32 @@ def test_news_driven_wording_avoids_false_causality():
     assert all(term not in text for term in forbidden)
     assert "could be related" in text
     assert "not financial advice." in text
+
+
+def test_news_driven_numeric_context_persists_stable_news_identity():
+    now = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+    news_item = {
+        "news_item_id": 1,
+        "news_key": "btc",
+        "dedup_group_id": "btc",
+        "title": "Bitcoin ETF approval draws major exchange flows",
+        "source": "Example News",
+        "url": "https://example.test/btc",
+        "published_at": now,
+        "primary_symbol": "btc",
+        "category": "etf",
+        "impact_level": "high",
+    }
+    input_payload = alerts._build_news_driven_event_input(
+        analysis_id="news_driven_alert_btc_test",
+        symbol="btc",
+        news_item=news_item,
+        current_price=100000,
+        change_24h=1.0,
+        now=now,
+    )
+
+    context = json.loads(alerts._news_driven_numeric_context(input_payload, news_item))
+
+    assert context["semantic_family"] == "news_catalyst"
+    assert context["stable_related_news_ids"] == [alerts._news_driven_identity(news_item)]

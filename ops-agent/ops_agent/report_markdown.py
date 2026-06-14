@@ -303,7 +303,7 @@ def _user_impact_table(evidence: dict[str, Any]) -> list[str]:
         f"| Users who received Heartbeats | {_int(row.get('users_received_heartbeats'))} | Distinct recipients with heartbeat-linked alerts. |",
         f"| Users affected by delivery failures | {_int(row.get('users_affected_by_delivery_failures'))} | Distinct users with failed or retry-pending delivery rows. |",
         f"| Users affected by duplicate or noisy alerts | {_int(row.get('users_affected_by_duplicate_alerts'))} | Duplicate delivery rows by user and market event. |",
-        f"| Users affected by formatting/content quality issues | {_int(row.get('users_affected_by_content_quality_issues'))} | Event Alerts with placeholder text or missing numeric context. |",
+        f"| Users affected by formatting/content quality issues | {_int(row.get('users_affected_by_content_quality_issues'))} | Event Alerts with placeholder text or old/confusing percentage labels. |",
     ]
 
 
@@ -394,7 +394,10 @@ def _event_alert_regression_checks(
     cooldown = detector_by_id.get("cooldown_effectiveness_gap")
     delivery_gap = detector_by_id.get("event_alert_delivery_explanation_gaps")
 
-    duplicate_count = len(duplicate_rows)
+    duplicate_event_count = len(duplicate_rows)
+    duplicate_extra_analysis_count = sum(
+        max(_int(row.get("analysis_count")) - 1, 0) for row in duplicate_rows
+    )
     duplicate_samples = [
         str(row.get("market_event_id"))
         for row in duplicate_rows[:5]
@@ -416,14 +419,20 @@ def _event_alert_regression_checks(
     gap_count = sum(_int(row.get("gap_count")) for row in gap_rows)
 
     status = "OK"
-    if duplicate_count or gap_count or placeholder_counts or old_label_counts:
+    if duplicate_event_count or gap_count or placeholder_counts or old_label_counts:
         status = "Critical"
     elif repeat_noise_groups:
         status = "Warning"
 
     lines = [f"Status: {status}"]
     if not any(
-        [duplicate_count, gap_count, placeholder_counts, old_label_counts, repeat_noise_groups]
+        [
+            duplicate_event_count,
+            gap_count,
+            placeholder_counts,
+            old_label_counts,
+            repeat_noise_groups,
+        ]
     ):
         return lines + [
             "OK - no duplicate attached analyses, same-family repeat noise, unexplained delivery gaps, placeholder text, or old percentage labels were found in collected evidence."
@@ -434,8 +443,9 @@ def _event_alert_regression_checks(
             "| Check | Count | Interpretation | Recommended next action |",
             "|---|---:|---|---|",
             (
-                f"| Duplicate attached successful event analyses | {duplicate_count} | "
-                f"{'Critical invariant regression' if duplicate_count else 'OK'} | "
+                f"| Affected market events with duplicate attached analyses | {duplicate_event_count} | "
+                f"{'Critical invariant regression' if duplicate_event_count else 'OK'}"
+                f"{f'; {duplicate_extra_analysis_count} extra successful analyses' if duplicate_extra_analysis_count else ''} | "
                 "Keep one successful attached analysis per market event. |"
             ),
             (

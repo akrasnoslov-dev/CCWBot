@@ -31,6 +31,14 @@ RANDOM_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 NA_RE = re.compile(r"(?<![a-z0-9])n/a(?![a-z0-9])", re.IGNORECASE)
+PLACEHOLDER_ISSUE_PATTERNS = (
+    (re.compile(r"(?<![a-z0-9])unknown(?![a-z0-9])", re.IGNORECASE), "contains_unknown"),
+    (
+        re.compile(r"(?<![a-z0-9])unavailable(?![a-z0-9])", re.IGNORECASE),
+        "contains_unavailable",
+    ),
+    (re.compile(r"(?<![a-z0-9])null(?![a-z0-9])", re.IGNORECASE), "contains_null"),
+)
 
 STOPWORDS = {
     "alert",
@@ -338,12 +346,8 @@ def _quality_issues(
     issues: list[str] = []
     if NA_RE.search(lowered):
         issues.append("contains_n_a")
-    for token, issue in (
-        ("unknown", "contains_unknown"),
-        ("unavailable", "contains_unavailable"),
-        ("null", "contains_null"),
-    ):
-        if token in lowered:
+    for pattern, issue in PLACEHOLDER_ISSUE_PATTERNS:
+        if pattern.search(lowered):
             issues.append(issue)
     is_event_alert = str(row.get("alert_type") or "") == "event_alert" or row.get(
         "market_event_id"
@@ -749,10 +753,9 @@ def _event_alert_regression_checks(
     warnings: list[str],
 ) -> dict[str, Any]:
     payload = _base_payload(period, warnings)
-    issue_counts = {
-        str(row.get("issue")): _int(row.get("delivery_count"))
-        for row in quality_payload.get("issues") or []
-    }
+    issue_counts: Counter[str] = Counter()
+    for row in quality_payload.get("issues") or []:
+        issue_counts[str(row.get("issue"))] += _int(row.get("delivery_count"))
     placeholder_issues = {
         issue: count
         for issue, count in issue_counts.items()
