@@ -1,6 +1,6 @@
 """unique attached event analysis
 
-Revision ID: 0022_unique_attached_event_analysis
+Revision ID: 0022_unique_event_analysis
 Revises: 0021_alert_delivery_outcomes
 Create Date: 2026-06-13 00:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0022_unique_attached_event_analysis"
+revision: str = "0022_unique_event_analysis"
 down_revision: str | None = "0021_alert_delivery_outcomes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
