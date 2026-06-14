@@ -32,6 +32,10 @@ Before starting any non-trivial task, Codex must check whether one or more agent
 them when required, or explain why they were not needed. See
 `docs/codex_agent_workflow.md`.
 
+Locally installed Codex skills live under `C:\Users\Loki\.codex\skills\`, outside this
+repository. Use `supabase-postgres-best-practices` for PostgreSQL/schema/performance work and
+`requesting-code-review` for review checkpoints when available. See `docs/codex_skills.md`.
+
 ## Runtime Notes
 
 - `python main.py` remains the local bot entry point.
