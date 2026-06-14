@@ -19,8 +19,11 @@ Safe defaults:
 - Do not change product behavior unless explicitly requested.
 - Do not rename `bot/services/ai_agent_groq.py`.
 - Put new project/process documentation under `docs/`; keep only `README.md` and `AGENTS.md`
-  at the repository root.
-- Installed Codex skills live under `C:\Users\Loki\.codex\skills\`, outside this repository.
+  at the repository root. Use subtree README.md files only when the content belongs to that
+  local tool or package directory.
+- Codex skills are developer tooling only. Local user skills live under
+  `C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are
+  pinned by `skills-lock.json`.
 
 Product guardrails:
 

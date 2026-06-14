@@ -36,6 +36,7 @@ Primary context files:
 - `AGENTS.md`
 - `docs/README.md`
 - `docs/codex_instructions.md`
+- `docs/codex_skills.md`
 - `docs/release_checklist.md`
 - `docs/dev_ops_guide.md`
 - `README.md`
@@ -44,3 +45,4 @@ Primary context files:
 - `docs/observability.md`
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
+- `.agents/skills/README.md`

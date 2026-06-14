@@ -454,3 +454,4 @@ Documentation index: [docs/README.md](docs/README.md).
 Developer notes: [docs/development.md](docs/development.md).
 Read-only operational SQL snippets: [docs/observability.md](docs/observability.md).
 Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).
+Codex skill locations and usage notes: [docs/codex_skills.md](docs/codex_skills.md).
