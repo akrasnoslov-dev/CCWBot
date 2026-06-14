@@ -41,3 +41,15 @@ ruff check .
 python -m pytest tests/ -v
 docker compose config >/dev/null
 ```
+
+For Alembic migration changes, add:
+
+```bash
+python -m pytest tests/test_alembic_migrations.py -v
+docker compose up -d postgres
+docker compose run --rm bot alembic upgrade head
+```
+
+Alembic revision ids must be 32 characters or shorter because
+`alembic_version.version_num` is `VARCHAR(32)`. Use compact ids such as
+`0022_unique_event_analysis`; `docker compose config` alone does not validate migrations.

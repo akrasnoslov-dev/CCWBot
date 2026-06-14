@@ -23,6 +23,22 @@ docker compose config >/dev/null
 These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
 Use dummy values from `.env.example` for Compose validation. Do not publish
 `docker compose config` output generated from a real `.env`, because Compose can expand secrets.
+`docker compose config` validates Compose syntax only; it does not prove that Alembic migrations
+apply successfully.
+
+For database migrations, also run the migration guard and a real PostgreSQL-backed upgrade before
+merge:
+
+```bash
+python -m pytest tests/test_alembic_migrations.py -v
+docker compose up -d postgres
+docker compose run --rm bot alembic upgrade head
+```
+
+Alembic revision ids must be 32 characters or shorter because the default
+`alembic_version.version_num` column is `VARCHAR(32)`. Prefer compact numeric/descriptive ids such
+as `0022_unique_event_analysis`; long revision ids can break startup migrations before the bot
+starts.
 
 ## Codex Agent Workflow
 
@@ -102,11 +118,37 @@ repository. Use `supabase-postgres-best-practices` for PostgreSQL/schema/perform
   same-family alerts stay inside the semantic cooldown unless urgency increases, analysed-window
   movement grows by the configured material delta, or selected stable news identity shows a new
   driver.
-- Migration `0022_unique_attached_event_analysis` enforces one attached `event_analysis` row per
+- Migration `0022_unique_event_analysis` enforces one attached `event_analysis` row per
   `market_event_id`. During upgrade it preserves evidence by setting `market_event_id=NULL` on
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
+
+## Local Migration Recovery
+
+If a local development database failed during an Alembic migration, inspect the current version
+before changing state:
+
+```bash
+docker compose exec postgres psql -U <user> -d <db> -c "select * from alembic_version;"
+```
+
+If the failed migration did not update `alembic_version`, apply the code fix and rerun:
+
+```bash
+docker compose up -d --build
+```
+
+or:
+
+```bash
+docker compose exec bot alembic upgrade head
+```
+
+If a developer manually widened the local `alembic_version.version_num` column and stamped the old
+long revision locally, treat that as local-dev-only repair work: inspect `alembic_version`, confirm
+the matching migration effects are present, then update the local stamp to the short revision id or
+rerun the migration from a clean local backup. Do not mutate production Alembic state manually.
 - Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
   outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
   wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal
