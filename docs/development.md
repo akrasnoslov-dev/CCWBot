@@ -48,9 +48,11 @@ Before starting any non-trivial task, Codex must check whether one or more agent
 them when required, or explain why they were not needed. See
 `docs/codex_agent_workflow.md`.
 
-Locally installed Codex skills live under `C:\Users\Loki\.codex\skills\`, outside this
-repository. Use `supabase-postgres-best-practices` for PostgreSQL/schema/performance work and
-`requesting-code-review` for review checkpoints when available. See `docs/codex_skills.md`.
+Codex skills are developer tooling, not runtime bot code. Local user skills live under
+`C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are
+pinned by `skills-lock.json`. Use `supabase-postgres-best-practices` for
+PostgreSQL/schema/performance work, `requesting-code-review` for review checkpoints when
+available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_skills.md`.
 
 ## Runtime Notes
 

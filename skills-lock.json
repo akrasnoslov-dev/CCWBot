@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "md-docs": {
+      "source": "paulrberg/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/md-docs/SKILL.md",
+      "computedHash": "d878986fb9189599a8facaf78703a8eac955a2f9c296d7d89302ee17cf48ec06"
+    }
+  }
+}
