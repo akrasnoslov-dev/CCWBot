@@ -242,7 +242,7 @@ Use these planned-work mappings when supported by evidence:
 
 * PR2: suppression observability/reasons, alert wording clarity, docs updates.
 * PR3: semantic event family normalization, stable event identity, filtered alert history, optional Telegram topics per coin backlog.
-* Separate n/a Event Alert fix: news-driven alerts must populate the same market context as regular `event_analysis` alerts so users never see `n/a`, `unknown`, `unavailable`, or `null` in Event Alert messages.
+* Event Alert cleanup regression checks: Event Alert copy must use clear percentage labels, omit missing numeric fields instead of rendering `n/a`, `unknown`, `unavailable`, or `null`, and report duplicate analyses, same-family repeat noise, unexplained delivery gaps, placeholders, and old labels.
 
 ## Percentages and missing data
 
@@ -267,7 +267,7 @@ Track at minimum:
 * alerts containing `unknown`;
 * alerts containing `unavailable`;
 * alerts containing `null`;
-* alerts with missing numeric market context;
+* alerts with old/confusing percentage labels;
 * alerts with empty related context;
 * malformed formatting.
 

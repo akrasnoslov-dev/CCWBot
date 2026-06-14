@@ -10,6 +10,10 @@ CCWBot has two separate agent concepts:
 The Telegram bot does not load `agents/*.toml` at runtime. Those files are a durable Codex
 workflow contract.
 
+Codex skills are separate local tooling. Installed skills live under
+`C:\Users\Loki\.codex\skills\`; see `docs/codex_skills.md`. Use them when relevant, but do not
+treat them as runtime bot code or replacements for the required project agents below.
+
 ## Current Agents
 
 - `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
@@ -21,6 +25,13 @@ workflow contract.
 - `db_migration_guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
 - `telegram_stars_payments_agent`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
 - `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
+
+## Installed Skills
+
+- `supabase-postgres-best-practices`: use alongside `db_migration_guardian` for PostgreSQL
+  schema, query, index, connection, RLS/security, and performance work.
+- `requesting-code-review`: use at review checkpoints after major features, after
+  subagent-driven tasks, and before merge or PR finalization when review support is available.
 
 ## Routing Rules
 

@@ -21,6 +21,19 @@ docker compose config >/dev/null
 ```
 
 Use `.env.example` for Compose validation when possible. Do not paste expanded Compose output.
+`docker compose config` is not migration verification.
+
+For PRs that include Alembic migrations, also confirm:
+
+```bash
+python -m pytest tests/test_alembic_migrations.py -v
+docker compose up -d postgres
+docker compose run --rm bot alembic upgrade head
+```
+
+Alembic revision ids must be 32 characters or shorter because
+`alembic_version.version_num` is `VARCHAR(32)`. Prefer compact numeric/descriptive ids, for example
+`0022_unique_event_analysis`.
 
 ## PR Description Must Include
 
@@ -28,6 +41,7 @@ Use `.env.example` for Compose validation when possible. Do not paste expanded C
 - Files changed
 - Behavior confirmation
 - Database/schema confirmation
+- Migration compatibility confirmation, when migrations are included
 - Verification performed
 - Manual verification status
 - Protected files changed and why

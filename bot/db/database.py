@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -922,6 +923,19 @@ class EventAiAnalysis(Base):
             "market_event_id",
             "input_hash",
             name="uq_event_ai_analyses_market_event_input_hash",
+        ),
+        Index(
+            "uq_event_ai_analyses_one_attached_event_analysis_per_event",
+            "market_event_id",
+            unique=True,
+            sqlite_where=text(
+                "market_event_id IS NOT NULL "
+                "AND analysis_type = 'event_analysis'"
+            ),
+            postgresql_where=text(
+                "market_event_id IS NOT NULL "
+                "AND analysis_type = 'event_analysis'"
+            ),
         ),
         {"comment": "One reusable AI analysis for a market event and exact input payload."},
     )

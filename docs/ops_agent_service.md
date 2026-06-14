@@ -53,6 +53,25 @@ Then inspect referenced `evidence/**` files only as needed to verify or expand f
 5. Mark success only after the report exists and the bundle is complete, unless the operator
    explicitly accepts a partial report.
 
+## Event Alert Regression Section
+
+Generated decision context includes `## Event Alert Regression Checks`. The section is Markdown-only
+and summarizes:
+
+- duplicate attached successful Event Alert analyses for one market event;
+- same-family Event Alerts delivered inside cooldown without escalation evidence;
+- same-family repeats allowed by urgency increase, material analysed-window movement increase, or
+  new stable related-news driver;
+- `should_alert=true` analyses with no sent delivery and no persisted suppression, cooldown,
+  failure, rate-limit, filtered, not-scheduled, or no-recipient outcome;
+- user-facing Event Alert placeholders such as `n/a`, `unknown`, `unavailable`, or `null`;
+- old/confusing percentage labels such as `Since last BTC alert`, `Analysed-window change`, and
+  generic `Price change`.
+
+An `OK` status means none of those regressions were found in collected evidence. `Warning` means
+likely same-family repeat noise needs review. `Critical` means a core invariant, observability, or
+user-facing copy regression was found.
+
 ## Safety Rules
 
 - Do not paste raw bundle JSON, logs, Telegram text, IDs, usernames, payment IDs, charge IDs,

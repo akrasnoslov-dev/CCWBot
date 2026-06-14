@@ -14,6 +14,7 @@ from this index or from `README.md` when it is useful for users.
 - `project_context.md`: product, stack, invariants, and primary context map.
 - `codex_instructions.md`: short Codex operating rules for this repository.
 - `codex_agent_workflow.md`: task-review agent routing and review workflow.
+- `codex_skills.md`: locally installed Codex skills and when to use them.
 
 ## Development And Release
 
