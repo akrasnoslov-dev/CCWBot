@@ -6,8 +6,9 @@ Before non-trivial work:
 
 1. Read `AGENTS.md` and `agents/routing.toml`.
 2. Use required review agents when routing says they apply.
-3. Check current branch and worktree status.
-4. Do not overwrite uncommitted user work.
+3. Use installed Codex skills from `docs/codex_skills.md` when they match the task.
+4. Check current branch and worktree status.
+5. Do not overwrite uncommitted user work.
 
 Safe defaults:
 
@@ -19,6 +20,7 @@ Safe defaults:
 - Do not rename `bot/services/ai_agent_groq.py`.
 - Put new project/process documentation under `docs/`; keep only `README.md` and `AGENTS.md`
   at the repository root.
+- Installed Codex skills live under `C:\Users\Loki\.codex\skills\`, outside this repository.
 
 Product guardrails:
 

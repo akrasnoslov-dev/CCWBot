@@ -112,6 +112,19 @@ Codex task-review agents live in `agents/*.toml`; routing rules live in
 - Use `devops_release_agent` for Docker, CI, config, health, dependencies, and deployment docs.
 - If no agent is relevant, state why in the PR description.
 
+## Installed Codex Skills
+Local Codex skills live outside this repository under `C:\Users\Loki\.codex\skills\`.
+They are developer tooling only and are not imported by `main.py` or `bot/`.
+
+- `supabase-postgres-best-practices`: use when writing, reviewing, or optimizing PostgreSQL
+  queries, schema designs, indexes, connection handling, RLS/security, or database performance.
+  This complements `db_migration_guardian`; it does not replace required routing agents.
+- `requesting-code-review`: use after completing major features or subagent-driven tasks, and
+  before merge/PR finalization when review support is available. For this project, combine it
+  with the required agents from `agents/routing.toml`.
+
+See `docs/codex_skills.md` for locations and usage notes.
+
 Mandatory agent examples:
 
 - Security-sensitive changes: `security_review_agent`.
