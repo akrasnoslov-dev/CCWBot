@@ -45,6 +45,33 @@ def test_weekly_report_without_disclaimer_is_accepted_after_append():
     assert decision.telegram_message.endswith("Not financial advice.")
 
 
+def test_rebranded_gram_symbol_is_accepted():
+    decision = validate_market_report_output(
+        _valid_report("daily"),
+        expected_report_type="daily",
+    )
+
+    assert [coin["symbol"] for coin in decision.coin_summaries] == [
+        "BTC",
+        "ETH",
+        "GRAM",
+        "SOL",
+    ]
+
+
+def test_legacy_ton_symbol_is_normalized_to_gram():
+    report = _valid_report("daily")
+    report["coin_summaries"] = [
+        {"symbol": "TON", "summary": "Legacy TON wording from the LLM."}
+    ]
+
+    decision = validate_market_report_output(report, expected_report_type="daily")
+
+    assert decision.coin_summaries == [
+        {"symbol": "GRAM", "summary": "Legacy TON wording from the LLM."}
+    ]
+
+
 def test_daily_report_advice_like_wording_is_accepted():
     decision = validate_market_report_output(
         _valid_report(
@@ -99,7 +126,7 @@ def test_direct_trading_wording_is_accepted(telegram_message):
 
 def test_wrong_symbol_is_rejected():
     report = _valid_report("daily")
-    report["coin_summaries"] = [{"symbol": "XRP", "summary": "XRP is moving."}]
+    report["coin_summaries"] = [{"symbol": "USDT", "summary": "USDT is moving."}]
 
     with pytest.raises(MarketReportValidationError, match="symbol is not active"):
         validate_market_report_output(report, expected_report_type="daily")

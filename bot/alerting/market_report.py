@@ -100,16 +100,16 @@ def _validate_coin_summaries(
     if not isinstance(value, list):
         raise MarketReportValidationError("coin_summaries must be an array")
 
-    allowed = {display_symbol(symbol) for symbol in active_symbols}
     summaries: list[dict[str, str]] = []
     for item in value:
         if not isinstance(item, dict):
             raise MarketReportValidationError("coin summary must be an object")
         symbol = _required_text(item.get("symbol"), "coin_summaries.symbol").upper()
-        if normalize_symbol(symbol) not in active_symbols or symbol not in allowed:
+        normalized_symbol = normalize_symbol(symbol)
+        if normalized_symbol not in active_symbols:
             raise MarketReportValidationError("coin summary symbol is not active")
         summary = _required_text(item.get("summary"), "coin_summaries.summary")
-        summaries.append({"symbol": symbol, "summary": summary})
+        summaries.append({"symbol": display_symbol(normalized_symbol), "summary": summary})
 
     if not summaries:
         raise MarketReportValidationError("coin_summaries must not be empty")
