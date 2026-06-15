@@ -16,7 +16,7 @@ Use this checklist for explicit `dev` -> `main` production release PRs.
 ```bash
 python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
 ruff check .
-python -m pytest tests/ -v
+python -m pytest tests/ -v -ra --durations=20
 docker compose config >/dev/null
 ```
 

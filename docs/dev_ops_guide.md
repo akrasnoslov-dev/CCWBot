@@ -16,7 +16,7 @@ Production runs from `main` on the Hetzner VPS at `/opt/CCWBot`. Local developme
 
 ```bash
 docker compose config >/dev/null
-python -m pytest tests/ -v
+python -m pytest tests/ -v -ra --durations=20
 ```
 
 Do not publish expanded Compose output from a real `.env`.
