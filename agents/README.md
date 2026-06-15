@@ -9,10 +9,12 @@ Routing rules live in `agents/routing.toml`. Before starting any non-trivial tas
 check those rules, use the required agents when relevant, or explicitly explain why a relevant
 agent was not used. High-risk areas must not skip agents silently.
 
-Local Codex skills are separate from these project agents and live under
-`C:\Users\Loki\.codex\skills\`. Use `supabase-postgres-best-practices` for PostgreSQL best
-practices and `requesting-code-review` for review checkpoints when relevant, but still follow
-the mandatory routing rules below. See `docs/codex_skills.md`.
+Codex skills are separate from these project agents. Local user skills live under
+`C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are
+pinned by `skills-lock.json`. Use `supabase-postgres-best-practices` for PostgreSQL best
+practices, `requesting-code-review` for review checkpoints, and `md-docs` for README.md/AGENTS.md
+maintenance when relevant, but still follow the mandatory routing rules below. See
+`docs/codex_skills.md`.
 
 Current agents:
 

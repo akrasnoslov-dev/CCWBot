@@ -113,8 +113,11 @@ Codex task-review agents live in `agents/*.toml`; routing rules live in
 - If no agent is relevant, state why in the PR description.
 
 ## Installed Codex Skills
-Local Codex skills live outside this repository under `C:\Users\Loki\.codex\skills\`.
-They are developer tooling only and are not imported by `main.py` or `bot/`.
+Codex skills are developer tooling only and are not imported by `main.py` or `bot/`.
+They can be installed either as local user skills or as project-copied skills:
+
+- Local user skills live under `C:\Users\Loki\.codex\skills\`.
+- Project-copied skills live under `.agents/skills/` and are pinned by `skills-lock.json`.
 
 - `supabase-postgres-best-practices`: use when writing, reviewing, or optimizing PostgreSQL
   queries, schema designs, indexes, connection handling, RLS/security, or database performance.
@@ -122,6 +125,9 @@ They are developer tooling only and are not imported by `main.py` or `bot/`.
 - `requesting-code-review`: use after completing major features or subagent-driven tasks, and
   before merge/PR finalization when review support is available. For this project, combine it
   with the required agents from `agents/routing.toml`.
+- `md-docs`: use for README.md and AGENTS.md refreshes. It enforces the split where README is
+  human-facing and AGENTS.md owns commands, workflows, and agent/developer context. It does not
+  maintain arbitrary Markdown files under `docs/`.
 
 See `docs/codex_skills.md` for locations and usage notes.
 
@@ -149,7 +155,8 @@ Optional agent examples:
 - `python main.py` and Docker Compose startup must keep working.
 - Update docs when setup, config, commands, dependencies, architecture, or behaviour changes.
 - Keep project and process documentation under `docs/`. Root `README.md` is the public entry
-  point, and root `AGENTS.md` stays at the repository root for agent tooling.
+  point, and root `AGENTS.md` stays at the repository root for agent tooling. Subtree README.md
+  files are acceptable when they document only that local tool or package directory.
 
 ## Verification
 Default checks:

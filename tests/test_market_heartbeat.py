@@ -146,6 +146,7 @@ def test_symbol_news_filter_selects_direct_altcoin_news_and_market_wide_news():
         {"title": "Crypto market sells off after Fed decision", "source": "B"},
         {"title": "Solana network outage hits validators", "source": "C"},
         {"title": "Toncoin ecosystem upgrade expands The Open Network", "source": "D"},
+        {"title": "GRAM token liquidity expands after TON rebrand", "source": "D2"},
         {"title": "Ethereum ETF inflows lift staking sentiment", "source": "E"},
     ]
 
@@ -155,10 +156,23 @@ def test_symbol_news_filter_selects_direct_altcoin_news_and_market_wide_news():
 
     assert "Solana network outage hits validators" in sol_titles
     assert "Toncoin ecosystem upgrade expands The Open Network" in ton_titles
+    assert "GRAM token liquidity expands after TON rebrand" in ton_titles
     assert "Ethereum ETF inflows lift staking sentiment" in eth_titles
     for titles in (sol_titles, ton_titles, eth_titles):
         assert "Crypto market sells off after Fed decision" in titles
         assert "Bitcoin ETFs crushed by billions in outflows" not in titles
+
+
+def test_gram_news_alias_requires_crypto_context():
+    news_items = [
+        {"title": "Recipe calls for one gram of salt", "source": "A"},
+        {"title": "GRAM token volume rises after Toncoin rebrand", "source": "B"},
+    ]
+
+    titles = [item["title"] for item in alerts.filter_news_for_symbol("ton", news_items)]
+
+    assert "Recipe calls for one gram of salt" not in titles
+    assert "GRAM token volume rises after Toncoin rebrand" in titles
 
 
 def test_empty_direct_altcoin_news_does_not_force_btc_only_context():
@@ -829,6 +843,20 @@ def test_market_heartbeat_safe_neutral_wording_is_accepted():
     assert decision.possible_action == SAFE_NEUTRAL_HEARTBEAT_ACTION
 
 
+def test_market_heartbeat_accepts_gram_display_symbol_for_internal_ton():
+    decision = validate_market_heartbeat_output(
+        heartbeat_result(
+            symbol="GRAM",
+            title="GRAM remains calm with no major market stress",
+            message_body="GRAM is trading without a clear urgent signal.",
+        ),
+        expected_symbol="ton",
+        candidate_news_ids=set(),
+    )
+
+    assert decision.symbol == "TON"
+
+
 @pytest.mark.parametrize(
     "possible_action",
     [
@@ -1120,7 +1148,7 @@ def test_custom_emoji_entity_is_used_when_id_exists(monkeypatch):
     assert payload["entities"][0].custom_emoji_id == "custom-btc-id"
 
 
-@pytest.mark.parametrize("symbol", ["BTC", "ETH", "TON", "SOL"])
+@pytest.mark.parametrize("symbol", ["BTC", "ETH", "GRAM", "SOL"])
 def test_active_coin_custom_icon_prefix_has_stable_entity(symbol):
     icon, entities = coin_icons.build_coin_icon_prefix(symbol)
 

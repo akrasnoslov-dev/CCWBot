@@ -7,6 +7,7 @@ analysis.
 ## Features
 
 - Manual `/price` checks for the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
+  The internal `ton` key is displayed as GRAM, and `/price gram` is accepted as an alias.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
@@ -102,10 +103,15 @@ and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 The supported cadence is `1800` seconds (30 minutes); stale custom values from local state
 or app settings are normalized back to 1800 seconds. It does not control Market Heartbeat
 delivery frequency. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
-BTC at minute 00/30, ETH at 05/35, TON at 10/40, and SOL at 15/45. On startup, the schedule
-log should show `symbol_first_delays=BTC:0s,ETH:300s,TON:600s,SOL:900s` at the cycle boundary.
+BTC at minute 00/30, ETH at 05/35, GRAM at 10/40, and SOL at 15/45. On startup, the schedule
+log should show `symbol_first_delays=BTC:0s,ETH:300s,GRAM:600s,SOL:900s` at the cycle boundary.
 The first-delay calculation is anchored to the wall-clock cycle, so restarts preserve the same
 symbol spacing instead of pairing symbols together.
+
+GRAM is stored internally as the legacy `ton` symbol to preserve existing PostgreSQL rows and
+cooldowns. User-facing messages, reports, keyboards, and watchlists display GRAM /
+Gram (prev. Toncoin). CoinGecko lookups for internal `ton` use `the-open-network`; the old
+`toncoin` id is not used for price resolution.
 
 ## Local Development Setup
 
@@ -177,7 +183,7 @@ of compact price points sent to the LLM. With the default 30-minute interval and
 points, alerts analyse a 3-hour window. Event Alert messages show that analysed-window
 change with a dynamic label, for example `3h change: -2.40%`, instead of exposing
 CoinGecko's rolling 24h change as the main alert move. The separate
-`Since last BTC alert` line describes movement since the last user-visible alert for that
+`Since last alert/message` line describes movement since the last user-visible alert for that
 symbol, so those two percentages can differ.
 The analysed-window baseline ignores stale snapshots outside the window tolerance: a
 pre-window reference may be used only when it is no more than one Event Alert analysis
@@ -426,7 +432,7 @@ After deploy, verify with a private chat:
 2. Send `/settings` as admin; it should work. Send it from a normal user; it should be denied.
 3. Send `/grantpremium <telegram_user_id> 1` and `/revokepremium <telegram_user_id>` as admin; both should update `/myplan` without deleting saved coin choices.
 4. Send `/userid`; it should work manually but stay hidden from command menus.
-5. Send `/price btc` and another supported symbol such as `/price eth`; both should return concise price text or a generic temporary-unavailable message. Send `/price usdt`; it should be rejected as unsupported.
+5. Send `/price btc` and another supported symbol such as `/price eth`; both should return concise price text or a generic temporary-unavailable message. Send `/price gram` and `/price ton`; both should return GRAM pricing. Send `/price usdt`; it should be rejected as unsupported.
 6. Send `/watchlist` as a free user; BTC should be available and non-BTC choices should be locked. After an admin grant or paid access, non-BTC choices should unlock but should not auto-enable.
 7. Send `/plan`; My plan should show Free, Premium, or expired Premium state without exposing internals.
 8. In `/plan`, Subscribe should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
@@ -454,3 +460,4 @@ Documentation index: [docs/README.md](docs/README.md).
 Developer notes: [docs/development.md](docs/development.md).
 Read-only operational SQL snippets: [docs/observability.md](docs/observability.md).
 Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md).
+Codex skill locations and usage notes: [docs/codex_skills.md](docs/codex_skills.md).

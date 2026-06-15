@@ -24,6 +24,7 @@ Do not place LLM/Groq calls inside recipient loops.
 Current product behavior:
 
 - Manual `/price` supports the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
+  Internal `ton` is user-facing GRAM; `/price gram` and legacy `/price ton` both work.
 - BTC automatic alerts remain free.
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
@@ -36,6 +37,7 @@ Primary context files:
 - `AGENTS.md`
 - `docs/README.md`
 - `docs/codex_instructions.md`
+- `docs/codex_skills.md`
 - `docs/release_checklist.md`
 - `docs/dev_ops_guide.md`
 - `README.md`
@@ -44,3 +46,4 @@ Primary context files:
 - `docs/observability.md`
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
+- `.agents/skills/README.md`

@@ -90,7 +90,12 @@ from bot.domain.premium import (
     get_effective_frequency_seconds,
     is_coin_unlocked_for_user,
 )
-from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, normalize_symbol
+from bot.domain.supported_coins import (
+    SUPPORTED_COINS,
+    SUPPORTED_SYMBOLS,
+    display_symbol,
+    normalize_symbol,
+)
 from bot.news import (
     fetch_news_context,
     remember_news_context,
@@ -823,10 +828,11 @@ def _build_event_alert_payload(
     input_payload: dict,
     related_news: list[dict],
 ) -> dict:
-    symbol = decision.symbol
+    symbol = display_symbol(decision.symbol)
+    backend_symbol = normalize_symbol(decision.symbol)
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    icon, entities = build_coin_icon_prefix(symbol)
-    icon_html = build_coin_icon_html(symbol)
+    icon, entities = build_coin_icon_prefix(backend_symbol)
+    icon_html = build_coin_icon_html(backend_symbol)
     analysed_window_change = market_data.get("chg_window")
     small_move = _small_analysed_window_move(analysed_window_change)
     title = _guard_small_move_dramatic_event_text(
@@ -975,9 +981,10 @@ def _build_market_heartbeat_payload(
     change_24h: float,
     related_news: list[dict],
 ) -> dict:
-    symbol = normalize_symbol(heartbeat.symbol).upper()
-    icon, entities = build_coin_icon_prefix(symbol)
-    icon_html = build_coin_icon_html(symbol)
+    backend_symbol = normalize_symbol(heartbeat.symbol)
+    symbol = display_symbol(backend_symbol)
+    icon, entities = build_coin_icon_prefix(backend_symbol)
+    icon_html = build_coin_icon_html(backend_symbol)
     title = _sanitize_event_text(heartbeat.title, f"{symbol} market heartbeat")
     message_body = sanitize_heartbeat_message_body(
         heartbeat.message_body,
@@ -1291,10 +1298,10 @@ def _build_news_candidates(symbol: str, news_items: list[dict]) -> list[dict]:
             reason = "Secondary coin mention in broader crypto context"
         elif raw_relevance == "direct" and material:
             relevance = "strong"
-            reason = f"{normalized_symbol.upper()}-specific material market context"
+            reason = f"{display_symbol(normalized_symbol)}-specific material market context"
         elif raw_relevance == "direct" and not generic:
             relevance = "medium"
-            reason = f"{normalized_symbol.upper()}-specific market context"
+            reason = f"{display_symbol(normalized_symbol)}-specific market context"
         elif material:
             relevance = "medium"
             reason = "Market-wide material crypto context"
@@ -1398,11 +1405,11 @@ def _coin_is_secondary_context(symbol: str, item: dict) -> bool:
 
 def _news_relevance_reason(symbol: str, relevance: str, raw_relevance: str) -> str:
     if relevance == "strong":
-        return f"{symbol.upper()}-specific material market context"
+        return f"{display_symbol(symbol)}-specific material market context"
     if relevance == "medium":
-        return f"{symbol.upper()}-specific market context"
+        return f"{display_symbol(symbol)}-specific market context"
     if raw_relevance == "direct":
-        return f"Weak {symbol.upper()} mention without clear market catalyst"
+        return f"Weak {display_symbol(symbol)} mention without clear market catalyst"
     return "Broad crypto market context"
 
 def _useful_news_candidates(candidates: list[dict] | None) -> list[dict]:
@@ -1514,18 +1521,19 @@ def _build_news_driven_event_decision(
     news_item: dict,
     event_key: str,
 ) -> EventAnalysisDecision:
-    display_symbol = normalize_symbol(symbol).upper()
-    title = f"High-impact news detected for {display_symbol}"
+    user_symbol = display_symbol(symbol)
+    backend_symbol = normalize_symbol(symbol).upper()
+    title = f"High-impact news detected for {user_symbol}"
     context = _format_news_driven_summary(news_item)
     message_body = (
         f"Possible market context: {context} "
         "This could be related to market sentiment, but price impact is uncertain."
     )
     possible_action = (
-        f"Review the news calmly and watch how {display_symbol} trades over the next alert window."
+        f"Review the news calmly and watch how {user_symbol} trades over the next alert window."
     )
     return EventAnalysisDecision(
-        symbol=display_symbol,
+        symbol=backend_symbol,
         should_alert=True,
         event_key=event_key,
         title=title,
@@ -1561,6 +1569,7 @@ def _build_news_driven_event_input(
     return {
         "analysis_id": analysis_id,
         "symbol": normalize_symbol(symbol).upper(),
+        "display_symbol": display_symbol(symbol),
         "coin_name": _coin_name(symbol),
         "timestamp_utc": published_at.astimezone(timezone.utc).isoformat(),
         "market": market_payload,
@@ -2093,6 +2102,7 @@ async def _build_event_analysis_input(
     return {
         "analysis_id": analysis_id,
         "symbol": normalized_symbol.upper(),
+        "display_symbol": display_symbol(normalized_symbol),
         "coin_name": _coin_name(normalized_symbol),
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
         "market": {
@@ -2159,6 +2169,7 @@ async def _build_market_heartbeat_input(
     return {
         "heartbeat_id": heartbeat_id,
         "symbol": normalized_symbol.upper(),
+        "display_symbol": display_symbol(normalized_symbol),
         "coin_name": _coin_name(normalized_symbol),
         "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
         "market_data": {
@@ -2721,14 +2732,14 @@ def _strip_existing_alert_title(plain_text: str) -> str:
     return plain_text.strip()
 
 def _coin_display_line(symbol: str) -> str:
-    display_symbol = normalize_symbol(symbol).upper()
+    user_symbol = display_symbol(symbol)
     try:
         coin_name = _coin_name(symbol)
     except KeyError:
-        return f"Coin: {display_symbol}"
-    if coin_name.lower() == display_symbol.lower():
-        return f"Coin: {display_symbol}"
-    return f"Coin: {display_symbol} / {coin_name}"
+        return f"Coin: {user_symbol}"
+    if coin_name.lower() == user_symbol.lower():
+        return f"Coin: {user_symbol}"
+    return f"Coin: {user_symbol} / {coin_name}"
 
 def _remove_user_facing_risk_level(plain_text: str) -> str:
     body = _strip_existing_alert_title(plain_text)
@@ -2773,10 +2784,10 @@ def _apply_severity_header(
 
     plain_text = sanitize_alert_message(str(alert_payload.get("plain_text", "")))
     body = _remove_user_facing_risk_level(plain_text)
-    display_symbol = normalize_symbol(symbol).upper()
+    user_symbol = display_symbol(symbol)
     header = (
         f"{severity_icon_text(severity.severity)} {severity_label_text(severity.severity)} - "
-        f"{display_symbol} {alert_title_action(severity.primary_alert_type)}\n\n"
+        f"{user_symbol} {alert_title_action(severity.primary_alert_type)}\n\n"
         f"{_coin_display_line(symbol)}"
     )
     updated_plain_text = sanitize_alert_message(f"{header}\n{body}")
@@ -2831,9 +2842,10 @@ def _build_product_notification_payload(
     context: SignalContext,
     decision: NotificationDecision,
 ) -> dict:
-    symbol = normalize_symbol(context.symbol).upper()
-    coin_icon, entities = build_coin_icon_prefix(symbol)
-    coin_icon_html = build_coin_icon_html(symbol)
+    backend_symbol = normalize_symbol(context.symbol)
+    symbol = display_symbol(backend_symbol)
+    coin_icon, entities = build_coin_icon_prefix(backend_symbol)
+    coin_icon_html = build_coin_icon_html(backend_symbol)
     period_label = _window_label(context.user_alert_frequency_seconds or 0)
     alert_move = _alert_move_percent(context, decision)
     summary = _summary_sentence(
@@ -3924,7 +3936,7 @@ def schedule_automatic_market_check(app: Application, interval_seconds: int) -> 
             data={"symbol": symbol},
             job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 15},
         )
-        scheduled_symbols.append(f"{symbol.upper()}:{first}s")
+        scheduled_symbols.append(f"{display_symbol(symbol)}:{first}s")
     log(
         "ops_event=automatic_check_scheduled "
         f"interval_seconds={interval_seconds} symbol_first_delays={','.join(scheduled_symbols)}"
@@ -4615,7 +4627,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             await remember_news_context(deduped_news)
         if not db_active:
             save_state(state)
-        checked_symbols_text = ", ".join(symbol.upper() for symbol in symbols_to_check)
+        checked_symbols_text = ", ".join(display_symbol(symbol) for symbol in symbols_to_check)
         log(
             "ops_event=automatic_check_completed "
             f"symbols={checked_symbols_text.replace(' ', '')} "
