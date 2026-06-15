@@ -160,7 +160,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             await mark_llm_usage_log_status(
                 usage_log_id,
                 status="schema_error",
-                error_reason="schema validation failed",
+                error_reason="schema_validation_failed",
                 error_message=str(error)[:500],
             )
         raw_output_json = getattr(error, "raw_content", raw_output_json)

@@ -2261,7 +2261,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         await mark_llm_usage_log_status(
             usage_log_id,
             status="schema_error",
-            error_reason="schema validation failed",
+            error_reason="schema_validation_failed",
             error_message=str(error),
         )
         heartbeat_id = await _save_market_heartbeat_attempt(
@@ -2363,7 +2363,7 @@ async def _create_event_analysis_decision(
     except Exception as error:
         raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
-        status = "invalid_json" if reason == "invalid JSON" else "llm_error"
+        status = "invalid_json" if reason == "invalid_json" else "llm_error"
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=raw_output,

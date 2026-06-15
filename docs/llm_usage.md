@@ -2,6 +2,25 @@
 
 `llm_usage_logs` records one row per Groq call when database storage is enabled.
 
+Failure reasons stored in `llm_usage_logs.error_reason` and shown in admin diagnostics use
+snake_case safe categories:
+
+- `rate_limit`
+- `rate_limit_backoff_active`
+- `invalid_json`
+- `schema_validation_failed`
+- `timeout`
+- `auth_error`
+- `provider_4xx`
+- `provider_5xx`
+- `network_error`
+- `empty_response`
+- `config_missing`
+- `other_error`
+
+These values are intentionally short and sanitized. Provider response bodies, raw JSON, stack
+traces, API keys, and connection strings must not be copied into Telegram status output.
+
 Last 24h/48h usage by call type, model, and status:
 
 ```sql

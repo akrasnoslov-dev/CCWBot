@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -368,6 +369,41 @@ def test_event_analysis_model_and_max_token_defaults():
         == "meta-llama/llama-4-scout-17b-16e-instruct"
     )
     assert ai_agent_groq.GROQ_EVENT_ANALYSIS_MAX_TOKENS == 300
+
+
+def test_classify_ai_error_reason_uses_safe_snake_case_categories():
+    class ResponseError(RuntimeError):
+        def __init__(self, status_code):
+            super().__init__(f"provider status {status_code}")
+            self.status_code = status_code
+
+    class APIConnectionError(RuntimeError):
+        pass
+
+    cases = [
+        (ai_agent_groq.AIGroqRateLimitError("429 rate limit"), "rate_limit"),
+        (
+            ai_agent_groq.LLMRateLimitBackoffActive(
+                provider="groq",
+                model="event-model",
+                limited_until=datetime.now(timezone.utc),
+            ),
+            "rate_limit_backoff_active",
+        ),
+        (ai_agent_groq.AIInvalidJsonError("bad json"), "invalid_json"),
+        (ai_agent_groq.AISchemaValidationError("bad schema"), "schema_validation_failed"),
+        (asyncio.TimeoutError(), "timeout"),
+        (ResponseError(401), "auth_error"),
+        (ResponseError(400), "provider_4xx"),
+        (ResponseError(503), "provider_5xx"),
+        (APIConnectionError("connection failed"), "network_error"),
+        (RuntimeError("empty response from provider"), "empty_response"),
+        (RuntimeError("GROQ_API_KEY is not configured."), "config_missing"),
+        (RuntimeError("something else"), "other_error"),
+    ]
+
+    for error, expected in cases:
+        assert ai_agent_groq.classify_ai_error_reason(error) == expected
 
 
 def test_event_analysis_prompt_quality_requirements():
