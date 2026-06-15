@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from bot.db.database import (
     LlmUsageLog,
     NewsItem,
     PriceState,
+    User,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, display_symbol
 from bot.services.ai_agent_groq import (
@@ -41,6 +43,22 @@ _STATUS_RANK = {
     ComponentStatus.WARN: 2,
     ComponentStatus.FAIL: 3,
 }
+_SECRET_DETAIL_RE = re.compile(
+    r"(?i)\b("
+    r"api[_ -]?key|authorization|auth[_ -]?header|bearer|token|"
+    r"database[_ -]?url|db[_ -]?url|connection[_ -]?string|"
+    r"postgres(?:ql)?://|asyncpg://"
+    r")\b"
+)
+_STACK_DETAIL_RE = re.compile(
+    r"(?i)(traceback|stack trace|^\s*file\s+\".*?\",\s+line\s+\d+|\n\s*at\s+\S+)"
+)
+_PROVIDER_PAYLOAD_RE = re.compile(
+    r"(?i)\b("
+    r"response body|response headers|request headers|raw response|error response|"
+    r"status_code|x-ratelimit|cf-ray|openai|groq"
+    r")\b"
+)
 
 
 @dataclass(frozen=True)
@@ -96,12 +114,28 @@ def _format_price(value: float | None) -> str:
 def _safe_detail(value: str | None, *, max_chars: int = 120) -> str | None:
     if not value:
         return None
-    text_value = " ".join(str(value).split())
-    redacted_markers = ("api key", "authorization", "bearer ", "token", "database_url")
-    lowered = text_value.lower()
-    if any(marker in lowered for marker in redacted_markers):
-        return "detail redacted"
+    raw_value = str(value).strip()
+    text_value = " ".join(raw_value.split())
+    if _SECRET_DETAIL_RE.search(raw_value):
+        return "internal error detail redacted"
+    if _STACK_DETAIL_RE.search(raw_value):
+        return "internal error detail redacted"
+    if "\n" in raw_value or "\r" in raw_value:
+        return "internal error detail redacted"
+    if _looks_like_payload(raw_value):
+        return "provider response redacted"
+    if _PROVIDER_PAYLOAD_RE.search(raw_value):
+        return "provider response redacted"
+    if len(text_value) > max_chars * 2:
+        return "internal error detail redacted"
     return text_value[:max_chars]
+
+
+def _looks_like_payload(value: str) -> bool:
+    stripped = value.strip()
+    if stripped.startswith(("{", "[")) or stripped.endswith(("}", "]")):
+        return True
+    return any(marker in stripped for marker in ("{", "}", "[", "]"))
 
 
 def _worst_status(statuses: list[ComponentStatus]) -> ComponentStatus:
@@ -503,12 +537,24 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         )
         or 0
     )
+    blocked_users = int(
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.bot_blocked.is_(True))
+        )
+        or 0
+    )
     total = sum(counts.values())
     if total == 0 and final_failed == 0:
+        if blocked_users > 0:
+            return ComponentHealth(
+                "Telegram alerts",
+                ComponentStatus.WARN,
+                f"no delivery rows in last 24h, blocked_users {blocked_users}",
+            )
         return ComponentHealth(
             "Telegram alerts",
             ComponentStatus.UNKNOWN,
-            "no delivery rows in last 24h",
+            f"no delivery rows in last 24h, blocked_users {blocked_users}",
         )
 
     sent = counts.get("sent", 0)
@@ -526,7 +572,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
 
     detail = (
         f"Last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
-        f"failed {failed}, final_failed {final_failed}"
+        f"failed {failed}, final_failed {final_failed}, blocked_users {blocked_users}"
     )
     return ComponentHealth("Telegram alerts", status, detail)
 

@@ -10,6 +10,7 @@ from bot.db.database import (
     LlmUsageLog,
     NewsItem,
     PriceState,
+    User,
 )
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS
 from bot.observability import system_status
@@ -212,6 +213,70 @@ async def test_system_status_marks_old_ai_failure_resolved_by_newer_success():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_message", "expected_detail", "rejected_text"),
+    [
+        (
+            "APIConnectionError - connection failed",
+            "Failure detail: APIConnectionError - connection failed",
+            None,
+        ),
+        (
+            "{'error': {'message': 'raw provider body', 'type': 'invalid_request'}}",
+            "Failure detail: provider response redacted",
+            "raw provider body",
+        ),
+        (
+            "Authorization: Bearer secret-token",
+            "Failure detail: internal error detail redacted",
+            "secret-token",
+        ),
+        (
+            "DATABASE_URL=postgresql://ccwbot:secret@example/db",
+            "Failure detail: internal error detail redacted",
+            "postgresql://",
+        ),
+        (
+            "Traceback (most recent call last):\n  File \"bot.py\", line 1\nRuntimeError: bad",
+            "Failure detail: internal error detail redacted",
+            "bot.py",
+        ),
+    ],
+)
+async def test_system_status_sanitizes_ai_failure_detail(
+    error_message,
+    expected_detail,
+    rejected_text,
+):
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add(
+                _event_analysis(
+                    status="llm_error",
+                    created_at=now - timedelta(minutes=1),
+                    analysis_id="failure_with_detail",
+                    error_reason="other_error",
+                    error_message=error_message,
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert expected_detail in text
+        if rejected_text:
+            assert rejected_text not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_system_status_marks_latest_ai_failure_active():
     now = _now()
     engine, session_local = await build_session_factory()
@@ -346,6 +411,18 @@ async def test_system_status_delivery_counts():
         async with session_local() as session:
             session.add_all(
                 [
+                    User(
+                        telegram_user_id=200,
+                        telegram_chat_id=200,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=2),
+                    ),
+                    User(
+                        telegram_user_id=201,
+                        telegram_chat_id=201,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=1),
+                    ),
                     Alert(
                         symbol="BTC",
                         alert_type="event_alert",
@@ -373,6 +450,9 @@ async def test_system_status_delivery_counts():
         )
 
         assert "Telegram alerts: WARN" in text
-        assert "Last 24h: sent 1, pending 0, retry_pending 1, failed 0, final_failed 0" in text
+        assert (
+            "Last 24h: sent 1, pending 0, retry_pending 1, failed 0, "
+            "final_failed 0, blocked_users 2"
+        ) in text
     finally:
         await engine.dispose()

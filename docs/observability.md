@@ -23,13 +23,14 @@ Signals currently checked:
 - Market data: one `price_state` row per active symbol from `SUPPORTED_SYMBOLS`, including GRAM
   stored as internal `ton` with CoinGecko id `the-open-network`.
 - AI: latest event-analysis attempt, latest successful attempt, and latest failure from
-  `event_ai_analyses`.
+  `event_ai_analyses`; failure details are sanitized and redacted if they look like provider
+  payloads, traces, headers, connection strings, or secrets.
 - Groq rate limit: active event-analysis/heartbeat in-memory backoff plus recent
   `llm_usage_logs` rate-limit telemetry.
 - RSS/news: latest `news_items.fetched_at`, usable non-noise/non-duplicate rows in the last 24h,
   and latest news-intelligence status.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
-  `failed`, and final-failed rows.
+  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`.
 
 If a latest AI failure is older than the latest `success` or `no_alert`, status shows it as
 `resolved by newer success`. That means the historical failure is still useful context but is not
@@ -41,7 +42,8 @@ Current limitations:
   request.
 - RSS fetch health is inferred from `news_items` cache freshness and news-intelligence telemetry;
   there is no separate provider fetch-run table yet.
-- Delivery health is based on stored delivery rows, not a live Telegram send probe.
+- Delivery health is based on stored delivery rows and user blocked-state telemetry, not a live
+  Telegram send probe.
 
 ## GRAM Rebrand Price-State Check
 

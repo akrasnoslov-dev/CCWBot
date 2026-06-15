@@ -424,7 +424,8 @@ and Telegram delivery telemetry. Component states mean:
 Status uses persisted `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and
 `alerts` rows. It does not call CoinGecko, Groq, RSS feeds, or Telegram while rendering the admin
 screen. Older AI failures are shown as resolved when a newer `success` or `no_alert` event-analysis
-row exists.
+row exists. Failure details are sanitized/redacted, and Telegram delivery health includes stored
+blocked-user count when PostgreSQL telemetry is available.
 
 ## Testing And Linting
 
