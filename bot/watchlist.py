@@ -24,6 +24,7 @@ from bot.domain.supported_coins import (
     PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_COINS,
     SUPPORTED_SYMBOLS,
+    display_symbol,
     is_symbol_free,
     premium_symbols_display,
 )
@@ -227,7 +228,7 @@ def build_user_settings_message(
         unlocked = is_coin_unlocked_for_user(user, symbol, now)
         rows.append((symbol, enabled, unlocked))
         if enabled and unlocked:
-            enabled_symbols.append(symbol.upper())
+            enabled_symbols.append(display_symbol(symbol))
 
     subscribed_text = ", ".join(enabled_symbols) if enabled_symbols else "None"
     lines = [

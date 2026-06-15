@@ -11,11 +11,11 @@ def _valid_report(report_type="daily", *, telegram_message="Daily Market Report"
     return {
         "report_type": report_type,
         "title": title,
-        "market_overview": "BTC, ETH, TON, and SOL are mixed.",
+        "market_overview": "BTC, ETH, GRAM, and SOL are mixed.",
         "coin_summaries": [
             {"symbol": "BTC", "summary": "BTC is steady."},
             {"symbol": "ETH", "summary": "ETH is steady."},
-            {"symbol": "TON", "summary": "TON is steady."},
+            {"symbol": "GRAM", "summary": "GRAM is steady."},
             {"symbol": "SOL", "summary": "SOL is steady."},
         ],
         "news_context": "No major market-wide news selected.",
@@ -26,7 +26,7 @@ def _valid_report(report_type="daily", *, telegram_message="Daily Market Report"
 
 def test_daily_report_without_disclaimer_is_accepted_after_append():
     decision = validate_market_report_output(
-        _valid_report("daily", telegram_message="Daily Market Report\n\nCoins:\nBTC ETH TON SOL"),
+        _valid_report("daily", telegram_message="Daily Market Report\n\nCoins:\nBTC ETH GRAM SOL"),
         expected_report_type="daily",
     )
 
@@ -35,7 +35,10 @@ def test_daily_report_without_disclaimer_is_accepted_after_append():
 
 def test_weekly_report_without_disclaimer_is_accepted_after_append():
     decision = validate_market_report_output(
-        _valid_report("weekly", telegram_message="Weekly Market Report\n\nCoins:\nBTC ETH TON SOL"),
+        _valid_report(
+            "weekly",
+            telegram_message="Weekly Market Report\n\nCoins:\nBTC ETH GRAM SOL",
+        ),
         expected_report_type="weekly",
     )
 

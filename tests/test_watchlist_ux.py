@@ -61,7 +61,7 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
 
     assert text.startswith("📡 Alert watchlist")
     assert "BTC alerts are free." in text
-    assert "ETH, TON, SOL" in text
+    assert "ETH, GRAM, SOL" in text
     assert "ETH - Premium" not in text
     assert "Heartbeat frequency: Every 4 hours" in text
     assert "Event alerts may arrive separately when market events are detected." in text
@@ -95,7 +95,7 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
         now,
     )
 
-    assert "Subscribed coins: BTC, ETH, TON, SOL" in text
+    assert "Subscribed coins: BTC, ETH, GRAM, SOL" in text
     assert "Heartbeat frequency: Every 1 hour" in text
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
@@ -183,7 +183,7 @@ def test_price_keyboard_uses_active_symbols_only():
     keyboard = build_price_keyboard()
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert labels == ["BTC", "ETH", "TON", "SOL"]
+    assert labels == ["BTC", "ETH", "GRAM", "SOL"]
     assert "XRP" not in labels
 
 
@@ -232,7 +232,7 @@ def test_watchlist_buttons_show_locked_icons_for_free_user():
     )
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert labels[:4] == ["✅ BTC", "🔒 ETH", "🔒 TON", "🔒 SOL"]
+    assert labels[:4] == ["✅ BTC", "🔒 ETH", "🔒 GRAM", "🔒 SOL"]
     assert "Enable" not in " ".join(labels)
     assert "Disable" not in " ".join(labels)
     assert "Locked" not in " ".join(labels)

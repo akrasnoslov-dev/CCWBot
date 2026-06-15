@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 
 from bot.db.database import get_price_state, update_price_state
+from bot.domain.supported_coins import display_symbol, supported_symbols_display
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot.services.price_service import COIN_SYMBOL_TO_ID, DEFAULT_SYMBOL, get_coin_price
+from bot.services.price_service import DEFAULT_SYMBOL, get_coin_price
 from bot.storage import load_state, save_state
 
 MANUAL_RATE_LIMIT_MESSAGE_COOLDOWN_SECONDS = 120
@@ -10,7 +11,7 @@ _MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT: dict[int, float] = {}
 
 
 def build_supported_symbols_message() -> str:
-    return ", ".join(COIN_SYMBOL_TO_ID.keys())
+    return supported_symbols_display(include_alias_note=True)
 
 
 async def send_price_message(target, symbol: str) -> None:
@@ -39,7 +40,7 @@ async def send_price_message(target, symbol: str) -> None:
             save_state(state)
 
     await target.reply_text(
-        f"{resolved_symbol.upper()} price\n\n"
+        f"{display_symbol(resolved_symbol)} price\n\n"
         f"Current USD price: ${coin_price:,.2f}\n"
         f"24h change: {change_24h:.2f}%"
     )

@@ -13,7 +13,11 @@ from bot.db.database import (
     save_market_report,
     utc_now,
 )
-from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS
+from bot.domain.supported_coins import (
+    SUPPORTED_SYMBOLS,
+    coin_display_name,
+    display_symbol,
+)
 from bot.news import fetch_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
@@ -304,11 +308,11 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
         {
             "report_type": report_type,
             "generated_at": generated_at.isoformat(),
-            "active_symbols": [symbol.upper() for symbol in symbols],
+            "active_symbols": [display_symbol(symbol) for symbol in symbols],
             "coins": [
                 {
-                    "symbol": symbol.upper(),
-                    "name": str(SUPPORTED_COINS[symbol]["name"]),
+                    "symbol": display_symbol(symbol),
+                    "name": coin_display_name(symbol),
                     "price": _round_optional((market_data.get(symbol) or {}).get("price")),
                     "change_24h": _round_optional(
                         (market_data.get(symbol) or {}).get("change_24h")

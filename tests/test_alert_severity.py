@@ -281,9 +281,9 @@ def test_formatted_alert_shows_severity_title_type_and_coin():
         alert_type=AlertType.PRICE_MOVEMENT,
     )
 
-    assert message.startswith("🔴 High - TON movement alert")
+    assert message.startswith("🔴 High - GRAM movement alert")
     assert "\nType:" not in message
-    assert "\nCoin: TON / Toncoin\n" in message
+    assert "\nCoin: GRAM / Gram (prev. Toncoin)\n" in message
     assert message.count("Coin:") == 1
 
 
@@ -305,7 +305,7 @@ def test_price_movement_alerts_include_severity_icons():
         alert_type=AlertType.PRICE_MOVEMENT,
     )
 
-    assert info.startswith("🟢 Low - TON movement alert")
+    assert info.startswith("🟢 Low - GRAM movement alert")
     assert watch.startswith("🟡 Medium - XRP movement alert")
     assert high.startswith("🔴 High - BTC movement alert")
 

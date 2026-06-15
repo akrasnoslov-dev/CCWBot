@@ -374,6 +374,7 @@ def test_event_analysis_prompt_quality_requirements():
     prompt = ai_agent_groq.build_event_analysis_prompt(
         {
             "symbol": "TON",
+            "display_symbol": "GRAM",
             "market": {"chg24h": 5.8, "snapshots": [{"m": -30, "p": 3.1}]},
             "news": [],
         }
@@ -435,7 +436,7 @@ def test_market_heartbeat_prompt_quality_requirements():
     )
 
     assert "calm Market Heartbeat, not an Event Alert" in prompt
-    assert "Do not present BTC-only news as related context for ETH, SOL, TON" in prompt
+    assert "Do not present BTC-only news as related context for ETH, SOL, GRAM" in prompt
     assert (
         "possible_action must be specific, practical, and tied to the current market context"
         in prompt

@@ -26,7 +26,18 @@ COIN_ALIASES = {
     "bnb": ("bnb", "binance coin", "binancecoin"),
     "doge": ("doge", "dogecoin"),
     "ada": ("ada", "cardano"),
-    "ton": ("ton", "toncoin", "the open network"),
+    "ton": (
+        "ton",
+        "toncoin",
+        "gram",
+        "$gram",
+        "gram token",
+        "gram usdt",
+        "gram/usdt",
+        "toncoin rebrand",
+        "ton rebrand",
+        "the open network",
+    ),
     "link": ("link", "chainlink"),
     "trx": ("trx", "tron"),
 }
@@ -185,7 +196,33 @@ def _news_search_text(news_item: dict) -> str:
 
 def _matches_symbol_alias(symbol: str, text: str) -> bool:
     aliases = COIN_ALIASES.get(normalize_symbol(symbol), (normalize_symbol(symbol),))
-    return any(re_search_word(alias.lower(), text) for alias in aliases)
+    for alias in aliases:
+        alias = alias.lower()
+        if alias == "gram":
+            if re_search_word(alias, text) and _has_gram_crypto_context(text):
+                return True
+            continue
+        if re_search_word(alias, text):
+            return True
+    return False
+
+def _has_gram_crypto_context(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "$gram",
+            "gram token",
+            "gram usdt",
+            "gram/usdt",
+            "toncoin",
+            "ton rebrand",
+            "the open network",
+            "crypto",
+            "cryptocurrency",
+            "token",
+            "blockchain",
+        )
+    )
 
 def _news_metadata_matches_symbol(symbol: str, news_item: dict) -> bool:
     normalized_symbol = normalize_symbol(symbol)

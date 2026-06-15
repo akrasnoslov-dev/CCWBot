@@ -5,7 +5,12 @@ import time
 import httpx
 
 from bot.config import PRICE_CACHE_TTL_SECONDS
-from bot.domain.supported_coins import SUPPORTED_COINS
+from bot.domain.supported_coins import (
+    SUPPORTED_COINS,
+    display_symbol,
+    normalize_symbol,
+    supported_symbols_display,
+)
 
 
 class CoinGeckoRateLimitError(Exception):
@@ -80,14 +85,10 @@ def _build_stale_price_payload(params: dict) -> dict | None:
     symbols = str(params.get("symbols") or "")
     if symbols:
         requested_symbols.extend(
-            symbol.strip().lower()
+            normalize_symbol(symbol)
             for symbol in symbols.split(",")
-            if symbol.strip().lower() in COIN_SYMBOL_TO_ID
+            if normalize_symbol(symbol) in COIN_SYMBOL_TO_ID
         )
-
-    names = str(params.get("names") or "").lower()
-    if "toncoin" in names:
-        requested_symbols.append("ton")
 
     payload: dict[str, dict[str, float]] = {}
     for symbol in dict.fromkeys(requested_symbols):
@@ -189,10 +190,10 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
 
     Unsupported symbols raise ValueError so callers can return a clear user message.
     """
-    normalized_symbol = symbol.lower()
+    normalized_symbol = normalize_symbol(symbol)
 
     if normalized_symbol not in COIN_SYMBOL_TO_ID:
-        supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
+        supported = supported_symbols_display(include_alias_note=True)
         raise ValueError(f"Unsupported coin symbol '{symbol}'. Supported: {supported}")
 
     cached = _get_cached_price(normalized_symbol)
@@ -215,15 +216,14 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
         raise ValueError("Unexpected CoinGecko response format.")
 
     coin_data = data.get(coin_id)
-    # TON has a fallback because CoinGecko occasionally omits toncoin in ids-based responses.
-    if coin_data is None and normalized_symbol == "ton":
+    if coin_data is None:
         logger.warning(
-            "CoinGecko simple price response missing expected id for TON fallback. "
+            "CoinGecko simple price response missing expected id. symbol=%s "
             "expected_id=%s returned_keys=%s",
+            display_symbol(normalized_symbol),
             coin_id,
             list(data.keys()),
         )
-        coin_data = await _fetch_ton_fallback_coin_data()
     if not isinstance(coin_data, dict):
         raise ValueError(f"CoinGecko response did not include expected coin data for '{coin_id}'.")
 
@@ -251,10 +251,10 @@ async def get_coin_market_data_batch(
     """
     global _BTC_MARKET_CACHE
 
-    normalized_symbols = list(dict.fromkeys(symbol.strip().lower() for symbol in symbols))
+    normalized_symbols = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols))
     unsupported = [symbol for symbol in normalized_symbols if symbol not in COIN_SYMBOL_TO_ID]
     if unsupported:
-        supported = ", ".join(COIN_SYMBOL_TO_ID.keys())
+        supported = supported_symbols_display(include_alias_note=True)
         raise ValueError(f"Unsupported coin symbol(s) {unsupported}. Supported: {supported}")
     if not normalized_symbols:
         return {}
@@ -276,25 +276,20 @@ async def get_coin_market_data_batch(
     result: dict[str, dict[str, float | None]] = {}
     for symbol, coin_id in zip(normalized_symbols, coin_ids, strict=True):
         coin_data = data.get(coin_id)
-        if coin_data is None and symbol == "ton":
-            logger.info(
-                "CoinGecko batch response missing TON id. Attempting TON fallback. "
-                "expected_id=%s returned_keys=%s",
-                coin_id,
-                list(data.keys()),
-            )
-            coin_data = await _fetch_ton_fallback_coin_data()
         if not isinstance(coin_data, dict):
             logger.warning(
-                "CoinGecko batch response missing data for %s. Skipping symbol.",
-                symbol.upper(),
+                "CoinGecko batch response missing data for %s. expected_id=%s "
+                "returned_keys=%s. Skipping symbol.",
+                display_symbol(symbol),
+                coin_id,
+                list(data.keys()),
             )
             continue
         price = coin_data.get("usd")
         if price is None:
             logger.warning(
                 "CoinGecko batch response missing USD price for %s. Skipping symbol.",
-                symbol.upper(),
+                display_symbol(symbol),
             )
             continue
         change_24h = coin_data.get("usd_24h_change")
@@ -363,87 +358,12 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     return price, change_24h, change_7d
 
 
-async def _fetch_ton_fallback_coin_data() -> dict | None:
-    """Fallback fetch for TON when ids=toncoin does not return toncoin data.
-
-    This keeps TON support stable without expanding supported symbols or APIs.
-    """
-    url = "https://api.coingecko.com/api/v3/simple/price"
-
-    async with httpx.AsyncClient() as client:
-        # First fallback: symbol-based lookup.
-        symbol_params = {
-            "symbols": "ton",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true",
-        }
-        symbol_data = await _get_with_retry(client, url, symbol_params)
-
-        symbol_coin_data = _extract_ton_coin_data_from_simple_price(symbol_data)
-        if isinstance(symbol_coin_data, dict):
-            logger.info("TON fallback succeeded via CoinGecko symbols=ton.")
-            return symbol_coin_data
-
-        logger.warning(
-            "TON fallback via symbols=ton failed. returned_keys=%s",
-            (
-                list(symbol_data.keys())
-                if isinstance(symbol_data, dict)
-                else type(symbol_data).__name__
-            ),
-        )
-
-        # Second fallback: name-based lookup.
-        name_params = {
-            "names": "Toncoin",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true",
-        }
-        name_data = await _get_with_retry(client, url, name_params)
-
-        name_coin_data = _extract_ton_coin_data_from_simple_price(name_data)
-        if isinstance(name_coin_data, dict):
-            logger.info("TON fallback succeeded via CoinGecko names=Toncoin.")
-            return name_coin_data
-
-        logger.warning(
-            "TON fallback via names=Toncoin failed. returned_keys=%s",
-            (list(name_data.keys()) if isinstance(name_data, dict) else type(name_data).__name__),
-        )
-        return None
-
-
 def _extract_ton_coin_data_from_simple_price(payload: dict) -> dict | None:
+    """Accept only the current exact CoinGecko id for GRAM/legacy TON payloads."""
     if not isinstance(payload, dict):
         return None
 
-    # Prefer explicit toncoin result when present.
-    preferred = payload.get("toncoin")
+    preferred = payload.get("the-open-network")
     if isinstance(preferred, dict) and preferred.get("usd") is not None:
         return preferred
-
-    # For symbols/names lookups, CoinGecko may return one or multiple ids.
-    candidates: list[tuple[str, dict]] = []
-    for coin_id, coin_data in payload.items():
-        if not isinstance(coin_data, dict):
-            continue
-        if coin_data.get("usd") is None:
-            continue
-        candidates.append((str(coin_id).lower(), coin_data))
-
-    if not candidates:
-        return None
-
-    for coin_id, coin_data in candidates:
-        if coin_id == "toncoin":
-            return coin_data
-
-    for coin_id, coin_data in candidates:
-        if coin_id == "the-open-network" or ("ton" in coin_id and "ton" != coin_id):
-            return coin_data
-
-    for coin_id, coin_data in candidates:
-        if coin_id == "ton":
-            return coin_data
-
-    return candidates[0][1]
+    return None

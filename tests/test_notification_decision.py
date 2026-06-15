@@ -730,7 +730,7 @@ def test_market_update_recovery_but_negative_24h_wording():
 
 def test_market_update_meaningful_period_and_positive_24h_wording():
     summary = alerts._summary_sentence(
-        "TON",
+        "GRAM",
         alerts.NotificationDirection.UP,
         alerts.NotificationType.MARKET_UPDATE,
         period_change_percent=3.11,
@@ -739,7 +739,7 @@ def test_market_update_meaningful_period_and_positive_24h_wording():
     )
 
     assert summary == (
-        "TON strengthened meaningfully over the last 1h and remains "
+        "GRAM strengthened meaningfully over the last 1h and remains "
         "positive on the 24h trend."
     )
 

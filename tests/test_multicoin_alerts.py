@@ -710,7 +710,7 @@ def test_automatic_check_startup_log_shows_separated_symbol_first_delays(monkeyp
     assert [kwargs["first"] for kwargs in captured_kwargs] == [0, 300, 600, 900]
     assert captured_logs == [
         "ops_event=automatic_check_scheduled "
-        "interval_seconds=1800 symbol_first_delays=BTC:0s,ETH:300s,TON:600s,SOL:900s"
+        "interval_seconds=1800 symbol_first_delays=BTC:0s,ETH:300s,GRAM:600s,SOL:900s"
     ]
 
 

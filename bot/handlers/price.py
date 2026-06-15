@@ -5,6 +5,7 @@ import time
 from telegram import MessageEntity, Update
 from telegram.ext import ContextTypes
 
+from bot.domain.supported_coins import normalize_symbol
 from bot.keyboards import build_price_keyboard
 from bot.prices import (
     build_supported_symbols_message,
@@ -44,11 +45,12 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=build_price_keyboard(),
             )
             return
-        requested_symbol = context.args[0].lower()
+        requested_symbol = normalize_symbol(context.args[0])
         if requested_symbol not in COIN_SYMBOL_TO_ID:
             supported_symbols = build_supported_symbols_message()
             await update.message.reply_text(
-                f"Unsupported symbol '{requested_symbol}'.\nSupported symbols: {supported_symbols}"
+                f"Unsupported symbol '{context.args[0].lower()}'.\n"
+                f"Supported symbols: {supported_symbols}"
             )
             return
         await send_price_message(update.message, requested_symbol)

@@ -53,7 +53,8 @@ def validate_market_heartbeat_output(
         raise MarketHeartbeatValidationError(f"missing fields: {sorted(missing_fields)}")
 
     symbol = str(result["symbol"]).strip().upper()
-    if symbol != normalize_symbol(expected_symbol).upper():
+    normalized_symbol = normalize_symbol(symbol)
+    if normalized_symbol != normalize_symbol(expected_symbol):
         raise MarketHeartbeatValidationError("symbol mismatch")
 
     title = _required_text(result["title"], "title")
@@ -78,7 +79,7 @@ def validate_market_heartbeat_output(
         raise MarketHeartbeatValidationError(f"unknown related_news_ids: {sorted(unknown_ids)}")
 
     return MarketHeartbeatDecision(
-        symbol=symbol,
+        symbol=normalized_symbol.upper(),
         title=title,
         message_body=message_body,
         related_news_ids=related_news_ids,
