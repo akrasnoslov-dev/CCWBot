@@ -115,6 +115,10 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
   sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
   `event_ai_analyses` rows.
+- Admin System status is read-only observability. It must use persisted telemetry such as
+  `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and `alerts`, plus existing
+  in-memory Groq backoff state. It must not perform live CoinGecko, Groq, RSS, or Telegram probes.
+  Use `OK`, `WARN`, `FAIL`, and `UNKNOWN` only when the underlying telemetry supports that state.
 - Event Alert identity is backend-owned after LLM validation. Broad LLM keys such as
   `news_catalyst`, `price_movement`, and `volatility` are normalized with deterministic rules using
   the raw key, alert title/body, and selected real related-news title/source/link context. Repeated

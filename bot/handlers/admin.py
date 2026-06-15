@@ -10,16 +10,7 @@ from io import BytesIO
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.alerting.event_analysis import (
-    EVENT_ANALYSIS_FAILURE_STATUSES,
-    EVENT_ANALYSIS_SUCCESS_STATUSES,
-)
 from bot.alerts import schedule_automatic_market_check
-from bot.db.database import (
-    get_latest_event_analysis_attempt,
-    get_latest_event_analysis_by_statuses,
-    get_price_state,
-)
 from bot.keyboards import (
     build_admin_alert_settings_keyboard,
     build_admin_keyboard,
@@ -27,7 +18,7 @@ from bot.keyboards import (
     build_admin_premium_keyboard,
     build_interval_keyboard,
 )
-from bot.services.price_service import DEFAULT_SYMBOL
+from bot.observability.system_status import build_admin_system_status_text
 from bot.settings import (
     get_db_alert_settings,
     get_state_alert_settings,
@@ -51,52 +42,9 @@ def _format_admin_alert_settings(alert_settings: dict) -> str:
 
 async def _build_admin_system_status_text() -> str:
     root = handlers_module()
-    ai_status = "NOT OK"
-    last_success = "not available"
-    last_failed = "not available"
-    last_error_reason = "not available"
-    if root.DB_ENABLED and root.DB_SESSION_LOCAL:
-        async with root.DB_SESSION_LOCAL() as session:
-            btc_state = await get_price_state(session, DEFAULT_SYMBOL)
-            latest_ai = await get_latest_event_analysis_attempt(session)
-            latest_success = await get_latest_event_analysis_by_statuses(
-                session,
-                EVENT_ANALYSIS_SUCCESS_STATUSES,
-            )
-            latest_failure = await get_latest_event_analysis_by_statuses(
-                session,
-                EVENT_ANALYSIS_FAILURE_STATUSES,
-            )
-        last_check = btc_state.last_checked_at if btc_state else "not checked yet"
-        database_status = "OK"
-        if latest_ai and latest_ai.status in EVENT_ANALYSIS_SUCCESS_STATUSES:
-            ai_status = "OK"
-        elif latest_ai is None:
-            ai_status = "NOT OK"
-            last_error_reason = "no AI analysis yet"
-        if latest_success:
-            last_success = latest_success.created_at
-        if latest_failure:
-            last_failed = latest_failure.created_at
-            last_error_reason = latest_failure.error_reason or latest_failure.status
-    else:
-        state = load_state()
-        last_check = state.get("last_checked_at", "not checked yet")
-        database_status = "disabled"
-        ai_status = "NOT OK"
-        last_error_reason = "database disabled"
-    return (
-        "System status\n\n"
-        "Bot status: OK\n"
-        f"Database status: {database_status}\n"
-        "CoinGecko status: OK\n"
-        f"Groq AI status: {ai_status}\n"
-        f"Last successful AI analysis time: {last_success}\n"
-        f"Last failed AI analysis time: {last_failed}\n"
-        f"Last AI error reason: {last_error_reason}\n"
-        "RSS/news status: OK\n"
-        f"Last check time: {last_check}\n"
-        "Rate limit status: no active rate limit recorded"
+    return await build_admin_system_status_text(
+        db_enabled=root.DB_ENABLED,
+        session_factory=root.DB_SESSION_LOCAL,
     )
 
 

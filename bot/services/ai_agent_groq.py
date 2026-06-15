@@ -129,38 +129,61 @@ class LLMJsonResult(tuple):
 def classify_ai_error_reason(error: Exception) -> str:
     """Return admin-safe LLM failure reason."""
     if isinstance(error, LLMRateLimitBackoffActive):
-        return "rate limit backoff active"
+        return "rate_limit_backoff_active"
     if isinstance(error, AIGroqRateLimitError) or _is_groq_rate_limit_error(error):
-        return "rate limit"
+        return "rate_limit"
     if isinstance(error, AIInvalidJsonError):
-        return "invalid JSON"
+        return "invalid_json"
     if isinstance(error, AISchemaValidationError):
-        return "schema validation failed"
-    if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+        return "schema_validation_failed"
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
         return "timeout"
     status_code = getattr(error, "status_code", None)
     response = getattr(error, "response", None)
-    if status_code in {401, 403} or getattr(response, "status_code", None) in {401, 403}:
-        return "auth error"
+    response_status_code = getattr(response, "status_code", None)
+    effective_status_code = status_code or response_status_code
+    if effective_status_code in {401, 403}:
+        return "auth_error"
+    if effective_status_code is not None:
+        try:
+            status_code_int = int(effective_status_code)
+        except (TypeError, ValueError):
+            status_code_int = None
+        if status_code_int is not None and 400 <= status_code_int < 500:
+            return "provider_4xx"
+        if status_code_int is not None and status_code_int >= 500:
+            return "provider_5xx"
     message = str(error).lower()
-    if "api key" in message or "unauthorized" in message or "forbidden" in message:
-        return "auth error"
+    class_name = error.__class__.__name__.lower()
+    if (
+        "api key" in message
+        or "api_key" in message
+        or "unauthorized" in message
+        or "forbidden" in message
+    ):
+        if "not configured" in message or "missing" in message:
+            return "config_missing"
+        return "auth_error"
     if "timeout" in message or "timed out" in message:
         return "timeout"
-    return "unknown error"
+    if "empty response" in message or "response was empty" in message:
+        return "empty_response"
+    if "connection" in message or "network" in message or "apiconnectionerror" in class_name:
+        return "network_error"
+    return "other_error"
 
 
 def _usage_status_for_error(error: Exception) -> str:
     reason = classify_ai_error_reason(error)
-    if reason == "rate limit":
+    if reason == "rate_limit":
         return "rate_limit"
-    if reason == "invalid JSON":
+    if reason == "invalid_json":
         return "invalid_json"
-    if reason == "schema validation failed" or _is_groq_json_validation_error(error):
+    if reason == "schema_validation_failed" or _is_groq_json_validation_error(error):
         return "schema_error"
     if reason == "timeout":
         return "timeout"
-    if reason == "auth error":
+    if reason == "auth_error":
         return "auth_error"
     return "other_error"
 
@@ -499,7 +522,7 @@ async def _run_groq_chat_completion(
             input_chars=input_chars,
             output_chars=None,
             max_tokens=max_tokens,
-            error_reason="rate limit backoff active",
+            error_reason="rate_limit_backoff_active",
             error_message=f"{provider} model {model} is limited until {limited_until.isoformat()}",
         )
         logger.info(
@@ -1300,7 +1323,7 @@ async def _ask_json_with_usage(
         max_tokens=max_tokens,
         headers=headers,
         response=response,
-        error_reason=None if parsed is not None else "invalid JSON",
+        error_reason=None if parsed is not None else "invalid_json",
         error_message=None if parsed is not None else "Provider response was not valid JSON.",
     )
     return parsed, usage_log_id
@@ -1386,7 +1409,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message=_safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
@@ -1401,7 +1424,7 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
@@ -1487,7 +1510,7 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=350,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message=_safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
@@ -1502,7 +1525,7 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=350,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
@@ -1601,7 +1624,7 @@ async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=800,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message=_safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
@@ -1616,7 +1639,7 @@ async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
             max_tokens=800,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
@@ -1671,7 +1694,7 @@ async def ask_news_intelligence_raw(
             max_tokens=max_tokens,
             headers=headers,
             response=response,
-            error_reason="invalid JSON",
+            error_reason="invalid_json",
             error_message="Provider response was not valid JSON.",
         )
         raise AIInvalidJsonError("Provider response was not valid JSON.", raw_content=raw_content)
