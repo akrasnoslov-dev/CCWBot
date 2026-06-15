@@ -75,7 +75,7 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
 - Automatic Event Alerts use per-symbol LLM analysis every 30 minutes. Custom persisted
   interval values are normalized back to 1800 seconds. Active symbols are staggered across
   the cycle to avoid burst LLM calls; for the current symbols the first-delay pattern is
-  BTC 0s, ETH 300s, TON 600s, SOL 900s. Staggering is anchored to the wall-clock cycle, so
+  BTC 0s, ETH 300s, GRAM 600s, SOL 900s. Staggering is anchored to the wall-clock cycle, so
   restarts preserve symbol spacing and do not pair symbols together. BTC is free; enabled
   non-BTC watchlist alerts require active Premium.
 - Event Alert messages show the analysed-window price change. The window is derived from
@@ -84,7 +84,8 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   one automatic check interval before the window start; if no fresh baseline exists, the
   message leaves the analysed-window change unknown instead of reusing old market data.
 - Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
-  `usdt` is not supported.
+  The internal `ton` key is displayed as GRAM / Gram (prev. Toncoin), `/price gram` is accepted
+  as an alias, and CoinGecko requests use `ids=the-open-network`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.

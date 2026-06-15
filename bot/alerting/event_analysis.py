@@ -63,6 +63,7 @@ _SYMBOL_ALIASES = {
     "bitcoin": "btc",
     "ethereum": "eth",
     "solana": "sol",
+    "gram": "ton",
     "toncoin": "ton",
 }
 
@@ -520,7 +521,8 @@ def validate_event_analysis_output(
         raise EventAnalysisValidationError(f"missing fields: {sorted(missing_fields)}")
 
     symbol = str(result["symbol"]).strip().upper()
-    if symbol != normalize_symbol(expected_symbol).upper():
+    normalized_symbol = normalize_symbol(symbol)
+    if normalized_symbol != normalize_symbol(expected_symbol):
         raise EventAnalysisValidationError("symbol mismatch")
 
     should_alert = result["should_alert"]
@@ -568,7 +570,7 @@ def validate_event_analysis_output(
             )
 
     return EventAnalysisDecision(
-        symbol=symbol,
+        symbol=normalized_symbol.upper(),
         should_alert=should_alert,
         event_key=event_key,
         title=title,

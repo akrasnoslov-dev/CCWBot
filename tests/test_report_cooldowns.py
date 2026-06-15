@@ -260,7 +260,7 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
                     "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
                     "news_context": "No major market-wide news selected.",
                     "possible_action": "Monitor risk without rushing.",
-                    "telegram_message": "Daily Market Report\n\nCoins:\nBTC ETH TON SOL",
+                    "telegram_message": "Daily Market Report\n\nCoins:\nBTC ETH GRAM SOL",
                 },
             )
         )
@@ -357,7 +357,7 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
         assert report.status == "completed"
         assert "• BTC: $77,361, 7d -3.2%, 24h -0.4%" in report.telegram_message
         assert "• ETH: $2,127.86, 7d not enough data yet, 24h -0.2%" in report.telegram_message
-        assert "• TON: $3.12, 7d +1.4%, 24h not enough data yet" in report.telegram_message
+        assert "• GRAM: $3.12, 7d +1.4%, 24h not enough data yet" in report.telegram_message
         assert "• SOL: $142.35, 7d -4.6%, 24h +0.7%" in report.telegram_message
         assert report.telegram_message.endswith("Not financial advice.")
     finally:
@@ -458,4 +458,4 @@ async def test_report_input_includes_active_symbols(monkeypatch):
     payload, _ = await reports._build_market_report_input("daily", utc_now())
 
     assert captured_symbols == ["btc", "eth", "ton", "sol"]
-    assert [coin["symbol"] for coin in payload["coins"]] == ["BTC", "ETH", "TON", "SOL"]
+    assert [coin["symbol"] for coin in payload["coins"]] == ["BTC", "ETH", "GRAM", "SOL"]

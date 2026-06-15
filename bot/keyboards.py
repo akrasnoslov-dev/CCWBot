@@ -1,11 +1,15 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.domain.supported_coins import PREMIUM_ALERT_FREQUENCY_SECONDS, SUPPORTED_SYMBOLS
+from bot.domain.supported_coins import (
+    PREMIUM_ALERT_FREQUENCY_SECONDS,
+    SUPPORTED_SYMBOLS,
+    display_symbol,
+)
 
 
 def build_price_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        InlineKeyboardButton(symbol.upper(), callback_data=f"price:{symbol}")
+        InlineKeyboardButton(display_symbol(symbol), callback_data=f"price:{symbol}")
         for symbol in SUPPORTED_SYMBOLS
     ]
     rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
@@ -26,7 +30,7 @@ def build_watchlist_keyboard(
         callback_value = "false" if enabled else "true"
         coin_buttons.append(
             InlineKeyboardButton(
-                f"{marker} {symbol.upper()}",
+                f"{marker} {display_symbol(symbol)}",
                 callback_data=f"watchlist:set:{symbol}:{callback_value}",
             )
         )

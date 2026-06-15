@@ -2,6 +2,38 @@
 
 Use these read-only queries for production analysis. Adjust interval windows as needed.
 
+## GRAM Rebrand Price-State Check
+
+GRAM is stored internally as symbol `ton` to preserve existing rows in `price_state`,
+`price_snapshots`, `alerts`, `market_events`, and watchlists. CoinGecko identity for this internal
+symbol must resolve to `the-open-network`; old `toncoin` or ambiguous `symbols=ton` data can create
+false price moves.
+
+Do not run cleanup blindly. First inspect the affected rows:
+
+```sql
+select *
+from price_state
+where symbol = 'TON';
+
+select *
+from price_snapshots
+where symbol = 'TON'
+order by checked_at desc
+limit 100;
+
+select id, symbol, alert_type, created_at, numeric_context, message
+from alerts
+where symbol = 'TON'
+order by created_at desc
+limit 50;
+```
+
+If bad `$0.38` TON/GRAM snapshots, `price_state.last_price`, or alert `numeric_context` values were
+persisted, remove or correct them before or immediately after deploy. Otherwise the next correct
+GRAM price around the current market level may look like a false rebound and trigger another bad
+alert. Take and verify a current database backup before any destructive production cleanup.
+
 ## Event Alerts With Market Events
 
 ```sql

@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import time
 from unittest.mock import AsyncMock
 
@@ -96,9 +95,27 @@ def test_coin_mapping_uses_active_symbols_only():
     assert price_service.COIN_SYMBOL_TO_ID == {
         "btc": "bitcoin",
         "eth": "ethereum",
-        "ton": "toncoin",
+        "ton": "the-open-network",
         "sol": "solana",
     }
+
+
+@pytest.mark.asyncio
+async def test_get_coin_price_accepts_gram_alias(monkeypatch):
+    get_with_retry = AsyncMock(
+        return_value={"the-open-network": {"usd": 1.75, "usd_24h_change": 3.2}}
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_price("gram")
+
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_params == {
+        "ids": "the-open-network",
+        "vs_currencies": "usd",
+        "include_24hr_change": "true",
+    }
+    assert result == (1.75, 3.2, "ton")
 
 
 @pytest.mark.asyncio
@@ -155,6 +172,35 @@ async def test_get_coin_market_data_batch_builds_supported_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_coin_market_data_batch_uses_current_gram_coingecko_id(monkeypatch):
+    get_with_retry = AsyncMock(
+        return_value={"the-open-network": {"usd": 1.72, "usd_24h_change": -0.4}}
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_market_data_batch(["ton"])
+
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_params["ids"] == "the-open-network"
+    assert "toncoin" not in requested_params["ids"]
+    assert result == {"ton": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+
+
+@pytest.mark.asyncio
+async def test_get_coin_market_data_batch_accepts_gram_alias(monkeypatch):
+    get_with_retry = AsyncMock(
+        return_value={"the-open-network": {"usd": 1.72, "usd_24h_change": -0.4}}
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_coin_market_data_batch(["gram"])
+
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_params["ids"] == "the-open-network"
+    assert result == {"ton": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+
+
+@pytest.mark.asyncio
 async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
     get_with_retry = AsyncMock(return_value={"bitcoin": {"usd": 60000.0}})
     monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
@@ -164,19 +210,27 @@ async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
     assert result == {"btc": {"price": 60000.0, "change_24h": 0.0, "change_7d": None}}
 
 
-@pytest.mark.asyncio
-async def test_ton_batch_fallback_success_does_not_log_warning(monkeypatch, caplog):
-    get_with_retry = AsyncMock(return_value={})
-    ton_fallback = AsyncMock(return_value={"usd": 5.0, "usd_24h_change": 1.5})
-    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
-    monkeypatch.setattr(price_service, "_fetch_ton_fallback_coin_data", ton_fallback)
-    caplog.set_level(logging.WARNING, logger=price_service.__name__)
+def test_ton_simple_price_extractor_accepts_only_current_gram_id():
+    payload = {
+        "toncoin": {"usd": 0.38, "usd_24h_change": -77.0},
+        "ton": {"usd": 0.37, "usd_24h_change": -78.0},
+        "the-open-network": {"usd": 1.72, "usd_24h_change": 2.0},
+    }
 
-    result = await price_service.get_coin_market_data_batch(["ton"])
+    assert price_service._extract_ton_coin_data_from_simple_price(payload) == {
+        "usd": 1.72,
+        "usd_24h_change": 2.0,
+    }
 
-    assert result == {"ton": {"price": 5.0, "change_24h": 1.5, "change_7d": None}}
-    ton_fallback.assert_awaited_once()
-    assert not caplog.records
+
+def test_ton_simple_price_extractor_rejects_arbitrary_symbol_candidates():
+    payload = {
+        "toncoin": {"usd": 0.38, "usd_24h_change": -77.0},
+        "ton": {"usd": 0.37, "usd_24h_change": -78.0},
+        "some-ton-candidate": {"usd": 0.39, "usd_24h_change": -76.0},
+    }
+
+    assert price_service._extract_ton_coin_data_from_simple_price(payload) is None
 
 
 def test_get_with_retry_returns_stale_cache_after_429_retries():

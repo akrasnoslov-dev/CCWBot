@@ -24,6 +24,7 @@ Do not place LLM/Groq calls inside recipient loops.
 Current product behavior:
 
 - Manual `/price` supports the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
+  Internal `ton` is user-facing GRAM; `/price gram` and legacy `/price ton` both work.
 - BTC automatic alerts remain free.
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.

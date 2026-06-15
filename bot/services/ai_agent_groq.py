@@ -17,6 +17,7 @@ import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
+from bot.domain.supported_coins import display_symbol as coin_display_symbol
 from bot.news_titles import clean_news_title, clean_related_news_text
 
 load_dotenv()
@@ -607,7 +608,7 @@ def build_fallback_alert_message(
     peak_movement_percent: float | None = None,
 ) -> str:
     """Deterministic fallback used when structured AI output cannot be trusted."""
-    display_symbol = symbol.upper()
+    display_symbol = coin_display_symbol(symbol)
     window_label = _format_window_label(window_seconds or check_interval_seconds)
     peak_line = (
         f"Peak intrahour move: {peak_movement_percent:+.2f}%\n"
@@ -1111,7 +1112,7 @@ def _build_deterministic_ai_alert_message(
     window_label = _format_window_label(check_interval_seconds)
     news_text = related_news_section or "News relevance:\nNo clearly relevant news found."
     message = (
-        f"{structured['risk_level']} - {symbol.upper()} market alert\n\n"
+        f"{structured['risk_level']} - {coin_display_symbol(symbol)} market alert\n\n"
         f"Price: ${current_price:,.2f}\n"
         f"{window_label} move: {price_change_percent:+.2f}%\n"
         f"24h trend: {change_24h:+.2f}%\n\n"
@@ -1185,7 +1186,7 @@ def _build_alert_prompt(
     symbol: str = "BTC",
     coin_name: str = "Bitcoin",
 ) -> str:
-    display_symbol = symbol.upper()
+    display_symbol = coin_display_symbol(symbol)
     change_7d_text = f"{change_7d:.4f}%" if change_7d is not None else "unavailable"
     threshold_text = alert_threshold_percent if alert_threshold_percent is not None else "unknown"
     window_label = _format_window_label(check_interval_seconds)
@@ -1316,10 +1317,10 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
         "Use exactly these fields: symbol, should_alert, event_key, title, message_body, "
         "related_news_ids, possible_action, urgency, confidence, reason_for_no_alert.\n"
         "urgency: low, normal, high. confidence: low, medium, high.\n"
-        "Analyze exactly one symbol: the symbol in the input payload. Do not change backend "
-        "alert types.\n"
+        "Analyze exactly one symbol: the symbol in the input payload. Use display_symbol for "
+        "user-facing wording when it is present. Do not change backend alert types.\n"
         "Use only direct symbol news or clearly market-wide crypto news. Do not treat "
-        "BTC-only news as related context for ETH, SOL, TON, or any non-BTC symbol.\n"
+        "BTC-only news as related context for ETH, SOL, GRAM, or any non-BTC symbol.\n"
         "Do not claim news caused a price move. Avoid overconfident trading instructions.\n"
         "Do not ignore meaningful price moves only because direct news is absent. For "
         "altcoins, a 24h move around 5-7% can be meaningful even without coin-specific news.\n"
@@ -1427,8 +1428,9 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
         "This is a calm Market Heartbeat, not an Event Alert. Do not return "
         "should_alert, event_key, urgency, market_update, important_alert, "
         "critical_alert, strong_signal, buy_signal, or sell_signal.\n"
-        "Use direct symbol news first. Use clearly market-wide crypto news only when useful. "
-        "Do not present BTC-only news as related context for ETH, SOL, TON, or any non-BTC "
+        "Use direct symbol news first. Use display_symbol for user-facing wording when it is "
+        "present. Use clearly market-wide crypto news only when useful. "
+        "Do not present BTC-only news as related context for ETH, SOL, GRAM, or any non-BTC "
         "symbol.\n"
         "Be concise and useful. Mention selected relevant news if useful, but avoid exact "
         "causality claims. Do not repeat exact price values or exact percentage values in "
