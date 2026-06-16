@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.config import OpsAgentConfig
@@ -10,6 +14,12 @@ from ops_agent.db_queries import QUERIES, DbQuery, validate_read_only_queries
 from ops_agent.detectors import run_detectors
 from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from alembic import command
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_all_db_queries_are_read_only_and_parameterized():
@@ -19,6 +29,163 @@ def test_all_db_queries_are_read_only_and_parameterized():
     assert ALERT_EVIDENCE_SQL.strip().lower().startswith(("select", "with"))
     assert ";" not in ALERT_EVIDENCE_SQL
     assert ":since" in ALERT_EVIDENCE_SQL
+
+
+@pytest.mark.asyncio
+async def test_all_ops_agent_queries_explain_against_migrated_postgres_schema():
+    database_url = os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set OPS_AGENT_POSTGRES_TEST_DATABASE_URL to a migrated local PostgreSQL DB")
+    if not database_url.startswith("postgresql+asyncpg://"):
+        pytest.fail("OPS_AGENT_POSTGRES_TEST_DATABASE_URL must use postgresql+asyncpg")
+
+    alembic_config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    alembic_config.set_main_option("sqlalchemy.url", database_url)
+    alembic_config.attributes["database_url"] = database_url
+    alembic_config.attributes["configure_logger"] = False
+    await asyncio.to_thread(command.upgrade, alembic_config, "head")
+
+    params = _query_params()
+    engine = create_async_engine(database_url, future=True)
+    try:
+        async with engine.connect() as connection:
+            for query in QUERIES:
+                await connection.execute(text(f"EXPLAIN {query.sql}"), params)
+            await connection.execute(text(f"EXPLAIN {ALERT_EVIDENCE_SQL}"), params)
+            await _assert_malformed_numeric_context_is_safe(connection, params)
+            await connection.rollback()
+    finally:
+        await engine.dispose()
+
+
+def _query_params() -> dict[str, object]:
+    return {
+        "since": datetime(2026, 6, 1, tzinfo=timezone.utc),
+        "until": datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "limit": 100,
+        "sample_limit": 20,
+        "anomaly_limit": 20,
+        "duplicate_bucket_minutes": 15,
+        "alert_evidence_limit": 100,
+    }
+
+
+async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str, object]) -> None:
+    await connection.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, telegram_user_id, telegram_chat_id, role, is_active, bot_blocked,
+                alert_frequency_seconds, created_at, updated_at
+            )
+            VALUES (
+                900001, 9900001, 9900001, 'user', true, false, 14400,
+                :since, :since
+            )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO market_events (
+                id, symbol, event_type, event_key, event_instance_key, price,
+                previous_price, price_change_percent, detected_at, created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-malformed-context-a', 65000, 66000, -1.5,
+                    :since, :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-malformed-context-b', 64000, 65000, -1.6,
+                    :since, :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO event_ai_analyses (
+                id, market_event_id, analysis_id, symbol, analysis_type, provider, model,
+                input_hash, should_alert, related_news_ids, status, plain_text, created_at
+            )
+            VALUES
+                (
+                    900001, 900001, 'ops_agent_contract_a', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-a', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                ),
+                (
+                    900002, 900002, 'ops_agent_contract_b', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-b', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO alerts (
+                id, symbol, alert_type, message, sent_to_chat_id, market_event_id,
+                event_ai_analysis_id, user_id, status, retry_count, numeric_context,
+                created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900001, 900001, 900001, 'sent', 0, '{bad json',
+                    :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900002, 900002, 900001, 'sent', 0, '{bad json',
+                    :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO alert_delivery_outcomes (
+                id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+                user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+                recipient_eligible, event_instance_key, semantic_family, created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 900001, 900001, 900001, 900001,
+                    9900001, 'delivered', 'delivered', true, true,
+                    'ops-agent-malformed-context-a', 'price_downtrend', :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 900002, 900002, 900002, 900001,
+                    9900001, 'delivered', 'delivered', true, true,
+                    'ops-agent-malformed-context-b', 'price_downtrend', :since
+                )
+            """
+        ),
+        params,
+    )
+
+    for query_name in (
+        "event_alert_same_family_repeats_24h",
+        "event_alert_same_news_repeats_24h",
+    ):
+        query = next(query for query in QUERIES if query.name == query_name)
+        result = await connection.execute(text(query.sql), params)
+        rows = result.fetchall()
+        assert rows, f"{query_name} should handle malformed numeric_context and return rows"
 
 
 def test_price_state_query_uses_existing_price_state_columns_only():
@@ -133,7 +300,9 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "semantic_family" in same_family.sql
     assert "analysed_window_change_percent" in same_family.sql
     assert "stable_news_set_hash" in same_family.sql
+    assert "::jsonb" not in same_family.sql
     assert "md5" in same_news.sql
+    assert "::jsonb" not in same_news.sql
     assert "message" not in same_news.sql.lower()
     assert "reason_code_unknown_count" in outcomes.sql
     for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):

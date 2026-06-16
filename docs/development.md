@@ -145,6 +145,16 @@ collector should record a failed collector status and allow later collectors to 
 tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
 redaction whenever diagnostics change.
 
+For PostgreSQL query-contract verification, run the ops-agent integration test against a local
+throwaway PostgreSQL database. The test upgrades the database to Alembic head, runs `EXPLAIN` for
+every ops-agent DB query, and executes the same-family/same-news repeat collectors against
+malformed `alerts.numeric_context` rows inside a rolled-back transaction:
+
+```bash
+OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:<port>/<test_db> \
+  python -m pytest tests/ops_agent/test_db_queries_and_detectors.py::test_all_ops_agent_queries_explain_against_migrated_postgres_schema -v
+```
+
 ## Local Migration Recovery
 
 If a local development database failed during an Alembic migration, inspect the current version

@@ -108,6 +108,17 @@ that collector as failed with a sanitized error category, continues later collec
 bundle `partial`. Use the generated collector status table to distinguish `Collector failed` from
 true `Unknown` evidence.
 
+Before releasing DB query changes, run the PostgreSQL query-contract test against a local
+throwaway database:
+
+```bash
+OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:<port>/<test_db> \
+  python -m pytest tests/ops_agent/test_db_queries_and_detectors.py::test_all_ops_agent_queries_explain_against_migrated_postgres_schema -v
+```
+
+The test runs Alembic to head, `EXPLAIN`s every ops-agent DB query, and verifies malformed
+`alerts.numeric_context` text does not break same-family or same-news collectors.
+
 The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
 
 1. `CODEX_INSTRUCTIONS.md`
