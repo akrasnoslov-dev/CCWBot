@@ -182,3 +182,12 @@ Avoidable LLM-call checks:
   'llm_rate_limited'`.
 - Market Heartbeat generation remains separate from Event Alerts; heartbeat cadence should not
   suppress Event Alerts.
+
+## Ops-Agent LLM Usage Evidence
+
+The ops-agent `llm_usage_summary` collector groups sanitized usage by provider, call type, model,
+status, and symbol. It reports call counts, prompt/completion/total token sums, latest call time,
+rate-limit count, timeout count, and invalid-JSON/schema-error count.
+
+The collector reads `llm_usage_logs` only. It does not call Groq, retry failed requests, inspect
+raw prompts, or export provider response bodies.

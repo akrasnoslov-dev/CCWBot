@@ -46,6 +46,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - `bot/domain/` contains pure domain rules such as supported coins and Premium entitlement.
 - `bot/services/` contains external service integrations for CoinGecko, RSS news, and Groq.
 - `alembic/` contains database migrations.
+- `ops-agent/` contains the repo-managed production diagnostics collector and sanitized
+  report-context generator.
 - `tests/` contains unit tests that avoid real Telegram, Groq, CoinGecko, and PostgreSQL calls.
 
 PostgreSQL is the primary runtime store when `DATABASE_URL` is configured. The bot uses async

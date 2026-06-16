@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from ops_agent.alert_similarity import build_alert_evidence_payloads
 from ops_agent.config import OpsAgentConfig, database_role_warning
 from ops_agent.db_queries import QUERIES, validate_read_only_queries
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message, redact_value
+from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_text, redact_value
 from ops_agent.schemas import Period
 
 ALERT_EVIDENCE_SQL = """
@@ -130,6 +130,26 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _collector_error(error: Exception, mapper: ReferenceMapper, report: RedactionReport) -> str:
+    raw = f"{type(error).__name__}: {error}".lower()
+    if "cancelled" in raw or "timeout" in raw:
+        category = "timeout"
+    elif "infailedsqltransaction" in raw or "current transaction is aborted" in raw:
+        category = "transaction_state_error"
+    elif any(
+        token in raw
+        for token in ("syntax", "programmingerror", "undefinedtable", "undefinedcolumn")
+    ):
+        category = "sql_syntax_or_schema_error"
+    elif "permission" in raw or "insufficientprivilege" in raw:
+        category = "permission_error"
+    elif "connection" in raw or "connect" in raw:
+        category = "connection_error"
+    else:
+        category = "collector_error"
+    return redact_text(f"{type(error).__name__}: {category}", mapper, report)
+
+
 async def collect_db(
     *,
     config: OpsAgentConfig,
@@ -182,9 +202,9 @@ async def collect_db(
         "alert_evidence_limit": config.limits.alert_evidence_row_cap,
     }
     try:
-        async with engine.connect() as connection:
-            for query in QUERIES:
-                try:
+        for query in QUERIES:
+            try:
+                async with engine.connect() as connection:
                     result = await asyncio.wait_for(
                         connection.execute(text(query.sql), params),
                         timeout=config.limits.db_query_timeout_seconds,
@@ -197,27 +217,27 @@ async def collect_db(
                         )
                         for row in result
                     ]
-                    grouped[query.evidence_file]["queries"][query.name] = {
-                        "query_name": query.name,
-                        "row_count": len(rows),
-                        "rows": rows,
-                        "warnings": [],
+                    await connection.rollback()
+                grouped[query.evidence_file]["queries"][query.name] = {
+                    "query_name": query.name,
+                    "row_count": len(rows),
+                    "rows": rows,
+                    "warnings": [],
+                }
+                if query.name == "duplicate_market_event_buckets":
+                    grouped[query.evidence_file]["queries"][query.name]["parameters"] = {
+                        "bucket_minutes": config.limits.duplicate_market_event_bucket_minutes
                     }
-                    if query.name == "duplicate_market_event_buckets":
-                        grouped[query.evidence_file]["queries"][query.name]["parameters"] = {
-                            "bucket_minutes": (
-                                config.limits.duplicate_market_event_bucket_minutes
-                            )
-                        }
-                    statuses.append({"name": f"db.{query.name}", "status": "ok", "error": None})
-                except Exception as error:
-                    message = redact_error_message(error, mapper, redaction_report)
-                    grouped[query.evidence_file]["warnings"].append(f"{query.name}: {message}")
-                    statuses.append(
-                        {"name": f"db.{query.name}", "status": "partial", "error": message}
-                    )
-            if include_raw_llm_samples:
-                try:
+                statuses.append({"name": f"db.{query.name}", "status": "ok", "error": None})
+            except Exception as error:
+                message = _collector_error(error, mapper, redaction_report)
+                grouped[query.evidence_file]["warnings"].append(f"{query.name}: {message}")
+                statuses.append(
+                    {"name": f"db.{query.name}", "status": "failed", "error": message}
+                )
+        if include_raw_llm_samples:
+            try:
+                async with engine.connect() as connection:
                     raw_result = await asyncio.wait_for(
                         connection.execute(
                             text(
@@ -244,30 +264,30 @@ async def collect_db(
                         )
                         for row in raw_result
                     ]
-                    grouped["evidence/db/raw_llm_samples.redacted.json"]["queries"][
-                        "raw_llm_samples"
-                    ] = {
-                        "query_name": "raw_llm_samples",
-                        "row_count": len(rows),
-                        "rows": rows,
-                        "warnings": ["raw previews are opt-in, capped, and redacted"],
+                    await connection.rollback()
+                grouped["evidence/db/raw_llm_samples.redacted.json"]["queries"][
+                    "raw_llm_samples"
+                ] = {
+                    "query_name": "raw_llm_samples",
+                    "row_count": len(rows),
+                    "rows": rows,
+                    "warnings": ["raw previews are opt-in, capped, and redacted"],
+                }
+                statuses.append({"name": "db.raw_llm_samples", "status": "ok", "error": None})
+            except Exception as error:
+                message = _collector_error(error, mapper, redaction_report)
+                grouped["evidence/db/raw_llm_samples.redacted.json"]["warnings"].append(
+                    f"raw_llm_samples: {message}"
+                )
+                statuses.append(
+                    {
+                        "name": "db.raw_llm_samples",
+                        "status": "failed",
+                        "error": message,
                     }
-                    statuses.append(
-                        {"name": "db.raw_llm_samples", "status": "ok", "error": None}
-                    )
-                except Exception as error:
-                    message = redact_error_message(error, mapper, redaction_report)
-                    grouped["evidence/db/raw_llm_samples.redacted.json"]["warnings"].append(
-                        f"raw_llm_samples: {message}"
-                    )
-                    statuses.append(
-                        {
-                            "name": "db.raw_llm_samples",
-                            "status": "partial",
-                            "error": message,
-                        }
-                    )
-            try:
+                )
+        try:
+            async with engine.connect() as connection:
                 alert_result = await asyncio.wait_for(
                     connection.execute(text(ALERT_EVIDENCE_SQL), params),
                     timeout=config.limits.db_query_timeout_seconds,
@@ -276,38 +296,37 @@ async def collect_db(
                     {key: _jsonable(value) for key, value in row._mapping.items()}
                     for row in alert_result
                 ]
-                alert_payloads = build_alert_evidence_payloads(
-                    alert_rows,
-                    period=period,
-                    row_cap=config.limits.alert_evidence_row_cap,
-                    semantic_cooldown_seconds=(
-                        config.limits.event_alert_semantic_cooldown_seconds
-                    ),
-                )
-                grouped.update(alert_payloads)
-                statuses.append(
-                    {"name": "db.alert_repetition_evidence", "status": "ok", "error": None}
-                )
-            except Exception as error:
-                message = redact_error_message(error, mapper, redaction_report)
-                for file_name in {
-                    "evidence/db/alert_delivery_distribution.json",
-                    "evidence/db/alert_quality.json",
-                    "evidence/db/event_analysis_decision_timeline.json",
-                    "evidence/db/alert_content_fingerprints.json",
-                    "evidence/db/alert_similarity_groups.json",
-                    "evidence/db/backend_suppression_effectiveness.json",
-                    "evidence/db/event_identity_quality.json",
-                    "evidence/db/event_alert_regression_checks.json",
-                }:
-                    grouped[file_name]["warnings"].append(f"alert_repetition_evidence: {message}")
-                statuses.append(
-                    {
-                        "name": "db.alert_repetition_evidence",
-                        "status": "partial",
-                        "error": message,
-                    }
-                )
+                await connection.rollback()
+            alert_payloads = build_alert_evidence_payloads(
+                alert_rows,
+                period=period,
+                row_cap=config.limits.alert_evidence_row_cap,
+                semantic_cooldown_seconds=config.limits.event_alert_semantic_cooldown_seconds,
+            )
+            grouped.update(alert_payloads)
+            statuses.append(
+                {"name": "db.alert_repetition_evidence", "status": "ok", "error": None}
+            )
+        except Exception as error:
+            message = _collector_error(error, mapper, redaction_report)
+            for file_name in {
+                "evidence/db/alert_delivery_distribution.json",
+                "evidence/db/alert_quality.json",
+                "evidence/db/event_analysis_decision_timeline.json",
+                "evidence/db/alert_content_fingerprints.json",
+                "evidence/db/alert_similarity_groups.json",
+                "evidence/db/backend_suppression_effectiveness.json",
+                "evidence/db/event_identity_quality.json",
+                "evidence/db/event_alert_regression_checks.json",
+            }:
+                grouped[file_name]["warnings"].append(f"alert_repetition_evidence: {message}")
+            statuses.append(
+                {
+                    "name": "db.alert_repetition_evidence",
+                    "status": "failed",
+                    "error": message,
+                }
+            )
     finally:
         await engine.dispose()
     return grouped, statuses

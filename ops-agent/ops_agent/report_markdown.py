@@ -28,6 +28,7 @@ def render_decision_report_context(
     evidence: dict[str, Any],
     detector_results: list[DetectorResult],
     collection_status: str,
+    collector_status: list[dict[str, Any]] | None = None,
     bundle_id: str,
     generated_at: datetime | None = None,
 ) -> str:
@@ -62,6 +63,10 @@ def render_decision_report_context(
         f"- Collection status: `{collection_status}`",
         f"- Data sources used: {_data_sources(evidence)}",
         "- Command/date input caveat: production wrapper accepts UTC ISO timestamps only, for example `2026-06-06T00:00:00Z`; ambiguous dates such as `06/06/2026` are rejected.",
+        "",
+        "## Collector Status",
+        "",
+        *_collector_status_table(collector_status or []),
         "",
         "## User Impact",
         "",
@@ -104,7 +109,7 @@ def render_decision_report_context(
         "",
         "## Unknown / Needs Investigation",
         "",
-        *_unknown_section(detector_results),
+        *_unknown_section(detector_results, collector_status or []),
         "",
         "## Data Completeness and Limitations",
         "",
@@ -120,6 +125,57 @@ def _query_rows(evidence: dict[str, Any], query_name: str) -> list[dict[str, Any
         return []
     query = (payload.get("queries") or {}).get(query_name)
     return list((query or {}).get("rows") or []) if isinstance(query, dict) else []
+
+
+def _collector_status_table(collector_status: list[dict[str, Any]]) -> list[str]:
+    if not collector_status:
+        return ["not available - collector status is only available in the bundle manifest."]
+    lines = [
+        "| Collector | Status | Safe error category | Next action |",
+        "|---|---|---|---|",
+    ]
+    for item in collector_status:
+        name = str(item.get("name") or "unknown")
+        status = str(item.get("status") or "unknown")
+        error = str(item.get("error") or "")
+        lines.append(
+            f"| `{name}` | {_display_collector_status(status)} | {error or 'none'} | {_collector_next_action(name, status, error)} |"
+        )
+    failed = [item for item in collector_status if str(item.get("status") or "") != "ok"]
+    if failed:
+        lines.extend(
+            [
+                "",
+                "Failed collectors mean evidence is missing because collection failed. They are not the same as `Unknown`, which means collection succeeded but the available evidence is insufficient.",
+            ]
+        )
+    return lines
+
+
+def _display_collector_status(status: str) -> str:
+    if status == "ok":
+        return "OK"
+    if status == "failed":
+        return "Collector failed"
+    if status == "skipped":
+        return "Unknown"
+    return "Warning"
+
+
+def _collector_next_action(name: str, status: str, error: str) -> str:
+    if status == "ok":
+        return "None."
+    if status == "skipped":
+        return "Configure the missing safe collector input, then rerun collection."
+    if "sql_syntax_or_schema_error" in error:
+        return "Fix the read-only SQL/schema contract for this collector and rerun collection."
+    if "timeout" in error:
+        return "Narrow the query or raise the ops-agent timeout after review."
+    if "permission" in error:
+        return "Verify the read-only ops-agent DB role grants."
+    if name.startswith("db."):
+        return "Inspect the named DB collector and rerun collection after the fix."
+    return "Inspect the named collector and rerun collection."
 
 
 def _query_rows_from(
@@ -551,14 +607,37 @@ def _finding_section(findings: list[ReportFinding], status: str) -> list[str]:
     return lines
 
 
-def _unknown_section(detector_results: list[DetectorResult]) -> list[str]:
+def _unknown_section(
+    detector_results: list[DetectorResult], collector_status: list[dict[str, Any]]
+) -> list[str]:
     unknown = [item for item in detector_results if item.status == "unknown"]
     if not unknown:
         return ["No unknown findings."]
+    failed_collectors = {
+        str(item.get("name") or "")
+        for item in collector_status
+        if str(item.get("status") or "") not in {"ok", ""}
+    }
     return [
-        f"- `{item.id}`: {item.evidence_gap or item.summary}"
+        f"- `{item.id}`: {_display_detector_status(item, failed_collectors)} - {item.evidence_gap or item.summary}"
         for item in sorted(unknown, key=lambda item: item.id)
     ]
+
+
+def _display_detector_status(
+    item: DetectorResult, failed_collectors: set[str] | None = None
+) -> str:
+    if item.status == "triggered" and item.severity in {"critical", "high"}:
+        return "Critical"
+    if item.status == "triggered":
+        return "Warning"
+    if item.status == "clear":
+        return "OK"
+    failed_collectors = failed_collectors or set()
+    evidence_gap = item.evidence_gap or ""
+    if any(name.removeprefix("db.") in evidence_gap for name in failed_collectors):
+        return "Collector failed"
+    return "Unknown"
 
 
 def _data_completeness(evidence: dict[str, Any]) -> list[str]:
@@ -566,6 +645,41 @@ def _data_completeness(evidence: dict[str, Any]) -> list[str]:
         ("Market events available", _has_query(evidence, "market_events_summary")),
         ("AI analyses available", _has_query(evidence, "event_ai_analysis_summary")),
         ("Alert delivery records available", _has_query(evidence, "alerts_summary")),
+        (
+            "Duplicate Event Alert delivery evidence available",
+            _has_query_from(
+                evidence,
+                "evidence/db/anomalies.json",
+                "event_alert_duplicate_deliveries_by_market_event",
+            )
+            and _has_query_from(
+                evidence,
+                "evidence/db/anomalies.json",
+                "event_alert_duplicate_deliveries_by_analysis",
+            ),
+        ),
+        ("Event Alert invariant evidence available", _has_query(evidence, "event_alert_event_invariant_summary")),
+        (
+            "Same-family and same-news repeat evidence available",
+            _has_query_from(
+                evidence,
+                "evidence/db/anomalies.json",
+                "event_alert_same_family_repeats_24h",
+            )
+            and _has_query_from(
+                evidence,
+                "evidence/db/anomalies.json",
+                "event_alert_same_news_repeats_24h",
+            ),
+        ),
+        ("LLM usage evidence available", _has_query(evidence, "llm_usage_summary")),
+        (
+            "Heartbeat freshness evidence available",
+            _has_query(evidence, "market_heartbeats_freshness")
+            and _has_query(evidence, "market_heartbeat_delivery_freshness"),
+        ),
+        ("Report freshness evidence available", _has_query(evidence, "market_reports_freshness")),
+        ("News freshness evidence available", _has_query(evidence, "news_freshness_summary")),
         ("Telegram failure details available", "evidence/db/recent_alert_failures.json" in evidence),
         ("Warning/error logs available", "evidence/logs/pattern_counts.json" in evidence),
         ("Suppression reason data available", bool(_suppression_reasons_available(evidence))),
@@ -582,6 +696,13 @@ def _data_completeness(evidence: dict[str, Any]) -> list[str]:
         ]
     )
     return lines
+
+
+def _has_query_from(evidence: dict[str, Any], file_name: str, query_name: str) -> bool:
+    payload = evidence.get(file_name)
+    if not isinstance(payload, dict):
+        return False
+    return isinstance((payload.get("queries") or {}).get(query_name), dict)
 
 
 def _suppression_reasons_available(evidence: dict[str, Any]) -> bool:

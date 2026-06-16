@@ -45,6 +45,31 @@ Current limitations:
 - Delivery health is based on stored delivery rows and user blocked-state telemetry, not a live
   Telegram send probe.
 
+## Ops-Agent Diagnostics
+
+The repo-managed ops-agent source lives under `ops-agent/`. Production wrappers should point to
+that source and keep using the safe collection command:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+DB collectors are isolated per read-only query. If one collector fails, the bundle records that
+collector as failed with a sanitized error class/category and continues later collectors. The
+bundle status becomes `partial` when any collector fails, but unrelated evidence should still be
+present.
+
+Generated report context includes a collector status table. Interpret statuses as:
+
+- `OK`: collector succeeded.
+- `Warning`: collector produced degraded but usable evidence.
+- `Critical`: detector evidence shows a high-impact issue.
+- `Unknown`: collection succeeded, but evidence is insufficient.
+- `Collector failed`: evidence is missing because the named collector failed.
+
+Failed collector errors must not include SQL parameters, connection strings, `.env` values, raw
+stack traces, or private Telegram text.
+
 ## GRAM Rebrand Price-State Check
 
 GRAM is stored internally as symbol `ton` to preserve existing rows in `price_state`,

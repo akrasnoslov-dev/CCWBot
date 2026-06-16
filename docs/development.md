@@ -131,6 +131,20 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
 
+## Ops-Agent Development
+
+`ops-agent/` is the repo-managed diagnostics collector used by the production wrapper
+`/usr/local/bin/ccwbot-ops-agent-collect`. Keep wrapper compatibility for:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+Ops-agent DB collectors must be read-only, isolated from each other, and sanitized. A failed DB
+collector should record a failed collector status and allow later collectors to run. Add focused
+tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
+redaction whenever diagnostics change.
+
 ## Local Migration Recovery
 
 If a local development database failed during an Alembic migration, inspect the current version
