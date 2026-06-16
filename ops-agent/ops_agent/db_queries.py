@@ -339,7 +339,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHERE coalesce(sd.sent_count, 0) = 0 AND coalesce(eo.explained_count, 0) = 0) "
         "SELECT 'should_alert_true_without_delivery_explanation' AS anomaly, count(*) AS gap_count, "
         "count(DISTINCT market_event_id) AS affected_market_events, "
-        "array_agg(DISTINCT symbol ORDER BY symbol)[1:10] AS symbols, "
+        "(array_agg(DISTINCT symbol ORDER BY symbol))[1:10] AS symbols, "
         "(array_agg(jsonb_build_object('event_ai_analysis_id', id, 'market_event_id', market_event_id, "
         "'symbol', symbol, 'event_key', event_key, 'created_at', created_at) "
         "ORDER BY created_at DESC, id DESC))[1:5] AS sample_analyses "
@@ -375,6 +375,121 @@ QUERIES: tuple[DbQuery, ...] = (
         "GROUP BY symbol, market_event_id HAVING count(DISTINCT event_ai_analysis_id) > 1) "
         "SELECT * FROM duplicate_deliveries UNION ALL SELECT * FROM events_without_delivery "
         "UNION ALL SELECT * FROM multiple_analysis LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "event_alert_duplicate_deliveries_by_market_event",
+        "evidence/db/anomalies.json",
+        "SELECT user_id, symbol, alert_type, market_event_id, count(*) AS sent_count, "
+        "min(created_at) AS first_sent_at, max(created_at) AS last_sent_at, "
+        "count(DISTINCT event_ai_analysis_id) FILTER (WHERE event_ai_analysis_id IS NOT NULL) "
+        "AS event_ai_analysis_count, "
+        "(array_remove(array_agg(DISTINCT event_ai_analysis_id ORDER BY event_ai_analysis_id), NULL))[1:10] "
+        "AS event_ai_analysis_ids "
+        "FROM alerts WHERE alert_type = 'event_alert' AND status = 'sent' "
+        "AND market_event_id IS NOT NULL "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY user_id, symbol, alert_type, market_event_id HAVING count(*) > 1 "
+        "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "event_alert_duplicate_deliveries_by_analysis",
+        "evidence/db/anomalies.json",
+        "SELECT user_id, symbol, alert_type, event_ai_analysis_id, count(*) AS sent_count, "
+        "min(created_at) AS first_sent_at, max(created_at) AS last_sent_at "
+        "FROM alerts WHERE alert_type = 'event_alert' AND status = 'sent' "
+        "AND event_ai_analysis_id IS NOT NULL "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY user_id, symbol, alert_type, event_ai_analysis_id HAVING count(*) > 1 "
+        "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "event_alert_event_invariant_summary",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT me.id AS market_event_id, me.symbol, me.event_key, me.event_instance_key, "
+        "count(DISTINCT eaa.id) AS attached_event_analysis_count, "
+        "count(DISTINCT eaa.id) FILTER (WHERE eaa.status IN ('success', 'completed')) "
+        "AS successful_attached_event_analysis_count, "
+        "count(DISTINCT a.id) FILTER (WHERE a.status = 'sent') AS sent_delivery_count, "
+        "count(DISTINCT ado.id) AS outcome_count "
+        "FROM market_events me "
+        "LEFT JOIN event_ai_analyses eaa ON eaa.market_event_id = me.id "
+        "AND coalesce(eaa.analysis_type, 'event_analysis') = 'event_analysis' "
+        "LEFT JOIN alerts a ON a.market_event_id = me.id AND a.alert_type = 'event_alert' "
+        "LEFT JOIN alert_delivery_outcomes ado ON ado.market_event_id = me.id "
+        "AND ado.alert_type = 'event_alert' "
+        "WHERE me.detected_at >= :since AND me.detected_at < :until "
+        "GROUP BY me.id, me.symbol, me.event_key, me.event_instance_key "
+        "ORDER BY me.id DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "event_alert_same_family_repeats_24h",
+        "evidence/db/anomalies.json",
+        "WITH sent AS ("
+        "SELECT a.user_id, a.symbol, coalesce(ado.semantic_family, me.event_key) AS canonical_event_key, "
+        "ado.semantic_family, a.created_at, "
+        "substring(a.numeric_context from "
+        "'\"analysed_window_change_percent\"\\s*:\\s*\"?(-?[0-9]+(?:\\.[0-9]+)?)\"?')::numeric "
+        "AS analysed_window_change_percent, "
+        "md5(coalesce(substring(a.numeric_context from "
+        "'\"stable_related_news_ids\"\\s*:\\s*(\\[[^\\]]*\\])'), "
+        "coalesce(eaa.related_news_ids, '[]'))) AS stable_news_set_hash "
+        "FROM alerts a JOIN market_events me ON me.id = a.market_event_id "
+        "LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id "
+        "LEFT JOIN event_ai_analyses eaa ON eaa.id = a.event_ai_analysis_id "
+        "WHERE a.alert_type = 'event_alert' AND a.status = 'sent' "
+        "AND a.created_at >= :since AND a.created_at < :until) "
+        "SELECT user_id, symbol, canonical_event_key, semantic_family, count(*) AS sent_count, "
+        "min(created_at) AS first_sent_at, max(created_at) AS last_sent_at, "
+        "min(analysed_window_change_percent) AS min_analysed_window_change_percent, "
+        "max(analysed_window_change_percent) AS max_analysed_window_change_percent, "
+        "count(DISTINCT stable_news_set_hash) AS stable_news_set_hash_count, "
+        "(array_agg(DISTINCT stable_news_set_hash ORDER BY stable_news_set_hash))[1:10] "
+        "AS stable_news_set_hashes "
+        "FROM sent GROUP BY user_id, symbol, canonical_event_key, semantic_family "
+        "HAVING count(*) > 1 AND max(created_at) - min(created_at) <= interval '24 hours' "
+        "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "event_alert_same_news_repeats_24h",
+        "evidence/db/anomalies.json",
+        "WITH sent AS ("
+        "SELECT a.user_id, a.symbol, me.event_key, ado.semantic_family, a.created_at, "
+        "md5(coalesce(substring(a.numeric_context from "
+        "'\"stable_related_news_ids\"\\s*:\\s*(\\[[^\\]]*\\])'), "
+        "coalesce(eaa.related_news_ids, '[]'))) AS stable_related_news_ids_hash "
+        "FROM alerts a JOIN market_events me ON me.id = a.market_event_id "
+        "LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id "
+        "LEFT JOIN event_ai_analyses eaa ON eaa.id = a.event_ai_analysis_id "
+        "WHERE a.alert_type = 'event_alert' AND a.status = 'sent' "
+        "AND a.created_at >= :since AND a.created_at < :until) "
+        "SELECT user_id, symbol, stable_related_news_ids_hash, count(*) AS sent_count, "
+        "min(created_at) AS first_sent_at, max(created_at) AS last_sent_at, "
+        "(array_agg(DISTINCT event_key ORDER BY event_key))[1:10] AS related_event_keys, "
+        "(array_remove(array_agg(DISTINCT semantic_family ORDER BY semantic_family), NULL))[1:10] "
+        "AS related_semantic_families "
+        "FROM sent WHERE stable_related_news_ids_hash != md5('[]') "
+        "GROUP BY user_id, symbol, stable_related_news_ids_hash "
+        "HAVING count(*) > 1 AND max(created_at) - min(created_at) <= interval '24 hours' "
+        "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
+    ),
+    DbQuery(
+        "alert_delivery_outcome_summary",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT coalesce(status, 'unknown') AS status, coalesce(reason_code, 'unknown') AS reason_code, "
+        "count(*) AS outcomes, count(*) FILTER (WHERE reason_code IS NULL OR reason_code = '') "
+        "AS reason_code_unknown_count, "
+        "count(*) FILTER (WHERE market_event_id IS NULL) AS market_event_id_null_count, "
+        "count(*) FILTER (WHERE market_event_id IS NOT NULL) AS market_event_id_present_count, "
+        "count(*) FILTER (WHERE event_ai_analysis_id IS NULL) AS event_ai_analysis_id_null_count, "
+        "count(*) FILTER (WHERE event_ai_analysis_id IS NOT NULL) AS event_ai_analysis_id_present_count, "
+        "count(*) FILTER (WHERE status = 'delivered') AS delivered_count, "
+        "count(*) FILTER (WHERE status = 'suppressed') AS suppressed_count, "
+        "count(*) FILTER (WHERE status = 'filtered') AS filtered_count, "
+        "count(*) FILTER (WHERE status = 'failed') AS failed_count, "
+        "count(*) FILTER (WHERE status = 'rate_limited') AS rate_limited_count "
+        "FROM alert_delivery_outcomes WHERE created_at >= :since AND created_at < :until "
+        "GROUP BY coalesce(status, 'unknown'), coalesce(reason_code, 'unknown') "
+        "ORDER BY outcomes DESC, status, reason_code LIMIT :limit",
     ),
     DbQuery(
         "market_events_without_delivery_classification",
@@ -478,6 +593,23 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM symbols s LEFT JOIN latest l ON l.symbol = s.symbol ORDER BY s.symbol LIMIT :limit",
     ),
     DbQuery(
+        "market_heartbeat_delivery_freshness",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT symbol, user_id, count(*) AS deliveries, "
+        "max(created_at) FILTER (WHERE status = 'sent') AS latest_sent_at, "
+        "count(*) FILTER (WHERE status = 'sent') AS sent_count, "
+        "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) "
+        "AS failed_count, "
+        "count(*) FILTER (WHERE coalesce(message, '') ~* '(^|[^a-z0-9])n/a([^a-z0-9]|$)' "
+        "OR coalesce(message, '') ~* '(^|[^a-z0-9])unknown([^a-z0-9]|$)' "
+        "OR coalesce(message, '') ~* '(^|[^a-z0-9])unavailable([^a-z0-9]|$)' "
+        "OR coalesce(message, '') ~* '(^|[^a-z0-9])null([^a-z0-9]|$)') "
+        "AS placeholder_quality_count "
+        "FROM alerts WHERE (alert_type = 'market_heartbeat' OR market_heartbeat_id IS NOT NULL) "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY symbol, user_id ORDER BY latest_sent_at DESC NULLS LAST, symbol LIMIT :limit",
+    ),
+    DbQuery(
         "market_reports_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT report_type, status, count(*) AS reports, max(generated_at) AS latest_generated_at, "
@@ -512,11 +644,33 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "llm_usage_summary",
         "evidence/db/aggregate_metrics.json",
-        "SELECT provider, model, call_type, status, count(*) AS calls, sum(total_tokens) AS total_tokens, "
+        "SELECT provider, model, call_type, status, coalesce(symbol, 'UNKNOWN') AS symbol, "
+        "count(*) AS calls, sum(prompt_tokens) AS prompt_tokens, "
+        "sum(completion_tokens) AS completion_tokens, sum(total_tokens) AS total_tokens, "
+        "max(created_at) AS latest_at, "
         "count(*) FILTER (WHERE status LIKE '%rate_limit%' OR retry_after IS NOT NULL) AS rate_limit_count, "
+        "count(*) FILTER (WHERE error_reason = 'timeout') AS timeout_count, "
+        "count(*) FILTER (WHERE error_reason IN ('invalid_json', 'schema_validation_failed')) "
+        "AS invalid_json_schema_error_count, "
         "max(retry_after) AS max_retry_after FROM llm_usage_logs "
         "WHERE created_at >= :since AND created_at < :until "
-        "GROUP BY provider, model, call_type, status ORDER BY calls DESC LIMIT :limit",
+        "GROUP BY provider, model, call_type, status, coalesce(symbol, 'UNKNOWN') "
+        "ORDER BY calls DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "news_freshness_summary",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT max(fetched_at) AS latest_fetched_at, "
+        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "AND coalesce(is_duplicate, false) = false AND coalesce(is_noise, false) = false) "
+        "AS usable_news_count_24h, "
+        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "AND coalesce(is_duplicate, false) = true) AS duplicate_filtered_count_24h, "
+        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "AND coalesce(is_noise, false) = true) AS noise_filtered_count_24h, "
+        "(array_agg(llm_status ORDER BY fetched_at DESC, id DESC) FILTER (WHERE llm_status IS NOT NULL))[1] "
+        "AS latest_news_intelligence_status "
+        "FROM news_items",
     ),
     DbQuery(
         "news_items_summary",

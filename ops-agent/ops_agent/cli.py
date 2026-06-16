@@ -130,6 +130,7 @@ async def _collect(args: argparse.Namespace) -> int:
             evidence=evidence,
             detector_results=results,
             collection_status=collection_status,
+            collector_status=[status.as_dict() for status in writer.collector_status],
             bundle_id=writer.bundle_id,
         ),
     )

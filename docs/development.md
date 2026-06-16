@@ -131,6 +131,30 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
 
+## Ops-Agent Development
+
+`ops-agent/` is the repo-managed diagnostics collector used by the production wrapper
+`/usr/local/bin/ccwbot-ops-agent-collect`. Keep wrapper compatibility for:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+Ops-agent DB collectors must be read-only, isolated from each other, and sanitized. A failed DB
+collector should record a failed collector status and allow later collectors to run. Add focused
+tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
+redaction whenever diagnostics change.
+
+For PostgreSQL query-contract verification, run the ops-agent integration test against a local
+throwaway PostgreSQL database. The test upgrades the database to Alembic head, runs `EXPLAIN` for
+every ops-agent DB query, and executes the same-family/same-news repeat collectors against
+malformed `alerts.numeric_context` rows inside a rolled-back transaction:
+
+```bash
+OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:<port>/<test_db> \
+  python -m pytest tests/ops_agent/test_db_queries_and_detectors.py::test_all_ops_agent_queries_explain_against_migrated_postgres_schema -v
+```
+
 ## Local Migration Recovery
 
 If a local development database failed during an Alembic migration, inspect the current version

@@ -103,6 +103,22 @@ sudo /usr/local/bin/ccwbot-ops-agent-collect --since 2026-05-27T00:00:00Z --unti
 Explicit periods must have `since < until` and must not exceed 720 hours.
 Use UTC ISO input only: `YYYY-MM-DDTHH:MM:SSZ`. Do not use slash-form dates.
 
+DB collectors run as isolated read-only collectors. If one DB collector fails, the bundle records
+that collector as failed with a sanitized error category, continues later collectors, and marks the
+bundle `partial`. Use the generated collector status table to distinguish `Collector failed` from
+true `Unknown` evidence.
+
+Before releasing DB query changes, run the PostgreSQL query-contract test against a local
+throwaway database:
+
+```bash
+OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:<port>/<test_db> \
+  python -m pytest tests/ops_agent/test_db_queries_and_detectors.py::test_all_ops_agent_queries_explain_against_migrated_postgres_schema -v
+```
+
+The test runs Alembic to head, `EXPLAIN`s every ops-agent DB query, and verifies malformed
+`alerts.numeric_context` text does not break same-family or same-news collectors.
+
 The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
 
 1. `CODEX_INSTRUCTIONS.md`
