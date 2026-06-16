@@ -16,10 +16,23 @@ Production runs from `main` on the Hetzner VPS at `/opt/CCWBot`. Local developme
 
 ```bash
 docker compose config >/dev/null
-python -m pytest tests/ -v
+python -m pytest tests/ -v -ra --durations=20
 ```
 
 Do not publish expanded Compose output from a real `.env`.
+
+## Ops-Agent Diagnostics
+
+The production ops-agent wrapper should point at the repo-managed `ops-agent/` source. Use only the
+safe wrapper for collection:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+Do not run raw deployment, restart, migration, environment-printing, or secret-reading commands as
+part of diagnostics. A partial bundle means at least one collector failed; inspect the collector
+status table and rerun after the named collector is fixed.
 
 ## Production Deploy
 

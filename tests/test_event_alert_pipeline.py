@@ -1673,8 +1673,8 @@ async def test_invalid_json_creates_no_delivery_and_marks_ai_not_ok(monkeypatch)
             assert row.status == "invalid_json"
             assert row.raw_output_json == "not json"
         status_text = await _build_admin_system_status_text()
-        assert "Groq AI status: NOT OK" in status_text
-        assert "Last AI error reason: invalid JSON" in status_text
+        assert "Groq event analysis: WARN - latest attempt invalid_json" in status_text
+        assert "Latest failure: invalid_json" in status_text
     finally:
         await engine.dispose()
 
@@ -1707,7 +1707,7 @@ async def test_llm_unavailable_creates_no_delivery_and_marks_ai_not_ok(monkeypat
             row = await session.scalar(select(EventAiAnalysis))
             assert row.status == "llm_error"
         status_text = await _build_admin_system_status_text()
-        assert "Groq AI status: NOT OK" in status_text
+        assert "Groq event analysis: FAIL - latest attempt llm_error" in status_text
     finally:
         await engine.dispose()
 

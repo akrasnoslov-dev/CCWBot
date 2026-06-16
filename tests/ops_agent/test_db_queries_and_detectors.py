@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
+import pytest
+from alembic.config import Config
+from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
-from ops_agent.db_queries import QUERIES, validate_read_only_queries
+from ops_agent.config import OpsAgentConfig
+from ops_agent.db_queries import QUERIES, DbQuery, validate_read_only_queries
 from ops_agent.detectors import run_detectors
+from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from alembic import command
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_all_db_queries_are_read_only_and_parameterized():
@@ -15,6 +29,163 @@ def test_all_db_queries_are_read_only_and_parameterized():
     assert ALERT_EVIDENCE_SQL.strip().lower().startswith(("select", "with"))
     assert ";" not in ALERT_EVIDENCE_SQL
     assert ":since" in ALERT_EVIDENCE_SQL
+
+
+@pytest.mark.asyncio
+async def test_all_ops_agent_queries_explain_against_migrated_postgres_schema():
+    database_url = os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set OPS_AGENT_POSTGRES_TEST_DATABASE_URL to a migrated local PostgreSQL DB")
+    if not database_url.startswith("postgresql+asyncpg://"):
+        pytest.fail("OPS_AGENT_POSTGRES_TEST_DATABASE_URL must use postgresql+asyncpg")
+
+    alembic_config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    alembic_config.set_main_option("sqlalchemy.url", database_url)
+    alembic_config.attributes["database_url"] = database_url
+    alembic_config.attributes["configure_logger"] = False
+    await asyncio.to_thread(command.upgrade, alembic_config, "head")
+
+    params = _query_params()
+    engine = create_async_engine(database_url, future=True)
+    try:
+        async with engine.connect() as connection:
+            for query in QUERIES:
+                await connection.execute(text(f"EXPLAIN {query.sql}"), params)
+            await connection.execute(text(f"EXPLAIN {ALERT_EVIDENCE_SQL}"), params)
+            await _assert_malformed_numeric_context_is_safe(connection, params)
+            await connection.rollback()
+    finally:
+        await engine.dispose()
+
+
+def _query_params() -> dict[str, object]:
+    return {
+        "since": datetime(2026, 6, 1, tzinfo=timezone.utc),
+        "until": datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "limit": 100,
+        "sample_limit": 20,
+        "anomaly_limit": 20,
+        "duplicate_bucket_minutes": 15,
+        "alert_evidence_limit": 100,
+    }
+
+
+async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str, object]) -> None:
+    await connection.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, telegram_user_id, telegram_chat_id, role, is_active, bot_blocked,
+                alert_frequency_seconds, created_at, updated_at
+            )
+            VALUES (
+                900001, 9900001, 9900001, 'user', true, false, 14400,
+                :since, :since
+            )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO market_events (
+                id, symbol, event_type, event_key, event_instance_key, price,
+                previous_price, price_change_percent, detected_at, created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-malformed-context-a', 65000, 66000, -1.5,
+                    :since, :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-malformed-context-b', 64000, 65000, -1.6,
+                    :since, :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO event_ai_analyses (
+                id, market_event_id, analysis_id, symbol, analysis_type, provider, model,
+                input_hash, should_alert, related_news_ids, status, plain_text, created_at
+            )
+            VALUES
+                (
+                    900001, 900001, 'ops_agent_contract_a', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-a', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                ),
+                (
+                    900002, 900002, 'ops_agent_contract_b', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-b', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO alerts (
+                id, symbol, alert_type, message, sent_to_chat_id, market_event_id,
+                event_ai_analysis_id, user_id, status, retry_count, numeric_context,
+                created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900001, 900001, 900001, 'sent', 0, '{bad json',
+                    :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900002, 900002, 900001, 'sent', 0, '{bad json',
+                    :since
+                )
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO alert_delivery_outcomes (
+                id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+                user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+                recipient_eligible, event_instance_key, semantic_family, created_at
+            )
+            VALUES
+                (
+                    900001, 'BTC', 'event_alert', 900001, 900001, 900001, 900001,
+                    9900001, 'delivered', 'delivered', true, true,
+                    'ops-agent-malformed-context-a', 'price_downtrend', :since
+                ),
+                (
+                    900002, 'BTC', 'event_alert', 900002, 900002, 900002, 900001,
+                    9900001, 'delivered', 'delivered', true, true,
+                    'ops-agent-malformed-context-b', 'price_downtrend', :since
+                )
+            """
+        ),
+        params,
+    )
+
+    for query_name in (
+        "event_alert_same_family_repeats_24h",
+        "event_alert_same_news_repeats_24h",
+    ):
+        query = next(query for query in QUERIES if query.name == query_name)
+        result = await connection.execute(text(query.sql), params)
+        rows = result.fetchall()
+        assert rows, f"{query_name} should handle malformed numeric_context and return rows"
 
 
 def test_price_state_query_uses_existing_price_state_columns_only():
@@ -35,6 +206,14 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "delivery_funnel" in query_names
     assert "alert_quality_summary" in query_names
     assert "event_alert_delivery_explanation_gaps" in query_names
+    assert "event_alert_duplicate_deliveries_by_market_event" in query_names
+    assert "event_alert_duplicate_deliveries_by_analysis" in query_names
+    assert "event_alert_event_invariant_summary" in query_names
+    assert "event_alert_same_family_repeats_24h" in query_names
+    assert "event_alert_same_news_repeats_24h" in query_names
+    assert "alert_delivery_outcome_summary" in query_names
+    assert "market_heartbeat_delivery_freshness" in query_names
+    assert "news_freshness_summary" in query_names
 
 
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
@@ -84,6 +263,78 @@ def test_event_alert_delivery_explanation_gap_query_accepts_expected_outcomes():
         "not_scheduled",
     ):
         assert expected_status in query.sql
+    assert "(array_agg(DISTINCT symbol ORDER BY symbol))[1:10]" in query.sql
+    assert "array_agg(DISTINCT symbol ORDER BY symbol)[1:10]" not in query.sql
+
+
+def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
+    duplicate_by_event = next(
+        query
+        for query in QUERIES
+        if query.name == "event_alert_duplicate_deliveries_by_market_event"
+    )
+    duplicate_by_analysis = next(
+        query
+        for query in QUERIES
+        if query.name == "event_alert_duplicate_deliveries_by_analysis"
+    )
+    invariant = next(
+        query for query in QUERIES if query.name == "event_alert_event_invariant_summary"
+    )
+    same_family = next(
+        query for query in QUERIES if query.name == "event_alert_same_family_repeats_24h"
+    )
+    same_news = next(
+        query for query in QUERIES if query.name == "event_alert_same_news_repeats_24h"
+    )
+    outcomes = next(query for query in QUERIES if query.name == "alert_delivery_outcome_summary")
+
+    assert "user_id" in duplicate_by_event.sql
+    assert "market_event_id" in duplicate_by_event.sql
+    assert "event_ai_analysis_count" in duplicate_by_event.sql
+    assert "event_ai_analysis_id" in duplicate_by_analysis.sql
+    assert "attached_event_analysis_count" in invariant.sql
+    assert "successful_attached_event_analysis_count" in invariant.sql
+    assert "sent_delivery_count" in invariant.sql
+    assert "outcome_count" in invariant.sql
+    assert "semantic_family" in same_family.sql
+    assert "analysed_window_change_percent" in same_family.sql
+    assert "stable_news_set_hash" in same_family.sql
+    assert "::jsonb" not in same_family.sql
+    assert "md5" in same_news.sql
+    assert "::jsonb" not in same_news.sql
+    assert "message" not in same_news.sql.lower()
+    assert "reason_code_unknown_count" in outcomes.sql
+    for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):
+        assert f"{status}_count" in outcomes.sql
+
+
+def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
+    query = next(query for query in QUERIES if query.name == "llm_usage_summary")
+
+    assert "call_type" in query.sql
+    assert "model" in query.sql
+    assert "status" in query.sql
+    assert "coalesce(symbol, 'UNKNOWN') AS symbol" in query.sql
+    assert "sum(prompt_tokens) AS prompt_tokens" in query.sql
+    assert "sum(completion_tokens) AS completion_tokens" in query.sql
+    assert "sum(total_tokens) AS total_tokens" in query.sql
+    assert "max(created_at) AS latest_at" in query.sql
+    assert "rate_limit_count" in query.sql
+    assert "timeout_count" in query.sql
+    assert "invalid_json_schema_error_count" in query.sql
+
+
+def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
+    query_names = {query.name: query for query in QUERIES}
+
+    assert "LEFT JOIN latest" in query_names["market_heartbeats_freshness"].sql
+    assert "VALUES ('daily', 14400), ('weekly', 86400)" in query_names[
+        "market_reports_freshness"
+    ].sql
+    assert "placeholder_quality_count" in query_names["market_heartbeat_delivery_freshness"].sql
+    assert "latest_fetched_at" in query_names["news_freshness_summary"].sql
+    assert "usable_news_count_24h" in query_names["news_freshness_summary"].sql
 
 
 def test_alert_quality_summary_uses_token_boundary_placeholder_regexes():
@@ -342,6 +593,88 @@ def test_missing_required_db_evidence_returns_unknown_not_clear():
 
     assert results["failed_telegram_deliveries"].status == "unknown"
     assert results["failed_telegram_deliveries"].evidence_gap is not None
+
+
+@pytest.mark.asyncio
+async def test_db_collector_failure_is_isolated_and_later_collectors_continue(
+    monkeypatch, tmp_path
+):
+    class FakeRow:
+        def __init__(self, **values):
+            self._mapping = values
+
+    class FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def __iter__(self):
+            return iter(self._rows)
+
+    class FakeConnection:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, statement, _params):
+            sql = str(statement)
+            if "BROKEN QUERY" in sql:
+                raise RuntimeError(
+                    "syntax error near FROM DATABASE_URL=postgresql://user:secret@db/name"
+                )
+            if "ok_later" in sql:
+                return FakeResult([FakeRow(value=1)])
+            return FakeResult([])
+
+        async def rollback(self):
+            return None
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConnection()
+
+        async def dispose(self):
+            return None
+
+    monkeypatch.setattr(db_collector, "create_async_engine", lambda *_args, **_kwargs: FakeEngine())
+    monkeypatch.setattr(
+        db_collector,
+        "QUERIES",
+        (
+            DbQuery("broken", "evidence/db/anomalies.json", "SELECT * FROM BROKEN QUERY"),
+            DbQuery("ok_later", "evidence/db/aggregate_metrics.json", "SELECT 1 AS ok_later"),
+        ),
+    )
+    monkeypatch.setattr(db_collector, "ALERT_EVIDENCE_SQL", "SELECT 1 WHERE false")
+
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    config = OpsAgentConfig(
+        database_url="postgresql+asyncpg://ccwbot_ops_reader:secret@postgres/ccwbot",
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path,
+        legacy_state_path=tmp_path / "state.json",
+    )
+
+    payloads, statuses = await db_collector.collect_db(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"0" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    status_by_name = {status["name"]: status for status in statuses}
+    assert status_by_name["db.broken"]["status"] == "failed"
+    assert status_by_name["db.broken"]["error"] == "RuntimeError: sql_syntax_or_schema_error"
+    assert "secret" not in str(status_by_name["db.broken"]["error"])
+    assert "DATABASE_URL" not in str(status_by_name["db.broken"]["error"])
+    assert status_by_name["db.ok_later"]["status"] == "ok"
+    assert payloads["evidence/db/aggregate_metrics.json"]["queries"]["ok_later"]["row_count"] == 1
 
 
 def test_no_delivery_classification_clear_for_expected_no_alert():

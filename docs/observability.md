@@ -2,6 +2,74 @@
 
 Use these read-only queries for production analysis. Adjust interval windows as needed.
 
+## Admin System Status
+
+Admin -> System status is the concise Telegram-safe summary for live operators. It uses only
+persisted telemetry and in-memory Groq backoff state; opening the screen must not call CoinGecko,
+Groq, RSS feeds, or Telegram delivery APIs.
+
+Component states:
+
+- `OK`: fresh successful telemetry exists.
+- `WARN`: telemetry is stale, partial, degraded, or has recent non-fatal failures.
+- `FAIL`: the latest required operation failed or a core dependency is unavailable.
+- `UNKNOWN`: there is not enough telemetry to claim success or failure.
+
+Signals currently checked:
+
+- Runtime: admin command response and latest BTC `price_state` freshness as the automatic market
+  check proxy.
+- Database: explicit lightweight PostgreSQL query.
+- Market data: one `price_state` row per active symbol from `SUPPORTED_SYMBOLS`, including GRAM
+  stored as internal `ton` with CoinGecko id `the-open-network`.
+- AI: latest event-analysis attempt, latest successful attempt, and latest failure from
+  `event_ai_analyses`; failure details are sanitized and redacted if they look like provider
+  payloads, traces, headers, connection strings, or secrets.
+- Groq rate limit: active event-analysis/heartbeat in-memory backoff plus recent
+  `llm_usage_logs` rate-limit telemetry.
+- RSS/news: latest `news_items.fetched_at`, usable non-noise/non-duplicate rows in the last 24h,
+  and latest news-intelligence status.
+- Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
+  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`.
+
+If a latest AI failure is older than the latest `success` or `no_alert`, status shows it as
+`resolved by newer success`. That means the historical failure is still useful context but is not
+the current Groq event-analysis state.
+
+Current limitations:
+
+- CoinGecko provider health is inferred from stored market-data freshness, not a live provider
+  request.
+- RSS fetch health is inferred from `news_items` cache freshness and news-intelligence telemetry;
+  there is no separate provider fetch-run table yet.
+- Delivery health is based on stored delivery rows and user blocked-state telemetry, not a live
+  Telegram send probe.
+
+## Ops-Agent Diagnostics
+
+The repo-managed ops-agent source lives under `ops-agent/`. Production wrappers should point to
+that source and keep using the safe collection command:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+DB collectors are isolated per read-only query. If one collector fails, the bundle records that
+collector as failed with a sanitized error class/category and continues later collectors. The
+bundle status becomes `partial` when any collector fails, but unrelated evidence should still be
+present.
+
+Generated report context includes a collector status table. Interpret statuses as:
+
+- `OK`: collector succeeded.
+- `Warning`: collector produced degraded but usable evidence.
+- `Critical`: detector evidence shows a high-impact issue.
+- `Unknown`: collection succeeded, but evidence is insufficient.
+- `Collector failed`: evidence is missing because the named collector failed.
+
+Failed collector errors must not include SQL parameters, connection strings, `.env` values, raw
+stack traces, or private Telegram text.
+
 ## GRAM Rebrand Price-State Check
 
 GRAM is stored internally as symbol `ton` to preserve existing rows in `price_state`,

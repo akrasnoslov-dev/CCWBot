@@ -188,7 +188,53 @@ def test_decision_report_context_handles_missing_denominators():
 
     assert "| contains_unknown | BTC | unknown | event_alert | 0 | not available | 0 |" in markdown
     assert "| AI analyses | 0 | not available |" in markdown
-    assert "`sample_unknown`: Required evidence missing: sample" in markdown
+    assert "`sample_unknown`: Unknown - Required evidence missing: sample" in markdown
+
+
+def test_decision_report_context_distinguishes_collector_failure_from_unknown():
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence={"evidence/health/health.json": {"status": "ok"}},
+        detector_results=[
+            DetectorResult(
+                "event_alert_delivery_explanation_gaps",
+                "high",
+                "unknown",
+                "Required evidence is missing",
+                evidence_gap=(
+                    "Required evidence missing: "
+                    "evidence/db/anomalies.json:event_alert_delivery_explanation_gaps"
+                ),
+            ),
+            DetectorResult(
+                "health_endpoint_unavailable",
+                "critical",
+                "clear",
+                "Health collector status: ok",
+            ),
+        ],
+        collection_status="partial",
+        collector_status=[
+            {
+                "name": "db.event_alert_delivery_explanation_gaps",
+                "status": "failed",
+                "error": "ProgrammingError: sql_syntax_or_schema_error",
+            },
+            {"name": "health", "status": "ok", "error": None},
+        ],
+        bundle_id="bundle",
+    )
+
+    assert "## Collector Status" in markdown
+    assert (
+        "| `db.event_alert_delivery_explanation_gaps` | Collector failed | "
+        "ProgrammingError: sql_syntax_or_schema_error |"
+    ) in markdown
+    assert "| `health` | OK | none | None. |" in markdown
+    assert (
+        "`event_alert_delivery_explanation_gaps`: Collector failed - Required evidence missing"
+    ) in markdown
+    assert "Failed collectors mean evidence is missing because collection failed" in markdown
 
 
 def test_quality_summary_evidence_uses_unique_affected_deliveries_not_issue_occurrences():

@@ -16,7 +16,7 @@ Run the same lightweight checks before opening a pull request:
 ```bash
 python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
 ruff check .
-python -m pytest tests/ -v
+python -m pytest tests/ -v -ra --durations=20
 docker compose config >/dev/null
 ```
 
@@ -115,6 +115,10 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
   sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
   `event_ai_analyses` rows.
+- Admin System status is read-only observability. It must use persisted telemetry such as
+  `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and `alerts`, plus existing
+  in-memory Groq backoff state. It must not perform live CoinGecko, Groq, RSS, or Telegram probes.
+  Use `OK`, `WARN`, `FAIL`, and `UNKNOWN` only when the underlying telemetry supports that state.
 - Event Alert identity is backend-owned after LLM validation. Broad LLM keys such as
   `news_catalyst`, `price_movement`, and `volatility` are normalized with deterministic rules using
   the raw key, alert title/body, and selected real related-news title/source/link context. Repeated
@@ -126,6 +130,30 @@ available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_sk
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
+
+## Ops-Agent Development
+
+`ops-agent/` is the repo-managed diagnostics collector used by the production wrapper
+`/usr/local/bin/ccwbot-ops-agent-collect`. Keep wrapper compatibility for:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
+```
+
+Ops-agent DB collectors must be read-only, isolated from each other, and sanitized. A failed DB
+collector should record a failed collector status and allow later collectors to run. Add focused
+tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
+redaction whenever diagnostics change.
+
+For PostgreSQL query-contract verification, run the ops-agent integration test against a local
+throwaway PostgreSQL database. The test upgrades the database to Alembic head, runs `EXPLAIN` for
+every ops-agent DB query, and executes the same-family/same-news repeat collectors against
+malformed `alerts.numeric_context` rows inside a rolled-back transaction:
+
+```bash
+OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:<port>/<test_db> \
+  python -m pytest tests/ops_agent/test_db_queries_and_detectors.py::test_all_ops_agent_queries_explain_against_migrated_postgres_schema -v
+```
 
 ## Local Migration Recovery
 
