@@ -12,7 +12,6 @@ from bot.db.database import (
     Alert,
     AlertDeliveryOutcome,
     Base,
-    EventAiAnalysis,
     User,
     UserCoinSubscription,
     ensure_default_coin_subscriptions,
@@ -412,92 +411,6 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Legacy strong-signal production path was removed in PR3.")
-async def test_strong_signal_reuses_one_saved_analysis_for_many_recipients(monkeypatch):
-    sent_messages = []
-
-    class FakeBot:
-        async def send_message(self, chat_id, text, parse_mode=None):
-            sent_messages.append((chat_id, text, parse_mode))
-
-    engine, SessionLocal = await build_session_factory()
-    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
-    try:
-        async with SessionLocal() as session:
-            await create_user(session, 1001, 2001)
-            await create_user(session, 1002, 2002)
-
-        monkeypatch.setattr(alerts, "DB_ENABLED", True)
-        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
-        monkeypatch.setattr(alerts, "load_state", lambda: {})
-        saved_state = {}
-        monkeypatch.setattr(alerts, "save_state", lambda state: saved_state.update(state))
-        monkeypatch.setattr(
-            alerts,
-            "datetime",
-            SimpleNamespace(
-                now=lambda tz=None: now,
-                fromisoformat=datetime.fromisoformat,
-            ),
-        )
-        monkeypatch.setattr(
-            alerts,
-            "get_btc_market_data",
-            AsyncMock(return_value=(100000.0, 5.0, 8.0)),
-        )
-        monkeypatch.setattr(
-            alerts,
-            "fetch_news_context",
-            AsyncMock(
-                return_value=[
-                    {
-                        "title": "Bitcoin demand rises",
-                        "source": "Example",
-                        "link": "https://example.test/news",
-                    }
-                ]
-            ),
-        )
-        classify = AsyncMock(
-            return_value={
-                "should_alert": True,
-                "signal_strength": "strong",
-                "direction": "bullish",
-                "telegram_message": "BTC strong signal\n\nNot financial advice.",
-            }
-        )
-        monkeypatch.setattr(alerts, "classify_strong_signal", classify)
-        monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
-
-        await alerts.strong_signal_check(
-            SimpleNamespace(application=SimpleNamespace(bot=FakeBot()))
-        )
-
-        classify.assert_awaited_once()
-        assert len(sent_messages) == 2
-        assert [chat_id for chat_id, _, _ in sent_messages] == [2001, 2002]
-        for _, message, parse_mode in sent_messages:
-            assert parse_mode is None
-            assert message.startswith("🔴 High - BTC strong signal")
-            assert "BTC strong signal" in message
-            assert "Risk level:" not in message
-            assert "Signals:\n" not in message
-            assert "Strong signal classification" not in message
-            assert message.endswith("Not financial advice.")
-        assert saved_state["last_strong_signal_strength"] == "strong"
-        assert saved_state["last_strong_signal_direction"] == "bullish"
-        async with SessionLocal() as session:
-            assert await session.scalar(select(func.count()).select_from(EventAiAnalysis)) == 1
-            assert await session.scalar(select(func.count()).select_from(Alert)) == 2
-            assert {
-                row.event_ai_analysis_id
-                for row in (await session.scalars(select(Alert))).all()
-            } == {1}
-    finally:
-        await engine.dispose()
-
-
-@pytest.mark.asyncio
 async def test_deliver_market_event_alert_respects_empty_recipient_list(monkeypatch):
     engine, SessionLocal = await build_session_factory()
     get_recipients = AsyncMock(side_effect=AssertionError("recipients should not be queried"))
@@ -733,29 +646,6 @@ def test_report_cache_scheduler_replaces_weekly_direct_send_and_strong_signal():
     assert [kwargs["interval"] for _, kwargs in captured] == [4 * 3600, 24 * 3600]
     assert not hasattr(alerts, "strong_signal_check")
     assert not hasattr(alerts, "schedule_strong_signal_job")
-
-
-@pytest.mark.skip(reason="Legacy strong-signal scheduling was removed in PR3.")
-def test_schedule_strong_signal_check_coalesces_overlapping_runs(monkeypatch):
-    captured_kwargs = {}
-
-    class FakeJobQueue:
-        def get_jobs_by_name(self, name):
-            return []
-
-        def run_repeating(self, callback, **kwargs):
-            captured_kwargs.update(kwargs)
-
-    monkeypatch.setattr(alerts, "ENABLE_STRONG_SIGNAL_ALERTS", True)
-
-    alerts.schedule_strong_signal_job(SimpleNamespace(job_queue=FakeJobQueue()))
-
-    assert captured_kwargs["interval"] == alerts.STRONG_SIGNAL_CHECK_INTERVAL_SECONDS
-    assert captured_kwargs["job_kwargs"] == {
-        "max_instances": 1,
-        "coalesce": True,
-        "misfire_grace_time": 15,
-    }
 
 
 def test_generic_sentiment_news_is_weak_not_material():

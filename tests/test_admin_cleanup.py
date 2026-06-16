@@ -49,48 +49,43 @@ def test_interval_keyboard_only_offers_supported_event_analysis_cadence():
     ]
 
 
-def test_admin_keyboard_has_expected_top_level_items():
-    buttons = [
-        (button.text, button.callback_data)
-        for row in build_admin_keyboard().inline_keyboard
-        for button in row
+def test_admin_keyboards_have_expected_items():
+    keyboard_expectations = [
+        (
+            build_admin_keyboard(),
+            [
+                ("Alert settings", "admin:alert_settings"),
+                ("System status", "admin:system_status"),
+                ("Premium management", "admin:premium_menu"),
+                ("Logs", "admin:logs_menu"),
+            ],
+        ),
+        (
+            build_admin_premium_keyboard(),
+            [
+                ("Grant premium", "admin:premium_grant"),
+                ("Revoke premium", "admin:premium_revoke"),
+                ("Back", "admin:back"),
+            ],
+        ),
+        (
+            build_admin_logs_keyboard(),
+            [
+                ("ON / OFF", "admin:logs_toggle"),
+                ("Status", "admin:logs_status"),
+                ("Export logs", "admin:logs_export"),
+                ("Back", "admin:back"),
+            ],
+        ),
     ]
 
-    assert buttons == [
-        ("Alert settings", "admin:alert_settings"),
-        ("System status", "admin:system_status"),
-        ("Premium management", "admin:premium_menu"),
-        ("Logs", "admin:logs_menu"),
-    ]
-
-
-def test_admin_premium_keyboard_has_expected_items():
-    buttons = [
-        (button.text, button.callback_data)
-        for row in build_admin_premium_keyboard().inline_keyboard
-        for button in row
-    ]
-
-    assert buttons == [
-        ("Grant premium", "admin:premium_grant"),
-        ("Revoke premium", "admin:premium_revoke"),
-        ("Back", "admin:back"),
-    ]
-
-
-def test_admin_logs_keyboard_has_expected_items():
-    buttons = [
-        (button.text, button.callback_data)
-        for row in build_admin_logs_keyboard().inline_keyboard
-        for button in row
-    ]
-
-    assert buttons == [
-        ("ON / OFF", "admin:logs_toggle"),
-        ("Status", "admin:logs_status"),
-        ("Export logs", "admin:logs_export"),
-        ("Back", "admin:back"),
-    ]
+    for markup, expected_buttons in keyboard_expectations:
+        buttons = [
+            (button.text, button.callback_data)
+            for row in markup.inline_keyboard
+            for button in row
+        ]
+        assert buttons == expected_buttons
 
 
 def test_legacy_alert_commands_are_not_registered():
