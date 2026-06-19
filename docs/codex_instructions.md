@@ -5,10 +5,12 @@ Follow `AGENTS.md` first. This file is a short context pointer for ChatGPT/Codex
 Before non-trivial work:
 
 1. Read `AGENTS.md`, this file, `docs/project_context.md`, and `agents/routing.toml`.
-2. Use required review agents when routing says they apply.
-3. Use installed Codex skills from `docs/codex_skills.md` when they match the task.
-4. Check current branch and worktree status.
-5. Do not overwrite uncommitted user work.
+2. Inspect installed skills under `C:\Users\Loki\.codex\skills\` and `.agents/skills/`.
+3. Read and apply every relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent).
+4. If no installed skill applies, state that explicitly in the final response and PR body.
+5. Use required review agents when routing says they apply.
+6. Check current branch and worktree status.
+7. Do not overwrite uncommitted user work.
 
 Safe defaults:
 

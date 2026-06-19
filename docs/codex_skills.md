@@ -17,6 +17,11 @@ Installed skills:
 
 ## When To Use
 
+Before starting a Codex task, inspect local user skills under `C:\Users\Loki\.codex\skills\`
+and project-copied skills under `.agents/skills/`. Read the relevant skill instruction files and
+apply every installed skill that matches the task. If no installed skill applies, say so in the
+final response and PR body.
+
 - `supabase-postgres-best-practices`: use for PostgreSQL query writing, schema review, index
   design, RLS/security review, connection management, and database performance work. Keep this
   aligned with the project database rules: async SQLAlchemy, asyncpg, Alembic, PostgreSQL, DB

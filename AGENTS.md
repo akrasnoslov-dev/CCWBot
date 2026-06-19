@@ -16,6 +16,11 @@ Never put LLM/Groq calls inside a recipient loop.
 ## Default Codex Workflow
 - Read required context first: `AGENTS.md`, `docs/codex_instructions.md`,
   `docs/project_context.md`, and `agents/routing.toml`.
+- Check installed skills before edits: inspect local skills under
+  `C:\Users\Loki\.codex\skills\` and project-copied skills under `.agents/skills/`.
+- Read each relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent) and apply
+  every relevant installed skill for the task.
+- If no installed skill applies, state that explicitly in the final response and PR body.
 - Check branch and worktree status before edits.
 - Work from `dev` or a focused branch based on `dev`; never work directly on `main`.
 - Do not overwrite, revert, reformat, or delete uncommitted user work unless explicitly asked.

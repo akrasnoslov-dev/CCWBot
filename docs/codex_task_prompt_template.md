@@ -23,7 +23,7 @@ Verification:
 - <default checks, focused tests, or why a check is not applicable>
 
 PR notes:
-- <anything the PR body must explicitly confirm>
+- <anything the PR body must explicitly confirm, including skills used or why no skill applied>
 ```
 
 For production releases, explicitly say the PR is `dev` -> `main`. Otherwise, Codex opens PRs
