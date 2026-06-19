@@ -335,6 +335,18 @@ def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     assert "placeholder_quality_count" in query_names["market_heartbeat_delivery_freshness"].sql
     assert "latest_fetched_at" in query_names["news_freshness_summary"].sql
     assert "usable_news_count_24h" in query_names["news_freshness_summary"].sql
+    assert "array_agg(llm_status" not in query_names["news_freshness_summary"].sql
+    assert "ORDER BY fetched_at DESC, id DESC LIMIT 1" in query_names[
+        "news_freshness_summary"
+    ].sql
+
+
+def test_alert_repetition_evidence_rolls_up_only_selected_recent_analyses():
+    assert "delivery_candidates AS" in ALERT_EVIDENCE_SQL
+    assert "JOIN alerts a ON a.event_ai_analysis_id = ra.event_ai_analysis_id" in ALERT_EVIDENCE_SQL
+    assert "JOIN alerts a ON a.event_ai_analysis_id IS NULL" in ALERT_EVIDENCE_SQL
+    assert "GROUP BY a.rollup_event_ai_analysis_id" in ALERT_EVIDENCE_SQL
+    assert "OR (dr.event_ai_analysis_id IS NULL" not in ALERT_EVIDENCE_SQL
 
 
 def test_alert_quality_summary_uses_token_boundary_placeholder_regexes():
