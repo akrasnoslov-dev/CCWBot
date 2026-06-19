@@ -145,6 +145,12 @@ collector should record a failed collector status and allow later collectors to 
 tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
 redaction whenever diagnostics change.
 
+Run the focused ops-agent suite for ops-agent code or reporting changes:
+
+```bash
+python -m pytest tests/ops_agent/ -v -ra
+```
+
 For PostgreSQL query-contract verification, run the ops-agent integration test against a local
 throwaway PostgreSQL database. The test upgrades the database to Alembic head, runs `EXPLAIN` for
 every ops-agent DB query, and executes the same-family/same-news repeat collectors against
