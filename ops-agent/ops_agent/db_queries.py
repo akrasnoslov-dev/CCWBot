@@ -660,17 +660,17 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "news_freshness_summary",
         "evidence/db/aggregate_metrics.json",
-        "SELECT max(fetched_at) AS latest_fetched_at, "
-        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "SELECT "
+        "(SELECT max(fetched_at) FROM news_items) AS latest_fetched_at, "
+        "(SELECT count(*) FROM news_items WHERE fetched_at >= :until - interval '24 hours' "
         "AND coalesce(is_duplicate, false) = false AND coalesce(is_noise, false) = false) "
         "AS usable_news_count_24h, "
-        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "(SELECT count(*) FROM news_items WHERE fetched_at >= :until - interval '24 hours' "
         "AND coalesce(is_duplicate, false) = true) AS duplicate_filtered_count_24h, "
-        "count(*) FILTER (WHERE fetched_at >= :until - interval '24 hours' "
+        "(SELECT count(*) FROM news_items WHERE fetched_at >= :until - interval '24 hours' "
         "AND coalesce(is_noise, false) = true) AS noise_filtered_count_24h, "
-        "(array_agg(llm_status ORDER BY fetched_at DESC, id DESC) FILTER (WHERE llm_status IS NOT NULL))[1] "
-        "AS latest_news_intelligence_status "
-        "FROM news_items",
+        "(SELECT llm_status FROM news_items WHERE llm_status IS NOT NULL "
+        "ORDER BY fetched_at DESC, id DESC LIMIT 1) AS latest_news_intelligence_status",
     ),
     DbQuery(
         "news_items_summary",

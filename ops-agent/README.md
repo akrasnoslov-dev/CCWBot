@@ -108,6 +108,13 @@ that collector as failed with a sanitized error category, continues later collec
 bundle `partial`. Use the generated collector status table to distinguish `Collector failed` from
 true `Unknown` evidence.
 
+Ops-agent/report PRs are observability-only unless the task explicitly asks for runtime changes.
+Partial reports must list failed or partial collectors in `Collector Status`; missing evidence and
+detector `unknown` states are not healthy results.
+
+After ops-agent code changes, production deploy requires explicitly rebuilding the `ops-agent`
+Docker image. A bot-only rebuild does not verify the collector image.
+
 Before releasing DB query changes, run the PostgreSQL query-contract test against a local
 throwaway database:
 

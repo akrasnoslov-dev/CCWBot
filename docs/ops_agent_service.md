@@ -9,12 +9,16 @@ It helps Codex produce an English Markdown operational report from sanitized evi
 - Does not use an LLM.
 - Does not write the final report.
 - Does not apply fixes.
+- Ops-agent/report PRs are observability-only unless the task explicitly asks for runtime changes.
 - Does not expose a public port.
 - Does not mount the Docker socket.
 - Does not provide raw SQL or shell execution.
 - Uses a read-only PostgreSQL role for DB evidence.
 
 Generated bundles and reports are operational artifacts and must stay out of Git.
+
+After ops-agent code changes, production deploy requires explicitly rebuilding the `ops-agent`
+Docker image. A normal bot-only deploy is not enough to prove the collector image changed.
 
 ## Production Access Model
 
@@ -53,6 +57,10 @@ Then inspect referenced `evidence/**` files only as needed to verify or expand f
 5. Mark success only after the report exists and the bundle is complete, unless the operator
    explicitly accepts a partial report.
 
+If a bundle or report is partial, include `Collector Status` in the report and list every failed
+or partial collector. Missing evidence, skipped evidence, and detector `unknown` states are not
+healthy evidence; describe them as gaps and lower confidence for affected findings.
+
 ## Event Alert Regression Section
 
 Generated decision context includes `## Event Alert Regression Checks`. The section is Markdown-only
@@ -78,6 +86,7 @@ user-facing copy regression was found.
   invoice payloads, LLM prompts/outputs, secrets, database URLs, or private identity maps.
 - Use redacted refs only when user-specific remediation is necessary.
 - Treat detector `unknown` as missing or inconclusive evidence, not healthy status.
+- Treat missing collector evidence as incomplete, not as proof that the system is healthy.
 - Do not download generated bundles or reports into the repo worktree. If temporary local
   copies are unavoidable, place them under `.cache/tmp` and clean them up.
 

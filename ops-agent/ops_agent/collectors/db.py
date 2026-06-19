@@ -45,10 +45,50 @@ WITH recent_analyses AS (
     ORDER BY eai.created_at DESC, eai.id DESC
     LIMIT :alert_evidence_limit
 ),
-delivery_rollup AS (
+delivery_candidates AS (
     SELECT
+        ra.event_ai_analysis_id AS rollup_event_ai_analysis_id,
         a.market_event_id,
         a.event_ai_analysis_id,
+        a.user_id,
+        a.id,
+        a.alert_type,
+        a.trigger_source,
+        a.status,
+        a.message,
+        a.numeric_context,
+        a.final_failed_at,
+        a.created_at
+    FROM recent_analyses ra
+    JOIN alerts a ON a.event_ai_analysis_id = ra.event_ai_analysis_id
+    WHERE a.created_at >= :since
+      AND a.created_at < :until
+      AND (a.alert_type = 'event_alert' OR a.event_ai_analysis_id IS NOT NULL)
+    UNION ALL
+    SELECT
+        ra.event_ai_analysis_id AS rollup_event_ai_analysis_id,
+        a.market_event_id,
+        a.event_ai_analysis_id,
+        a.user_id,
+        a.id,
+        a.alert_type,
+        a.trigger_source,
+        a.status,
+        a.message,
+        a.numeric_context,
+        a.final_failed_at,
+        a.created_at
+    FROM recent_analyses ra
+    JOIN alerts a ON a.event_ai_analysis_id IS NULL
+                 AND a.market_event_id = ra.market_event_id
+    WHERE a.created_at >= :since
+      AND a.created_at < :until
+      AND a.alert_type = 'event_alert'
+      AND ra.market_event_id IS NOT NULL
+),
+delivery_rollup AS (
+    SELECT
+        a.rollup_event_ai_analysis_id,
         count(*) AS delivery_count,
         count(*) FILTER (WHERE a.status = 'sent') AS sent_delivery_count,
         count(*) FILTER (
@@ -65,12 +105,9 @@ delivery_rollup AS (
             AS alert_numeric_context,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
             FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family
-    FROM alerts a
+    FROM delivery_candidates a
     LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id
-    WHERE a.created_at >= :since
-      AND a.created_at < :until
-      AND (a.alert_type = 'event_alert' OR a.event_ai_analysis_id IS NOT NULL)
-    GROUP BY a.market_event_id, a.event_ai_analysis_id
+    GROUP BY a.rollup_event_ai_analysis_id
 )
 SELECT
     coalesce(me.symbol, ra.analysis_symbol, 'UNKNOWN') AS symbol,
@@ -115,9 +152,7 @@ SELECT
     dr.semantic_family
 FROM recent_analyses ra
 LEFT JOIN market_events me ON me.id = ra.market_event_id
-LEFT JOIN delivery_rollup dr
-  ON (dr.event_ai_analysis_id = ra.event_ai_analysis_id)
-  OR (dr.event_ai_analysis_id IS NULL AND dr.market_event_id = ra.market_event_id)
+LEFT JOIN delivery_rollup dr ON dr.rollup_event_ai_analysis_id = ra.event_ai_analysis_id
 ORDER BY ra.analysis_created_at DESC, ra.event_ai_analysis_id DESC
 """
 

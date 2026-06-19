@@ -49,10 +49,11 @@ them when required, or explain why they were not needed. See
 `docs/codex_agent_workflow.md`.
 
 Codex skills are developer tooling, not runtime bot code. Local user skills live under
-`C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are
-pinned by `skills-lock.json`. Use `supabase-postgres-best-practices` for
-PostgreSQL/schema/performance work, `requesting-code-review` for review checkpoints when
-available, and `md-docs` for README.md/AGENTS.md maintenance. See `docs/codex_skills.md`.
+`C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills live
+under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Use
+`documentation-writer` for general docs, `agents-md` for `AGENTS.md` and Codex-facing docs,
+`supabase-postgres-best-practices` for PostgreSQL/schema/performance work, and
+`requesting-code-review` for review checkpoints when available. See `docs/codex_skills.md`.
 
 ## Runtime Notes
 
@@ -144,6 +145,12 @@ Ops-agent DB collectors must be read-only, isolated from each other, and sanitiz
 collector should record a failed collector status and allow later collectors to run. Add focused
 tests under `tests/ops_agent/` for collector isolation, report status wording, query contracts, and
 redaction whenever diagnostics change.
+
+Run the focused ops-agent suite for ops-agent code or reporting changes:
+
+```bash
+python -m pytest tests/ops_agent/ -v -ra
+```
 
 For PostgreSQL query-contract verification, run the ops-agent integration test against a local
 throwaway PostgreSQL database. The test upgrades the database to Alembic head, runs `EXPLAIN` for
