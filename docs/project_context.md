@@ -57,4 +57,3 @@ Primary context files:
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
 - `docs/codex_task_prompt_template.md`
-- `.agents/skills/README.md`

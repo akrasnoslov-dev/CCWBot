@@ -16,11 +16,14 @@ Never put LLM/Groq calls inside a recipient loop.
 ## Default Codex Workflow
 - Read required context first: `AGENTS.md`, `docs/codex_instructions.md`,
   `docs/project_context.md`, and `agents/routing.toml`.
-- Check installed skills before edits: inspect local skills under
-  `C:\Users\Loki\.codex\skills\` and project-copied skills under `.agents/skills/`.
+- Check installed skills before edits: inspect user skills under
+  `C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`, plus
+  project-copied skills under `.agents/skills/` when present.
 - Read each relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent) and apply
   every relevant installed skill for the task.
 - If no installed skill applies, state that explicitly in the final response and PR body.
+- For documentation work, use `documentation-writer` for general docs and `agents-md` for
+  agent-facing instructions such as `AGENTS.md` and Codex workflow docs.
 - Check branch and worktree status before edits.
 - Work from `dev` or a focused branch based on `dev`; never work directly on `main`.
 - Do not overwrite, revert, reformat, or delete uncommitted user work unless explicitly asked.
@@ -140,20 +143,22 @@ Codex task-review agents live in `agents/*.toml`; routing rules live in
 
 ## Installed Codex Skills
 Codex skills are developer tooling only and are not imported by `main.py` or `bot/`.
-They can be installed either as local user skills or as project-copied skills:
+They can be installed as user-level skills or project-copied skills:
 
 - Local user skills live under `C:\Users\Loki\.codex\skills\`.
-- Project-copied skills live under `.agents/skills/` and are pinned by `skills-lock.json`.
+- Additional user skills may live under `C:\Users\Loki\.agents\skills\`.
+- Project-copied skills live under `.agents/skills/` when present and may be pinned by
+  `skills-lock.json`.
 
+- `documentation-writer`: use for general documentation quality, structure, README/docs guides,
+  references, and explanations.
+- `agents-md`: use for `AGENTS.md`, Codex-facing instructions, and agent workflow docs.
 - `supabase-postgres-best-practices`: use when writing, reviewing, or optimizing PostgreSQL
   queries, schema designs, indexes, connection handling, RLS/security, or database performance.
   This complements `db_migration_guardian`; it does not replace required routing agents.
 - `requesting-code-review`: use after completing major features or subagent-driven tasks, and
   before merge/PR finalization when review support is available. For this project, combine it
   with the required agents from `agents/routing.toml`.
-- `md-docs`: use for README.md and AGENTS.md refreshes. It enforces the split where README is
-  human-facing and AGENTS.md owns commands, workflows, and agent/developer context. It does not
-  maintain arbitrary Markdown files under `docs/`.
 
 See `docs/codex_skills.md` for locations and usage notes.
 

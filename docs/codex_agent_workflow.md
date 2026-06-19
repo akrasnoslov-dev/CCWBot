@@ -11,9 +11,10 @@ The Telegram bot does not load `agents/*.toml` at runtime. Those files are a dur
 workflow contract.
 
 Codex skills are separate developer tooling. Local user skills live under
-`C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are pinned
-by `skills-lock.json`. See `docs/codex_skills.md`. Use skills when relevant, but do not treat
-them as runtime bot code or replacements for the required project agents below.
+`C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills live
+under `.agents/skills/` when present and may be pinned by `skills-lock.json`. See
+`docs/codex_skills.md`. Use skills when relevant, but do not treat them as runtime bot code or
+replacements for the required project agents below.
 
 ## Current Agents
 
@@ -29,12 +30,13 @@ them as runtime bot code or replacements for the required project agents below.
 
 ## Installed Skills
 
+- `documentation-writer`: use for general documentation quality, structure, guides, references,
+  and explanations.
+- `agents-md`: use for `AGENTS.md`, Codex-facing instructions, and agent workflow docs.
 - `supabase-postgres-best-practices`: use alongside `db_migration_guardian` for PostgreSQL
   schema, query, index, connection, RLS/security, and performance work.
 - `requesting-code-review`: use at review checkpoints after major features, after
   subagent-driven tasks, and before merge or PR finalization when review support is available.
-- `md-docs`: use for README.md and AGENTS.md maintenance. It does not replace the project
-  routing rules and does not maintain arbitrary Markdown files under `docs/`.
 
 ## Routing Rules
 

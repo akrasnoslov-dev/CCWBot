@@ -5,7 +5,8 @@ Follow `AGENTS.md` first. This file is a short context pointer for ChatGPT/Codex
 Before non-trivial work:
 
 1. Read `AGENTS.md`, this file, `docs/project_context.md`, and `agents/routing.toml`.
-2. Inspect installed skills under `C:\Users\Loki\.codex\skills\` and `.agents/skills/`.
+2. Inspect installed skills under `C:\Users\Loki\.codex\skills\`,
+   `C:\Users\Loki\.agents\skills\`, and `.agents/skills/` when present.
 3. Read and apply every relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent).
 4. If no installed skill applies, state that explicitly in the final response and PR body.
 5. Use required review agents when routing says they apply.
@@ -27,8 +28,10 @@ Safe defaults:
   at the repository root. Use subtree README.md files only when the content belongs to that
   local tool or package directory.
 - Codex skills are developer tooling only. Local user skills live under
-  `C:\Users\Loki\.codex\skills\`; project-copied skills live under `.agents/skills/` and are
-  pinned by `skills-lock.json`.
+  `C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills
+  live under `.agents/skills/` when present and may be pinned by `skills-lock.json`.
+- For documentation work, apply `documentation-writer` for general docs and `agents-md` for
+  agent-facing files such as `AGENTS.md` and Codex workflow docs.
 
 Product guardrails:
 
