@@ -21,6 +21,16 @@ Core invariant:
 
 Do not place LLM/Groq calls inside recipient loops.
 
+Permanent guardrails:
+
+- Do not change Event Alert business logic unless explicitly requested.
+- Do not change Premium, watchlist, subscription, payment, or grant/revoke behavior unless
+  explicitly requested.
+- Do not expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs,
+  or diagnostic internals in user-facing Telegram messages.
+- Do not commit `.env`, `.ops-agent.env`, logs, generated reports, DB dumps, caches, local state,
+  or secrets.
+
 Current product behavior:
 
 - Manual `/price` supports the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
@@ -46,4 +56,5 @@ Primary context files:
 - `docs/observability.md`
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
+- `docs/codex_task_prompt_template.md`
 - `.agents/skills/README.md`

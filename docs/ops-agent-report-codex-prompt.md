@@ -20,6 +20,10 @@ Do not modify production systems, apply fixes, edit code, restart services, or c
 
 Do not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
+Ops-agent/report PRs are observability-only unless the task explicitly asks otherwise. Do not
+change runtime bot behavior, Event Alert logic, Premium/watchlist/payment behavior, deployment
+scripts, or database schema as part of a report task.
+
 On production, run only the root-owned ops-agent wrappers authorized by the operator:
 
 * `sudo /usr/local/bin/ccwbot-ops-agent-collect` with the wrapper's safe collection arguments;
@@ -60,6 +64,7 @@ Treat tail-context logs as supporting context only. Do not use them alone to cla
 If `manifest.json` says the bundle is partial:
 
 * include a `Collection Gaps` section in the final report;
+* include `Collector Status` and list every failed or partial collector;
 * state which collectors failed or returned partial data;
 * do not infer that missing data means there are no problems;
 * keep detector statuses marked as `unknown` when evidence is missing;

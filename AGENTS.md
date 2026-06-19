@@ -13,8 +13,26 @@ Core invariant:
 
 Never put LLM/Groq calls inside a recipient loop.
 
+## Default Codex Workflow
+- Read required context first: `AGENTS.md`, `docs/codex_instructions.md`,
+  `docs/project_context.md`, and `agents/routing.toml`.
+- Check installed skills before edits: inspect local skills under
+  `C:\Users\Loki\.codex\skills\` and project-copied skills under `.agents/skills/`.
+- Read each relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent) and apply
+  every relevant installed skill for the task.
+- If no installed skill applies, state that explicitly in the final response and PR body.
+- Check branch and worktree status before edits.
+- Work from `dev` or a focused branch based on `dev`; never work directly on `main`.
+- Do not overwrite, revert, reformat, or delete uncommitted user work unless explicitly asked.
+- Keep changes focused on the requested task.
+- Open normal PRs against `dev`.
+- Open `dev` -> `main` PRs only when explicitly asked for a production release.
+- Use `docs/codex_task_prompt_template.md` for short future task prompts.
+
 ## Product Rules
 - Do not change product behaviour unless explicitly asked.
+- Do not change Event Alert business logic unless explicitly asked.
+- Do not change Premium, watchlist, subscription, payment, or grant/revoke behaviour unless explicitly asked.
 - Automatic alerts are BTC-only unless explicitly expanded.
 - Manual `/price` supports configured supported coins and remains free.
 - `/reports`, `/dailyreport`, `/weeklyreport` are available to all users.
@@ -60,7 +78,7 @@ Never implement "1 user = 1 LLM call" for the same event.
 ## Telegram UX
 - Keep admin-only commands protected.
 - Keep messages concise and clear.
-- Do not expose raw JSON, stack traces, DB internals, or debug fields.
+- Do not expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs, or debug fields.
 - Never leak diagnostic labels in Telegram messages, including `Data:`, `News:`, `Debug:`, `move=`, `change24h=`, `change7d=`, `threshold=`, `interval=`, `previous=`, `current=`.
 
 ## Logging
@@ -83,6 +101,14 @@ Never implement "1 user = 1 LLM call" for the same event.
 - Do not auto-enable non-BTC coins after purchase unless requested.
 - If Premium expires, keep non-BTC choices in DB, block non-BTC deliveries, and restore them after renewal.
 - If Telegram Stars recurring support is unclear, investigate and document it before implementing.
+
+## Ops-Agent and Reports
+- Ops-agent/report PRs are observability-only unless the task explicitly asks for runtime changes.
+- Keep ops-agent collectors isolated, read-only where applicable, and sanitized.
+- If a collector fails, keep later collectors running and make the partial report list failed collectors in `Collector Status`.
+- Treat missing or `unknown` evidence as incomplete, not healthy.
+- Do not paste or commit raw bundles, generated reports, logs, Telegram text, IDs, payment IDs, secrets, DB URLs, or raw JSON evidence.
+- After ops-agent code changes, production deploy requires explicitly rebuilding the `ops-agent` Docker image.
 
 ## Available Agents
 Codex task-review agents live in `agents/*.toml`; routing rules live in
@@ -170,6 +196,16 @@ docker compose config >/dev/null
 
 If Docker Compose changes, run `docker compose config >/dev/null`. Do not publish Compose config output from a real `.env`, and do not claim manual Telegram/runtime verification unless it was actually performed.
 
+For ops-agent code or reporting changes, add focused checks under `tests/ops_agent/` when
+behaviour changes and run the relevant subset, for example:
+
+```bash
+python -m pytest tests/ops_agent/ -v -ra
+```
+
+When PostgreSQL is available and ops-agent DB queries changed, run the PostgreSQL query-contract
+test documented in `docs/development.md`.
+
 ## Environments
 - Local development runs on the developer PC from `dev` or a feature branch based on `dev`.
 - Production runs on the Hetzner VPS from `main` only.
@@ -218,7 +254,9 @@ For every task:
 5. Push.
 6. Create a GitHub PR against `dev` unless explicitly asked to release production or merge `dev` into `main`.
 
-Never commit `.env`, `state.json`, `.venv`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`, `*.sqlite`, or database volumes.
+Never commit `.env`, `.ops-agent.env`, logs, generated reports, DB dumps, `state.json`, `.venv`,
+`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.ruff_cache/`, `pytest-cache-files-*/`, `*.db`,
+`*.sqlite`, database volumes, local state, or secrets.
 
 ## Production Deployment Workflow
 - Production updates happen through Git only.
