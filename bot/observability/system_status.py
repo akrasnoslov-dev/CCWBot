@@ -67,6 +67,8 @@ class ComponentHealth:
     status: ComponentStatus
     detail: str
     rows: tuple[str, ...] = field(default_factory=tuple)
+    summary: str | None = None
+    problem_rows: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _utc_now() -> datetime:
@@ -153,48 +155,53 @@ async def build_admin_system_status_text(
 ) -> str:
     """Return concise admin-safe status text without live provider probes."""
     now = _as_utc(now) or _utc_now()
-    runtime_rows = ["Bot: OK - admin command responded"]
 
     if not db_enabled:
         state = state_loader()
         last_checked = state.get("last_checked_at")
-        runtime_rows.append(
-            "Automatic market check: UNKNOWN - PostgreSQL telemetry unavailable"
-            + (f"; local BTC state last checked {last_checked}" if last_checked else "")
+        market_problem_rows = (
+            (f"Local BTC state last checked: {last_checked}",) if last_checked else ()
         )
         sections = [
             ComponentHealth(
                 "Database",
                 ComponentStatus.WARN,
                 "database disabled; using local JSON fallback",
+                summary="local JSON fallback",
             ),
             ComponentHealth(
-                "CoinGecko / price data",
+                "Market data",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL price telemetry unavailable",
+                summary="no price telemetry",
+                problem_rows=market_problem_rows,
             ),
             ComponentHealth(
-                "Groq event analysis",
+                "AI analysis",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL AI telemetry unavailable",
+                summary="no analysis telemetry",
             ),
             ComponentHealth(
                 "Groq rate limit",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL usage telemetry unavailable",
+                summary="no usage telemetry",
             ),
             ComponentHealth(
-                "RSS/news",
+                "News",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL news telemetry unavailable",
+                summary="no cache telemetry",
             ),
             ComponentHealth(
-                "Telegram alerts",
+                "Telegram delivery",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL delivery telemetry unavailable",
+                summary="no delivery telemetry",
             ),
         ]
-        return _render_status(now=now, runtime_rows=runtime_rows, sections=sections)
+        return _render_status(now=now, sections=sections)
 
     if not session_factory:
         sections = [
@@ -202,10 +209,10 @@ async def build_admin_system_status_text(
                 "Database",
                 ComponentStatus.FAIL,
                 "database enabled but session factory is missing",
+                summary="session unavailable",
             )
         ]
-        runtime_rows.append("Automatic market check: UNKNOWN - database session unavailable")
-        return _render_status(now=now, runtime_rows=runtime_rows, sections=sections)
+        return _render_status(now=now, sections=sections)
 
     try:
         async with session_factory() as session:
@@ -216,30 +223,31 @@ async def build_admin_system_status_text(
                 interval_seconds=interval_seconds,
                 now=now,
             )
-            ai_health = await _ai_health(session)
+            ai_health = await _ai_health(session, now=now)
             rate_limit_health = await _rate_limit_health(session, now=now)
             news_health = await _news_health(session, now=now)
             delivery_health = await _delivery_health(session, now=now)
     except Exception:
-        runtime_rows.append("Automatic market check: UNKNOWN - database query failed")
         return _render_status(
             now=now,
-            runtime_rows=runtime_rows,
             sections=[
                 ComponentHealth(
                     "Database",
                     ComponentStatus.FAIL,
                     "query failed",
+                    summary="query failed",
                 )
             ],
         )
 
-    database_health = ComponentHealth("Database", ComponentStatus.OK, "PostgreSQL query successful")
-    automatic_detail = _automatic_market_check_detail(price_health)
-    runtime_rows.append(f"Automatic market check: {automatic_detail}")
+    database_health = ComponentHealth(
+        "Database",
+        ComponentStatus.OK,
+        "PostgreSQL query successful",
+        summary="connected",
+    )
     return _render_status(
         now=now,
-        runtime_rows=runtime_rows,
         sections=[
             database_health,
             price_health,
@@ -273,6 +281,9 @@ async def _market_data_health(
     states = {row.symbol.upper(): row for row in rows.all()}
     stale_after = timedelta(seconds=max(interval_seconds * 2, interval_seconds + 900))
     details: list[str] = []
+    problem_rows: list[str] = []
+    fresh_symbols: list[str] = []
+    missing_symbols: list[str] = []
     statuses: list[ComponentStatus] = []
 
     for symbol in SUPPORTED_SYMBOLS:
@@ -281,6 +292,7 @@ async def _market_data_health(
         expected_id = SUPPORTED_COINS[symbol]["coingecko_id"]
         if row is None:
             statuses.append(ComponentStatus.FAIL)
+            missing_symbols.append(display)
             details.append(
                 f"{display}: FAIL - missing price_state; expected CoinGecko id {expected_id}"
             )
@@ -290,23 +302,29 @@ async def _market_data_health(
         if checked_at is None:
             status = ComponentStatus.FAIL
             detail = "last check missing"
+            problem_rows.append(f"{display} stale: last check missing")
         elif age is not None and age > stale_after:
             status = ComponentStatus.WARN
             detail = (
                 f"stale, last checked {_format_utc(checked_at)} "
                 f"({_age_label(checked_at, now=now)})"
             )
+            problem_rows.append(f"{display} stale: last check {_age_label(checked_at, now=now)}")
         else:
             status = ComponentStatus.OK
             detail = (
                 f"fresh, last checked {_format_utc(checked_at)} "
                 f"({_age_label(checked_at, now=now)})"
             )
+            fresh_symbols.append(display)
         statuses.append(status)
         details.append(
             f"{display}: {status.value} - {detail}, price {_format_price(row.last_price)}, "
             f"CoinGecko id {expected_id}"
         )
+
+    if missing_symbols:
+        problem_rows.append(f"Missing: {', '.join(missing_symbols)}")
 
     component_status = ComponentStatus.OK
     if all(status == ComponentStatus.FAIL for status in statuses):
@@ -314,27 +332,24 @@ async def _market_data_health(
     elif any(status in {ComponentStatus.FAIL, ComponentStatus.WARN} for status in statuses):
         component_status = ComponentStatus.WARN
 
+    if component_status == ComponentStatus.OK:
+        summary = f"{', '.join(fresh_symbols)} fresh"
+    elif component_status == ComponentStatus.FAIL:
+        summary = "no fresh price telemetry"
+    else:
+        summary = "stale/missing symbols"
+
     return ComponentHealth(
-        "CoinGecko / price data",
+        "Market data",
         component_status,
         "persisted price_state freshness by active symbol",
         tuple(details),
+        summary=summary,
+        problem_rows=tuple(problem_rows),
     )
 
 
-def _automatic_market_check_detail(price_health: ComponentHealth) -> str:
-    btc_row = next((row for row in price_health.rows if row.startswith("BTC:")), None)
-    if btc_row and btc_row.startswith("BTC: OK"):
-        detail = btc_row.split(" - ", maxsplit=1)[1].split(", price", maxsplit=1)[0]
-        return f"OK - last BTC check {detail}"
-    if btc_row:
-        status = "FAIL" if "FAIL" in btc_row else "WARN"
-        detail = btc_row.split(" - ", maxsplit=1)[1]
-        return f"{status} - BTC {detail}"
-    return "UNKNOWN - no BTC price telemetry"
-
-
-async def _ai_health(session: AsyncSession) -> ComponentHealth:
+async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
     latest = await session.scalar(
         select(EventAiAnalysis)
         .where(EventAiAnalysis.analysis_type == "event_analysis")
@@ -358,22 +373,28 @@ async def _ai_health(session: AsyncSession) -> ComponentHealth:
 
     if latest is None:
         return ComponentHealth(
-            "Groq event analysis",
+            "AI analysis",
             ComponentStatus.UNKNOWN,
             "no event-analysis attempt recorded yet",
+            summary="no analysis telemetry",
         )
 
     if latest.status in {"success", "no_alert"}:
         status = ComponentStatus.OK
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
+        summary = f"latest success {_age_label(latest.created_at, now=now)}"
     elif latest.status in {"skipped_due_to_rate_limit", "schema_error", "invalid_json"}:
         status = ComponentStatus.WARN
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
+        summary = f"latest {latest.status}"
     else:
         status = ComponentStatus.FAIL
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
+        safe_reason = _safe_detail(latest.error_reason or latest.status, max_chars=60)
+        summary = f"latest failed: {safe_reason}"
 
     rows = [f"Latest attempt: {latest.status} at {_format_utc(latest.created_at)}"]
+    problem_rows: list[str] = []
     if latest_success is not None:
         rows.append(
             f"Latest success: {latest_success.status} "
@@ -394,18 +415,36 @@ async def _ai_health(session: AsyncSession) -> ComponentHealth:
         safe_detail = _safe_detail(latest_failure.error_message)
         if safe_detail:
             rows.append(f"Failure detail: {safe_detail}")
+        if not resolved and latest_failure.id == latest.id:
+            problem_reason = _safe_detail(
+                latest_failure.error_reason or latest_failure.status,
+                max_chars=60,
+            )
+            if safe_detail:
+                problem_reason = safe_detail
+            if problem_reason:
+                problem_rows.append(f"Reason: {problem_reason}")
 
-    return ComponentHealth("Groq event analysis", status, detail, tuple(rows))
+    return ComponentHealth(
+        "AI analysis",
+        status,
+        detail,
+        tuple(rows),
+        summary=summary,
+        problem_rows=tuple(problem_rows),
+    )
 
 
 async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
     active_backoffs = []
+    active_until: datetime | None = None
     for label, model in (
         ("event-analysis", GROQ_EVENT_ANALYSIS_MODEL),
         ("heartbeat", GROQ_MARKET_HEARTBEAT_MODEL),
     ):
         limited_until = get_llm_rate_limit_backoff(model=model, now=now)
         if limited_until is not None:
+            active_until = limited_until
             active_backoffs.append(f"{label} {model} limited until {_format_utc(limited_until)}")
     if active_backoffs:
         return ComponentHealth(
@@ -413,6 +452,7 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
             ComponentStatus.WARN,
             active_backoffs[0],
             tuple(active_backoffs),
+            summary=f"active until {_format_utc(active_until)[11:16]} UTC",
         )
 
     latest_usage = await session.scalar(
@@ -448,19 +488,27 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
                 f"recent {latest_rate_limit.status} "
                 f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
             ),
+            summary=f"recent limit{retry_after}",
         )
     if latest_usage is None:
-        return ComponentHealth("Groq rate limit", ComponentStatus.UNKNOWN, "no LLM usage telemetry")
+        return ComponentHealth(
+            "Groq rate limit",
+            ComponentStatus.UNKNOWN,
+            "no LLM usage telemetry",
+            summary="no usage telemetry",
+        )
     if latest_usage.status == "success":
         return ComponentHealth(
             "Groq rate limit",
             ComponentStatus.OK,
             f"latest usage success at {_format_utc(latest_usage.created_at)}",
+            summary="no active limit",
         )
     return ComponentHealth(
         "Groq rate limit",
         ComponentStatus.UNKNOWN,
         f"latest usage status {latest_usage.status} at {_format_utc(latest_usage.created_at)}",
+        summary="no usage telemetry",
     )
 
 
@@ -469,7 +517,12 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
         select(NewsItem).order_by(NewsItem.fetched_at.desc(), NewsItem.id.desc()).limit(1)
     )
     if latest is None:
-        return ComponentHealth("RSS/news", ComponentStatus.UNKNOWN, "no news cache telemetry")
+        return ComponentHealth(
+            "News",
+            ComponentStatus.UNKNOWN,
+            "no news cache telemetry",
+            summary="no cache telemetry",
+        )
 
     since = now - timedelta(hours=24)
     usable_count = int(
@@ -517,7 +570,20 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
             f"News intelligence: OK - latest {latest_intel.llm_status} "
             f"at {_format_utc(latest_intel.updated_at)}"
         )
-    return ComponentHealth("RSS/news", status, detail, tuple(rows))
+    if status == ComponentStatus.OK:
+        summary = f"{usable_count} usable items in 24h"
+        problem_rows: tuple[str, ...] = ()
+    else:
+        summary = "stale or empty"
+        problem_rows = (f"Usable items in 24h: {usable_count}",)
+    return ComponentHealth(
+        "News",
+        status,
+        detail,
+        tuple(rows),
+        summary=summary,
+        problem_rows=problem_rows,
+    )
 
 
 async def _delivery_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
@@ -547,14 +613,17 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     if total == 0 and final_failed == 0:
         if blocked_users > 0:
             return ComponentHealth(
-                "Telegram alerts",
+                "Telegram delivery",
                 ComponentStatus.WARN,
                 f"no delivery rows in last 24h, blocked_users {blocked_users}",
+                summary="no delivery rows in 24h",
+                problem_rows=(f"Blocked users: {blocked_users}",),
             )
         return ComponentHealth(
-            "Telegram alerts",
-            ComponentStatus.UNKNOWN,
+            "Telegram delivery",
+            ComponentStatus.WARN,
             f"no delivery rows in last 24h, blocked_users {blocked_users}",
+            summary="no delivery rows in 24h",
         )
 
     sent = counts.get("sent", 0)
@@ -574,26 +643,58 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         f"Last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
         f"failed {failed}, final_failed {final_failed}, blocked_users {blocked_users}"
     )
-    return ComponentHealth("Telegram alerts", status, detail)
+    problem_rows = []
+    if blocked_users > 0:
+        problem_rows.append(f"Blocked users: {blocked_users}")
+    if final_failed > 0:
+        summary = f"final_failed {final_failed} in 24h"
+    elif pending > 0 or retry_pending > 0:
+        summary = "retry/pending deliveries"
+    elif failed > 0:
+        summary = "failed deliveries"
+    elif sent > 0:
+        summary = f"sent {sent} in 24h"
+    else:
+        summary = "no delivery rows in 24h"
+    return ComponentHealth(
+        "Telegram delivery",
+        status,
+        detail,
+        summary=summary,
+        problem_rows=tuple(problem_rows),
+    )
+
+
+_STATUS_ICON = {
+    ComponentStatus.OK: "✅",
+    ComponentStatus.WARN: "⚠️",
+    ComponentStatus.UNKNOWN: "⚠️",
+    ComponentStatus.FAIL: "❌",
+}
+
+_OVERALL_LABEL = {
+    ComponentStatus.OK: "OK",
+    ComponentStatus.UNKNOWN: "Needs attention",
+    ComponentStatus.WARN: "Needs attention",
+    ComponentStatus.FAIL: "Problems detected",
+}
 
 
 def _render_status(
     *,
     now: datetime,
-    runtime_rows: list[str],
     sections: list[ComponentHealth],
 ) -> str:
     overall = _worst_status([section.status for section in sections])
     lines = [
-        f"System status - {_format_utc(now)}",
-        f"Overall: {overall.value}",
+        f"System status — {_format_utc(now)}",
+        f"Overall: {_STATUS_ICON[overall]} {_OVERALL_LABEL[overall]}",
         "",
-        "Runtime",
-        *runtime_rows,
-        "",
+        "✅ Bot — running",
     ]
     for section in sections:
-        lines.append(f"{section.name}: {section.status.value} - {section.detail}")
-        lines.extend(section.rows)
-        lines.append("")
+        summary = section.summary or section.detail
+        lines.append(f"{_STATUS_ICON[section.status]} {section.name} — {summary}")
+        if section.status != ComponentStatus.OK:
+            lines.extend(f"   {row}" for row in section.problem_rows)
     return "\n".join(lines).strip()

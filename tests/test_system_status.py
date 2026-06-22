@@ -124,14 +124,23 @@ async def test_system_status_uses_real_fresh_telemetry():
             now=now,
         )
 
-        assert "Overall: OK" in text
-        assert "CoinGecko status: OK" not in text
-        assert "RSS/news status: OK" not in text
+        assert "Overall: ✅ OK" in text
+        assert "✅ Bot — running" in text
+        assert "✅ Database — connected" in text
+        assert "✅ Market data — BTC, ETH, GRAM, SOL fresh" in text
+        assert "✅ AI analysis — latest success 5m ago" in text
+        assert "✅ Groq rate limit — no active limit" in text
+        assert "✅ News — 1 usable items in 24h" in text
+        assert "✅ Telegram delivery — sent 1 in 24h" in text
+        assert len(text.splitlines()) <= 10
+        assert "CoinGecko id" not in text
+        assert "price_state" not in text
+        assert "$" not in text
+        assert "Latest news cache" not in text
+        assert "Recent usable news items" not in text
+        assert "News intelligence" not in text
+        assert "Latest failure" not in text
         assert "Rate limit status: no active rate limit recorded" not in text
-        assert "GRAM: OK" in text
-        assert "CoinGecko id the-open-network" in text
-        assert "Groq event analysis: OK" in text
-        assert "Telegram alerts: OK" in text
     finally:
         await engine.dispose()
 
@@ -145,19 +154,21 @@ async def test_system_status_db_disabled_is_not_fake_ok():
         now=_now(),
     )
 
-    assert "Overall: WARN" in text
-    assert "Database: WARN - database disabled; using local JSON fallback" in text
-    assert "CoinGecko / price data: UNKNOWN" in text
-    assert "Groq event analysis: UNKNOWN" in text
+    assert "Overall: ⚠️ Needs attention" in text
+    assert "✅ Bot — running" in text
+    assert "⚠️ Database — local JSON fallback" in text
+    assert "⚠️ Market data — no price telemetry" in text
+    assert "⚠️ AI analysis — no analysis telemetry" in text
+    assert "PostgreSQL" not in text
 
 
 @pytest.mark.asyncio
-async def test_system_status_shows_missing_gram_price_state():
+async def test_system_status_shows_missing_symbols_compactly():
     now = _now()
     engine, session_local = await build_session_factory()
     try:
         async with session_local() as session:
-            await _seed_fresh_prices(session, now, skip={"ton"})
+            await _seed_fresh_prices(session, now, skip={"eth", "ton", "sol"})
             await session.commit()
 
         text = await build_admin_system_status_text(
@@ -166,8 +177,41 @@ async def test_system_status_shows_missing_gram_price_state():
             now=now,
         )
 
-        assert "CoinGecko / price data: WARN" in text
-        assert "GRAM: FAIL - missing price_state; expected CoinGecko id the-open-network" in text
+        assert "⚠️ Market data — stale/missing symbols" in text
+        assert "Missing: ETH, GRAM, SOL" in text
+        assert "CoinGecko id" not in text
+        assert "price_state" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_shows_stale_btc_without_price_details():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            await _seed_fresh_prices(session, now, skip={"btc"})
+            session.add(
+                PriceState(
+                    symbol="BTC",
+                    last_price=65000.0,
+                    last_24h_change=-1.0,
+                    last_checked_at=now - timedelta(hours=32),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "⚠️ Market data — stale/missing symbols" in text
+        assert "BTC stale: last check 32h ago" in text
+        assert "$65,000.00" not in text
+        assert "CoinGecko id" not in text
     finally:
         await engine.dispose()
 
@@ -202,12 +246,10 @@ async def test_system_status_marks_old_ai_failure_resolved_by_newer_success():
             now=now,
         )
 
-        assert "Groq event analysis: OK" in text
-        assert (
-            "Latest failure: other_error at 2026-06-14 16:55 UTC "
-            "- resolved by newer success"
-        ) in text
-        assert "Failure detail: APIConnectionError - connection failed" in text
+        assert "✅ AI analysis — latest success 10m ago" in text
+        assert "Latest failure" not in text
+        assert "Failure detail" not in text
+        assert "APIConnectionError" not in text
     finally:
         await engine.dispose()
 
@@ -218,27 +260,27 @@ async def test_system_status_marks_old_ai_failure_resolved_by_newer_success():
     [
         (
             "APIConnectionError - connection failed",
-            "Failure detail: APIConnectionError - connection failed",
+            "Reason: APIConnectionError - connection failed",
             None,
         ),
         (
             "{'error': {'message': 'raw provider body', 'type': 'invalid_request'}}",
-            "Failure detail: provider response redacted",
+            "Reason: provider response redacted",
             "raw provider body",
         ),
         (
             "Authorization: Bearer secret-token",
-            "Failure detail: internal error detail redacted",
+            "Reason: internal error detail redacted",
             "secret-token",
         ),
         (
             "DATABASE_URL=postgresql://ccwbot:secret@example/db",
-            "Failure detail: internal error detail redacted",
+            "Reason: internal error detail redacted",
             "postgresql://",
         ),
         (
             "Traceback (most recent call last):\n  File \"bot.py\", line 1\nRuntimeError: bad",
-            "Failure detail: internal error detail redacted",
+            "Reason: internal error detail redacted",
             "bot.py",
         ),
     ],
@@ -298,8 +340,8 @@ async def test_system_status_marks_latest_ai_failure_active():
             now=now,
         )
 
-        assert "Groq event analysis: WARN - latest attempt invalid_json" in text
-        assert "Latest failure: invalid_json at 2026-06-15 16:54 UTC" in text
+        assert "⚠️ AI analysis — latest invalid_json" in text
+        assert "Reason: invalid_json" in text
         assert "resolved by newer success" not in text
     finally:
         await engine.dispose()
@@ -324,10 +366,7 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
             now=now,
         )
 
-        assert (
-            "Groq rate limit: WARN - event-analysis event-model limited until "
-            "2026-06-15 17:00 UTC"
-        ) in text
+        assert "⚠️ Groq rate limit — active until 17:00 UTC" in text
     finally:
         reset_llm_rate_limit_backoffs()
         await engine.dispose()
@@ -358,10 +397,7 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert (
-            "Groq rate limit: WARN - recent rate_limit at 2026-06-15 16:25 UTC, "
-            "retry_after 10"
-        ) in text
+        assert "⚠️ Groq rate limit — recent limit, retry_after 10" in text
     finally:
         await engine.dispose()
 
@@ -376,7 +412,7 @@ async def test_system_status_news_cache_stale_and_missing():
             session_factory=session_local,
             now=now,
         )
-        assert "RSS/news: UNKNOWN - no news cache telemetry" in text
+        assert "⚠️ News — no cache telemetry" in text
 
         async with session_local() as session:
             session.add(
@@ -396,9 +432,9 @@ async def test_system_status_news_cache_stale_and_missing():
             session_factory=session_local,
             now=now,
         )
-        assert "RSS/news: WARN" in text
-        assert "Recent usable news items: 0 in last 24h" in text
-        assert "News intelligence: WARN - latest failed" in text
+        assert "⚠️ News — stale or empty" in text
+        assert "Usable items in 24h: 0" in text
+        assert "News intelligence" not in text
     finally:
         await engine.dispose()
 
@@ -449,10 +485,27 @@ async def test_system_status_delivery_counts():
             now=now,
         )
 
-        assert "Telegram alerts: WARN" in text
-        assert (
-            "Last 24h: sent 1, pending 0, retry_pending 1, failed 0, "
-            "final_failed 0, blocked_users 2"
-        ) in text
+        assert "⚠️ Telegram delivery — retry/pending deliveries" in text
+        assert "Blocked users: 2" in text
+        assert "retry_pending 1" not in text
+        assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_no_rows_is_compact_warning():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "⚠️ Telegram delivery — no delivery rows in 24h" in text
+        assert "Blocked users:" not in text
+        assert "blocked_users" not in text
     finally:
         await engine.dispose()

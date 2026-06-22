@@ -4,37 +4,54 @@ Use these read-only queries for production analysis. Adjust interval windows as 
 
 ## Admin System Status
 
-Admin -> System status is the concise Telegram-safe summary for live operators. It uses only
+Admin -> System status is a compact Telegram-safe dashboard for live operators. It uses only
 persisted telemetry and in-memory Groq backoff state; opening the screen must not call CoinGecko,
 Groq, RSS feeds, or Telegram delivery APIs.
 
-Component states:
+Default output is designed for mobile scanning:
 
-- `OK`: fresh successful telemetry exists.
-- `WARN`: telemetry is stale, partial, degraded, or has recent non-fatal failures.
-- `FAIL`: the latest required operation failed or a core dependency is unavailable.
-- `UNKNOWN`: there is not enough telemetry to claim success or failure.
+- `✅`: the component has fresh successful telemetry.
+- `⚠️`: telemetry is stale, partial, degraded, or not enough to claim healthy.
+- `❌`: the latest required operation failed or a core dependency is unavailable.
 
-Signals currently checked:
+The default Telegram message shows one main line per component and only adds indented problem
+lines for degraded or failing components. Long OK details, repeated timestamps, price values,
+CoinGecko ids, raw table names, provider payloads, traces, and secrets are not shown in the
+default dashboard.
 
-- Runtime: admin command response and latest BTC `price_state` freshness as the automatic market
-  check proxy.
+Signals currently summarized:
+
+- Runtime: admin command response.
 - Database: explicit lightweight PostgreSQL query.
-- Market data: one `price_state` row per active symbol from `SUPPORTED_SYMBOLS`, including GRAM
-  stored as internal `ton` with CoinGecko id `the-open-network`.
+- Market data: freshness for each active symbol from persisted price telemetry. Automatic market
+  check health is folded into this component.
 - AI: latest event-analysis attempt, latest successful attempt, and latest failure from
   `event_ai_analyses`; failure details are sanitized and redacted if they look like provider
-  payloads, traces, headers, connection strings, or secrets.
+  payloads, traces, headers, connection strings, or secrets. Old failures resolved by newer
+  success/no-alert rows do not clutter the default dashboard.
 - Groq rate limit: active event-analysis/heartbeat in-memory backoff plus recent
   `llm_usage_logs` rate-limit telemetry.
-- RSS/news: latest `news_items.fetched_at`, usable non-noise/non-duplicate rows in the last 24h,
-  and latest news-intelligence status.
+- News: cache freshness and usable non-noise/non-duplicate rows in the last 24h.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
-  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`.
+  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`. Blocked users are
+  shown only when non-zero.
 
-If a latest AI failure is older than the latest `success` or `no_alert`, status shows it as
-`resolved by newer success`. That means the historical failure is still useful context but is not
-the current Groq event-analysis state.
+Example degraded output:
+
+```text
+System status — 2026-06-15 16:55 UTC
+Overall: ⚠️ Needs attention
+
+✅ Bot — running
+✅ Database — connected
+⚠️ Market data — stale/missing symbols
+   BTC stale: last check 32h ago
+   Missing: ETH, GRAM, SOL
+✅ AI analysis — latest success 32h ago
+⚠️ Groq rate limit — recent limit, retry_after 1s
+✅ News — 5 usable items in 24h
+⚠️ Telegram delivery — no delivery rows in 24h
+```
 
 Current limitations:
 
