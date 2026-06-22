@@ -335,6 +335,16 @@ def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     assert "placeholder_quality_count" in query_names["market_heartbeat_delivery_freshness"].sql
     assert "latest_fetched_at" in query_names["news_freshness_summary"].sql
     assert "usable_news_count_24h" in query_names["news_freshness_summary"].sql
+    assert "CAST(:until AS timestamptz) - interval '24 hours'" in query_names[
+        "news_freshness_summary"
+    ].sql
+    assert (
+        query_names["news_freshness_summary"].sql.count(
+            "fetched_at < CAST(:until AS timestamptz)"
+        )
+        == 3
+    )
+    assert ":until - interval '24 hours'" not in query_names["news_freshness_summary"].sql
     assert "array_agg(llm_status" not in query_names["news_freshness_summary"].sql
     assert "ORDER BY fetched_at DESC, id DESC LIMIT 1" in query_names[
         "news_freshness_summary"
