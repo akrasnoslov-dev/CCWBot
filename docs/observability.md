@@ -14,10 +14,10 @@ Default output is designed for mobile scanning:
 - `⚠️`: telemetry is stale, partial, degraded, or not enough to claim healthy.
 - `❌`: the latest required operation failed or a core dependency is unavailable.
 
-The default Telegram message shows one main line per component and only adds indented problem
-lines for degraded or failing components. Long OK details, repeated timestamps, price values,
-CoinGecko ids, raw table names, provider payloads, traces, and secrets are not shown in the
-default dashboard.
+The default Telegram message shows one main line per component. It adds indented problem lines for
+degraded or failing components, plus compact informational rows such as blocked-user counts only
+when they are non-zero. Long OK details, repeated timestamps, price values, CoinGecko ids, raw
+table names, provider payloads, traces, and secrets are not shown in the default dashboard.
 
 Signals currently summarized:
 
@@ -31,7 +31,8 @@ Signals currently summarized:
   success/no-alert rows do not clutter the default dashboard.
 - Groq rate limit: active event-analysis/heartbeat in-memory backoff plus recent
   `llm_usage_logs` rate-limit telemetry.
-- News: cache freshness and usable non-noise/non-duplicate rows in the last 24h.
+- News: cache freshness and usable non-noise/non-duplicate rows in the last 24h. Fresh usable
+  news remains OK even when enrichment telemetry has not run yet.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
   `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`. Blocked users are
   shown only when non-zero.

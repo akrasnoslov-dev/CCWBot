@@ -69,6 +69,7 @@ class ComponentHealth:
     rows: tuple[str, ...] = field(default_factory=tuple)
     summary: str | None = None
     problem_rows: tuple[str, ...] = field(default_factory=tuple)
+    info_rows: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _utc_now() -> datetime:
@@ -557,8 +558,6 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
     ]
     if latest_intel is None:
         rows.append("News intelligence: UNKNOWN - no enrichment telemetry")
-        if status == ComponentStatus.OK:
-            status = ComponentStatus.WARN
     elif latest_intel.llm_status == "failed":
         rows.append(
             f"News intelligence: WARN - latest failed "
@@ -570,9 +569,13 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
             f"News intelligence: OK - latest {latest_intel.llm_status} "
             f"at {_format_utc(latest_intel.updated_at)}"
         )
-    if status == ComponentStatus.OK:
+    if fresh and usable_count > 0:
         summary = f"{usable_count} usable items in 24h"
-        problem_rows: tuple[str, ...] = ()
+        problem_rows = (
+            ("News intelligence: latest failed",)
+            if latest_intel is not None and latest_intel.llm_status == "failed"
+            else ()
+        )
     else:
         summary = "stale or empty"
         problem_rows = (f"Usable items in 24h: {usable_count}",)
@@ -617,7 +620,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
                 ComponentStatus.WARN,
                 f"no delivery rows in last 24h, blocked_users {blocked_users}",
                 summary="no delivery rows in 24h",
-                problem_rows=(f"Blocked users: {blocked_users}",),
+                info_rows=(f"Blocked users: {blocked_users}",),
             )
         return ComponentHealth(
             "Telegram delivery",
@@ -643,9 +646,9 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         f"Last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
         f"failed {failed}, final_failed {final_failed}, blocked_users {blocked_users}"
     )
-    problem_rows = []
+    info_rows = []
     if blocked_users > 0:
-        problem_rows.append(f"Blocked users: {blocked_users}")
+        info_rows.append(f"Blocked users: {blocked_users}")
     if final_failed > 0:
         summary = f"final_failed {final_failed} in 24h"
     elif pending > 0 or retry_pending > 0:
@@ -661,7 +664,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         status,
         detail,
         summary=summary,
-        problem_rows=tuple(problem_rows),
+        info_rows=tuple(info_rows),
     )
 
 
@@ -697,4 +700,5 @@ def _render_status(
         lines.append(f"{_STATUS_ICON[section.status]} {section.name} — {summary}")
         if section.status != ComponentStatus.OK:
             lines.extend(f"   {row}" for row in section.problem_rows)
+        lines.extend(f"   {row}" for row in section.info_rows)
     return "\n".join(lines).strip()

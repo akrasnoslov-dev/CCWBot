@@ -440,6 +440,39 @@ async def test_system_status_news_cache_stale_and_missing():
 
 
 @pytest.mark.asyncio
+async def test_system_status_news_fresh_without_enrichment_stays_ok():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add(
+                NewsItem(
+                    news_key="news-fresh",
+                    title="Fresh news",
+                    url="https://example.com/fresh",
+                    fetched_at=now - timedelta(minutes=20),
+                    llm_status=None,
+                    updated_at=now - timedelta(minutes=20),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "✅ News — 1 usable items in 24h" in text
+        assert "News — stale or empty" not in text
+        assert "Latest news cache" not in text
+        assert "Recent usable news items" not in text
+        assert "News intelligence" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_system_status_delivery_counts():
     now = _now()
     engine, session_local = await build_session_factory()
@@ -488,6 +521,59 @@ async def test_system_status_delivery_counts():
         assert "⚠️ Telegram delivery — retry/pending deliveries" in text
         assert "Blocked users: 2" in text
         assert "retry_pending 1" not in text
+        assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_ok_shows_blocked_users_info():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add_all(
+                [
+                    User(
+                        telegram_user_id=200,
+                        telegram_chat_id=200,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=2),
+                    ),
+                    User(
+                        telegram_user_id=201,
+                        telegram_chat_id=201,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=1),
+                    ),
+                    Alert(
+                        symbol="BTC",
+                        alert_type="event_alert",
+                        message="safe",
+                        sent_to_chat_id=100,
+                        status="sent",
+                        created_at=now - timedelta(hours=1),
+                    ),
+                    Alert(
+                        symbol="BTC",
+                        alert_type="event_alert",
+                        message="safe",
+                        sent_to_chat_id=101,
+                        status="sent",
+                        created_at=now - timedelta(hours=1),
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "✅ Telegram delivery — sent 2 in 24h" in text
+        assert "Blocked users: 2" in text
         assert "blocked_users" not in text
     finally:
         await engine.dispose()
