@@ -22,7 +22,7 @@ analysis.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
 - User `/settings` for watchlist and heartbeat frequency, plus admin-only `/admin`,
   `/chatid`, `/grantpremium`, and `/revokepremium` commands. System status is available
-  from `/admin` and reports real persisted telemetry instead of live provider probes.
+  from `/admin` as a compact persisted-telemetry dashboard instead of live provider probes.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -416,18 +416,18 @@ internal error details.
 ## Admin System Status
 
 Admin -> System status groups runtime, database, market data, AI, Groq rate-limit, RSS/news,
-and Telegram delivery telemetry. Component states mean:
+and Telegram delivery telemetry into a compact Telegram dashboard. Component icons mean:
 
-- `OK`: fresh successful telemetry exists.
-- `WARN`: telemetry is stale, partial, degraded, or has recent non-fatal failures.
-- `FAIL`: the latest required operation failed or a core dependency is unavailable.
-- `UNKNOWN`: there is not enough telemetry to claim success or failure.
+- `✅`: fresh successful telemetry exists.
+- `⚠️`: telemetry is stale, partial, degraded, or not enough to claim healthy.
+- `❌`: the latest required operation failed or a core dependency is unavailable.
 
 Status uses persisted `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and
 `alerts` rows. It does not call CoinGecko, Groq, RSS feeds, or Telegram while rendering the admin
-screen. Older AI failures are shown as resolved when a newer `success` or `no_alert` event-analysis
-row exists. Failure details are sanitized/redacted, and Telegram delivery health includes stored
-blocked-user count when PostgreSQL telemetry is available.
+screen. Default output shows one line per component and adds short indented details for degraded
+or failing components, plus compact informational rows such as blocked-user counts only when they
+are non-zero. Older AI failures do not clutter the dashboard when a newer `success` or `no_alert`
+event-analysis row exists. Failure details are sanitized/redacted.
 
 ## Testing And Linting
 
@@ -455,8 +455,8 @@ After deploy, verify with a private chat:
 7. Send `/plan`; My plan should show Free, Premium, or expired Premium state without exposing internals.
 8. In `/plan`, Subscribe should return a Telegram Stars invoice link. Repeating it immediately should return a short wait message.
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
-10. Open Admin -> System status; component lines should show `OK`, `WARN`, `FAIL`, or `UNKNOWN`
-    from persisted telemetry, with active symbols including GRAM/TON visible.
+10. Open Admin -> System status; component lines should show compact `✅`, `⚠️`, or `❌`
+    status icons from persisted telemetry, with details only for degraded or failing components.
 11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
 12. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
 
