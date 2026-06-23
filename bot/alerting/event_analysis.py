@@ -608,6 +608,9 @@ def _validate_alert_related_news_ids(
         raise EventAnalysisValidationError("related_news_ids must be a string array")
     if len(set(value)) != len(value):
         raise EventAnalysisValidationError("related_news_ids contains duplicates")
+    unknown_ids = {str(item) for item in value} - candidate_news_ids
+    if unknown_ids:
+        raise EventAnalysisValidationError("related_news_ids contains unknown news ids")
     return value
 
 

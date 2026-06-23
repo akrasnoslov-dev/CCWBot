@@ -281,6 +281,12 @@ COLUMN_COMMENTS = {
         "trigger_source": "Machine-readable signal source for this outcome.",
         "event_instance_key": "Stable idempotency key for the market event.",
         "semantic_family": "Canonical semantic family used for suppression.",
+        "decision_stage": "Decision stage that produced this operator-facing outcome.",
+        "decision_reason": "Machine-readable event alert decision reason for operator reports.",
+        "previous_alert_id": "Previous alert row considered for repeat or cooldown decisions.",
+        "context_fingerprint": (
+            "Safe hash of the sanitized decision context used for observability."
+        ),
         "detail": "Sanitized secondary diagnostic detail for operators.",
         "created_at": "When this outcome row was created.",
     },

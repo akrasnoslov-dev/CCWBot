@@ -406,6 +406,14 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
                 row.reason_code
                 for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
             } == {"delivered"}
+            assert {
+                row.decision_stage
+                for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
+            } == {"delivery"}
+            assert {
+                row.decision_reason
+                for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
+            } == {"delivered"}
     finally:
         await engine.dispose()
 

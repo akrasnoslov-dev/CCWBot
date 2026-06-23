@@ -426,7 +426,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/anomalies.json",
         "WITH sent AS ("
         "SELECT a.user_id, a.symbol, coalesce(ado.semantic_family, me.event_key) AS canonical_event_key, "
-        "ado.semantic_family, a.created_at, "
+        "ado.semantic_family, ado.decision_reason, a.created_at, "
         "substring(a.numeric_context from "
         "'\"analysed_window_change_percent\"\\s*:\\s*\"?(-?[0-9]+(?:\\.[0-9]+)?)\"?')::numeric "
         "AS analysed_window_change_percent, "
@@ -444,7 +444,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "max(analysed_window_change_percent) AS max_analysed_window_change_percent, "
         "count(DISTINCT stable_news_set_hash) AS stable_news_set_hash_count, "
         "(array_agg(DISTINCT stable_news_set_hash ORDER BY stable_news_set_hash))[1:10] "
-        "AS stable_news_set_hashes "
+        "AS stable_news_set_hashes, "
+        "(array_remove(array_agg(DISTINCT decision_reason ORDER BY decision_reason), NULL))[1:10] "
+        "AS decision_reasons "
         "FROM sent GROUP BY user_id, symbol, canonical_event_key, semantic_family "
         "HAVING count(*) > 1 AND max(created_at) - min(created_at) <= interval '24 hours' "
         "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
@@ -453,7 +455,8 @@ QUERIES: tuple[DbQuery, ...] = (
         "event_alert_same_news_repeats_24h",
         "evidence/db/anomalies.json",
         "WITH sent AS ("
-        "SELECT a.user_id, a.symbol, me.event_key, ado.semantic_family, a.created_at, "
+        "SELECT a.user_id, a.symbol, me.event_key, ado.semantic_family, ado.decision_reason, "
+        "a.created_at, "
         "md5(coalesce(substring(a.numeric_context from "
         "'\"stable_related_news_ids\"\\s*:\\s*(\\[[^\\]]*\\])'), "
         "coalesce(eaa.related_news_ids, '[]'))) AS stable_related_news_ids_hash "
@@ -466,7 +469,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "min(created_at) AS first_sent_at, max(created_at) AS last_sent_at, "
         "(array_agg(DISTINCT event_key ORDER BY event_key))[1:10] AS related_event_keys, "
         "(array_remove(array_agg(DISTINCT semantic_family ORDER BY semantic_family), NULL))[1:10] "
-        "AS related_semantic_families "
+        "AS related_semantic_families, "
+        "(array_remove(array_agg(DISTINCT decision_reason ORDER BY decision_reason), NULL))[1:10] "
+        "AS decision_reasons "
         "FROM sent WHERE stable_related_news_ids_hash != md5('[]') "
         "GROUP BY user_id, symbol, stable_related_news_ids_hash "
         "HAVING count(*) > 1 AND max(created_at) - min(created_at) <= interval '24 hours' "
@@ -476,8 +481,12 @@ QUERIES: tuple[DbQuery, ...] = (
         "alert_delivery_outcome_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT coalesce(status, 'unknown') AS status, coalesce(reason_code, 'unknown') AS reason_code, "
+        "coalesce(decision_stage, 'unknown') AS decision_stage, "
+        "coalesce(decision_reason, 'unknown') AS decision_reason, "
         "count(*) AS outcomes, count(*) FILTER (WHERE reason_code IS NULL OR reason_code = '') "
         "AS reason_code_unknown_count, "
+        "count(*) FILTER (WHERE decision_reason IS NULL OR decision_reason = '') "
+        "AS decision_reason_unknown_count, "
         "count(*) FILTER (WHERE market_event_id IS NULL) AS market_event_id_null_count, "
         "count(*) FILTER (WHERE market_event_id IS NOT NULL) AS market_event_id_present_count, "
         "count(*) FILTER (WHERE event_ai_analysis_id IS NULL) AS event_ai_analysis_id_null_count, "
@@ -486,10 +495,29 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE status = 'suppressed') AS suppressed_count, "
         "count(*) FILTER (WHERE status = 'filtered') AS filtered_count, "
         "count(*) FILTER (WHERE status = 'failed') AS failed_count, "
-        "count(*) FILTER (WHERE status = 'rate_limited') AS rate_limited_count "
+        "count(*) FILTER (WHERE status = 'rate_limited') AS rate_limited_count, "
+        "count(*) FILTER (WHERE decision_reason = 'news_only_rejected') AS news_only_rejected_count, "
+        "count(*) FILTER (WHERE decision_reason = 'llm_should_alert') AS llm_should_alert_count, "
+        "count(*) FILTER (WHERE decision_reason = 'llm_no_alert') AS llm_no_alert_count, "
+        "count(*) FILTER (WHERE decision_reason = 'semantic_cooldown_suppressed') "
+        "AS semantic_cooldown_suppressed_count, "
+        "count(*) FILTER (WHERE status = 'delivered' AND decision_reason IS NOT NULL) "
+        "AS delivered_with_decision_reason_count "
         "FROM alert_delivery_outcomes WHERE created_at >= :since AND created_at < :until "
-        "GROUP BY coalesce(status, 'unknown'), coalesce(reason_code, 'unknown') "
-        "ORDER BY outcomes DESC, status, reason_code LIMIT :limit",
+        "GROUP BY coalesce(status, 'unknown'), coalesce(reason_code, 'unknown'), "
+        "coalesce(decision_stage, 'unknown'), coalesce(decision_reason, 'unknown') "
+        "ORDER BY outcomes DESC, status, reason_code, decision_stage, decision_reason LIMIT :limit",
+    ),
+    DbQuery(
+        "event_alert_possible_action_quality",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT count(*) AS event_alert_actions, "
+        "count(*) FILTER (WHERE possible_action ~* "
+        "'^(monitor price movement|monitor market developments|monitor market sentiment|keep watching|monitor risk)\\.?$') "
+        "AS generic_possible_action_count "
+        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
+        "AND should_alert = true",
     ),
     DbQuery(
         "market_events_without_delivery_classification",

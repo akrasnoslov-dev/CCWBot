@@ -46,6 +46,57 @@ def test_decision_report_context_renders_required_decision_sections():
                 "market_events_summary": {"rows": [{"events": 10}]},
                 "event_ai_analysis_summary": {"rows": [{"analyses": 10}]},
                 "alerts_summary": {"rows": [{"deliveries": 500}]},
+                "alert_delivery_outcome_summary": {
+                    "rows": [
+                        {
+                            "status": "allowed",
+                            "reason_code": "llm_should_alert",
+                            "decision_stage": "llm",
+                            "decision_reason": "llm_should_alert",
+                            "outcomes": 5,
+                            "news_only_rejected_count": 0,
+                            "llm_should_alert_count": 5,
+                            "llm_no_alert_count": 0,
+                            "semantic_cooldown_suppressed_count": 0,
+                            "delivered_with_decision_reason_count": 0,
+                            "decision_reason_unknown_count": 0,
+                        },
+                        {
+                            "status": "not_scheduled",
+                            "reason_code": "news_only_rejected",
+                            "decision_stage": "llm",
+                            "decision_reason": "news_only_rejected",
+                            "outcomes": 3,
+                            "news_only_rejected_count": 3,
+                            "llm_should_alert_count": 0,
+                            "llm_no_alert_count": 0,
+                            "semantic_cooldown_suppressed_count": 0,
+                            "delivered_with_decision_reason_count": 0,
+                            "decision_reason_unknown_count": 0,
+                        },
+                        {
+                            "status": "delivered",
+                            "reason_code": "delivered",
+                            "decision_stage": "delivery",
+                            "decision_reason": "delivered",
+                            "outcomes": 8,
+                            "news_only_rejected_count": 0,
+                            "llm_should_alert_count": 0,
+                            "llm_no_alert_count": 0,
+                            "semantic_cooldown_suppressed_count": 0,
+                            "delivered_with_decision_reason_count": 8,
+                            "decision_reason_unknown_count": 0,
+                        },
+                    ]
+                },
+                "event_alert_possible_action_quality": {
+                    "rows": [
+                        {
+                            "event_alert_actions": 10,
+                            "generic_possible_action_count": 2,
+                        }
+                    ]
+                },
             }
         },
         "evidence/db/recent_alert_failures.json": {"queries": {"alerts_failures": {"rows": []}}},
@@ -112,6 +163,11 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "451 / 451 unique affected Event Alert deliveries, 100.0%" in markdown
     assert "| contains_n_a | BTC | news | event_alert | 451 | 100.0% | 82 |" in markdown
     assert "## Event Alert Regression Checks" in markdown
+    assert "## Decision Reasons" in markdown
+    assert "| `news_only_rejected` | 3 |" in markdown
+    assert "| `llm_should_alert` | 5 |" in markdown
+    assert "| Delivered rows with decision reason | 8 |" in markdown
+    assert "| Generic possible action quality signals | 2 / 10 |" in markdown
     assert "Status: Critical" in markdown
     duplicate_row = (
         "| Affected market events with duplicate attached analyses | 1 | "

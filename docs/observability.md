@@ -147,6 +147,8 @@ LIMIT 100;
 `alert_delivery_outcomes` is the queryable decision ledger for Event Alerts. `alerts` remains the
 Telegram delivery table; outcome rows explain recipient filtering, cooldown suppression, delivery
 success/failure, LLM rate-limit skips, and event-level no-recipient cases.
+Event Alerts are market-event-first: news may support the analysis, but standalone news-only
+Event Alerts are not part of current product behavior.
 
 Outcome statuses:
 
@@ -158,6 +160,7 @@ Outcome statuses:
 - `cooldown`
 - `not_scheduled`
 - `no_eligible_recipients`
+- `allowed`
 
 Common reason codes:
 
@@ -175,6 +178,20 @@ Common reason codes:
 - `delivery_not_scheduled`
 - `already_delivered`
 - `severity_below_threshold`
+- `llm_should_alert`
+- `llm_no_alert`
+- `news_only_rejected`
+
+Decision fields:
+
+- `decision_stage`: operator-facing stage such as `pre_llm`, `llm`, `semantic_cooldown`, or
+  `delivery`.
+- `decision_reason`: operator-facing reason such as `news_only_rejected`, `llm_no_alert`,
+  `llm_should_alert`, `semantic_cooldown_suppressed`, `delivered`, `delivery_failed`,
+  `no_eligible_recipient`, or `unknown`.
+- `previous_alert_id`: nullable link to a previous alert considered for repeat/cooldown context.
+- `context_fingerprint`: safe hash of sanitized decision context; it is not a raw prompt or
+  Telegram message export.
 
 For a market event, trace analysis, recipient decisions, and delivery outcomes:
 
@@ -192,6 +209,10 @@ SELECT
   ado.recipient_eligible,
   ado.status AS outcome_status,
   ado.reason_code,
+  ado.decision_stage,
+  ado.decision_reason,
+  ado.previous_alert_id,
+  ado.context_fingerprint,
   a.status AS delivery_status,
   ado.created_at AS outcome_at
 FROM market_events me
@@ -213,13 +234,15 @@ SELECT
   eaa.created_at AS analysis_at,
   coalesce(ado.status, 'missing_outcome') AS outcome_status,
   coalesce(ado.reason_code, 'missing_outcome') AS reason_code,
+  coalesce(ado.decision_reason, 'missing_outcome') AS decision_reason,
   count(a.id) FILTER (WHERE a.status = 'sent') AS sent_deliveries
 FROM event_ai_analyses eaa
 JOIN market_events me ON me.id = eaa.market_event_id
 LEFT JOIN alert_delivery_outcomes ado ON ado.event_ai_analysis_id = eaa.id
 LEFT JOIN alerts a ON a.event_ai_analysis_id = eaa.id
 WHERE eaa.should_alert = true
-GROUP BY me.id, me.symbol, me.event_key, eaa.id, eaa.created_at, ado.status, ado.reason_code
+GROUP BY me.id, me.symbol, me.event_key, eaa.id, eaa.created_at, ado.status, ado.reason_code,
+  ado.decision_reason
 HAVING count(a.id) FILTER (WHERE a.status = 'sent') = 0
 ORDER BY eaa.created_at DESC;
 ```
@@ -275,6 +298,8 @@ semantic family key, and also checks delivered outcome semantic family where ava
 raw-key wording drift does not bypass the cooldown. Same-family events can still deliver inside the
 semantic cooldown when urgency increased, the absolute analysed-window movement grew by at least
 2.5 percentage points, or stable related-news identity shows a new news driver.
+Generic `possible_action` wording is reported as a quality signal only; it does not suppress
+runtime delivery.
 
 ## Event Alert Suppression Reasons
 

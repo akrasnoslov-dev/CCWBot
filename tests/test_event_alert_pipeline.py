@@ -72,6 +72,8 @@ async def seed_sent_event_alert(
     analysed_window_change_percent: float | None = None,
     stable_related_news_ids: list[str] | None = None,
     semantic_family: str | None = None,
+    trigger_reason: str | None = None,
+    possible_action: str | None = None,
 ):
     event = MarketEvent(
         symbol=symbol.upper(),
@@ -93,6 +95,7 @@ async def seed_sent_event_alert(
         user_id=user_id,
         market_event_id=event.id,
         status="sent",
+        trigger_reason=trigger_reason,
         created_at=created_at,
         numeric_context=alerts._json_dumps(
             {
@@ -101,6 +104,7 @@ async def seed_sent_event_alert(
                 "analysed_window_change_percent": analysed_window_change_percent,
                 "stable_related_news_ids": stable_related_news_ids or [],
                 "semantic_family": semantic_family,
+                "possible_action": possible_action,
             }
         ),
     )
@@ -1005,6 +1009,55 @@ async def test_event_analysis_input_reports_unknown_change_without_snapshots(mon
 
 
 @pytest.mark.asyncio
+async def test_event_analysis_input_includes_sanitized_previous_event_alert(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_etf_flows",
+                semantic_family="etf_flows",
+                analysed_window_change_percent=0.42,
+                stable_related_news_ids=["source_title:private-news-id"],
+                trigger_reason="BTC ETF flow context repeated",
+                possible_action="Wait for price confirmation before reacting.",
+                created_at=now - timedelta(hours=2),
+            )
+
+        payload = await alerts._build_event_analysis_input(
+            analysis_id="event_analysis_btc_previous_context",
+            symbol="btc",
+            current_price=100.0,
+            change_24h=1.0,
+            now=now,
+            state={},
+            candidate_news=[],
+            event_analysis_interval_seconds=1800,
+        )
+
+        previous = payload["previous_event_alert"]
+        assert previous["title"] == "BTC ETF flow context repeated"
+        assert previous["canonical_event_key"] == "btc_etf_flows"
+        assert previous["semantic_family"] == "etf_flows"
+        assert previous["analysed_window_move"] == 0.42
+        assert previous["stable_related_news_ids_hash"]
+        assert "source_title:private-news-id" not in str(previous)
+        assert previous["possible_action"] == "Wait for price confirmation before reacting."
+        assert "user_id" not in previous
+        assert "telegram" not in str(previous).lower()
+        assert "message" not in previous
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_event_analysis_input_excludes_future_snapshots(monkeypatch):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
@@ -1499,6 +1552,7 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
         assert analysis_id is not None
         async with session_local() as session:
             row = await session.scalar(select(EventAiAnalysis))
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
             assert row.status == "no_alert"
             assert row.should_alert is False
             assert row.related_news_ids == "[]"
@@ -1506,6 +1560,59 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
             assert row.confidence is None
             assert row.error_reason is None
             assert row.error_message is None
+            assert outcome.event_ai_analysis_id == row.id
+            assert outcome.status == "not_scheduled"
+            assert outcome.reason_code == "llm_no_alert"
+            assert outcome.decision_stage == "llm"
+            assert outcome.decision_reason == "llm_no_alert"
+            assert outcome.context_fingerprint
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_news_only_no_alert_persists_news_only_rejected(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        parsed = {
+            "symbol": "BTC",
+            "should_alert": False,
+            "event_key": None,
+            "title": None,
+            "message_body": None,
+            "related_news_ids": [],
+            "possible_action": None,
+            "urgency": None,
+            "confidence": "medium",
+            "reason_for_no_alert": (
+                "News alone is repeated ETF context, while the analysed-window market "
+                "move does not justify a new alert."
+            ),
+        }
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(return_value=("raw no-alert output", parsed)),
+        )
+        payload = {
+            "analysis_id": "event_analysis_btc_news_only_no_alert",
+            "symbol": "BTC",
+            "news": [{"news_id": "n1", "title": "ETF outflows continue"}],
+            "market": {"chg_window": 0.1},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is not None
+        assert analysis_id is not None
+        async with session_local() as session:
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+        assert outcome.status == "not_scheduled"
+        assert outcome.reason_code == "news_only_rejected"
+        assert outcome.decision_stage == "llm"
+        assert outcome.decision_reason == "news_only_rejected"
     finally:
         await engine.dispose()
 
@@ -2178,6 +2285,9 @@ async def test_semantic_event_alert_cooldown_suppresses_same_family_without_esca
             assert outcome.status == "suppressed"
             assert outcome.reason_code == "similar_event_suppressed"
             assert outcome.semantic_family == "price_downtrend"
+            assert outcome.decision_stage == "semantic_cooldown"
+            assert outcome.decision_reason == "semantic_cooldown_suppressed"
+            assert outcome.previous_alert_id is not None
     finally:
         await engine.dispose()
 
