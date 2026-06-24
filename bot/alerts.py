@@ -316,7 +316,9 @@ class EventRecipientFilterResult:
     recipients: list[AlertRecipient]
     suppression_reason_counts: dict[str, int]
     suppressed: list[RecipientOutcome] = field(default_factory=list)
-    allowed_market_context_changed: bool = False
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = field(
+        default_factory=dict
+    )
 
 @dataclass(frozen=True)
 class AlertRecipientResolution:
@@ -329,6 +331,9 @@ def _count_suppression(
 ) -> None:
     normalized_reason = reason if reason in SUPPRESSION_REASON_VALUES else SUPPRESSION_UNKNOWN
     counts[normalized_reason] = counts.get(normalized_reason, 0) + 1
+
+def _recipient_decision_key(recipient: AlertRecipient) -> tuple[int | None, int]:
+    return recipient.user_id, recipient.chat_id
 
 def _log_event_alert_suppression(
     *,
@@ -2965,7 +2970,7 @@ async def _filter_event_recipients_for_cooldown(
                 recipients=recipients,
                 suppression_reason_counts={},
                 suppressed=[],
-                allowed_market_context_changed=False,
+                delivery_decision_reasons_by_recipient={},
             )
         return recipients
     effective_cooldown = int(cooldown_seconds)
@@ -2977,14 +2982,14 @@ async def _filter_event_recipients_for_cooldown(
                 recipients=recipients,
                 suppression_reason_counts={},
                 suppressed=[],
-                allowed_market_context_changed=False,
+                delivery_decision_reasons_by_recipient={},
             )
         return recipients
 
     filtered: list[AlertRecipient] = []
     suppressed: list[RecipientOutcome] = []
     suppression_reason_counts: dict[str, int] = {}
-    allowed_market_context_changed = False
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = {}
     async with DB_SESSION_LOCAL() as session:
         for recipient in recipients:
             if recipient.user_id is None:
@@ -3092,7 +3097,9 @@ async def _filter_event_recipients_for_cooldown(
                     )
                     continue
                 if semantic_allow_reason:
-                    allowed_market_context_changed = True
+                    delivery_decision_reasons_by_recipient[_recipient_decision_key(recipient)] = (
+                        DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED
+                    )
                     filtered.append(recipient)
                     continue
             if effective_cooldown <= 0:
@@ -3137,7 +3144,7 @@ async def _filter_event_recipients_for_cooldown(
             recipients=filtered,
             suppression_reason_counts=suppression_reason_counts,
             suppressed=suppressed,
-            allowed_market_context_changed=allowed_market_context_changed,
+            delivery_decision_reasons_by_recipient=delivery_decision_reasons_by_recipient,
         )
     return filtered
 
@@ -3924,7 +3931,7 @@ async def _deliver_market_event_alert(
     numeric_context: str | None = None,
     thresholds_used: str | None = None,
     context_fingerprint: str | None = None,
-    delivery_decision_reason: str = DECISION_REASON_DELIVERED,
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     if event_type not in PRODUCT_ALERT_TYPES and event_type != EVENT_ALERT_TYPE:
@@ -3983,6 +3990,9 @@ async def _deliver_market_event_alert(
     sent_count = 0
     skipped_count = 0
     for recipient in recipients:
+        delivery_decision_reason = (
+            delivery_decision_reasons_by_recipient or {}
+        ).get(_recipient_decision_key(recipient), DECISION_REASON_DELIVERED)
         if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None and market_event_id:
             async with DB_SESSION_LOCAL() as session:
                 alert_row, should_send = await reserve_alert_delivery(
@@ -5116,10 +5126,8 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 ),
                 thresholds_used=None,
                 context_fingerprint=context_fingerprint,
-                delivery_decision_reason=(
-                    DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED
-                    if recipient_filter.allowed_market_context_changed
-                    else DECISION_REASON_DELIVERED
+                delivery_decision_reasons_by_recipient=(
+                    recipient_filter.delivery_decision_reasons_by_recipient
                 ),
             )
             if delivered:

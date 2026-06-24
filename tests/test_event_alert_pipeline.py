@@ -2516,6 +2516,147 @@ async def test_semantic_event_alert_cooldown_allows_material_movement_increase(m
 
 
 @pytest.mark.asyncio
+async def test_delivery_reason_market_context_changed_is_per_recipient(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 6, 3, 21, 30, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            normal_user = await create_user(session, telegram_user_id=1001, chat_id=2001)
+            escalated_user = await create_user(session, telegram_user_id=1002, chat_id=2002)
+            suppressed_user = await create_user(session, telegram_user_id=1003, chat_id=2003)
+            event_key = canonicalize_event_key("btc", "btc_price_drop").canonical_event_key
+            await seed_sent_event_alert(
+                session,
+                user_id=escalated_user.id,
+                chat_id=escalated_user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-3.0,
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(minutes=10),
+            )
+            await seed_sent_event_alert(
+                session,
+                user_id=suppressed_user.id,
+                chat_id=suppressed_user.telegram_chat_id,
+                symbol="btc",
+                event_key=event_key,
+                urgency="normal",
+                analysed_window_change_percent=-4.0,
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(minutes=10),
+            )
+            current_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=event_key,
+                event_instance_key="mixed-recipient-delivery-reason",
+                price=100.0,
+                previous_price=95.0,
+                price_change_percent=-5.5,
+                detected_at=now,
+            )
+            session.add(current_event)
+            await session.flush()
+            analysis = EventAiAnalysis(
+                market_event_id=current_event.id,
+                analysis_id="event_analysis_btc_mixed_recipients",
+                symbol="BTC",
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash="mixed-recipients",
+                status="success",
+                should_alert=True,
+                plain_text="BTC moved materially. Not financial advice.",
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(current_event)
+            await session.refresh(analysis)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        groq_call = AsyncMock(side_effect=AssertionError("delivery must not call Groq"))
+        monkeypatch.setattr(alerts, "ask_event_analysis_raw", groq_call)
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(True, None)),
+        )
+        recipients = [
+            alerts.AlertRecipient(chat_id=normal_user.telegram_chat_id, user_id=normal_user.id),
+            alerts.AlertRecipient(
+                chat_id=escalated_user.telegram_chat_id,
+                user_id=escalated_user.id,
+            ),
+            alerts.AlertRecipient(
+                chat_id=suppressed_user.telegram_chat_id,
+                user_id=suppressed_user.id,
+            ),
+        ]
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            recipients,
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key=event_key,
+            semantic_family="price_downtrend",
+            current_movement_percent=-5.5,
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+            return_summary=True,
+        )
+        await alerts._record_recipient_outcomes(
+            result.suppressed,
+            symbol="btc",
+            alert_type=alerts.EVENT_ALERT_TYPE,
+            market_event_id=current_event.id,
+            event_ai_analysis_id=analysis.id,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+            semantic_family="price_downtrend",
+        )
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(),
+            symbol="btc",
+            alert_payload={"plain_text": "BTC moved materially. Not financial advice."},
+            market_event_id=current_event.id,
+            event_ai_analysis_id=analysis.id,
+            recipients=result.recipients,
+            event_type=alerts.EVENT_ALERT_TYPE,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+            semantic_family="price_downtrend",
+            delivery_decision_reasons_by_recipient=(
+                result.delivery_decision_reasons_by_recipient
+            ),
+        )
+
+        async with session_local() as session:
+            outcomes = list(
+                (
+                    await session.scalars(
+                        select(AlertDeliveryOutcome).where(
+                            AlertDeliveryOutcome.market_event_id == current_event.id
+                        )
+                    )
+                ).all()
+            )
+
+        reasons_by_user = {outcome.user_id: outcome.decision_reason for outcome in outcomes}
+        assert delivered is True
+        assert result.recipients == [recipients[0], recipients[1]]
+        assert len(result.suppressed) == 1
+        assert reasons_by_user[normal_user.id] == "delivered"
+        assert reasons_by_user[escalated_user.id] == "allowed_market_context_changed"
+        assert reasons_by_user[suppressed_user.id] == "semantic_cooldown_suppressed"
+        groq_call.assert_not_awaited()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_semantic_event_alert_cooldown_suppresses_new_news_driver_without_market_change(
     monkeypatch,
 ):
