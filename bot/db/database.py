@@ -1360,6 +1360,7 @@ _REEXPORTS = {
         "reserve_market_heartbeat_delivery",
         "update_alert_delivery_status",
         "save_alert_delivery_outcome",
+        "get_recent_alert_delivery_outcome_by_context_fingerprint",
         "get_or_create_market_event",
         "get_market_event_by_instance_key",
         "get_event_ai_analysis",

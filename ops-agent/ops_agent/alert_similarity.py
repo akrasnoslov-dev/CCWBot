@@ -824,10 +824,6 @@ def _delivery_escalation_allowed(
         >= abs(previous_movement) + EVENT_REGRESSION_MATERIAL_MOVEMENT_DELTA_PERCENT
     ):
         return True, "material_movement_increased"
-    previous_news = {str(item) for item in previous.get("stable_related_news_ids") or []}
-    current_news = {str(item) for item in current.get("stable_related_news_ids") or []}
-    if current_news - previous_news:
-        return True, "new_news_driver"
     return False, None
 
 

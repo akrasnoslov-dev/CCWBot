@@ -478,6 +478,23 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
     ),
     DbQuery(
+        "event_alert_similar_context_reuse",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT symbol, coalesce(semantic_family, 'unknown') AS semantic_family, "
+        "count(*) AS similar_context_reused_count, "
+        "count(*) FILTER (WHERE decision_stage = 'pre_llm') AS pre_llm_reused_count, "
+        "count(*) FILTER (WHERE market_event_id IS NULL) AS eventless_reused_count, "
+        "count(*) FILTER (WHERE event_ai_analysis_id IS NULL) AS llm_skipped_count, "
+        "count(DISTINCT context_fingerprint) AS context_fingerprint_count, "
+        "max(created_at) AS latest_reuse_at "
+        "FROM alert_delivery_outcomes "
+        "WHERE alert_type = 'event_alert' "
+        "AND created_at >= :since AND created_at < :until "
+        "AND decision_reason = 'similar_context_reused' "
+        "GROUP BY symbol, coalesce(semantic_family, 'unknown') "
+        "ORDER BY similar_context_reused_count DESC, symbol, semantic_family LIMIT :limit",
+    ),
+    DbQuery(
         "alert_delivery_outcome_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT coalesce(status, 'unknown') AS status, coalesce(reason_code, 'unknown') AS reason_code, "
@@ -501,6 +518,13 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE decision_reason = 'llm_no_alert') AS llm_no_alert_count, "
         "count(*) FILTER (WHERE decision_reason = 'semantic_cooldown_suppressed') "
         "AS semantic_cooldown_suppressed_count, "
+        "count(*) FILTER (WHERE decision_reason = 'similar_context_reused') "
+        "AS similar_context_reused_count, "
+        "count(*) FILTER (WHERE decision_reason = 'allowed_market_context_changed') "
+        "AS allowed_market_context_changed_count, "
+        "count(*) FILTER (WHERE decision_stage = 'pre_llm' "
+        "AND decision_reason = 'similar_context_reused') "
+        "AS pre_llm_similar_context_reused_count, "
         "count(*) FILTER (WHERE status = 'delivered' AND decision_reason IS NOT NULL) "
         "AS delivered_with_decision_reason_count "
         "FROM alert_delivery_outcomes WHERE created_at >= :since AND created_at < :until "

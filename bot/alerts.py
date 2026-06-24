@@ -72,6 +72,7 @@ from bot.db.database import (
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
+    get_recent_alert_delivery_outcome_by_context_fingerprint,
     get_reference_price_snapshot,
     make_news_key,
     mark_user_bot_blocked,
@@ -136,6 +137,7 @@ AnalysedWindowReference = _event_identity.AnalysedWindowReference
 _analysed_window_minutes_from_payload = _event_identity._analysed_window_minutes_from_payload
 _automatic_market_check_job_name = _event_identity._automatic_market_check_job_name
 _build_event_analysis_id = _event_identity._build_event_analysis_id
+_build_event_similarity_fingerprint = _event_identity._build_event_similarity_fingerprint
 _build_event_instance_key = _event_identity._build_event_instance_key
 _build_market_heartbeat_id = _event_identity._build_market_heartbeat_id
 _build_news_driven_event_instance_key = _event_identity._build_news_driven_event_instance_key
@@ -234,6 +236,7 @@ SUPPRESSION_PRODUCT_GATED = "product_gated"
 SUPPRESSION_DELIVERY_FAILED = "delivery_failed"
 SUPPRESSION_LLM_RATE_LIMITED = "llm_rate_limited"
 SUPPRESSION_STALE_HEARTBEAT = "stale_heartbeat"
+SUPPRESSION_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
 SUPPRESSION_UNKNOWN = "unknown"
 SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_EXACT_COOLDOWN,
@@ -245,6 +248,7 @@ SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_DELIVERY_FAILED,
     SUPPRESSION_LLM_RATE_LIMITED,
     SUPPRESSION_STALE_HEARTBEAT,
+    SUPPRESSION_SIMILAR_CONTEXT_REUSED,
     SUPPRESSION_UNKNOWN,
 }
 OUTCOME_DELIVERED = "delivered"
@@ -273,6 +277,7 @@ REASON_SEVERITY_BELOW_THRESHOLD = "severity_below_threshold"
 REASON_LLM_SHOULD_ALERT = "llm_should_alert"
 REASON_LLM_NO_ALERT = "llm_no_alert"
 REASON_NEWS_ONLY_REJECTED = "news_only_rejected"
+REASON_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
 
 DECISION_STAGE_PRE_LLM = "pre_llm"
 DECISION_STAGE_LLM = "llm"
@@ -283,6 +288,7 @@ DECISION_REASON_LLM_SHOULD_ALERT = "llm_should_alert"
 DECISION_REASON_LLM_NO_ALERT = "llm_no_alert"
 DECISION_REASON_SEMANTIC_COOLDOWN_SUPPRESSED = "semantic_cooldown_suppressed"
 DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED = "allowed_market_context_changed"
+DECISION_REASON_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
 DECISION_REASON_DELIVERED = "delivered"
 DECISION_REASON_DELIVERY_FAILED = "delivery_failed"
 DECISION_REASON_NO_ELIGIBLE_RECIPIENT = "no_eligible_recipient"
@@ -310,6 +316,9 @@ class EventRecipientFilterResult:
     recipients: list[AlertRecipient]
     suppression_reason_counts: dict[str, int]
     suppressed: list[RecipientOutcome] = field(default_factory=list)
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = field(
+        default_factory=dict
+    )
 
 @dataclass(frozen=True)
 class AlertRecipientResolution:
@@ -322,6 +331,9 @@ def _count_suppression(
 ) -> None:
     normalized_reason = reason if reason in SUPPRESSION_REASON_VALUES else SUPPRESSION_UNKNOWN
     counts[normalized_reason] = counts.get(normalized_reason, 0) + 1
+
+def _recipient_decision_key(recipient: AlertRecipient) -> tuple[int | None, int]:
+    return recipient.user_id, recipient.chat_id
 
 def _log_event_alert_suppression(
     *,
@@ -558,6 +570,67 @@ async def _get_previous_event_alert_for_input(symbol: str) -> tuple[dict | None,
 async def _get_previous_event_alert_id(symbol: str) -> int | None:
     _, previous_alert_id = await _get_previous_event_alert_for_input(symbol)
     return previous_alert_id
+
+def _event_context_fingerprint(input_payload: dict) -> str:
+    return _build_event_similarity_fingerprint(input_payload)
+
+async def _get_recent_event_analysis_decision_by_similarity(
+    input_payload: dict,
+    *,
+    now: datetime,
+) -> object | None:
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    context_fingerprint = _event_context_fingerprint(input_payload)
+    cooldown_seconds = int(EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS or 0)
+    if cooldown_seconds <= 0:
+        return None
+    async with DB_SESSION_LOCAL() as session:
+        return await get_recent_alert_delivery_outcome_by_context_fingerprint(
+            session,
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            context_fingerprint=context_fingerprint,
+            since=now - timedelta(seconds=cooldown_seconds),
+            decision_reasons={
+                DECISION_REASON_LLM_NO_ALERT,
+                DECISION_REASON_NEWS_ONLY_REJECTED,
+                DECISION_REASON_SEMANTIC_COOLDOWN_SUPPRESSED,
+                DECISION_REASON_SIMILAR_CONTEXT_REUSED,
+            },
+            statuses={OUTCOME_DELIVERED},
+        )
+
+async def _record_similar_context_reuse(
+    input_payload: dict,
+    previous_outcome,
+) -> None:
+    previous_reason = str(getattr(previous_outcome, "decision_reason", "") or "")
+    previous_status = str(getattr(previous_outcome, "status", "") or "")
+    was_delivered = previous_status == OUTCOME_DELIVERED
+    await _record_alert_delivery_outcome(
+        symbol=str(input_payload["symbol"]),
+        alert_type=EVENT_ALERT_TYPE,
+        status=OUTCOME_SUPPRESSED if was_delivered else OUTCOME_NOT_SCHEDULED,
+        reason_code=REASON_SIMILAR_CONTEXT_REUSED,
+        trigger_source=EVENT_ANALYSIS_TYPE,
+        semantic_family=getattr(previous_outcome, "semantic_family", None),
+        decision_stage=DECISION_STAGE_PRE_LLM,
+        decision_reason=DECISION_REASON_SIMILAR_CONTEXT_REUSED,
+        previous_alert_id=(
+            getattr(previous_outcome, "alert_id", None)
+            or getattr(previous_outcome, "previous_alert_id", None)
+        ),
+        context_fingerprint=_event_context_fingerprint(input_payload),
+        detail=f"reused_recent_{previous_reason or previous_status or 'decision'}",
+    )
+    _log_event_alert_suppression(
+        symbol=str(input_payload["symbol"]),
+        suppression_reason=SUPPRESSION_SIMILAR_CONTEXT_REUSED,
+        suppression_count=1,
+        semantic_family=getattr(previous_outcome, "semantic_family", None),
+        analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
+    )
 
 def _select_representative_snapshots(
     snapshots_payload: list[dict], *, limit: int = 6
@@ -2620,7 +2693,7 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=_event_input_hash(input_payload),
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail="event_analysis_backoff_active",
         )
         _log_event_alert_suppression(
@@ -2650,7 +2723,7 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=_event_input_hash(input_payload),
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=reason,
         )
         logger.warning(
@@ -2695,7 +2768,7 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=_event_input_hash(input_payload),
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=classify_ai_error_reason(schema_error),
         )
         logger.warning(
@@ -2725,7 +2798,7 @@ async def _create_event_analysis_decision(
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_NEWS_ONLY_REJECTED,
             previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
-            context_fingerprint=_event_input_hash(input_payload),
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=rejected_decision.reason_for_no_alert,
         )
         logger.info(
@@ -2788,7 +2861,7 @@ async def _create_event_analysis_decision(
         decision_stage=DECISION_STAGE_LLM,
         decision_reason=decision_reason,
         previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
-        context_fingerprint=_event_input_hash(input_payload),
+        context_fingerprint=_event_context_fingerprint(input_payload),
         detail=(
             "market_event_first_llm_allowed"
             if decision.should_alert
@@ -2897,6 +2970,7 @@ async def _filter_event_recipients_for_cooldown(
                 recipients=recipients,
                 suppression_reason_counts={},
                 suppressed=[],
+                delivery_decision_reasons_by_recipient={},
             )
         return recipients
     effective_cooldown = int(cooldown_seconds)
@@ -2908,12 +2982,14 @@ async def _filter_event_recipients_for_cooldown(
                 recipients=recipients,
                 suppression_reason_counts={},
                 suppressed=[],
+                delivery_decision_reasons_by_recipient={},
             )
         return recipients
 
     filtered: list[AlertRecipient] = []
     suppressed: list[RecipientOutcome] = []
     suppression_reason_counts: dict[str, int] = {}
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = {}
     async with DB_SESSION_LOCAL() as session:
         for recipient in recipients:
             if recipient.user_id is None:
@@ -3021,6 +3097,9 @@ async def _filter_event_recipients_for_cooldown(
                     )
                     continue
                 if semantic_allow_reason:
+                    delivery_decision_reasons_by_recipient[_recipient_decision_key(recipient)] = (
+                        DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED
+                    )
                     filtered.append(recipient)
                     continue
             if effective_cooldown <= 0:
@@ -3065,6 +3144,7 @@ async def _filter_event_recipients_for_cooldown(
             recipients=filtered,
             suppression_reason_counts=suppression_reason_counts,
             suppressed=suppressed,
+            delivery_decision_reasons_by_recipient=delivery_decision_reasons_by_recipient,
         )
     return filtered
 
@@ -3851,6 +3931,7 @@ async def _deliver_market_event_alert(
     numeric_context: str | None = None,
     thresholds_used: str | None = None,
     context_fingerprint: str | None = None,
+    delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] | None = None,
 ) -> bool:
     """Send one sanitized event analysis to every resolved recipient."""
     if event_type not in PRODUCT_ALERT_TYPES and event_type != EVENT_ALERT_TYPE:
@@ -3909,6 +3990,9 @@ async def _deliver_market_event_alert(
     sent_count = 0
     skipped_count = 0
     for recipient in recipients:
+        delivery_decision_reason = (
+            delivery_decision_reasons_by_recipient or {}
+        ).get(_recipient_decision_key(recipient), DECISION_REASON_DELIVERED)
         if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None and market_event_id:
             async with DB_SESSION_LOCAL() as session:
                 alert_row, should_send = await reserve_alert_delivery(
@@ -4009,7 +4093,7 @@ async def _deliver_market_event_alert(
                 semantic_family=semantic_family,
                 decision_stage=DECISION_STAGE_DELIVERY,
                 decision_reason=(
-                    DECISION_REASON_DELIVERED if sent else DECISION_REASON_DELIVERY_FAILED
+                    delivery_decision_reason if sent else DECISION_REASON_DELIVERY_FAILED
                 ),
                 context_fingerprint=context_fingerprint,
                 detail=None if sent else _truncate_text(str(error_message or ""), 255),
@@ -4046,7 +4130,7 @@ async def _deliver_market_event_alert(
                 semantic_family=semantic_family,
                 decision_stage=DECISION_STAGE_DELIVERY,
                 decision_reason=(
-                    DECISION_REASON_DELIVERED if sent else DECISION_REASON_DELIVERY_FAILED
+                    delivery_decision_reason if sent else DECISION_REASON_DELIVERY_FAILED
                 ),
                 context_fingerprint=context_fingerprint,
                 detail=None if sent else _truncate_text(str(error_message or ""), 255),
@@ -4733,8 +4817,35 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_settings.get("automatic_check_interval_seconds", 300)
                 ),
             )
+            similar_context_outcome = await _get_recent_event_analysis_decision_by_similarity(
+                input_payload,
+                now=now,
+            )
+            if similar_context_outcome is not None:
+                await _record_similar_context_reuse(input_payload, similar_context_outcome)
+                logger.info(
+                    "%s event analysis skipped before LLM due to similar recent context.",
+                    symbol.upper(),
+                )
+                await _deliver_market_heartbeat(
+                    app,
+                    symbol=symbol,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    now=now,
+                )
+                await _save_price_state(
+                    symbol=symbol,
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                    checked_at=checked_at,
+                    last_alert_at=None,
+                )
+                continue
             decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
-            context_fingerprint = _event_input_hash(input_payload)
+            context_fingerprint = _event_context_fingerprint(input_payload)
             if decision is None:
                 news_delivered = False
                 for news_item in news_driven_candidates.get(symbol, []):
@@ -5015,6 +5126,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 ),
                 thresholds_used=None,
                 context_fingerprint=context_fingerprint,
+                delivery_decision_reasons_by_recipient=(
+                    recipient_filter.delivery_decision_reasons_by_recipient
+                ),
             )
             if delivered:
                 delivered_symbols += 1

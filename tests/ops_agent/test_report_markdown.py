@@ -58,6 +58,9 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 5,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
+                            "similar_context_reused_count": 0,
+                            "allowed_market_context_changed_count": 0,
+                            "pre_llm_similar_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 0,
                             "decision_reason_unknown_count": 0,
                         },
@@ -71,6 +74,9 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 0,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
+                            "similar_context_reused_count": 0,
+                            "allowed_market_context_changed_count": 0,
+                            "pre_llm_similar_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 0,
                             "decision_reason_unknown_count": 0,
                         },
@@ -84,9 +90,41 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 0,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
+                            "similar_context_reused_count": 0,
+                            "allowed_market_context_changed_count": 0,
+                            "pre_llm_similar_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 8,
                             "decision_reason_unknown_count": 0,
                         },
+                        {
+                            "status": "not_scheduled",
+                            "reason_code": "similar_context_reused",
+                            "decision_stage": "pre_llm",
+                            "decision_reason": "similar_context_reused",
+                            "outcomes": 4,
+                            "news_only_rejected_count": 0,
+                            "llm_should_alert_count": 0,
+                            "llm_no_alert_count": 0,
+                            "semantic_cooldown_suppressed_count": 0,
+                            "similar_context_reused_count": 4,
+                            "allowed_market_context_changed_count": 0,
+                            "pre_llm_similar_context_reused_count": 4,
+                            "delivered_with_decision_reason_count": 0,
+                            "decision_reason_unknown_count": 0,
+                        },
+                    ]
+                },
+                "event_alert_similar_context_reuse": {
+                    "rows": [
+                        {
+                            "symbol": "BTC",
+                            "semantic_family": "price_level_range",
+                            "similar_context_reused_count": 4,
+                            "pre_llm_reused_count": 4,
+                            "eventless_reused_count": 4,
+                            "llm_skipped_count": 4,
+                            "context_fingerprint_count": 1,
+                        }
                     ]
                 },
                 "event_alert_possible_action_quality": {
@@ -166,6 +204,10 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "## Decision Reasons" in markdown
     assert "| `news_only_rejected` | 3 |" in markdown
     assert "| `llm_should_alert` | 5 |" in markdown
+    assert "| `similar_context_reused` | 4 |" in markdown
+    assert "| Pre-LLM similar-context skips | 4 |" in markdown
+    assert "| `allowed_market_context_changed` | 0 |" in markdown
+    assert "Top similar-context reuse groups: BTC/price_level_range: 4." in markdown
     assert "| Delivered rows with decision reason | 8 |" in markdown
     assert "| Generic possible action quality signals | 2 / 10 |" in markdown
     assert "Status: Critical" in markdown

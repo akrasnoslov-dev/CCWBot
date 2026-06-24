@@ -177,6 +177,11 @@ Avoidable LLM-call checks:
   snapshots as the primary basis, `market.chg24h` as broader context, and news as supporting
   context only. News alone must return no alert, and a backend guard rejects clear news-only
   `should_alert=true` decisions before market event creation or delivery.
+- Before Event Analysis calls Groq, the runtime checks a sanitized similar-context fingerprint
+  against recent durable outcomes. Clear repeats of no-alert, news-only rejection, semantic
+  cooldown suppression, similar-context reuse, or delivered decisions are recorded as
+  `decision_stage = 'pre_llm'` and `decision_reason = 'similar_context_reused'` without creating a
+  market event or calling the LLM.
 - The Event Analysis input can include a compact sanitized `previous_event_alert` object with
   prior title, canonical key, semantic family, analysed-window move, related-news hash, possible
   action, and timestamp. It excludes Telegram IDs, raw messages, raw prompts, secrets, and private
@@ -190,6 +195,8 @@ Avoidable LLM-call checks:
   'llm_rate_limited'`.
 - LLM allow/no-alert decisions are also persisted in `alert_delivery_outcomes` with sanitized
   `decision_stage`, `decision_reason`, `previous_alert_id`, and `context_fingerprint` fields.
+- `context_fingerprint` for Event Alert outcomes is a stable similarity hash for operator reuse
+  and reporting. Exact raw input hashes remain on `event_ai_analyses.input_hash`.
 - Market Heartbeat generation remains separate from Event Alerts; heartbeat cadence should not
   suppress Event Alerts.
 
