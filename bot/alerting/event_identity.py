@@ -138,8 +138,6 @@ def _event_semantic_cooldown_allows_escalation(
         return True, "urgency_increased"
     if details["material_movement_increased"]:
         return True, "material_movement_increased"
-    if details["new_news_driver"]:
-        return True, "new_news_driver"
     return False, None
 
 def _event_semantic_cooldown_escalation_details(
@@ -313,6 +311,60 @@ def _json_dumps(payload: dict | list) -> str:
 
 def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
+
+def _build_event_similarity_fingerprint(input_payload: dict) -> str:
+    """Return a safe stable hash for conservative pre-LLM context reuse."""
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    if not isinstance(market_data, dict):
+        market_data = {}
+    movement = _event_movement_percent_from_payload(input_payload)
+    previous_context = input_payload.get("previous_event_alert")
+    if not isinstance(previous_context, dict):
+        previous_context = {}
+    stable_news_ids = _stable_candidate_news_ids(input_payload)
+    payload = {
+        "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
+        "analysed_window_minutes": market_data.get("analysed_window_minutes"),
+        "movement_direction": _movement_direction(movement),
+        "movement_bucket": _stable_market_movement_bucket(input_payload),
+        "change_24h_bucket": _stable_numeric_bucket(market_data.get("chg24h")),
+        "candidate_news_ids": stable_news_ids[:2],
+        "previous_canonical_event_key": previous_context.get("canonical_event_key"),
+        "previous_semantic_family": previous_context.get("semantic_family"),
+        "previous_related_news_hash": previous_context.get("stable_related_news_ids_hash"),
+    }
+    return sha256(_json_dumps(payload).encode("utf-8")).hexdigest()
+
+def _movement_direction(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    if value > 0:
+        return "up"
+    if value < 0:
+        return "down"
+    return "flat"
+
+def _stable_numeric_bucket(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    bucket = int(abs(number) // EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT)
+    bucket *= EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT
+    return f"{_movement_direction(number)}:{bucket:.1f}"
+
+def _stable_candidate_news_ids(input_payload: dict) -> list[str]:
+    news_items = input_payload.get("news", input_payload.get("candidate_news", []))
+    if not isinstance(news_items, list):
+        return []
+    stable_ids: set[str] = set()
+    for item in news_items:
+        if not isinstance(item, dict):
+            continue
+        stable_key = make_news_key({"link": item.get("url"), **item})
+        if stable_key:
+            stable_ids.add(stable_key)
+    return sorted(stable_ids)
 
 def _event_instance_bucket(timestamp_value: object, *, bucket_minutes: int = 60) -> str:
     if isinstance(timestamp_value, datetime):

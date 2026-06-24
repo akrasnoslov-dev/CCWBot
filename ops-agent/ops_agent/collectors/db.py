@@ -104,7 +104,9 @@ delivery_rollup AS (
         (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
             AS alert_numeric_context,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
-            FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family
+            FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family,
+        (array_agg(ado.decision_reason ORDER BY ado.created_at DESC, ado.id DESC)
+            FILTER (WHERE ado.decision_reason IS NOT NULL))[1] AS decision_reason
     FROM delivery_candidates a
     LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id
     GROUP BY a.rollup_event_ai_analysis_id
@@ -149,7 +151,8 @@ SELECT
     dr.status,
     dr.alert_message,
     dr.alert_numeric_context,
-    dr.semantic_family
+    dr.semantic_family,
+    dr.decision_reason
 FROM recent_analyses ra
 LEFT JOIN market_events me ON me.id = ra.market_event_id
 LEFT JOIN delivery_rollup dr ON dr.rollup_event_ai_analysis_id = ra.event_ai_analysis_id

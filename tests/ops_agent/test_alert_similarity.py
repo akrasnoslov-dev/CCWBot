@@ -379,7 +379,7 @@ def test_suppression_effectiveness_marks_material_movement_escalation_separately
     assert groups[0]["allowed_escalation_reasons"] == {"material_movement_increased": 1}
 
 
-def test_suppression_effectiveness_marks_new_news_driver_escalation_separately():
+def test_suppression_effectiveness_does_not_allow_new_news_driver_alone():
     rows = [
         _row(
             first_delivery_at="2026-06-01T10:01:00Z",
@@ -416,5 +416,5 @@ def test_suppression_effectiveness_marks_new_news_driver_escalation_separately()
     )
     groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
 
-    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
-    assert groups[0]["allowed_escalation_reasons"] == {"new_news_driver": 1}
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 1
+    assert groups[0]["allowed_escalation_reasons"] == {}

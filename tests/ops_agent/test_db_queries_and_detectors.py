@@ -288,6 +288,10 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         query for query in QUERIES if query.name == "event_alert_same_news_repeats_24h"
     )
     outcomes = next(query for query in QUERIES if query.name == "alert_delivery_outcome_summary")
+    reuse = next(query for query in QUERIES if query.name == "event_alert_similar_context_reuse")
+    possible_action_quality = next(
+        query for query in QUERIES if query.name == "event_alert_possible_action_quality"
+    )
 
     assert "user_id" in duplicate_by_event.sql
     assert "market_event_id" in duplicate_by_event.sql
@@ -298,15 +302,30 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "sent_delivery_count" in invariant.sql
     assert "outcome_count" in invariant.sql
     assert "semantic_family" in same_family.sql
+    assert "decision_reason" in same_family.sql
     assert "analysed_window_change_percent" in same_family.sql
     assert "stable_news_set_hash" in same_family.sql
     assert "::jsonb" not in same_family.sql
     assert "md5" in same_news.sql
+    assert "decision_reason" in same_news.sql
     assert "::jsonb" not in same_news.sql
     assert "message" not in same_news.sql.lower()
     assert "reason_code_unknown_count" in outcomes.sql
+    assert "decision_stage" in outcomes.sql
+    assert "decision_reason" in outcomes.sql
+    assert "news_only_rejected_count" in outcomes.sql
+    assert "llm_no_alert_count" in outcomes.sql
+    assert "semantic_cooldown_suppressed_count" in outcomes.sql
+    assert "similar_context_reused_count" in outcomes.sql
+    assert "allowed_market_context_changed_count" in outcomes.sql
+    assert "pre_llm_similar_context_reused_count" in outcomes.sql
+    assert "decision_reason = 'similar_context_reused'" in reuse.sql
+    assert "event_ai_analysis_id IS NULL" in reuse.sql
+    assert "context_fingerprint" in reuse.sql
     for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):
         assert f"{status}_count" in outcomes.sql
+    assert "generic_possible_action_count" in possible_action_quality.sql
+    assert "should_alert = true" in possible_action_quality.sql
 
 
 def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():

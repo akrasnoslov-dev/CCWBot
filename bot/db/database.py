@@ -856,6 +856,30 @@ class AlertDeliveryOutcome(Base):
     semantic_family: Mapped[str | None] = mapped_column(
         String(128), nullable=True, comment="Canonical semantic family used for suppression."
     )
+    decision_stage: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Decision stage that produced this operator-facing outcome.",
+    )
+    decision_reason: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="Machine-readable event alert decision reason for operator reports.",
+    )
+    previous_alert_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alerts.id"),
+        nullable=True,
+        index=True,
+        comment="Previous alert row considered for repeat or cooldown decisions.",
+    )
+    context_fingerprint: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="Safe hash of the sanitized decision context used for observability.",
+    )
     detail: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Sanitized secondary diagnostic detail for operators."
     )
@@ -1329,12 +1353,14 @@ _REEXPORTS = {
         "get_latest_sent_event_alert_for_event_key",
         "get_last_sent_alert",
         "get_latest_sent_alert_for_symbol",
+        "get_latest_sent_event_alert_context_for_symbol",
         "get_alert_delivery",
         "get_market_heartbeat_delivery",
         "reserve_alert_delivery",
         "reserve_market_heartbeat_delivery",
         "update_alert_delivery_status",
         "save_alert_delivery_outcome",
+        "get_recent_alert_delivery_outcome_by_context_fingerprint",
         "get_or_create_market_event",
         "get_market_event_by_instance_key",
         "get_event_ai_analysis",

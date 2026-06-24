@@ -84,6 +84,10 @@ def render_decision_report_context(
         "",
         *_event_alert_regression_checks(evidence, detector_results),
         "",
+        "## Decision Reasons",
+        "",
+        *_decision_reasons(evidence),
+        "",
         "## Suppression Reasons",
         "",
         *_suppression_reasons(evidence),
@@ -537,6 +541,64 @@ def _event_alert_regression_checks(
         lines.append(f"Cooldown repeat evidence gap: {cooldown.evidence_gap}")
     if delivery_gap and delivery_gap.status == "unknown":
         lines.append(f"Delivery explanation evidence gap: {delivery_gap.evidence_gap}")
+    return lines
+
+
+def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
+    rows = _query_rows(evidence, "alert_delivery_outcome_summary")
+    quality_rows = _query_rows(evidence, "event_alert_possible_action_quality")
+    reuse_rows = _query_rows(evidence, "event_alert_similar_context_reuse")
+    if not rows:
+        return ["not available - alert delivery outcome decision fields were not collected."]
+    total = sum(_int(row.get("outcomes")) for row in rows)
+    news_only_rejected = sum(_int(row.get("news_only_rejected_count")) for row in rows)
+    llm_should_alert = sum(_int(row.get("llm_should_alert_count")) for row in rows)
+    llm_no_alert = sum(_int(row.get("llm_no_alert_count")) for row in rows)
+    semantic_suppressed = sum(
+        _int(row.get("semantic_cooldown_suppressed_count")) for row in rows
+    )
+    similar_reused = sum(_int(row.get("similar_context_reused_count")) for row in rows)
+    market_context_changed = sum(
+        _int(row.get("allowed_market_context_changed_count")) for row in rows
+    )
+    pre_llm_similar_reused = sum(
+        _int(row.get("pre_llm_similar_context_reused_count")) for row in rows
+    )
+    delivered_with_reason = sum(
+        _int(row.get("delivered_with_decision_reason_count")) for row in rows
+    )
+    unknown_reason = sum(_int(row.get("decision_reason_unknown_count")) for row in rows)
+    generic_actions = sum(
+        _int(row.get("generic_possible_action_count")) for row in quality_rows
+    )
+    action_total = sum(_int(row.get("event_alert_actions")) for row in quality_rows)
+    lines = [
+        "| Metric | Count | Notes |",
+        "|---|---:|---|",
+        f"| `news_only_rejected` | {news_only_rejected} | LLM no-alert decisions where news was not enough without market context. |",
+        f"| `llm_should_alert` | {llm_should_alert} | LLM allow decisions for market-event-first alerts. |",
+        f"| `llm_no_alert` | {llm_no_alert} | LLM no-alert decisions for non-news-only reasons. |",
+        f"| `semantic_cooldown_suppressed` | {semantic_suppressed} | Backend semantic cooldown suppressions. |",
+        f"| `similar_context_reused` | {similar_reused} | Conservative same-context decisions reused without needing a fresh Event Alert. |",
+        f"| Pre-LLM similar-context skips | {pre_llm_similar_reused} | Event Analysis LLM calls avoided by stable context fingerprint reuse. |",
+        f"| `allowed_market_context_changed` | {market_context_changed} | Delivered repeats allowed because market context changed, not because news alone changed. |",
+        f"| Delivered rows with decision reason | {delivered_with_reason} | Successful deliveries carrying operator-facing decision reason. |",
+        f"| Missing/unknown decision reason | {unknown_reason} | Rows needing older-schema allowance or follow-up. |",
+        f"| Generic possible action quality signals | {generic_actions} / {action_total} | Quality metric only; not a delivery gate. |",
+    ]
+    if reuse_rows:
+        top_reuse = sorted(
+            reuse_rows,
+            key=lambda row: -_int(row.get("similar_context_reused_count")),
+        )[:5]
+        summary = ", ".join(
+            f"{row.get('symbol', 'UNKNOWN')}/{row.get('semantic_family', 'unknown')}: "
+            f"{_int(row.get('similar_context_reused_count'))}"
+            for row in top_reuse
+        )
+        lines.append(f"Top similar-context reuse groups: {summary}.")
+    if total:
+        lines.append(f"Total outcome rows in this section: {total}.")
     return lines
 
 

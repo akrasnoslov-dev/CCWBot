@@ -117,14 +117,16 @@ def test_alert_rejects_null_confidence():
         )
 
 
-def test_alert_accepts_unmapped_related_news_ids_for_safe_backend_fallback():
-    decision = validate_event_analysis_output(
-        alert_analysis_result(related_news_ids=["n999"]),
-        expected_symbol="sol",
-        candidate_news_ids={"n1"},
-    )
-
-    assert decision.related_news_ids == ["n999"]
+def test_alert_rejects_unmapped_related_news_ids():
+    with pytest.raises(
+        EventAnalysisValidationError,
+        match="related_news_ids contains unknown news ids",
+    ):
+        validate_event_analysis_output(
+            alert_analysis_result(related_news_ids=["n999"]),
+            expected_symbol="sol",
+            candidate_news_ids={"n1"},
+        )
 
 
 def test_alert_accepts_gram_display_symbol_for_internal_ton():

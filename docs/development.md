@@ -84,6 +84,18 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   points = 3 hours by default. The analysed-window baseline ignores stale snapshots outside
   one automatic check interval before the window start; if no fresh baseline exists, the
   message leaves the analysed-window change unknown instead of reusing old market data.
+- Event Alerts are market-event-first. Normal Event Analysis must set `should_alert=true` only
+  when analysed-window market context justifies a useful alert. A backend guard also rejects
+  clear news-only Event Alert decisions even if the LLM returns `should_alert=true`. News can
+  support or explain an alert, but standalone news-only Event Alerts are disabled. `Possible
+  action` remains part of the alert and is not a suppression gate. Before the LLM call, the
+  runtime can reuse a recent same-context no-alert, news-only rejection, semantic cooldown
+  suppression, similar-context reuse, or delivered decision by matching a sanitized stable
+  similarity fingerprint. This avoids repeated Event Analysis calls for clearly repeated context
+  without using arbitrary hard movement thresholds as product gates.
+- Event Alert quality cleanup was split across PRs: PR1 made Event Alerts market-event-first and
+  added durable decision fields; PR2 added conservative pre-LLM similar-context reuse and removed
+  new-news-only semantic cooldown bypasses.
 - Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
   The internal `ton` key is displayed as GRAM / Gram (prev. Toncoin), `/price gram` is accepted
   as an alias, and CoinGecko requests use `ids=the-open-network`. `usdt` is not supported.
@@ -123,14 +135,17 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
 - Event Alert identity is backend-owned after LLM validation. Broad LLM keys such as
   `news_catalyst`, `price_movement`, and `volatility` are normalized with deterministic rules using
   the raw key, alert title/body, and selected real related-news title/source/link context. Repeated
-  same-family alerts stay inside the semantic cooldown unless urgency increases, analysed-window
-  movement grows by the configured material delta, or selected stable news identity shows a new
-  driver.
+  same-family alerts stay inside the semantic cooldown unless urgency increases or analysed-window
+  movement grows by the configured material delta. Selected stable news identity is diagnostics and
+  supporting context only; new news alone does not bypass semantic cooldown.
 - Migration `0022_unique_event_analysis` enforces one attached `event_analysis` row per
   `market_event_id`. During upgrade it preserves evidence by setting `market_event_id=NULL` on
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
+- Migration `0023_alert_outcome_decisions` adds nullable operator-facing decision observability
+  fields to `alert_delivery_outcomes`: `decision_stage`, `decision_reason`, `previous_alert_id`,
+  and `context_fingerprint`.
 
 ## Ops-Agent Development
 
