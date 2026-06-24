@@ -37,6 +37,10 @@ Current product behavior:
   Internal `ton` is user-facing GRAM; `/price gram` and legacy `/price ton` both work.
 - BTC automatic alerts remain free.
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
+- Event Alerts are market-event-first: analysed-window market context is the primary basis,
+  and news is supporting context only. Standalone news-only Event Alerts are disabled.
+- Event Alert `Possible action` stays in alert copy and is observed for quality; generic wording
+  is not a suppression gate.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
 - `/settings` is admin-only.
 - `/userid` works manually but stays hidden from menus/help.

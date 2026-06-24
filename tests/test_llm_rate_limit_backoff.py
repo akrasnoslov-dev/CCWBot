@@ -111,6 +111,9 @@ async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch)
         assert outcome.status == "rate_limited"
         assert outcome.reason_code == "llm_rate_limited"
         assert outcome.event_ai_analysis_id == row.id
+        assert outcome.decision_stage == "llm"
+        assert outcome.decision_reason == "unknown"
+        assert outcome.context_fingerprint
     finally:
         await engine.dispose()
 

@@ -187,7 +187,7 @@ async def test_feature_flag_off_means_no_news_driven_alert(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_high_impact_btc_news_produces_event_alert_candidate(monkeypatch):
+async def test_high_impact_btc_news_does_not_produce_standalone_event_alert(monkeypatch):
     engine, session_local = await build_session_factory()
     sent_messages = []
     now = datetime.now(timezone.utc)
@@ -203,17 +203,10 @@ async def test_high_impact_btc_news_produces_event_alert_candidate(monkeypatch):
             sent_messages=sent_messages,
         )
 
-        assert len(sent_messages) == 1
-        assert "BTC Event Alert" in sent_messages[0][1]
-        assert "High-impact news detected for BTC" in sent_messages[0][1]
-        assert "Not financial advice." in sent_messages[0][1]
-        assert_no_event_placeholders(sent_messages[0][1])
+        assert sent_messages == []
         async with session_local() as session:
-            event = await session.scalar(select(MarketEvent))
-            assert event is not None
-            assert event.event_type == alerts.EVENT_ALERT_TYPE
-            assert event.event_key.startswith("news:btc:")
-            assert await session.scalar(select(func.count()).select_from(Alert)) == 1
+            assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 0
+            assert await session.scalar(select(func.count()).select_from(Alert)) == 0
     finally:
         await engine.dispose()
 
@@ -264,7 +257,21 @@ async def test_low_noisy_old_and_undated_news_do_not_alert(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_free_users_only_receive_btc_news_alerts(monkeypatch):
+async def test_news_driven_flag_cannot_bypass_product_policy(monkeypatch):
+    monkeypatch.setattr(alerts, "ENABLE_NEWS_DRIVEN_ALERTS", True)
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", object())
+
+    candidates = await alerts._load_news_driven_alert_candidates(
+        ["btc"],
+        now=datetime.now(timezone.utc),
+    )
+
+    assert candidates == {}
+
+
+@pytest.mark.asyncio
+async def test_free_users_receive_no_news_only_event_alerts(monkeypatch):
     engine, session_local = await build_session_factory()
     sent_messages = []
     now = datetime.now(timezone.utc)
@@ -293,15 +300,13 @@ async def test_free_users_only_receive_btc_news_alerts(monkeypatch):
             sent_messages=sent_messages,
         )
 
-        assert [message[0] for message in sent_messages] == [2001]
-        assert "BTC Event Alert" in sent_messages[0][1]
-        assert "ETH Event Alert" not in sent_messages[0][1]
+        assert sent_messages == []
     finally:
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_premium_users_only_receive_enabled_watchlist_symbol_alerts(monkeypatch):
+async def test_premium_users_receive_no_news_only_event_alerts(monkeypatch):
     engine, session_local = await build_session_factory()
     sent_messages = []
     now = datetime.now(timezone.utc)
@@ -344,9 +349,7 @@ async def test_premium_users_only_receive_enabled_watchlist_symbol_alerts(monkey
             sent_messages=sent_messages,
         )
 
-        assert [message[0] for message in sent_messages] == [2002]
-        assert "ETH Event Alert" in sent_messages[0][1]
-        assert "SOL Event Alert" not in sent_messages[0][1]
+        assert sent_messages == []
     finally:
         await engine.dispose()
 
@@ -382,10 +385,10 @@ async def test_duplicate_dedup_group_and_repeated_cycles_are_idempotent(monkeypa
             sent_messages=sent_messages,
         )
 
-        assert len(sent_messages) == 1
+        assert sent_messages == []
         async with session_local() as session:
-            assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 1
-            assert await session.scalar(select(func.count()).select_from(Alert)) == 1
+            assert await session.scalar(select(func.count()).select_from(MarketEvent)) == 0
+            assert await session.scalar(select(func.count()).select_from(Alert)) == 0
     finally:
         await engine.dispose()
 

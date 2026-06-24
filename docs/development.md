@@ -84,6 +84,12 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   points = 3 hours by default. The analysed-window baseline ignores stale snapshots outside
   one automatic check interval before the window start; if no fresh baseline exists, the
   message leaves the analysed-window change unknown instead of reusing old market data.
+- Event Alerts are market-event-first. Normal Event Analysis must set `should_alert=true` only
+  when analysed-window market context justifies a useful alert. A backend guard also rejects
+  clear news-only Event Alert decisions even if the LLM returns `should_alert=true`. News can
+  support or explain an alert, but standalone news-only Event Alerts are disabled. `Possible
+  action` remains part of the alert and is not a suppression gate. Pre-LLM similar-context
+  reuse/skip remains future work.
 - Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
   The internal `ton` key is displayed as GRAM / Gram (prev. Toncoin), `/price gram` is accepted
   as an alias, and CoinGecko requests use `ids=the-open-network`. `usdt` is not supported.
@@ -131,6 +137,9 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
   delivery-referenced and then oldest analyses as canonical. Confirm a current production backup
   exists before deploying this migration.
+- Migration `0023_alert_outcome_decisions` adds nullable operator-facing decision observability
+  fields to `alert_delivery_outcomes`: `decision_stage`, `decision_reason`, `previous_alert_id`,
+  and `context_fingerprint`.
 
 ## Ops-Agent Development
 

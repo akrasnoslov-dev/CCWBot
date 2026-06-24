@@ -76,6 +76,11 @@ and summarizes:
 - old/confusing percentage labels such as `Since last BTC alert`, `Analysed-window change`, and
   generic `Price change`.
 
+Generated decision context also includes `## Decision Reasons`, based on sanitized
+`alert_delivery_outcomes` fields. It reports counts for `news_only_rejected`, `llm_no_alert`,
+`semantic_cooldown_suppressed`, delivered rows with decision reasons, missing/unknown decision
+reasons, and generic `Possible action` wording as a quality metric only.
+
 An `OK` status means none of those regressions were found in collected evidence. `Warning` means
 likely same-family repeat noise needs review. `Critical` means a core invariant, observability, or
 user-facing copy regression was found.

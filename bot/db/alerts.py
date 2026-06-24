@@ -191,6 +191,36 @@ async def get_latest_sent_alert_for_symbol(
     return await session.scalar(statement)
 
 
+async def get_latest_sent_event_alert_context_for_symbol(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+) -> tuple[Alert, str | None, str | None] | None:
+    """Return latest sent Event Alert with canonical event and semantic outcome context."""
+    statement = (
+        select(Alert, MarketEvent.event_key, AlertDeliveryOutcome.semantic_family)
+        .outerjoin(MarketEvent, Alert.market_event_id == MarketEvent.id)
+        .outerjoin(
+            AlertDeliveryOutcome,
+            and_(
+                AlertDeliveryOutcome.alert_id == Alert.id,
+                AlertDeliveryOutcome.status == "delivered",
+            ),
+        )
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.alert_type == alert_type)
+        .where(Alert.status == "sent")
+        .order_by(Alert.created_at.desc(), Alert.id.desc(), AlertDeliveryOutcome.id.desc())
+        .limit(1)
+    )
+    row = (await session.execute(statement)).first()
+    if row is None:
+        return None
+    alert, event_key, semantic_family = row
+    return alert, event_key, semantic_family
+
+
 
 async def get_alert_delivery(
     session: AsyncSession,
@@ -452,6 +482,10 @@ async def save_alert_delivery_outcome(
     trigger_source: str | None = None,
     event_instance_key: str | None = None,
     semantic_family: str | None = None,
+    decision_stage: str | None = None,
+    decision_reason: str | None = None,
+    previous_alert_id: int | None = None,
+    context_fingerprint: str | None = None,
     detail: str | None = None,
 ) -> AlertDeliveryOutcome:
     outcome = AlertDeliveryOutcome(
@@ -469,6 +503,10 @@ async def save_alert_delivery_outcome(
         trigger_source=trigger_source,
         event_instance_key=event_instance_key,
         semantic_family=semantic_family,
+        decision_stage=decision_stage,
+        decision_reason=decision_reason,
+        previous_alert_id=previous_alert_id,
+        context_fingerprint=context_fingerprint,
         detail=detail,
     )
     session.add(outcome)
