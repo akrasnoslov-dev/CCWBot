@@ -2421,6 +2421,178 @@ def _llm_no_alert_decision_reason(decision: EventAnalysisDecision, input_payload
         return DECISION_REASON_NEWS_ONLY_REJECTED
     return DECISION_REASON_LLM_NO_ALERT
 
+_MARKET_EVENT_TERMS = {
+    "analysed",
+    "analyzed",
+    "window",
+    "price",
+    "market",
+    "move",
+    "moved",
+    "movement",
+    "rally",
+    "rallied",
+    "rebound",
+    "surge",
+    "breakout",
+    "drop",
+    "dropped",
+    "decline",
+    "selloff",
+    "volatility",
+    "volatile",
+    "support",
+    "resistance",
+    "trend",
+    "momentum",
+}
+_NEWS_PRIMARY_TERMS = {
+    "news",
+    "headline",
+    "headlines",
+    "report",
+    "reports",
+    "reported",
+    "announcement",
+    "announced",
+    "etf",
+    "regulatory",
+    "regulation",
+    "sec",
+    "lawsuit",
+    "policy",
+    "hack",
+    "exploit",
+}
+_GENERIC_CONTEXT_TERMS = {
+    "about",
+    "after",
+    "alert",
+    "attention",
+    "bitcoin",
+    "btc",
+    "context",
+    "crypto",
+    "event",
+    "market",
+    "news",
+    "price",
+    "related",
+    "report",
+    "reports",
+    "situation",
+    "the",
+    "this",
+    "update",
+}
+
+
+def _decision_text(decision: EventAnalysisDecision) -> str:
+    return " ".join(
+        str(value or "")
+        for value in (
+            decision.event_key,
+            decision.title,
+            decision.message_body,
+            decision.possible_action,
+        )
+    ).lower()
+
+
+def _decision_tokens(decision: EventAnalysisDecision) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", _decision_text(decision)))
+
+
+def _news_context_tokens(input_payload: dict, related_news_ids: list[str]) -> set[str]:
+    tokens: set[str] = set()
+    for item in _selected_event_analysis_news(input_payload, related_news_ids):
+        for field_name in ("title", "source"):
+            value = item.get(field_name)
+            if not isinstance(value, str):
+                continue
+            tokens.update(
+                token
+                for token in re.findall(r"[a-z0-9]+", value.lower())
+                if len(token) > 3 and token not in _GENERIC_CONTEXT_TERMS
+            )
+    return tokens
+
+
+def _has_non_flat_analysed_market_context(input_payload: dict) -> bool:
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    if not isinstance(market_data, dict):
+        return False
+    for field_name in (
+        "chg_window",
+        "chg_since_msg",
+        "change_since_last_user_visible_message_percent",
+    ):
+        value = market_data.get(field_name)
+        if isinstance(value, (int, float)) and float(value) != 0.0:
+            return True
+    snapshots = market_data.get("snapshots")
+    if isinstance(snapshots, list) and len(snapshots) >= 2:
+        prices = [
+            float(snapshot["p"] if "p" in snapshot else snapshot["price_usd"])
+            for snapshot in snapshots
+            if isinstance(snapshot, dict)
+            and ("p" in snapshot or "price_usd" in snapshot)
+            and isinstance(snapshot.get("p", snapshot.get("price_usd")), (int, float))
+        ]
+        if len(prices) >= 2 and prices[0] != prices[-1]:
+            return True
+    return False
+
+
+def _decision_describes_market_event(decision: EventAnalysisDecision) -> bool:
+    return bool(_decision_tokens(decision).intersection(_MARKET_EVENT_TERMS))
+
+
+def _decision_is_primarily_news_context(
+    decision: EventAnalysisDecision,
+    input_payload: dict,
+) -> bool:
+    if not decision.related_news_ids:
+        return False
+    tokens = _decision_tokens(decision)
+    if tokens.intersection(_NEWS_PRIMARY_TERMS):
+        return True
+    news_tokens = _news_context_tokens(input_payload, decision.related_news_ids)
+    return len(tokens.intersection(news_tokens)) >= 2
+
+
+def _is_news_only_event_alert_decision(
+    decision: EventAnalysisDecision,
+    input_payload: dict,
+) -> bool:
+    if not decision.should_alert:
+        return False
+    if not _decision_is_primarily_news_context(decision, input_payload):
+        return False
+    return (
+        not _has_non_flat_analysed_market_context(input_payload)
+        or not _decision_describes_market_event(decision)
+    )
+
+
+def _as_news_only_rejected_decision(decision: EventAnalysisDecision) -> EventAnalysisDecision:
+    return EventAnalysisDecision(
+        symbol=decision.symbol,
+        should_alert=False,
+        event_key=None,
+        title=None,
+        message_body=None,
+        related_news_ids=[],
+        possible_action=None,
+        urgency=None,
+        confidence=decision.confidence,
+        reason_for_no_alert=(
+            "News can support Event Alerts, but this decision did not identify an "
+            "analysed-window market event as the alert basis."
+        ),
+    )
+
+
 async def _create_event_analysis_decision(
     input_payload: dict,
 ) -> tuple[EventAnalysisDecision | None, int | None]:
@@ -2532,6 +2704,35 @@ async def _create_event_analysis_decision(
             error,
         )
         return None, None
+
+    if _is_news_only_event_alert_decision(decision, input_payload):
+        rejected_decision = _as_news_only_rejected_decision(decision)
+        analysis_id = await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=raw_output,
+            status="no_alert",
+            parsed_result=normalized_parsed,
+            decision=rejected_decision,
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_NOT_SCHEDULED,
+            reason_code=REASON_NEWS_ONLY_REJECTED,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            semantic_family=_semantic_family_from_payload(input_payload),
+            decision_stage=DECISION_STAGE_LLM,
+            decision_reason=DECISION_REASON_NEWS_ONLY_REJECTED,
+            previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
+            context_fingerprint=_event_input_hash(input_payload),
+            detail=rejected_decision.reason_for_no_alert,
+        )
+        logger.info(
+            "%s LLM event analysis rejected as news-only.",
+            str(input_payload["symbol"]).upper(),
+        )
+        return rejected_decision, analysis_id
 
     if decision.should_alert:
         decision, canonical = with_canonical_event_key(

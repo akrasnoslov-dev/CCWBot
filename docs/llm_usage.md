@@ -175,7 +175,8 @@ Avoidable LLM-call checks:
   another LLM call.
 - Event Analysis is market-event-first. The prompt treats `market.chg_window` and short-term
   snapshots as the primary basis, `market.chg24h` as broader context, and news as supporting
-  context only. News alone must return no alert.
+  context only. News alone must return no alert, and a backend guard rejects clear news-only
+  `should_alert=true` decisions before market event creation or delivery.
 - The Event Analysis input can include a compact sanitized `previous_event_alert` object with
   prior title, canonical key, semantic family, analysed-window move, related-news hash, possible
   action, and timestamp. It excludes Telegram IDs, raw messages, raw prompts, secrets, and private

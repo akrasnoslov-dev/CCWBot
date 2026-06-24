@@ -148,7 +148,9 @@ LIMIT 100;
 Telegram delivery table; outcome rows explain recipient filtering, cooldown suppression, delivery
 success/failure, LLM rate-limit skips, and event-level no-recipient cases.
 Event Alerts are market-event-first: news may support the analysis, but standalone news-only
-Event Alerts are not part of current product behavior.
+Event Alerts are not part of current product behavior. If an LLM returns `should_alert=true`
+for a clear news-only situation, the backend records a `news_only_rejected` LLM-stage outcome
+before market event creation or Telegram delivery.
 
 Outcome statuses:
 

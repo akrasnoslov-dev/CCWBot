@@ -85,9 +85,11 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   one automatic check interval before the window start; if no fresh baseline exists, the
   message leaves the analysed-window change unknown instead of reusing old market data.
 - Event Alerts are market-event-first. Normal Event Analysis must set `should_alert=true` only
-  when analysed-window market context justifies a useful alert. News can support or explain an
-  alert, but standalone news-only Event Alerts are disabled. `Possible action` remains part of
-  the alert and is not a suppression gate.
+  when analysed-window market context justifies a useful alert. A backend guard also rejects
+  clear news-only Event Alert decisions even if the LLM returns `should_alert=true`. News can
+  support or explain an alert, but standalone news-only Event Alerts are disabled. `Possible
+  action` remains part of the alert and is not a suppression gate. Pre-LLM similar-context
+  reuse/skip remains future work.
 - Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
   The internal `ton` key is displayed as GRAM / Gram (prev. Toncoin), `/price gram` is accepted
   as an alias, and CoinGecko requests use `ids=the-open-network`. `usdt` is not supported.
