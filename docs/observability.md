@@ -189,8 +189,9 @@ Decision fields:
 - `decision_stage`: operator-facing stage such as `pre_llm`, `llm`, `semantic_cooldown`, or
   `delivery`.
 - `decision_reason`: operator-facing reason such as `news_only_rejected`, `llm_no_alert`,
-  `llm_should_alert`, `semantic_cooldown_suppressed`, `delivered`, `delivery_failed`,
-  `no_eligible_recipient`, or `unknown`.
+  `llm_should_alert`, `semantic_cooldown_suppressed`, `similar_context_reused`,
+  `allowed_market_context_changed`, `delivered`, `delivery_failed`, `no_eligible_recipient`, or
+  `unknown`.
 - `previous_alert_id`: nullable link to a previous alert considered for repeat/cooldown context.
 - `context_fingerprint`: safe hash of sanitized decision context; it is not a raw prompt or
   Telegram message export.
@@ -298,10 +299,43 @@ Suppressed semantic duplicates are persisted as `alert_delivery_outcomes.reason_
 `suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
 semantic family key, and also checks delivered outcome semantic family where available, so minor
 raw-key wording drift does not bypass the cooldown. Same-family events can still deliver inside the
-semantic cooldown when urgency increased, the absolute analysed-window movement grew by at least
-2.5 percentage points, or stable related-news identity shows a new news driver.
+semantic cooldown when urgency increased or the absolute analysed-window movement grew by the
+configured material movement delta. Stable related-news identity remains diagnostics/supporting
+context only; new news alone does not bypass cooldown.
 Generic `possible_action` wording is reported as a quality signal only; it does not suppress
 runtime delivery.
+
+## Event Alert Similar-Context Reuse
+
+Before calling the Event Analysis LLM, the runtime can reuse a recent durable decision with the
+same sanitized `context_fingerprint`. The fingerprint is built from stable normalized fields such
+as symbol, analysed-window length, coarse market movement identity, compact candidate-news
+identity, and previous Event Alert semantic context. It excludes raw timestamps, prompts, LLM
+outputs, Telegram ids, user ids, and secrets.
+
+Pre-LLM reuse writes an event-less `alert_delivery_outcomes` row:
+
+```sql
+SELECT
+  symbol,
+  semantic_family,
+  decision_stage,
+  decision_reason,
+  status,
+  reason_code,
+  previous_alert_id,
+  context_fingerprint,
+  created_at
+FROM alert_delivery_outcomes
+WHERE alert_type = 'event_alert'
+  AND decision_stage = 'pre_llm'
+  AND decision_reason = 'similar_context_reused'
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+These rows are expected to have no `market_event_id` and no `event_ai_analysis_id`, because no new
+market event or LLM attempt was created.
 
 ## Event Alert Suppression Reasons
 
@@ -316,9 +350,9 @@ suppression_reason=semantic_cooldown analysed_window_minutes=180
 
 Debug cooldown checks include sanitized escalation fields such as `urgency_increased`,
 `material_movement_increased`, `new_news_driver`, previous/current movement percentages, and
-previous/current selected-news counts. These fields explain whether same-family delivery was
-allowed through cooldown or denied; they are for logs/outcomes only and must not be copied into
-Telegram messages.
+previous/current selected-news counts. `new_news_driver` is diagnostics only and is not sufficient
+to allow a same-family repeat inside cooldown; allowed repeat reasons must be market-context based.
+These fields are for logs/outcomes only and must not be copied into Telegram messages.
 
 Market-only event instance keys are built from symbol, canonical semantic key, rounded UTC time
 bucket, urgency, and a coarse movement bucket. News-linked event instance keys use stable selected

@@ -39,6 +39,11 @@ Current product behavior:
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
 - Event Alerts are market-event-first: analysed-window market context is the primary basis,
   and news is supporting context only. Standalone news-only Event Alerts are disabled.
+- Event Alerts use conservative pre-LLM similar-context reuse inside the semantic cooldown window.
+  The reuse key is built from sanitized stable market/news context, not raw prompts, raw outputs,
+  timestamps, user ids, or arbitrary hard movement-threshold gates.
+- New news alone cannot allow a same-family repeat inside semantic cooldown; a repeat must have
+  market-context escalation such as higher urgency or materially changed analysed-window movement.
 - Event Alert `Possible action` stays in alert copy and is observed for quality; generic wording
   is not a suppression gate.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.

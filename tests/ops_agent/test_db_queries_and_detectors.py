@@ -288,6 +288,7 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         query for query in QUERIES if query.name == "event_alert_same_news_repeats_24h"
     )
     outcomes = next(query for query in QUERIES if query.name == "alert_delivery_outcome_summary")
+    reuse = next(query for query in QUERIES if query.name == "event_alert_similar_context_reuse")
     possible_action_quality = next(
         query for query in QUERIES if query.name == "event_alert_possible_action_quality"
     )
@@ -315,6 +316,12 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "news_only_rejected_count" in outcomes.sql
     assert "llm_no_alert_count" in outcomes.sql
     assert "semantic_cooldown_suppressed_count" in outcomes.sql
+    assert "similar_context_reused_count" in outcomes.sql
+    assert "allowed_market_context_changed_count" in outcomes.sql
+    assert "pre_llm_similar_context_reused_count" in outcomes.sql
+    assert "decision_reason = 'similar_context_reused'" in reuse.sql
+    assert "event_ai_analysis_id IS NULL" in reuse.sql
+    assert "context_fingerprint" in reuse.sql
     for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):
         assert f"{status}_count" in outcomes.sql
     assert "generic_possible_action_count" in possible_action_quality.sql

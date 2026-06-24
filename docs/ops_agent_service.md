@@ -69,7 +69,11 @@ and summarizes:
 - duplicate attached successful Event Alert analyses for one market event;
 - same-family Event Alerts delivered inside cooldown without escalation evidence;
 - same-family repeats allowed by urgency increase, material analysed-window movement increase, or
-  new stable related-news driver;
+  another market-context reason;
+- pre-LLM similar-context reuse counts by symbol and semantic family;
+- same-family or same-news repeats suppressed before the Event Analysis LLM;
+- delivered repeats that were allowed only because of news, which should be treated as a
+  regression after PR2;
 - `should_alert=true` analyses with no sent delivery and no persisted suppression, cooldown,
   failure, rate-limit, filtered, not-scheduled, or no-recipient outcome;
 - user-facing Event Alert placeholders such as `n/a`, `unknown`, `unavailable`, or `null`;
@@ -78,7 +82,8 @@ and summarizes:
 
 Generated decision context also includes `## Decision Reasons`, based on sanitized
 `alert_delivery_outcomes` fields. It reports counts for `news_only_rejected`, `llm_no_alert`,
-`semantic_cooldown_suppressed`, delivered rows with decision reasons, missing/unknown decision
+`semantic_cooldown_suppressed`, `similar_context_reused`, pre-LLM similar-context skips,
+`allowed_market_context_changed`, delivered rows with decision reasons, missing/unknown decision
 reasons, and generic `Possible action` wording as a quality metric only.
 
 An `OK` status means none of those regressions were found in collected evidence. `Warning` means

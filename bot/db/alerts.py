@@ -516,6 +516,40 @@ async def save_alert_delivery_outcome(
 
 
 
+async def get_recent_alert_delivery_outcome_by_context_fingerprint(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    context_fingerprint: str,
+    since: datetime,
+    decision_reasons: set[str] | None = None,
+    statuses: set[str] | None = None,
+) -> AlertDeliveryOutcome | None:
+    """Return the latest durable decision for a safe sanitized context hash."""
+    statement = (
+        select(AlertDeliveryOutcome)
+        .where(AlertDeliveryOutcome.symbol == symbol.upper())
+        .where(AlertDeliveryOutcome.alert_type == alert_type)
+        .where(AlertDeliveryOutcome.context_fingerprint == context_fingerprint)
+        .where(AlertDeliveryOutcome.created_at >= since)
+    )
+    filters = []
+    if decision_reasons:
+        filters.append(AlertDeliveryOutcome.decision_reason.in_(sorted(decision_reasons)))
+    if statuses:
+        filters.append(AlertDeliveryOutcome.status.in_(sorted(statuses)))
+    if filters:
+        statement = statement.where(or_(*filters))
+    return await session.scalar(
+        statement.order_by(
+            AlertDeliveryOutcome.created_at.desc(),
+            AlertDeliveryOutcome.id.desc(),
+        ).limit(1)
+    )
+
+
+
 async def get_or_create_market_event(
     session: AsyncSession,
     *,
