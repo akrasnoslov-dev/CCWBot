@@ -18,7 +18,7 @@ from bot.domain.supported_coins import (
     coin_display_name,
     display_symbol,
 )
-from bot.news import fetch_news_context, remember_news_context
+from bot.news import fetch_report_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_REPORT_MODEL,
@@ -346,7 +346,10 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
     market_data = await get_report_market_data_batch(symbols)
     if not _has_usable_market_data(market_data):
         raise MarketReportDataUnavailable("market data unavailable")
-    news_items = await fetch_news_context(limit=6, prefer_unseen=True)
+    news_payload, news_items = await fetch_report_news_context(symbols, prefer_unseen=True)
+    market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
+    coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
+    news_fallback = news_payload.get("fallback") if isinstance(news_payload, dict) else ""
     return (
         {
             "report_type": report_type,
@@ -356,16 +359,9 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
                 _build_report_coin_payload(symbol, market_data.get(symbol) or {})
                 for symbol in symbols
             ],
-            "news": [
-                {
-                    "news_id": str(index + 1),
-                    "title": str(item.get("title", "")).strip()[:180],
-                    "source": str(item.get("source", "")).strip()[:80],
-                    "link": str(item.get("link", "")).strip(),
-                }
-                for index, item in enumerate(news_items[:6])
-                if str(item.get("title", "")).strip()
-            ],
+            "market_news": market_news,
+            "coin_news": coin_news,
+            "news_fallback": news_fallback,
         },
         news_items,
     )
@@ -400,7 +396,9 @@ def _build_report_telegram_message(
     is_weekly = report_type == "weekly"
     title = "Weekly Market Report" if is_weekly else "Daily Market Report"
     overview_label = "Weekly overview" if is_weekly else "Market overview"
-    news_label = "Weekly news theme" if is_weekly else "News context"
+    news_label = "Top catalysts of the week" if is_weekly else "News context"
+    # Keep user-visible report news tied to selected title/source/link items, not model prose.
+    news_context_text = _format_report_news_context(input_payload)
     coin_rows = [
         _format_coin_row(coin, weekly=is_weekly)
         for coin in input_payload.get("coins", [])
@@ -413,12 +411,54 @@ def _build_report_telegram_message(
         "Coins:\n"
         f"{chr(10).join(coin_rows)}\n\n"
         f"{news_label}:\n"
-        f"{news_context.strip()}\n\n"
+        f"{news_context_text}\n\n"
         "Possible action:\n"
         f"{possible_action.strip()}\n\n"
         "Not financial advice."
     )
     return sanitize_alert_message(message)
+
+
+def _format_report_news_context(input_payload: dict) -> str:
+    rows: list[str] = []
+    market_news = input_payload.get("market_news")
+    if isinstance(market_news, list):
+        for item in market_news:
+            if not isinstance(item, dict):
+                continue
+            formatted = _format_report_news_item(item)
+            if formatted:
+                rows.append(formatted)
+
+    coin_news = input_payload.get("coin_news")
+    if isinstance(coin_news, dict):
+        for symbol in input_payload.get("active_symbols", []):
+            symbol_text = str(symbol or "").strip().upper()
+            items = coin_news.get(symbol_text)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                formatted = _format_report_news_item(item, prefix=symbol_text)
+                if formatted:
+                    rows.append(formatted)
+
+    if rows:
+        return "\n".join(rows)
+
+    fallback = str(input_payload.get("news_fallback") or "").strip()
+    return fallback or "No clearly relevant fresh news found for tracked coins"
+
+
+def _format_report_news_item(item: dict, *, prefix: str | None = None) -> str:
+    title = str(item.get("title") or "").strip()
+    source = str(item.get("source") or "").strip()
+    link = str(item.get("link") or "").strip()
+    if not (title and source and link):
+        return ""
+    label = f"{prefix}: " if prefix else ""
+    return f"• {label}{title} ({source}) {link}"
 
 
 def _format_coin_row(coin: dict, *, weekly: bool) -> str:

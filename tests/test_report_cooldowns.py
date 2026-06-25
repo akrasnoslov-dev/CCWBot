@@ -45,7 +45,7 @@ def _daily_message() -> str:
         "Daily Market Report\n\n"
         "Market overview:\nBTC and ETH are mixed.\n\n"
         "Coins:\n• BTC: $100,000, 24h +1.0%\n\n"
-        "News context:\nNo major market-wide news selected.\n\n"
+        "News context:\nNo clearly relevant fresh news found for tracked coins\n\n"
         "Possible action:\nMonitor risk without rushing.\n\n"
         "Not financial advice."
     )
@@ -70,6 +70,17 @@ def _market_data():
         "ton": {"price": 3.12, "change_24h": None, "change_7d": 1.4},
         "sol": {"price": 142.35, "change_24h": 0.7, "change_7d": -4.6},
     }
+
+
+def _empty_report_news_context():
+    return (
+        {
+            "market_news": [],
+            "coin_news": {"BTC": [], "ETH": [], "GRAM": [], "SOL": []},
+            "fallback": "No clearly relevant fresh news found for tracked coins",
+        },
+        [],
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -221,7 +232,11 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
             "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
         ask_report = AsyncMock(
             return_value=(
@@ -231,7 +246,7 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
                     "title": "Daily Market Report",
                     "market_overview": "Mixed market.",
                     "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                    "news_context": "No major market-wide news selected.",
+                    "news_context": "No clearly relevant fresh news found for tracked coins",
                     "possible_action": "Monitor risk without rushing.",
                     "telegram_message": _daily_message(),
                 },
@@ -262,7 +277,11 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
             "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
         ask_report = AsyncMock(
             return_value=(
@@ -272,7 +291,7 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
                     "title": "Daily Market Report",
                     "market_overview": "Mixed market.",
                     "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                    "news_context": "No major market-wide news selected.",
+                    "news_context": "No clearly relevant fresh news found for tracked coins",
                     "possible_action": "Monitor risk without rushing.",
                     "telegram_message": "Daily Market Report\n\nCoins:\nBTC ETH GRAM SOL",
                 },
@@ -305,7 +324,11 @@ async def test_daily_report_accepts_strategy_wording(monkeypatch):
             "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
         monkeypatch.setattr(
             reports,
@@ -318,7 +341,7 @@ async def test_daily_report_accepts_strategy_wording(monkeypatch):
                         "title": "Daily Market Report",
                         "market_overview": "Adjust your strategy as needed while BTC is mixed.",
                         "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                        "news_context": "No major market-wide news selected.",
+                        "news_context": "No clearly relevant fresh news found for tracked coins",
                         "possible_action": "Adjust your strategy as needed.",
                         "telegram_message": "Daily Market Report",
                     },
@@ -345,7 +368,11 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
             "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(reports, "remember_news_context", AsyncMock())
         monkeypatch.setattr(
             reports,
@@ -358,7 +385,7 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
                         "title": "Weekly Market Report",
                         "market_overview": "Review your portfolio and adjust your strategy.",
                         "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                        "news_context": "No major weekly news theme selected.",
+                        "news_context": "No clearly relevant fresh news found for tracked coins",
                         "possible_action": "Review your portfolio if needed.",
                         "telegram_message": "Weekly Market Report",
                     },
@@ -390,7 +417,11 @@ async def test_failed_report_generation_does_not_create_fake_fallback(monkeypatc
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         ask_report = AsyncMock(side_effect=RuntimeError("LLM should not be called"))
         monkeypatch.setattr(reports, "get_report_market_data_batch", AsyncMock(return_value={}))
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
 
         await reports.send_daily_report_message(target)
@@ -417,7 +448,11 @@ async def test_report_rate_limit_failure_starts_provider_backoff(monkeypatch):
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         market_data = AsyncMock(side_effect=reports.CoinGeckoRateLimitError("rate limited"))
         monkeypatch.setattr(reports, "get_report_market_data_batch", market_data)
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(
             reports,
             "ask_market_report_raw",
@@ -448,7 +483,11 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
             "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
-        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "fetch_report_news_context",
+            AsyncMock(return_value=_empty_report_news_context()),
+        )
         monkeypatch.setattr(
             reports,
             "ask_market_report_raw",
@@ -460,7 +499,7 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
                         "title": "Daily Market Report",
                         "market_overview": "Mixed market.",
                         "coin_summaries": [{"symbol": "XRP", "summary": "XRP is steady."}],
-                        "news_context": "No major market-wide news selected.",
+                        "news_context": "No clearly relevant fresh news found for tracked coins",
                         "possible_action": "Monitor risk.",
                         "telegram_message": "Daily Market Report",
                     },
@@ -498,7 +537,9 @@ async def test_report_input_includes_active_symbols(monkeypatch):
         return {symbol: {"price": 1.0, "change_24h": 0.1, "change_7d": None} for symbol in symbols}
 
     monkeypatch.setattr(reports, "get_report_market_data_batch", fake_market_data)
-    monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        reports, "fetch_report_news_context", AsyncMock(return_value=_empty_report_news_context())
+    )
 
     payload, _ = await reports._build_market_report_input("daily", utc_now())
 
@@ -519,3 +560,60 @@ async def test_report_input_includes_active_symbols(monkeypatch):
         "weekly_low": None,
         "range_position": None,
     }
+    assert payload["market_news"] == []
+    assert payload["coin_news"] == {"BTC": [], "ETH": [], "GRAM": [], "SOL": []}
+    assert payload["news_fallback"] == "No clearly relevant fresh news found for tracked coins"
+
+
+def test_report_message_renders_selected_news_not_llm_news_context():
+    message = reports._build_report_telegram_message(
+        report_type="daily",
+        input_payload={
+            "active_symbols": ["BTC", "ETH"],
+            "coins": [],
+            "market_news": [
+                {
+                    "title": "Crypto market liquidity improves",
+                    "source": "CoinDesk",
+                    "link": "https://example.com/market",
+                }
+            ],
+            "coin_news": {
+                "BTC": [],
+                "ETH": [
+                    {
+                        "title": "Ethereum ETF inflows accelerate",
+                        "source": "Cointelegraph",
+                        "link": "https://example.com/eth",
+                    }
+                ],
+            },
+            "news_fallback": "",
+        },
+        market_overview="Mixed market.",
+        news_context="Invented exchange rumor with no source.",
+        possible_action="Monitor risk without rushing.",
+    )
+
+    assert "Invented exchange rumor" not in message
+    assert "Crypto market liquidity improves (CoinDesk) https://example.com/market" in message
+    assert "ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth" in message
+
+
+def test_report_message_renders_news_fallback_when_no_selected_news():
+    message = reports._build_report_telegram_message(
+        report_type="daily",
+        input_payload={
+            "active_symbols": ["BTC"],
+            "coins": [],
+            "market_news": [],
+            "coin_news": {"BTC": []},
+            "news_fallback": "No clearly relevant fresh news found for tracked coins",
+        },
+        market_overview="Mixed market.",
+        news_context="No major market-wide news selected.",
+        possible_action="Monitor risk without rushing.",
+    )
+
+    assert "No clearly relevant fresh news found for tracked coins" in message
+    assert "No major market-wide news selected" not in message

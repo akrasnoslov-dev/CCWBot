@@ -30,3 +30,26 @@ Report changes must not add LLM calls inside user or recipient loops.
 
 Automatic Event Alerts continue to use their existing market data path and are
 not affected by report-specific data enrichment.
+
+## News Selection
+
+Report news uses the existing RSS/news-intelligence boundary. It does not add a
+separate news provider abstraction.
+
+The report input is split into:
+
+- `market_news`: a small market-wide list for broad crypto catalysts;
+- `coin_news`: direct news buckets for BTC, ETH, GRAM, and SOL.
+
+Only items with a real title, source, and link are eligible. Direct coin matches
+rank above market-wide items for coin buckets, and fresher/higher-scored items
+rank first. BTC-only news must not be shown as ETH, SOL, or GRAM news unless it
+is clearly market-wide.
+
+The LLM payload stays bounded to at most two market-wide items and two direct
+items per tracked coin. If no clearly relevant fresh news is found, reports use
+the explicit fallback:
+
+```text
+No clearly relevant fresh news found for tracked coins
+```

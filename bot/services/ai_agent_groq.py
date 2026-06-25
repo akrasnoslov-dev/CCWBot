@@ -1557,7 +1557,7 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
 def build_market_report_prompt(input_payload: dict) -> str:
     report_type = str(input_payload.get("report_type") or "daily").strip().lower()
     overview_label = "Weekly overview" if report_type == "weekly" else "Market overview"
-    news_label = "Weekly news theme" if report_type == "weekly" else "News context"
+    news_label = "Top catalysts of the week" if report_type == "weekly" else "News context"
     coin_rows_example = (
         "• BTC: $..., 7d ..., 24h ...\n"
         "• ETH: $..., 7d ..., 24h ...\n\n"
@@ -1584,10 +1584,13 @@ def build_market_report_prompt(input_payload: dict) -> str:
         "Coins:\n"
         f"{coin_rows_example}"
         f"{news_label}:\n"
-        "<1-2 short sentences or No major market-wide news selected.>\n\n"
+        "<1-2 short sentences using market_news and coin_news when present. "
+        "If news_fallback is non-empty, use that exact fallback.>\n\n"
         "Possible action:\n"
         "<one cautious non-prescriptive sentence>\n\n"
         "Not financial advice.\n"
+        "Use only supplied news title/source/link context. Do not invent news, sources, "
+        'links, or reasons. Do not use the phrase "No major market-wide news selected." '
         "No raw JSON in telegram_message. No dense paragraphs.\n\n"
         "Input JSON:\n"
         f"{json.dumps(input_payload, ensure_ascii=False, sort_keys=True)}"
