@@ -505,12 +505,17 @@ def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
                                 message=SimpleNamespace(
                                     content=(
                                         '{"report_type":"daily","title":"Daily Market Report",'
-                                        '"market_overview":"Review your portfolio.",'
-                                        '"coin_summaries":['
-                                        '{"symbol":"BTC","summary":"BTC steady"}],'
-                                        '"news_context":"No major news.",'
-                                        '"possible_action":"Adjust your strategy.",'
-                                        '"telegram_message":"Daily Market Report"}'
+                                        '"market_pulse":"Review your portfolio.",'
+                                        '"dashboard":["BTC steady"],'
+                                        '"coin_cards":['
+                                        '{"symbol":"BTC","summary":"BTC steady",'
+                                        '"watch":"Watch the range."}],'
+                                        '"market_catalysts":[],'
+                                        '"why_it_matters":"Mixed conditions need confirmation.",'
+                                        '"watch_next":"Adjust your strategy as needed.",'
+                                        '"week_timeline":[],'
+                                        '"themes":[],'
+                                        '"next_week_focus":""}'
                                     )
                                 )
                             )
@@ -541,6 +546,33 @@ def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
             await engine.dispose()
 
     asyncio.run(run_test())
+
+
+def test_market_report_prompt_requests_structured_schema_not_model_message():
+    prompt = ai_agent_groq.build_market_report_prompt(
+        {
+            "report_type": "weekly",
+            "active_symbols": ["BTC", "ETH"],
+            "coins": [],
+            "market_news": [],
+            "coin_news": {"BTC": [], "ETH": []},
+        }
+    )
+
+    assert "market_pulse" in prompt
+    assert "dashboard" in prompt
+    assert "coin_cards" in prompt
+    assert "week_timeline" in prompt
+    assert "next_week_focus" in prompt
+    assert "week_timeline must be an array of short strings only" in prompt
+    assert "themes must be an array of short strings only" in prompt
+    assert "Do not return objects inside week_timeline or themes" in prompt
+    assert "Do not use {day, event, summary} style entries" in prompt
+    assert "market-data strings" in prompt
+    assert "telegram_message" not in prompt
+    assert "possible_action" not in prompt
+    assert "buy now" in prompt
+    assert "sell now" in prompt
 
 
 def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
