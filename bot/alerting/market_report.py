@@ -32,8 +32,9 @@ _BANNED_ADVICE_PATTERNS = tuple(
     for pattern in (
         rf"\b(buy|sell|short|long)\s+{_TRADE_TARGET_PATTERN}\b",
         rf"\b{_TRADE_TARGET_PATTERN}\s+(buy|sell|short|long)\b",
-        rf"\b(increase|decrease|add|reduce|exit|enter)\s+.*\b{_TRADE_TARGET_PATTERN}\b",
-        r"\b(increase|decrease|add|reduce)\s+.*\b(exposure|position)\b",
+        rf"\b(increase|decrease|add|reduce|exit|enter)\s+{_TRADE_TARGET_PATTERN}\s+(exposure|position)\b",
+        rf"\b(increase|decrease|add|reduce|exit|enter)\s+(exposure|position)\s+(to|in)\s+{_TRADE_TARGET_PATTERN}\b",
+        rf"\b(exit|enter)\s+{_TRADE_TARGET_PATTERN}\s+(trade|position)\b",
         r"\bgo\s+(long|short)\b",
     )
 )

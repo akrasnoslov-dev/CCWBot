@@ -67,9 +67,9 @@ Not financial advice.
 ```
 
 The LLM supplies concise structured fields such as `market_pulse`,
-`dashboard`, `coin_cards`, `themes`, and `next_week_focus`. Price rows, market
-breadth, weekly path notes, and news citations are still rendered from
-backend-selected market/news data.
+`dashboard`, `coin_cards`, `market_catalysts`, `themes`, and
+`next_week_focus`. Price rows, market breadth, weekly path notes, and news
+citations are still rendered from backend-selected market/news data.
 
 Weekly report input also includes `weekly_context`:
 
@@ -77,8 +77,7 @@ Weekly report input also includes `weekly_context`:
   range context, and relative 7d performance versus BTC when BTC data exists;
 - `breadth`: a backend summary of how many tracked assets were positive over
   seven days, plus leaders and laggards;
-- `timeline`: backend evidence from 7d sparkline path notes and selected
-  source-backed news dates.
+- `timeline`: backend evidence from 7d sparkline path notes only.
 
 If the provider omits the required weekly sparkline values, the weekly timeline
 states that the 7d path is unavailable for that symbol instead of inventing a

@@ -636,17 +636,14 @@ async def test_weekly_report_input_includes_breadth_and_timeline(monkeypatch):
     assert weekly_context["scoreboard"][0]["weekly_start"] == 76000.0
     assert weekly_context["scoreboard"][0]["vs_btc_7d"] is None
     assert weekly_context["scoreboard"][2]["vs_btc_7d"] == 4.6
-    assert any(
-        "Crypto market liquidity improves (CoinDesk)" in row
-        for row in weekly_context["timeline"]
-    )
+    assert not any("Crypto market liquidity improves" in row for row in weekly_context["timeline"])
 
 
-def test_report_message_renders_selected_news_not_model_catalysts():
+def test_report_message_renders_market_catalysts_and_selected_news_links():
     decision = validate_market_report_output(
         _llm_report_payload(
             "daily",
-            market_catalysts=["Invented exchange rumor with no source."],
+            market_catalysts=["BTC 24h volume stayed elevated versus the weekly average."],
         ),
         expected_report_type="daily",
     )
@@ -677,7 +674,7 @@ def test_report_message_renders_selected_news_not_model_catalysts():
         decision=decision,
     )
 
-    assert "Invented exchange rumor" not in message
+    assert "BTC 24h volume stayed elevated versus the weekly average." in message
     assert "Market pulse:" in message
     assert "Coin-specific news:" in message
     assert "Crypto market liquidity improves (CoinDesk) https://example.com/market" in message
@@ -703,3 +700,215 @@ def test_report_message_renders_news_fallback_when_no_selected_news():
 
     assert "No clearly relevant fresh news found for tracked coins" in message
     assert "No major market-wide news selected" not in message
+
+
+def test_daily_report_message_exact_render_includes_catalysts_and_news_links():
+    decision = validate_market_report_output(
+        _llm_report_payload(
+            "daily",
+            market_pulse="Tracked assets are mixed.",
+            dashboard=["BTC is steady.", "ETH is mixed."],
+            market_catalysts=["BTC 24h volume stayed elevated."],
+            why_it_matters="Confirmation matters more than speed.",
+            watch_next="Watch whether BTC holds its current range.",
+        ),
+        expected_report_type="daily",
+    )
+
+    message = reports._build_report_telegram_message(
+        report_type="daily",
+        input_payload={
+            "active_symbols": ["BTC", "ETH"],
+            "coins": [
+                {"symbol": "BTC", "price": 77361.0, "change_24h": -0.4},
+                {"symbol": "ETH", "price": 2127.86, "change_24h": None},
+            ],
+            "market_news": [
+                {
+                    "title": "Crypto market liquidity improves",
+                    "source": "CoinDesk",
+                    "link": "https://example.com/market",
+                }
+            ],
+            "coin_news": {
+                "BTC": [],
+                "ETH": [
+                    {
+                        "title": "Ethereum ETF inflows accelerate",
+                        "source": "Cointelegraph",
+                        "link": "https://example.com/eth",
+                    }
+                ],
+            },
+            "news_fallback": "",
+        },
+        decision=decision,
+    )
+
+    assert message == (
+        "📊 Daily Market Report\n\n"
+        "Market pulse:\n"
+        "Tracked assets are mixed.\n\n"
+        "Dashboard:\n"
+        "• BTC is steady.\n"
+        "• ETH is mixed.\n\n"
+        "Tracked assets:\n"
+        "• BTC: $77,361, 24h -0.4%\n"
+        "• ETH: $2,127.86, 24h not enough data yet\n\n"
+        "What moved today:\n"
+        "• BTC is steady.\n"
+        "• ETH is mixed.\n"
+        "• BTC 24h volume stayed elevated.\n"
+        "• Confirmation matters more than speed.\n\n"
+        "Coin-specific news:\n"
+        "• Crypto market liquidity improves (CoinDesk) https://example.com/market\n"
+        "• ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth\n\n"
+        "What to watch next:\n"
+        "Watch whether BTC holds its current range.\n\n"
+        "Not financial advice."
+    )
+
+
+def test_daily_report_message_exact_render_uses_no_news_fallback():
+    decision = validate_market_report_output(
+        _llm_report_payload(
+            "daily",
+            market_pulse="Tracked assets are quiet.",
+            dashboard=["BTC is steady."],
+            market_catalysts=[],
+            why_it_matters="Quiet conditions can still change quickly.",
+            watch_next="Watch whether volume expands.",
+        ),
+        expected_report_type="daily",
+    )
+
+    message = reports._build_report_telegram_message(
+        report_type="daily",
+        input_payload={
+            "active_symbols": ["BTC"],
+            "coins": [{"symbol": "BTC", "price": 77361.0, "change_24h": -0.4}],
+            "market_news": [],
+            "coin_news": {"BTC": []},
+            "news_fallback": "No clearly relevant fresh news found for tracked coins",
+        },
+        decision=decision,
+    )
+
+    assert message == (
+        "📊 Daily Market Report\n\n"
+        "Market pulse:\n"
+        "Tracked assets are quiet.\n\n"
+        "Dashboard:\n"
+        "• BTC is steady.\n\n"
+        "Tracked assets:\n"
+        "• BTC: $77,361, 24h -0.4%\n\n"
+        "What moved today:\n"
+        "• BTC is steady.\n"
+        "• Quiet conditions can still change quickly.\n\n"
+        "Coin-specific news:\n"
+        "No clearly relevant fresh news found for tracked coins\n\n"
+        "What to watch next:\n"
+        "Watch whether volume expands.\n\n"
+        "Not financial advice."
+    )
+
+
+def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_news():
+    chart = "\U0001F4CA"
+    bullet = "\u2022"
+    sparkline = "\u2581\u2588\u2586"
+    decision = validate_market_report_output(
+        _llm_report_payload(
+            "weekly",
+            market_pulse="BTC led a mixed tracked basket.",
+            dashboard=["BTC held its range.", "ETH lacked follow-through."],
+            market_catalysts=["BTC range position stayed mid-weekly range."],
+            why_it_matters="Participation was narrow across tracked assets.",
+            themes=["BTC leadership stayed visible."],
+            next_week_focus="Watch whether BTC leadership broadens to ETH and SOL.",
+        ),
+        expected_report_type="weekly",
+    )
+
+    message = reports._build_report_telegram_message(
+        report_type="weekly",
+        input_payload={
+            "active_symbols": ["BTC", "ETH", "GRAM", "SOL"],
+            "coins": [
+                {
+                    "symbol": "BTC",
+                    "price": 77361.0,
+                    "change_24h": -0.4,
+                    "change_7d": -3.2,
+                    "sparkline_7d": sparkline,
+                    "range_position": 0.68,
+                },
+                {"symbol": "ETH", "price": 2127.86, "change_24h": -0.2, "change_7d": None},
+            ],
+            "market_news": [
+                {
+                    "title": "Crypto market liquidity improves",
+                    "source": "CoinDesk",
+                    "link": "https://example.com/market",
+                }
+            ],
+            "coin_news": {
+                "BTC": [],
+                "ETH": [
+                    {
+                        "title": "Ethereum ETF inflows accelerate",
+                        "source": "Cointelegraph",
+                        "link": "https://example.com/eth",
+                    }
+                ],
+                "GRAM": [],
+                "SOL": [],
+            },
+            "news_fallback": "",
+            "weekly_context": {
+                "breadth": {
+                    "summary": (
+                        "1/3 tracked assets are positive over 7d; "
+                        "leaders: GRAM, BTC; laggards: BTC, SOL"
+                    )
+                },
+                "timeline": [
+                    "BTC: week opened near $76,000, midweek near $78,000, now near $77,361",
+                    "ETH: 7d path unavailable from provider",
+                ],
+            },
+        },
+        decision=decision,
+    )
+
+    assert message == (
+        f"{chart} Weekly Market Report\n\n"
+        "Week in one line:\n"
+        "BTC led a mixed tracked basket.\n\n"
+        "Weekly scoreboard:\n"
+        f"{bullet} BTC: $77,361, 7d -3.2%, 24h -0.4%, {sparkline} mid weekly range\n"
+        f"{bullet} ETH: $2,127.86, 7d unavailable from provider, 24h -0.2%\n\n"
+        "Market breadth:\n"
+        f"{bullet} 1/3 tracked assets are positive over 7d; "
+        "leaders: GRAM, BTC; laggards: BTC, SOL\n\n"
+        "Themes of the week:\n"
+        f"{bullet} BTC leadership stayed visible.\n"
+        f"{bullet} BTC held its range.\n"
+        f"{bullet} ETH lacked follow-through.\n"
+        f"{bullet} BTC range position stayed mid-weekly range.\n"
+        f"{bullet} Participation was narrow across tracked assets.\n\n"
+        "Week timeline:\n"
+        f"{bullet} BTC: week opened near $76,000, midweek near $78,000, now near $77,361\n"
+        f"{bullet} ETH: 7d path unavailable from provider\n\n"
+        "Coin-specific recap:\n"
+        f"{bullet} BTC: BTC is steady. Watch: Watch the range.\n"
+        f"{bullet} ETH: ETH is mixed. Watch: Watch ETF flow news.\n"
+        f"{bullet} GRAM: GRAM is steady. Watch: Watch liquidity.\n"
+        f"{bullet} SOL: SOL is steady. Watch: Watch network news.\n\n"
+        "Top catalysts of the week:\n"
+        f"{bullet} Crypto market liquidity improves (CoinDesk) https://example.com/market\n"
+        f"{bullet} ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth\n\n"
+        "Next week in focus:\n"
+        "Watch whether BTC leadership broadens to ETH and SOL.\n\n"
+        "Not financial advice."
+    )

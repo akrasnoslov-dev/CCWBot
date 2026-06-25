@@ -364,7 +364,7 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
             "market_news": market_news,
             "coin_news": coin_news,
             "news_fallback": news_fallback,
-            "weekly_context": _build_weekly_context(market_data, news_payload)
+            "weekly_context": _build_weekly_context(market_data)
             if report_type == "weekly"
             else {},
         },
@@ -392,7 +392,7 @@ def _build_report_coin_payload(symbol: str, coin_data: dict[str, Any]) -> dict:
     }
 
 
-def _build_weekly_context(market_data: dict[str, dict[str, Any]], news_payload: dict) -> dict:
+def _build_weekly_context(market_data: dict[str, dict[str, Any]]) -> dict:
     scoreboard = [
         _build_weekly_coin_context(symbol, market_data.get(symbol) or {})
         for symbol in SUPPORTED_SYMBOLS
@@ -412,7 +412,7 @@ def _build_weekly_context(market_data: dict[str, dict[str, Any]], news_payload: 
             if change_7d is not None and btc_change_7d is not None and item.get("symbol") != "BTC"
             else None
         )
-    timeline = _build_weekly_timeline(scoreboard, news_payload)
+    timeline = _build_weekly_timeline(scoreboard)
     return {
         "scoreboard": scoreboard,
         "breadth": _build_weekly_breadth(scoreboard),
@@ -479,34 +479,13 @@ def _build_weekly_breadth(scoreboard: list[dict]) -> dict:
     }
 
 
-def _build_weekly_timeline(scoreboard: list[dict], news_payload: dict) -> list[str]:
+def _build_weekly_timeline(scoreboard: list[dict]) -> list[str]:
     timeline = [
         str(item.get("timeline_note"))
         for item in scoreboard
         if str(item.get("timeline_note") or "").strip()
     ]
-    for item in _selected_weekly_news_items(news_payload):
-        title = str(item.get("title") or "").strip()
-        source = str(item.get("source") or "").strip()
-        published_at = str(item.get("published_at") or "").strip()[:10]
-        if title and source:
-            prefix = f"{published_at}: " if published_at else ""
-            timeline.append(f"{prefix}{title} ({source})")
     return timeline or ["No strong tracked weekly catalyst in selected news"]
-
-
-def _selected_weekly_news_items(news_payload: dict) -> list[dict]:
-    items: list[dict] = []
-    market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
-    if isinstance(market_news, list):
-        items.extend(item for item in market_news if isinstance(item, dict))
-    coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
-    if isinstance(coin_news, dict):
-        for symbol in (display_symbol(item) for item in SUPPORTED_SYMBOLS):
-            symbol_items = coin_news.get(symbol)
-            if isinstance(symbol_items, list):
-                items.extend(item for item in symbol_items if isinstance(item, dict))
-    return items[:6]
 
 
 def _build_report_telegram_message(
@@ -546,7 +525,7 @@ def _build_daily_report_message(
     news_context_text: str,
 ) -> str:
     moved_today = _format_report_section_items(
-        [*decision.dashboard, decision.why_it_matters],
+        [*decision.dashboard, *decision.market_catalysts, decision.why_it_matters],
         fallback=decision.why_it_matters,
     )
     message = (
@@ -575,7 +554,12 @@ def _build_weekly_report_message(
     news_context_text: str,
     weekly_context,
 ) -> str:
-    themes = [*decision.dashboard, decision.why_it_matters]
+    themes = [
+        *decision.themes,
+        *decision.dashboard,
+        *decision.market_catalysts,
+        decision.why_it_matters,
+    ]
     breadth_text = _format_weekly_breadth(weekly_context)
     timeline_text = _format_weekly_timeline(weekly_context)
     message = (

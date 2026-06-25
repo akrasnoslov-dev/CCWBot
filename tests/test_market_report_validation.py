@@ -121,6 +121,9 @@ def test_duplicate_coin_card_symbol_is_rejected():
         ("watch_next", "Buy BTC today."),
         ("watch_next", "Sell SOL into strength."),
         ("watch_next", "Increase ETH exposure."),
+        ("watch_next", "Reduce BTC position."),
+        ("watch_next", "Increase exposure to ETH."),
+        ("watch_next", "Exit SOL position."),
     ],
 )
 def test_direct_trading_wording_is_rejected(field, value):
@@ -128,6 +131,24 @@ def test_direct_trading_wording_is_rejected(field, value):
 
     with pytest.raises(MarketReportValidationError, match="direct trading instruction"):
         validate_market_report_output(report, expected_report_type="weekly")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("market_pulse", "There was an increase in ETH volume during the session."),
+        ("dashboard", ["A decrease in BTC dominance coincided with mixed altcoin breadth."]),
+        ("market_catalysts", ["Increase in SOL network activity supported relative interest."]),
+        ("why_it_matters", "The decrease in Bitcoin volatility may affect market breadth."),
+        ("watch_next", "Watch whether the increase in ETH volume continues."),
+    ],
+)
+def test_market_observation_wording_is_accepted(field, value):
+    report = _valid_report("daily", **{field: value})
+
+    decision = validate_market_report_output(report, expected_report_type="daily")
+
+    assert decision.report_type == "daily"
 
 
 def test_validation_errors_do_not_contain_financial_advice_messages():
