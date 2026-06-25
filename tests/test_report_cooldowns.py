@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.reports as reports
+from bot.alerting.market_report import validate_market_report_output
 from bot.db.database import Alert, Base, MarketReport, utc_now
 
 
@@ -81,6 +82,33 @@ def _empty_report_news_context():
         },
         [],
     )
+
+
+def _llm_report_payload(report_type="daily", **overrides):
+    payload = {
+        "report_type": report_type,
+        "title": "Daily Market Report" if report_type == "daily" else "Weekly Market Report",
+        "market_pulse": "Mixed market.",
+        "dashboard": ["BTC is steady.", "ETH is mixed."],
+        "coin_cards": [
+            {"symbol": "BTC", "summary": "BTC is steady.", "watch": "Watch the range."},
+            {"symbol": "ETH", "summary": "ETH is mixed.", "watch": "Watch ETF flow news."},
+            {"symbol": "GRAM", "summary": "GRAM is steady.", "watch": "Watch liquidity."},
+            {"symbol": "SOL", "summary": "SOL is steady.", "watch": "Watch network news."},
+        ],
+        "market_catalysts": ["No clearly relevant fresh news found for tracked coins"],
+        "why_it_matters": "Mixed conditions make confirmation more useful than speed.",
+        "watch_next": "Monitor risk without rushing.",
+        "week_timeline": [] if report_type == "daily" else ["Midweek: BTC tested its range."],
+        "themes": [] if report_type == "daily" else ["BTC led while alt participation was mixed."],
+        "next_week_focus": (
+            ""
+            if report_type == "daily"
+            else "Review whether BTC leadership broadens to ETH and SOL."
+        ),
+    }
+    payload.update(overrides)
+    return payload
 
 
 @pytest.fixture(autouse=True)
@@ -241,15 +269,7 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
         ask_report = AsyncMock(
             return_value=(
                 '{"report_type":"daily"}',
-                {
-                    "report_type": "daily",
-                    "title": "Daily Market Report",
-                    "market_overview": "Mixed market.",
-                    "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                    "news_context": "No clearly relevant fresh news found for tracked coins",
-                    "possible_action": "Monitor risk without rushing.",
-                    "telegram_message": _daily_message(),
-                },
+                _llm_report_payload("daily"),
             )
         )
         monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
@@ -286,15 +306,7 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
         ask_report = AsyncMock(
             return_value=(
                 '{"report_type":"daily"}',
-                {
-                    "report_type": "daily",
-                    "title": "Daily Market Report",
-                    "market_overview": "Mixed market.",
-                    "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                    "news_context": "No clearly relevant fresh news found for tracked coins",
-                    "possible_action": "Monitor risk without rushing.",
-                    "telegram_message": "Daily Market Report\n\nCoins:\nBTC ETH GRAM SOL",
-                },
+                _llm_report_payload("daily"),
             )
         )
         monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
@@ -336,15 +348,11 @@ async def test_daily_report_accepts_strategy_wording(monkeypatch):
             AsyncMock(
                 return_value=(
                     "{}",
-                    {
-                        "report_type": "daily",
-                        "title": "Daily Market Report",
-                        "market_overview": "Adjust your strategy as needed while BTC is mixed.",
-                        "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                        "news_context": "No clearly relevant fresh news found for tracked coins",
-                        "possible_action": "Adjust your strategy as needed.",
-                        "telegram_message": "Daily Market Report",
-                    },
+                    _llm_report_payload(
+                        "daily",
+                        market_pulse="Adjust your strategy as needed while BTC is mixed.",
+                        watch_next="Adjust your strategy as needed.",
+                    ),
                 )
             ),
         )
@@ -380,15 +388,11 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
             AsyncMock(
                 return_value=(
                     "{}",
-                    {
-                        "report_type": "weekly",
-                        "title": "Weekly Market Report",
-                        "market_overview": "Review your portfolio and adjust your strategy.",
-                        "coin_summaries": [{"symbol": "BTC", "summary": "BTC is steady."}],
-                        "news_context": "No clearly relevant fresh news found for tracked coins",
-                        "possible_action": "Review your portfolio if needed.",
-                        "telegram_message": "Weekly Market Report",
-                    },
+                    _llm_report_payload(
+                        "weekly",
+                        market_pulse="Review your portfolio and adjust your strategy.",
+                        next_week_focus="Review your portfolio if needed.",
+                    ),
                 )
             ),
         )
@@ -494,15 +498,16 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
             AsyncMock(
                 return_value=(
                     "{}",
-                    {
-                        "report_type": "daily",
-                        "title": "Daily Market Report",
-                        "market_overview": "Mixed market.",
-                        "coin_summaries": [{"symbol": "XRP", "summary": "XRP is steady."}],
-                        "news_context": "No clearly relevant fresh news found for tracked coins",
-                        "possible_action": "Monitor risk.",
-                        "telegram_message": "Daily Market Report",
-                    },
+                    _llm_report_payload(
+                        "daily",
+                        coin_cards=[
+                            {
+                                "symbol": "XRP",
+                                "summary": "XRP is steady.",
+                                "watch": "Watch the range.",
+                            }
+                        ],
+                    ),
                 )
             ),
         )
@@ -510,7 +515,7 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
         report = await reports.get_or_generate_report("daily")
 
         assert report.status == "failed"
-        assert report.error_message == "coin summary symbol is not active"
+        assert report.error_message == "coin card symbol is not active"
         assert report.error_message != "unknown error"
     finally:
         await engine.dispose()
@@ -565,7 +570,14 @@ async def test_report_input_includes_active_symbols(monkeypatch):
     assert payload["news_fallback"] == "No clearly relevant fresh news found for tracked coins"
 
 
-def test_report_message_renders_selected_news_not_llm_news_context():
+def test_report_message_renders_selected_news_not_model_catalysts():
+    decision = validate_market_report_output(
+        _llm_report_payload(
+            "daily",
+            market_catalysts=["Invented exchange rumor with no source."],
+        ),
+        expected_report_type="daily",
+    )
     message = reports._build_report_telegram_message(
         report_type="daily",
         input_payload={
@@ -590,17 +602,21 @@ def test_report_message_renders_selected_news_not_llm_news_context():
             },
             "news_fallback": "",
         },
-        market_overview="Mixed market.",
-        news_context="Invented exchange rumor with no source.",
-        possible_action="Monitor risk without rushing.",
+        decision=decision,
     )
 
     assert "Invented exchange rumor" not in message
+    assert "Market pulse:" in message
+    assert "Coin-specific news:" in message
     assert "Crypto market liquidity improves (CoinDesk) https://example.com/market" in message
     assert "ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth" in message
 
 
 def test_report_message_renders_news_fallback_when_no_selected_news():
+    decision = validate_market_report_output(
+        _llm_report_payload("daily"),
+        expected_report_type="daily",
+    )
     message = reports._build_report_telegram_message(
         report_type="daily",
         input_payload={
@@ -610,9 +626,7 @@ def test_report_message_renders_news_fallback_when_no_selected_news():
             "coin_news": {"BTC": []},
             "news_fallback": "No clearly relevant fresh news found for tracked coins",
         },
-        market_overview="Mixed market.",
-        news_context="No major market-wide news selected.",
-        possible_action="Monitor risk without rushing.",
+        decision=decision,
     )
 
     assert "No clearly relevant fresh news found for tracked coins" in message

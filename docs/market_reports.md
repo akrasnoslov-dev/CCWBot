@@ -28,8 +28,45 @@ Reports remain available to all users. The cache model stays global: one report
 generation creates one LLM report, then many users can read the cached result.
 Report changes must not add LLM calls inside user or recipient loops.
 
+The report LLM returns structured JSON only. The bot does not trust an
+LLM-composed `telegram_message` for reports. Telegram text is assembled in code
+from validated fields and selected source-backed news items.
+
 Automatic Event Alerts continue to use their existing market data path and are
 not affected by report-specific data enrichment.
+
+## Telegram Templates
+
+Daily reports use this deterministic section model:
+
+```text
+Daily Market Report
+Market pulse
+Dashboard
+Tracked assets
+What moved today
+Coin-specific news
+What to watch next
+Not financial advice.
+```
+
+Weekly reports use a different section model:
+
+```text
+Weekly Market Report
+Week in one line
+Weekly scoreboard
+Themes of the week
+Week timeline
+Coin-specific recap
+Top catalysts of the week
+Next week in focus
+Not financial advice.
+```
+
+The LLM supplies concise structured fields such as `market_pulse`,
+`dashboard`, `coin_cards`, `themes`, and `next_week_focus`. Price rows and news
+citations are still rendered from backend-selected market/news data.
 
 ## News Selection
 

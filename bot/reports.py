@@ -6,7 +6,11 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from bot.alerting.market_report import MarketReportValidationError, validate_market_report_output
+from bot.alerting.market_report import (
+    MarketReportDecision,
+    MarketReportValidationError,
+    validate_market_report_output,
+)
 from bot.db.database import (
     MarketReport,
     get_latest_market_report,
@@ -162,9 +166,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         message = _build_report_telegram_message(
             report_type=report_type,
             input_payload=input_payload,
-            market_overview=decision.market_overview,
-            news_context=decision.news_context,
-            possible_action=decision.possible_action,
+            decision=decision,
         )
         await remember_news_context(news_items)
         log(f"ops_event=market_report_generated report_type={report_type} status=completed")
@@ -389,14 +391,9 @@ def _build_report_telegram_message(
     *,
     report_type: str,
     input_payload: dict,
-    market_overview: str,
-    news_context: str,
-    possible_action: str,
+    decision: MarketReportDecision,
 ) -> str:
     is_weekly = report_type == "weekly"
-    title = "Weekly Market Report" if is_weekly else "Daily Market Report"
-    overview_label = "Weekly overview" if is_weekly else "Market overview"
-    news_label = "Top catalysts of the week" if is_weekly else "News context"
     # Keep user-visible report news tied to selected title/source/link items, not model prose.
     news_context_text = _format_report_news_context(input_payload)
     coin_rows = [
@@ -404,19 +401,99 @@ def _build_report_telegram_message(
         for coin in input_payload.get("coins", [])
         if isinstance(coin, dict)
     ]
+    if is_weekly:
+        message = _build_weekly_report_message(
+            decision=decision,
+            coin_rows=coin_rows,
+            news_context_text=news_context_text,
+        )
+    else:
+        message = _build_daily_report_message(
+            decision=decision,
+            coin_rows=coin_rows,
+            news_context_text=news_context_text,
+        )
+    return sanitize_alert_message(message)
+
+
+def _build_daily_report_message(
+    *,
+    decision: MarketReportDecision,
+    coin_rows: list[str],
+    news_context_text: str,
+) -> str:
+    moved_today = _format_report_section_items(
+        [*decision.dashboard, decision.why_it_matters],
+        fallback=decision.why_it_matters,
+    )
     message = (
-        f"📊 {title}\n\n"
-        f"{overview_label}:\n"
-        f"{market_overview.strip()}\n\n"
-        "Coins:\n"
+        "📊 Daily Market Report\n\n"
+        "Market pulse:\n"
+        f"{decision.market_pulse}\n\n"
+        "Dashboard:\n"
+        f"{_format_report_section_items(decision.dashboard)}\n\n"
+        "Tracked assets:\n"
         f"{chr(10).join(coin_rows)}\n\n"
-        f"{news_label}:\n"
+        "What moved today:\n"
+        f"{moved_today}\n\n"
+        "Coin-specific news:\n"
         f"{news_context_text}\n\n"
-        "Possible action:\n"
-        f"{possible_action.strip()}\n\n"
+        "What to watch next:\n"
+        f"{decision.watch_next}\n\n"
         "Not financial advice."
     )
-    return sanitize_alert_message(message)
+    return message
+
+
+def _build_weekly_report_message(
+    *,
+    decision: MarketReportDecision,
+    coin_rows: list[str],
+    news_context_text: str,
+) -> str:
+    themes = [*decision.dashboard, decision.why_it_matters]
+    timeline = (
+        f"\n\nWeek timeline:\n{_format_report_section_items(decision.week_timeline)}"
+        if decision.week_timeline
+        else ""
+    )
+    message = (
+        "📊 Weekly Market Report\n\n"
+        "Week in one line:\n"
+        f"{decision.market_pulse}\n\n"
+        "Weekly scoreboard:\n"
+        f"{chr(10).join(coin_rows)}\n\n"
+        "Themes of the week:\n"
+        f"{_format_report_section_items(themes, fallback=decision.why_it_matters)}"
+        f"{timeline}\n\n"
+        "Coin-specific recap:\n"
+        f"{_format_coin_cards(decision.coin_cards)}\n\n"
+        "Top catalysts of the week:\n"
+        f"{news_context_text}\n\n"
+        "Next week in focus:\n"
+        f"{decision.next_week_focus or decision.watch_next}\n\n"
+        "Not financial advice."
+    )
+    return message
+
+
+def _format_report_section_items(items: list[str], *, fallback: str | None = None) -> str:
+    rows = [str(item or "").strip() for item in items if str(item or "").strip()]
+    if not rows and fallback:
+        rows = [fallback.strip()]
+    return "\n".join(f"• {row}" for row in rows)
+
+
+def _format_coin_cards(cards: list[dict[str, str]]) -> str:
+    rows = []
+    for card in cards:
+        symbol = str(card.get("symbol") or "").strip().upper()
+        summary = str(card.get("summary") or "").strip()
+        watch = str(card.get("watch") or "").strip()
+        if not (symbol and summary and watch):
+            continue
+        rows.append(f"• {symbol}: {summary} Watch: {watch}")
+    return "\n".join(rows)
 
 
 def _format_report_news_context(input_payload: dict) -> str:
