@@ -564,6 +564,10 @@ def test_market_report_prompt_requests_structured_schema_not_model_message():
     assert "coin_cards" in prompt
     assert "week_timeline" in prompt
     assert "next_week_focus" in prompt
+    assert "week_timeline must be an array of short strings only" in prompt
+    assert "themes must be an array of short strings only" in prompt
+    assert "Do not return objects inside week_timeline or themes" in prompt
+    assert "Do not use {day, event, summary} style entries" in prompt
     assert "market-data strings" in prompt
     assert "telegram_message" not in prompt
     assert "possible_action" not in prompt

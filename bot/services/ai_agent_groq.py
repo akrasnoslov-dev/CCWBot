@@ -1559,6 +1559,10 @@ def build_market_report_prompt(input_payload: dict) -> str:
     weekly_guidance = (
         "For weekly reports, week_timeline and themes must be non-empty and "
         "next_week_focus must be a concise cautious sentence. "
+        "week_timeline must be an array of short strings only. "
+        "themes must be an array of short strings only. "
+        "Do not return objects inside week_timeline or themes. "
+        "Do not use {day, event, summary} style entries. "
         "Use weekly_context.scoreboard, weekly_context.breadth, and weekly_context.timeline "
         "when they are present. weekly_context.timeline is market-data path evidence, not a "
         "place for news headlines. If weekly_context says a block is unavailable, say so "
