@@ -824,6 +824,12 @@ def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_new
             dashboard=["BTC held its range.", "ETH lacked follow-through."],
             market_catalysts=["BTC range position stayed mid-weekly range."],
             why_it_matters="Participation was narrow across tracked assets.",
+            week_timeline=[
+                {
+                    "day": "Monday",
+                    "event": "Model timeline text should not replace backend timeline.",
+                }
+            ],
             themes=["BTC leadership stayed visible."],
             next_week_focus="Watch whether BTC leadership broadens to ETH and SOL.",
         ),
@@ -912,3 +918,5 @@ def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_new
         "Watch whether BTC leadership broadens to ETH and SOL.\n\n"
         "Not financial advice."
     )
+    assert "Monday:" not in message
+    assert "{" not in message

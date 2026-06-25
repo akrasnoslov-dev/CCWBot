@@ -54,6 +54,56 @@ def test_weekly_structured_report_requires_weekly_fields():
     assert decision.next_week_focus == "Watch whether BTC leadership broadens to ETH and SOL."
 
 
+def test_weekly_timeline_dict_items_are_normalized_to_strings():
+    decision = validate_market_report_output(
+        _valid_report(
+            "weekly",
+            week_timeline=[
+                {
+                    "day": "Monday",
+                    "event": "BTC tested its weekly range.",
+                    "summary": "ETH stayed mixed.",
+                },
+                {
+                    "period": "Late week",
+                    "text": "SOL cooled while GRAM held steady.",
+                },
+            ],
+            themes=["BTC led while alt participation was mixed."],
+        ),
+        expected_report_type="weekly",
+    )
+
+    assert decision.week_timeline == [
+        "Monday: BTC tested its weekly range. ETH stayed mixed.",
+        "Late week: SOL cooled while GRAM held steady.",
+    ]
+    assert decision.themes == ["BTC led while alt participation was mixed."]
+
+
+def test_weekly_timeline_dict_direct_trading_instruction_is_rejected():
+    with pytest.raises(MarketReportValidationError, match="direct trading instruction"):
+        validate_market_report_output(
+            _valid_report("weekly", week_timeline=[{"day": "Monday", "event": "Buy BTC."}]),
+            expected_report_type="weekly",
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("week_timeline", [{"day": "Monday", "summary": {"nested": "value"}}]),
+        ("themes", [{"title": "Debug: move=1.2"}]),
+    ],
+)
+def test_weekly_text_lists_reject_complex_or_diagnostic_entries(field, value):
+    with pytest.raises(MarketReportValidationError):
+        validate_market_report_output(
+            _valid_report("weekly", **{field: value}),
+            expected_report_type="weekly",
+        )
+
+
 def test_weekly_empty_next_week_focus_is_rejected():
     with pytest.raises(MarketReportValidationError, match="next_week_focus must be non-empty"):
         validate_market_report_output(

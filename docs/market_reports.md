@@ -67,9 +67,10 @@ Not financial advice.
 ```
 
 The LLM supplies concise structured fields such as `market_pulse`,
-`dashboard`, `coin_cards`, `market_catalysts`, `themes`, and
-`next_week_focus`. Price rows, market breadth, weekly path notes, and news
-citations are still rendered from backend-selected market/news data.
+`dashboard`, `coin_cards`, `market_catalysts`, `week_timeline`, `themes`, and
+`next_week_focus`. `week_timeline` and `themes` are short string lists. Price
+rows, market breadth, weekly path notes, and news citations are still rendered
+from backend-selected market/news data.
 
 Weekly report input also includes `weekly_context`:
 

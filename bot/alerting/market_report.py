@@ -38,6 +38,14 @@ _BANNED_ADVICE_PATTERNS = tuple(
         r"\bgo\s+(long|short)\b",
     )
 )
+_RAW_DIAGNOSTIC_PATTERN = re.compile(
+    r"(?i)(\b(data|debug|diagnostic|traceback|stack\s+trace)\s*:|"
+    r"\b(move|change24h|change7d|threshold|interval|previous|current)\s*=|"
+    r"```|^\s*[\[{])"
+)
+_REPORT_LIST_TEXT_FIELDS = ("period", "day", "label", "title", "summary", "event", "note", "text")
+_REPORT_LIST_LABEL_FIELDS = ("period", "day", "label", "title")
+_REPORT_LIST_DETAIL_FIELDS = ("event", "summary", "note", "text")
 
 
 class MarketReportValidationError(ValueError):
@@ -93,12 +101,12 @@ def validate_market_report_output(
     )
     why_it_matters = _required_text(result["why_it_matters"], "why_it_matters")
     watch_next = _required_text(result["watch_next"], "watch_next")
-    week_timeline = _validate_text_list(
+    week_timeline = _validate_report_text_list(
         result["week_timeline"],
         "week_timeline",
         allow_empty=report_type == "daily",
     )
-    themes = _validate_text_list(
+    themes = _validate_report_text_list(
         result["themes"],
         "themes",
         allow_empty=report_type == "daily",
@@ -160,6 +168,79 @@ def _validate_text_list(
     return items
 
 
+def _validate_report_text_list(
+    value: Any,
+    field_name: str,
+    *,
+    allow_empty: bool = False,
+) -> list[str]:
+    if not isinstance(value, list):
+        raise MarketReportValidationError(f"{field_name} must be an array")
+    if not value and not allow_empty:
+        raise MarketReportValidationError(f"{field_name} must not be empty")
+
+    items: list[str] = []
+    for item in value:
+        text = _normalize_report_text_list_item(item, field_name)
+        _reject_raw_diagnostics(text)
+        _reject_banned_advice(text)
+        items.append(text)
+    return items
+
+
+def _normalize_report_text_list_item(item: Any, field_name: str) -> str:
+    if isinstance(item, str):
+        text = item.strip()
+    elif isinstance(item, dict):
+        if any(isinstance(value, (dict, list, tuple, set)) for value in item.values()):
+            raise MarketReportValidationError(f"{field_name} must be text")
+        text = _format_report_text_dict(item)
+    else:
+        raise MarketReportValidationError(f"{field_name} must be text")
+
+    if not text:
+        raise MarketReportValidationError(f"{field_name} must be non-empty")
+    return text
+
+
+def _format_report_text_dict(item: dict[str, Any]) -> str:
+    label = _first_text_field(item, _REPORT_LIST_LABEL_FIELDS)
+    details = _unique_text_fields(item, _REPORT_LIST_DETAIL_FIELDS, skip=label)
+    if label and details:
+        return f"{label}: {' '.join(details)}"
+    if label:
+        return label
+    return " ".join(_unique_text_fields(item, _REPORT_LIST_TEXT_FIELDS))
+
+
+def _first_text_field(item: dict[str, Any], field_names: tuple[str, ...]) -> str:
+    for field_name in field_names:
+        value = item.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _unique_text_fields(
+    item: dict[str, Any],
+    field_names: tuple[str, ...],
+    *,
+    skip: str = "",
+) -> list[str]:
+    values: list[str] = []
+    seen = {skip.lower()} if skip else set()
+    for field_name in field_names:
+        value = item.get(field_name)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text or text.lower() in seen:
+            continue
+        values.append(text)
+        seen.add(text.lower())
+    return values
+
+
 def _validate_coin_cards(
     value: Any,
     *,
@@ -213,3 +294,8 @@ def _reject_banned_advice(text: str) -> None:
         pattern.search(lowered) for pattern in _BANNED_ADVICE_PATTERNS
     ):
         raise MarketReportValidationError("direct trading instruction is not allowed")
+
+
+def _reject_raw_diagnostics(text: str) -> None:
+    if _RAW_DIAGNOSTIC_PATTERN.search(text):
+        raise MarketReportValidationError("raw diagnostic output is not allowed")
