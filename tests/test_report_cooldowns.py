@@ -53,7 +53,19 @@ def _daily_message() -> str:
 
 def _market_data():
     return {
-        "btc": {"price": 77361.0, "change_24h": -0.4, "change_7d": -3.2},
+        "btc": {
+            "price": 77361.0,
+            "change_1h": 0.1,
+            "change_24h": -0.4,
+            "change_7d": -3.2,
+            "volume_24h": 25000000000.0,
+            "market_cap": 1500000000000.0,
+            "rank": 1,
+            "sparkline_7d": [76000.0, 78000.0, 77361.0],
+            "weekly_high": 78000.0,
+            "weekly_low": 76000.0,
+            "range_position": 0.68,
+        },
         "eth": {"price": 2127.86, "change_24h": -0.2, "change_7d": None},
         "ton": {"price": 3.12, "change_24h": None, "change_7d": 1.4},
         "sol": {"price": 142.35, "change_24h": 0.7, "change_7d": -4.6},
@@ -64,9 +76,11 @@ def _market_data():
 def clear_report_caches():
     reports._last_report_call.clear()
     reports._memory_report_cache.clear()
+    reports._report_provider_backoff_until.clear()
     yield
     reports._last_report_call.clear()
     reports._memory_report_cache.clear()
+    reports._report_provider_backoff_until.clear()
 
 
 @pytest.mark.asyncio
@@ -204,7 +218,7 @@ async def test_missing_daily_report_generates_one_global_cache_row(monkeypatch):
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         monkeypatch.setattr(
             reports,
-            "get_coin_market_data_batch",
+            "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
@@ -245,7 +259,7 @@ async def test_daily_command_sends_report_when_llm_omits_disclaimer(monkeypatch)
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         monkeypatch.setattr(
             reports,
-            "get_coin_market_data_batch",
+            "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
@@ -288,7 +302,7 @@ async def test_daily_report_accepts_strategy_wording(monkeypatch):
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         monkeypatch.setattr(
             reports,
-            "get_coin_market_data_batch",
+            "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
@@ -328,7 +342,7 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         monkeypatch.setattr(
             reports,
-            "get_coin_market_data_batch",
+            "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
@@ -356,7 +370,10 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
 
         assert report.status == "completed"
         assert "• BTC: $77,361, 7d -3.2%, 24h -0.4%" in report.telegram_message
-        assert "• ETH: $2,127.86, 7d not enough data yet, 24h -0.2%" in report.telegram_message
+        assert "mid weekly range" in report.telegram_message
+        assert "• ETH: $2,127.86, 7d unavailable from provider, 24h -0.2%" in (
+            report.telegram_message
+        )
         assert "• GRAM: $3.12, 7d +1.4%, 24h not enough data yet" in report.telegram_message
         assert "• SOL: $142.35, 7d -4.6%, 24h +0.7%" in report.telegram_message
         assert report.telegram_message.endswith("Not financial advice.")
@@ -372,7 +389,7 @@ async def test_failed_report_generation_does_not_create_fake_fallback(monkeypatc
         monkeypatch.setattr(reports, "DB_ENABLED", True)
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         ask_report = AsyncMock(side_effect=RuntimeError("LLM should not be called"))
-        monkeypatch.setattr(reports, "get_coin_market_data_batch", AsyncMock(return_value={}))
+        monkeypatch.setattr(reports, "get_report_market_data_batch", AsyncMock(return_value={}))
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
         monkeypatch.setattr(reports, "ask_market_report_raw", ask_report)
 
@@ -393,6 +410,34 @@ async def test_failed_report_generation_does_not_create_fake_fallback(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_report_rate_limit_failure_starts_provider_backoff(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        market_data = AsyncMock(side_effect=reports.CoinGeckoRateLimitError("rate limited"))
+        monkeypatch.setattr(reports, "get_report_market_data_batch", market_data)
+        monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            reports,
+            "ask_market_report_raw",
+            AsyncMock(side_effect=AssertionError("LLM should not be called")),
+        )
+
+        first_report = await reports.get_or_generate_report("daily")
+        second_report = await reports.get_or_generate_report("daily")
+
+        assert first_report.status == "failed"
+        assert first_report.error_message == "coingecko rate limit"
+        assert second_report is None
+        market_data.assert_awaited_once_with(["btc", "eth", "ton", "sol"])
+        async with session_local() as session:
+            assert await session.scalar(select(func.count()).select_from(MarketReport)) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_failed_report_stores_exact_schema_failure(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
@@ -400,7 +445,7 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
         monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
         monkeypatch.setattr(
             reports,
-            "get_coin_market_data_batch",
+            "get_report_market_data_batch",
             AsyncMock(return_value=_market_data()),
         )
         monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
@@ -452,10 +497,25 @@ async def test_report_input_includes_active_symbols(monkeypatch):
         captured_symbols.extend(symbols)
         return {symbol: {"price": 1.0, "change_24h": 0.1, "change_7d": None} for symbol in symbols}
 
-    monkeypatch.setattr(reports, "get_coin_market_data_batch", fake_market_data)
+    monkeypatch.setattr(reports, "get_report_market_data_batch", fake_market_data)
     monkeypatch.setattr(reports, "fetch_news_context", AsyncMock(return_value=[]))
 
     payload, _ = await reports._build_market_report_input("daily", utc_now())
 
     assert captured_symbols == ["btc", "eth", "ton", "sol"]
     assert [coin["symbol"] for coin in payload["coins"]] == ["BTC", "ETH", "GRAM", "SOL"]
+    assert payload["coins"][0] == {
+        "symbol": "BTC",
+        "name": "Bitcoin",
+        "price": 1.0,
+        "change_1h": None,
+        "change_24h": 0.1,
+        "change_7d": None,
+        "volume_24h": None,
+        "market_cap": None,
+        "rank": None,
+        "sparkline_7d": None,
+        "weekly_high": None,
+        "weekly_low": None,
+        "range_position": None,
+    }

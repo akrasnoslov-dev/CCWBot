@@ -29,7 +29,7 @@ from bot.services.ai_agent_groq import (
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
-from bot.services.price_service import get_coin_market_data_batch
+from bot.services.price_service import CoinGeckoRateLimitError, get_report_market_data_batch
 
 
 class MarketReportDataUnavailable(RuntimeError):
@@ -38,6 +38,7 @@ class MarketReportDataUnavailable(RuntimeError):
 
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
+REPORT_PROVIDER_BACKOFF_SECONDS = 300
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
 REPORT_UNAVAILABLE_MESSAGES = {
     "daily": "Daily report is temporarily unavailable. Please try again later.",
@@ -49,6 +50,7 @@ _report_generation_locks = {
     "weekly": asyncio.Lock(),
 }
 _memory_report_cache: dict[str, dict[str, Any]] = {}
+_report_provider_backoff_until: dict[str, float] = {}
 
 
 def _target_chat_id(target) -> int | None:
@@ -80,6 +82,22 @@ def _freshness_seconds(report_type: str) -> int:
     return REPORT_FRESHNESS_SECONDS[report_type]
 
 
+def _is_report_provider_backoff_active(report_type: str) -> bool:
+    backoff_until = _report_provider_backoff_until.get(report_type)
+    if backoff_until is None:
+        return False
+    if backoff_until <= time.monotonic():
+        _report_provider_backoff_until.pop(report_type, None)
+        return False
+    return True
+
+
+def _start_report_provider_backoff(report_type: str) -> None:
+    _report_provider_backoff_until[report_type] = (
+        time.monotonic() + REPORT_PROVIDER_BACKOFF_SECONDS
+    )
+
+
 def _is_fresh_report(report: MarketReport | None) -> bool:
     if report is None or report.status != "completed" or not report.telegram_message:
         return False
@@ -104,11 +122,20 @@ async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, A
     cached = await _get_fresh_cached_report(report_type)
     if cached is not None:
         return cached
+    if _is_report_provider_backoff_active(report_type):
+        log(f"ops_event=market_report_skipped report_type={report_type} reason=provider_backoff")
+        return None
 
     async with _report_generation_locks[report_type]:
         cached = await _get_fresh_cached_report(report_type)
         if cached is not None:
             return cached
+        if _is_report_provider_backoff_active(report_type):
+            log(
+                "ops_event=market_report_skipped "
+                f"report_type={report_type} reason=provider_backoff"
+            )
+            return None
         return await generate_report_cache(report_type)
 
 
@@ -188,6 +215,22 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message="market data unavailable",
+        )
+    except CoinGeckoRateLimitError:
+        _start_report_provider_backoff(report_type)
+        log(
+            "ops_event=market_report_failed "
+            f"report_type={report_type} reason=coingecko_rate_limit"
+        )
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message="coingecko rate limit",
         )
     except Exception as error:
         log(
@@ -300,7 +343,7 @@ async def _save_or_remember_report(
 
 async def _build_market_report_input(report_type: str, generated_at) -> tuple[dict, list[dict]]:
     symbols = list(SUPPORTED_SYMBOLS)
-    market_data = await get_coin_market_data_batch(symbols)
+    market_data = await get_report_market_data_batch(symbols)
     if not _has_usable_market_data(market_data):
         raise MarketReportDataUnavailable("market data unavailable")
     news_items = await fetch_news_context(limit=6, prefer_unseen=True)
@@ -310,15 +353,7 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
             "generated_at": generated_at.isoformat(),
             "active_symbols": [display_symbol(symbol) for symbol in symbols],
             "coins": [
-                {
-                    "symbol": display_symbol(symbol),
-                    "name": coin_display_name(symbol),
-                    "price": _round_optional((market_data.get(symbol) or {}).get("price")),
-                    "change_24h": _round_optional(
-                        (market_data.get(symbol) or {}).get("change_24h")
-                    ),
-                    "change_7d": _round_optional((market_data.get(symbol) or {}).get("change_7d")),
-                }
+                _build_report_coin_payload(symbol, market_data.get(symbol) or {})
                 for symbol in symbols
             ],
             "news": [
@@ -334,6 +369,24 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
         },
         news_items,
     )
+
+
+def _build_report_coin_payload(symbol: str, coin_data: dict[str, Any]) -> dict:
+    return {
+        "symbol": display_symbol(symbol),
+        "name": coin_display_name(symbol),
+        "price": _round_optional(coin_data.get("price")),
+        "change_1h": _round_optional(coin_data.get("change_1h")),
+        "change_24h": _round_optional(coin_data.get("change_24h")),
+        "change_7d": _round_optional(coin_data.get("change_7d")),
+        "volume_24h": _round_optional(coin_data.get("volume_24h")),
+        "market_cap": _round_optional(coin_data.get("market_cap")),
+        "rank": coin_data.get("rank"),
+        "sparkline_7d": _format_sparkline(coin_data.get("sparkline_7d")),
+        "weekly_high": _round_optional(coin_data.get("weekly_high")),
+        "weekly_low": _round_optional(coin_data.get("weekly_low")),
+        "range_position": _round_optional(coin_data.get("range_position")),
+    }
 
 
 def _build_report_telegram_message(
@@ -373,8 +426,15 @@ def _format_coin_row(coin: dict, *, weekly: bool) -> str:
     price = _format_price(coin.get("price"))
     change_24h = _format_percent(coin.get("change_24h"))
     if weekly:
-        change_7d = _format_percent(coin.get("change_7d"))
-        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}"
+        change_7d = _format_percent(
+            coin.get("change_7d"),
+            unavailable_text="unavailable from provider",
+        )
+        sparkline = str(coin.get("sparkline_7d") or "").strip()
+        range_text = _format_range_position(coin.get("range_position"))
+        suffix_parts = [part for part in (sparkline, range_text) if part]
+        suffix = f", {' '.join(suffix_parts)}" if suffix_parts else ""
+        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}{suffix}"
     return f"• {symbol}: {price}, 24h {change_24h}"
 
 
@@ -387,10 +447,53 @@ def _format_price(value) -> str:
     return f"${numeric_value:,.2f}"
 
 
-def _format_percent(value) -> str:
+def _format_percent(value, *, unavailable_text: str = "not enough data yet") -> str:
     if value is None:
-        return "not enough data yet"
+        return unavailable_text
     return f"{float(value):+.1f}%"
+
+
+def _format_sparkline(values) -> str | None:
+    if not isinstance(values, list):
+        return None
+    numeric_values = [
+        float(value)
+        for value in values
+        if isinstance(value, int | float)
+    ]
+    if not numeric_values:
+        return None
+    blocks = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
+    low = min(numeric_values)
+    high = max(numeric_values)
+    if high == low:
+        return blocks[0] * min(len(numeric_values), 12)
+    if len(numeric_values) > 12:
+        step = (len(numeric_values) - 1) / 11
+        numeric_values = [numeric_values[round(index * step)] for index in range(12)]
+    return "".join(
+        blocks[
+            max(
+                0,
+                min(
+                    len(blocks) - 1,
+                    round(((value - low) / (high - low)) * (len(blocks) - 1)),
+                ),
+            )
+        ]
+        for value in numeric_values
+    )
+
+
+def _format_range_position(value) -> str | None:
+    if value is None:
+        return None
+    numeric_value = max(0.0, min(1.0, float(value)))
+    if numeric_value >= 0.75:
+        return "near weekly high"
+    if numeric_value <= 0.25:
+        return "near weekly low"
+    return "mid weekly range"
 
 
 def _round_optional(value) -> float | None:

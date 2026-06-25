@@ -1,0 +1,32 @@
+# Market Reports
+
+Daily and weekly reports are cached market-wide LLM reports across the active
+symbols: BTC, ETH, GRAM, and SOL. A report is generated once per cache window
+and reused for manual report requests.
+
+## Market Data
+
+Report generation uses a report-specific CoinGecko `/coins/markets` request.
+This is separate from the automatic alert price fetcher so reports can include
+richer context without changing alert behavior.
+
+The report payload includes:
+
+- current USD price;
+- 1h, 24h, and 7d percentage changes when CoinGecko provides them;
+- 24h volume, market cap, and market-cap rank;
+- 7d sparkline context;
+- weekly high, weekly low, and range position calculated from the 7d sparkline.
+
+If a provider omits 7d data for a coin, weekly report rows say
+`7d unavailable from provider`. The report should not describe missing 7d data
+as normal market context.
+
+## Guardrails
+
+Reports remain available to all users. The cache model stays global: one report
+generation creates one LLM report, then many users can read the cached result.
+Report changes must not add LLM calls inside user or recipient loops.
+
+Automatic Event Alerts continue to use their existing market data path and are
+not affected by report-specific data enrichment.
