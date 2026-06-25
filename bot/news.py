@@ -1,9 +1,11 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.alerting.news_context import classify_news_relevance
 from bot.config import ENABLE_NEWS_INTELLIGENCE
 from bot.db.database import (
     NewsItem,
@@ -12,9 +14,14 @@ from bot.db.database import (
     mark_news_items_seen,
     was_news_seen,
 )
+from bot.domain.supported_coins import display_symbol
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.news_intelligence_service import NewsIntelligenceService
 from bot.services.news_service import fetch_crypto_news
+
+REPORT_MARKET_NEWS_LIMIT = 2
+REPORT_COIN_NEWS_LIMIT = 2
+REPORT_NEWS_FETCH_LIMIT = 24
 
 
 def _normalize_news_symbol(symbol: str) -> str:
@@ -28,6 +35,97 @@ def _row_published_at(row: NewsItem) -> datetime | None:
     if published_at.tzinfo is None:
         return published_at.replace(tzinfo=timezone.utc)
     return published_at.astimezone(timezone.utc)
+
+
+def _item_published_at(item: dict) -> datetime | None:
+    raw_value = (
+        item.get("published_at_utc")
+        or item.get("published_at")
+        or item.get("published")
+        or item.get("updated")
+        or ""
+    )
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        value = str(raw_value).strip()
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(value)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _item_link(item: dict) -> str:
+    return str(item.get("url") or item.get("link") or "").strip()
+
+
+def _has_report_news_identity(item: dict) -> bool:
+    return bool(
+        str(item.get("title") or "").strip()
+        and str(item.get("source") or "").strip()
+        and _item_link(item)
+    )
+
+
+def _item_related_symbols(item: dict, *, matched_symbol: str | None = None) -> list[str]:
+    related_symbols = item.get("related_symbols")
+    symbols = []
+    if isinstance(related_symbols, list):
+        symbols.extend(_normalize_news_symbol(symbol) for symbol in related_symbols)
+    primary_symbol = _normalize_news_symbol(str(item.get("primary_symbol") or ""))
+    if primary_symbol:
+        symbols.append(primary_symbol)
+    if matched_symbol:
+        symbols.append(_normalize_news_symbol(matched_symbol))
+    return sorted({symbol for symbol in symbols if symbol})
+
+
+def _report_news_rank(item: dict, *, direct: bool) -> tuple[int, int, int, int, str]:
+    published_at = _item_published_at(item)
+    return (
+        1 if direct else 0,
+        int(item.get("impact_score") if item.get("impact_score") is not None else -1),
+        int(item.get("relevance_score") if item.get("relevance_score") is not None else -1),
+        int(published_at.timestamp()) if published_at else 0,
+        str(item.get("title") or ""),
+    )
+
+
+def _report_news_payload(
+    item: dict,
+    *,
+    news_id: str,
+    related_symbols: list[str],
+) -> dict:
+    published_at = _item_published_at(item)
+    return {
+        "news_id": news_id,
+        "title": str(item.get("title") or "").strip()[:180],
+        "source": str(item.get("source") or "").strip()[:80],
+        "link": _item_link(item),
+        "published_at": published_at.isoformat() if published_at else "",
+        "related_symbols": [display_symbol(symbol) for symbol in related_symbols],
+    }
+
+
+def _dedupe_report_news(items: list[dict]) -> list[dict]:
+    selected: list[dict] = []
+    seen_keys: set[str] = set()
+    for item in items:
+        key = make_news_key(item) or _item_link(item) or str(item.get("title") or "").lower()
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        selected.append(item)
+    return selected
 
 
 def _row_matches_symbol(row: NewsItem, symbol: str) -> tuple[bool, bool]:
@@ -262,6 +360,110 @@ async def fetch_news_context(
     if prefer_unseen:
         log("No unseen RSS news found in PostgreSQL seen_news; reusing recent fetched news.")
     return news_items[:limit]
+
+
+async def fetch_report_news_context(
+    symbols: list[str] | tuple[str, ...],
+    *,
+    prefer_unseen: bool = True,
+    market_limit: int = REPORT_MARKET_NEWS_LIMIT,
+    per_symbol_limit: int = REPORT_COIN_NEWS_LIMIT,
+) -> tuple[dict[str, object], list[dict]]:
+    """Return bounded market-wide and per-coin news context for reports.
+
+    This selector uses the existing RSS/news-intelligence boundary. It does not
+    add provider calls outside `fetch_news_context`, and it only returns news
+    items with a real title, source, and link.
+    """
+    normalized_symbols = [
+        normalized for symbol in symbols if (normalized := _normalize_news_symbol(symbol))
+    ]
+    fetch_limit = max(
+        REPORT_NEWS_FETCH_LIMIT,
+        market_limit + per_symbol_limit * len(normalized_symbols) * 3,
+    )
+    raw_items = await fetch_news_context(limit=fetch_limit, prefer_unseen=prefer_unseen)
+    candidates = _dedupe_report_news(
+        [item for item in raw_items if _has_report_news_identity(item)]
+    )
+
+    coin_items_by_symbol: dict[str, list[dict]] = {symbol: [] for symbol in normalized_symbols}
+    for symbol in normalized_symbols:
+        direct_items = [
+            item for item in candidates if classify_news_relevance(symbol, item) == "direct"
+        ]
+        for item in sorted(
+            direct_items,
+            key=lambda candidate: _report_news_rank(candidate, direct=True),
+            reverse=True,
+        ):
+            coin_items_by_symbol[symbol].append(item)
+            if len(coin_items_by_symbol[symbol]) >= per_symbol_limit:
+                break
+
+    used_keys = {
+        make_news_key(item) or _item_link(item) or str(item.get("title") or "").lower()
+        for symbol_items in coin_items_by_symbol.values()
+        for item in symbol_items
+    }
+    market_candidates: list[dict] = []
+    for item in candidates:
+        key = make_news_key(item) or _item_link(item) or str(item.get("title") or "").lower()
+        if key in used_keys:
+            continue
+        if any(
+            classify_news_relevance(symbol, item) == "market_wide" for symbol in normalized_symbols
+        ):
+            market_candidates.append(item)
+
+    selected_market_items = sorted(
+        market_candidates,
+        key=lambda candidate: _report_news_rank(candidate, direct=False),
+        reverse=True,
+    )[:market_limit]
+
+    news_counter = 1
+    market_news = []
+    for item in selected_market_items:
+        market_news.append(
+            _report_news_payload(
+                item,
+                news_id=f"rn{news_counter}",
+                related_symbols=_item_related_symbols(item),
+            )
+        )
+        news_counter += 1
+
+    coin_news: dict[str, list[dict]] = {}
+    for symbol in normalized_symbols:
+        display_symbol_text = display_symbol(symbol)
+        coin_news[display_symbol_text] = []
+        for item in coin_items_by_symbol[symbol]:
+            coin_news[display_symbol_text].append(
+                _report_news_payload(
+                    item,
+                    news_id=f"rn{news_counter}",
+                    related_symbols=_item_related_symbols(item, matched_symbol=symbol),
+                )
+            )
+            news_counter += 1
+
+    selected_coin_items = [
+        item for symbol_items in coin_items_by_symbol.values() for item in symbol_items
+    ]
+
+    return (
+        {
+            "market_news": market_news,
+            "coin_news": coin_news,
+            "fallback": (
+                ""
+                if market_news or any(coin_news.values())
+                else "No clearly relevant fresh news found for tracked coins"
+            ),
+        },
+        _dedupe_report_news(selected_market_items + selected_coin_items),
+    )
 
 
 async def remember_news_context(news_items: list[dict]) -> None:
