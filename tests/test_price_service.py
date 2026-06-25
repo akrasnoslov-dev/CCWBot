@@ -210,6 +210,100 @@ async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
     assert result == {"btc": {"price": 60000.0, "change_24h": 0.0, "change_7d": None}}
 
 
+@pytest.mark.asyncio
+async def test_get_report_market_data_batch_uses_markets_endpoint(monkeypatch):
+    get_with_retry = AsyncMock(
+        return_value=[
+            {
+                "id": "bitcoin",
+                "current_price": 60000.0,
+                "price_change_percentage_1h_in_currency": 0.2,
+                "price_change_percentage_24h_in_currency": 1.2,
+                "price_change_percentage_7d_in_currency": -3.5,
+                "total_volume": 28000000000,
+                "market_cap": 1180000000000,
+                "market_cap_rank": 1,
+                "sparkline_in_7d": {"price": [59000.0, 61000.0, 60000.0]},
+            },
+            {
+                "id": "ethereum",
+                "current_price": 3000.0,
+                "price_change_percentage_24h_in_currency": -0.5,
+                "sparkline_in_7d": {"price": []},
+            },
+        ]
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    result = await price_service.get_report_market_data_batch(["btc", "eth"])
+
+    requested_url = get_with_retry.await_args.args[1]
+    requested_params = get_with_retry.await_args.args[2]
+    assert requested_url.endswith("/coins/markets")
+    assert requested_params == {
+        "ids": "bitcoin,ethereum",
+        "vs_currency": "usd",
+        "price_change_percentage": "1h,24h,7d",
+        "sparkline": "true",
+        "per_page": "2",
+    }
+    assert get_with_retry.await_args.kwargs["allow_stale_price_fallback"] is False
+    assert result == {
+        "btc": {
+            "price": 60000.0,
+            "change_1h": 0.2,
+            "change_24h": 1.2,
+            "change_7d": -3.5,
+            "volume_24h": 28000000000.0,
+            "market_cap": 1180000000000.0,
+            "rank": 1,
+            "sparkline_7d": [59000.0, 61000.0, 60000.0],
+            "weekly_start": 59000.0,
+            "weekly_end": 60000.0,
+            "weekly_high": 61000.0,
+            "weekly_low": 59000.0,
+            "range_position": 0.5,
+        },
+        "eth": {
+            "price": 3000.0,
+            "change_1h": None,
+            "change_24h": -0.5,
+            "change_7d": None,
+            "volume_24h": None,
+            "market_cap": None,
+            "rank": None,
+            "sparkline_7d": [],
+            "weekly_start": None,
+            "weekly_end": None,
+            "weekly_high": None,
+            "weekly_low": None,
+            "range_position": None,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_report_market_data_batch_keeps_btc_alert_cache_unchanged(monkeypatch):
+    price_service._BTC_MARKET_CACHE = (59000.0, -1.0, None, time.time())
+    price_service._set_cached_price("btc", 58000.0, -2.0, cached_at=0)
+    get_with_retry = AsyncMock(
+        return_value=[
+            {
+                "id": "bitcoin",
+                "current_price": 60000.0,
+                "price_change_percentage_24h_in_currency": 1.2,
+            }
+        ]
+    )
+    monkeypatch.setattr(price_service, "_get_with_retry", get_with_retry)
+
+    await price_service.get_report_market_data_batch(["btc"])
+
+    assert price_service._BTC_MARKET_CACHE is not None
+    assert price_service._BTC_MARKET_CACHE[:3] == (59000.0, -1.0, None)
+    assert price_service._PRICE_CACHE["btc"][:2] == (58000.0, -2.0)
+
+
 def test_ton_simple_price_extractor_accepts_only_current_gram_id():
     payload = {
         "toncoin": {"usd": 0.38, "usd_24h_change": -77.0},
@@ -264,6 +358,37 @@ def test_get_with_retry_returns_stale_cache_after_429_retries():
             "usd_24h_change": 1.5,
         }
     }
+    assert price_service._PRICE_CACHE["btc"][2] == 0
+
+
+def test_get_with_retry_can_disable_stale_cache_after_429_retries():
+    price_service._set_cached_price("btc", 50000.0, 1.5, cached_at=0)
+    client = FakeClient(
+        [
+            FakeResponse(429),
+            FakeResponse(429),
+            FakeResponse(429),
+        ]
+    )
+
+    with pytest.raises(price_service.CoinGeckoRateLimitError):
+        asyncio.run(
+            price_service._get_with_retry(
+                client,
+                "https://api.coingecko.com/api/v3/coins/markets",
+                {
+                    "ids": "bitcoin",
+                    "vs_currency": "usd",
+                    "price_change_percentage": "1h,24h,7d",
+                    "sparkline": "true",
+                },
+                max_retries=2,
+                base_delay=0,
+                allow_stale_price_fallback=False,
+            )
+        )
+
+    assert client.calls == 3
     assert price_service._PRICE_CACHE["btc"][2] == 0
 
 

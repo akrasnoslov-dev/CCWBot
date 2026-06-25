@@ -6,7 +6,11 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from bot.alerting.market_report import MarketReportValidationError, validate_market_report_output
+from bot.alerting.market_report import (
+    MarketReportDecision,
+    MarketReportValidationError,
+    validate_market_report_output,
+)
 from bot.db.database import (
     MarketReport,
     get_latest_market_report,
@@ -18,7 +22,7 @@ from bot.domain.supported_coins import (
     coin_display_name,
     display_symbol,
 )
-from bot.news import fetch_news_context, remember_news_context
+from bot.news import fetch_report_news_context, remember_news_context
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_REPORT_MODEL,
@@ -29,7 +33,7 @@ from bot.services.ai_agent_groq import (
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
-from bot.services.price_service import get_coin_market_data_batch
+from bot.services.price_service import CoinGeckoRateLimitError, get_report_market_data_batch
 
 
 class MarketReportDataUnavailable(RuntimeError):
@@ -38,6 +42,7 @@ class MarketReportDataUnavailable(RuntimeError):
 
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
+REPORT_PROVIDER_BACKOFF_SECONDS = 300
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
 REPORT_UNAVAILABLE_MESSAGES = {
     "daily": "Daily report is temporarily unavailable. Please try again later.",
@@ -49,6 +54,7 @@ _report_generation_locks = {
     "weekly": asyncio.Lock(),
 }
 _memory_report_cache: dict[str, dict[str, Any]] = {}
+_report_provider_backoff_until: dict[str, float] = {}
 
 
 def _target_chat_id(target) -> int | None:
@@ -80,6 +86,22 @@ def _freshness_seconds(report_type: str) -> int:
     return REPORT_FRESHNESS_SECONDS[report_type]
 
 
+def _is_report_provider_backoff_active(report_type: str) -> bool:
+    backoff_until = _report_provider_backoff_until.get(report_type)
+    if backoff_until is None:
+        return False
+    if backoff_until <= time.monotonic():
+        _report_provider_backoff_until.pop(report_type, None)
+        return False
+    return True
+
+
+def _start_report_provider_backoff(report_type: str) -> None:
+    _report_provider_backoff_until[report_type] = (
+        time.monotonic() + REPORT_PROVIDER_BACKOFF_SECONDS
+    )
+
+
 def _is_fresh_report(report: MarketReport | None) -> bool:
     if report is None or report.status != "completed" or not report.telegram_message:
         return False
@@ -104,11 +126,20 @@ async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, A
     cached = await _get_fresh_cached_report(report_type)
     if cached is not None:
         return cached
+    if _is_report_provider_backoff_active(report_type):
+        log(f"ops_event=market_report_skipped report_type={report_type} reason=provider_backoff")
+        return None
 
     async with _report_generation_locks[report_type]:
         cached = await _get_fresh_cached_report(report_type)
         if cached is not None:
             return cached
+        if _is_report_provider_backoff_active(report_type):
+            log(
+                "ops_event=market_report_skipped "
+                f"report_type={report_type} reason=provider_backoff"
+            )
+            return None
         return await generate_report_cache(report_type)
 
 
@@ -135,9 +166,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         message = _build_report_telegram_message(
             report_type=report_type,
             input_payload=input_payload,
-            market_overview=decision.market_overview,
-            news_context=decision.news_context,
-            possible_action=decision.possible_action,
+            decision=decision,
         )
         await remember_news_context(news_items)
         log(f"ops_event=market_report_generated report_type={report_type} status=completed")
@@ -188,6 +217,22 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message="market data unavailable",
+        )
+    except CoinGeckoRateLimitError:
+        _start_report_provider_backoff(report_type)
+        log(
+            "ops_event=market_report_failed "
+            f"report_type={report_type} reason=coingecko_rate_limit"
+        )
+        return await _save_or_remember_report(
+            report_type=report_type,
+            generated_at=generated_at,
+            expires_at=expires_at,
+            status="failed",
+            raw_input_json=raw_input_json,
+            raw_output_json=raw_output_json,
+            telegram_message=None,
+            error_message="coingecko rate limit",
         )
     except Exception as error:
         log(
@@ -300,72 +345,343 @@ async def _save_or_remember_report(
 
 async def _build_market_report_input(report_type: str, generated_at) -> tuple[dict, list[dict]]:
     symbols = list(SUPPORTED_SYMBOLS)
-    market_data = await get_coin_market_data_batch(symbols)
+    market_data = await get_report_market_data_batch(symbols)
     if not _has_usable_market_data(market_data):
         raise MarketReportDataUnavailable("market data unavailable")
-    news_items = await fetch_news_context(limit=6, prefer_unseen=True)
+    news_payload, news_items = await fetch_report_news_context(symbols, prefer_unseen=True)
+    market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
+    coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
+    news_fallback = news_payload.get("fallback") if isinstance(news_payload, dict) else ""
     return (
         {
             "report_type": report_type,
             "generated_at": generated_at.isoformat(),
             "active_symbols": [display_symbol(symbol) for symbol in symbols],
             "coins": [
-                {
-                    "symbol": display_symbol(symbol),
-                    "name": coin_display_name(symbol),
-                    "price": _round_optional((market_data.get(symbol) or {}).get("price")),
-                    "change_24h": _round_optional(
-                        (market_data.get(symbol) or {}).get("change_24h")
-                    ),
-                    "change_7d": _round_optional((market_data.get(symbol) or {}).get("change_7d")),
-                }
+                _build_report_coin_payload(symbol, market_data.get(symbol) or {})
                 for symbol in symbols
             ],
-            "news": [
-                {
-                    "news_id": str(index + 1),
-                    "title": str(item.get("title", "")).strip()[:180],
-                    "source": str(item.get("source", "")).strip()[:80],
-                    "link": str(item.get("link", "")).strip(),
-                }
-                for index, item in enumerate(news_items[:6])
-                if str(item.get("title", "")).strip()
-            ],
+            "market_news": market_news,
+            "coin_news": coin_news,
+            "news_fallback": news_fallback,
+            "weekly_context": _build_weekly_context(market_data, news_payload)
+            if report_type == "weekly"
+            else {},
         },
         news_items,
     )
+
+
+def _build_report_coin_payload(symbol: str, coin_data: dict[str, Any]) -> dict:
+    return {
+        "symbol": display_symbol(symbol),
+        "name": coin_display_name(symbol),
+        "price": _round_optional(coin_data.get("price")),
+        "change_1h": _round_optional(coin_data.get("change_1h")),
+        "change_24h": _round_optional(coin_data.get("change_24h")),
+        "change_7d": _round_optional(coin_data.get("change_7d")),
+        "volume_24h": _round_optional(coin_data.get("volume_24h")),
+        "market_cap": _round_optional(coin_data.get("market_cap")),
+        "rank": coin_data.get("rank"),
+        "sparkline_7d": _format_sparkline(coin_data.get("sparkline_7d")),
+        "weekly_start": _round_optional(coin_data.get("weekly_start")),
+        "weekly_end": _round_optional(coin_data.get("weekly_end")),
+        "weekly_high": _round_optional(coin_data.get("weekly_high")),
+        "weekly_low": _round_optional(coin_data.get("weekly_low")),
+        "range_position": _round_optional(coin_data.get("range_position")),
+    }
+
+
+def _build_weekly_context(market_data: dict[str, dict[str, Any]], news_payload: dict) -> dict:
+    scoreboard = [
+        _build_weekly_coin_context(symbol, market_data.get(symbol) or {})
+        for symbol in SUPPORTED_SYMBOLS
+    ]
+    btc_change_7d = next(
+        (
+            item.get("change_7d")
+            for item in scoreboard
+            if item.get("symbol") == "BTC" and item.get("change_7d") is not None
+        ),
+        None,
+    )
+    for item in scoreboard:
+        change_7d = item.get("change_7d")
+        item["vs_btc_7d"] = (
+            _round_optional(float(change_7d) - float(btc_change_7d))
+            if change_7d is not None and btc_change_7d is not None and item.get("symbol") != "BTC"
+            else None
+        )
+    timeline = _build_weekly_timeline(scoreboard, news_payload)
+    return {
+        "scoreboard": scoreboard,
+        "breadth": _build_weekly_breadth(scoreboard),
+        "timeline": timeline,
+    }
+
+
+def _build_weekly_coin_context(symbol: str, coin_data: dict[str, Any]) -> dict:
+    weekly_start = _round_optional(coin_data.get("weekly_start"))
+    weekly_end = _round_optional(coin_data.get("weekly_end"))
+    weekly_high = _round_optional(coin_data.get("weekly_high"))
+    weekly_low = _round_optional(coin_data.get("weekly_low"))
+    change_7d = _round_optional(coin_data.get("change_7d"))
+    range_label = _format_range_position(coin_data.get("range_position"))
+    return {
+        "symbol": display_symbol(symbol),
+        "weekly_start": weekly_start,
+        "weekly_end": weekly_end,
+        "weekly_high": weekly_high,
+        "weekly_low": weekly_low,
+        "change_7d": change_7d,
+        "range_label": range_label or "weekly range unavailable from provider",
+        "timeline_note": _weekly_coin_timeline_note(symbol, coin_data),
+    }
+
+
+def _weekly_coin_timeline_note(symbol: str, coin_data: dict[str, Any]) -> str:
+    sparkline = coin_data.get("sparkline_7d")
+    if not isinstance(sparkline, list) or len(sparkline) < 2:
+        return f"{display_symbol(symbol)}: 7d path unavailable from provider"
+    prices = [float(value) for value in sparkline if isinstance(value, int | float)]
+    if len(prices) < 2:
+        return f"{display_symbol(symbol)}: 7d path unavailable from provider"
+    midpoint = prices[len(prices) // 2]
+    return (
+        f"{display_symbol(symbol)}: week opened near {_format_price(prices[0])}, "
+        f"midweek near {_format_price(midpoint)}, now near {_format_price(prices[-1])}"
+    )
+
+
+def _build_weekly_breadth(scoreboard: list[dict]) -> dict:
+    changes = [
+        (str(item.get("symbol")), float(item["change_7d"]))
+        for item in scoreboard
+        if item.get("change_7d") is not None
+    ]
+    if not changes:
+        return {
+            "summary": "Weekly breadth unavailable from provider",
+            "leaders": [],
+            "laggards": [],
+        }
+    ordered = sorted(changes, key=lambda item: item[1], reverse=True)
+    positive_count = sum(1 for _, change in changes if change > 0)
+    leaders = [symbol for symbol, _ in ordered[:2]]
+    laggards = [symbol for symbol, _ in ordered[-2:]]
+    return {
+        "summary": (
+            f"{positive_count}/{len(changes)} tracked assets are positive over 7d; "
+            f"leaders: {', '.join(leaders)}; laggards: {', '.join(laggards)}"
+        ),
+        "leaders": leaders,
+        "laggards": laggards,
+    }
+
+
+def _build_weekly_timeline(scoreboard: list[dict], news_payload: dict) -> list[str]:
+    timeline = [
+        str(item.get("timeline_note"))
+        for item in scoreboard
+        if str(item.get("timeline_note") or "").strip()
+    ]
+    for item in _selected_weekly_news_items(news_payload):
+        title = str(item.get("title") or "").strip()
+        source = str(item.get("source") or "").strip()
+        published_at = str(item.get("published_at") or "").strip()[:10]
+        if title and source:
+            prefix = f"{published_at}: " if published_at else ""
+            timeline.append(f"{prefix}{title} ({source})")
+    return timeline or ["No strong tracked weekly catalyst in selected news"]
+
+
+def _selected_weekly_news_items(news_payload: dict) -> list[dict]:
+    items: list[dict] = []
+    market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
+    if isinstance(market_news, list):
+        items.extend(item for item in market_news if isinstance(item, dict))
+    coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
+    if isinstance(coin_news, dict):
+        for symbol in (display_symbol(item) for item in SUPPORTED_SYMBOLS):
+            symbol_items = coin_news.get(symbol)
+            if isinstance(symbol_items, list):
+                items.extend(item for item in symbol_items if isinstance(item, dict))
+    return items[:6]
 
 
 def _build_report_telegram_message(
     *,
     report_type: str,
     input_payload: dict,
-    market_overview: str,
-    news_context: str,
-    possible_action: str,
+    decision: MarketReportDecision,
 ) -> str:
     is_weekly = report_type == "weekly"
-    title = "Weekly Market Report" if is_weekly else "Daily Market Report"
-    overview_label = "Weekly overview" if is_weekly else "Market overview"
-    news_label = "Weekly news theme" if is_weekly else "News context"
+    # Keep user-visible report news tied to selected title/source/link items, not model prose.
+    news_context_text = _format_report_news_context(input_payload)
     coin_rows = [
         _format_coin_row(coin, weekly=is_weekly)
         for coin in input_payload.get("coins", [])
         if isinstance(coin, dict)
     ]
+    if is_weekly:
+        message = _build_weekly_report_message(
+            decision=decision,
+            coin_rows=coin_rows,
+            news_context_text=news_context_text,
+            weekly_context=input_payload.get("weekly_context"),
+        )
+    else:
+        message = _build_daily_report_message(
+            decision=decision,
+            coin_rows=coin_rows,
+            news_context_text=news_context_text,
+        )
+    return sanitize_alert_message(message)
+
+
+def _build_daily_report_message(
+    *,
+    decision: MarketReportDecision,
+    coin_rows: list[str],
+    news_context_text: str,
+) -> str:
+    moved_today = _format_report_section_items(
+        [*decision.dashboard, decision.why_it_matters],
+        fallback=decision.why_it_matters,
+    )
     message = (
-        f"📊 {title}\n\n"
-        f"{overview_label}:\n"
-        f"{market_overview.strip()}\n\n"
-        "Coins:\n"
+        "📊 Daily Market Report\n\n"
+        "Market pulse:\n"
+        f"{decision.market_pulse}\n\n"
+        "Dashboard:\n"
+        f"{_format_report_section_items(decision.dashboard)}\n\n"
+        "Tracked assets:\n"
         f"{chr(10).join(coin_rows)}\n\n"
-        f"{news_label}:\n"
-        f"{news_context.strip()}\n\n"
-        "Possible action:\n"
-        f"{possible_action.strip()}\n\n"
+        "What moved today:\n"
+        f"{moved_today}\n\n"
+        "Coin-specific news:\n"
+        f"{news_context_text}\n\n"
+        "What to watch next:\n"
+        f"{decision.watch_next}\n\n"
         "Not financial advice."
     )
-    return sanitize_alert_message(message)
+    return message
+
+
+def _build_weekly_report_message(
+    *,
+    decision: MarketReportDecision,
+    coin_rows: list[str],
+    news_context_text: str,
+    weekly_context,
+) -> str:
+    themes = [*decision.dashboard, decision.why_it_matters]
+    breadth_text = _format_weekly_breadth(weekly_context)
+    timeline_text = _format_weekly_timeline(weekly_context)
+    message = (
+        "📊 Weekly Market Report\n\n"
+        "Week in one line:\n"
+        f"{decision.market_pulse}\n\n"
+        "Weekly scoreboard:\n"
+        f"{chr(10).join(coin_rows)}\n\n"
+        "Market breadth:\n"
+        f"{breadth_text}\n\n"
+        "Themes of the week:\n"
+        f"{_format_report_section_items(themes, fallback=decision.why_it_matters)}\n\n"
+        "Week timeline:\n"
+        f"{timeline_text}\n\n"
+        "Coin-specific recap:\n"
+        f"{_format_coin_cards(decision.coin_cards)}\n\n"
+        "Top catalysts of the week:\n"
+        f"{news_context_text}\n\n"
+        "Next week in focus:\n"
+        f"{decision.next_week_focus or decision.watch_next}\n\n"
+        "Not financial advice."
+    )
+    return message
+
+
+def _format_report_section_items(items: list[str], *, fallback: str | None = None) -> str:
+    rows = [str(item or "").strip() for item in items if str(item or "").strip()]
+    if not rows and fallback:
+        rows = [fallback.strip()]
+    return "\n".join(f"• {row}" for row in rows)
+
+
+def _format_coin_cards(cards: list[dict[str, str]]) -> str:
+    rows = []
+    for card in cards:
+        symbol = str(card.get("symbol") or "").strip().upper()
+        summary = str(card.get("summary") or "").strip()
+        watch = str(card.get("watch") or "").strip()
+        if not (symbol and summary and watch):
+            continue
+        rows.append(f"• {symbol}: {summary} Watch: {watch}")
+    return "\n".join(rows)
+
+
+def _format_weekly_breadth(weekly_context) -> str:
+    if not isinstance(weekly_context, dict):
+        return "• Weekly breadth unavailable from provider"
+    breadth = weekly_context.get("breadth")
+    if not isinstance(breadth, dict):
+        return "• Weekly breadth unavailable from provider"
+    summary = str(breadth.get("summary") or "").strip()
+    return f"• {summary}" if summary else "• Weekly breadth unavailable from provider"
+
+
+def _format_weekly_timeline(weekly_context) -> str:
+    if not isinstance(weekly_context, dict):
+        return "• No strong tracked weekly catalyst in selected news"
+    timeline = weekly_context.get("timeline")
+    if not isinstance(timeline, list):
+        return "• No strong tracked weekly catalyst in selected news"
+    rows = [str(item or "").strip() for item in timeline if str(item or "").strip()]
+    if not rows:
+        rows = ["No strong tracked weekly catalyst in selected news"]
+    return "\n".join(f"• {row}" for row in rows)
+
+
+def _format_report_news_context(input_payload: dict) -> str:
+    rows: list[str] = []
+    market_news = input_payload.get("market_news")
+    if isinstance(market_news, list):
+        for item in market_news:
+            if not isinstance(item, dict):
+                continue
+            formatted = _format_report_news_item(item)
+            if formatted:
+                rows.append(formatted)
+
+    coin_news = input_payload.get("coin_news")
+    if isinstance(coin_news, dict):
+        for symbol in input_payload.get("active_symbols", []):
+            symbol_text = str(symbol or "").strip().upper()
+            items = coin_news.get(symbol_text)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                formatted = _format_report_news_item(item, prefix=symbol_text)
+                if formatted:
+                    rows.append(formatted)
+
+    if rows:
+        return "\n".join(rows)
+
+    fallback = str(input_payload.get("news_fallback") or "").strip()
+    return fallback or "No clearly relevant fresh news found for tracked coins"
+
+
+def _format_report_news_item(item: dict, *, prefix: str | None = None) -> str:
+    title = str(item.get("title") or "").strip()
+    source = str(item.get("source") or "").strip()
+    link = str(item.get("link") or "").strip()
+    if not (title and source and link):
+        return ""
+    label = f"{prefix}: " if prefix else ""
+    return f"• {label}{title} ({source}) {link}"
 
 
 def _format_coin_row(coin: dict, *, weekly: bool) -> str:
@@ -373,8 +689,15 @@ def _format_coin_row(coin: dict, *, weekly: bool) -> str:
     price = _format_price(coin.get("price"))
     change_24h = _format_percent(coin.get("change_24h"))
     if weekly:
-        change_7d = _format_percent(coin.get("change_7d"))
-        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}"
+        change_7d = _format_percent(
+            coin.get("change_7d"),
+            unavailable_text="unavailable from provider",
+        )
+        sparkline = str(coin.get("sparkline_7d") or "").strip()
+        range_text = _format_range_position(coin.get("range_position"))
+        suffix_parts = [part for part in (sparkline, range_text) if part]
+        suffix = f", {' '.join(suffix_parts)}" if suffix_parts else ""
+        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}{suffix}"
     return f"• {symbol}: {price}, 24h {change_24h}"
 
 
@@ -387,10 +710,53 @@ def _format_price(value) -> str:
     return f"${numeric_value:,.2f}"
 
 
-def _format_percent(value) -> str:
+def _format_percent(value, *, unavailable_text: str = "not enough data yet") -> str:
     if value is None:
-        return "not enough data yet"
+        return unavailable_text
     return f"{float(value):+.1f}%"
+
+
+def _format_sparkline(values) -> str | None:
+    if not isinstance(values, list):
+        return None
+    numeric_values = [
+        float(value)
+        for value in values
+        if isinstance(value, int | float)
+    ]
+    if not numeric_values:
+        return None
+    blocks = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
+    low = min(numeric_values)
+    high = max(numeric_values)
+    if high == low:
+        return blocks[0] * min(len(numeric_values), 12)
+    if len(numeric_values) > 12:
+        step = (len(numeric_values) - 1) / 11
+        numeric_values = [numeric_values[round(index * step)] for index in range(12)]
+    return "".join(
+        blocks[
+            max(
+                0,
+                min(
+                    len(blocks) - 1,
+                    round(((value - low) / (high - low)) * (len(blocks) - 1)),
+                ),
+            )
+        ]
+        for value in numeric_values
+    )
+
+
+def _format_range_position(value) -> str | None:
+    if value is None:
+        return None
+    numeric_value = max(0.0, min(1.0, float(value)))
+    if numeric_value >= 0.75:
+        return "near weekly high"
+    if numeric_value <= 0.25:
+        return "near weekly low"
+    return "mid weekly range"
 
 
 def _round_optional(value) -> float | None:

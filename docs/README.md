@@ -23,6 +23,7 @@ index or from `README.md` when they are useful for users.
 ## Development And Release
 
 - `development.md`: local development notes, runtime behavior, and verification.
+- `market_reports.md`: daily and weekly report data sources and report-specific guardrails.
 - `release_checklist.md`: `dev` -> `main` release checklist.
 - `dev_ops_guide.md`: environment and production deployment guide.
 

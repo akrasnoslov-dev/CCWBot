@@ -105,13 +105,18 @@ def _build_stale_price_payload(params: dict) -> dict | None:
     return payload or None
 
 
+def _has_stale_price_fallback(params: dict, *, enabled: bool = True) -> bool:
+    return enabled and _build_stale_price_payload(params) is not None
+
+
 async def _get_with_retry(
     client,
     url,
     params,
     max_retries: int = 3,
     base_delay: int = 5,
-) -> dict:
+    allow_stale_price_fallback: bool = True,
+) -> dict | list:
     """Fetch CoinGecko data, retrying 429s and falling back to stale cache."""
     for attempt in range(max_retries + 1):
         response = await client.get(url, params=params, timeout=10)
@@ -126,12 +131,12 @@ async def _get_with_retry(
                 "stale_cache_available=%s retry_delay_seconds=%s",
                 attempt + 1,
                 max_retries,
-                _build_stale_price_payload(params) is not None,
+                _has_stale_price_fallback(params, enabled=allow_stale_price_fallback),
                 delay,
             )
             await asyncio.sleep(delay)
 
-    stale_payload = _build_stale_price_payload(params)
+    stale_payload = _build_stale_price_payload(params) if allow_stale_price_fallback else None
     if stale_payload is not None:
         logger.warning(
             "ops_event=coingecko_rate_limit attempt=%s max_retries=%s "
@@ -307,6 +312,141 @@ async def get_coin_market_data_batch(
         }
 
     return result
+
+
+async def get_report_market_data_batch(
+    symbols: list[str] | tuple[str, ...] | set[str],
+) -> dict[str, dict[str, float | int | str | list[float] | None]]:
+    """Fetch richer market data for cached daily/weekly reports.
+
+    This intentionally uses CoinGecko's markets endpoint instead of the alert
+    batch fetcher so reports can include 1h/24h/7d changes and sparklines
+    without changing automatic alert behavior.
+    """
+    normalized_symbols = list(dict.fromkeys(normalize_symbol(symbol) for symbol in symbols))
+    unsupported = [symbol for symbol in normalized_symbols if symbol not in COIN_SYMBOL_TO_ID]
+    if unsupported:
+        supported = supported_symbols_display(include_alias_note=True)
+        raise ValueError(f"Unsupported coin symbol(s) {unsupported}. Supported: {supported}")
+    if not normalized_symbols:
+        return {}
+
+    coin_ids = [COIN_SYMBOL_TO_ID[symbol] for symbol in normalized_symbols]
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "ids": ",".join(coin_ids),
+        "vs_currency": "usd",
+        "price_change_percentage": "1h,24h,7d",
+        "sparkline": "true",
+        "per_page": str(len(coin_ids)),
+    }
+
+    async with httpx.AsyncClient() as client:
+        data = await _get_with_retry(
+            client,
+            url,
+            params,
+            allow_stale_price_fallback=False,
+        )
+
+    if not isinstance(data, list):
+        raise ValueError("Unexpected CoinGecko markets response format.")
+
+    rows_by_id = {str(row.get("id")): row for row in data if isinstance(row, dict)}
+    result: dict[str, dict[str, float | int | str | list[float] | None]] = {}
+    for symbol, coin_id in zip(normalized_symbols, coin_ids, strict=True):
+        coin_data = rows_by_id.get(coin_id)
+        if not isinstance(coin_data, dict):
+            logger.warning(
+                "CoinGecko report market response missing data for %s. expected_id=%s "
+                "returned_ids=%s. Skipping symbol.",
+                display_symbol(symbol),
+                coin_id,
+                list(rows_by_id),
+            )
+            continue
+
+        price = _optional_float(coin_data.get("current_price"))
+        if price is None:
+            logger.warning(
+                "CoinGecko report market response missing current_price for %s. Skipping symbol.",
+                display_symbol(symbol),
+            )
+            continue
+
+        change_24h = _optional_float(coin_data.get("price_change_percentage_24h_in_currency"))
+        sparkline_prices = _extract_sparkline_prices(coin_data)
+        weekly_low = min(sparkline_prices) if sparkline_prices else None
+        weekly_high = max(sparkline_prices) if sparkline_prices else None
+        weekly_start = sparkline_prices[0] if sparkline_prices else None
+        weekly_end = sparkline_prices[-1] if sparkline_prices else None
+        result[symbol] = {
+            "price": price,
+            "change_1h": _optional_float(
+                coin_data.get("price_change_percentage_1h_in_currency")
+            ),
+            "change_24h": change_24h,
+            "change_7d": _optional_float(
+                coin_data.get("price_change_percentage_7d_in_currency")
+            ),
+            "volume_24h": _optional_float(coin_data.get("total_volume")),
+            "market_cap": _optional_float(coin_data.get("market_cap")),
+            "rank": _optional_int(coin_data.get("market_cap_rank")),
+            "sparkline_7d": sparkline_prices,
+            "weekly_start": weekly_start,
+            "weekly_end": weekly_end,
+            "weekly_high": weekly_high,
+            "weekly_low": weekly_low,
+            "range_position": _range_position(price, weekly_low, weekly_high),
+        }
+
+    return result
+
+
+def _optional_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_sparkline_prices(coin_data: dict) -> list[float]:
+    sparkline = coin_data.get("sparkline_in_7d")
+    if not isinstance(sparkline, dict):
+        return []
+    raw_prices = sparkline.get("price")
+    if not isinstance(raw_prices, list):
+        return []
+    prices: list[float] = []
+    for value in raw_prices:
+        price = _optional_float(value)
+        if price is not None:
+            prices.append(price)
+    return prices
+
+
+def _range_position(
+    price: float | None,
+    weekly_low: float | None,
+    weekly_high: float | None,
+) -> float | None:
+    if price is None or weekly_low is None or weekly_high is None:
+        return None
+    spread = weekly_high - weekly_low
+    if spread <= 0:
+        return None
+    return max(0.0, min(1.0, (price - weekly_low) / spread))
 
 
 async def get_btc_price() -> tuple[float, float]:
