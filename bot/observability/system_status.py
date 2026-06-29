@@ -28,6 +28,7 @@ from bot.services.ai_agent_groq import (
 )
 from bot.settings import DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
 from bot.storage import load_state
+from bot.telegram_errors import is_bot_blocked_error
 
 
 class ComponentStatus(StrEnum):
@@ -58,6 +59,17 @@ _PROVIDER_PAYLOAD_RE = re.compile(
     r"response body|response headers|request headers|raw response|error response|"
     r"status_code|x-ratelimit|cf-ray|openai|groq"
     r")\b"
+)
+
+_NETWORK_DELIVERY_ERROR_RE = re.compile(
+    r"(?i)\b(timeout|timed out|network|connection|connect|temporary|unavailable)\b"
+)
+_BAD_REQUEST_DELIVERY_ERROR_RE = re.compile(
+    r"(?i)\b(bad request|can't parse|cannot parse|message.*invalid|message.*too long|"
+    r"entity|entities|markup)\b"
+)
+_CHAT_UNAVAILABLE_DELIVERY_ERROR_RE = re.compile(
+    r"(?i)\b(chat unavailable|chat is unavailable|chat.*unavailable)\b"
 )
 
 
@@ -139,6 +151,25 @@ def _looks_like_payload(value: str) -> bool:
     if stripped.startswith(("{", "[")) or stripped.endswith(("}", "]")):
         return True
     return any(marker in stripped for marker in ("{", "}", "[", "]"))
+
+
+def _delivery_failure_category(last_error: str | None, error_message: str | None) -> str:
+    text = " ".join(part for part in (last_error, error_message) if part)
+    if _NETWORK_DELIVERY_ERROR_RE.search(text):
+        return "Network/timeouts"
+    if _BAD_REQUEST_DELIVERY_ERROR_RE.search(text):
+        return "Bad request/message format"
+    return "Other delivery failures"
+
+
+def _is_expected_blocked_delivery_failure(
+    last_error: str | None,
+    error_message: str | None,
+) -> bool:
+    if is_bot_blocked_error(last_error) or is_bot_blocked_error(error_message):
+        return True
+    text = " ".join(part for part in (last_error, error_message) if part)
+    return bool(_CHAT_UNAVAILABLE_DELIVERY_ERROR_RE.search(text))
 
 
 def _worst_status(statuses: list[ComponentStatus]) -> ComponentStatus:
@@ -606,6 +637,24 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         )
         or 0
     )
+    final_failure_rows = (
+        await session.execute(
+            select(Alert.last_error, Alert.error_message)
+            .where(Alert.final_failed_at.is_not(None))
+            .where(Alert.final_failed_at >= since)
+        )
+    ).all()
+    blocked_final_failed = 0
+    real_final_failed = 0
+    real_failure_categories: dict[str, int] = {}
+    for last_error, error_message in final_failure_rows:
+        if _is_expected_blocked_delivery_failure(last_error, error_message):
+            blocked_final_failed += 1
+            continue
+        real_final_failed += 1
+        category = _delivery_failure_category(last_error, error_message)
+        real_failure_categories[category] = real_failure_categories.get(category, 0) + 1
+
     blocked_users = int(
         await session.scalar(
             select(func.count()).select_from(User).where(User.bot_blocked.is_(True))
@@ -633,28 +682,42 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     pending = counts.get("pending", 0)
     retry_pending = counts.get("retry_pending", 0)
     failed = counts.get("failed", 0)
-    if final_failed > 0:
+    non_final_failed = max(failed - final_failed, 0)
+    if real_final_failed > 0:
         status = ComponentStatus.FAIL
-    elif failed > 0 or pending > 0 or retry_pending > 0:
+    elif non_final_failed > 0 or pending > 0 or retry_pending > 0:
         status = ComponentStatus.WARN
-    elif sent > 0:
+    elif sent > 0 or blocked_final_failed > 0:
         status = ComponentStatus.OK
     else:
         status = ComponentStatus.UNKNOWN
 
     detail = (
         f"Last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
-        f"failed {failed}, final_failed {final_failed}, blocked_users {blocked_users}"
+        f"failed {failed}, final_failed {final_failed}, "
+        f"blocked_final_failed {blocked_final_failed}, real_final_failed {real_final_failed}, "
+        f"blocked_users {blocked_users}"
     )
     info_rows = []
+    problem_rows = []
+    if real_final_failed > 0 and blocked_final_failed > 0:
+        problem_rows.append(f"Real delivery failures: {real_final_failed}")
+        info_rows.append(f"Blocked-user failures: {blocked_final_failed}")
+    elif blocked_final_failed > 0:
+        info_rows.append(f"Blocked-user failures: {blocked_final_failed} in 24h")
+    if real_final_failed > 0:
+        for category in sorted(real_failure_categories):
+            problem_rows.append(f"{category}: {real_failure_categories[category]}")
     if blocked_users > 0:
         info_rows.append(f"Blocked users: {blocked_users}")
-    if final_failed > 0:
+    if real_final_failed > 0:
         summary = f"final_failed {final_failed} in 24h"
     elif pending > 0 or retry_pending > 0:
         summary = "retry/pending deliveries"
-    elif failed > 0:
+    elif non_final_failed > 0:
         summary = "failed deliveries"
+    elif blocked_final_failed > 0:
+        summary = "no system delivery issue"
     elif sent > 0:
         summary = f"sent {sent} in 24h"
     else:
@@ -664,6 +727,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         status,
         detail,
         summary=summary,
+        problem_rows=tuple(problem_rows),
         info_rows=tuple(info_rows),
     )
 

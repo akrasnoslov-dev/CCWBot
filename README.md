@@ -426,8 +426,10 @@ Status uses persisted `price_state`, `event_ai_analyses`, `llm_usage_logs`, `new
 `alerts` rows. It does not call CoinGecko, Groq, RSS feeds, or Telegram while rendering the admin
 screen. Default output shows one line per component and adds short indented details for degraded
 or failing components, plus compact informational rows such as blocked-user counts only when they
-are non-zero. Older AI failures do not clutter the dashboard when a newer `success` or `no_alert`
-event-analysis row exists. Failure details are sanitized/redacted.
+are non-zero. Expected Telegram permanent failures from blocked users or unavailable chats are
+shown separately from real delivery failures and do not mark the system as broken by themselves.
+Older AI failures do not clutter the dashboard when a newer `success` or `no_alert` event-analysis
+row exists. Failure details are sanitized/redacted.
 
 ## Testing And Linting
 
