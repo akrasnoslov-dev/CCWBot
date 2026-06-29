@@ -63,8 +63,8 @@ _SYMBOL_ALIASES = {
     "bitcoin": "btc",
     "ethereum": "eth",
     "solana": "sol",
-    "gram": "ton",
-    "toncoin": "ton",
+    "ton": "gram",
+    "toncoin": "gram",
 }
 
 
@@ -491,7 +491,7 @@ def _is_random_event_key(symbol: str, value: str) -> bool:
     if _UUID_LIKE_RE.match(last) or _RANDOM_TOKEN_RE.match(last):
         return True
     if len(parts) >= 4 and parts[0] == "event" and parts[1] == "analysis":
-        if parts[2] in {normalize_symbol(symbol), "btc", "eth", "sol", "ton"}:
+        if parts[2] in {normalize_symbol(symbol), "btc", "eth", "sol", "gram"}:
             return True
     return False
 

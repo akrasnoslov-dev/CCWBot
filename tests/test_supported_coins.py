@@ -8,13 +8,14 @@ from bot.domain.supported_coins import (
 )
 
 
-def test_gram_rebrand_preserves_internal_ton_symbol():
-    assert SUPPORTED_COINS["ton"]["coingecko_id"] == "the-open-network"
-    assert normalize_symbol("gram") == "ton"
-    assert normalize_symbol("ton") == "ton"
+def test_gram_rebrand_uses_primary_gram_symbol_with_legacy_ton_alias():
+    assert SUPPORTED_COINS["gram"]["coingecko_id"] == "the-open-network"
+    assert normalize_symbol("gram") == "gram"
+    assert normalize_symbol("ton") == "gram"
+    assert normalize_symbol("toncoin") == "gram"
     assert display_symbol("ton") == "GRAM"
     assert display_symbol("gram") == "GRAM"
-    assert coin_display_name("ton") == "Gram (prev. Toncoin)"
+    assert coin_display_name("ton") == "Gram"
 
 
 def test_premium_and_supported_symbol_display_use_gram():

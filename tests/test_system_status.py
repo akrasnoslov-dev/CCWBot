@@ -168,7 +168,7 @@ async def test_system_status_shows_missing_symbols_compactly():
     engine, session_local = await build_session_factory()
     try:
         async with session_local() as session:
-            await _seed_fresh_prices(session, now, skip={"eth", "ton", "sol"})
+            await _seed_fresh_prices(session, now, skip={"eth", "gram", "sol"})
             await session.commit()
 
         text = await build_admin_system_status_text(

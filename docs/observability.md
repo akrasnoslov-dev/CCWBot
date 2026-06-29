@@ -90,9 +90,8 @@ stack traces, or private Telegram text.
 
 ## GRAM Rebrand Price-State Check
 
-GRAM is stored internally as symbol `ton` to preserve existing rows in `price_state`,
-`price_snapshots`, `alerts`, `market_events`, and watchlists. CoinGecko identity for this internal
-symbol must resolve to `the-open-network`; old `toncoin` or ambiguous `symbols=ton` data can create
+GRAM is stored internally as symbol `gram`; legacy `ton` input normalizes to `gram`.
+CoinGecko identity for this internal symbol must resolve to `the-open-network`; old `toncoin` or ambiguous `symbols=ton` data can create
 false price moves.
 
 Do not run cleanup blindly. First inspect the affected rows:

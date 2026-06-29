@@ -108,7 +108,7 @@ async def test_blocked_telegram_error_disables_user_and_keeps_failed_alert(monke
             assert alert.final_failed_at is not None
             assert "Forbidden: bot was blocked by the user" in alert.error_message
             assert outcome.status == "failed"
-            assert outcome.reason_code == "telegram_send_failed"
+            assert outcome.reason_code == "telegram_bot_blocked"
             assert outcome.recipient_considered is True
             assert outcome.recipient_eligible is True
     finally:

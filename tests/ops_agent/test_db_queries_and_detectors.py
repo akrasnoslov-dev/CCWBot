@@ -318,7 +318,12 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "semantic_cooldown_suppressed_count" in outcomes.sql
     assert "similar_context_reused_count" in outcomes.sql
     assert "allowed_market_context_changed_count" in outcomes.sql
+    assert "telegram_bot_blocked_count" in outcomes.sql
+    assert "llm_invalid_response_count" in outcomes.sql
     assert "pre_llm_similar_context_reused_count" in outcomes.sql
+    assert "latest_error_message" in next(
+        query for query in QUERIES if query.name == "market_reports_freshness"
+    ).sql
     assert "decision_reason = 'similar_context_reused'" in reuse.sql
     assert "event_ai_analysis_id IS NULL" in reuse.sql
     assert "context_fingerprint" in reuse.sql

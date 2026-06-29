@@ -326,8 +326,8 @@ def test_canonical_event_key_normalizes_common_llm_variants(raw_event_key, expec
         ("btc", "btc_price_test_low"),
         ("btc", "btc_price_test_february_low"),
         ("btc", "btc_price_drop"),
-        ("ton", "ton_price_drop"),
-        ("ton", "ton_price_decline"),
+        ("gram", "gram_price_drop"),
+        ("gram", "gram_price_decline"),
     ],
 )
 def test_semantic_event_family_normalizes_equivalent_downtrend_keys(symbol, raw_event_key):
@@ -339,14 +339,14 @@ def test_semantic_event_family_normalizes_equivalent_downtrend_keys(symbol, raw_
 
 def test_semantic_event_family_uses_context_for_ambiguous_movement_key():
     result = canonicalize_event_key(
-        "ton",
-        "ton_price_movement",
-        title="TON price weakened again",
-        message_body="TON moved lower while market pressure remains elevated.",
+        "gram",
+        "gram_price_movement",
+        title="GRAM price weakened again",
+        message_body="GRAM moved lower while market pressure remains elevated.",
     )
 
     assert result.semantic_family == "price_downtrend"
-    assert result.canonical_event_key == "ton_price_downtrend"
+    assert result.canonical_event_key == "gram_price_downtrend"
 
 
 @pytest.mark.parametrize("raw_event_key", ["news_catalyst", "volatility", "price_movement"])
@@ -745,7 +745,78 @@ def test_event_alert_material_analysed_window_move_keeps_dramatic_wording():
 
     message = payload["plain_text"]
     assert "BTC surge remains notable" in message
-    assert "BTC may collapse if the move accelerates." in message
+    assert "BTC may collapse if the move accelerates." not in message
+    assert "Structured market data shows BTC moved higher by +2.50%." in message
+
+
+def test_event_alert_numeric_guard_replaces_contradictory_llm_percent_claim():
+    decision = alerts.EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_price_movement",
+        title="SOL jumps +5.58% in 3 hours",
+        message_body="SOL rallied +5.58% in 3 hours as momentum improved.",
+        related_news_ids=[],
+        possible_action="Watch whether the rally keeps extending.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 142.35,
+                "analysed_window_minutes": 180,
+                "chg_window": -0.12,
+                "chg_since_msg": -0.2,
+                "chg24h": 0.4,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "+5.58%" not in message
+    assert "rallied" not in message.lower()
+    assert "rally" not in message.lower()
+    assert "Structured market data shows SOL moved lower by -0.12%." in message
+    assert "3h market move: -0.12%" in message
+
+
+def test_event_alert_numeric_guard_rejects_mismatched_window_claim():
+    decision = alerts.EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_price_movement",
+        title="SOL jumps +5.0% in 3 hours",
+        message_body="SOL jumps +5.0% in 3 hours while the trend improves.",
+        related_news_ids=[],
+        possible_action="Watch whether the 3 hour move keeps extending.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 142.35,
+                "analysed_window_minutes": 180,
+                "chg_window": 0.2,
+                "chg_since_msg": 0.1,
+                "chg24h": 5.0,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "+5.0% in 3 hours" not in message
+    assert "Structured market data shows SOL moved higher by +0.20%." in message
+    assert "3h market move: +0.20%" in message
 
 
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
@@ -798,7 +869,8 @@ def test_missing_event_related_news_id_logs_and_uses_safe_fallback(caplog):
     )
 
     assert related_news == []
-    assert "No major related news selected." in payload["plain_text"]
+    assert "Related context:" not in payload["plain_text"]
+    assert "No major related news selected." not in payload["plain_text"]
     assert "n999" in caplog.text
 
 
@@ -886,36 +958,36 @@ async def test_event_analysis_input_ignores_stale_reference_snapshot(monkeypatch
         async with session_local() as session:
             await save_price_snapshot(
                 session,
-                symbol="ton",
+                symbol="gram",
                 price=1.93,
                 change_24h=-1.0,
                 checked_at=datetime(2026, 6, 2, 15, 47, tzinfo=timezone.utc),
             )
             await save_price_snapshot(
                 session,
-                symbol="ton",
+                symbol="gram",
                 price=1.55,
                 change_24h=-1.0,
                 checked_at=now - timedelta(minutes=160),
             )
             await save_price_snapshot(
                 session,
-                symbol="ton",
+                symbol="gram",
                 price=1.545,
                 change_24h=-1.0,
                 checked_at=now - timedelta(minutes=70),
             )
             await save_price_snapshot(
                 session,
-                symbol="ton",
+                symbol="gram",
                 price=1.54,
                 change_24h=-1.0,
                 checked_at=now - timedelta(minutes=5),
             )
 
         payload = await alerts._build_event_analysis_input(
-            analysis_id="event_analysis_ton_stale_reference",
-            symbol="ton",
+            analysis_id="event_analysis_gram_stale_reference",
+            symbol="gram",
             current_price=1.54,
             change_24h=-1.0,
             now=now,

@@ -75,7 +75,7 @@ def _market_data():
             "change_7d": None,
             "sparkline_7d": [],
         },
-        "ton": {
+        "gram": {
             "price": 3.12,
             "change_24h": None,
             "change_7d": 1.4,
@@ -495,7 +495,7 @@ async def test_report_rate_limit_failure_starts_provider_backoff(monkeypatch):
         assert first_report.status == "failed"
         assert first_report.error_message == "coingecko rate limit"
         assert second_report is None
-        market_data.assert_awaited_once_with(["btc", "eth", "ton", "sol"])
+        market_data.assert_awaited_once_with(["btc", "eth", "gram", "sol"])
         async with session_local() as session:
             assert await session.scalar(select(func.count()).select_from(MarketReport)) == 1
     finally:
@@ -503,7 +503,7 @@ async def test_report_rate_limit_failure_starts_provider_backoff(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failed_report_stores_exact_schema_failure(monkeypatch):
+async def test_malformed_report_output_uses_deterministic_fallback(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
         monkeypatch.setattr(reports, "DB_ENABLED", True)
@@ -540,9 +540,12 @@ async def test_failed_report_stores_exact_schema_failure(monkeypatch):
 
         report = await reports.get_or_generate_report("daily")
 
-        assert report.status == "failed"
-        assert report.error_message == "coin card symbol is not active"
-        assert report.error_message != "unknown error"
+        assert report.status == "completed"
+        assert report.error_message == "deterministic fallback after other_error"
+        assert "Daily Market Report" in report.telegram_message
+        assert "Tracked assets:" in report.telegram_message
+        assert "GRAM" in report.telegram_message
+        assert "Not financial advice." in report.telegram_message
     finally:
         await engine.dispose()
 
@@ -574,7 +577,7 @@ async def test_report_input_includes_active_symbols(monkeypatch):
 
     payload, _ = await reports._build_market_report_input("daily", utc_now())
 
-    assert captured_symbols == ["btc", "eth", "ton", "sol"]
+    assert captured_symbols == ["btc", "eth", "gram", "sol"]
     assert [coin["symbol"] for coin in payload["coins"]] == ["BTC", "ETH", "GRAM", "SOL"]
     assert payload["coins"][0] == {
         "symbol": "BTC",

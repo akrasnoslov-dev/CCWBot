@@ -33,8 +33,8 @@ Permanent guardrails:
 
 Current product behavior:
 
-- Manual `/price` supports the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
-  Internal `ton` is user-facing GRAM; `/price gram` and legacy `/price ton` both work.
+- Manual `/price` supports the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
+  GRAM is the primary backend/product symbol; legacy `/price ton` still works as an alias.
 - BTC automatic alerts remain free.
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
 - Event Alerts are market-event-first: analysed-window market context is the primary basis,
