@@ -4,6 +4,9 @@ Use this template for normal CCWBot Codex tasks. The standing workflow, branch r
 guardrails, agent routing, verification defaults, and PR requirements live in `AGENTS.md`,
 `docs/codex_instructions.md`, `docs/project_context.md`, and `agents/routing.toml`.
 
+Non-trivial tasks must follow the mandatory implementation and PR-readiness workflow in
+`docs/codex_instructions.md`.
+
 ```markdown
 Task: <short task title>
 
@@ -24,6 +27,7 @@ Verification:
 
 PR notes:
 - <anything the PR body must explicitly confirm, including skills used or why no skill applied>
+- Non-trivial PRs must include `Self-review / risk check`.
 ```
 
 For production releases, explicitly say the PR is `dev` -> `main`. Otherwise, Codex opens PRs
