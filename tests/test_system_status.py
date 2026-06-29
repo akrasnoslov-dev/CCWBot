@@ -50,6 +50,36 @@ async def _seed_fresh_prices(session, now: datetime, *, skip: set[str] | None = 
         )
 
 
+async def _seed_healthy_status_dependencies(session, now: datetime):
+    await _seed_fresh_prices(session, now)
+    session.add(
+        _event_analysis(
+            status="success",
+            created_at=now - timedelta(minutes=5),
+            analysis_id="healthy_status_success",
+        )
+    )
+    session.add(
+        LlmUsageLog(
+            provider="groq",
+            model="event-model",
+            call_type="event_analysis",
+            status="success",
+            created_at=now - timedelta(minutes=5),
+        )
+    )
+    session.add(
+        NewsItem(
+            news_key="healthy-news",
+            title="BTC news",
+            url="https://example.com/news",
+            fetched_at=now - timedelta(minutes=20),
+            llm_status="success",
+            updated_at=now - timedelta(minutes=19),
+        )
+    )
+
+
 def _event_analysis(
     *,
     status: str,
@@ -70,6 +100,26 @@ def _event_analysis(
         error_reason=error_reason,
         error_message=error_message,
         created_at=created_at,
+    )
+
+
+def _final_failed_alert(
+    *,
+    sent_to_chat_id: int,
+    created_at: datetime,
+    last_error: str | None = None,
+    error_message: str | None = None,
+) -> Alert:
+    return Alert(
+        symbol="BTC",
+        alert_type="event_alert",
+        message="safe",
+        sent_to_chat_id=sent_to_chat_id,
+        status="failed",
+        created_at=created_at,
+        error_message=error_message,
+        last_error=last_error,
+        final_failed_at=created_at,
     )
 
 
@@ -478,6 +528,7 @@ async def test_system_status_delivery_counts():
     engine, session_local = await build_session_factory()
     try:
         async with session_local() as session:
+            await _seed_healthy_status_dependencies(session, now)
             session.add_all(
                 [
                     User(
@@ -522,6 +573,148 @@ async def test_system_status_delivery_counts():
         assert "Blocked users: 2" in text
         assert "retry_pending 1" not in text
         assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_blocked_only_final_failures_are_not_system_failure():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            await _seed_healthy_status_dependencies(session, now)
+            session.add_all(
+                [
+                    User(
+                        telegram_user_id=200,
+                        telegram_chat_id=200,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=2),
+                    ),
+                    User(
+                        telegram_user_id=201,
+                        telegram_chat_id=201,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=1),
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=200,
+                        created_at=now - timedelta(hours=1),
+                        error_message="Forbidden: bot was blocked by the user 200",
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=201,
+                        created_at=now - timedelta(minutes=30),
+                        last_error="Bad Request: chat is unavailable for chat 201",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "Overall: ❌ Problems detected" not in text
+        assert "❌ Telegram delivery" not in text
+        assert "✅ Telegram delivery — no system delivery issue" in text
+        assert "Blocked-user failures: 2 in 24h" in text
+        assert "Blocked users: 2" in text
+        assert "bot was blocked by the user" not in text
+        assert "chat is unavailable" not in text
+        assert "200" not in text
+        assert "201" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_real_final_failures_fail_without_raw_details():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add_all(
+                [
+                    _final_failed_alert(
+                        sent_to_chat_id=301,
+                        created_at=now - timedelta(hours=1),
+                        error_message="Timed out while sending Telegram message to chat 301",
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=302,
+                        created_at=now - timedelta(minutes=30),
+                        last_error="Bad Request: can't parse entities in message for 302",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "Overall: ❌ Problems detected" in text
+        assert "❌ Telegram delivery — final_failed 2 in 24h" in text
+        assert "Network/timeouts: 1" in text
+        assert "Bad request/message format: 1" in text
+        assert "Timed out while sending Telegram message" not in text
+        assert "can't parse entities" not in text
+        assert "301" not in text
+        assert "302" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add_all(
+                [
+                    _final_failed_alert(
+                        sent_to_chat_id=401,
+                        created_at=now - timedelta(hours=2),
+                        error_message="Forbidden: user is deactivated 401",
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=402,
+                        created_at=now - timedelta(hours=1),
+                        error_message="Telegram gateway returned unknown error for 402",
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=403,
+                        created_at=now - timedelta(minutes=30),
+                        last_error="Timed out while sending Telegram message to 403",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "❌ Telegram delivery — final_failed 3 in 24h" in text
+        assert "Real delivery failures: 2" in text
+        assert "Blocked-user failures: 1" in text
+        assert "Network/timeouts: 1" in text
+        assert "Other delivery failures: 1" in text
+        assert "user is deactivated" not in text
+        assert "unknown error" not in text
+        assert "Timed out while sending Telegram message" not in text
+        assert "401" not in text
+        assert "402" not in text
+        assert "403" not in text
     finally:
         await engine.dispose()
 
@@ -575,6 +768,53 @@ async def test_system_status_delivery_ok_shows_blocked_users_info():
         assert "✅ Telegram delivery — sent 2 in 24h" in text
         assert "Blocked users: 2" in text
         assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add_all(
+                [
+                    User(
+                        telegram_user_id=501,
+                        telegram_chat_id=501,
+                        bot_blocked=True,
+                        blocked_at=now - timedelta(hours=1),
+                    ),
+                    Alert(
+                        symbol="BTC",
+                        alert_type="event_alert",
+                        message="safe",
+                        sent_to_chat_id=100,
+                        status="sent",
+                        created_at=now - timedelta(minutes=20),
+                    ),
+                    _final_failed_alert(
+                        sent_to_chat_id=501,
+                        created_at=now - timedelta(minutes=10),
+                        error_message="Forbidden: bot was blocked by the user",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "❌ Telegram delivery" not in text
+        assert "✅ Telegram delivery — no system delivery issue" in text
+        assert "Blocked-user failures: 1 in 24h" in text
+        assert "Blocked users: 1" in text
+        assert "bot was blocked by the user" not in text
+        assert "501" not in text
     finally:
         await engine.dispose()
 
