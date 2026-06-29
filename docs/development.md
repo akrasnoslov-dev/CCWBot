@@ -96,9 +96,9 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
 - Event Alert quality cleanup was split across PRs: PR1 made Event Alerts market-event-first and
   added durable decision fields; PR2 added conservative pre-LLM similar-context reuse and removed
   new-news-only semantic cooldown bypasses.
-- Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
-  The internal `ton` key is displayed as GRAM / Gram (prev. Toncoin), `/price gram` is accepted
-  as an alias, and CoinGecko requests use `ids=the-open-network`. `usdt` is not supported.
+- Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
+  Legacy `/price ton` is accepted as an alias for GRAM, and CoinGecko requests use
+  `ids=the-open-network`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.

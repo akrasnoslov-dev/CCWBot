@@ -26,7 +26,7 @@ COIN_ALIASES = {
     "bnb": ("bnb", "binance coin", "binancecoin"),
     "doge": ("doge", "dogecoin"),
     "ada": ("ada", "cardano"),
-    "ton": (
+    "gram": (
         "ton",
         "toncoin",
         "gram",

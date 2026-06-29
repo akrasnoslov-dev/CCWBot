@@ -28,6 +28,9 @@ Never put LLM/Groq calls inside a recipient loop.
 - Work from `dev` or a focused branch based on `dev`; never work directly on `main`.
 - Do not overwrite, revert, reformat, or delete uncommitted user work unless explicitly asked.
 - Keep changes focused on the requested task.
+- For every non-trivial task, follow the mandatory implementation and PR-readiness workflow in
+  `docs/codex_instructions.md`: plan before edits, search affected concepts, add regression tests
+  when applicable, self-review the full diff, update PR risk notes, and verify review/check status.
 - Open normal PRs against `dev`.
 - Open `dev` -> `main` PRs only when explicitly asked for a production release.
 - Use `docs/codex_task_prompt_template.md` for short future task prompts.

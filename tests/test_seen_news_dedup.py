@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -9,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from alembic import command
+from bot.alerting.news_context import filter_news_for_symbol
 from bot.alerts import (
     _build_alert_ai_input_hash,
     _build_price_movement_event_key,
@@ -779,6 +781,100 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
             }.items()
         finally:
             await session.close()
+            await migrated_engine.dispose()
+    finally:
+        if db_path.exists():
+            db_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_gram_migration_updates_news_item_symbol_metadata():
+    db_path = PROJECT_ROOT / "legacy_news_symbol_migration_test.sqlite"
+    if db_path.exists():
+        db_path.unlink()
+    try:
+        database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+        engine = create_async_engine(database_url, future=True)
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "CREATE TABLE alembic_version ("
+                    "version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO alembic_version (version_num) "
+                    "VALUES ('0023_alert_outcome_decisions')"
+                )
+            )
+            await connection.execute(
+                text(
+                    "CREATE TABLE news_items ("
+                    "id INTEGER PRIMARY KEY, "
+                    "title VARCHAR(255) NOT NULL, "
+                    "source VARCHAR(255) NOT NULL, "
+                    "url TEXT, "
+                    "primary_symbol VARCHAR(32), "
+                    "related_symbols JSON"
+                    ")"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO news_items "
+                    "(id, title, source, url, primary_symbol, related_symbols) "
+                    "VALUES "
+                    "(1, 'Validator funding update', 'Test', 'https://example.test/1', "
+                    "'ton', '[\"btc\", \"eth\"]'), "
+                    "(2, 'Network validators update', 'Test', 'https://example.test/2', "
+                    "NULL, '[\"btc\", \"ton\"]'), "
+                    "(3, 'Protocol governance update', 'Test', 'https://example.test/3', "
+                    "NULL, '[\"ton\", \"gram\"]')"
+                )
+            )
+        await engine.dispose()
+
+        migrated_engine, _SessionLocal = await init_db(database_url)
+        try:
+            async with migrated_engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            "SELECT id, title, source, url, primary_symbol, related_symbols "
+                            "FROM news_items ORDER BY id"
+                        )
+                    )
+                ).mappings().all()
+            assert rows[0]["primary_symbol"] == "gram"
+            assert json.loads(rows[1]["related_symbols"]) == ["btc", "gram"]
+            assert json.loads(rows[2]["related_symbols"]) == ["gram"]
+
+            migrated_items = [
+                {
+                    "title": row["title"],
+                    "source": row["source"],
+                    "url": row["url"],
+                    "primary_symbol": row["primary_symbol"],
+                    "related_symbols": json.loads(row["related_symbols"]),
+                }
+                for row in rows
+            ]
+            selected_titles = {
+                item["title"]
+                for item in filter_news_for_symbol(
+                    "gram",
+                    migrated_items,
+                    max_direct=5,
+                    max_market_wide=0,
+                )
+            }
+            assert selected_titles == {
+                "Validator funding update",
+                "Network validators update",
+                "Protocol governance update",
+            }
+        finally:
             await migrated_engine.dispose()
     finally:
         if db_path.exists():

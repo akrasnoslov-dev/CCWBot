@@ -52,11 +52,11 @@ ALL_SUPPORTED_COINS = {
         "aliases": (),
         "free": False,
     },
-    "ton": {
-        "name": "Gram (prev. Toncoin)",
+    "gram": {
+        "name": "Gram",
         "coingecko_id": "the-open-network",
         "display_symbol": "GRAM",
-        "aliases": ("gram",),
+        "aliases": ("ton", "toncoin"),
         "free": False,
     },
     "link": {
@@ -75,7 +75,7 @@ ALL_SUPPORTED_COINS = {
     },
 }
 
-ACTIVE_SYMBOLS = ("btc", "eth", "ton", "sol")
+ACTIVE_SYMBOLS = ("btc", "eth", "gram", "sol")
 SUPPORTED_COINS = {symbol: ALL_SUPPORTED_COINS[symbol] for symbol in ACTIVE_SYMBOLS}
 SUPPORTED_SYMBOLS = ACTIVE_SYMBOLS
 SYMBOL_ALIASES = {
@@ -123,6 +123,6 @@ def premium_symbols_display() -> str:
 def supported_symbols_display(*, include_alias_note: bool = False) -> str:
     symbols = [display_symbol(symbol) for symbol in SUPPORTED_SYMBOLS]
     text = ", ".join(symbols)
-    if include_alias_note and "ton" in SUPPORTED_SYMBOLS:
+    if include_alias_note and "gram" in SUPPORTED_SYMBOLS:
         text = f"{text} (TON legacy alias accepted for GRAM)"
     return text

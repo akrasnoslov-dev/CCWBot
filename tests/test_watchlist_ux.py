@@ -91,7 +91,7 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
     text, rows = build_user_settings_message(
         make_user(active_until=now + timedelta(days=1), frequency=3600),
-        make_subscriptions(eth=True, sol=True, ton=True),
+        make_subscriptions(eth=True, sol=True, gram=True),
         now,
     )
 
@@ -100,7 +100,7 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
     assert "Manage subscription: /myplan" in text
-    assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "ton", "sol"]
+    assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "gram", "sol"]
 
 
 def test_watchlist_free_user_can_have_btc_disabled_in_keyboard_state():
@@ -214,7 +214,7 @@ def test_watchlist_buttons_use_icons_and_compact_layout():
     assert [button.callback_data for row in rows for button in row] == [
         "watchlist:set:btc:false",
         "watchlist:set:eth:false",
-        "watchlist:set:ton:true",
+        "watchlist:set:gram:true",
         "watchlist:set:sol:true",
         "watchlist:frequency:3600",
         "watchlist:frequency:21600",
@@ -240,7 +240,7 @@ def test_watchlist_buttons_show_locked_icons_for_free_user():
     assert [button.callback_data for row in keyboard.inline_keyboard for button in row] == [
         "watchlist:set:btc:false",
         "watchlist:set:eth:true",
-        "watchlist:set:ton:true",
+        "watchlist:set:gram:true",
         "watchlist:set:sol:true",
     ]
 
