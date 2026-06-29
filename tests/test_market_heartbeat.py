@@ -496,8 +496,8 @@ async def test_heartbeat_generation_uses_active_symbols(monkeypatch):
 
         await alerts.generate_market_heartbeats(SimpleNamespace())
 
-        assert requested_symbols == ["btc", "eth", "ton", "sol"]
-        assert called_symbols == ["BTC", "ETH", "TON", "SOL"]
+        assert requested_symbols == ["btc", "eth", "gram", "sol"]
+        assert called_symbols == ["BTC", "ETH", "GRAM", "SOL"]
     finally:
         await engine.dispose()
 
@@ -843,18 +843,18 @@ def test_market_heartbeat_safe_neutral_wording_is_accepted():
     assert decision.possible_action == SAFE_NEUTRAL_HEARTBEAT_ACTION
 
 
-def test_market_heartbeat_accepts_gram_display_symbol_for_internal_ton():
+def test_market_heartbeat_accepts_gram_display_symbol_for_backend_gram():
     decision = validate_market_heartbeat_output(
         heartbeat_result(
             symbol="GRAM",
             title="GRAM remains calm with no major market stress",
             message_body="GRAM is trading without a clear urgent signal.",
         ),
-        expected_symbol="ton",
+        expected_symbol="gram",
         candidate_news_ids=set(),
     )
 
-    assert decision.symbol == "TON"
+    assert decision.symbol == "GRAM"
 
 
 @pytest.mark.parametrize(
@@ -1076,7 +1076,7 @@ def test_heartbeat_related_context_missing_url_stays_plain_text():
     assert "Bitcoin ETF flows remain steady - CoinDesk" not in payload["plain_text"]
 
 
-def test_heartbeat_related_context_empty_selection_is_preserved():
+def test_heartbeat_related_context_empty_selection_is_hidden():
     heartbeat = SimpleNamespace(
         symbol="BTC",
         title="BTC remains calm",
@@ -1094,7 +1094,8 @@ def test_heartbeat_related_context_empty_selection_is_preserved():
 
     assert payload["html_text"] is not None
     assert "<tg-emoji emoji-id=" in payload["html_text"]
-    assert "No major related news selected." in payload["plain_text"]
+    assert "Related context:" not in payload["plain_text"]
+    assert "No major related news selected." not in payload["plain_text"]
 
 
 def test_event_alert_validation_still_allows_existing_cautious_event_wording():

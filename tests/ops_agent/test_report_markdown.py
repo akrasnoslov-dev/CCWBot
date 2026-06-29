@@ -205,6 +205,9 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "| `news_only_rejected` | 3 |" in markdown
     assert "| `llm_should_alert` | 5 |" in markdown
     assert "| `similar_context_reused` | 4 |" in markdown
+    assert "| No eligible recipients | 0 |" in markdown
+    assert "| Blocked user | 0 |" in markdown
+    assert "| LLM/schema failure | 0 |" in markdown
     assert "| Pre-LLM similar-context skips | 4 |" in markdown
     assert "| `allowed_market_context_changed` | 0 |" in markdown
     assert "Top similar-context reuse groups: BTC/price_level_range: 4." in markdown

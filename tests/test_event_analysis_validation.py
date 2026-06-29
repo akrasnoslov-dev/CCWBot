@@ -129,19 +129,19 @@ def test_alert_rejects_unmapped_related_news_ids():
         )
 
 
-def test_alert_accepts_gram_display_symbol_for_internal_ton():
+def test_alert_accepts_gram_display_symbol_for_backend_gram():
     decision = validate_event_analysis_output(
         alert_analysis_result(
             symbol="GRAM",
-            event_key="ton_price_downtrend",
+            event_key="gram_price_downtrend",
             title="GRAM market conditions changed",
             message_body="GRAM moved sharply while market context remains mixed.",
         ),
-        expected_symbol="ton",
+        expected_symbol="gram",
         candidate_news_ids={"n1"},
     )
 
-    assert decision.symbol == "TON"
+    assert decision.symbol == "GRAM"
 
 
 def test_alert_possible_action_advice_like_wording_no_longer_blocks_schema():

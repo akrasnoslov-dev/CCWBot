@@ -278,6 +278,7 @@ REASON_LLM_SHOULD_ALERT = "llm_should_alert"
 REASON_LLM_NO_ALERT = "llm_no_alert"
 REASON_NEWS_ONLY_REJECTED = "news_only_rejected"
 REASON_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
+REASON_TELEGRAM_BOT_BLOCKED = "telegram_bot_blocked"
 
 DECISION_STAGE_PRE_LLM = "pre_llm"
 DECISION_STAGE_LLM = "llm"
@@ -513,6 +514,45 @@ def _safe_previous_text(value: object, *, max_chars: int = 180) -> str | None:
         return None
     return _truncate_text(text, max_chars)
 
+def _event_market_decision_detail(input_payload: dict, decision: EventAnalysisDecision) -> str:
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    news_items = _selected_event_analysis_news(input_payload, decision.related_news_ids)
+    return _json_dumps(
+        {
+            "analysed_window_change_percent": _stable_float(
+                _optional_float(market_data.get("chg_window")), 4
+            ),
+            "change_since_last_message_percent": _stable_float(
+                _optional_float(
+                    market_data.get(
+                        "chg_since_msg",
+                        market_data.get("change_since_last_user_visible_message_percent"),
+                    )
+                ),
+                4,
+            ),
+            "twenty_four_hour_change_percent": _stable_float(
+                _optional_float(market_data.get("chg24h", market_data.get("change_24h_percent"))),
+                4,
+            ),
+            "reason_for_no_alert": _safe_previous_text(
+                decision.reason_for_no_alert, max_chars=180
+            ),
+            "selected_related_news_count": len(news_items),
+            "selected_related_news_ids": _stable_related_news_ids(
+                input_payload,
+                decision.related_news_ids,
+            ),
+        }
+    )
+
+def _outcome_created_at(value: object) -> str | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
 def _stable_id_set_hash(values: object) -> str | None:
     if not isinstance(values, list):
         return None
@@ -622,7 +662,21 @@ async def _record_similar_context_reuse(
             or getattr(previous_outcome, "previous_alert_id", None)
         ),
         context_fingerprint=_event_context_fingerprint(input_payload),
-        detail=f"reused_recent_{previous_reason or previous_status or 'decision'}",
+        detail=_json_dumps(
+            {
+                "previous_decision_reason": previous_reason or None,
+                "previous_status": previous_status or None,
+                "previous_detail": _safe_previous_text(
+                    getattr(previous_outcome, "detail", None), max_chars=180
+                ),
+                "previous_created_at": _outcome_created_at(
+                    getattr(previous_outcome, "created_at", None)
+                ),
+                "previous_alert_id": getattr(previous_outcome, "alert_id", None)
+                or getattr(previous_outcome, "previous_alert_id", None),
+                "current_context_fingerprint": _event_context_fingerprint(input_payload),
+            }
+        ),
     )
     _log_event_alert_suppression(
         symbol=str(input_payload["symbol"]),
@@ -760,6 +814,23 @@ DRAMATIC_EVENT_WORD_REPLACEMENTS = (
     (re.compile(r"(?i)\bmoon(?:s|ed|ing)?\b"), "move higher"),
     (re.compile(r"(?i)\bskyrocket(?:s|ed|ing)?\b"), "move higher"),
 )
+PERCENT_CLAIM_RE = re.compile(
+    r"(?i)(?:[+-]?\d+(?:\.\d+)?\s*%)(?:\s+(?:in|over|during|within)\s+"
+    r"(?:the\s+)?(?:last\s+)?\d+\s*(?:m|minute|minutes|h|hour|hours|d|day|days))?"
+)
+UPWARD_DIRECTION_RE = re.compile(
+    r"(?i)\b(?:up|rally|rallies|rallied|surge|surges|surged|gain|gains|gained|"
+    r"climb|climbs|climbed|higher|strengthen|strengthens|strengthened|bullish)\b"
+)
+DOWNWARD_DIRECTION_RE = re.compile(
+    r"(?i)\b(?:down|drop|drops|dropped|fall|falls|fell|fallen|decline|declines|"
+    r"declined|lower|weaken|weakens|weakened|bearish|selloff|sell-off|collapse|"
+    r"collapses|collapsed|collapsing|crash|crashes|crashed|crashing|plunge|"
+    r"plunges|plunged|plunging)\b"
+)
+CLAIM_PERCENT_VALUE_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+EVENT_TEXT_PERCENT_TOLERANCE = 0.4
+EVENT_TEXT_DIRECTION_TOLERANCE = 0.2
 
 
 def _small_analysed_window_move(analysed_window_change: object) -> bool:
@@ -777,6 +848,117 @@ def _guard_small_move_dramatic_event_text(value: str, *, small_move: bool) -> st
     for pattern, replacement in DRAMATIC_EVENT_WORD_REPLACEMENTS:
         guarded = pattern.sub(replacement, guarded)
     return " ".join(guarded.split()).strip()
+
+def _structured_market_claims(market_data: dict) -> list[float]:
+    values: list[float] = []
+    for key in (
+        "chg_window",
+        "chg_since_msg",
+        "change_since_last_user_visible_message_percent",
+        "chg24h",
+        "change_24h_percent",
+    ):
+        value = _optional_float(market_data.get(key))
+        if value is not None:
+            values.append(value)
+    return values
+
+def _primary_market_direction_value(market_data: dict) -> float | None:
+    fallback: float | None = None
+    for key in (
+        "chg_window",
+        "chg_since_msg",
+        "change_since_last_user_visible_message_percent",
+        "chg24h",
+        "change_24h_percent",
+    ):
+        value = _optional_float(market_data.get(key))
+        if value is not None:
+            if fallback is None:
+                fallback = value
+            if abs(value) >= EVENT_TEXT_DIRECTION_TOLERANCE:
+                return value
+    return fallback
+
+def _percent_claim_value(claim: str) -> float | None:
+    match = CLAIM_PERCENT_VALUE_RE.search(claim)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+def _contains_untrusted_percent_claim(text: str, market_claims: list[float]) -> bool:
+    for match in PERCENT_CLAIM_RE.finditer(text):
+        claim_value = _percent_claim_value(match.group(0))
+        if claim_value is None:
+            continue
+        if not any(
+            abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
+            for structured_value in market_claims
+        ):
+            return True
+    return False
+
+def _contains_contradictory_direction(text: str, direction_value: float | None) -> bool:
+    if direction_value is None or abs(direction_value) < EVENT_TEXT_DIRECTION_TOLERANCE:
+        return False
+    if direction_value < 0:
+        return UPWARD_DIRECTION_RE.search(text) is not None
+    return DOWNWARD_DIRECTION_RE.search(text) is not None
+
+def _deterministic_event_text(*, field_name: str, symbol: str, market_data: dict) -> str:
+    analysed_window = _optional_float(market_data.get("chg_window"))
+    change_since_message = _optional_float(
+        market_data.get(
+            "chg_since_msg",
+            market_data.get("change_since_last_user_visible_message_percent"),
+        )
+    )
+    change_24h = _optional_float(market_data.get("chg24h", market_data.get("change_24h_percent")))
+    main_change = (
+        analysed_window
+        if analysed_window is not None
+        else change_since_message
+        if change_since_message is not None
+        else change_24h
+    )
+    direction = (
+        "higher"
+        if main_change is not None and main_change > 0
+        else "lower"
+        if main_change is not None and main_change < 0
+        else "without a clear directional move"
+    )
+    if field_name == "title":
+        return f"{symbol} market move needs review"
+    if field_name == "possible_action":
+        return "Review the structured market data calmly and avoid impulsive decisions."
+    return (
+        f"Structured market data shows {symbol} moved {direction} by "
+        f"{_format_optional_percent(main_change)}."
+    )
+
+def _guard_event_text_against_market_data(
+    value: str,
+    *,
+    field_name: str,
+    symbol: str,
+    market_data: dict,
+) -> str:
+    if not value:
+        return value
+    if _contains_untrusted_percent_claim(
+        value,
+        _structured_market_claims(market_data),
+    ) or _contains_contradictory_direction(value, _primary_market_direction_value(market_data)):
+        return _deterministic_event_text(
+            field_name=field_name,
+            symbol=symbol,
+            market_data=market_data,
+        )
+    return value
 
 def _utf16_length(value: str) -> int:
     return len(value.encode("utf-16-le")) // 2
@@ -905,9 +1087,12 @@ def _build_market_heartbeat_html_message(
     since_last_text: str,
     change_24h_text: str,
     message_body: str,
-    related_section_html: str,
+    related_section_html: str | None,
     possible_action: str,
 ) -> str:
+    related_block = (
+        f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
+    )
     return (
         f"{icon_html} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
         f"{escape(title)}\n\n"
@@ -916,8 +1101,7 @@ def _build_market_heartbeat_html_message(
         f"24h change: {escape(change_24h_text)}\n\n"
         "Situation:\n"
         f"{escape(message_body)}\n\n"
-        "Related context:\n"
-        f"{related_section_html}\n\n"
+        f"{related_block}"
         "Possible action:\n"
         f"{escape(possible_action)}\n\n"
         "Not financial advice."
@@ -930,18 +1114,20 @@ def _build_event_alert_html_message(
     title: str,
     market_context_html: str,
     message_body: str,
-    related_section_html: str,
+    related_section_html: str | None,
     possible_action: str,
 ) -> str:
     market_section = f"{market_context_html}\n\n" if market_context_html else ""
+    related_block = (
+        f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
+    )
     return (
         f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
         f"{escape(title)}\n\n"
         f"{market_section}"
         "Situation:\n"
         f"{escape(message_body)}\n\n"
-        "Related context:\n"
-        f"{related_section_html}\n\n"
+        f"{related_block}"
         "Possible action:\n"
         f"{escape(possible_action)}\n\n"
         "Not financial advice."
@@ -1000,6 +1186,12 @@ def _build_event_alert_payload(
         ),
         small_move=small_move,
     )
+    title = _guard_event_text_against_market_data(
+        title,
+        field_name="title",
+        symbol=symbol,
+        market_data=market_data,
+    )
     message_body = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(
             decision.message_body,
@@ -1007,6 +1199,12 @@ def _build_event_alert_payload(
             omit_placeholders=True,
         ),
         small_move=small_move,
+    )
+    message_body = _guard_event_text_against_market_data(
+        message_body,
+        field_name="message_body",
+        symbol=symbol,
+        market_data=market_data,
     )
     possible_action = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(
@@ -1016,9 +1214,15 @@ def _build_event_alert_payload(
         ),
         small_move=small_move,
     )
+    possible_action = _guard_event_text_against_market_data(
+        possible_action,
+        field_name="possible_action",
+        symbol=symbol,
+        market_data=market_data,
+    )
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
-        empty_text="No major related news selected.",
+        empty_text="",
     )
     price = market_data.get("price", market_data.get("price_now_usd"))
     change_since_message = market_data.get(
@@ -1036,17 +1240,18 @@ def _build_event_alert_payload(
     market_context_text = "\n".join(market_context_lines)
     market_context_block = f"{market_context_text}\n\n" if market_context_text else ""
 
+    related_prefix = "Related context:\n" if related_section else ""
     before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
         f"{title}\n\n"
         f"{market_context_block}"
         "Situation:\n"
         f"{message_body}\n\n"
-        "Related context:\n"
+        f"{related_prefix}"
     )
     after_related = (
-        "\n\n"
-        "Possible action:\n"
+        ("\n\n" if related_section else "")
+        + "Possible action:\n"
         f"{possible_action}\n\n"
         "Not financial advice."
     )
@@ -1070,7 +1275,7 @@ def _build_event_alert_payload(
             title=title,
             market_context_html="\n".join(escape(line) for line in market_context_lines),
             message_body=message_body,
-            related_section_html=related_section_html or escape(related_section),
+            related_section_html=related_section_html,
             possible_action=possible_action,
         )
     return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
@@ -1151,11 +1356,12 @@ def _build_market_heartbeat_payload(
     possible_action = sanitize_heartbeat_possible_action(heartbeat.possible_action)
     related_section, related_section_html = _format_market_heartbeat_related_context(
         related_news,
-        empty_text="No major related news selected.",
+        empty_text="",
     )
     price_text = _format_optional_price(current_price)
     since_last_text = _format_optional_percent(change_since_last_message)
     change_24h_text = _format_optional_percent(change_24h)
+    related_block = f"Related context:\n{related_section}\n\n" if related_section else ""
     message = (
         f"{icon} \U0001f4e1 {symbol} Market Heartbeat\n\n"
         f"{title}\n\n"
@@ -1164,8 +1370,7 @@ def _build_market_heartbeat_payload(
         f"24h change: {change_24h_text}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
-        "Related context:\n"
-        f"{related_section}\n\n"
+        f"{related_block}"
         "Possible action:\n"
         f"{possible_action}\n\n"
         "Not financial advice."
@@ -1180,7 +1385,7 @@ def _build_market_heartbeat_payload(
             since_last_text=since_last_text,
             change_24h_text=change_24h_text,
             message_body=message_body,
-            related_section_html=related_section_html or escape(related_section),
+            related_section_html=related_section_html,
             possible_action=possible_action,
         )
     return {"plain_text": message, "html_text": html_message, "entities": entities}
@@ -2799,7 +3004,7 @@ async def _create_event_analysis_decision(
             decision_reason=DECISION_REASON_NEWS_ONLY_REJECTED,
             previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
             context_fingerprint=_event_context_fingerprint(input_payload),
-            detail=rejected_decision.reason_for_no_alert,
+            detail=_event_market_decision_detail(input_payload, rejected_decision),
         )
         logger.info(
             "%s LLM event analysis rejected as news-only.",
@@ -2865,7 +3070,7 @@ async def _create_event_analysis_decision(
         detail=(
             "market_event_first_llm_allowed"
             if decision.should_alert
-            else _safe_previous_text(decision.reason_for_no_alert, max_chars=255)
+            else _event_market_decision_detail(input_payload, decision)
         ),
     )
     return decision, analysis_id
@@ -3579,6 +3784,11 @@ def _is_permanent_telegram_delivery_error(error: BaseException | str | None) -> 
         return True
     return is_bot_blocked_error(error)
 
+def _telegram_failure_reason_code(error: BaseException | str | None) -> str:
+    if is_bot_blocked_error(error):
+        return REASON_TELEGRAM_BOT_BLOCKED
+    return REASON_TELEGRAM_SEND_FAILED
+
 def _is_transient_telegram_delivery_error(error: BaseException | str | None) -> bool:
     if error is None or _is_permanent_telegram_delivery_error(error):
         return False
@@ -4082,7 +4292,9 @@ async def _deliver_market_event_alert(
                 symbol=normalized_symbol,
                 alert_type=event_type,
                 status=OUTCOME_DELIVERED if sent else OUTCOME_FAILED,
-                reason_code=REASON_DELIVERED if sent else REASON_TELEGRAM_SEND_FAILED,
+                reason_code=(
+                    REASON_DELIVERED if sent else _telegram_failure_reason_code(error_message)
+                ),
                 market_event_id=market_event_id,
                 event_ai_analysis_id=event_ai_analysis_id,
                 alert_id=alert_id,
@@ -4120,7 +4332,9 @@ async def _deliver_market_event_alert(
                 symbol=normalized_symbol,
                 alert_type=event_type,
                 status=OUTCOME_DELIVERED if sent else OUTCOME_FAILED,
-                reason_code=REASON_DELIVERED if sent else REASON_TELEGRAM_SEND_FAILED,
+                reason_code=(
+                    REASON_DELIVERED if sent else _telegram_failure_reason_code(error_message)
+                ),
                 market_event_id=market_event_id,
                 event_ai_analysis_id=event_ai_analysis_id,
                 recipient=recipient,

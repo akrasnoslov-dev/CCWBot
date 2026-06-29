@@ -91,11 +91,11 @@ async def test_get_coin_price_unsupported_symbol_raises_value_error():
 
 
 def test_coin_mapping_uses_active_symbols_only():
-    assert ACTIVE_SYMBOLS == ("btc", "eth", "ton", "sol")
+    assert ACTIVE_SYMBOLS == ("btc", "eth", "gram", "sol")
     assert price_service.COIN_SYMBOL_TO_ID == {
         "btc": "bitcoin",
         "eth": "ethereum",
-        "ton": "the-open-network",
+        "gram": "the-open-network",
         "sol": "solana",
     }
 
@@ -115,7 +115,7 @@ async def test_get_coin_price_accepts_gram_alias(monkeypatch):
         "vs_currencies": "usd",
         "include_24hr_change": "true",
     }
-    assert result == (1.75, 3.2, "ton")
+    assert result == (1.75, 3.2, "gram")
 
 
 @pytest.mark.asyncio
@@ -183,7 +183,7 @@ async def test_get_coin_market_data_batch_uses_current_gram_coingecko_id(monkeyp
     requested_params = get_with_retry.await_args.args[2]
     assert requested_params["ids"] == "the-open-network"
     assert "toncoin" not in requested_params["ids"]
-    assert result == {"ton": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+    assert result == {"gram": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
 
 
 @pytest.mark.asyncio
@@ -197,7 +197,7 @@ async def test_get_coin_market_data_batch_accepts_gram_alias(monkeypatch):
 
     requested_params = get_with_retry.await_args.args[2]
     assert requested_params["ids"] == "the-open-network"
-    assert result == {"ton": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+    assert result == {"gram": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
 
 
 @pytest.mark.asyncio

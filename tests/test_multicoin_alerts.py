@@ -465,13 +465,13 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
         alerts.AUTOMATIC_MARKET_CHECK_JOB_NAME,
         "automatic_market_check:btc",
         "automatic_market_check:eth",
-        "automatic_market_check:ton",
+        "automatic_market_check:gram",
         "automatic_market_check:sol",
     ]
     assert [kwargs["name"] for kwargs in captured_kwargs] == [
         "automatic_market_check:btc",
         "automatic_market_check:eth",
-        "automatic_market_check:ton",
+        "automatic_market_check:gram",
         "automatic_market_check:sol",
     ]
     assert all(kwargs["interval"] == 1800 for kwargs in captured_kwargs)
@@ -486,7 +486,7 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
     assert [kwargs["data"] for kwargs in captured_kwargs] == [
         {"symbol": "btc"},
         {"symbol": "eth"},
-        {"symbol": "ton"},
+        {"symbol": "gram"},
         {"symbol": "sol"},
     ]
 
@@ -509,7 +509,7 @@ def test_legacy_automatic_btc_scheduler_alias_uses_market_job_name():
     assert [kwargs["name"] for kwargs in captured_kwargs] == [
         "automatic_market_check:btc",
         "automatic_market_check:eth",
-        "automatic_market_check:ton",
+        "automatic_market_check:gram",
         "automatic_market_check:sol",
     ]
 
@@ -518,12 +518,12 @@ def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
     now = datetime(2026, 6, 5, 12, 0, tzinfo=timezone.utc)
 
     assert alerts._symbol_stagger_offsets_seconds(
-        symbols=("btc", "eth", "ton", "sol"),
+        symbols=("btc", "eth", "gram", "sol"),
         interval_seconds=1800,
     ) == {
         "btc": 0,
         "eth": 300,
-        "ton": 600,
+        "gram": 600,
         "sol": 900,
     }
     assert alerts._seconds_until_next_symbol_check(
@@ -537,7 +537,7 @@ def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
         now=now,
     ) == 300
     assert alerts._seconds_until_next_symbol_check(
-        symbol="ton",
+        symbol="gram",
         interval_seconds=1800,
         now=now,
     ) == 600
@@ -557,13 +557,13 @@ def test_symbol_first_delays_are_deterministic_after_mid_cycle_restart():
             interval_seconds=1800,
             now=now,
         )
-        for symbol in ("btc", "eth", "ton", "sol")
+        for symbol in ("btc", "eth", "gram", "sol")
     }
 
     assert first_delays == {
         "btc": 1757,
         "eth": 257,
-        "ton": 557,
+        "gram": 557,
         "sol": 857,
     }
     assert len(set(first_delays.values())) == len(first_delays)
@@ -573,20 +573,20 @@ def test_symbol_first_delays_are_deterministic_after_mid_cycle_restart():
             interval_seconds=1800,
             now=now,
         )
-        for symbol in ("btc", "eth", "ton", "sol")
+        for symbol in ("btc", "eth", "gram", "sol")
     }
 
 
 def test_symbol_stagger_offsets_do_not_pair_symbols_on_shorter_interval():
     offsets = alerts._symbol_stagger_offsets_seconds(
-        symbols=("btc", "eth", "ton", "sol"),
+        symbols=("btc", "eth", "gram", "sol"),
         interval_seconds=600,
     )
 
     assert offsets == {
         "btc": 0,
         "eth": 100,
-        "ton": 200,
+        "gram": 200,
         "sol": 300,
     }
     assert len(set(offsets.values())) == len(offsets)

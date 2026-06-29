@@ -558,6 +558,12 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         _int(row.get("semantic_cooldown_suppressed_count")) for row in rows
     )
     similar_reused = sum(_int(row.get("similar_context_reused_count")) for row in rows)
+    no_recipients = sum(_int(row.get("no_eligible_recipients_count")) for row in rows)
+    already_delivered = sum(_int(row.get("already_delivered_count")) for row in rows)
+    telegram_failed = sum(_int(row.get("telegram_send_failed_count")) for row in rows)
+    blocked_users = sum(_int(row.get("telegram_bot_blocked_count")) for row in rows)
+    llm_rate_limited = sum(_int(row.get("llm_rate_limited_count")) for row in rows)
+    llm_invalid_response = sum(_int(row.get("llm_invalid_response_count")) for row in rows)
     market_context_changed = sum(
         _int(row.get("allowed_market_context_changed_count")) for row in rows
     )
@@ -580,6 +586,12 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| `llm_no_alert` | {llm_no_alert} | LLM no-alert decisions for non-news-only reasons. |",
         f"| `semantic_cooldown_suppressed` | {semantic_suppressed} | Backend semantic cooldown suppressions. |",
         f"| `similar_context_reused` | {similar_reused} | Conservative same-context decisions reused without needing a fresh Event Alert. |",
+        f"| No eligible recipients | {no_recipients} | Event had no recipient allowed by current eligibility state. |",
+        f"| Duplicate or already delivered | {already_delivered} | Delivery idempotency prevented a repeat send. |",
+        f"| Telegram delivery failed | {telegram_failed} | Non-blocked Telegram send failures. |",
+        f"| Blocked user | {blocked_users} | Telegram reported the bot was blocked by the user. |",
+        f"| LLM rate limited | {llm_rate_limited} | Event Analysis skipped or failed because provider rate limiting was active. |",
+        f"| LLM/schema failure | {llm_invalid_response} | Event Analysis response was invalid JSON or failed schema validation. |",
         f"| Pre-LLM similar-context skips | {pre_llm_similar_reused} | Event Analysis LLM calls avoided by stable context fingerprint reuse. |",
         f"| `allowed_market_context_changed` | {market_context_changed} | Delivered repeats allowed because market context changed, not because news alone changed. |",
         f"| Delivered rows with decision reason | {delivered_with_reason} | Successful deliveries carrying operator-facing decision reason. |",

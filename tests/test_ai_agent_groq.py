@@ -409,7 +409,7 @@ def test_classify_ai_error_reason_uses_safe_snake_case_categories():
 def test_event_analysis_prompt_quality_requirements():
     prompt = ai_agent_groq.build_event_analysis_prompt(
         {
-            "symbol": "TON",
+            "symbol": "GRAM",
             "display_symbol": "GRAM",
             "market": {"chg24h": 5.8, "snapshots": [{"m": -30, "p": 3.1}]},
             "news": [],

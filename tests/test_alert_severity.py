@@ -283,7 +283,7 @@ def test_formatted_alert_shows_severity_title_type_and_coin():
 
     assert message.startswith("🔴 High - GRAM movement alert")
     assert "\nType:" not in message
-    assert "\nCoin: GRAM / Gram (prev. Toncoin)\n" in message
+    assert "\nCoin: GRAM\n" in message
     assert message.count("Coin:") == 1
 
 

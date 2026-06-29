@@ -193,6 +193,38 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
                 error_message=str(error)[:500],
             )
         raw_output_json = getattr(error, "raw_content", raw_output_json)
+        if raw_input_json:
+            try:
+                input_payload = json.loads(raw_input_json)
+            except json.JSONDecodeError:
+                input_payload = None
+            if isinstance(input_payload, dict):
+                fallback_decision = _build_deterministic_report_decision(
+                    report_type,
+                    input_payload,
+                )
+                message = _build_report_telegram_message(
+                    report_type=report_type,
+                    input_payload=input_payload,
+                    decision=fallback_decision,
+                )
+                await remember_news_context(news_items)
+                reason = classify_ai_error_reason(error)
+                log(
+                    "ops_event=market_report_generated "
+                    f"report_type={report_type} status=completed fallback=deterministic "
+                    f"reason={reason.replace(' ', '_')}"
+                )
+                return await _save_or_remember_report(
+                    report_type=report_type,
+                    generated_at=generated_at,
+                    expires_at=expires_at,
+                    status="completed",
+                    raw_input_json=raw_input_json,
+                    raw_output_json=raw_output_json,
+                    telegram_message=message,
+                    error_message=f"deterministic fallback after {reason}",
+                )
         return await _save_or_remember_report(
             report_type=report_type,
             generated_at=generated_at,
@@ -516,6 +548,89 @@ def _build_report_telegram_message(
             news_context_text=news_context_text,
         )
     return sanitize_alert_message(message)
+
+
+def _build_deterministic_report_decision(
+    report_type: str,
+    input_payload: dict,
+) -> MarketReportDecision:
+    coins = [coin for coin in input_payload.get("coins", []) if isinstance(coin, dict)]
+    market_pulse = _deterministic_market_pulse(coins, weekly=report_type == "weekly")
+    coin_cards = [
+        {
+            "symbol": str(coin.get("symbol") or "").upper(),
+            "summary": _deterministic_coin_summary(coin, weekly=report_type == "weekly"),
+            "watch": "Watch whether the next update confirms or fades this move.",
+        }
+        for coin in coins
+        if str(coin.get("symbol") or "").strip()
+    ]
+    dashboard = [_format_coin_row(coin, weekly=report_type == "weekly") for coin in coins]
+    if report_type == "weekly":
+        weekly_context = input_payload.get("weekly_context")
+        timeline = (
+            weekly_context.get("timeline")
+            if isinstance(weekly_context, dict)
+            and isinstance(weekly_context.get("timeline"), list)
+            else []
+        )
+        themes = [
+            "Tracked assets were reviewed from available price and news data.",
+            "Fallback report used deterministic market data because model output was malformed.",
+        ]
+        return MarketReportDecision(
+            report_type="weekly",
+            title="Weekly Market Report",
+            market_pulse=market_pulse,
+            dashboard=dashboard or ["Tracked market data is temporarily limited."],
+            coin_cards=coin_cards,
+            market_catalysts=[],
+            why_it_matters="A data-only fallback avoids relying on malformed model output.",
+            watch_next="Monitor whether next week's data confirms the current direction.",
+            week_timeline=timeline or ["No strong tracked weekly catalyst in selected news"],
+            themes=themes,
+            next_week_focus="Watch whether market breadth improves across tracked assets.",
+        )
+    return MarketReportDecision(
+        report_type="daily",
+        title="Daily Market Report",
+        market_pulse=market_pulse,
+        dashboard=dashboard or ["Tracked market data is temporarily limited."],
+        coin_cards=coin_cards,
+        market_catalysts=[],
+        why_it_matters="A data-only fallback avoids relying on malformed model output.",
+        watch_next="Monitor whether the next update confirms or fades the current move.",
+        week_timeline=[],
+        themes=[],
+        next_week_focus="",
+    )
+
+
+def _deterministic_market_pulse(coins: list[dict], *, weekly: bool) -> str:
+    key = "change_7d" if weekly else "change_24h"
+    moves = [
+        (str(coin.get("symbol") or "").upper(), float(coin[key]))
+        for coin in coins
+        if coin.get(key) is not None and str(coin.get("symbol") or "").strip()
+    ]
+    if not moves:
+        return "Tracked market data is available, but direction is limited."
+    leaders = sorted(moves, key=lambda item: item[1], reverse=True)
+    strongest = leaders[0]
+    weakest = leaders[-1]
+    return (
+        f"{strongest[0]} is the strongest tracked asset at {strongest[1]:+.1f}%, "
+        f"while {weakest[0]} is weakest at {weakest[1]:+.1f}%."
+    )
+
+
+def _deterministic_coin_summary(coin: dict, *, weekly: bool) -> str:
+    symbol = str(coin.get("symbol") or "").upper()
+    price = _format_price(coin.get("price"))
+    change_key = "change_7d" if weekly else "change_24h"
+    change_label = "7d" if weekly else "24h"
+    change = _format_percent(coin.get(change_key))
+    return f"{symbol} is near {price}, with {change_label} change at {change}."
 
 
 def _build_daily_report_message(
