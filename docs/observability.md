@@ -34,8 +34,11 @@ Signals currently summarized:
 - News: cache freshness and usable non-noise/non-duplicate rows in the last 24h. Fresh usable
   news remains OK even when enrichment telemetry has not run yet.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
-  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`. Blocked users are
-  shown only when non-zero.
+  `failed`, final-failed rows, and blocked-user count from `users.bot_blocked`. Expected
+  Telegram permanent failures such as blocked users, unavailable chats, deactivated users, and
+  forbidden sends are shown separately from real delivery failures. Blocked-user/chat-unavailable
+  failures do not mark the whole system as broken unless non-blocked delivery failures are also
+  present. Blocked users are shown only when non-zero.
 
 Example degraded output:
 
