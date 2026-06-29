@@ -8,6 +8,8 @@ Create Date: 2026-06-29
 
 from __future__ import annotations
 
+import json
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -54,6 +56,10 @@ def _has_table_and_symbol(tables: set[str], table_name: str) -> bool:
     return table_name in tables and "symbol" in _column_names(table_name)
 
 
+def _has_table_columns(tables: set[str], table_name: str, columns: set[str]) -> bool:
+    return table_name in tables and columns.issubset(_column_names(table_name))
+
+
 def upgrade() -> None:
     tables = _table_names()
     if _has_table_and_symbol(tables, "user_coin_subscriptions"):
@@ -62,6 +68,8 @@ def upgrade() -> None:
         _merge_user_symbol_alert_state()
     if _has_table_and_symbol(tables, "price_state"):
         _merge_price_state()
+    if _has_table_columns(tables, "news_items", {"id", "primary_symbol", "related_symbols"}):
+        _migrate_news_items_symbols("ton", "gram")
 
     for table_name in UPPER_SYMBOL_TABLES:
         if table_name == "price_state":
@@ -82,6 +90,84 @@ def downgrade() -> None:
     for table_name in LOWER_SYMBOL_TABLES:
         if _has_table_and_symbol(tables, table_name):
             op.execute(sa.text(f"UPDATE {table_name} SET symbol = 'ton' WHERE symbol = 'gram'"))
+    if _has_table_columns(tables, "news_items", {"id", "primary_symbol", "related_symbols"}):
+        _migrate_news_items_symbols("gram", "ton")
+
+
+def _coerce_related_symbols(value: object) -> list | None:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, list) else None
+    return None
+
+
+def _replace_related_symbol_values(
+    value: object,
+    *,
+    source_symbol: str,
+    target_symbol: str,
+) -> tuple[list | None, bool]:
+    related_symbols = _coerce_related_symbols(value)
+    if related_symbols is None:
+        return None, False
+    changed = False
+    migrated: list = []
+    seen_symbols: set[str] = set()
+    for item in related_symbols:
+        normalized_item = str(item or "").strip().lower()
+        next_item = target_symbol if normalized_item == source_symbol else item
+        next_normalized = str(next_item or "").strip().lower()
+        if next_normalized in {source_symbol, target_symbol}:
+            if target_symbol in seen_symbols:
+                changed = True
+                continue
+            next_item = target_symbol
+            next_normalized = target_symbol
+        if next_item != item:
+            changed = True
+        if next_normalized:
+            seen_symbols.add(next_normalized)
+        migrated.append(next_item)
+    return migrated, changed
+
+
+def _migrate_news_items_symbols(source_symbol: str, target_symbol: str) -> None:
+    news_items = sa.table(
+        "news_items",
+        sa.column("id", sa.Integer),
+        sa.column("primary_symbol", sa.String),
+        sa.column("related_symbols", sa.JSON),
+    )
+    bind = op.get_bind()
+    rows = bind.execute(
+        sa.select(
+            news_items.c.id,
+            news_items.c.primary_symbol,
+            news_items.c.related_symbols,
+        )
+    )
+    for row in rows:
+        values: dict[str, object] = {}
+        if str(row.primary_symbol or "").strip().lower() == source_symbol:
+            values["primary_symbol"] = target_symbol
+        related_symbols, changed = _replace_related_symbol_values(
+            row.related_symbols,
+            source_symbol=source_symbol,
+            target_symbol=target_symbol,
+        )
+        if changed:
+            values["related_symbols"] = related_symbols
+        if values:
+            bind.execute(
+                news_items.update()
+                .where(news_items.c.id == row.id)
+                .values(**values)
+            )
 
 
 def _merge_user_coin_subscriptions() -> None:

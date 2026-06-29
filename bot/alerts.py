@@ -815,8 +815,10 @@ DRAMATIC_EVENT_WORD_REPLACEMENTS = (
     (re.compile(r"(?i)\bskyrocket(?:s|ed|ing)?\b"), "move higher"),
 )
 PERCENT_CLAIM_RE = re.compile(
-    r"(?i)(?:[+-]?\d+(?:\.\d+)?\s*%)(?:\s+(?:in|over|during|within)\s+"
-    r"(?:the\s+)?(?:last\s+)?\d+\s*(?:m|minute|minutes|h|hour|hours|d|day|days))?"
+    r"(?i)(?P<percent>[+-]?\d+(?:\.\d+)?\s*%)"
+    r"(?:\s+(?:in|over|during|within)\s+"
+    r"(?:the\s+)?(?:last\s+)?(?P<window_value>\d+)\s*"
+    r"(?P<window_unit>m|min|minute|minutes|h|hr|hour|hours|d|day|days))?"
 )
 UPWARD_DIRECTION_RE = re.compile(
     r"(?i)\b(?:up|rally|rallies|rallied|surge|surges|surged|gain|gains|gained|"
@@ -831,6 +833,7 @@ DOWNWARD_DIRECTION_RE = re.compile(
 CLAIM_PERCENT_VALUE_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
 EVENT_TEXT_PERCENT_TOLERANCE = 0.4
 EVENT_TEXT_DIRECTION_TOLERANCE = 0.2
+EVENT_TEXT_WINDOW_TOLERANCE_MINUTES = 1
 
 
 def _small_analysed_window_move(analysed_window_change: object) -> bool:
@@ -863,6 +866,48 @@ def _structured_market_claims(market_data: dict) -> list[float]:
             values.append(value)
     return values
 
+def _window_minutes_from_claim(match: re.Match[str]) -> int | None:
+    raw_value = match.groupdict().get("window_value")
+    raw_unit = str(match.groupdict().get("window_unit") or "").lower()
+    if not raw_value or not raw_unit:
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return None
+    if value <= 0:
+        return None
+    if raw_unit in {"m", "min", "minute", "minutes"}:
+        return value
+    if raw_unit in {"h", "hr", "hour", "hours"}:
+        return value * 60
+    if raw_unit in {"d", "day", "days"}:
+        return value * 24 * 60
+    return None
+
+def _window_compatible(left_minutes: int | None, right_minutes: int | None) -> bool:
+    if left_minutes is None or right_minutes is None:
+        return False
+    return abs(left_minutes - right_minutes) <= EVENT_TEXT_WINDOW_TOLERANCE_MINUTES
+
+def _matching_window_market_claims(market_data: dict, window_minutes: int) -> list[float]:
+    values: list[float] = []
+    analysed_window_minutes = _optional_float(market_data.get("analysed_window_minutes"))
+    if _window_compatible(
+        window_minutes,
+        int(analysed_window_minutes) if analysed_window_minutes is not None else None,
+    ):
+        analysed_window = _optional_float(market_data.get("chg_window"))
+        if analysed_window is not None:
+            values.append(analysed_window)
+    if _window_compatible(window_minutes, 24 * 60):
+        change_24h = _optional_float(
+            market_data.get("chg24h", market_data.get("change_24h_percent"))
+        )
+        if change_24h is not None:
+            values.append(change_24h)
+    return values
+
 def _primary_market_direction_value(market_data: dict) -> float | None:
     fallback: float | None = None
     for key in (
@@ -889,11 +934,20 @@ def _percent_claim_value(claim: str) -> float | None:
     except ValueError:
         return None
 
-def _contains_untrusted_percent_claim(text: str, market_claims: list[float]) -> bool:
+def _contains_untrusted_percent_claim(text: str, market_data: dict) -> bool:
+    unwindowed_market_claims = _structured_market_claims(market_data)
     for match in PERCENT_CLAIM_RE.finditer(text):
         claim_value = _percent_claim_value(match.group(0))
         if claim_value is None:
             continue
+        window_minutes = _window_minutes_from_claim(match)
+        market_claims = (
+            _matching_window_market_claims(market_data, window_minutes)
+            if window_minutes is not None
+            else unwindowed_market_claims
+        )
+        if window_minutes is not None and not market_claims:
+            return True
         if not any(
             abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
             for structured_value in market_claims
@@ -951,7 +1005,7 @@ def _guard_event_text_against_market_data(
         return value
     if _contains_untrusted_percent_claim(
         value,
-        _structured_market_claims(market_data),
+        market_data,
     ) or _contains_contradictory_direction(value, _primary_market_direction_value(market_data)):
         return _deterministic_event_text(
             field_name=field_name,

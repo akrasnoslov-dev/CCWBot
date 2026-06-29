@@ -785,6 +785,40 @@ def test_event_alert_numeric_guard_replaces_contradictory_llm_percent_claim():
     assert "3h market move: -0.12%" in message
 
 
+def test_event_alert_numeric_guard_rejects_mismatched_window_claim():
+    decision = alerts.EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_price_movement",
+        title="SOL jumps +5.0% in 3 hours",
+        message_body="SOL jumps +5.0% in 3 hours while the trend improves.",
+        related_news_ids=[],
+        possible_action="Watch whether the 3 hour move keeps extending.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 142.35,
+                "analysed_window_minutes": 180,
+                "chg_window": 0.2,
+                "chg_since_msg": 0.1,
+                "chg24h": 5.0,
+            }
+        },
+        related_news=[],
+    )
+
+    message = payload["plain_text"]
+    assert "+5.0% in 3 hours" not in message
+    assert "Structured market data shows SOL moved higher by +0.20%." in message
+    assert "3h market move: +0.20%" in message
+
+
 def test_event_alert_related_context_renders_multiple_links_in_selected_order():
     decision = event_decision(related_news_ids=["n1", "n2"])
     related_news = [
