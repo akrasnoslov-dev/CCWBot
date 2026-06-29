@@ -13,6 +13,30 @@ Before non-trivial work:
 6. Check current branch and worktree status.
 7. Do not overwrite uncommitted user work.
 
+Mandatory implementation and PR-readiness workflow for every non-trivial task:
+
+1. Write a short implementation plan before changing files. Cover expected files or areas to
+   change, risky edge cases, DB/schema/data migration impact, tests to add, and what belongs in
+   the current PR versus follow-up work.
+2. Search repository-wide for affected concepts before coding, not only obvious files. For
+   migrations or renames, explicitly search for direct columns/fields, lowercase supported-symbol
+   fields, JSON metadata fields, docs/tests/ops-agent queries, user-facing copy, and
+   historical/cache tables.
+3. Add at least one regression test for every bug fix or behavior change that would fail on the
+   old behavior, unless the task is documentation-only or tests are genuinely not applicable.
+4. Before saying a PR is ready, review the full diff and update the PR body with a section named
+   `Self-review / risk check`. Include risky assumptions checked, edge cases tested, files
+   intentionally not changed and why, data migration coverage when relevant, rollback/downgrade
+   considerations when relevant, and known limitations or follow-ups.
+5. If automated PR review is available, check open review comments or threads before saying the
+   PR is ready. Address all valid review comments, explain any intentionally unresolved comment,
+   and do not claim the PR is ready to merge while valid review threads remain unresolved.
+6. Run the required verification commands from the project docs. If a command cannot be run, state
+   exactly which command was not run, why it was not run, and what risk remains.
+7. Do not claim a PR is ready to merge when there are unresolved valid review threads, untested
+   migrations, failed checks, missing required verification, or known CI/test gaps, unless those
+   limitations are explicitly documented and the user is asked to decide.
+
 Safe defaults:
 
 - Work from `dev` or a focused branch based on `dev`.
