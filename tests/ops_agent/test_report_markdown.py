@@ -338,6 +338,28 @@ def test_decision_report_context_distinguishes_collector_failure_from_unknown():
     assert "Failed collectors mean evidence is missing because collection failed" in markdown
 
 
+def test_report_markdown_explains_report_freshness_scheduler_grace():
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence={"evidence/health/health.json": {"status": "ok"}},
+        detector_results=[
+            DetectorResult(
+                "failed_daily_weekly_reports",
+                "medium",
+                "triggered",
+                "1 stale or missing reports",
+                metrics={"stale_or_missing_reports": 1},
+            )
+        ],
+        collection_status="complete",
+        bundle_id="bundle",
+    )
+
+    assert "freshness threshold" in markdown
+    assert "scheduler grace" in markdown
+    assert "drift beyond that grace" in markdown
+
+
 def test_quality_summary_evidence_uses_unique_affected_deliveries_not_issue_occurrences():
     evidence = {
         "evidence/db/aggregate_metrics.json": {

@@ -246,6 +246,10 @@ async def _collect_alert_repetition_rows(
     return rows[:row_cap], statuses, warnings
 
 
+def _successful_alert_repetition_buckets(statuses: list[dict[str, str | None]]) -> int:
+    return sum(1 for status in statuses if status.get("status") == "ok")
+
+
 async def collect_db(
     *,
     config: OpsAgentConfig,
@@ -392,7 +396,8 @@ async def collect_db(
             redaction_report=redaction_report,
         )
         statuses.extend(bucket_statuses)
-        if alert_rows:
+        successful_buckets = _successful_alert_repetition_buckets(bucket_statuses)
+        if successful_buckets:
             alert_payloads = build_alert_evidence_payloads(
                 alert_rows,
                 period=period,
@@ -409,7 +414,7 @@ async def collect_db(
                 }
             )
         else:
-            message = "; ".join(alert_warnings) or "no alert repetition evidence collected"
+            message = "; ".join(alert_warnings) or "all alert repetition evidence buckets failed"
             for file_name in {
                 "evidence/db/alert_delivery_distribution.json",
                 "evidence/db/alert_quality.json",

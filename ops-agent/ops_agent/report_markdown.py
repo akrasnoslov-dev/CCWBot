@@ -811,6 +811,11 @@ def _recommended_action(detector_id: str) -> str:
         return "Normalize semantic event identity and stable event keys."
     if detector_id == "failed_telegram_deliveries":
         return "Investigate retry-pending and unexplained failures; keep blocked-user failures separate."
+    if detector_id == "failed_daily_weekly_reports":
+        return (
+            "Compare latest report generation time against the freshness threshold, "
+            "which includes scheduler grace; investigate only drift beyond that grace."
+        )
     if detector_id == "market_event_analysis_invariant":
         return "Fix any path that creates more than one AI analysis for the same market event."
     return "Investigate the detector evidence and add the smallest targeted fix."

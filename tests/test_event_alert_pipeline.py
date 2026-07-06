@@ -1633,6 +1633,132 @@ async def test_should_alert_event_with_eligible_recipient_creates_delivery_rows(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("symbol", "premium_required"),
+    [("btc", False), ("sol", True)],
+)
+async def test_automatic_should_alert_creates_delivery_rows_through_recipient_resolution(
+    monkeypatch, symbol, premium_required
+):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            if premium_required:
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol="btc",
+                    is_enabled=False,
+                )
+                await grant_user_premium(
+                    session,
+                    telegram_user_id=user.telegram_user_id,
+                    days=3650,
+                    now=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+                )
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol=symbol,
+                    is_enabled=True,
+                )
+            user_id = user.id
+
+        parsed = {
+            "symbol": symbol.upper(),
+            "should_alert": True,
+            "event_key": f"{symbol}_delivery_gap_regression",
+            "title": f"{symbol.upper()} market pressure is increasing",
+            "message_body": (
+                f"{symbol.upper()} has moved enough in the analysed window to warrant "
+                "a cautious Event Alert."
+            ),
+            "related_news_ids": [],
+            "possible_action": "Review your exposure calmly and avoid reacting impulsively.",
+            "urgency": "high",
+            "confidence": "medium",
+            "reason_for_no_alert": None,
+        }
+        groq_call = AsyncMock(return_value=("raw should-alert output", parsed))
+        send_alert = AsyncMock(return_value=(True, None))
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={
+                    symbol: {
+                        "price": 103.0,
+                        "change_24h": -2.4,
+                        "change_7d": -4.8,
+                    }
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_load_news_driven_alert_candidates",
+            AsyncMock(return_value={}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_select_related_news_context",
+            AsyncMock(return_value=([], None, False)),
+        )
+        monkeypatch.setattr(alerts, "ask_event_analysis_raw", groq_call)
+        monkeypatch.setattr(alerts, "_send_alert_to_recipient_with_retry", send_alert)
+        monkeypatch.setattr(alerts, "_deliver_market_heartbeat", AsyncMock())
+
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+        async with session_local() as session:
+            deliveries = list((await session.scalars(select(Alert))).all())
+            analyses = list((await session.scalars(select(EventAiAnalysis))).all())
+            market_events = list((await session.scalars(select(MarketEvent))).all())
+            outcomes = list(
+                (await session.scalars(select(AlertDeliveryOutcome))).all()
+            )
+
+        assert len(analyses) == 1
+        assert len(market_events) == 1
+        assert len(deliveries) == 1
+        analysis = analyses[0]
+        market_event = market_events[0]
+        delivery = deliveries[0]
+        assert analysis.market_event_id == market_event.id
+        assert delivery.market_event_id == market_event.id
+        assert delivery.event_ai_analysis_id == analysis.id
+        assert delivery.user_id == user_id
+        assert delivery.status == "sent"
+        outcome_statuses = {outcome.status for outcome in outcomes}
+        assert alerts.OUTCOME_ALLOWED in outcome_statuses
+        assert alerts.OUTCOME_DELIVERED in outcome_statuses
+        delivered_outcome = next(
+            outcome for outcome in outcomes if outcome.status == alerts.OUTCOME_DELIVERED
+        )
+        assert delivered_outcome.market_event_id == market_event.id
+        assert delivered_outcome.event_ai_analysis_id == analysis.id
+        assert delivered_outcome.user_id == user_id
+        assert delivered_outcome.recipient_eligible is True
+        allowed_outcome = next(
+            outcome for outcome in outcomes if outcome.status == alerts.OUTCOME_ALLOWED
+        )
+        assert allowed_outcome.event_ai_analysis_id == analysis.id
+        assert groq_call.await_count == 1
+        send_alert.assert_awaited_once()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_llm_should_alert_false_creates_no_delivery(monkeypatch):
     deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not happen"))
 

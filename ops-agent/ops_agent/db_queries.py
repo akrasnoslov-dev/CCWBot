@@ -12,6 +12,21 @@ class DbQuery:
 
 
 ACTIVE_SYMBOL_VALUES_SQL = "VALUES ('btc'), ('eth'), ('gram'), ('sol')"
+DAILY_REPORT_RUNTIME_INTERVAL_SECONDS = 14400
+WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS = 86400
+DAILY_REPORT_FRESHNESS_GRACE_SECONDS = 3600
+WEEKLY_REPORT_FRESHNESS_GRACE_SECONDS = 3600
+DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS = (
+    DAILY_REPORT_RUNTIME_INTERVAL_SECONDS + DAILY_REPORT_FRESHNESS_GRACE_SECONDS
+)
+WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS = (
+    WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS + WEEKLY_REPORT_FRESHNESS_GRACE_SECONDS
+)
+REPORT_FRESHNESS_VALUES_SQL = (
+    "VALUES "
+    f"('daily', {DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS}), "
+    f"('weekly', {WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS})"
+)
 
 
 QUERIES: tuple[DbQuery, ...] = (
@@ -276,6 +291,25 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM alerts WHERE created_at >= :since AND created_at < :until "
         "GROUP BY symbol, alert_type, coalesce(status, 'unknown'), trigger_source, fallback_mode "
         "ORDER BY deliveries DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "telegram_delivery_failure_summary",
+        "evidence/db/aggregate_metrics.json",
+        "WITH failures AS ("
+        "SELECT CASE WHEN lower(coalesce(last_error, error_message, '')) LIKE '%bot was blocked%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%chat not found%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%user is deactivated%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%forbidden%' "
+        "THEN 'blocked_user' WHEN status = 'retry_pending' THEN 'retry_pending_actionable' "
+        "ELSE 'unexplained_telegram_failure' END AS failure_category "
+        "FROM alerts WHERE created_at >= :since AND created_at < :until "
+        "AND (status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL)) "
+        "SELECT count(*) AS failed_or_retry_pending_total, "
+        "count(*) FILTER (WHERE failure_category = 'blocked_user') AS blocked_user, "
+        "count(*) FILTER (WHERE failure_category = 'retry_pending_actionable') "
+        "AS retry_pending_actionable, "
+        "count(*) FILTER (WHERE failure_category = 'unexplained_telegram_failure') "
+        "AS unexplained_telegram_failure FROM failures",
     ),
     DbQuery(
         "delivery_funnel",
@@ -722,8 +756,10 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "market_reports_freshness",
         "evidence/db/aggregate_metrics.json",
+        # Ops freshness thresholds are runtime cadence plus scheduler/reporting grace.
+        # They do not change the report generation cadence.
         "WITH report_types(report_type, max_age_seconds) AS ("
-        "VALUES ('daily', 18000), ('weekly', 90000)"
+        f"{REPORT_FRESHNESS_VALUES_SQL}"
         "), latest AS ("
         "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at, "
         "left(error_message, 160) AS latest_error_message "
