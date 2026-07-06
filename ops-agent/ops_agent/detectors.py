@@ -49,6 +49,20 @@ def _missing_files_gap(evidence: dict[str, Any], required: list[str]) -> str | N
     return "Required evidence missing: " + ", ".join(missing)
 
 
+def _incomplete_files_gap(evidence: dict[str, Any], required: list[str]) -> str | None:
+    incomplete = []
+    for file_name in required:
+        payload = evidence.get(file_name)
+        if not isinstance(payload, dict):
+            continue
+        warnings = payload.get("warnings")
+        if payload.get("evidence_incomplete") or (isinstance(warnings, list) and warnings):
+            incomplete.append(file_name)
+    if not incomplete:
+        return None
+    return "Required evidence incomplete: " + ", ".join(incomplete)
+
+
 def _int(value: Any) -> int:
     try:
         return int(value or 0)
@@ -107,6 +121,7 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "expected_no_eligible_recipients",
             "expected_product_gating_possible",
             "expected_backend_cooldown_active",
+            "expected_failed_or_rate_limited_outcome",
         }
     )
     unknown = sum(
@@ -123,6 +138,9 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "llm_failure_or_rate_limit": classifications.get("llm_failure_or_rate_limit", 0),
         "expected_backend_cooldown_active": classifications.get(
             "expected_backend_cooldown_active", 0
+        ),
+        "expected_failed_or_rate_limited_outcome": classifications.get(
+            "expected_failed_or_rate_limited_outcome", 0
         ),
         "delivery_gap_should_alert_true": classifications.get(
             "delivery_gap_should_alert_true", 0
@@ -180,7 +198,15 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     logs_available, period_logs, tail_logs, period_logs_available = _log_counts(evidence)
     health = evidence.get("evidence/health/health.json") or {}
 
-    failed_deliveries = sum(_int(row.get("failed")) for row in alert_summary)
+    failure_summary_rows = _query_rows(evidence, aggregate, "telegram_delivery_failure_summary")
+    failure_summary = failure_summary_rows[0] if failure_summary_rows else {}
+    blocked_user_failures = _int(failure_summary.get("blocked_user"))
+    retry_pending_actionable = _int(failure_summary.get("retry_pending_actionable"))
+    unexplained_telegram_failures = _int(
+        failure_summary.get("unexplained_telegram_failure")
+    )
+    failed_or_retry_pending_total = _int(failure_summary.get("failed_or_retry_pending_total"))
+    failed_deliveries = retry_pending_actionable + unexplained_telegram_failures
     total_deliveries = sum(_int(row.get("deliveries")) for row in alert_summary)
     failed_rate = failed_deliveries / total_deliveries if total_deliveries else 0
     llm_failures = sum(
@@ -287,6 +313,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         gap = _missing_files_gap(evidence, required)
         if gap:
             return result(detector_id, severity, "unknown", "Required evidence is missing", refs, metrics, gap)
+        gap = _incomplete_files_gap(evidence, required)
+        if gap and clear_status == "clear":
+            return result(detector_id, severity, "unknown", "Required evidence is incomplete", refs, metrics, gap)
         return result(detector_id, severity, clear_status, summary, refs, metrics)
 
     invariant_by_type: dict[str, int] = {}
@@ -362,11 +391,24 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "failed_telegram_deliveries",
             "high" if failed_deliveries >= 5 or failed_rate >= 0.2 else "info",
-            [(aggregate, "alerts_summary"), ("evidence/db/recent_alert_failures.json", "alerts_failures")],
-            "triggered" if failed_deliveries or alert_failures else "clear",
-            f"{failed_deliveries} failed or retry-pending deliveries",
+            [
+                (aggregate, "alerts_summary"),
+                (aggregate, "telegram_delivery_failure_summary"),
+                ("evidence/db/recent_alert_failures.json", "alerts_failures"),
+            ],
+            "triggered" if failed_deliveries else "clear",
+            f"{failed_deliveries} actionable failed or retry-pending deliveries",
             ["evidence/db/recent_alert_failures.json", "evidence/db/aggregate_metrics.json"],
-            {"failed": failed_deliveries, "total": total_deliveries, "failed_rate": failed_rate},
+            {
+                "failed": failed_deliveries,
+                "total": total_deliveries,
+                "failed_rate": failed_rate,
+                "blocked_user_failures": blocked_user_failures,
+                "retry_pending_actionable": retry_pending_actionable,
+                "unexplained_telegram_failures": unexplained_telegram_failures,
+                "failed_or_retry_pending_total": failed_or_retry_pending_total,
+                "sample_failure_rows": len(alert_failures),
+            },
         ),
         db_result(
             "no_alert_deliveries_observed",

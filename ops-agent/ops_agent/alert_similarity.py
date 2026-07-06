@@ -238,9 +238,10 @@ def build_alert_evidence_payloads(
     period: Period,
     row_cap: int,
     semantic_cooldown_seconds: int,
+    warnings: list[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     hasher = BundleHasher()
-    warnings = []
+    warnings = list(warnings or [])
     if len(rows) >= row_cap:
         warnings.append("alert evidence reached row cap; repetition analysis may be incomplete")
 

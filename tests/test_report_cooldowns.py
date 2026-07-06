@@ -541,7 +541,7 @@ async def test_malformed_report_output_uses_deterministic_fallback(monkeypatch):
         report = await reports.get_or_generate_report("daily")
 
         assert report.status == "completed"
-        assert report.error_message == "deterministic fallback after other_error"
+        assert report.error_message == "deterministic fallback after schema_validation_failed"
         assert "Daily Market Report" in report.telegram_message
         assert "Tracked assets:" in report.telegram_message
         assert "GRAM" in report.telegram_message

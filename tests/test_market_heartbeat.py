@@ -811,6 +811,29 @@ def test_event_and_heartbeat_rendering_use_new_labels_and_fallback_emoji(monkeyp
     assert event_payload["entities"] is None
 
 
+def test_heartbeat_rendering_omits_missing_since_last_placeholder():
+    heartbeat = SimpleNamespace(
+        symbol="BTC",
+        title="BTC remains calm",
+        message_body="BTC remains under regular monitoring.",
+        possible_action="No urgent action appears necessary.",
+    )
+
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=100000.0,
+        change_since_last_message=None,
+        change_24h=1.0,
+        related_news=[],
+    )
+
+    assert "Since last BTC message:" not in payload["plain_text"]
+    lowered = payload["plain_text"].lower()
+    assert "n/a" not in lowered
+    assert "unknown" not in lowered
+    assert "null" not in lowered
+
+
 def heartbeat_result(**overrides):
     result = {
         "symbol": "BTC",
