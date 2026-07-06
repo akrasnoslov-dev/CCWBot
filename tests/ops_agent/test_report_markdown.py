@@ -360,6 +360,57 @@ def test_report_markdown_explains_report_freshness_scheduler_grace():
     assert "drift beyond that grace" in markdown
 
 
+def test_report_markdown_explains_safe_news_llm_and_docker_evidence():
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence={
+            "evidence/health/health.json": {"status": "ok"},
+            "evidence/docker/container_state.json": {
+                "status": "ok",
+                "services": [{"service": "bot", "is_running": True}],
+            },
+        },
+        detector_results=[
+            DetectorResult(
+                "news_intelligence_failures",
+                "medium",
+                "triggered",
+                "0 failed news intelligence rows, 3 budget skips (3 high/medium), 1 sample rows",
+                metrics={
+                    "failed_news_intelligence": 0,
+                    "skipped_budget": 3,
+                    "high_medium_budget_skips": 3,
+                },
+            ),
+            DetectorResult(
+                "repeated_llm_failures_or_rate_limits",
+                "high",
+                "triggered",
+                "3 LLM failures and 1 rate-limit signals",
+                metrics={
+                    "llm_failures": 3,
+                    "rate_limits": 1,
+                    "failure_categories": {
+                        "schema_validation_failed": 2,
+                        "rate_limit_backoff": 1,
+                    },
+                },
+            ),
+        ],
+        collection_status="complete",
+        collector_status=[
+            {"name": "docker", "status": "ok", "error": None},
+        ],
+        bundle_id="bundle",
+    )
+
+    assert "container state summary" in markdown
+    assert "budget-skipped" in markdown
+    assert "schema_validation_failed: 2" in markdown
+    assert "provider/network issues" in markdown
+    assert "before considering any LLM budget change" in markdown
+
+
 def test_quality_summary_evidence_uses_unique_affected_deliveries_not_issue_occurrences():
     evidence = {
         "evidence/db/aggregate_metrics.json": {

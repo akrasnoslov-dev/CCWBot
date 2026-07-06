@@ -8,6 +8,7 @@ from typing import Any
 
 from ops_agent.bundle import NON_DROPPABLE_BUNDLE_FILES, BundleWriter, sha256_file, sha256_tree
 from ops_agent.collectors.db import collect_db
+from ops_agent.collectors.docker import collect_docker
 from ops_agent.collectors.health import collect_health
 from ops_agent.collectors.local_state import collect_local_state
 from ops_agent.collectors.logs import collect_logs
@@ -91,6 +92,13 @@ async def _collect(args: argparse.Namespace) -> int:
         writer.write_text(path, payload["text"])
     for status in log_statuses:
         writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
+
+    docker_payload, docker_status = collect_docker(config=config, period=period)
+    writer.write_json("evidence/docker/container_state.json", docker_payload)
+    evidence["evidence/docker/container_state.json"] = docker_payload
+    writer.add_status(
+        str(docker_status["name"]), str(docker_status["status"]), docker_status.get("error")
+    )
 
     local_state = collect_local_state(
         config=config,

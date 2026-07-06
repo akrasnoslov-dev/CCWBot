@@ -30,6 +30,7 @@ class OpsAgentConfig:
     output_dir: Path
     logs_dir: Path
     legacy_state_path: Path
+    docker_status_json_path: Path | None = None
     retention_days: int = 60
     max_bundles: int = 30
     max_reports: int = 30
@@ -86,6 +87,9 @@ def load_config(output_dir: str | None = None) -> OpsAgentConfig:
     return OpsAgentConfig(
         database_url=os.getenv("OPS_AGENT_DATABASE_URL") or None,
         health_url=os.getenv("OPS_AGENT_HEALTH_URL", "http://bot:8080/health"),
+        docker_status_json_path=(
+            Path(path) if (path := os.getenv("OPS_AGENT_DOCKER_STATUS_JSON_PATH")) else None
+        ),
         output_dir=Path(output_dir or os.getenv("OPS_AGENT_OUTPUT_DIR", "/app/reports/ops-agent")),
         logs_dir=Path(os.getenv("OPS_AGENT_LOGS_DIR", "/app/logs")),
         legacy_state_path=Path(os.getenv("OPS_AGENT_LEGACY_STATE_PATH", "/app/state.json")),

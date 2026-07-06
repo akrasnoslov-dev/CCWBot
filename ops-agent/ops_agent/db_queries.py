@@ -798,6 +798,27 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY calls DESC LIMIT :limit",
     ),
     DbQuery(
+        "llm_failure_category_summary",
+        "evidence/db/aggregate_metrics.json",
+        "WITH classified AS ("
+        "SELECT call_type, "
+        "CASE "
+        "WHEN status IN ('success', 'completed') THEN 'successful' "
+        "WHEN status LIKE '%rate_limit%' OR retry_after IS NOT NULL "
+        "OR error_reason IN ('rate_limit', 'rate_limited') THEN 'rate_limit_backoff' "
+        "WHEN error_reason = 'schema_validation_failed' THEN 'schema_validation_failed' "
+        "WHEN error_reason = 'timeout' THEN 'timeout' "
+        "WHEN error_reason IN ('network_error', 'provider_error', 'provider_4xx', 'provider_5xx') "
+        "OR error_reason LIKE 'provider_%' THEN 'provider_network_error' "
+        "WHEN error_reason = 'invalid_json' THEN 'invalid_json' "
+        "ELSE 'other' END AS failure_category "
+        "FROM llm_usage_logs WHERE created_at >= :since AND created_at < :until"
+        ") "
+        "SELECT call_type, failure_category, count(*) AS calls "
+        "FROM classified GROUP BY call_type, failure_category "
+        "ORDER BY calls DESC, call_type, failure_category LIMIT :limit",
+    ),
+    DbQuery(
         "news_freshness_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT "
@@ -825,6 +846,32 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM news_items WHERE fetched_at >= :since AND fetched_at < :until "
         "GROUP BY llm_status, impact_level, is_duplicate, is_noise, is_alert_worthy "
         "ORDER BY items DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "news_intelligence_budget_summary",
+        "evidence/db/aggregate_metrics.json",
+        "WITH classified AS ("
+        "SELECT "
+        "CASE "
+        "WHEN llm_status = 'success' THEN 'successful' "
+        "WHEN llm_status = 'skipped_budget' THEN 'skipped_budget' "
+        "WHEN llm_status = 'failed' THEN 'failed' "
+        "WHEN llm_status IS NULL OR llm_status = 'pending' THEN 'pending' "
+        "ELSE 'unknown' END AS outcome_category, "
+        "CASE "
+        "WHEN impact_level IN ('critical', 'high') THEN 'high' "
+        "WHEN impact_level = 'medium' THEN 'medium' "
+        "ELSE 'low_or_null' END AS impact_bucket, "
+        "fetched_at "
+        "FROM news_items WHERE fetched_at >= :since AND fetched_at < :until"
+        ") "
+        "SELECT outcome_category, impact_bucket, count(*) AS items, "
+        "count(*) FILTER ("
+        "WHERE fetched_at >= CAST(:until AS timestamptz) - interval '24 hours' "
+        "AND fetched_at < CAST(:until AS timestamptz)"
+        ") AS recent_24h_items "
+        "FROM classified GROUP BY outcome_category, impact_bucket "
+        "ORDER BY items DESC, outcome_category, impact_bucket LIMIT :limit",
     ),
     DbQuery(
         "news_items_recent_high_impact",

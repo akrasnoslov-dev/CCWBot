@@ -162,6 +162,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_failures = _query_rows(evidence, "evidence/db/recent_alert_failures.json", "alerts_failures")
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
+    llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
     reports = _query_rows(evidence, aggregate, "market_reports_summary")
     report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
@@ -184,6 +185,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     blocked_users = _query_rows(evidence, anomalies, "blocked_users_still_active")
     payment_inconsistencies = _query_rows(evidence, anomalies, "premium_payment_inconsistencies")
     news_rows = _query_rows(evidence, "evidence/db/recent_news_failures.json", "news_items_recent_high_impact")
+    news_budget_rows = _query_rows(evidence, aggregate, "news_intelligence_budget_summary")
     delivery_distribution_payload = _file_payload(
         evidence, "evidence/db/alert_delivery_distribution.json"
     )
@@ -209,12 +211,28 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     failed_deliveries = retry_pending_actionable + unexplained_telegram_failures
     total_deliveries = sum(_int(row.get("deliveries")) for row in alert_summary)
     failed_rate = failed_deliveries / total_deliveries if total_deliveries else 0
-    llm_failures = sum(
-        _int(row.get("calls"))
-        for row in llm_summary
-        if str(row.get("status") or "") not in {"success", "completed"}
+    llm_category_counts: dict[str, int] = {}
+    for row in llm_category_rows:
+        category = str(row.get("failure_category") or "other")
+        llm_category_counts[category] = llm_category_counts.get(category, 0) + _int(
+            row.get("calls")
+        )
+    llm_failures = (
+        sum(
+            calls
+            for category, calls in llm_category_counts.items()
+            if category != "successful"
+        )
+        if llm_category_rows
+        else sum(
+            _int(row.get("calls"))
+            for row in llm_summary
+            if str(row.get("status") or "") not in {"success", "completed"}
+        )
     )
-    rate_limits = sum(_int(row.get("rate_limit_count")) for row in llm_summary)
+    rate_limits = llm_category_counts.get("rate_limit_backoff", 0) or sum(
+        _int(row.get("rate_limit_count")) for row in llm_summary
+    )
     failed_reports = sum(
         _int(row.get("reports")) for row in reports if str(row.get("status")) != "completed"
     )
@@ -243,6 +261,26 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         or _int(row.get("age_seconds")) > heartbeat_threshold_seconds
     ]
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
+    news_budget_counts: dict[str, int] = {}
+    news_budget_by_impact: dict[str, int] = {}
+    for row in news_budget_rows:
+        category = str(row.get("outcome_category") or "unknown")
+        impact = str(row.get("impact_bucket") or "low_or_null")
+        items = _int(row.get("items"))
+        news_budget_counts[category] = news_budget_counts.get(category, 0) + items
+        if category == "skipped_budget":
+            news_budget_by_impact[impact] = news_budget_by_impact.get(impact, 0) + items
+    skipped_budget = news_budget_counts.get("skipped_budget", 0)
+    failed_news_intelligence = news_budget_counts.get("failed", 0)
+    pending_news_intelligence = news_budget_counts.get("pending", 0)
+    unknown_news_intelligence = news_budget_counts.get("unknown", 0)
+    high_medium_budget_skips = news_budget_by_impact.get("high", 0) + news_budget_by_impact.get(
+        "medium", 0
+    )
+    total_news_intelligence = sum(news_budget_counts.values())
+    excessive_budget_skips = skipped_budget >= 10 or high_medium_budget_skips >= 3 or (
+        total_news_intelligence >= 20 and skipped_budget / total_news_intelligence >= 0.5
+    )
     error_patterns = _int(period_logs.get("error"))
     tail_error_patterns = _int(tail_logs.get("error"))
     noisy_symbol_rows = [
@@ -551,11 +589,15 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "repeated_llm_failures_or_rate_limits",
             "high" if llm_failures >= 3 else "medium",
-            [(aggregate, "llm_usage_summary")],
+            [(aggregate, "llm_usage_summary"), (aggregate, "llm_failure_category_summary")],
             "triggered" if llm_failures >= 3 or rate_limits else "clear",
             f"{llm_failures} LLM failures and {rate_limits} rate-limit signals",
             ["evidence/db/aggregate_metrics.json", "evidence/db/recent_llm_failures.json"],
-            {"llm_failures": llm_failures, "rate_limits": rate_limits},
+            {
+                "llm_failures": llm_failures,
+                "rate_limits": rate_limits,
+                "failure_categories": llm_category_counts,
+            },
         ),
         db_result(
             "failed_daily_weekly_reports",
@@ -654,12 +696,29 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ),
         db_result(
             "news_intelligence_failures",
-            "medium",
-            [("evidence/db/recent_news_failures.json", "news_items_recent_high_impact")],
-            "triggered" if news_failures else "clear",
-            f"{news_failures} failed or skipped high-impact news intelligence rows",
-            ["evidence/db/recent_news_failures.json"],
-            {"news_failures": news_failures},
+            "high"
+            if failed_news_intelligence
+            else "medium"
+            if excessive_budget_skips
+            else "info",
+            [(aggregate, "news_intelligence_budget_summary")],
+            "triggered" if failed_news_intelligence or excessive_budget_skips else "clear",
+            (
+                f"{failed_news_intelligence} failed news intelligence rows, "
+                f"{skipped_budget} budget skips ({high_medium_budget_skips} high/medium), "
+                f"{news_failures} sample rows"
+            ),
+            ["evidence/db/aggregate_metrics.json", "evidence/db/recent_news_failures.json"],
+            {
+                "failed_news_intelligence": failed_news_intelligence,
+                "skipped_budget": skipped_budget,
+                "high_medium_budget_skips": high_medium_budget_skips,
+                "pending_news_intelligence": pending_news_intelligence,
+                "unknown_news_intelligence": unknown_news_intelligence,
+                "total_news_intelligence": total_news_intelligence,
+                "excessive_budget_skips": excessive_budget_skips,
+                "sample_rows": len(news_rows),
+            },
         ),
         db_result(
             "stale_price_snapshots",

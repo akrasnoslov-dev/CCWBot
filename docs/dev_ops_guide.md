@@ -34,6 +34,18 @@ Do not run raw deployment, restart, migration, environment-printing, or secret-r
 part of diagnostics. A partial bundle means at least one collector failed; inspect the collector
 status table and rerun after the named collector is fixed.
 
+For post-deploy Event Alert verification, rebuild the `ops-agent` Docker image with the deploy and
+collect a short no-state bundle:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update
+```
+
+Review only the sanitized report context and detector summary. Confirm `/health` is OK,
+`market_events_without_alert_deliveries` is clear or has only explicit expected skip reasons, no
+new critical/high unexplained Event Alert detector is triggered, and basic Telegram functionality
+works in a private smoke check without recording user ids or private text.
+
 ## Production Deploy
 
 Deploy tracked-file changes only through Git:

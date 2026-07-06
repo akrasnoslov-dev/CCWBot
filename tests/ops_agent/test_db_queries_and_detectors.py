@@ -241,6 +241,8 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "event_alert_same_news_repeats_24h" in query_names
     assert "alert_delivery_outcome_summary" in query_names
     assert "market_heartbeat_delivery_freshness" in query_names
+    assert "news_intelligence_budget_summary" in query_names
+    assert "llm_failure_category_summary" in query_names
     no_delivery = next(
         query for query in QUERIES if query.name == "market_events_without_delivery_classification"
     )
@@ -369,6 +371,9 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
 
 def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
     query = next(query for query in QUERIES if query.name == "llm_usage_summary")
+    category_query = next(
+        query for query in QUERIES if query.name == "llm_failure_category_summary"
+    )
 
     assert "call_type" in query.sql
     assert "model" in query.sql
@@ -381,6 +386,28 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
     assert "rate_limit_count" in query.sql
     assert "timeout_count" in query.sql
     assert "invalid_json_schema_error_count" in query.sql
+    for category in (
+        "schema_validation_failed",
+        "timeout",
+        "provider_network_error",
+        "rate_limit_backoff",
+        "invalid_json",
+        "other",
+    ):
+        assert category in category_query.sql
+
+
+def test_news_budget_query_uses_sanitized_aggregates_only():
+    query = next(query for query in QUERIES if query.name == "news_intelligence_budget_summary")
+
+    assert "outcome_category" in query.sql
+    assert "impact_bucket" in query.sql
+    assert "recent_24h_items" in query.sql
+    for category in ("successful", "skipped_budget", "failed", "pending", "unknown"):
+        assert category in query.sql
+    assert "title" not in query.sql.lower()
+    assert "url" not in query.sql.lower()
+    assert "llm_error" not in query.sql.lower()
 
 
 def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
@@ -1203,6 +1230,153 @@ def test_no_alert_deliveries_clear_when_active_period_has_no_market_events():
     results = {result.id: result for result in run_detectors(evidence, period)}
 
     assert results["no_alert_deliveries_observed"].status == "clear"
+
+
+def test_news_budget_detector_clears_expected_small_budget_skips():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "successful",
+                            "impact_bucket": "high",
+                            "items": 8,
+                        },
+                        {
+                            "outcome_category": "skipped_budget",
+                            "impact_bucket": "low_or_null",
+                            "items": 2,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/db/recent_news_failures.json": {
+            "queries": {"news_items_recent_high_impact": {"rows": [{}] * 100}}
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "clear"
+    assert detector.metrics["skipped_budget"] == 2
+    assert detector.metrics["sample_rows"] == 100
+
+
+def test_news_budget_detector_triggers_on_aggregate_failures_despite_capped_sample():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "failed",
+                            "impact_bucket": "high",
+                            "items": 12,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/db/recent_news_failures.json": {
+            "queries": {"news_items_recent_high_impact": {"rows": [{}]}}
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "triggered"
+    assert detector.severity == "high"
+    assert detector.metrics["failed_news_intelligence"] == 12
+    assert detector.metrics["sample_rows"] == 1
+
+
+def test_news_budget_detector_triggers_on_excessive_high_medium_skips():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "skipped_budget",
+                            "impact_bucket": "high",
+                            "items": 3,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "triggered"
+    assert detector.severity == "medium"
+    assert detector.metrics["excessive_budget_skips"] is True
+
+
+def test_llm_failure_detector_uses_safe_category_aggregates():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "llm_usage_summary": {"rows": []},
+                "llm_failure_category_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "failure_category": "schema_validation_failed",
+                            "calls": 2,
+                        },
+                        {
+                            "call_type": "event_analysis",
+                            "failure_category": "rate_limit_backoff",
+                            "calls": 1,
+                        },
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["repeated_llm_failures_or_rate_limits"]
+    assert detector.status == "triggered"
+    assert detector.metrics["llm_failures"] == 3
+    assert detector.metrics["rate_limits"] == 1
+    assert detector.metrics["failure_categories"]["schema_validation_failed"] == 2
 
 
 def test_payment_premium_detector_aggregates_inconsistency_types():
