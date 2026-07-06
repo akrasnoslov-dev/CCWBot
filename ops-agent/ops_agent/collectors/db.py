@@ -214,9 +214,10 @@ async def _collect_alert_repetition_rows(
     rows: list[dict[str, Any]] = []
     statuses: list[dict[str, str | None]] = []
     warnings: list[str] = []
-    for index, (window_start, window_end) in enumerate(_alert_evidence_windows(period), start=1):
+    newest_first_windows = list(reversed(_alert_evidence_windows(period)))
+    for index, (window_start, window_end) in enumerate(newest_first_windows, start=1):
         if len(rows) >= row_cap:
-            warnings.append("alert repetition evidence row cap reached before all buckets ran")
+            warnings.append("alert repetition evidence row cap reached before older buckets ran")
             break
         bucket_name = f"db.alert_repetition_evidence.bucket_{index}"
         try:

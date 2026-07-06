@@ -957,26 +957,68 @@ class _AlertEvidenceFakeConnection:
 
     async def execute(self, _statement, _params):
         self._engine.calls += 1
+        self._engine.params.append(dict(_params))
         if self._engine.fail_mode == "partial" and self._engine.calls == 1:
             raise TimeoutError("bucket timed out")
         if self._engine.fail_mode == "all":
             raise TimeoutError("bucket timed out")
-        return _FakeResult([])
+        rows = self._engine.rows_by_since.get(_params.get("since"), [])
+        limit = int(_params.get("alert_evidence_limit") or len(rows) or 1)
+        return _FakeResult([_FakeRow(**row) for row in rows[:limit]])
 
     async def rollback(self):
         return None
 
 
 class _AlertEvidenceFakeEngine:
-    def __init__(self, fail_mode: str | None = None):
+    def __init__(
+        self,
+        fail_mode: str | None = None,
+        rows_by_since: dict[datetime, list[dict[str, object]]] | None = None,
+    ):
         self.fail_mode = fail_mode
+        self.rows_by_since = rows_by_since or {}
         self.calls = 0
+        self.params: list[dict[str, object]] = []
 
     def connect(self):
         return _AlertEvidenceFakeConnection(self)
 
     async def dispose(self):
         return None
+
+
+@pytest.mark.asyncio
+async def test_alert_repetition_row_cap_prioritizes_newest_bucket():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    newest_bucket_start = datetime(2026, 6, 1, 18, tzinfo=timezone.utc)
+    oldest_bucket_start = datetime(2026, 6, 1, 0, tzinfo=timezone.utc)
+    fake_engine = _AlertEvidenceFakeEngine(
+        rows_by_since={
+            newest_bucket_start: [{"marker": "newest"}],
+            oldest_bucket_start: [{"marker": "oldest"}],
+        }
+    )
+
+    rows, statuses, warnings = await db_collector._collect_alert_repetition_rows(
+        fake_engine,
+        params={},
+        period=period,
+        timeout_seconds=1,
+        row_cap=1,
+        mapper=ReferenceMapper(salt=b"0" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    assert rows == [{"marker": "newest"}]
+    assert fake_engine.params[0]["since"] == newest_bucket_start
+    assert fake_engine.params[0]["until"] == period.end
+    assert len(statuses) == 1
+    assert warnings == ["alert repetition evidence row cap reached before older buckets ran"]
 
 
 async def _collect_alert_evidence_with_fake_engine(monkeypatch, tmp_path, *, fail_mode=None):

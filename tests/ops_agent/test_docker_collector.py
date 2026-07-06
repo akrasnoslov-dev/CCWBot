@@ -76,6 +76,8 @@ def test_docker_collector_handles_newline_delimited_compose_output(tmp_path):
     assert payload["service_count"] == 2
     assert payload["running_count"] == 1
     assert payload["warnings"] == ["container_not_running"]
+    assert payload["services"][1]["service"] == "ops-agent"
+    assert payload["services"][1]["is_running"] is False
     assert status["status"] == "partial"
 
 

@@ -99,7 +99,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --format json > "$docker_status_file" 2>/dev/null; then
+if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --format json > "$docker_status_file" 2>/dev/null; then
   printf '{"status":"failed","error":"docker_status_unavailable"}\n' > "$docker_status_file"
 fi
 

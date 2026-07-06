@@ -101,7 +101,7 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "--output-dir" not in script
     assert "eval " not in script
     assert "printenv" not in script
-    assert "ps --format json" in script
+    assert "ps --all --format json" in script
     assert "OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json" in script
     assert '$docker_status_file:/tmp/ops-agent-docker-status.json:ro' in script
     assert "docker inspect" not in script
