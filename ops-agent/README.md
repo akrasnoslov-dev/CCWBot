@@ -94,6 +94,20 @@ Normal production collection:
 sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
+Post-deploy verification after Event Alert delivery-gap changes:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update
+```
+
+Use the generated sanitized bundle and report context to confirm `/health` is OK, container state is
+healthy or explicitly marked unavailable, `market_events_without_alert_deliveries` is clear or only
+contains explicit expected skip reasons, and there are no new critical/high unexplained Event Alert
+detector findings. Perform a basic Telegram smoke check with a private test chat, but do not record
+Telegram user ids, private message text, payment ids, raw logs, raw DB rows, or raw bundle JSON in
+the report. After ops-agent changes, rebuild the `ops-agent` Docker image during production deploy
+before relying on this verification.
+
 Explicit production collection period:
 
 ```bash

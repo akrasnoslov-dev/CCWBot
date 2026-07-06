@@ -10,7 +10,18 @@ from alembic.config import Config
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.config import OpsAgentConfig
-from ops_agent.db_queries import QUERIES, DbQuery, validate_read_only_queries
+from ops_agent.db_queries import (
+    DAILY_REPORT_FRESHNESS_GRACE_SECONDS,
+    DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS,
+    DAILY_REPORT_RUNTIME_INTERVAL_SECONDS,
+    QUERIES,
+    REPORT_FRESHNESS_VALUES_SQL,
+    WEEKLY_REPORT_FRESHNESS_GRACE_SECONDS,
+    WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS,
+    WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS,
+    DbQuery,
+    validate_read_only_queries,
+)
 from ops_agent.detectors import run_detectors
 from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
@@ -192,6 +203,23 @@ def test_price_state_query_uses_existing_price_state_columns_only():
     price_state_query = next(query for query in QUERIES if query.name == "price_state_current")
 
     assert "last_7d_change" not in price_state_query.sql
+    assert "('btc'), ('eth'), ('gram'), ('sol')" in price_state_query.sql
+    assert "lower(symbol) IN" in price_state_query.sql
+
+
+def test_ops_agent_classifies_legacy_symbols_and_blocked_failures_separately():
+    query_names = {query.name: query for query in QUERIES}
+
+    assert "legacy_inactive_price_state" in query_names
+    assert "legacy_inactive_symbol" in query_names["legacy_inactive_price_state"].sql
+    assert "failure_category" in query_names["alerts_failures"].sql
+    assert "blocked_user" in query_names["alerts_failures"].sql
+    assert "retry_pending_actionable" in query_names["alerts_failures"].sql
+    assert "unexplained_telegram_failure" in query_names["alerts_failures"].sql
+    assert "telegram_delivery_failure_summary" in query_names
+    assert "failed_or_retry_pending_total" in query_names[
+        "telegram_delivery_failure_summary"
+    ].sql
 
 
 def test_ops_agent_queries_include_hardened_anomaly_evidence():
@@ -213,6 +241,14 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "event_alert_same_news_repeats_24h" in query_names
     assert "alert_delivery_outcome_summary" in query_names
     assert "market_heartbeat_delivery_freshness" in query_names
+    assert "news_intelligence_budget_summary" in query_names
+    assert "llm_failure_category_summary" in query_names
+    no_delivery = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+    assert "outcome_summary AS" in no_delivery.sql
+    assert "expected_no_eligible_recipients" in no_delivery.sql
+    assert "expected_product_gating_possible" in no_delivery.sql
     assert "news_freshness_summary" in query_names
 
 
@@ -335,6 +371,9 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
 
 def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
     query = next(query for query in QUERIES if query.name == "llm_usage_summary")
+    category_query = next(
+        query for query in QUERIES if query.name == "llm_failure_category_summary"
+    )
 
     assert "call_type" in query.sql
     assert "model" in query.sql
@@ -347,14 +386,37 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
     assert "rate_limit_count" in query.sql
     assert "timeout_count" in query.sql
     assert "invalid_json_schema_error_count" in query.sql
+    for category in (
+        "schema_validation_failed",
+        "timeout",
+        "provider_network_error",
+        "rate_limit_backoff",
+        "invalid_json",
+        "other",
+    ):
+        assert category in category_query.sql
+
+
+def test_news_budget_query_uses_sanitized_aggregates_only():
+    query = next(query for query in QUERIES if query.name == "news_intelligence_budget_summary")
+
+    assert "outcome_category" in query.sql
+    assert "impact_bucket" in query.sql
+    assert "recent_24h_items" in query.sql
+    for category in ("successful", "skipped_budget", "failed", "pending", "unknown"):
+        assert category in query.sql
+    assert "title" not in query.sql.lower()
+    assert "url" not in query.sql.lower()
+    assert "llm_error" not in query.sql.lower()
 
 
 def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     query_names = {query.name: query for query in QUERIES}
 
     assert "LEFT JOIN latest" in query_names["market_heartbeats_freshness"].sql
-    assert "VALUES ('daily', 14400), ('weekly', 86400)" in query_names[
-        "market_reports_freshness"
+    assert REPORT_FRESHNESS_VALUES_SQL in query_names["market_reports_freshness"].sql
+    assert "VALUES ('btc'), ('eth'), ('gram'), ('sol')" in query_names[
+        "market_heartbeats_freshness"
     ].sql
     assert "placeholder_quality_count" in query_names["market_heartbeat_delivery_freshness"].sql
     assert "latest_fetched_at" in query_names["news_freshness_summary"].sql
@@ -373,6 +435,15 @@ def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     assert "ORDER BY fetched_at DESC, id DESC LIMIT 1" in query_names[
         "news_freshness_summary"
     ].sql
+
+
+def test_report_freshness_thresholds_include_scheduler_grace_without_runtime_cadence_change():
+    assert DAILY_REPORT_RUNTIME_INTERVAL_SECONDS == 14400
+    assert WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS == 86400
+    assert DAILY_REPORT_FRESHNESS_GRACE_SECONDS == 3600
+    assert WEEKLY_REPORT_FRESHNESS_GRACE_SECONDS == 3600
+    assert DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS == 18000
+    assert WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS == 90000
 
 
 def test_alert_repetition_evidence_rolls_up_only_selected_recent_analyses():
@@ -429,6 +500,49 @@ def test_alert_repetition_detectors_unknown_when_evidence_missing():
     assert results["weak_event_identity"].status == "unknown"
     assert results["cooldown_effectiveness_gap"].status == "unknown"
     assert results["llm_repeated_alert_true_for_similar_situations"].status == "unknown"
+
+
+def test_alert_repetition_detectors_unknown_when_evidence_partial():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+
+    results = {
+        result.id: result
+        for result in run_detectors(
+            {
+                "evidence/db/alert_delivery_distribution.json": {
+                    "warnings": ["bucket timeout"],
+                    "symbols": [],
+                },
+                "evidence/db/alert_content_fingerprints.json": {
+                    "warnings": ["bucket timeout"],
+                    "repeated_groups": [],
+                },
+                "evidence/db/alert_similarity_groups.json": {
+                    "warnings": ["bucket timeout"],
+                    "groups": [],
+                },
+                "evidence/db/backend_suppression_effectiveness.json": {
+                    "warnings": ["bucket timeout"],
+                    "cooldown_gap_groups": [],
+                },
+                "evidence/db/event_identity_quality.json": {
+                    "warnings": ["bucket timeout"],
+                    "rows": [],
+                },
+            },
+            period,
+        )
+    }
+
+    assert results["noisy_alert_symbols"].status == "unknown"
+    assert results["repeated_alert_content"].status == "unknown"
+    assert results["similar_alert_groups"].status == "unknown"
+    assert results["weak_event_identity"].status == "unknown"
+    assert results["cooldown_effectiveness_gap"].status == "unknown"
 
 
 def test_alert_repetition_detectors_trigger_with_evidence():
@@ -499,7 +613,17 @@ def test_failed_delivery_detector_triggers():
             "queries": {
                 "alerts_summary": {
                     "rows": [{"deliveries": 10, "failed": 5}],
-                }
+                },
+                "telegram_delivery_failure_summary": {
+                    "rows": [
+                        {
+                            "failed_or_retry_pending_total": 5,
+                            "blocked_user": 0,
+                            "retry_pending_actionable": 2,
+                            "unexplained_telegram_failure": 3,
+                        }
+                    ]
+                },
             }
         },
         "evidence/db/recent_alert_failures.json": {
@@ -513,6 +637,91 @@ def test_failed_delivery_detector_triggers():
 
     assert results["failed_telegram_deliveries"].status == "triggered"
     assert results["failed_telegram_deliveries"].severity == "high"
+
+
+def test_failed_delivery_detector_uses_aggregate_counts_not_capped_samples():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "alerts_summary": {"rows": [{"deliveries": 100, "failed": 25}]},
+                "telegram_delivery_failure_summary": {
+                    "rows": [
+                        {
+                            "failed_or_retry_pending_total": 25,
+                            "blocked_user": 0,
+                            "retry_pending_actionable": 20,
+                            "unexplained_telegram_failure": 5,
+                        }
+                    ]
+                },
+            }
+        },
+        "evidence/db/recent_alert_failures.json": {
+            "queries": {
+                "alerts_failures": {
+                    "rows": [{"alert_id": 1, "failure_category": "retry_pending_actionable"}]
+                }
+            }
+        },
+        "evidence/health/health.json": {"status": "ok"},
+        "evidence/logs/pattern_counts.json": {"pattern_counts": {}},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+    detector = results["failed_telegram_deliveries"]
+
+    assert detector.status == "triggered"
+    assert detector.severity == "high"
+    assert detector.metrics["failed"] == 25
+    assert detector.metrics["sample_failure_rows"] == 1
+
+
+def test_blocked_user_delivery_failures_stay_visible_without_actionable_severity():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "alerts_summary": {"rows": [{"deliveries": 100, "failed": 12}]},
+                "telegram_delivery_failure_summary": {
+                    "rows": [
+                        {
+                            "failed_or_retry_pending_total": 12,
+                            "blocked_user": 12,
+                            "retry_pending_actionable": 0,
+                            "unexplained_telegram_failure": 0,
+                        }
+                    ]
+                },
+            }
+        },
+        "evidence/db/recent_alert_failures.json": {
+            "queries": {
+                "alerts_failures": {
+                    "rows": [{"alert_id": 1, "failure_category": "blocked_user"}]
+                }
+            }
+        },
+        "evidence/health/health.json": {"status": "ok"},
+        "evidence/logs/pattern_counts.json": {"pattern_counts": {}},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+    detector = results["failed_telegram_deliveries"]
+
+    assert detector.status == "clear"
+    assert detector.severity == "info"
+    assert detector.metrics["failed"] == 0
+    assert detector.metrics["blocked_user_failures"] == 12
+    assert detector.metrics["failed_or_retry_pending_total"] == 12
 
 
 def test_health_detector_triggers_when_unavailable():
@@ -723,6 +932,178 @@ async def test_db_collector_failure_is_isolated_and_later_collectors_continue(
     assert payloads["evidence/db/aggregate_metrics.json"]["queries"]["ok_later"]["row_count"] == 1
 
 
+class _FakeRow:
+    def __init__(self, **values):
+        self._mapping = values
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _AlertEvidenceFakeConnection:
+    def __init__(self, engine):
+        self._engine = engine
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def execute(self, _statement, _params):
+        self._engine.calls += 1
+        self._engine.params.append(dict(_params))
+        if self._engine.fail_mode == "partial" and self._engine.calls == 1:
+            raise TimeoutError("bucket timed out")
+        if self._engine.fail_mode == "all":
+            raise TimeoutError("bucket timed out")
+        rows = self._engine.rows_by_since.get(_params.get("since"), [])
+        limit = int(_params.get("alert_evidence_limit") or len(rows) or 1)
+        return _FakeResult([_FakeRow(**row) for row in rows[:limit]])
+
+    async def rollback(self):
+        return None
+
+
+class _AlertEvidenceFakeEngine:
+    def __init__(
+        self,
+        fail_mode: str | None = None,
+        rows_by_since: dict[datetime, list[dict[str, object]]] | None = None,
+    ):
+        self.fail_mode = fail_mode
+        self.rows_by_since = rows_by_since or {}
+        self.calls = 0
+        self.params: list[dict[str, object]] = []
+
+    def connect(self):
+        return _AlertEvidenceFakeConnection(self)
+
+    async def dispose(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_alert_repetition_row_cap_prioritizes_newest_bucket():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    newest_bucket_start = datetime(2026, 6, 1, 18, tzinfo=timezone.utc)
+    oldest_bucket_start = datetime(2026, 6, 1, 0, tzinfo=timezone.utc)
+    fake_engine = _AlertEvidenceFakeEngine(
+        rows_by_since={
+            newest_bucket_start: [{"marker": "newest"}],
+            oldest_bucket_start: [{"marker": "oldest"}],
+        }
+    )
+
+    rows, statuses, warnings = await db_collector._collect_alert_repetition_rows(
+        fake_engine,
+        params={},
+        period=period,
+        timeout_seconds=1,
+        row_cap=1,
+        mapper=ReferenceMapper(salt=b"0" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    assert rows == [{"marker": "newest"}]
+    assert fake_engine.params[0]["since"] == newest_bucket_start
+    assert fake_engine.params[0]["until"] == period.end
+    assert len(statuses) == 1
+    assert warnings == ["alert repetition evidence row cap reached before older buckets ran"]
+
+
+async def _collect_alert_evidence_with_fake_engine(monkeypatch, tmp_path, *, fail_mode=None):
+    fake_engine = _AlertEvidenceFakeEngine(fail_mode=fail_mode)
+    monkeypatch.setattr(db_collector, "create_async_engine", lambda *_args, **_kwargs: fake_engine)
+    monkeypatch.setattr(db_collector, "QUERIES", ())
+    monkeypatch.setattr(db_collector, "ALERT_EVIDENCE_SQL", "SELECT 1 WHERE false")
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    config = OpsAgentConfig(
+        database_url="postgresql+asyncpg://ccwbot_ops_reader:secret@postgres/ccwbot",
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path,
+        legacy_state_path=tmp_path / "state.json",
+    )
+    payloads, statuses = await db_collector.collect_db(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"0" * 32),
+        redaction_report=RedactionReport(),
+    )
+    return payloads, {status["name"]: status for status in statuses}, period
+
+
+@pytest.mark.asyncio
+async def test_alert_repetition_zero_rows_collects_valid_empty_evidence(monkeypatch, tmp_path):
+    payloads, statuses, period = await _collect_alert_evidence_with_fake_engine(
+        monkeypatch,
+        tmp_path,
+    )
+
+    assert statuses["db.alert_repetition_evidence"]["status"] == "ok"
+    assert payloads["evidence/db/alert_delivery_distribution.json"]["warnings"] == []
+    assert payloads["evidence/db/alert_delivery_distribution.json"]["symbols"] == []
+
+    results = {result.id: result for result in run_detectors(payloads, period)}
+
+    assert results["noisy_alert_symbols"].status == "clear"
+    assert results["repeated_alert_content"].status == "clear"
+    assert results["similar_alert_groups"].status == "clear"
+
+
+@pytest.mark.asyncio
+async def test_alert_repetition_partial_bucket_warning_marks_dependent_detectors_unknown(
+    monkeypatch, tmp_path
+):
+    payloads, statuses, period = await _collect_alert_evidence_with_fake_engine(
+        monkeypatch,
+        tmp_path,
+        fail_mode="partial",
+    )
+
+    assert statuses["db.alert_repetition_evidence"]["status"] == "partial"
+    assert "timeout" in statuses["db.alert_repetition_evidence"]["error"]
+
+    results = {result.id: result for result in run_detectors(payloads, period)}
+
+    assert results["noisy_alert_symbols"].status == "unknown"
+    assert results["repeated_alert_content"].status == "unknown"
+    assert results["similar_alert_groups"].status == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_alert_repetition_all_buckets_failed_keeps_dependent_detectors_unknown(
+    monkeypatch, tmp_path
+):
+    payloads, statuses, period = await _collect_alert_evidence_with_fake_engine(
+        monkeypatch,
+        tmp_path,
+        fail_mode="all",
+    )
+
+    assert statuses["db.alert_repetition_evidence"]["status"] == "failed"
+
+    results = {result.id: result for result in run_detectors(payloads, period)}
+
+    assert results["noisy_alert_symbols"].status == "unknown"
+    assert results["repeated_alert_content"].status == "unknown"
+    assert results["similar_alert_groups"].status == "unknown"
+
+
 def test_no_delivery_classification_clear_for_expected_no_alert():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -891,6 +1272,153 @@ def test_no_alert_deliveries_clear_when_active_period_has_no_market_events():
     results = {result.id: result for result in run_detectors(evidence, period)}
 
     assert results["no_alert_deliveries_observed"].status == "clear"
+
+
+def test_news_budget_detector_clears_expected_small_budget_skips():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "successful",
+                            "impact_bucket": "high",
+                            "items": 8,
+                        },
+                        {
+                            "outcome_category": "skipped_budget",
+                            "impact_bucket": "low_or_null",
+                            "items": 2,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/db/recent_news_failures.json": {
+            "queries": {"news_items_recent_high_impact": {"rows": [{}] * 100}}
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "clear"
+    assert detector.metrics["skipped_budget"] == 2
+    assert detector.metrics["sample_rows"] == 100
+
+
+def test_news_budget_detector_triggers_on_aggregate_failures_despite_capped_sample():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "failed",
+                            "impact_bucket": "high",
+                            "items": 12,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/db/recent_news_failures.json": {
+            "queries": {"news_items_recent_high_impact": {"rows": [{}]}}
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "triggered"
+    assert detector.severity == "high"
+    assert detector.metrics["failed_news_intelligence"] == 12
+    assert detector.metrics["sample_rows"] == 1
+
+
+def test_news_budget_detector_triggers_on_excessive_high_medium_skips():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {
+                            "outcome_category": "skipped_budget",
+                            "impact_bucket": "high",
+                            "items": 3,
+                        },
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["news_intelligence_failures"]
+    assert detector.status == "triggered"
+    assert detector.severity == "medium"
+    assert detector.metrics["excessive_budget_skips"] is True
+
+
+def test_llm_failure_detector_uses_safe_category_aggregates():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "llm_usage_summary": {"rows": []},
+                "llm_failure_category_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "failure_category": "schema_validation_failed",
+                            "calls": 2,
+                        },
+                        {
+                            "call_type": "event_analysis",
+                            "failure_category": "rate_limit_backoff",
+                            "calls": 1,
+                        },
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["repeated_llm_failures_or_rate_limits"]
+    assert detector.status == "triggered"
+    assert detector.metrics["llm_failures"] == 3
+    assert detector.metrics["rate_limits"] == 1
+    assert detector.metrics["failure_categories"]["schema_validation_failed"] == 2
 
 
 def test_payment_premium_detector_aggregates_inconsistency_types():

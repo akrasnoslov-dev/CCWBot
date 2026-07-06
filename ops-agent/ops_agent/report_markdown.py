@@ -175,6 +175,8 @@ def _collector_next_action(name: str, status: str, error: str) -> str:
         return "Fix the read-only SQL/schema contract for this collector and rerun collection."
     if "timeout" in error:
         return "Narrow the query or raise the ops-agent timeout after review."
+    if name == "docker":
+        return "Verify the production safe Docker status wrapper can run `docker compose ps --format json`."
     if "permission" in error:
         return "Verify the read-only ops-agent DB role grants."
     if name.startswith("db."):
@@ -345,6 +347,8 @@ def _data_sources(evidence: dict[str, Any]) -> str:
         sources.append("log pattern counts")
     if "evidence/health/health.json" in evidence:
         sources.append("health probe")
+    if "evidence/docker/container_state.json" in evidence:
+        sources.append("container state summary")
     if "evidence/db/alert_quality.json" in evidence:
         sources.append("sanitized alert quality evidence")
     return ", ".join(sources) if sources else "not available"
@@ -748,13 +752,22 @@ def _data_completeness(evidence: dict[str, Any]) -> list[str]:
         ),
         ("LLM usage evidence available", _has_query(evidence, "llm_usage_summary")),
         (
+            "Safe LLM failure categories available",
+            _has_query(evidence, "llm_failure_category_summary"),
+        ),
+        (
             "Heartbeat freshness evidence available",
             _has_query(evidence, "market_heartbeats_freshness")
             and _has_query(evidence, "market_heartbeat_delivery_freshness"),
         ),
         ("Report freshness evidence available", _has_query(evidence, "market_reports_freshness")),
         ("News freshness evidence available", _has_query(evidence, "news_freshness_summary")),
+        (
+            "News intelligence budget evidence available",
+            _has_query(evidence, "news_intelligence_budget_summary"),
+        ),
         ("Telegram failure details available", "evidence/db/recent_alert_failures.json" in evidence),
+        ("Container state summary available", "evidence/docker/container_state.json" in evidence),
         ("Warning/error logs available", "evidence/logs/pattern_counts.json" in evidence),
         ("Suppression reason data available", bool(_suppression_reasons_available(evidence))),
         ("Semantic family data available", bool(_payload(evidence, "evidence/db/alert_similarity_groups.json"))),
@@ -787,6 +800,25 @@ def _suppression_reasons_available(evidence: dict[str, Any]) -> bool:
 
 def _detector_user_impact(result: DetectorResult) -> str:
     metrics = result.metrics
+    if result.id == "failed_telegram_deliveries":
+        return (
+            f"{_int(metrics.get('retry_pending_actionable'))} retry-pending actionable, "
+            f"{_int(metrics.get('unexplained_telegram_failures'))} unexplained, "
+            f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures"
+        )
+    if result.id == "repeated_llm_failures_or_rate_limits":
+        categories = metrics.get("failure_categories")
+        if isinstance(categories, dict) and categories:
+            return ", ".join(
+                f"{key}: {_int(value)}" for key, value in sorted(categories.items())
+            )
+        return f"{_int(metrics.get('llm_failures'))} categorized LLM failures"
+    if result.id == "news_intelligence_failures":
+        return (
+            f"{_int(metrics.get('failed_news_intelligence'))} failed, "
+            f"{_int(metrics.get('skipped_budget'))} budget-skipped, "
+            f"{_int(metrics.get('high_medium_budget_skips'))} high/medium budget-skipped"
+        )
     if "failed" in metrics and "total" in metrics:
         return _count_pct(_int(metrics.get("failed")), _int(metrics.get("total")), "deliveries")
     if "duplicate_deliveries" in metrics:
@@ -804,7 +836,16 @@ def _recommended_action(detector_id: str) -> str:
     if detector_id in {"weak_event_identity", "duplicate_market_events"}:
         return "Normalize semantic event identity and stable event keys."
     if detector_id == "failed_telegram_deliveries":
-        return "Investigate delivery failures and blocked-user cleanup first."
+        return "Investigate retry-pending and unexplained failures; keep blocked-user failures separate."
+    if detector_id == "failed_daily_weekly_reports":
+        return (
+            "Compare latest report generation time against the freshness threshold, "
+            "which includes scheduler grace; investigate only drift beyond that grace."
+        )
+    if detector_id == "repeated_llm_failures_or_rate_limits":
+        return "Use safe LLM failure categories to separate schema bugs, provider/network issues, timeouts, invalid JSON, and rate-limit/backoff."
+    if detector_id == "news_intelligence_failures":
+        return "Treat small skipped-budget counts as expected; investigate failed rows or excessive high/medium budget skips before considering any LLM budget change."
     if detector_id == "market_event_analysis_invariant":
         return "Fix any path that creates more than one AI analysis for the same market event."
     return "Investigate the detector evidence and add the smallest targeted fix."
@@ -817,6 +858,8 @@ def _pr_mapping(detector_id: str) -> str:
         return "PR3 semantic identity"
     if detector_id == "failed_telegram_deliveries":
         return "new work"
+    if detector_id in {"repeated_llm_failures_or_rate_limits", "news_intelligence_failures"}:
+        return "ops post-deploy observability follow-up"
     if detector_id == "event_alert_delivery_explanation_gaps":
         return "Event Alert cleanup regression checks"
     return "new work"

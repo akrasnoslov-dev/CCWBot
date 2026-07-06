@@ -93,7 +93,17 @@ done
 [ -x "$DOCKER" ] || reject "/usr/bin/docker is not executable"
 
 cd /opt/CCWBot
-set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent collect
+docker_status_file=$(mktemp)
+cleanup() {
+  rm -f "$docker_status_file"
+}
+trap cleanup EXIT INT TERM
+
+if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --format json > "$docker_status_file" 2>/dev/null; then
+  printf '{"status":"failed","error":"docker_status_unavailable"}\n' > "$docker_status_file"
+fi
+
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm -v "$docker_status_file:/tmp/ops-agent-docker-status.json:ro" -e OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json ops-agent collect
 
 if [ -n "$since" ]; then
   set -- "$@" --since "$since"

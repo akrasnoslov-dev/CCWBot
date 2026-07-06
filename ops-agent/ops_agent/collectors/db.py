@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -188,6 +188,69 @@ def _collector_error(error: Exception, mapper: ReferenceMapper, report: Redactio
     return redact_text(f"{type(error).__name__}: {category}", mapper, report)
 
 
+def _alert_evidence_windows(
+    period: Period, *, bucket_hours: int = 6
+) -> list[tuple[datetime, datetime]]:
+    windows: list[tuple[datetime, datetime]] = []
+    cursor = period.start
+    step = timedelta(hours=bucket_hours)
+    while cursor < period.end:
+        end = min(cursor + step, period.end)
+        windows.append((cursor, end))
+        cursor = end
+    return windows or [(period.start, period.end)]
+
+
+async def _collect_alert_repetition_rows(
+    engine,
+    *,
+    params: dict[str, Any],
+    period: Period,
+    timeout_seconds: int,
+    row_cap: int,
+    mapper: ReferenceMapper,
+    redaction_report: RedactionReport,
+) -> tuple[list[dict[str, Any]], list[dict[str, str | None]], list[str]]:
+    rows: list[dict[str, Any]] = []
+    statuses: list[dict[str, str | None]] = []
+    warnings: list[str] = []
+    newest_first_windows = list(reversed(_alert_evidence_windows(period)))
+    for index, (window_start, window_end) in enumerate(newest_first_windows, start=1):
+        if len(rows) >= row_cap:
+            warnings.append("alert repetition evidence row cap reached before older buckets ran")
+            break
+        bucket_name = f"db.alert_repetition_evidence.bucket_{index}"
+        try:
+            async with engine.connect() as connection:
+                alert_result = await asyncio.wait_for(
+                    connection.execute(
+                        text(ALERT_EVIDENCE_SQL),
+                        {
+                            **params,
+                            "since": window_start,
+                            "until": window_end,
+                            "alert_evidence_limit": max(row_cap - len(rows), 1),
+                        },
+                    ),
+                    timeout=timeout_seconds,
+                )
+                rows.extend(
+                    {key: _jsonable(value) for key, value in row._mapping.items()}
+                    for row in alert_result
+                )
+                await connection.rollback()
+            statuses.append({"name": bucket_name, "status": "ok", "error": None})
+        except Exception as error:
+            message = _collector_error(error, mapper, redaction_report)
+            warnings.append(f"{bucket_name}: {message}")
+            statuses.append({"name": bucket_name, "status": "failed", "error": message})
+    return rows[:row_cap], statuses, warnings
+
+
+def _successful_alert_repetition_buckets(statuses: list[dict[str, str | None]]) -> int:
+    return sum(1 for status in statuses if status.get("status") == "ok")
+
+
 async def collect_db(
     *,
     config: OpsAgentConfig,
@@ -324,29 +387,35 @@ async def collect_db(
                         "error": message,
                     }
                 )
-        try:
-            async with engine.connect() as connection:
-                alert_result = await asyncio.wait_for(
-                    connection.execute(text(ALERT_EVIDENCE_SQL), params),
-                    timeout=config.limits.db_query_timeout_seconds,
-                )
-                alert_rows = [
-                    {key: _jsonable(value) for key, value in row._mapping.items()}
-                    for row in alert_result
-                ]
-                await connection.rollback()
+        alert_rows, bucket_statuses, alert_warnings = await _collect_alert_repetition_rows(
+            engine,
+            params=params,
+            period=period,
+            timeout_seconds=config.limits.db_query_timeout_seconds,
+            row_cap=config.limits.alert_evidence_row_cap,
+            mapper=mapper,
+            redaction_report=redaction_report,
+        )
+        statuses.extend(bucket_statuses)
+        successful_buckets = _successful_alert_repetition_buckets(bucket_statuses)
+        if successful_buckets:
             alert_payloads = build_alert_evidence_payloads(
                 alert_rows,
                 period=period,
                 row_cap=config.limits.alert_evidence_row_cap,
                 semantic_cooldown_seconds=config.limits.event_alert_semantic_cooldown_seconds,
+                warnings=alert_warnings,
             )
             grouped.update(alert_payloads)
             statuses.append(
-                {"name": "db.alert_repetition_evidence", "status": "ok", "error": None}
+                {
+                    "name": "db.alert_repetition_evidence",
+                    "status": "partial" if alert_warnings else "ok",
+                    "error": "; ".join(alert_warnings) if alert_warnings else None,
+                }
             )
-        except Exception as error:
-            message = _collector_error(error, mapper, redaction_report)
+        else:
+            message = "; ".join(alert_warnings) or "all alert repetition evidence buckets failed"
             for file_name in {
                 "evidence/db/alert_delivery_distribution.json",
                 "evidence/db/alert_quality.json",

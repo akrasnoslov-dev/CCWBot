@@ -18,7 +18,9 @@ from bot.db.database import (
     User,
     UserPremiumSubscription,
     ensure_default_coin_subscriptions,
+    grant_user_premium,
     save_price_snapshot,
+    set_user_coin_subscription,
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
@@ -1535,6 +1537,223 @@ async def test_deliver_market_event_alert_does_not_create_ai_analysis(monkeypatc
         assert delivery_count == 1
         groq_call.assert_not_awaited()
         save_analysis.assert_not_awaited()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("symbol", "premium_required"),
+    [("btc", False), ("sol", True)],
+)
+async def test_should_alert_event_with_eligible_recipient_creates_delivery_rows(
+    monkeypatch, symbol, premium_required
+):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            if premium_required:
+                await grant_user_premium(
+                    session,
+                    telegram_user_id=user.telegram_user_id,
+                    days=30,
+                    now=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+                )
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol=symbol,
+                    is_enabled=True,
+                )
+            market_event = MarketEvent(
+                symbol=symbol.upper(),
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=f"{symbol}_delivery_gap_regression",
+                event_instance_key=f"{symbol}:delivery-gap-regression",
+                price=100.0,
+                previous_price=98.0,
+                price_change_percent=2.0,
+                detected_at=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+            )
+            session.add(market_event)
+            await session.commit()
+            await session.refresh(market_event)
+            analysis = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id=f"event_analysis_{symbol}_delivery_gap_regression",
+                symbol=symbol.upper(),
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash=f"{symbol}-delivery-gap",
+                status="success",
+                should_alert=True,
+                plain_text=f"{symbol.upper()} alert. Not financial advice.",
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(analysis)
+            market_event_id = market_event.id
+            analysis_id = analysis.id
+            user_id = user.id
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(True, None)),
+        )
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(),
+            symbol=symbol,
+            alert_payload={
+                "plain_text": f"{symbol.upper()} alert.\n\nNot financial advice."
+            },
+            market_event_id=market_event_id,
+            event_ai_analysis_id=analysis_id,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)],
+            event_type=alerts.EVENT_ALERT_TYPE,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+        )
+
+        async with session_local() as session:
+            delivery_count = await session.scalar(select(func.count()).select_from(Alert))
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+
+        assert delivered is True
+        assert delivery_count == 1
+        assert outcome.status == "delivered"
+        assert outcome.market_event_id == market_event_id
+        assert outcome.event_ai_analysis_id == analysis_id
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("symbol", "premium_required"),
+    [("btc", False), ("sol", True)],
+)
+async def test_automatic_should_alert_creates_delivery_rows_through_recipient_resolution(
+    monkeypatch, symbol, premium_required
+):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            if premium_required:
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol="btc",
+                    is_enabled=False,
+                )
+                await grant_user_premium(
+                    session,
+                    telegram_user_id=user.telegram_user_id,
+                    days=3650,
+                    now=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+                )
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol=symbol,
+                    is_enabled=True,
+                )
+            user_id = user.id
+
+        parsed = {
+            "symbol": symbol.upper(),
+            "should_alert": True,
+            "event_key": f"{symbol}_delivery_gap_regression",
+            "title": f"{symbol.upper()} market pressure is increasing",
+            "message_body": (
+                f"{symbol.upper()} has moved enough in the analysed window to warrant "
+                "a cautious Event Alert."
+            ),
+            "related_news_ids": [],
+            "possible_action": "Review your exposure calmly and avoid reacting impulsively.",
+            "urgency": "high",
+            "confidence": "medium",
+            "reason_for_no_alert": None,
+        }
+        groq_call = AsyncMock(return_value=("raw should-alert output", parsed))
+        send_alert = AsyncMock(return_value=(True, None))
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={
+                    symbol: {
+                        "price": 103.0,
+                        "change_24h": -2.4,
+                        "change_7d": -4.8,
+                    }
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_load_news_driven_alert_candidates",
+            AsyncMock(return_value={}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_select_related_news_context",
+            AsyncMock(return_value=([], None, False)),
+        )
+        monkeypatch.setattr(alerts, "ask_event_analysis_raw", groq_call)
+        monkeypatch.setattr(alerts, "_send_alert_to_recipient_with_retry", send_alert)
+        monkeypatch.setattr(alerts, "_deliver_market_heartbeat", AsyncMock())
+
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+
+        async with session_local() as session:
+            deliveries = list((await session.scalars(select(Alert))).all())
+            analyses = list((await session.scalars(select(EventAiAnalysis))).all())
+            market_events = list((await session.scalars(select(MarketEvent))).all())
+            outcomes = list(
+                (await session.scalars(select(AlertDeliveryOutcome))).all()
+            )
+
+        assert len(analyses) == 1
+        assert len(market_events) == 1
+        assert len(deliveries) == 1
+        analysis = analyses[0]
+        market_event = market_events[0]
+        delivery = deliveries[0]
+        assert analysis.market_event_id == market_event.id
+        assert delivery.market_event_id == market_event.id
+        assert delivery.event_ai_analysis_id == analysis.id
+        assert delivery.user_id == user_id
+        assert delivery.status == "sent"
+        outcome_statuses = {outcome.status for outcome in outcomes}
+        assert alerts.OUTCOME_ALLOWED in outcome_statuses
+        assert alerts.OUTCOME_DELIVERED in outcome_statuses
+        delivered_outcome = next(
+            outcome for outcome in outcomes if outcome.status == alerts.OUTCOME_DELIVERED
+        )
+        assert delivered_outcome.market_event_id == market_event.id
+        assert delivered_outcome.event_ai_analysis_id == analysis.id
+        assert delivered_outcome.user_id == user_id
+        assert delivered_outcome.recipient_eligible is True
+        allowed_outcome = next(
+            outcome for outcome in outcomes if outcome.status == alerts.OUTCOME_ALLOWED
+        )
+        assert allowed_outcome.event_ai_analysis_id == analysis.id
+        assert groq_call.await_count == 1
+        send_alert.assert_awaited_once()
     finally:
         await engine.dispose()
 

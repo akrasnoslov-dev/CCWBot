@@ -49,6 +49,20 @@ def _missing_files_gap(evidence: dict[str, Any], required: list[str]) -> str | N
     return "Required evidence missing: " + ", ".join(missing)
 
 
+def _incomplete_files_gap(evidence: dict[str, Any], required: list[str]) -> str | None:
+    incomplete = []
+    for file_name in required:
+        payload = evidence.get(file_name)
+        if not isinstance(payload, dict):
+            continue
+        warnings = payload.get("warnings")
+        if payload.get("evidence_incomplete") or (isinstance(warnings, list) and warnings):
+            incomplete.append(file_name)
+    if not incomplete:
+        return None
+    return "Required evidence incomplete: " + ", ".join(incomplete)
+
+
 def _int(value: Any) -> int:
     try:
         return int(value or 0)
@@ -107,6 +121,7 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "expected_no_eligible_recipients",
             "expected_product_gating_possible",
             "expected_backend_cooldown_active",
+            "expected_failed_or_rate_limited_outcome",
         }
     )
     unknown = sum(
@@ -123,6 +138,9 @@ def _no_delivery_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "llm_failure_or_rate_limit": classifications.get("llm_failure_or_rate_limit", 0),
         "expected_backend_cooldown_active": classifications.get(
             "expected_backend_cooldown_active", 0
+        ),
+        "expected_failed_or_rate_limited_outcome": classifications.get(
+            "expected_failed_or_rate_limited_outcome", 0
         ),
         "delivery_gap_should_alert_true": classifications.get(
             "delivery_gap_should_alert_true", 0
@@ -144,6 +162,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_failures = _query_rows(evidence, "evidence/db/recent_alert_failures.json", "alerts_failures")
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
+    llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
     reports = _query_rows(evidence, aggregate, "market_reports_summary")
     report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
@@ -166,6 +185,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     blocked_users = _query_rows(evidence, anomalies, "blocked_users_still_active")
     payment_inconsistencies = _query_rows(evidence, anomalies, "premium_payment_inconsistencies")
     news_rows = _query_rows(evidence, "evidence/db/recent_news_failures.json", "news_items_recent_high_impact")
+    news_budget_rows = _query_rows(evidence, aggregate, "news_intelligence_budget_summary")
     delivery_distribution_payload = _file_payload(
         evidence, "evidence/db/alert_delivery_distribution.json"
     )
@@ -180,15 +200,39 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     logs_available, period_logs, tail_logs, period_logs_available = _log_counts(evidence)
     health = evidence.get("evidence/health/health.json") or {}
 
-    failed_deliveries = sum(_int(row.get("failed")) for row in alert_summary)
+    failure_summary_rows = _query_rows(evidence, aggregate, "telegram_delivery_failure_summary")
+    failure_summary = failure_summary_rows[0] if failure_summary_rows else {}
+    blocked_user_failures = _int(failure_summary.get("blocked_user"))
+    retry_pending_actionable = _int(failure_summary.get("retry_pending_actionable"))
+    unexplained_telegram_failures = _int(
+        failure_summary.get("unexplained_telegram_failure")
+    )
+    failed_or_retry_pending_total = _int(failure_summary.get("failed_or_retry_pending_total"))
+    failed_deliveries = retry_pending_actionable + unexplained_telegram_failures
     total_deliveries = sum(_int(row.get("deliveries")) for row in alert_summary)
     failed_rate = failed_deliveries / total_deliveries if total_deliveries else 0
-    llm_failures = sum(
-        _int(row.get("calls"))
-        for row in llm_summary
-        if str(row.get("status") or "") not in {"success", "completed"}
+    llm_category_counts: dict[str, int] = {}
+    for row in llm_category_rows:
+        category = str(row.get("failure_category") or "other")
+        llm_category_counts[category] = llm_category_counts.get(category, 0) + _int(
+            row.get("calls")
+        )
+    llm_failures = (
+        sum(
+            calls
+            for category, calls in llm_category_counts.items()
+            if category != "successful"
+        )
+        if llm_category_rows
+        else sum(
+            _int(row.get("calls"))
+            for row in llm_summary
+            if str(row.get("status") or "") not in {"success", "completed"}
+        )
     )
-    rate_limits = sum(_int(row.get("rate_limit_count")) for row in llm_summary)
+    rate_limits = llm_category_counts.get("rate_limit_backoff", 0) or sum(
+        _int(row.get("rate_limit_count")) for row in llm_summary
+    )
     failed_reports = sum(
         _int(row.get("reports")) for row in reports if str(row.get("status")) != "completed"
     )
@@ -217,6 +261,26 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         or _int(row.get("age_seconds")) > heartbeat_threshold_seconds
     ]
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
+    news_budget_counts: dict[str, int] = {}
+    news_budget_by_impact: dict[str, int] = {}
+    for row in news_budget_rows:
+        category = str(row.get("outcome_category") or "unknown")
+        impact = str(row.get("impact_bucket") or "low_or_null")
+        items = _int(row.get("items"))
+        news_budget_counts[category] = news_budget_counts.get(category, 0) + items
+        if category == "skipped_budget":
+            news_budget_by_impact[impact] = news_budget_by_impact.get(impact, 0) + items
+    skipped_budget = news_budget_counts.get("skipped_budget", 0)
+    failed_news_intelligence = news_budget_counts.get("failed", 0)
+    pending_news_intelligence = news_budget_counts.get("pending", 0)
+    unknown_news_intelligence = news_budget_counts.get("unknown", 0)
+    high_medium_budget_skips = news_budget_by_impact.get("high", 0) + news_budget_by_impact.get(
+        "medium", 0
+    )
+    total_news_intelligence = sum(news_budget_counts.values())
+    excessive_budget_skips = skipped_budget >= 10 or high_medium_budget_skips >= 3 or (
+        total_news_intelligence >= 20 and skipped_budget / total_news_intelligence >= 0.5
+    )
     error_patterns = _int(period_logs.get("error"))
     tail_error_patterns = _int(tail_logs.get("error"))
     noisy_symbol_rows = [
@@ -287,6 +351,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         gap = _missing_files_gap(evidence, required)
         if gap:
             return result(detector_id, severity, "unknown", "Required evidence is missing", refs, metrics, gap)
+        gap = _incomplete_files_gap(evidence, required)
+        if gap and clear_status == "clear":
+            return result(detector_id, severity, "unknown", "Required evidence is incomplete", refs, metrics, gap)
         return result(detector_id, severity, clear_status, summary, refs, metrics)
 
     invariant_by_type: dict[str, int] = {}
@@ -362,11 +429,24 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "failed_telegram_deliveries",
             "high" if failed_deliveries >= 5 or failed_rate >= 0.2 else "info",
-            [(aggregate, "alerts_summary"), ("evidence/db/recent_alert_failures.json", "alerts_failures")],
-            "triggered" if failed_deliveries or alert_failures else "clear",
-            f"{failed_deliveries} failed or retry-pending deliveries",
+            [
+                (aggregate, "alerts_summary"),
+                (aggregate, "telegram_delivery_failure_summary"),
+                ("evidence/db/recent_alert_failures.json", "alerts_failures"),
+            ],
+            "triggered" if failed_deliveries else "clear",
+            f"{failed_deliveries} actionable failed or retry-pending deliveries",
             ["evidence/db/recent_alert_failures.json", "evidence/db/aggregate_metrics.json"],
-            {"failed": failed_deliveries, "total": total_deliveries, "failed_rate": failed_rate},
+            {
+                "failed": failed_deliveries,
+                "total": total_deliveries,
+                "failed_rate": failed_rate,
+                "blocked_user_failures": blocked_user_failures,
+                "retry_pending_actionable": retry_pending_actionable,
+                "unexplained_telegram_failures": unexplained_telegram_failures,
+                "failed_or_retry_pending_total": failed_or_retry_pending_total,
+                "sample_failure_rows": len(alert_failures),
+            },
         ),
         db_result(
             "no_alert_deliveries_observed",
@@ -509,11 +589,15 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "repeated_llm_failures_or_rate_limits",
             "high" if llm_failures >= 3 else "medium",
-            [(aggregate, "llm_usage_summary")],
+            [(aggregate, "llm_usage_summary"), (aggregate, "llm_failure_category_summary")],
             "triggered" if llm_failures >= 3 or rate_limits else "clear",
             f"{llm_failures} LLM failures and {rate_limits} rate-limit signals",
             ["evidence/db/aggregate_metrics.json", "evidence/db/recent_llm_failures.json"],
-            {"llm_failures": llm_failures, "rate_limits": rate_limits},
+            {
+                "llm_failures": llm_failures,
+                "rate_limits": rate_limits,
+                "failure_categories": llm_category_counts,
+            },
         ),
         db_result(
             "failed_daily_weekly_reports",
@@ -612,12 +696,29 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ),
         db_result(
             "news_intelligence_failures",
-            "medium",
-            [("evidence/db/recent_news_failures.json", "news_items_recent_high_impact")],
-            "triggered" if news_failures else "clear",
-            f"{news_failures} failed or skipped high-impact news intelligence rows",
-            ["evidence/db/recent_news_failures.json"],
-            {"news_failures": news_failures},
+            "high"
+            if failed_news_intelligence
+            else "medium"
+            if excessive_budget_skips
+            else "info",
+            [(aggregate, "news_intelligence_budget_summary")],
+            "triggered" if failed_news_intelligence or excessive_budget_skips else "clear",
+            (
+                f"{failed_news_intelligence} failed news intelligence rows, "
+                f"{skipped_budget} budget skips ({high_medium_budget_skips} high/medium), "
+                f"{news_failures} sample rows"
+            ),
+            ["evidence/db/aggregate_metrics.json", "evidence/db/recent_news_failures.json"],
+            {
+                "failed_news_intelligence": failed_news_intelligence,
+                "skipped_budget": skipped_budget,
+                "high_medium_budget_skips": high_medium_budget_skips,
+                "pending_news_intelligence": pending_news_intelligence,
+                "unknown_news_intelligence": unknown_news_intelligence,
+                "total_news_intelligence": total_news_intelligence,
+                "excessive_budget_skips": excessive_budget_skips,
+                "sample_rows": len(news_rows),
+            },
         ),
         db_result(
             "stale_price_snapshots",
