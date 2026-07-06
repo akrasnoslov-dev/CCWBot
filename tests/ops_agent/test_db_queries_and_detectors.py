@@ -192,6 +192,19 @@ def test_price_state_query_uses_existing_price_state_columns_only():
     price_state_query = next(query for query in QUERIES if query.name == "price_state_current")
 
     assert "last_7d_change" not in price_state_query.sql
+    assert "('btc'), ('eth'), ('gram'), ('sol')" in price_state_query.sql
+    assert "lower(symbol) IN" in price_state_query.sql
+
+
+def test_ops_agent_classifies_legacy_symbols_and_blocked_failures_separately():
+    query_names = {query.name: query for query in QUERIES}
+
+    assert "legacy_inactive_price_state" in query_names
+    assert "legacy_inactive_symbol" in query_names["legacy_inactive_price_state"].sql
+    assert "failure_category" in query_names["alerts_failures"].sql
+    assert "blocked_user" in query_names["alerts_failures"].sql
+    assert "retry_pending_actionable" in query_names["alerts_failures"].sql
+    assert "unexplained_telegram_failure" in query_names["alerts_failures"].sql
 
 
 def test_ops_agent_queries_include_hardened_anomaly_evidence():
@@ -213,6 +226,12 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "event_alert_same_news_repeats_24h" in query_names
     assert "alert_delivery_outcome_summary" in query_names
     assert "market_heartbeat_delivery_freshness" in query_names
+    no_delivery = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+    assert "outcome_summary AS" in no_delivery.sql
+    assert "expected_no_eligible_recipients" in no_delivery.sql
+    assert "expected_product_gating_possible" in no_delivery.sql
     assert "news_freshness_summary" in query_names
 
 
@@ -353,8 +372,11 @@ def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     query_names = {query.name: query for query in QUERIES}
 
     assert "LEFT JOIN latest" in query_names["market_heartbeats_freshness"].sql
-    assert "VALUES ('daily', 14400), ('weekly', 86400)" in query_names[
+    assert "VALUES ('daily', 18000), ('weekly', 90000)" in query_names[
         "market_reports_freshness"
+    ].sql
+    assert "VALUES ('btc'), ('eth'), ('gram'), ('sol')" in query_names[
+        "market_heartbeats_freshness"
     ].sql
     assert "placeholder_quality_count" in query_names["market_heartbeat_delivery_freshness"].sql
     assert "latest_fetched_at" in query_names["news_freshness_summary"].sql
@@ -429,6 +451,49 @@ def test_alert_repetition_detectors_unknown_when_evidence_missing():
     assert results["weak_event_identity"].status == "unknown"
     assert results["cooldown_effectiveness_gap"].status == "unknown"
     assert results["llm_repeated_alert_true_for_similar_situations"].status == "unknown"
+
+
+def test_alert_repetition_detectors_unknown_when_evidence_partial():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+
+    results = {
+        result.id: result
+        for result in run_detectors(
+            {
+                "evidence/db/alert_delivery_distribution.json": {
+                    "warnings": ["bucket timeout"],
+                    "symbols": [],
+                },
+                "evidence/db/alert_content_fingerprints.json": {
+                    "warnings": ["bucket timeout"],
+                    "repeated_groups": [],
+                },
+                "evidence/db/alert_similarity_groups.json": {
+                    "warnings": ["bucket timeout"],
+                    "groups": [],
+                },
+                "evidence/db/backend_suppression_effectiveness.json": {
+                    "warnings": ["bucket timeout"],
+                    "cooldown_gap_groups": [],
+                },
+                "evidence/db/event_identity_quality.json": {
+                    "warnings": ["bucket timeout"],
+                    "rows": [],
+                },
+            },
+            period,
+        )
+    }
+
+    assert results["noisy_alert_symbols"].status == "unknown"
+    assert results["repeated_alert_content"].status == "unknown"
+    assert results["similar_alert_groups"].status == "unknown"
+    assert results["weak_event_identity"].status == "unknown"
+    assert results["cooldown_effectiveness_gap"].status == "unknown"
 
 
 def test_alert_repetition_detectors_trigger_with_evidence():

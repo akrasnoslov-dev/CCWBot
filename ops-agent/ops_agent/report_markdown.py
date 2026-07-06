@@ -787,6 +787,12 @@ def _suppression_reasons_available(evidence: dict[str, Any]) -> bool:
 
 def _detector_user_impact(result: DetectorResult) -> str:
     metrics = result.metrics
+    if result.id == "failed_telegram_deliveries":
+        return (
+            f"{_int(metrics.get('retry_pending_actionable'))} retry-pending actionable, "
+            f"{_int(metrics.get('unexplained_telegram_failures'))} unexplained, "
+            f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures"
+        )
     if "failed" in metrics and "total" in metrics:
         return _count_pct(_int(metrics.get("failed")), _int(metrics.get("total")), "deliveries")
     if "duplicate_deliveries" in metrics:
@@ -804,7 +810,7 @@ def _recommended_action(detector_id: str) -> str:
     if detector_id in {"weak_event_identity", "duplicate_market_events"}:
         return "Normalize semantic event identity and stable event keys."
     if detector_id == "failed_telegram_deliveries":
-        return "Investigate delivery failures and blocked-user cleanup first."
+        return "Investigate retry-pending and unexplained failures; keep blocked-user failures separate."
     if detector_id == "market_event_analysis_invariant":
         return "Fix any path that creates more than one AI analysis for the same market event."
     return "Investigate the detector evidence and add the smallest targeted fix."

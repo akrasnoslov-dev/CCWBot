@@ -18,7 +18,9 @@ from bot.db.database import (
     User,
     UserPremiumSubscription,
     ensure_default_coin_subscriptions,
+    grant_user_premium,
     save_price_snapshot,
+    set_user_coin_subscription,
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
@@ -1535,6 +1537,97 @@ async def test_deliver_market_event_alert_does_not_create_ai_analysis(monkeypatc
         assert delivery_count == 1
         groq_call.assert_not_awaited()
         save_analysis.assert_not_awaited()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("symbol", "premium_required"),
+    [("btc", False), ("sol", True)],
+)
+async def test_should_alert_event_with_eligible_recipient_creates_delivery_rows(
+    monkeypatch, symbol, premium_required
+):
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            if premium_required:
+                await grant_user_premium(
+                    session,
+                    telegram_user_id=user.telegram_user_id,
+                    days=30,
+                    now=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+                )
+                await set_user_coin_subscription(
+                    session,
+                    user_id=user.id,
+                    symbol=symbol,
+                    is_enabled=True,
+                )
+            market_event = MarketEvent(
+                symbol=symbol.upper(),
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=f"{symbol}_delivery_gap_regression",
+                event_instance_key=f"{symbol}:delivery-gap-regression",
+                price=100.0,
+                previous_price=98.0,
+                price_change_percent=2.0,
+                detected_at=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+            )
+            session.add(market_event)
+            await session.commit()
+            await session.refresh(market_event)
+            analysis = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id=f"event_analysis_{symbol}_delivery_gap_regression",
+                symbol=symbol.upper(),
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash=f"{symbol}-delivery-gap",
+                status="success",
+                should_alert=True,
+                plain_text=f"{symbol.upper()} alert. Not financial advice.",
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(analysis)
+            market_event_id = market_event.id
+            analysis_id = analysis.id
+            user_id = user.id
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(True, None)),
+        )
+
+        delivered = await alerts._deliver_market_event_alert(
+            SimpleNamespace(),
+            symbol=symbol,
+            alert_payload={
+                "plain_text": f"{symbol.upper()} alert.\n\nNot financial advice."
+            },
+            market_event_id=market_event_id,
+            event_ai_analysis_id=analysis_id,
+            recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)],
+            event_type=alerts.EVENT_ALERT_TYPE,
+            trigger_source=alerts.EVENT_ANALYSIS_TYPE,
+        )
+
+        async with session_local() as session:
+            delivery_count = await session.scalar(select(func.count()).select_from(Alert))
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+
+        assert delivered is True
+        assert delivery_count == 1
+        assert outcome.status == "delivered"
+        assert outcome.market_event_id == market_event_id
+        assert outcome.event_ai_analysis_id == analysis_id
     finally:
         await engine.dispose()
 

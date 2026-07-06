@@ -210,6 +210,8 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
                 )
                 await remember_news_context(news_items)
                 reason = classify_ai_error_reason(error)
+                if isinstance(error, MarketReportValidationError):
+                    reason = "schema_validation_failed"
                 log(
                     "ops_event=market_report_generated "
                     f"report_type={report_type} status=completed fallback=deterministic "

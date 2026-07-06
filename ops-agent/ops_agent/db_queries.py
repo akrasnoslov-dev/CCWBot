@@ -11,6 +11,9 @@ class DbQuery:
     sql: str
 
 
+ACTIVE_SYMBOL_VALUES_SQL = "VALUES ('btc'), ('eth'), ('gram'), ('sol')"
+
+
 QUERIES: tuple[DbQuery, ...] = (
     DbQuery("schema_version", "evidence/db/aggregate_metrics.json", "SELECT version_num FROM alembic_version"),
     DbQuery(
@@ -181,7 +184,15 @@ QUERIES: tuple[DbQuery, ...] = (
         "price_state_current",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, last_price, last_24h_change, last_checked_at, last_alert_at "
-        "FROM price_state ORDER BY symbol",
+        f"FROM price_state WHERE lower(symbol) IN (SELECT column1 FROM ({ACTIVE_SYMBOL_VALUES_SQL}) active_symbols) "
+        "ORDER BY symbol",
+    ),
+    DbQuery(
+        "legacy_inactive_price_state",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT symbol, last_checked_at, 'legacy_inactive_symbol' AS classification "
+        f"FROM price_state WHERE lower(symbol) NOT IN (SELECT column1 FROM ({ACTIVE_SYMBOL_VALUES_SQL}) active_symbols) "
+        "ORDER BY symbol LIMIT :limit",
     ),
     DbQuery(
         "price_snapshots_summary",
@@ -350,7 +361,14 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/recent_alert_failures.json",
         "SELECT id AS alert_id, symbol, alert_type, market_event_id, market_heartbeat_id, "
         "event_ai_analysis_id, user_id, status, retry_count, left(last_error, 300) AS last_error, "
-        "next_retry_at, final_failed_at, created_at FROM alerts "
+        "next_retry_at, final_failed_at, created_at, "
+        "CASE WHEN lower(coalesce(last_error, error_message, '')) LIKE '%bot was blocked%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%chat not found%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%user is deactivated%' "
+        "OR lower(coalesce(last_error, error_message, '')) LIKE '%forbidden%' "
+        "THEN 'blocked_user' WHEN status = 'retry_pending' THEN 'retry_pending_actionable' "
+        "ELSE 'unexplained_telegram_failure' END AS failure_category "
+        "FROM alerts "
         "WHERE created_at >= :since AND created_at < :until "
         "AND (status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) "
         "ORDER BY created_at DESC, id DESC LIMIT :sample_limit",
@@ -590,10 +608,27 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND a.created_at < e.detected_at "
         "AND a.created_at >= e.detected_at - ((SELECT cooldown_seconds FROM settings) * interval '1 second') "
         "GROUP BY e.market_event_id), "
+        "outcome_summary AS ("
+        "SELECT e.market_event_id, "
+        "count(*) FILTER (WHERE ado.reason_code = 'no_recipients') AS no_recipient_outcomes, "
+        "count(*) FILTER (WHERE ado.reason_code = 'premium_required') AS premium_required_outcomes, "
+        "count(*) FILTER (WHERE ado.reason_code IN ('cooldown_active', 'similar_event_suppressed')) AS cooldown_outcomes, "
+        "count(*) FILTER (WHERE ado.status IN ('failed', 'rate_limited')) AS failed_or_rate_limited_outcomes "
+        "FROM events_without_delivery e JOIN alert_delivery_outcomes ado "
+        "ON ado.market_event_id = e.market_event_id "
+        "OR (ado.market_event_id IS NULL AND ado.event_ai_analysis_id IN ("
+        "SELECT id FROM event_ai_analyses WHERE market_event_id = e.market_event_id"
+        ")) "
+        "WHERE ado.alert_type = 'event_alert' "
+        "GROUP BY e.market_event_id), "
         "classified AS ("
         "SELECT e.market_event_id, e.symbol, e.event_type, e.event_key, e.detected_at, "
         "la.analysis_id, la.status AS analysis_status, la.should_alert, la.error_reason, "
         "rea.recent_sent_at, "
+        "coalesce(os.no_recipient_outcomes, 0) AS no_recipient_outcomes, "
+        "coalesce(os.premium_required_outcomes, 0) AS premium_required_outcomes, "
+        "coalesce(os.cooldown_outcomes, 0) AS cooldown_outcomes, "
+        "coalesce(os.failed_or_rate_limited_outcomes, 0) AS failed_or_rate_limited_outcomes, "
         "coalesce(rs.likely_eligible_recipients, 0) AS likely_eligible_recipients, "
         "coalesce(rs.product_gated_users, 0) AS product_gated_users, "
         "coalesce(rs.enabled_watchlist_users, 0) AS enabled_watchlist_users, "
@@ -603,6 +638,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "OR lower(coalesce(la.error_reason, '')) LIKE '%rate%' THEN 'llm_failure_or_rate_limit' "
         "WHEN la.should_alert = false THEN 'expected_should_alert_false' "
         "WHEN la.should_alert IS NULL THEN 'unknown_should_alert_null' "
+        "WHEN la.should_alert = true AND coalesce(os.no_recipient_outcomes, 0) > 0 THEN 'expected_no_eligible_recipients' "
+        "WHEN la.should_alert = true AND coalesce(os.premium_required_outcomes, 0) > 0 THEN 'expected_product_gating_possible' "
+        "WHEN la.should_alert = true AND coalesce(os.cooldown_outcomes, 0) > 0 THEN 'expected_backend_cooldown_active' "
+        "WHEN la.should_alert = true AND coalesce(os.failed_or_rate_limited_outcomes, 0) > 0 THEN 'expected_failed_or_rate_limited_outcome' "
         "WHEN la.should_alert = true AND coalesce(rs.likely_eligible_recipients, 0) = 0 "
         "AND lower(e.symbol) <> 'btc' AND coalesce(rs.product_gated_users, 0) > 0 THEN 'expected_product_gating_possible' "
         "WHEN la.should_alert = true AND rea.recent_sent_at IS NOT NULL THEN 'expected_backend_cooldown_active' "
@@ -612,6 +651,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM events_without_delivery e "
         "LEFT JOIN latest_analysis la ON la.market_event_id = e.market_event_id "
         "LEFT JOIN recipient_summary rs ON rs.symbol = lower(e.symbol) "
+        "LEFT JOIN outcome_summary os ON os.market_event_id = e.market_event_id "
         "LEFT JOIN recent_event_alerts rea ON rea.market_event_id = e.market_event_id) "
         "SELECT classification, count(*) AS events, "
         "count(*) FILTER (WHERE analysis_id IS NOT NULL) AS events_with_analysis, "
@@ -623,7 +663,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "'market_event_id', market_event_id, 'symbol', symbol, 'event_type', event_type, "
         "'event_key', event_key, 'detected_at', detected_at, 'analysis_status', analysis_status, "
         "'should_alert', should_alert, 'likely_eligible_recipients', likely_eligible_recipients, "
-        "'product_gated_users', product_gated_users, 'recent_sent_at', recent_sent_at"
+        "'product_gated_users', product_gated_users, 'recent_sent_at', recent_sent_at, "
+        "'outcome_counts', jsonb_build_object('no_recipients', no_recipient_outcomes, "
+        "'premium_required', premium_required_outcomes, 'cooldown', cooldown_outcomes, "
+        "'failed_or_rate_limited', failed_or_rate_limited_outcomes)"
         ") ORDER BY detected_at DESC, market_event_id DESC))[1:5] AS sample_events "
         "FROM classified GROUP BY classification ORDER BY events DESC LIMIT :anomaly_limit",
     ),
@@ -640,11 +683,12 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "market_heartbeats_freshness",
         "evidence/db/aggregate_metrics.json",
-        "WITH symbols AS ("
-        "SELECT DISTINCT symbol FROM price_state UNION SELECT DISTINCT symbol FROM market_heartbeats"
+        "WITH symbols(symbol) AS ("
+        f"{ACTIVE_SYMBOL_VALUES_SQL}"
         "), latest AS ("
-        "SELECT DISTINCT ON (symbol) symbol, status, generated_at "
-        "FROM market_heartbeats ORDER BY symbol, generated_at DESC, id DESC"
+        "SELECT DISTINCT ON (lower(symbol)) lower(symbol) AS symbol, status, generated_at "
+        "FROM market_heartbeats WHERE lower(symbol) IN (SELECT symbol FROM symbols) "
+        "ORDER BY lower(symbol), generated_at DESC, id DESC"
         ") "
         "SELECT s.symbol, l.status AS latest_status, l.generated_at AS latest_generated_at, "
         "extract(epoch FROM (:until - l.generated_at)) AS age_seconds "
@@ -679,7 +723,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "market_reports_freshness",
         "evidence/db/aggregate_metrics.json",
         "WITH report_types(report_type, max_age_seconds) AS ("
-        "VALUES ('daily', 14400), ('weekly', 86400)"
+        "VALUES ('daily', 18000), ('weekly', 90000)"
         "), latest AS ("
         "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at, "
         "left(error_message, 160) AS latest_error_message "

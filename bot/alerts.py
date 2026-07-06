@@ -1137,9 +1137,7 @@ def _build_market_heartbeat_html_message(
     icon_html: str,
     symbol: str,
     title: str,
-    price_text: str,
-    since_last_text: str,
-    change_24h_text: str,
+    metric_lines: list[str],
     message_body: str,
     related_section_html: str | None,
     possible_action: str,
@@ -1147,12 +1145,11 @@ def _build_market_heartbeat_html_message(
     related_block = (
         f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
     )
+    metric_block = "\n".join(escape(line) for line in metric_lines)
     return (
         f"{icon_html} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
         f"{escape(title)}\n\n"
-        f"Price: {escape(price_text)}\n"
-        f"Since last {escape(symbol)} message: {escape(since_last_text)}\n"
-        f"24h change: {escape(change_24h_text)}\n\n"
+        f"{metric_block}\n\n"
         "Situation:\n"
         f"{escape(message_body)}\n\n"
         f"{related_block}"
@@ -1412,16 +1409,18 @@ def _build_market_heartbeat_payload(
         related_news,
         empty_text="",
     )
-    price_text = _format_optional_price(current_price)
-    since_last_text = _format_optional_percent(change_since_last_message)
-    change_24h_text = _format_optional_percent(change_24h)
+    metric_lines = [f"Price: {_format_optional_price(current_price)}"]
+    if change_since_last_message is not None:
+        metric_lines.append(
+            f"Since last {symbol} message: {_format_optional_percent(change_since_last_message)}"
+        )
+    metric_lines.append(f"24h change: {_format_optional_percent(change_24h)}")
+    metric_block = "\n".join(metric_lines)
     related_block = f"Related context:\n{related_section}\n\n" if related_section else ""
     message = (
         f"{icon} \U0001f4e1 {symbol} Market Heartbeat\n\n"
         f"{title}\n\n"
-        f"Price: {price_text}\n"
-        f"Since last {symbol} message: {since_last_text}\n"
-        f"24h change: {change_24h_text}\n\n"
+        f"{metric_block}\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         f"{related_block}"
@@ -1435,9 +1434,7 @@ def _build_market_heartbeat_payload(
             icon_html=icon_html,
             symbol=symbol,
             title=title,
-            price_text=price_text,
-            since_last_text=since_last_text,
-            change_24h_text=change_24h_text,
+            metric_lines=metric_lines,
             message_body=message_body,
             related_section_html=related_section_html,
             possible_action=possible_action,
