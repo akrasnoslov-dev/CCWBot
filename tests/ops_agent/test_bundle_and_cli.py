@@ -101,6 +101,11 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "--output-dir" not in script
     assert "eval " not in script
     assert "printenv" not in script
+    assert "ps --format json" in script
+    assert "OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json" in script
+    assert '$docker_status_file:/tmp/ops-agent-docker-status.json:ro' in script
+    assert "docker inspect" not in script
+    assert " compose config" not in script
 
 
 def test_production_mark_success_wrapper_restricts_paths_and_arguments():
@@ -134,6 +139,13 @@ def test_ops_agent_runbook_documents_safe_production_report_tree():
     assert "sudo -u ccwbot_ops test -r /opt/CCWBot/reports/ops-agent/bundles" in readme
     assert "ccwbot_ops` can read generated bundles" in readme
     assert "write only final Markdown reports" in readme
+    assert "Post-deploy verification after Event Alert delivery-gap changes" in readme
+    assert (
+        "sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update"
+        in readme
+    )
+    assert "rebuild the `ops-agent` Docker image" in readme
+    assert "market_events_without_alert_deliveries" in readme
 
 
 def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
