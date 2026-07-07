@@ -10,7 +10,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://ccwbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/ccwbot
-    command: sh -c "alembic upgrade head && exec python main.py"
+    command: python main.py
     ports:
       - "127.0.0.1:${HEALTH_PORT:-8080}:${HEALTH_PORT:-8080}"
     volumes:
@@ -20,6 +20,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  migrate:
+    build: .
+    profiles:
+      - tools
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ccwbot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/ccwbot
+    command: alembic upgrade head
 
   postgres:
     image: postgres:16

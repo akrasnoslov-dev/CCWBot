@@ -4,7 +4,7 @@ import time
 from bot.config import (
     ENVIRONMENT,
     HEALTH_PORT,
-    TELEGRAM_ADMIN_USER_ID,
+    TELEGRAM_ADMIN_USER_IDS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 )
@@ -25,8 +25,11 @@ def validate_required_config() -> None:
         raise ValueError("TELEGRAM_BOT_TOKEN is missing. Check your .env file.")
     if not TELEGRAM_CHAT_ID:
         raise ValueError("TELEGRAM_CHAT_ID is missing. Check your .env file.")
-    if not TELEGRAM_ADMIN_USER_ID:
-        raise ValueError("TELEGRAM_ADMIN_USER_ID is missing. Check your .env file.")
+    if not TELEGRAM_ADMIN_USER_IDS:
+        raise ValueError(
+            "TELEGRAM_ADMIN_USER_ID or TELEGRAM_ADMIN_USER_IDS is missing. "
+            "Check your .env file."
+        )
 
 
 async def initialize_runtime() -> None:

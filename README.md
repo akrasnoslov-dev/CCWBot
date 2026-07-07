@@ -63,13 +63,14 @@ Required:
 - `ENVIRONMENT`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
-- `TELEGRAM_ADMIN_USER_ID`
+- `TELEGRAM_ADMIN_USER_ID` or `TELEGRAM_ADMIN_USER_IDS`
 - `GROQ_API_KEY`
 
 Common configuration:
 
 - `DATABASE_URL`
 - `POSTGRES_PASSWORD`
+- `TELEGRAM_ADMIN_USER_IDS`
 - `GROQ_MODEL`
 - `GROQ_EVENT_ANALYSIS_MODEL`
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS`
@@ -96,6 +97,14 @@ Common configuration:
 News Intelligence stores structured RSS metadata in `news_items` and checks that persistent cache
 before calling Groq. Per-run and hourly budgets keep the feature from materially increasing LLM
 usage; when budget is exhausted, RSS news still flows through the existing alert/report contracts.
+
+Admin access supports the legacy single-admin variable and the multi-admin comma list. If both are
+set, valid positive numeric IDs are combined and deduplicated:
+
+```text
+TELEGRAM_ADMIN_USER_ID=111111111
+TELEGRAM_ADMIN_USER_IDS=111111111,222222222
+```
 
 Legacy `PRICE_MOVE_ALERT_PERCENT`, `GROQ_STRONG_SIGNAL_MODEL`, `ENABLE_WEEKLY_REPORT`, `WEEKLY_REPORT_DAY`,
 `WEEKLY_REPORT_HOUR`, `ENABLE_STRONG_SIGNAL_ALERTS`, `STRONG_SIGNAL_CHECK_INTERVAL_SECONDS`,
@@ -132,6 +141,14 @@ alembic upgrade head
 python main.py
 ```
 
+For Docker Compose first-run, start PostgreSQL, run migrations explicitly, then start the bot:
+
+```bash
+docker compose up -d postgres
+docker compose run --rm migrate
+docker compose up -d --build bot
+```
+
 ## Database Migrations
 
 Run migrations before local startup when using PostgreSQL:
@@ -140,8 +157,15 @@ Run migrations before local startup when using PostgreSQL:
 alembic upgrade head
 ```
 
-Docker Compose runs Alembic migrations before starting the bot service. Do not add migrations
-unless a task explicitly changes the database schema.
+Docker Compose does not run Alembic migrations during normal bot startup. Use the explicit
+migration command when setting up a fresh local database or deploying a change that includes
+migrations:
+
+```bash
+docker compose run --rm migrate
+```
+
+Do not add migrations unless a task explicitly changes the database schema.
 
 Migration `0007_unique_telegram_user_id` adds uniqueness for `users.telegram_user_id`. It
 intentionally stops if duplicate Telegram users already exist; merge duplicate user rows before
@@ -267,6 +291,8 @@ Useful commands:
 ```bash
 cp .env.example .env
 docker compose config >/dev/null
+docker compose up -d postgres
+docker compose run --rm migrate
 docker compose up --build
 docker compose down
 ```
@@ -361,10 +387,12 @@ Normal work should be opened as pull requests against `dev`. Only open pull requ
 
 1. Verify the release branch and VPS environment.
 2. Pull the latest `main` on the VPS.
-3. Run `docker compose up -d --build`.
-4. Check container health with `docker compose ps`.
-5. Check bot logs with `docker compose logs -f`.
-6. Verify bot functionality in Telegram.
+3. Verify `/opt/backups` has a recent backup or create one with `sudo scripts/backup_postgres.sh`.
+4. If migrations are needed, run `docker compose run --rm migrate`.
+5. Run `docker compose up -d --build`.
+6. Check container health with `docker compose ps`.
+7. Check bot logs with `docker compose logs -f`.
+8. Verify bot functionality in Telegram.
 
 Production tracked files should not be edited manually on the VPS. Deploy production changes
 through Git only:
@@ -442,13 +470,15 @@ python -m pytest tests/ -v -ra --durations=20
 docker compose config >/dev/null
 ```
 
-CI runs Ruff, compile checks, the test suite, and Compose validation on pull requests.
+CI runs Ruff, compile checks, Alembic migration validation against temporary PostgreSQL,
+the test suite, and Compose validation on pull requests.
 
 ## Manual Telegram Smoke Test
 
 After deploy, verify with a private chat:
 
-1. Send `/start` as the configured `TELEGRAM_ADMIN_USER_ID`; admin-only commands should appear.
+1. Send `/start` as a configured admin from `TELEGRAM_ADMIN_USER_ID` or
+   `TELEGRAM_ADMIN_USER_IDS`; admin-only commands should appear.
 2. Send `/settings` as admin; it should work. Send it from a normal user; it should be denied.
 3. Send `/grantpremium <telegram_user_id> 1` and `/revokepremium <telegram_user_id>` as admin; both should update `/myplan` without deleting saved coin choices.
 4. Send `/userid`; it should work manually but stay hidden from command menus.

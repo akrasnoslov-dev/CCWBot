@@ -1258,9 +1258,15 @@ class LlmUsageLog(Base):
     )
 
 
-async def init_db(database_url: str):
-    """Create SQLAlchemy async engine/session factory and run migrations."""
-    await run_async_upgrade(database_url)
+async def init_db(database_url: str, *, run_migrations: bool = False):
+    """Create SQLAlchemy async engine/session factory.
+
+    Alembic migrations are intentionally explicit and run through
+    ``run_async_upgrade`` or the documented operator command, not normal bot
+    startup.
+    """
+    if run_migrations:
+        await run_async_upgrade(database_url)
     engine = create_async_engine(database_url, future=True)
     session_local = async_sessionmaker(
         bind=engine,

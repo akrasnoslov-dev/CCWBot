@@ -10,6 +10,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ccwbot_test
+          POSTGRES_USER: ccwbot
+          POSTGRES_PASSWORD: ccwbot_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ccwbot -d ccwbot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -30,6 +44,13 @@ jobs:
 
       - name: Compile
         run: python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
+
+      - name: Validate Alembic migrations on PostgreSQL
+        env:
+          DATABASE_URL: postgresql+asyncpg://ccwbot:ccwbot_test_password@localhost:5432/ccwbot_test
+        run: |
+          python -m pytest tests/test_alembic_migrations.py -v
+          alembic upgrade head
 
       - name: Test
         run: python -m pytest tests/ -v -ra --durations=20

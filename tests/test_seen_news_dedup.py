@@ -576,7 +576,7 @@ async def test_event_analysis_invariant_migration_detaches_duplicates():
         )
     await engine.dispose()
 
-    migrated_engine, SessionLocal = await init_db(database_url)
+    migrated_engine, SessionLocal = await init_db(database_url, run_migrations=True)
     try:
         async with SessionLocal() as session:
             attached_ids = list(
@@ -766,7 +766,7 @@ async def test_legacy_app_settings_table_migrates_to_global_columns():
             )
         await engine.dispose()
 
-        migrated_engine, SessionLocal = await init_db(database_url)
+        migrated_engine, SessionLocal = await init_db(database_url, run_migrations=True)
         session = SessionLocal()
         try:
             migrated = await get_or_create_app_settings(
@@ -835,7 +835,7 @@ async def test_gram_migration_updates_news_item_symbol_metadata():
             )
         await engine.dispose()
 
-        migrated_engine, _SessionLocal = await init_db(database_url)
+        migrated_engine, _SessionLocal = await init_db(database_url, run_migrations=True)
         try:
             async with migrated_engine.connect() as connection:
                 rows = (
@@ -929,7 +929,7 @@ async def test_unique_telegram_user_migration_refuses_existing_duplicates():
         await engine.dispose()
 
         with pytest.raises(RuntimeError, match="duplicate users exist"):
-            await init_db(database_url)
+            await init_db(database_url, run_migrations=True)
     finally:
         if db_path.exists():
             db_path.unlink()
