@@ -7,7 +7,7 @@ ALEMBIC_VERSION_LIMIT = 32
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 LONG_REVISION_MESSAGE = (
     "Alembic revision ids must fit alembic_version.version_num VARCHAR(32); "
-    "long ids can break startup migrations."
+    "long ids can break migration execution."
 )
 
 

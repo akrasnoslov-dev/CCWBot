@@ -1122,7 +1122,10 @@ def test_new_user_facing_alert_types_are_limited_to_product_model():
 @pytest.mark.asyncio
 async def test_last_market_update_time_persists_after_restart(tmp_path):
     db_path = tmp_path / "market_update.sqlite"
-    engine, session_local = await init_db(f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    engine, session_local = await init_db(
+        f"sqlite+aiosqlite:///{db_path.as_posix()}",
+        run_migrations=True,
+    )
     update_time = datetime.now(timezone.utc)
     async with session_local() as session:
         await upsert_user_symbol_alert_state(
@@ -1147,7 +1150,10 @@ async def test_last_market_update_time_persists_after_restart(tmp_path):
 @pytest.mark.asyncio
 async def test_important_alert_updates_effective_baseline(tmp_path, monkeypatch):
     db_path = tmp_path / "important_baseline.sqlite"
-    engine, session_local = await init_db(f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    engine, session_local = await init_db(
+        f"sqlite+aiosqlite:///{db_path.as_posix()}",
+        run_migrations=True,
+    )
     monkeypatch.setattr(alerts, "DB_ENABLED", True)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
 

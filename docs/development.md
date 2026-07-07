@@ -32,13 +32,12 @@ merge:
 ```bash
 python -m pytest tests/test_alembic_migrations.py -v
 docker compose up -d postgres
-docker compose run --rm bot alembic upgrade head
+docker compose run --rm migrate
 ```
 
 Alembic revision ids must be 32 characters or shorter because the default
 `alembic_version.version_num` column is `VARCHAR(32)`. Prefer compact numeric/descriptive ids such
-as `0022_unique_event_analysis`; long revision ids can break startup migrations before the bot
-starts.
+as `0022_unique_event_analysis`; long revision ids can break migration execution.
 
 ## Codex Agent Workflow
 
@@ -58,7 +57,8 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
 ## Runtime Notes
 
 - `python main.py` remains the local bot entry point.
-- Docker Compose starts PostgreSQL and the bot, and the bot runs Alembic migrations on startup.
+- Docker Compose starts PostgreSQL and the bot. Alembic migrations are explicit and do not run
+  during normal bot startup.
 - Docker Compose overrides `DATABASE_URL` for the bot container to use the `postgres` service.
 - Docker Compose binds the bot health port and PostgreSQL host port to `127.0.0.1` only.
   This keeps internal services off the public internet while preserving host-local checks and
@@ -147,6 +147,17 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   fields to `alert_delivery_outcomes`: `decision_stage`, `decision_reason`, `previous_alert_id`,
   and `context_fingerprint`.
 
+## Gradual Large-File Refactors
+
+Large files should be refactored gradually only when they are already being touched for a concrete
+reason. Do not mix structural cleanup with product behavior changes. Preserve public interfaces,
+add regression tests before moving behavior, and keep alert, Premium, payment, and watchlist logic
+unchanged unless the task explicitly asks for that behavior change.
+
+High-risk files such as `bot/alerts.py`, `bot/services/ai_agent_groq.py`, and
+`bot/db/database.py` should be split by cohesive responsibility over multiple focused PRs, not by
+line count alone.
+
 ## Ops-Agent Development
 
 `ops-agent/` is the repo-managed diagnostics collector used by the production wrapper
@@ -189,13 +200,13 @@ docker compose exec postgres psql -U <user> -d <db> -c "select * from alembic_ve
 If the failed migration did not update `alembic_version`, apply the code fix and rerun:
 
 ```bash
-docker compose up -d --build
+docker compose run --rm migrate
 ```
 
 or:
 
 ```bash
-docker compose exec bot alembic upgrade head
+alembic upgrade head
 ```
 
 If a developer manually widened the local `alembic_version.version_num` column and stamped the old

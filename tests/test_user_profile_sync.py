@@ -129,3 +129,101 @@ async def test_get_or_create_user_updates_changed_username():
     finally:
         await session.close()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_user_marks_second_admin_id_from_allowlist():
+    engine, session = await build_session()
+    try:
+        user = await get_or_create_user(
+            session,
+            telegram_user_id=222222222,
+            telegram_chat_id=2001,
+            username="second_admin",
+            first_name="Second",
+            admin_user_ids=(111111111, 222222222),
+        )
+
+        assert user.role == "admin"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_user_keeps_non_admin_role_with_allowlist():
+    engine, session = await build_session()
+    try:
+        user = await get_or_create_user(
+            session,
+            telegram_user_id=333333333,
+            telegram_chat_id=2001,
+            username="user",
+            first_name="User",
+            admin_user_ids=(111111111, 222222222),
+        )
+
+        assert user.role == "user"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_user_promotes_existing_user_added_to_admin_allowlist():
+    engine, session = await build_session()
+    try:
+        user = User(
+            telegram_user_id=222222222,
+            telegram_chat_id=2001,
+            username="old",
+            first_name="Old",
+            role="user",
+            is_active=True,
+        )
+        session.add(user)
+        await session.commit()
+
+        updated = await get_or_create_user(
+            session,
+            telegram_user_id=222222222,
+            telegram_chat_id=2001,
+            username="second_admin",
+            first_name="Second",
+            admin_user_ids=(111111111, 222222222),
+        )
+
+        assert updated.role == "admin"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_user_demotes_existing_admin_removed_from_allowlist():
+    engine, session = await build_session()
+    try:
+        user = User(
+            telegram_user_id=222222222,
+            telegram_chat_id=2001,
+            username="old",
+            first_name="Old",
+            role="admin",
+            is_active=True,
+        )
+        session.add(user)
+        await session.commit()
+
+        updated = await get_or_create_user(
+            session,
+            telegram_user_id=222222222,
+            telegram_chat_id=2001,
+            username="removed_admin",
+            first_name="Removed",
+            admin_user_ids=(111111111,),
+        )
+
+        assert updated.role == "user"
+    finally:
+        await session.close()
+        await engine.dispose()
