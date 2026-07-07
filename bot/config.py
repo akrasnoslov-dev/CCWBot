@@ -2,7 +2,8 @@
 
 Notes about key IDs:
 - TELEGRAM_CHAT_ID: fallback destination chat for automatic bot alerts when database storage is off.
-- TELEGRAM_ADMIN_USER_ID: Telegram user allowed to run admin-only commands.
+- TELEGRAM_ADMIN_USER_ID / TELEGRAM_ADMIN_USER_IDS: Telegram users allowed to run
+  admin-only commands.
 """
 
 import os
@@ -55,9 +56,35 @@ def parse_telegram_user_id(value: int | str | None) -> int | None:
     if value is None:
         return None
     try:
-        return int(str(value).strip())
+        parsed = int(str(value).strip())
     except ValueError:
         return None
+    return parsed if parsed > 0 else None
+
+
+def parse_telegram_user_ids(value: int | str | None) -> tuple[int, ...]:
+    if value is None:
+        return ()
+    ids: list[int] = []
+    for item in str(value).split(","):
+        parsed = parse_telegram_user_id(item)
+        if parsed is not None:
+            ids.append(parsed)
+    return tuple(ids)
+
+
+def combine_telegram_admin_user_ids(
+    single_admin_user_id: int | str | None,
+    admin_user_ids: int | str | None,
+) -> tuple[int, ...]:
+    combined: list[int] = []
+    for parsed in (
+        parse_telegram_user_id(single_admin_user_id),
+        *parse_telegram_user_ids(admin_user_ids),
+    ):
+        if parsed is not None and parsed not in combined:
+            combined.append(parsed)
+    return tuple(combined)
 
 
 ENVIRONMENT = _get_environment()
@@ -68,6 +95,10 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # User ID allowed to run admin-only commands (/settings, /admin, etc.).
 TELEGRAM_ADMIN_USER_ID = parse_telegram_user_id(os.getenv("TELEGRAM_ADMIN_USER_ID"))
+TELEGRAM_ADMIN_USER_IDS = combine_telegram_admin_user_ids(
+    TELEGRAM_ADMIN_USER_ID,
+    os.getenv("TELEGRAM_ADMIN_USER_IDS"),
+)
 
 ALERT_COOLDOWN_MINUTES = _get_int_env("ALERT_COOLDOWN_MINUTES", 30, minimum=0)
 EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS = _get_int_env(

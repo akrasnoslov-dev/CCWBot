@@ -104,7 +104,7 @@ For Alembic migration changes, add:
 ```bash
 python -m pytest tests/test_alembic_migrations.py -v
 docker compose up -d postgres
-docker compose run --rm bot alembic upgrade head
+docker compose run --rm migrate
 ```
 
 Alembic revision ids must be 32 characters or shorter because

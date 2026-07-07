@@ -252,11 +252,12 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         async def set_my_commands(self, commands, scope):
             calls.append((commands, scope))
 
-    monkeypatch.setattr("bot.setup.TELEGRAM_ADMIN_USER_ID", 123)
+    monkeypatch.setattr("bot.setup.TELEGRAM_ADMIN_USER_IDS", (111111111, 222222222))
     await setup_bot_commands(SimpleNamespace(bot=FakeBot()))
 
     default_commands = [command.command for command in calls[0][0]]
     admin_commands = [command.command for command in calls[1][0]]
+    second_admin_commands = [command.command for command in calls[2][0]]
     assert default_commands == [
         "start",
         "price",
@@ -272,6 +273,7 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
         "plan",
         "admin",
     ]
+    assert second_admin_commands == admin_commands
     assert "watchlist" not in default_commands
     assert "watchlist" not in admin_commands
     assert "alerts" not in default_commands

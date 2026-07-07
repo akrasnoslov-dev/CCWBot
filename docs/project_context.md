@@ -66,3 +66,16 @@ Primary context files:
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
 - `docs/codex_task_prompt_template.md`
+
+Documentation ownership:
+
+- Product invariants and runtime behavior belong here.
+- Codex workflow belongs in `AGENTS.md`, `docs/codex_instructions.md`, and
+  `docs/codex_agent_workflow.md`.
+- Deploy, backup, migration, and recovery steps belong in `docs/dev_ops_guide.md`.
+- Release gates belong in `docs/release_checklist.md`.
+- Local development details and gradual refactor policy belong in `docs/development.md`.
+
+Some guardrails are intentionally repeated for AI-agent visibility. When changing product
+invariants, secret-handling rules, Premium/free boundaries, or deployment safety rules, update all
+listed owner and summary files in the same PR.

@@ -25,6 +25,15 @@ def _same_telegram_user_id(left: int | str | None, right: int | str | None) -> b
         return False
 
 
+def _telegram_user_id_in(
+    telegram_user_id: int | str | None,
+    admin_user_ids: tuple[int | str, ...] | list[int | str] | set[int | str] | None,
+) -> bool:
+    if admin_user_ids is None:
+        return False
+    return any(_same_telegram_user_id(telegram_user_id, admin_id) for admin_id in admin_user_ids)
+
+
 
 async def get_or_create_user(
     session: AsyncSession,
@@ -33,13 +42,19 @@ async def get_or_create_user(
     telegram_chat_id: int,
     username: str | None,
     first_name: str | None,
-    admin_user_id: int | str | None,
+    admin_user_id: int | str | None = None,
+    admin_user_ids: tuple[int | str, ...] | list[int | str] | set[int | str] | None = None,
 ):
     """Create or update profile fields for the current Telegram interaction."""
     user = await session.scalar(
         select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     )
-    role = "admin" if _same_telegram_user_id(telegram_user_id, admin_user_id) else "user"
+    allowed_admin_user_ids = admin_user_ids or (() if admin_user_id is None else (admin_user_id,))
+    role = (
+        "admin"
+        if _telegram_user_id_in(telegram_user_id, allowed_admin_user_ids)
+        else "user"
+    )
     created = user is None
     if user is None:
         user = User(
@@ -57,6 +72,8 @@ async def get_or_create_user(
         user.first_name = first_name
         if role == "admin":
             user.role = role
+        elif user.role == "admin":
+            user.role = "user"
         user.updated_at = utc_now()
     try:
         await session.commit()
@@ -72,6 +89,8 @@ async def get_or_create_user(
         user.first_name = first_name
         if role == "admin":
             user.role = role
+        elif user.role == "admin":
+            user.role = "user"
         user.updated_at = utc_now()
         await session.commit()
     await session.refresh(user)

@@ -48,7 +48,7 @@ async def test_database_comments_migration_applies_to_head(tmp_path):
     db_path = tmp_path / "comments_migration.sqlite"
     database_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
 
-    engine, session_local = await init_db(database_url)
+    engine, session_local = await init_db(database_url, run_migrations=True)
     session = session_local()
     try:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))

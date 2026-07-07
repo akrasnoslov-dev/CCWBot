@@ -21,6 +21,93 @@ python -m pytest tests/ -v -ra --durations=20
 
 Do not publish expanded Compose output from a real `.env`.
 
+## PostgreSQL Backups
+
+Production database backups live under `/opt/backups`. Existing backups may already be present
+there; do not delete or move them unless the operator has verified they are obsolete.
+
+The repo-managed manual backup command is:
+
+```bash
+cd /opt/CCWBot
+sudo scripts/backup_postgres.sh
+```
+
+The script writes compressed SQL backups named:
+
+```text
+/opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz
+```
+
+It keeps the newest 14 matching `ccwbot-postgres-*.sql.gz` files by default, never deletes
+unrelated files in `/opt/backups`, creates files with owner-only permissions, and does not print
+`.env` values or connection strings. Override retention only when needed:
+
+```bash
+sudo CCWBOT_BACKUP_RETENTION_COUNT=14 scripts/backup_postgres.sh
+```
+
+Verify the latest backup exists:
+
+```bash
+sudo find /opt/backups -maxdepth 1 -type f -name 'ccwbot-postgres-*.sql.gz' -printf '%TY-%Tm-%Td %TH:%TM %p\n' | sort | tail -n 1
+```
+
+Verify a backup file is readable:
+
+```bash
+gzip -t /opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz
+```
+
+Test restore into a temporary/local PostgreSQL database, never production:
+
+```bash
+createdb ccwbot_restore_test
+gzip -dc /opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz | psql ccwbot_restore_test
+psql ccwbot_restore_test -c "select count(*) from users;"
+dropdb ccwbot_restore_test
+```
+
+Before production migrations, verify a recent backup exists or create a fresh one. If the VPS is
+lost but `/opt/backups` is available from server storage or an external copy, provision a new VPS,
+clone the repository, restore the latest verified backup into PostgreSQL, recreate the production
+`.env` manually, run any required migrations, then start the bot and verify `/health` and Telegram.
+
+Scheduling is a manual operator step. Example crontab:
+
+```cron
+15 2 * * * cd /opt/CCWBot && /usr/bin/sudo /opt/CCWBot/scripts/backup_postgres.sh >> /var/log/ccwbot-backup.log 2>&1
+```
+
+Example systemd service template:
+
+```ini
+[Unit]
+Description=CCWBot PostgreSQL backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/CCWBot
+ExecStart=/opt/CCWBot/scripts/backup_postgres.sh
+```
+
+Example systemd timer template:
+
+```ini
+[Unit]
+Description=Run CCWBot PostgreSQL backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Install either cron or systemd on the VPS manually; this repository does not auto-install a backup
+schedule.
+
 ## Ops-Agent Diagnostics
 
 The production ops-agent wrapper should point at the repo-managed `ops-agent/` source. Use only the
@@ -54,6 +141,8 @@ Deploy tracked-file changes only through Git:
 cd /opt/CCWBot
 git checkout main
 git pull
+sudo scripts/backup_postgres.sh
+docker compose run --rm migrate  # only when migrations are needed
 docker compose up -d --build
 docker compose ps
 docker compose logs -f
@@ -66,4 +155,13 @@ After every deploy:
 3. Check `/health` from the VPS.
 4. Verify basic Telegram functionality.
 
-For migrations, test locally first and verify a current backup before production.
+Normal bot restarts do not run migrations. For migrations, test locally first, confirm CI migration
+validation passed, verify a current backup, run `docker compose run --rm migrate` explicitly, then
+start or restart the bot.
+
+## Dependabot
+
+Dependabot is configured in `.github/dependabot.yml` for Python dependencies and GitHub Actions.
+Do not merge Dependabot PRs blindly. Review the changelog/risk, run tests, and confirm CI is green.
+Dependabot Alerts and security updates may also require repository settings in GitHub; enable them
+manually if they are not already active.
