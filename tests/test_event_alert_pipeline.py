@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -18,9 +19,13 @@ from bot.db.database import (
     User,
     UserPremiumSubscription,
     ensure_default_coin_subscriptions,
+    get_user_symbol_alert_state,
     grant_user_premium,
+    init_db,
+    normalize_stored_severity,
     save_price_snapshot,
     set_user_coin_subscription,
+    upsert_user_symbol_alert_state,
 )
 from bot.handlers import _build_admin_system_status_text
 from bot.services.ai_agent_groq import AIInvalidJsonError
@@ -3161,3 +3166,76 @@ async def test_semantic_event_alert_cooldown_allows_different_identity_dimension
         ]
     finally:
         await engine.dispose()
+
+
+def test_llm_severity_is_normalized_to_allowed_values():
+    assert normalize_stored_severity("info") == "low"
+    assert normalize_stored_severity("watch") == "medium"
+    assert normalize_stored_severity("moderate") == "medium"
+    assert normalize_stored_severity("critical") == "extreme"
+
+
+def test_new_user_facing_alert_types_are_limited_to_product_model():
+    assert alerts.PRODUCT_ALERT_TYPES == {"market_update", "important_alert", "critical_alert"}
+
+
+@pytest.mark.asyncio
+async def test_last_market_update_time_persists_after_restart(tmp_path):
+    db_path = tmp_path / "market_update.sqlite"
+    engine, session_local = await init_db(
+        f"sqlite+aiosqlite:///{db_path.as_posix()}",
+        run_migrations=True,
+    )
+    update_time = datetime.now(timezone.utc)
+    async with session_local() as session:
+        await upsert_user_symbol_alert_state(
+            session,
+            user_id=1,
+            symbol="btc",
+            last_market_update_time=update_time,
+        )
+
+    async with session_local() as restarted_session:
+        row = await get_user_symbol_alert_state(
+            restarted_session,
+            user_id=1,
+            symbol="btc",
+        )
+
+    assert row is not None
+    assert row.last_market_update_time is not None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_important_alert_updates_effective_baseline(tmp_path, monkeypatch):
+    db_path = tmp_path / "important_baseline.sqlite"
+    engine, session_local = await init_db(
+        f"sqlite+aiosqlite:///{db_path.as_posix()}",
+        run_migrations=True,
+    )
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+    await alerts._persist_successful_product_alert_state(
+        recipient=alerts.AlertRecipient(chat_id=123, user_id=1, alert_frequency_seconds=3600),
+        symbol="eth",
+        event_type=alerts.NotificationType.IMPORTANT_ALERT.value,
+        severity="medium",
+        numeric_context=json.dumps(
+            {
+                "notification_direction": "up",
+                "change_since_last_market_update_percent": 1.4,
+                "current_price": 2500.0,
+            }
+        ),
+    )
+
+    async with session_local() as session:
+        row = await get_user_symbol_alert_state(session, user_id=1, symbol="eth")
+
+    assert row is not None
+    assert row.last_important_alert_time is not None
+    assert row.last_market_update_time is not None
+    assert row.last_cumulative_movement_percent == 1.4
+    await engine.dispose()
