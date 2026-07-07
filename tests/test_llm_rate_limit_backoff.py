@@ -68,6 +68,18 @@ async def test_rate_limit_error_starts_provider_model_backoff(monkeypatch):
 async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
+        # The backoff registry is keyed by (provider, model). The first call below
+        # arms the backoff using the event-analysis model, and the second call
+        # (through the production path) must look it up under the exact same model.
+        # Both sides read GROQ_EVENT_ANALYSIS_MODEL, which is resolved from the
+        # environment at import time and can differ between the two modules if the
+        # environment or test ordering changed it. Pin both to one shared value so
+        # the backoff key matches deterministically instead of relying on ambient
+        # state, which previously made this test flaky in CI.
+        event_analysis_model = "test-event-analysis-model"
+        monkeypatch.setattr(ai_agent_groq, "GROQ_EVENT_ANALYSIS_MODEL", event_analysis_model)
+        monkeypatch.setattr(alerts, "GROQ_EVENT_ANALYSIS_MODEL", event_analysis_model)
+
         rate_limited_create = AsyncMock(
             side_effect=RuntimeError("rate_limit_exceeded: try again in 30s")
         )
@@ -80,11 +92,13 @@ async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch)
             await ai_agent_groq._run_groq_chat_completion(
                 call_type="event_analysis",
                 symbol="BTC",
-                model=alerts.GROQ_EVENT_ANALYSIS_MODEL,
+                model=event_analysis_model,
                 messages=[{"role": "user", "content": "hello"}],
                 max_tokens=10,
                 response_format=None,
             )
+
+        assert ai_agent_groq.get_llm_rate_limit_backoff(model=event_analysis_model) is not None
 
         blocked_create = AsyncMock(return_value=SimpleNamespace(headers={}, choices=[]))
         monkeypatch.setattr(ai_agent_groq, "_groq_client", _fake_groq_client(blocked_create))
