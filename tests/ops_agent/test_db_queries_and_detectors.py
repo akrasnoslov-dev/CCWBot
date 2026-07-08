@@ -252,6 +252,18 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "news_freshness_summary" in query_names
 
 
+def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explained():
+    query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+
+    cooldown_filter_start = query.sql.index("AS cooldown_outcomes")
+    cooldown_filter = query.sql[max(0, cooldown_filter_start - 200) : cooldown_filter_start]
+    for reason_code in ("cooldown_active", "similar_event_suppressed", "similar_context_reused"):
+        assert f"'{reason_code}'" in cooldown_filter
+    assert "expected_backend_cooldown_active" in query.sql
+
+
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
 
@@ -1251,6 +1263,55 @@ def test_no_delivery_classification_clear_for_backend_cooldown():
     assert detector.metrics["expected_backend_cooldown_active"] == 2
 
 
+def test_fully_cooldown_suppressed_event_is_not_flagged_as_delivery_gap():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/anomalies.json": {
+            "queries": {
+                "market_events_without_delivery_classification": {
+                    "rows": [
+                        {
+                            "classification": "expected_backend_cooldown_active",
+                            "events": 1,
+                            "should_alert_true": 1,
+                            "likely_eligible_recipient_total": 194,
+                            "sample_events": [
+                                {
+                                    "market_event_id": 3617,
+                                    "symbol": "BTC",
+                                    "should_alert": True,
+                                    "likely_eligible_recipients": 194,
+                                    "outcome_counts": {
+                                        "no_recipients": 0,
+                                        "premium_required": 0,
+                                        "cooldown": 194,
+                                        "failed_or_rate_limited": 0,
+                                    },
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["market_events_without_alert_deliveries"]
+    assert detector.status == "clear"
+    assert detector.severity == "info"
+    assert detector.metrics["delivery_gap_should_alert_true"] == 0
+    assert detector.metrics["expected_backend_cooldown_active"] == 1
+    assert detector.metrics["expected_no_delivery"] == 1
+
+
 def test_no_alert_deliveries_clear_when_active_period_has_no_market_events():
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -1549,3 +1610,38 @@ def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():
     assert detector.status == "triggered"
     assert detector.metrics["stale_or_missing_heartbeats"] == 2
     assert detector.metrics["affected_symbols"] == ["BTC", "ETH"]
+
+
+def test_alert_evidence_collector_uses_dedicated_timeout_and_narrower_buckets():
+    from ops_agent.collectors.db import _alert_evidence_windows
+    from ops_agent.config import OpsAgentLimits, load_config
+
+    limits = OpsAgentLimits()
+    assert limits.alert_evidence_query_timeout_seconds > limits.db_query_timeout_seconds
+    assert limits.alert_evidence_bucket_hours < 6
+
+    config = load_config(output_dir="reports")
+    assert config.limits.alert_evidence_query_timeout_seconds == 45
+    assert config.limits.alert_evidence_bucket_hours == 3
+
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    windows = _alert_evidence_windows(period, bucket_hours=3)
+    assert len(windows) == 8
+    assert windows[0][0] == period.start
+    assert windows[-1][1] == period.end
+
+
+def test_event_alert_delivered_event_ratio_query_is_registered():
+    query = next(
+        query for query in QUERIES if query.name == "event_alert_delivered_event_ratio"
+    )
+
+    assert query.evidence_file == "evidence/db/aggregate_metrics.json"
+    assert "should_alert = true" in query.sql
+    assert "AS should_alert_true_events" in query.sql
+    assert "AS delivered_events" in query.sql
+    assert "status = 'sent'" in query.sql
