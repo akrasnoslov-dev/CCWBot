@@ -123,30 +123,35 @@ Never implement "1 user = 1 LLM call" for the same event.
 - After ops-agent code changes, production deploy requires explicitly rebuilding the `ops-agent` Docker image.
 
 ## Sub-Agents / Review Lenses
-These were originally Codex subagent TOML configs in `agents/*.toml` (routing in
-`agents/routing.toml`). They are not runtime Telegram bot agents and are not imported by
-`main.py` or `bot/`. Claude Code doesn't read `.toml` subagent configs natively — until these are
-ported to `.claude/agents/*.md`, apply the same lenses manually and note in the PR which ones you
-considered:
+These review lenses exist as native Claude Code subagents under `.claude/agents/` (committed to
+the repo, so every session gets the same set). Claude Code delegates to them automatically based
+on their descriptions, or explicitly via the Agent tool. They are not runtime Telegram bot agents
+and are not imported by `main.py` or `bot/`. The original Codex TOML configs in `agents/*.toml`
+(routing in `agents/routing.toml`) remain in place for Codex and were the source these subagents
+were derived from; for Claude Code, the `.claude/agents/*.md` files are the operative definitions.
 
-- `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
-- `security_review_agent`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
-- `code_quality_agent`: maintainability, async boundaries, error handling, logging levels, and focused refactors.
-- `test_ci_agent`: regression coverage, validation commands, and CI confidence.
-- `product_policy_agent`: Telegram command access, alert wording, premium/free UX, and product-rule consistency.
-- `market_pipeline_agent`: CoinGecko/news/LLM payloads, event detection, delivery flow, and rate-limit handling.
-- `db_migration_guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
-- `telegram_stars_payments_agent`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
-- `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
+- `architecture-guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
+- `security-review`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
+- `code-quality`: maintainability, async boundaries, error handling, logging levels, and focused refactors.
+- `test-ci`: regression coverage, validation commands, and CI confidence (may run verification via Bash).
+- `product-policy`: Telegram command access, alert wording, premium/free UX, and product-rule consistency.
+- `market-pipeline`: CoinGecko/news/LLM payloads, event detection, delivery flow, and rate-limit handling.
+- `db-migration-guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
+- `telegram-stars-payments`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
+- `devops-release`: Docker, CI, config, health monitoring, dependencies, and release safety (may run verification via Bash).
+
+Review lenses are read-only (Read/Grep/Glob) except `test-ci` and `devops-release`, which may
+also run verification commands. Note in the PR which lenses ran and what they found.
 
 Mandatory lens examples:
-- Security-sensitive changes: `security_review_agent`.
-- Database/schema changes: `db_migration_guardian`.
-- Alert/report logic changes: `architecture_guardian`, `market_pipeline_agent`, `product_policy_agent`.
-- LLM prompt or output format changes: `architecture_guardian`, `market_pipeline_agent`, `product_policy_agent`.
-- Production/debugging tasks: `devops_release_agent`, `security_review_agent`.
-- Refactors affecting multiple modules: `architecture_guardian`, `code_quality_agent`, `test_ci_agent`.
-- Changes that may increase API/token usage or rate-limit pressure: `architecture_guardian`, `market_pipeline_agent`, `test_ci_agent`.
+- Security-sensitive changes: `security-review`.
+- Database/schema changes: `db-migration-guardian`.
+- Alert/report logic changes: `architecture-guardian`, `market-pipeline`, `product-policy`.
+- LLM prompt or output format changes: `architecture-guardian`, `market-pipeline`, `product-policy`.
+- Production/debugging tasks: `devops-release`, `security-review`.
+- Refactors affecting multiple modules: `architecture-guardian`, `code-quality`, `test-ci`.
+- Changes that may increase API/token usage or rate-limit pressure: `architecture-guardian`, `market-pipeline`, `test-ci`.
+- Premium/payment changes: `telegram-stars-payments`, `security-review`, `product-policy`.
 
 Optional: typo-only doc fixes, comment-only clarifications, narrow formatting-only changes after
 confirming no behaviour changed.
