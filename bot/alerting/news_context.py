@@ -22,10 +22,6 @@ COIN_ALIASES = {
     "btc": ("btc", "bitcoin"),
     "eth": ("eth", "ethereum", "ether"),
     "sol": ("sol", "solana"),
-    "xrp": ("xrp", "ripple"),
-    "bnb": ("bnb", "binance coin", "binancecoin"),
-    "doge": ("doge", "dogecoin"),
-    "ada": ("ada", "cardano"),
     "gram": (
         "ton",
         "toncoin",
@@ -38,8 +34,6 @@ COIN_ALIASES = {
         "ton rebrand",
         "the open network",
     ),
-    "link": ("link", "chainlink"),
-    "trx": ("trx", "tron"),
 }
 MARKET_WIDE_NEWS_TERMS = (
     "crypto market",
