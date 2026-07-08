@@ -104,6 +104,44 @@ def test_weekly_text_lists_reject_complex_or_diagnostic_entries(field, value):
         )
 
 
+def test_dashboard_dict_items_are_normalized_to_strings():
+    decision = validate_market_report_output(
+        _valid_report(
+            "daily",
+            dashboard=[
+                {"label": "BTC", "summary": "steady into the close."},
+                "Volume is moderate across tracked assets.",
+            ],
+        ),
+        expected_report_type="daily",
+    )
+
+    assert decision.dashboard == [
+        "BTC: steady into the close.",
+        "Volume is moderate across tracked assets.",
+    ]
+
+
+def test_market_catalysts_dict_items_are_normalized_to_strings():
+    decision = validate_market_report_output(
+        _valid_report(
+            "daily",
+            market_catalysts=[{"event": "ETF flows rose across major funds."}],
+        ),
+        expected_report_type="daily",
+    )
+
+    assert decision.market_catalysts == ["ETF flows rose across major funds."]
+
+
+def test_dashboard_nested_object_entries_are_still_rejected():
+    with pytest.raises(MarketReportValidationError):
+        validate_market_report_output(
+            _valid_report("daily", dashboard=[{"summary": {"nested": "value"}}]),
+            expected_report_type="daily",
+        )
+
+
 def test_weekly_empty_next_week_focus_is_rejected():
     with pytest.raises(MarketReportValidationError, match="next_week_focus must be non-empty"):
         validate_market_report_output(

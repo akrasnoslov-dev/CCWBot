@@ -164,7 +164,12 @@ def _validate_text_list(
 
     items: list[str] = []
     for item in value:
-        items.append(_required_text(item, field_name))
+        # Coerce occasional dict-shaped bullets (e.g. {"summary": "..."}) to plain
+        # text instead of failing the whole report, matching the tolerance already
+        # applied to week_timeline/themes below.
+        text = _normalize_report_text_list_item(item, field_name)
+        _reject_banned_advice(text)
+        items.append(text)
     return items
 
 

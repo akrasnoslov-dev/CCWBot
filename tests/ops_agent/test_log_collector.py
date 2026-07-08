@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from ops_agent.collectors.logs import collect_logs, parse_log_timestamp
+from ops_agent.collectors.logs import LOG_PATTERNS, collect_logs, parse_log_timestamp
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
@@ -114,3 +114,48 @@ def test_collect_logs_warns_when_timestamps_are_unparseable(tmp_path):
     assert index["files"][0]["timestamp_parse"]["period_filter_applied"] is False
     assert pattern_counts["period_matched_pattern_counts"]["error"] == 0
     assert pattern_counts["tail_context_pattern_counts"]["error"] == 1
+
+
+def test_llm_failure_pattern_ignores_healthy_llm_lines_and_failed_zero_counters():
+    pattern = LOG_PATTERNS["llm_failure"]
+
+    non_failures = [
+        "Running automatic LLM event-analysis check.",
+        "ops_event=news_intelligence_batch_completed fetched=5 success=5 "
+        "skipped_budget=0 failed=0",
+        "Groq client initialised for model x.",
+    ]
+    failures = [
+        "Groq JSON mode failed; using deterministic fallback.",
+        "LLM usage logging failed: database unavailable",
+        "AI parsing failed: invalid JSON (unexpected token).",
+        "ops_event=llm_rate_limit_started provider=groq model=x call_type=unknown",
+        "market heartbeat schema validation failed: missing field",
+    ]
+
+    assert not any(pattern.search(line) for line in non_failures)
+    assert all(pattern.search(line) for line in failures)
+
+
+def test_heartbeat_failure_pattern_ignores_healthy_heartbeat_lines():
+    pattern = LOG_PATTERNS["heartbeat_failure"]
+
+    non_failures = [
+        "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
+        "due=3 sent=3 failed=0",
+        "ops_event=heartbeat_generation_scheduled interval_seconds=3600",
+        "ops_event=heartbeat_generation_completed symbols=4",
+        "BTC market heartbeat skipped: no cached heartbeat.",
+        "Market heartbeat generation skipped because database storage is off.",
+    ]
+    failures = [
+        "BTC market heartbeat generation failed: provider timeout",
+        "BTC market heartbeat schema validation failed: missing field",
+        "ops_event=heartbeat_generation_failed symbol=BTC error=x",
+        "ops_event=heartbeat_delivery_failed symbol=BTC error_class=Forbidden",
+        "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
+        "due=3 sent=1 failed=2",
+    ]
+
+    assert not any(pattern.search(line) for line in non_failures)
+    assert all(pattern.search(line) for line in failures)

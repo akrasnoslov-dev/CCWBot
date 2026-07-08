@@ -57,13 +57,7 @@ COIN_VOLATILITY_BASELINES = {
     "btc": 2.5,
     "eth": 3.5,
     "sol": 5.0,
-    "xrp": 5.0,
-    "bnb": 3.5,
-    "doge": 6.0,
-    "ada": 4.5,
     "gram": 5.0,
-    "link": 5.0,
-    "trx": 3.5,
 }
 
 

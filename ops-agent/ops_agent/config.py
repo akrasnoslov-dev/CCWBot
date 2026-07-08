@@ -20,6 +20,8 @@ class OpsAgentLimits:
     raw_llm_preview_bytes: int = 2048
     duplicate_market_event_bucket_minutes: int = 15
     alert_evidence_row_cap: int = 500
+    alert_evidence_query_timeout_seconds: int = 45
+    alert_evidence_bucket_hours: int = 3
     event_alert_semantic_cooldown_seconds: int = 4 * 60 * 60
 
 
@@ -80,6 +82,10 @@ def load_config(output_dir: str | None = None) -> OpsAgentConfig:
             "OPS_AGENT_DUPLICATE_MARKET_EVENT_BUCKET_MINUTES", 15
         ),
         alert_evidence_row_cap=_int_env("OPS_AGENT_ALERT_EVIDENCE_ROW_CAP", 500),
+        alert_evidence_query_timeout_seconds=_int_env(
+            "OPS_AGENT_ALERT_EVIDENCE_QUERY_TIMEOUT_SECONDS", 45
+        ),
+        alert_evidence_bucket_hours=_int_env("OPS_AGENT_ALERT_EVIDENCE_BUCKET_HOURS", 3),
         event_alert_semantic_cooldown_seconds=_int_env(
             "OPS_AGENT_EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS", 4 * 60 * 60, minimum=0
         ),

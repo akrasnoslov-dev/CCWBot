@@ -467,6 +467,51 @@ async def test_per_run_budget_is_respected_and_exhaustion_does_not_crash():
 
 
 @pytest.mark.asyncio
+async def test_budget_cutoff_skips_low_priority_items_before_high_priority_ones():
+    engine, session = await build_session()
+    fake_llm = FakeNewsLlm([_valid_response(), _valid_response()])
+    try:
+        service = NewsIntelligenceService(
+            session,
+            llm_client=fake_llm,
+            max_items_per_run=3,
+            max_llm_calls_per_run=2,
+            max_llm_calls_per_hour=20,
+        )
+        result = await service.analyze_items(
+            [
+                _raw_item(
+                    title="Analyst shares casual market commentary",
+                    link="https://example.com/low-1",
+                ),
+                _raw_item(
+                    title="Newsletter recaps weekly trading volume",
+                    link="https://example.com/low-2",
+                ),
+                _raw_item(
+                    title="Major exchange hit by security breach",
+                    link="https://example.com/high-1",
+                ),
+            ]
+        )
+        rows_by_url = {
+            row.url: row.llm_status
+            for row in (await session.scalars(select(NewsItem))).all()
+        }
+
+        assert len(result) == 3
+        assert fake_llm.calls == 2
+        # The high-priority item arrived last in feed order but must still be
+        # analyzed; a lower-priority item is the one left as skipped_budget.
+        assert rows_by_url["https://example.com/high-1"] == "success"
+        assert rows_by_url["https://example.com/low-1"] == "success"
+        assert rows_by_url["https://example.com/low-2"] == "skipped_budget"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_hourly_budget_exhaustion_persists_without_llm_call():
     engine, session = await build_session()
     fake_llm = FakeNewsLlm()

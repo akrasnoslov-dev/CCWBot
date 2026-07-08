@@ -227,7 +227,15 @@ Optional alert repetition evidence settings:
 ```text
 OPS_AGENT_ALERT_EVIDENCE_ROW_CAP=500
 OPS_AGENT_EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS=14400
+OPS_AGENT_ALERT_EVIDENCE_QUERY_TIMEOUT_SECONDS=45
+OPS_AGENT_ALERT_EVIDENCE_BUCKET_HOURS=3
 ```
+
+The `db.alert_repetition_evidence` collector queries the period in per-bucket windows
+(`OPS_AGENT_ALERT_EVIDENCE_BUCKET_HOURS`, newest first) with its own dedicated timeout
+(`OPS_AGENT_ALERT_EVIDENCE_QUERY_TIMEOUT_SECONDS`), separate from the general
+`OPS_AGENT_DB_QUERY_TIMEOUT_SECONDS`. A single slow bucket fails on its own; the remaining
+buckets still run and the collector reports `partial` instead of losing all alert evidence.
 
 The aggregate DB evidence includes `event_alert_llm_estimates` with sanitized Event Alert
 LLM pressure fields:
