@@ -76,6 +76,10 @@ def render_decision_report_context(
         "",
         *_delivery_funnel(evidence),
         "",
+        "## Reliability Metrics",
+        "",
+        *_reliability_metrics(evidence),
+        "",
         "## Alert Quality",
         "",
         *_alert_quality(evidence),
@@ -405,6 +409,81 @@ def _delivery_funnel(evidence: dict[str, Any]) -> list[str]:
     for label, count, denominator in stages:
         conversion = "100.0%" if denominator is None and count else _pct(count, denominator or 0)
         lines.append(f"| {label} | {count} | {conversion} |")
+    return lines
+
+
+def _reliability_metrics(evidence: dict[str, Any]) -> list[str]:
+    lines = ["| Metric | Value | Notes |", "|---|---:|---|"]
+
+    ratio_rows = _query_rows(evidence, "event_alert_delivered_event_ratio")
+    if ratio_rows:
+        row = ratio_rows[0]
+        should_alert_events = _int(row.get("should_alert_true_events"))
+        delivered_events = _int(row.get("delivered_events"))
+        lines.append(
+            f"| Delivered event ratio | {_pct(delivered_events, should_alert_events)} | "
+            f"{delivered_events} of {should_alert_events} should_alert=true market events "
+            "had at least one sent delivery. A low ratio is not a failure by itself; "
+            "check no-delivery classifications. |"
+        )
+    else:
+        lines.append(
+            "| Delivered event ratio | not available | "
+            "`event_alert_delivered_event_ratio` was not collected. |"
+        )
+
+    budget_rows = _query_rows(evidence, "news_intelligence_budget_summary")
+    if budget_rows:
+        total_items = 0
+        skipped_budget = 0
+        for row in budget_rows:
+            items = _int(row.get("items"))
+            total_items += items
+            if str(row.get("outcome_category") or "") == "skipped_budget":
+                skipped_budget += items
+        lines.append(
+            f"| News skipped_budget rate | {_pct(skipped_budget, total_items)} | "
+            f"{skipped_budget} of {total_items} news intelligence items were skipped by "
+            "the LLM budget in this period. |"
+        )
+    else:
+        lines.append(
+            "| News skipped_budget rate | not available | "
+            "`news_intelligence_budget_summary` was not collected. |"
+        )
+
+    docker_payload = evidence.get("evidence/docker/container_state.json")
+    if isinstance(docker_payload, dict) and docker_payload.get("services"):
+        services = [
+            service
+            for service in docker_payload.get("services") or []
+            if isinstance(service, dict)
+        ]
+        known_restarts = [
+            service for service in services if service.get("restart_count") is not None
+        ]
+        if known_restarts:
+            total_restarts = sum(_int(service.get("restart_count")) for service in known_restarts)
+            noisy = [
+                f"{service.get('service')}={_int(service.get('restart_count'))}"
+                for service in known_restarts
+                if _int(service.get("restart_count")) > 0
+            ]
+            detail = "; ".join(noisy) if noisy else "no restarts recorded"
+            lines.append(
+                f"| Container restarts | {total_restarts} | {detail}. "
+                "Restart cause is not available from the safe compose status snapshot. |"
+            )
+        else:
+            lines.append(
+                "| Container restarts | unknown | Container state was collected but "
+                "restart counts were not present; treat as incomplete, not healthy. |"
+            )
+    else:
+        lines.append(
+            "| Container restarts | not available | "
+            "`evidence/docker/container_state.json` was not collected. |"
+        )
     return lines
 
 

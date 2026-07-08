@@ -326,6 +326,19 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND (status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL)) AS telegram_failed",
     ),
     DbQuery(
+        "event_alert_delivered_event_ratio",
+        "evidence/db/aggregate_metrics.json",
+        "WITH should_alert_events AS ("
+        "SELECT DISTINCT market_event_id FROM event_ai_analyses "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND should_alert = true AND market_event_id IS NOT NULL) "
+        "SELECT "
+        "(SELECT count(*) FROM should_alert_events) AS should_alert_true_events, "
+        "(SELECT count(DISTINCT a.market_event_id) FROM alerts a "
+        "WHERE a.market_event_id IN (SELECT market_event_id FROM should_alert_events) "
+        "AND a.alert_type = 'event_alert' AND a.status = 'sent') AS delivered_events",
+    ),
+    DbQuery(
         "alert_quality_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT lower(coalesce(a.symbol, 'unknown')) AS symbol, "
@@ -646,7 +659,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "SELECT e.market_event_id, "
         "count(*) FILTER (WHERE ado.reason_code = 'no_recipients') AS no_recipient_outcomes, "
         "count(*) FILTER (WHERE ado.reason_code = 'premium_required') AS premium_required_outcomes, "
-        "count(*) FILTER (WHERE ado.reason_code IN ('cooldown_active', 'similar_event_suppressed')) AS cooldown_outcomes, "
+        "count(*) FILTER (WHERE ado.reason_code IN ('cooldown_active', 'similar_event_suppressed', 'similar_context_reused')) AS cooldown_outcomes, "
         "count(*) FILTER (WHERE ado.status IN ('failed', 'rate_limited')) AS failed_or_rate_limited_outcomes "
         "FROM events_without_delivery e JOIN alert_delivery_outcomes ado "
         "ON ado.market_event_id = e.market_event_id "

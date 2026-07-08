@@ -210,11 +210,14 @@ async def _collect_alert_repetition_rows(
     row_cap: int,
     mapper: ReferenceMapper,
     redaction_report: RedactionReport,
+    bucket_hours: int = 6,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str | None]], list[str]]:
     rows: list[dict[str, Any]] = []
     statuses: list[dict[str, str | None]] = []
     warnings: list[str] = []
-    newest_first_windows = list(reversed(_alert_evidence_windows(period)))
+    newest_first_windows = list(
+        reversed(_alert_evidence_windows(period, bucket_hours=bucket_hours))
+    )
     for index, (window_start, window_end) in enumerate(newest_first_windows, start=1):
         if len(rows) >= row_cap:
             warnings.append("alert repetition evidence row cap reached before older buckets ran")
@@ -391,10 +394,11 @@ async def collect_db(
             engine,
             params=params,
             period=period,
-            timeout_seconds=config.limits.db_query_timeout_seconds,
+            timeout_seconds=config.limits.alert_evidence_query_timeout_seconds,
             row_cap=config.limits.alert_evidence_row_cap,
             mapper=mapper,
             redaction_report=redaction_report,
+            bucket_hours=config.limits.alert_evidence_bucket_hours,
         )
         statuses.extend(bucket_statuses)
         successful_buckets = _successful_alert_repetition_buckets(bucket_statuses)

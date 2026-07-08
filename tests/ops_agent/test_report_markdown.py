@@ -473,3 +473,80 @@ def test_quality_summary_evidence_uses_unique_affected_deliveries_not_issue_occu
     assert "10 / 10 unique affected Event Alert deliveries, 100.0%" in markdown
     assert "20 / 10" not in markdown
     assert "200.0%" not in markdown
+
+
+def test_reliability_metrics_render_delivered_ratio_budget_rate_and_restarts():
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "event_alert_delivered_event_ratio": {
+                    "rows": [{"should_alert_true_events": 52, "delivered_events": 31}]
+                },
+                "news_intelligence_budget_summary": {
+                    "rows": [
+                        {"outcome_category": "success", "impact_bucket": "high", "items": 30},
+                        {
+                            "outcome_category": "skipped_budget",
+                            "impact_bucket": "low_or_null",
+                            "items": 10,
+                        },
+                    ]
+                },
+            }
+        },
+        "evidence/docker/container_state.json": {
+            "services": [
+                {"service": "bot", "restart_count": 2, "is_running": True},
+                {"service": "postgres", "restart_count": 0, "is_running": True},
+            ]
+        },
+    }
+
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence=evidence,
+        detector_results=[],
+        collection_status="complete",
+        bundle_id="bundle",
+    )
+
+    assert "## Reliability Metrics" in markdown
+    assert "Delivered event ratio | 59.6%" in markdown
+    assert "31 of 52 should_alert=true market events" in markdown
+    assert "News skipped_budget rate | 25.0%" in markdown
+    assert "Container restarts | 2 | bot=2" in markdown
+    assert "Restart cause is not available" in markdown
+
+
+def test_reliability_metrics_report_missing_evidence_as_not_available():
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence={},
+        detector_results=[],
+        collection_status="partial",
+        bundle_id="bundle",
+    )
+
+    assert "## Reliability Metrics" in markdown
+    assert "Delivered event ratio | not available" in markdown
+    assert "News skipped_budget rate | not available" in markdown
+    assert "Container restarts | not available" in markdown
+
+
+def test_reliability_metrics_treat_missing_restart_counts_as_unknown_not_healthy():
+    evidence = {
+        "evidence/docker/container_state.json": {
+            "services": [{"service": "bot", "is_running": True, "restart_count": None}]
+        },
+    }
+
+    markdown = render_decision_report_context(
+        period=_period(),
+        evidence=evidence,
+        detector_results=[],
+        collection_status="complete",
+        bundle_id="bundle",
+    )
+
+    assert "Container restarts | unknown" in markdown
+    assert "incomplete, not healthy" in markdown

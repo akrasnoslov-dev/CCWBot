@@ -17,9 +17,20 @@ LOG_PATTERNS = {
         r"telegram.*fail|delivery_failure|Forbidden",
         re.IGNORECASE,
     ),
-    "llm_failure": re.compile(r"llm|groq|schema validation|invalid JSON|rate limit", re.IGNORECASE),
+    "llm_failure": re.compile(
+        r"(?:llm|groq).{0,40}\bfailed\b(?!\s*=\s*0\b)|"
+        r"\bfailed\b(?!\s*=\s*0\b).{0,40}(?:llm|groq)|"
+        r"llm.{0,40}rate[ _]limit|rate[ _]limit.{0,40}llm|"
+        r"schema validation|invalid JSON|rate limit",
+        re.IGNORECASE,
+    ),
     "report_failure": re.compile(r"report.*failed|market_report_failed", re.IGNORECASE),
-    "heartbeat_failure": re.compile(r"heartbeat.*failed|market_heartbeat", re.IGNORECASE),
+    "heartbeat_failure": re.compile(
+        r"heartbeat.{0,40}\bfailed\b\s*:|"
+        r"ops_event=heartbeat_(?:generation|delivery)_failed|"
+        r"heartbeat.{0,40}\bfailed=[1-9]\d*\b",
+        re.IGNORECASE,
+    ),
     "payment_rejection": re.compile(r"payment.*rejected|invalid payload", re.IGNORECASE),
 }
 OPS_EVENT_RE = re.compile(r"\bops_event=([a-z0-9_]+)")
