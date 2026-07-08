@@ -42,14 +42,7 @@ from bot.alerting.market_heartbeat import (
     sanitize_heartbeat_possible_action,
     validate_market_heartbeat_output,
 )
-from bot.alerting.notification_decision import (
-    NotificationDecision,
-    NotificationDirection,
-    NotificationSeverity,
-    NotificationType,
-    SignalContext,
-    TriggerSource,
-)
+from bot.alerting.notification_decision import NotificationType
 from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
 from bot.config import (
     ENABLE_NEWS_DRIVEN_ALERTS,
@@ -2227,12 +2220,16 @@ async def _deliver_news_driven_alert_for_symbol(
         thresholds_used=None,
     )
 
+_news_driven_alerts_warning_logged = False
+
 async def _load_news_driven_alert_candidates(
     symbols: list[str],
     *,
     now: datetime,
 ) -> dict[str, list[dict]]:
-    if ENABLE_NEWS_DRIVEN_ALERTS:
+    global _news_driven_alerts_warning_logged
+    if ENABLE_NEWS_DRIVEN_ALERTS and not _news_driven_alerts_warning_logged:
+        _news_driven_alerts_warning_logged = True
         logger.warning(
             "ENABLE_NEWS_DRIVEN_ALERTS is set, but standalone news-driven Event Alerts "
             "are disabled by current product policy."
@@ -2241,19 +2238,6 @@ async def _load_news_driven_alert_candidates(
 
 def _market_condition_can_alert(evaluation: SeverityEvaluation) -> bool:
     return evaluation.severity in {AlertSeverity.HIGH, AlertSeverity.EXTREME}
-
-def _window_label(seconds: int) -> str:
-    if seconds == 3600:
-        return "1h"
-    if seconds == 21600:
-        return "6h"
-    if seconds == 86400:
-        return "24h"
-    if seconds % 3600 == 0:
-        return f"{seconds // 3600}h"
-    if seconds % 60 == 0:
-        return f"{seconds // 60}m"
-    return f"{seconds}s"
 
 def _severity_from_decision(decision: AlertDecision) -> SeverityEvaluation:
     severity = decision.backend_severity_ceiling
@@ -2291,59 +2275,6 @@ def _format_numeric_context_for_storage(
             "movement_percent": movement_percent,
             "peak_intrawindow_movement_percent": peak_movement_percent,
             "change_24h": change_24h,
-        },
-        sort_keys=True,
-    )
-
-def _format_signal_context_for_storage(
-    context: SignalContext,
-    decision: NotificationDecision,
-) -> str:
-    return json.dumps(
-        {
-            "symbol": normalize_symbol(context.symbol).upper(),
-            "current_price": context.current_price,
-            "latest_5m_change_percent": context.latest_5m_change_percent,
-            "change_since_last_market_update_percent": (
-                context.change_since_last_market_update_percent
-            ),
-            "user_period_change_percent": context.user_period_change_percent,
-            "one_hour_change_percent": context.one_hour_change_percent,
-            "four_hour_change_percent": context.four_hour_change_percent,
-            "twenty_four_hour_change_percent": context.twenty_four_hour_change_percent,
-            "news_relevance_score": context.news_relevance_score,
-            "news_candidates": context.news_candidates,
-            "last_notification_type": context.last_notification_type,
-            "last_notification_severity": context.last_notification_severity,
-            "last_notification_direction": context.last_notification_direction,
-            "last_market_update_time": (
-                context.last_market_update_time.isoformat()
-                if context.last_market_update_time
-                else None
-            ),
-            "previous_market_update_time": (
-                context.last_market_update_time.isoformat()
-                if context.last_market_update_time
-                else None
-            ),
-            "new_market_update_time": (
-                datetime.now(timezone.utc).isoformat()
-                if decision.notification_type is NotificationType.MARKET_UPDATE
-                else None
-            ),
-            "source_snapshot_time": datetime.now(timezone.utc).isoformat(),
-            "baseline_snapshot_time": (
-                context.last_market_update_time.isoformat()
-                if context.last_market_update_time
-                else None
-            ),
-            "user_alert_frequency_seconds": context.user_alert_frequency_seconds,
-            "trigger_candidates": context.trigger_candidates,
-            "suppression_context": context.suppression_context,
-            "notification_type": decision.notification_type.value,
-            "notification_severity": decision.severity.value,
-            "notification_direction": decision.direction.value,
-            "trigger_source": decision.trigger_source.value if decision.trigger_source else None,
         },
         sort_keys=True,
     )
@@ -3503,293 +3434,6 @@ def normalize_llm_severity(value: str | None) -> str | None:
         return "low"
     return normalized
 
-def _notification_type_label(notification_type: NotificationType | str) -> str:
-    normalized = NotificationType(notification_type)
-    return {
-        NotificationType.MARKET_UPDATE: "Market Update",
-        NotificationType.IMPORTANT_ALERT: "Important Alert",
-        NotificationType.CRITICAL_ALERT: "Critical Alert",
-        NotificationType.NO_ALERT: "Market Update",
-    }[normalized]
-
-def _format_percent(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:+.2f}%"
-
-def _build_product_notification_payload(
-    context: SignalContext,
-    decision: NotificationDecision,
-) -> dict:
-    backend_symbol = normalize_symbol(context.symbol)
-    symbol = display_symbol(backend_symbol)
-    coin_icon, entities = build_coin_icon_prefix(backend_symbol)
-    coin_icon_html = build_coin_icon_html(backend_symbol)
-    period_label = _window_label(context.user_alert_frequency_seconds or 0)
-    alert_move = _alert_move_percent(context, decision)
-    summary = _summary_sentence(
-        symbol,
-        decision.direction,
-        decision.notification_type,
-        trigger_source=decision.trigger_source,
-        alert_move_percent=alert_move,
-        one_hour_change_percent=context.one_hour_change_percent,
-        period_change_percent=context.user_period_change_percent,
-        change_24h=context.twenty_four_hour_change_percent,
-        period_label=period_label,
-    )
-    visible_news = _visible_news_candidates_for_message(context, decision)
-    news_section = ""
-    if visible_news and _is_user_visible_news(context.news_relevance_score):
-        lines = []
-        for item in visible_news[:2]:
-            title = clean_news_title(str(item.get("title") or ""))
-            source = str(item.get("source") or "").strip()
-            link = str(item.get("url") or item.get("link") or "").strip()
-            if not title:
-                continue
-            detail = f" - {source}" if source else ""
-            display_text = clean_related_news_text(
-                f"{title}{detail}",
-                source=source,
-            )
-            if not display_text:
-                continue
-            lines.append(f"- {display_text}")
-            if link:
-                lines.append(f"  {link}")
-        if lines:
-            news_section = "\nRelated news:\n" + "\n".join(lines) + "\n"
-    elif decision.notification_type in {
-        NotificationType.IMPORTANT_ALERT,
-        NotificationType.CRITICAL_ALERT,
-    }:
-        if context.news_candidates:
-            logger.info("weak_news_hidden_from_user_message")
-        news_section = "\nNews context:\nNo clear news catalyst found.\n"
-
-    if decision.notification_type is NotificationType.MARKET_UPDATE:
-        movement_lines = (
-            f"Move: {_format_percent(context.user_period_change_percent)} over the last "
-            f"{period_label}\n"
-            f"24h change: {_format_percent(context.twenty_four_hour_change_percent)}"
-        )
-    else:
-        movement_lines = (
-            f"Alert move: {_format_percent(alert_move)}\n"
-            f"1h move: {_format_percent(context.one_hour_change_percent)}\n"
-            f"24h change: {_format_percent(context.twenty_four_hour_change_percent)}"
-        )
-
-    message = (
-        f"{coin_icon} {decision.icon} {_notification_type_label(decision.notification_type)} - "
-        f"{symbol}\n\n"
-        f"{summary}\n\n"
-        f"Price: ${context.current_price:,.2f}\n"
-        f"{movement_lines}\n\n"
-        "Why this matters:\n"
-        f"{decision.reasoning_summary}\n"
-        f"{news_section}\n"
-        "Possible action:\n"
-        f"{decision.possible_action}\n\n"
-        "Not financial advice."
-    )
-    plain_text = sanitize_alert_message(message)
-    html_text = None
-    if coin_icon_html != coin_icon:
-        html_text = _build_html_message_from_plain_with_icon(
-            plain_text=plain_text,
-            plain_icon=coin_icon,
-            icon_html=coin_icon_html,
-        )
-    return {"plain_text": plain_text, "html_text": html_text, "entities": entities}
-
-def _alert_move_percent(context: SignalContext, decision: NotificationDecision) -> float | None:
-    if decision.trigger_source is TriggerSource.FAST_MOVEMENT:
-        return context.latest_5m_change_percent
-    if decision.trigger_source is TriggerSource.CUMULATIVE_MOVEMENT:
-        return context.change_since_last_market_update_percent
-    if decision.trigger_source is TriggerSource.USER_PERIOD_MOVEMENT:
-        return context.user_period_change_percent
-    if decision.notification_type is NotificationType.CRITICAL_ALERT:
-        values = [
-            context.latest_5m_change_percent,
-            context.change_since_last_market_update_percent,
-            context.user_period_change_percent,
-            context.one_hour_change_percent,
-            context.four_hour_change_percent,
-        ]
-        return max(
-            (value for value in values if value is not None),
-            key=lambda value: abs(value),
-            default=None,
-        )
-    return context.user_period_change_percent
-
-def _visible_news_candidates_for_message(
-    context: SignalContext,
-    decision: NotificationDecision,
-) -> list[dict]:
-    candidates = _useful_news_candidates(context.news_candidates)
-    if decision.notification_type is NotificationType.MARKET_UPDATE:
-        return candidates
-    return [
-        item
-        for item in candidates
-        if str(item.get("relevance") or "").strip().lower() == "strong"
-    ]
-
-def _is_user_visible_news(news_relevance_score: str | None) -> bool:
-    return (news_relevance_score or "").strip().lower() in {
-        "relevant",
-        "very_relevant",
-        "medium",
-        "strong",
-        "high",
-    }
-
-def _summary_sentence(
-    symbol: str,
-    direction: NotificationDirection,
-    notification_type: NotificationType,
-    *,
-    trigger_source: TriggerSource | None = None,
-    alert_move_percent: float | None = None,
-    one_hour_change_percent: float | None = None,
-    period_change_percent: float | None = None,
-    change_24h: float | None = None,
-    period_label: str = "update window",
-) -> str:
-    period = period_change_percent or 0.0
-    one_hour = one_hour_change_percent if one_hour_change_percent is not None else period
-    alert_move = alert_move_percent if alert_move_percent is not None else period
-    trend = change_24h or 0.0
-    if notification_type is NotificationType.MARKET_UPDATE:
-        summary = _market_update_timeframe_summary(
-            symbol,
-            period_change_percent=period,
-            change_24h=trend,
-            period_label=period_label,
-        )
-        logger.info(
-            "market_update_timeframe_classification symbol=%s period=%.4f trend_24h=%.4f",
-            symbol,
-            period,
-            trend,
-        )
-        return summary
-    if trigger_source is TriggerSource.NEWS:
-        if abs(one_hour) < 1.0 and abs(alert_move) < 1.0:
-            return f"{symbol} has relevant market news, while price remains mostly stable."
-        return f"{symbol} has relevant market news, but price has not reacted strongly yet."
-    if notification_type is NotificationType.CRITICAL_ALERT:
-        visible_move = one_hour if abs(one_hour) >= 0.3 else alert_move
-        if visible_move > 0:
-            action = "jumped sharply"
-        elif visible_move < 0:
-            action = "dropped sharply"
-        elif direction is NotificationDirection.UP:
-            action = "jumped sharply"
-        else:
-            action = "dropped sharply"
-        return f"{symbol} {action}."
-    visible_move = one_hour if abs(one_hour) >= 0.3 else alert_move
-    if visible_move > 0:
-        return f"{symbol} is gaining momentum."
-    if visible_move < 0:
-        return f"{symbol} is moving down faster than usual."
-    return f"{symbol} market conditions changed."
-
-def _market_update_timeframe_summary(
-    symbol: str,
-    *,
-    period_change_percent: float,
-    change_24h: float,
-    period_label: str,
-) -> str:
-    period_abs = abs(period_change_percent)
-    period_direction = _movement_direction(period_change_percent, calm_threshold=0.3)
-    trend_direction = _movement_direction(change_24h, calm_threshold=1.0)
-    trend_strength = _trend_strength(change_24h)
-
-    if period_direction == "neutral":
-        period_text = f"{symbol} is stable over the last {period_label}"
-        if trend_direction == "neutral":
-            return period_text + "."
-        logger.info("mixed_timeframe_wording_selected symbol=%s", symbol)
-        return f"{period_text}, but remains {trend_strength} on the 24h trend."
-
-    if trend_direction != "neutral" and period_direction != trend_direction:
-        logger.info("mixed_timeframe_wording_selected symbol=%s", symbol)
-        if period_direction == "up":
-            period_text = (
-                f"{symbol} recovered slightly over the last {period_label}"
-                if period_abs < 1.0
-                else f"{symbol} strengthened over the last {period_label}"
-            )
-        else:
-            period_text = (
-                f"{symbol} is slightly lower over the last {period_label}"
-                if period_abs < 1.0
-                else f"{symbol} weakened over the last {period_label}"
-            )
-        return f"{period_text}, but the 24h trend remains {trend_strength}."
-
-    if period_direction == "up":
-        if period_abs >= 3.0 and trend_direction == "up":
-            return (
-                f"{symbol} strengthened meaningfully over the last {period_label} and remains "
-                "positive on the 24h trend."
-            )
-        if period_abs < 1.0:
-            return f"{symbol} recovered slightly over the last {period_label}."
-        return f"{symbol} strengthened over the last {period_label}."
-
-    if period_direction == "down":
-        if period_abs >= 3.0 and trend_direction == "down":
-            return (
-                f"{symbol} weakened meaningfully over the last {period_label} and remains "
-                f"{trend_strength} on the 24h trend."
-            )
-        if period_abs < 1.0:
-            if trend_direction == "down":
-                return (
-                    f"{symbol} is slightly lower over the last {period_label}, while the 24h "
-                    f"trend remains {trend_strength}."
-                )
-            return f"{symbol} is slightly lower over the last {period_label}."
-        return f"{symbol} weakened over the last {period_label}."
-
-    return f"{symbol} is relatively calm over the last {period_label}."
-
-def _movement_direction(value: float, *, calm_threshold: float) -> str:
-    if abs(value) < calm_threshold:
-        return "neutral"
-    return "up" if value > 0 else "down"
-
-def _trend_strength(change_24h: float) -> str:
-    if change_24h <= -5.0:
-        return "weak"
-    if change_24h < -2.0:
-        return "mildly negative"
-    if change_24h < -1.0:
-        return "slightly negative"
-    if change_24h >= 5.0:
-        return "strong"
-    if change_24h > 2.0:
-        return "positive"
-    if change_24h > 1.0:
-        return "slightly positive"
-    return "calm"
-
-def _notification_severity_to_alert_severity(severity: NotificationSeverity) -> AlertSeverity:
-    return {
-        NotificationSeverity.LOW: AlertSeverity.INFO,
-        NotificationSeverity.MEDIUM: AlertSeverity.WATCH,
-        NotificationSeverity.HIGH: AlertSeverity.HIGH,
-        NotificationSeverity.EXTREME: AlertSeverity.EXTREME,
-    }[severity]
-
 async def _send_alert_to_recipient(
     app: Application, recipient: AlertRecipient, alert_payload: dict
 ) -> tuple[bool, str | None]:
@@ -4904,58 +4548,6 @@ def _direction_from_numeric_context(numeric_context: str | None) -> str | None:
         return None
     direction = payload.get("notification_direction")
     return str(direction) if direction else None
-
-def _should_skip_near_duplicate_market_update(
-    *,
-    notification_type: NotificationType,
-    previous_alert,
-    context: SignalContext,
-    decision: NotificationDecision,
-    now: datetime,
-    frequency_seconds: int,
-) -> bool:
-    if notification_type is not NotificationType.MARKET_UPDATE:
-        return False
-    if previous_alert is None or getattr(previous_alert, "status", "sent") != "sent":
-        return False
-    created_at = getattr(previous_alert, "created_at", None)
-    if created_at is None:
-        return False
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    max_quiet_seconds = max(int(frequency_seconds), 1) * 6
-    if (now - created_at).total_seconds() > max_quiet_seconds:
-        return False
-
-    previous = _numeric_context_payload(getattr(previous_alert, "numeric_context", None))
-    if previous.get("notification_type") != NotificationType.MARKET_UPDATE.value:
-        return False
-    if previous.get("notification_direction") != decision.direction.value:
-        return False
-    if previous.get("notification_severity") != decision.severity.value:
-        return False
-    previous_score = str(previous.get("news_relevance_score") or "none").lower()
-    current_score = str(context.news_relevance_score or "none").lower()
-    if _useful_news_candidates(context.news_candidates):
-        return False
-    if previous_score != current_score and current_score not in {"none", "weak"}:
-        return False
-    previous_period = previous.get("user_period_change_percent")
-    try:
-        previous_period_float = float(previous_period)
-    except (TypeError, ValueError):
-        return False
-    current_period = float(context.user_period_change_percent or 0.0)
-    if abs(current_period - previous_period_float) > 0.3:
-        return False
-    logger.debug(
-        "near_duplicate_market_update reason=same_direction_severity_small_delta "
-        "previous_period=%.4f current_period=%.4f news_score=%s",
-        previous_period_float,
-        current_period,
-        current_score,
-    )
-    return True
 
 async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
     app = context.application

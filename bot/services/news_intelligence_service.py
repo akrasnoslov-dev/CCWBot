@@ -64,6 +64,26 @@ NOISE_PATTERNS = [
     r"\bcould explode\b",
 ]
 
+HIGH_PRIORITY_KEYWORDS = (
+    "hack",
+    "exploit",
+    "breach",
+    "vulnerab",
+    "lawsuit",
+    "sec ",
+    "regulat",
+    "ban",
+    "etf",
+    "collapse",
+    "insolven",
+    "bankrupt",
+    "depeg",
+    "halt",
+    "freeze",
+    "liquidat",
+    "outage",
+)
+
 NewsLlmCallable = Callable[[list[dict], str, int], Awaitable[tuple[str, dict]]]
 
 
@@ -119,7 +139,11 @@ class NewsIntelligenceService:
 
         normalized_items = [normalize_news_item(item) for item in raw_items]
         compatibility_items = [item.compatibility_dict() for item in normalized_items if item]
-        processable = [item for item in normalized_items if item][: self.max_items_per_run]
+        valid_items = [item for item in normalized_items if item]
+        prioritized_items = sorted(
+            valid_items, key=_budget_priority_score, reverse=True
+        )
+        processable = prioritized_items[: self.max_items_per_run]
         if not processable:
             return compatibility_items
 
@@ -469,6 +493,18 @@ def derive_impact_level(score: int) -> str:
 def is_obvious_noise(item: NormalizedNewsItem) -> bool:
     text = f"{item.title} {item.summary or ''}".lower()
     return any(re.search(pattern, text) for pattern in NOISE_PATTERNS)
+
+
+def _budget_priority_score(item: NormalizedNewsItem) -> int:
+    """Cheap keyword heuristic ranking items before the per-run LLM budget cutoff.
+
+    Higher-scoring items are analyzed first, so when the hourly/per-run LLM
+    budget runs out mid-batch, low-signal items are the ones left as
+    ``skipped_budget`` rather than whichever items happened to arrive first
+    in feed order.
+    """
+    text = f"{item.title} {item.summary or ''}".lower()
+    return sum(1 for keyword in HIGH_PRIORITY_KEYWORDS if keyword in text)
 
 
 def build_pre_llm_dedup_group_id(item: NormalizedNewsItem) -> str:
