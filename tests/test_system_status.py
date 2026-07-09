@@ -179,10 +179,12 @@ async def test_system_status_uses_real_fresh_telemetry():
         assert "✅ Database — connected" in text
         assert "✅ Market data — BTC, ETH, GRAM, SOL fresh" in text
         assert "✅ AI analysis — latest success 5m ago" in text
-        assert "✅ Groq rate limit — no active limit" in text
+        assert "✅ LLM rate limit — no active limit" in text
         assert "✅ News — 1 usable items in 24h" in text
         assert "✅ Telegram delivery — sent 1 in 24h" in text
-        assert len(text.splitlines()) <= 10
+        # Stage 9: compact per-provider LLM usage breakdown on the existing card.
+        assert "groq: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        assert len(text.splitlines()) <= 12
         assert "CoinGecko id" not in text
         assert "price_state" not in text
         assert "$" not in text
@@ -416,7 +418,7 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
             now=now,
         )
 
-        assert "⚠️ Groq rate limit — active until 17:00 UTC" in text
+        assert "⚠️ LLM rate limit — active until 17:00 UTC" in text
     finally:
         reset_llm_rate_limit_backoffs()
         await engine.dispose()
@@ -447,7 +449,7 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert "⚠️ Groq rate limit — recent limit, retry_after 10" in text
+        assert "⚠️ LLM rate limit — recent limit, retry_after 10" in text
     finally:
         await engine.dispose()
 
@@ -833,5 +835,60 @@ async def test_system_status_delivery_no_rows_is_compact_warning():
         assert "⚠️ Telegram delivery — no delivery rows in 24h" in text
         assert "Blocked users:" not in text
         assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_shows_per_provider_llm_breakdown():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            # groq: 2 success, 1 rate_limit, 1 timeout, plus 1 "other" status (invalid_json)
+            # that must count toward total calls but not toward any bucket.
+            for status in ("success", "success", "rate_limit", "timeout", "invalid_json"):
+                session.add(
+                    LlmUsageLog(
+                        provider="groq",
+                        model="event-model",
+                        call_type="event_analysis",
+                        status=status,
+                        created_at=now - timedelta(minutes=10),
+                    )
+                )
+            session.add(
+                LlmUsageLog(
+                    provider="cerebras",
+                    model="cerebras-model",
+                    call_type="event_analysis",
+                    status="success",
+                    created_at=now - timedelta(minutes=8),
+                )
+            )
+            # Stale row (older than 24h) must be excluded from the breakdown.
+            session.add(
+                LlmUsageLog(
+                    provider="mistral",
+                    model="mistral-model",
+                    call_type="event_analysis",
+                    status="timeout",
+                    created_at=now - timedelta(hours=30),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        # 5 total calls; the invalid_json row inflates the count but is not bucketed,
+        # and the fresh timeout row proves the timeout column counts.
+        assert "groq: 5 calls (2 ok, 1 rate_limit, 1 timeout) in 24h" in text
+        assert "cerebras: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        # Provider with only stale (>24h) usage is not surfaced.
+        assert "mistral:" not in text
     finally:
         await engine.dispose()

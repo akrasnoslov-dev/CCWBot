@@ -4,21 +4,59 @@ The bot asks for structured JSON so code can validate output before posting mess
 When parsing/validation fails, callers fall back to deterministic templates where callers allow it.
 """
 
-import asyncio
 import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from html import escape
 
-import httpx
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
 from bot.domain.supported_coins import display_symbol as coin_display_symbol
 from bot.news_titles import clean_news_title, clean_related_news_text
+from bot.services.llm import get_router
+
+# Several names below are re-exports: they now live in bot.services.llm but remain importable
+# from this module for backward compatibility. `import x as x` marks a re-export intentionally
+# so the linter does not flag it as unused. AIGroqRateLimitError stays an alias of the
+# provider-agnostic error type.
+from bot.services.llm.errors import (
+    AIGroqRateLimitError,
+    AIInvalidJsonError,
+)
+from bot.services.llm.errors import (
+    AIProviderRateLimitError as AIProviderRateLimitError,
+)
+from bot.services.llm.errors import (
+    AISchemaValidationError as AISchemaValidationError,
+)
+from bot.services.llm.errors import (
+    AllProvidersFailedError as AllProvidersFailedError,
+)
+from bot.services.llm.errors import (
+    LLMRateLimitBackoffActive as LLMRateLimitBackoffActive,
+)
+from bot.services.llm.telemetry import (
+    _llm_rate_limit_backoffs as _llm_rate_limit_backoffs,
+)
+from bot.services.llm.telemetry import (
+    classify_ai_error_reason as classify_ai_error_reason,
+)
+from bot.services.llm.telemetry import (
+    get_llm_rate_limit_backoff as get_llm_rate_limit_backoff,
+)
+from bot.services.llm.telemetry import (
+    is_json_validation_error,
+    is_rate_limit_error,
+    safe_error_message,
+    write_llm_usage_log,
+)
+from bot.services.llm.telemetry import (
+    mark_llm_usage_log_status as mark_llm_usage_log_status,
+)
+from bot.services.llm.telemetry import (
+    reset_llm_rate_limit_backoffs as reset_llm_rate_limit_backoffs,
+)
 
 load_dotenv()
 
@@ -47,13 +85,6 @@ GROQ_NEWS_INTELLIGENCE_MODEL = os.getenv("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-
 
 logger = logging.getLogger(__name__)
 
-_groq_client: AsyncOpenAI | None = None
-_GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS = _get_int_env(
-    "GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS", 300, minimum=1
-)
-_RATE_LIMIT_BACKOFF_CALL_TYPES = {"event_analysis", "market_heartbeat"}
-_llm_rate_limit_backoffs: dict[tuple[str, str], datetime] = {}
-
 SYSTEM_PROMPT = "You are a careful crypto monitoring assistant."
 _RAW_DIAGNOSTIC_LINE_RE = re.compile(
     r"(?i)\b(move|change24h|change7d|threshold|interval|previous|current|price)\s*="
@@ -72,125 +103,31 @@ _RISK_REASON_GENERIC_RE = re.compile(
 _RISK_REASON_NEWS_RE = re.compile(r"(?i)\b(news|headline|headlines|sentiment|driver)\b")
 
 
-class AIGroqRateLimitError(RuntimeError):
-    """Raised when Groq refuses a request because the account is rate limited."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        provider: str = "groq",
-        model: str | None = None,
-        retry_after_seconds: int | None = None,
-        limited_until: datetime | None = None,
-    ):
-        super().__init__(message)
-        self.provider = provider
-        self.model = model
-        self.retry_after_seconds = retry_after_seconds
-        self.limited_until = limited_until
-
-
-class LLMRateLimitBackoffActive(RuntimeError):
-    """Raised when a provider/model is already in temporary rate-limit backoff."""
-
-    def __init__(self, *, provider: str, model: str, limited_until: datetime):
-        super().__init__(
-            f"{provider} model {model} is rate-limited until {limited_until.isoformat()}"
-        )
-        self.provider = provider
-        self.model = model
-        self.limited_until = limited_until
-
-
-class AIInvalidJsonError(RuntimeError):
-    """Raised when the provider response is not valid JSON."""
-
-    def __init__(self, message: str, raw_content: str | None = None):
-        super().__init__(message)
-        self.raw_content = raw_content
-
-
-class AISchemaValidationError(RuntimeError):
-    """Raised when validated JSON does not match the expected schema."""
-
-
 class LLMJsonResult(tuple):
-    """Tuple-compatible raw JSON result with attached usage log id."""
+    """Tuple-compatible raw JSON result with attached usage log id and provider/model.
+
+    Remains a 2-tuple ``(raw_content, parsed)`` for backward compatibility; ``provider`` and
+    ``model`` expose which provider actually answered so callers can attribute the analysis.
+    """
 
     usage_log_id: int | None
+    provider: str | None
+    model: str | None
 
-    def __new__(cls, raw_content: str, parsed: dict, usage_log_id: int | None = None):
+    def __new__(
+        cls,
+        raw_content: str,
+        parsed: dict,
+        usage_log_id: int | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+    ):
         value = super().__new__(cls, (raw_content, parsed))
         value.usage_log_id = usage_log_id
+        value.provider = provider
+        value.model = model
         return value
-
-
-def classify_ai_error_reason(error: Exception) -> str:
-    """Return admin-safe LLM failure reason."""
-    if isinstance(error, LLMRateLimitBackoffActive):
-        return "rate_limit_backoff_active"
-    if isinstance(error, AIGroqRateLimitError) or _is_groq_rate_limit_error(error):
-        return "rate_limit"
-    if isinstance(error, AIInvalidJsonError):
-        return "invalid_json"
-    if isinstance(error, AISchemaValidationError):
-        return "schema_validation_failed"
-    if isinstance(error, (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException)):
-        return "timeout"
-    status_code = getattr(error, "status_code", None)
-    response = getattr(error, "response", None)
-    response_status_code = getattr(response, "status_code", None)
-    effective_status_code = status_code or response_status_code
-    if effective_status_code in {401, 403}:
-        return "auth_error"
-    if effective_status_code is not None:
-        try:
-            status_code_int = int(effective_status_code)
-        except (TypeError, ValueError):
-            status_code_int = None
-        if status_code_int is not None and 400 <= status_code_int < 500:
-            return "provider_4xx"
-        if status_code_int is not None and status_code_int >= 500:
-            return "provider_5xx"
-    message = str(error).lower()
-    class_name = error.__class__.__name__.lower()
-    if (
-        "api key" in message
-        or "api_key" in message
-        or "unauthorized" in message
-        or "forbidden" in message
-    ):
-        if "not configured" in message or "missing" in message:
-            return "config_missing"
-        return "auth_error"
-    if "timeout" in message or "timed out" in message:
-        return "timeout"
-    if "empty response" in message or "response was empty" in message:
-        return "empty_response"
-    if "connection" in message or "network" in message or "apiconnectionerror" in class_name:
-        return "network_error"
-    return "other_error"
-
-
-def _usage_status_for_error(error: Exception) -> str:
-    reason = classify_ai_error_reason(error)
-    if reason == "rate_limit":
-        return "rate_limit"
-    if reason == "invalid_json":
-        return "invalid_json"
-    if reason == "schema_validation_failed" or _is_groq_json_validation_error(error):
-        return "schema_error"
-    if reason == "timeout":
-        return "timeout"
-    if reason == "auth_error":
-        return "auth_error"
-    return "other_error"
-
-
-def _safe_error_message(error: Exception, max_chars: int = 500) -> str:
-    message = " ".join(str(error).split())
-    return message[:max_chars]
 
 
 def _groq_json_mode_enabled() -> bool:
@@ -204,398 +141,6 @@ def _groq_json_mode_retry_plain_enabled() -> bool:
         "yes",
         "on",
     }
-
-
-def _is_groq_json_validation_error(error: Exception) -> bool:
-    message = str(error).lower()
-    return (
-        "json_validate_failed" in message
-        or "validate json" in message
-        or "json validation" in message
-    )
-
-
-def _is_groq_rate_limit_error(error: Exception) -> bool:
-    if isinstance(error, AIGroqRateLimitError):
-        return True
-    status_code = getattr(error, "status_code", None)
-    response = getattr(error, "response", None)
-    if status_code == 429 or getattr(response, "status_code", None) == 429:
-        return True
-    message = str(error).lower()
-    return (
-        "429" in message
-        or "rate limit" in message
-        or "rate_limit" in message
-        or "tokens per day" in message
-    )
-
-
-def get_groq_client() -> AsyncOpenAI:
-    """Create the Groq client only when an AI call is actually needed."""
-    global _groq_client
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not configured.")
-    if _groq_client is None:
-        _groq_client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://api.groq.com/openai/v1",
-            timeout=httpx.Timeout(20.0, connect=10.0),
-            max_retries=0,
-        )
-    return _groq_client
-
-
-def _message_input_chars(messages: list[dict]) -> int:
-    return sum(len(str(message.get("content") or "")) for message in messages)
-
-
-def _response_content(response) -> str:
-    try:
-        return response.choices[0].message.content or ""
-    except (AttributeError, IndexError, TypeError):
-        return ""
-
-
-def _usage_int(response, name: str) -> int | None:
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return None
-    value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _headers_from_error(error: Exception):
-    response = getattr(error, "response", None)
-    return getattr(response, "headers", None)
-
-
-def _header_value(headers, name: str) -> str | None:
-    if headers is None:
-        return None
-    for candidate in (name, name.lower(), name.upper()):
-        try:
-            value = headers.get(candidate)
-        except AttributeError:
-            value = None
-        if value is not None:
-            return str(value)
-    return None
-
-
-def _rate_limit_header_payload(headers) -> dict:
-    return {
-        "rate_limit_limit_requests": _header_value(headers, "x-ratelimit-limit-requests"),
-        "rate_limit_remaining_requests": _header_value(
-            headers, "x-ratelimit-remaining-requests"
-        ),
-        "rate_limit_reset_requests": _header_value(headers, "x-ratelimit-reset-requests"),
-        "rate_limit_limit_tokens": _header_value(headers, "x-ratelimit-limit-tokens"),
-        "rate_limit_remaining_tokens": _header_value(headers, "x-ratelimit-remaining-tokens"),
-        "rate_limit_reset_tokens": _header_value(headers, "x-ratelimit-reset-tokens"),
-        "retry_after": _header_value(headers, "retry-after"),
-    }
-
-
-def _parse_retry_after_header(value: str | None, now: datetime) -> int | None:
-    if not value:
-        return None
-    stripped = str(value).strip()
-    try:
-        seconds = int(float(stripped))
-    except ValueError:
-        seconds = None
-    if seconds is not None:
-        return max(seconds, 1)
-    try:
-        retry_at = parsedate_to_datetime(stripped)
-    except (TypeError, ValueError, IndexError, OverflowError):
-        return None
-    if retry_at.tzinfo is None:
-        retry_at = retry_at.replace(tzinfo=timezone.utc)
-    return max(int((retry_at.astimezone(timezone.utc) - now).total_seconds()), 1)
-
-
-def _parse_retry_delay_text(value: str | None) -> int | None:
-    if not value:
-        return None
-    text = str(value).lower()
-    match = re.search(
-        r"(?:try again in|retry after|retry in)\s+"
-        r"(?:(?P<hours>\d+(?:\.\d+)?)\s*h(?:ours?)?)?\s*"
-        r"(?:(?P<minutes>\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?)?\s*"
-        r"(?:(?P<seconds>\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?)?",
-        text,
-    )
-    if not match:
-        return None
-    total = 0.0
-    for name, multiplier in (("hours", 3600), ("minutes", 60), ("seconds", 1)):
-        raw = match.group(name)
-        if raw:
-            total += float(raw) * multiplier
-    if total <= 0:
-        return None
-    return max(int(total), 1)
-
-
-def _retry_after_seconds_from_rate_limit(
-    error: Exception,
-    headers,
-    *,
-    now: datetime,
-) -> int:
-    for header_name in (
-        "retry-after",
-        "x-ratelimit-reset-tokens",
-        "x-ratelimit-reset-requests",
-    ):
-        retry_after = _parse_retry_after_header(_header_value(headers, header_name), now)
-        if retry_after is not None:
-            return retry_after
-        retry_after = _parse_retry_delay_text(_header_value(headers, header_name))
-        if retry_after is not None:
-            return retry_after
-    retry_after = _parse_retry_delay_text(str(error))
-    if retry_after is not None:
-        return retry_after
-    return _GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS
-
-
-def _active_rate_limit_backoff(
-    *,
-    provider: str,
-    model: str,
-    now: datetime | None = None,
-) -> datetime | None:
-    now = now or datetime.now(timezone.utc)
-    key = (provider, model)
-    limited_until = _llm_rate_limit_backoffs.get(key)
-    if limited_until is None:
-        return None
-    if limited_until.tzinfo is None:
-        limited_until = limited_until.replace(tzinfo=timezone.utc)
-    limited_until = limited_until.astimezone(timezone.utc)
-    if limited_until <= now:
-        _llm_rate_limit_backoffs.pop(key, None)
-        return None
-    return limited_until
-
-
-def get_llm_rate_limit_backoff(
-    *,
-    provider: str = "groq",
-    model: str,
-    now: datetime | None = None,
-) -> datetime | None:
-    """Return the active provider/model backoff expiry, if any."""
-    return _active_rate_limit_backoff(provider=provider, model=model, now=now)
-
-
-def reset_llm_rate_limit_backoffs() -> None:
-    """Clear in-memory provider/model backoffs for tests and controlled restarts."""
-    _llm_rate_limit_backoffs.clear()
-
-
-def _start_llm_rate_limit_backoff(
-    *,
-    provider: str,
-    model: str,
-    error: Exception,
-    headers,
-) -> tuple[int, datetime]:
-    now = datetime.now(timezone.utc)
-    retry_after_seconds = _retry_after_seconds_from_rate_limit(error, headers, now=now)
-    limited_until = now + timedelta(seconds=retry_after_seconds)
-    key = (provider, model)
-    existing = _active_rate_limit_backoff(provider=provider, model=model, now=now)
-    if existing and existing > limited_until:
-        limited_until = existing
-        retry_after_seconds = max(int((limited_until - now).total_seconds()), 1)
-    _llm_rate_limit_backoffs[key] = limited_until
-    logger.warning(
-        "ops_event=llm_rate_limit_started provider=%s model=%s call_type=unknown "
-        "retry_after_seconds=%s",
-        provider,
-        model,
-        retry_after_seconds,
-    )
-    return retry_after_seconds, limited_until
-
-
-async def _write_llm_usage_log(
-    *,
-    call_type: str,
-    symbol: str | None,
-    model: str,
-    status: str,
-    input_chars: int | None,
-    output_chars: int | None,
-    max_tokens: int | None,
-    headers=None,
-    response=None,
-    error_reason: str | None = None,
-    error_message: str | None = None,
-) -> int | None:
-    try:
-        from bot.db.database import save_llm_usage_log
-        from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
-
-        if not DB_ENABLED or not DB_SESSION_LOCAL:
-            return None
-        async with DB_SESSION_LOCAL() as session:
-            row = await save_llm_usage_log(
-                session,
-                provider="groq",
-                model=model,
-                call_type=call_type,
-                symbol=symbol,
-                status=status,
-                prompt_tokens=_usage_int(response, "prompt_tokens"),
-                completion_tokens=_usage_int(response, "completion_tokens"),
-                total_tokens=_usage_int(response, "total_tokens"),
-                input_chars=input_chars,
-                output_chars=output_chars,
-                max_tokens=max_tokens,
-                error_reason=error_reason,
-                error_message=error_message,
-                **_rate_limit_header_payload(headers),
-            )
-            return row.id
-    except Exception as log_error:
-        logger.debug("LLM usage logging failed: %s", log_error)
-        return None
-
-
-async def mark_llm_usage_log_status(
-    usage_log_id: int | None,
-    *,
-    status: str,
-    error_reason: str | None = None,
-    error_message: str | None = None,
-) -> None:
-    if usage_log_id is None:
-        return
-    try:
-        from bot.db.database import update_llm_usage_log_status
-        from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
-
-        if not DB_ENABLED or not DB_SESSION_LOCAL:
-            return
-        async with DB_SESSION_LOCAL() as session:
-            await update_llm_usage_log_status(
-                session,
-                usage_log_id=usage_log_id,
-                status=status,
-                error_reason=error_reason,
-                error_message=error_message,
-            )
-    except Exception as log_error:
-        logger.debug("LLM usage status update failed: %s", log_error)
-
-
-async def _run_groq_chat_completion(
-    *,
-    call_type: str,
-    symbol: str | None,
-    model: str,
-    messages: list[dict],
-    max_tokens: int,
-    response_format: dict | None,
-    timeout: int = 15,
-):
-    input_chars = _message_input_chars(messages)
-    provider = "groq"
-    limited_until = None
-    if call_type in _RATE_LIMIT_BACKOFF_CALL_TYPES:
-        limited_until = _active_rate_limit_backoff(provider=provider, model=model)
-    if limited_until is not None:
-        await _write_llm_usage_log(
-            call_type=call_type,
-            symbol=symbol,
-            model=model,
-            status="skipped_due_to_rate_limit",
-            input_chars=input_chars,
-            output_chars=None,
-            max_tokens=max_tokens,
-            error_reason="rate_limit_backoff_active",
-            error_message=f"{provider} model {model} is limited until {limited_until.isoformat()}",
-        )
-        logger.info(
-            "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
-            "status=skipped_due_to_rate_limit",
-            provider,
-            model,
-            call_type,
-        )
-        raise LLMRateLimitBackoffActive(
-            provider=provider,
-            model=model,
-            limited_until=limited_until,
-        )
-
-    client = get_groq_client()
-    request_kwargs = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.0,
-        "max_tokens": max_tokens,
-    }
-    if response_format is not None:
-        request_kwargs["response_format"] = response_format
-
-    try:
-        completions = client.chat.completions
-        raw_resource = getattr(completions, "with_raw_response", None)
-        raw_create = getattr(raw_resource, "create", None)
-        if raw_create is not None:
-            raw_response = await asyncio.wait_for(raw_create(**request_kwargs), timeout=timeout)
-            headers = getattr(raw_response, "headers", None)
-            response = raw_response.parse()
-        else:
-            response = await asyncio.wait_for(completions.create(**request_kwargs), timeout=timeout)
-            headers = getattr(response, "headers", None)
-    except Exception as error:
-        headers = _headers_from_error(error)
-        status = _usage_status_for_error(error)
-        await _write_llm_usage_log(
-            call_type=call_type,
-            symbol=symbol,
-            model=model,
-            status=status,
-            input_chars=input_chars,
-            output_chars=None,
-            max_tokens=max_tokens,
-            headers=headers,
-            error_reason=classify_ai_error_reason(error),
-            error_message=_safe_error_message(error),
-        )
-        if _is_groq_rate_limit_error(error):
-            retry_after_seconds, limited_until = _start_llm_rate_limit_backoff(
-                provider=provider,
-                model=model,
-                error=error,
-                headers=headers,
-            )
-            raise AIGroqRateLimitError(
-                str(error),
-                provider=provider,
-                model=model,
-                retry_after_seconds=retry_after_seconds,
-                limited_until=limited_until,
-            ) from error
-        raise
-    logger.info(
-        "ops_event=llm_call_completed provider=%s model=%s call_type=%s status=success",
-        provider,
-        model,
-        call_type,
-    )
-    return response, headers, input_chars
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
@@ -1277,52 +822,51 @@ async def _ask_json_with_usage(
     ]
     json_mode_enabled = _groq_json_mode_enabled()
     response_format = {"type": "json_object"} if json_mode_enabled else None
-    selected_model = model or GROQ_MODEL
+    # Honour an explicit Groq model override for the primary provider; fallback providers use
+    # their own configured models.
+    model_overrides = {"groq": model} if model else None
 
     try:
-        response, headers, input_chars = await _run_groq_chat_completion(
+        result = await get_router().chat_completion(
             call_type=call_type,
-            symbol=symbol,
-            model=selected_model,
             messages=messages,
             max_tokens=max_tokens,
             response_format=response_format,
+            symbol=symbol,
+            model_overrides=model_overrides,
         )
     except Exception as error:
-        if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
-        if not json_mode_enabled or not _is_groq_json_validation_error(error):
+        # Rate-limit / all-providers-failed already carry the correct type from the router.
+        if is_rate_limit_error(error):
+            raise
+        if not json_mode_enabled or not is_json_validation_error(error):
             raise
         if not _groq_json_mode_retry_plain_enabled():
-            logger.warning("Groq JSON mode failed; using deterministic fallback.")
+            logger.warning("LLM JSON mode failed; using deterministic fallback.")
             return None, None
-        logger.warning("Groq JSON mode failed; retrying once without response_format.")
-        try:
-            response, headers, input_chars = await _run_groq_chat_completion(
-                call_type=call_type,
-                symbol=symbol,
-                model=selected_model,
-                messages=messages,
-                max_tokens=max_tokens,
-                response_format=None,
-            )
-        except Exception as retry_error:
-            if _is_groq_rate_limit_error(retry_error):
-                raise AIGroqRateLimitError(str(retry_error)) from retry_error
-            raise
-    raw_content = _response_content(response)
+        logger.warning("LLM JSON mode failed; retrying once without response_format.")
+        result = await get_router().chat_completion(
+            call_type=call_type,
+            messages=messages,
+            max_tokens=max_tokens,
+            response_format=None,
+            symbol=symbol,
+            model_overrides=model_overrides,
+        )
+    raw_content = result.raw_content
     parsed = _parse_json(raw_content)
     status = "success" if parsed is not None else "invalid_json"
-    usage_log_id = await _write_llm_usage_log(
+    usage_log_id = await write_llm_usage_log(
+        provider=result.provider,
         call_type=call_type,
         symbol=symbol,
-        model=selected_model,
+        model=result.model,
         status=status,
-        input_chars=input_chars,
+        input_chars=result.input_chars,
         output_chars=len(raw_content),
         max_tokens=max_tokens,
-        headers=headers,
-        response=response,
+        headers=result.headers,
+        response=result.response,
         error_reason=None if parsed is not None else "invalid_json",
         error_message=None if parsed is not None else "Provider response was not valid JSON.",
     )
@@ -1391,66 +935,65 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
 
-    try:
-        response, headers, input_chars = await _run_groq_chat_completion(
-            call_type="event_analysis",
-            symbol=symbol,
-            model=GROQ_EVENT_ANALYSIS_MODEL,
-            messages=messages,
-            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-            response_format=response_format,
-        )
-    except Exception as error:
-        if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
-        raise
-    raw_content = _response_content(response)
+    result = await get_router().chat_completion(
+        call_type="event_analysis",
+        messages=messages,
+        max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+        response_format=response_format,
+        symbol=symbol,
+    )
+    raw_content = result.raw_content
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
     cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as error:
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type="event_analysis",
             symbol=symbol,
-            model=GROQ_EVENT_ANALYSIS_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
-            error_message=_safe_error_message(error),
+            error_message=safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
     if not isinstance(parsed, dict):
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type="event_analysis",
             symbol=symbol,
-            model=GROQ_EVENT_ANALYSIS_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await _write_llm_usage_log(
+    usage_log_id = await write_llm_usage_log(
+        provider=result.provider,
         call_type="event_analysis",
         symbol=symbol,
-        model=GROQ_EVENT_ANALYSIS_MODEL,
+        model=result.model,
         status="success",
-        input_chars=input_chars,
+        input_chars=result.input_chars,
         output_chars=len(raw_content),
         max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-        headers=headers,
-        response=response,
+        headers=result.headers,
+        response=result.response,
     )
-    return LLMJsonResult(raw_content, parsed, usage_log_id)
+    return LLMJsonResult(
+        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+    )
 
 
 def build_market_heartbeat_prompt(input_payload: dict) -> str:
@@ -1492,66 +1035,65 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
 
-    try:
-        response, headers, input_chars = await _run_groq_chat_completion(
-            call_type="market_heartbeat",
-            symbol=symbol,
-            model=GROQ_MARKET_HEARTBEAT_MODEL,
-            messages=messages,
-            max_tokens=350,
-            response_format=response_format,
-        )
-    except Exception as error:
-        if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
-        raise
-    raw_content = _response_content(response)
+    result = await get_router().chat_completion(
+        call_type="market_heartbeat",
+        messages=messages,
+        max_tokens=350,
+        response_format=response_format,
+        symbol=symbol,
+    )
+    raw_content = result.raw_content
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
     cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as error:
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type="market_heartbeat",
             symbol=symbol,
-            model=GROQ_MARKET_HEARTBEAT_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=350,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
-            error_message=_safe_error_message(error),
+            error_message=safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
     if not isinstance(parsed, dict):
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type="market_heartbeat",
             symbol=symbol,
-            model=GROQ_MARKET_HEARTBEAT_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=350,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await _write_llm_usage_log(
+    usage_log_id = await write_llm_usage_log(
+        provider=result.provider,
         call_type="market_heartbeat",
         symbol=symbol,
-        model=GROQ_MARKET_HEARTBEAT_MODEL,
+        model=result.model,
         status="success",
-        input_chars=input_chars,
+        input_chars=result.input_chars,
         output_chars=len(raw_content),
         max_tokens=350,
-        headers=headers,
-        response=response,
+        headers=result.headers,
+        response=result.response,
     )
-    return LLMJsonResult(raw_content, parsed, usage_log_id)
+    return LLMJsonResult(
+        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+    )
 
 
 def build_market_report_prompt(input_payload: dict) -> str:
@@ -1606,67 +1148,66 @@ async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
     ]
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
 
-    try:
-        response, headers, input_chars = await _run_groq_chat_completion(
-            call_type=call_type,
-            symbol=None,
-            model=GROQ_REPORT_MODEL,
-            messages=messages,
-            max_tokens=800,
-            response_format=response_format,
-            timeout=20,
-        )
-    except Exception as error:
-        if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
-        raise
-    raw_content = _response_content(response)
+    result = await get_router().chat_completion(
+        call_type=call_type,
+        messages=messages,
+        max_tokens=800,
+        response_format=response_format,
+        timeout=20,
+        symbol=None,
+    )
+    raw_content = result.raw_content
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
     cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as error:
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type=call_type,
             symbol=None,
-            model=GROQ_REPORT_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=800,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
-            error_message=_safe_error_message(error),
+            error_message=safe_error_message(error),
         )
         raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
     if not isinstance(parsed, dict):
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type=call_type,
             symbol=None,
-            model=GROQ_REPORT_MODEL,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=800,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
             error_message="top-level JSON is not an object",
         )
         raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await _write_llm_usage_log(
+    usage_log_id = await write_llm_usage_log(
+        provider=result.provider,
         call_type=call_type,
         symbol=None,
-        model=GROQ_REPORT_MODEL,
+        model=result.model,
         status="success",
-        input_chars=input_chars,
+        input_chars=result.input_chars,
         output_chars=len(raw_content),
         max_tokens=800,
-        headers=headers,
-        response=response,
+        headers=result.headers,
+        response=result.response,
     )
-    return LLMJsonResult(raw_content, parsed, usage_log_id)
+    return LLMJsonResult(
+        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+    )
 
 
 async def ask_news_intelligence_raw(
@@ -1676,53 +1217,52 @@ async def ask_news_intelligence_raw(
     timeout: int = 20,
     max_tokens: int = 350,
 ) -> tuple[str, dict]:
-    """Ask Groq for one compact structured news intelligence JSON response."""
+    """Ask the LLM for one compact structured news intelligence JSON response."""
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
-    try:
-        response, headers, input_chars = await _run_groq_chat_completion(
-            call_type="news_intelligence",
-            symbol=None,
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens,
-            response_format=response_format,
-            timeout=timeout,
-        )
-    except Exception as error:
-        if _is_groq_rate_limit_error(error):
-            raise AIGroqRateLimitError(str(error)) from error
-        raise
+    result = await get_router().chat_completion(
+        call_type="news_intelligence",
+        messages=messages,
+        max_tokens=max_tokens,
+        response_format=response_format,
+        timeout=timeout,
+        symbol=None,
+        model_overrides={"groq": model} if model else None,
+    )
 
-    raw_content = _response_content(response)
+    raw_content = result.raw_content
     parsed = _parse_json(raw_content)
     if parsed is None:
-        await _write_llm_usage_log(
+        await write_llm_usage_log(
+            provider=result.provider,
             call_type="news_intelligence",
             symbol=None,
-            model=model,
+            model=result.model,
             status="invalid_json",
-            input_chars=input_chars,
+            input_chars=result.input_chars,
             output_chars=len(raw_content),
             max_tokens=max_tokens,
-            headers=headers,
-            response=response,
+            headers=result.headers,
+            response=result.response,
             error_reason="invalid_json",
             error_message="Provider response was not valid JSON.",
         )
         raise AIInvalidJsonError("Provider response was not valid JSON.", raw_content=raw_content)
 
-    usage_log_id = await _write_llm_usage_log(
+    usage_log_id = await write_llm_usage_log(
+        provider=result.provider,
         call_type="news_intelligence",
         symbol=None,
-        model=model,
+        model=result.model,
         status="success",
-        input_chars=input_chars,
+        input_chars=result.input_chars,
         output_chars=len(raw_content),
         max_tokens=max_tokens,
-        headers=headers,
-        response=response,
+        headers=result.headers,
+        response=result.response,
     )
-    return LLMJsonResult(raw_content, parsed, usage_log_id)
+    return LLMJsonResult(
+        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+    )
 
 
 async def create_ai_alert_message(

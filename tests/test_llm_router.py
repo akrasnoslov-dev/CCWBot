@@ -1,0 +1,308 @@
+"""Router fallback behaviour with mocked providers (no real provider calls)."""
+
+import asyncio
+
+import pytest
+
+from bot.services.llm import config
+from bot.services.llm.base_provider import BaseProvider, ProviderResult
+from bot.services.llm.errors import (
+    AIProviderRateLimitError,
+    AllProvidersFailedError,
+    LLMRateLimitBackoffActive,
+)
+from bot.services.llm.router import LLMRouter
+
+
+class FakeProvider(BaseProvider):
+    def __init__(self, name, behavior):
+        self.name = name
+        self._behavior = behavior
+        self.calls = 0
+
+    async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
+                              response_format, timeout=15):
+        self.calls += 1
+        behavior = self._behavior
+        if isinstance(behavior, BaseException):
+            raise behavior
+        if callable(behavior):
+            return behavior(name=self.name, model=model)
+        return behavior
+
+
+def _result(name, model="m"):
+    return ProviderResult(provider=name, model=model, raw_content="{}", input_chars=1)
+
+
+def _http_error(status_code):
+    err = RuntimeError(f"status {status_code}")
+    err.status_code = status_code
+    return err
+
+
+def _configure(monkeypatch, priority, keys):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
+    for provider in ("groq", "cerebras", "gemini", "mistral"):
+        env = config.api_key_env(provider)
+        if provider in keys:
+            monkeypatch.setenv(env, f"{provider}-key")
+        else:
+            monkeypatch.delenv(env, raising=False)
+
+
+async def _call(router, call_type="event_analysis"):
+    return await router.chat_completion(
+        call_type=call_type,
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        response_format=None,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_name", ["groq", "cerebras", "gemini", "mistral"])
+async def test_success_through_each_provider(monkeypatch, provider_name):
+    _configure(monkeypatch, [provider_name], {provider_name})
+    provider = FakeProvider(provider_name, lambda name, model: _result(name, model))
+    router = LLMRouter(registry={provider_name: provider})
+
+    result = await _call(router)
+
+    assert result.provider == provider_name
+    assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        AIProviderRateLimitError("429", provider="groq", model="m"),
+        asyncio.TimeoutError(),
+        _http_error(503),
+        _http_error(401),  # auth_error -> unusable provider, advance
+        RuntimeError("connection failed"),  # network_error -> advance
+    ],
+)
+async def test_fallback_to_next_provider(monkeypatch, failure):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider("groq", failure)
+    cerebras = FakeProvider("cerebras", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    result = await _call(router)
+
+    assert result.provider == "cerebras"
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_all_providers_rate_limited_raises_rate_limit(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider("groq", AIProviderRateLimitError("429", provider="groq")),
+            "cerebras": FakeProvider(
+                "cerebras", AIProviderRateLimitError("429", provider="cerebras")
+            ),
+        }
+    )
+
+    with pytest.raises(AIProviderRateLimitError):
+        await _call(router)
+
+
+@pytest.mark.asyncio
+async def test_all_providers_timeout_raises_all_failed(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider("groq", asyncio.TimeoutError()),
+            "cerebras": FakeProvider("cerebras", _http_error(500)),
+        }
+    )
+
+    with pytest.raises(AllProvidersFailedError):
+        await _call(router)
+
+
+@pytest.mark.asyncio
+async def test_all_providers_in_backoff_raises_backoff_active(monkeypatch):
+    from datetime import datetime, timezone
+
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    until = datetime.now(timezone.utc)
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider(
+                "groq", LLMRateLimitBackoffActive(provider="groq", model="m", limited_until=until)
+            ),
+            "cerebras": FakeProvider(
+                "cerebras",
+                LLMRateLimitBackoffActive(provider="cerebras", model="m", limited_until=until),
+            ),
+        }
+    )
+
+    with pytest.raises(LLMRateLimitBackoffActive):
+        await _call(router)
+
+
+@pytest.mark.asyncio
+async def test_deterministic_error_is_not_retried(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider("groq", _http_error(400))
+    cerebras = FakeProvider("cerebras", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    with pytest.raises(RuntimeError):
+        await _call(router)
+    assert cerebras.calls == 0  # 4xx is deterministic; do not fall through
+
+
+@pytest.mark.asyncio
+async def test_provider_without_api_key_is_excluded(monkeypatch):
+    # cerebras has no key, so it is excluded even though it is next in priority.
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq"})
+    groq = FakeProvider("groq", lambda name, model: _result(name, model))
+    cerebras = FakeProvider("cerebras", RuntimeError("should not be called"))
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    result = await _call(router)
+
+    assert result.provider == "groq"
+    assert cerebras.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_no_configured_providers_raises_all_failed(monkeypatch):
+    _configure(monkeypatch, ["groq"], set())
+    router = LLMRouter(registry={"groq": FakeProvider("groq", RuntimeError("x"))})
+
+    with pytest.raises(AllProvidersFailedError):
+        await _call(router)
+
+
+def test_provider_priority_per_call_type_override(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cerebras")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "mistral,groq")
+    assert config.provider_priority("event_analysis") == ["mistral", "groq"]
+    # Report/heartbeat with no override fall back to the global priority.
+    assert config.provider_priority("daily_report") == ["groq", "cerebras"]
+
+
+def test_provider_priority_filters_unknown_tokens(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "foo, groq , bar,cerebras")
+    monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
+    assert config.provider_priority("event_analysis") == ["groq", "cerebras"]
+
+
+def test_provider_priority_defaults_when_unset(monkeypatch):
+    monkeypatch.delenv("LLM_PROVIDER_PRIORITY", raising=False)
+    monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
+    assert config.provider_priority("event_analysis") == ["groq", "cerebras", "gemini", "mistral"]
+
+
+def test_model_for_resolves_per_provider(monkeypatch):
+    monkeypatch.delenv("GROQ_MARKET_HEARTBEAT_MODEL", raising=False)
+    monkeypatch.delenv("CEREBRAS_MODEL", raising=False)
+    assert config.model_for("groq", "market_heartbeat") == "llama-3.1-8b-instant"
+    assert config.model_for("cerebras", "daily_report") == "llama-3.3-70b"
+    monkeypatch.setenv("CEREBRAS_MODEL", "custom-cerebras")
+    assert config.model_for("cerebras", "event_analysis") == "custom-cerebras"
+
+
+@pytest.mark.asyncio
+async def test_backoff_skip_then_next_provider_succeeds(monkeypatch):
+    # The feature's core payoff: a provider already in active backoff is skipped (no HTTP call)
+    # and the next configured provider answers.
+    from datetime import datetime, timezone
+
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider(
+        "groq",
+        LLMRateLimitBackoffActive(
+            provider="groq", model="m", limited_until=datetime.now(timezone.utc)
+        ),
+    )
+    cerebras = FakeProvider("cerebras", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    result = await _call(router)
+
+    assert result.provider == "cerebras"
+    assert groq.calls == 1  # the skip still counts as one chat_completion invocation
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_mixed_failure_exhaustion_prefers_rate_limit(monkeypatch):
+    # timeout then rate_limit -> rate-limit wins so callers reach the rate-limited fallback.
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider("groq", asyncio.TimeoutError()),
+            "cerebras": FakeProvider(
+                "cerebras", AIProviderRateLimitError("429", provider="cerebras")
+            ),
+        }
+    )
+
+    with pytest.raises(AIProviderRateLimitError):
+        await _call(router)
+
+
+@pytest.mark.asyncio
+async def test_mixed_prebackoff_and_live_rate_limit_raises_rate_limit(monkeypatch):
+    # First provider is in active backoff (skip), second returns a live 429. Because a real
+    # attempt happened, this is NOT only-pre-backoff, so it surfaces as a rate-limit error
+    # (recorded as a failure), not skipped_due_to_rate_limit.
+    from datetime import datetime, timezone
+
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider(
+                "groq",
+                LLMRateLimitBackoffActive(
+                    provider="groq", model="m", limited_until=datetime.now(timezone.utc)
+                ),
+            ),
+            "cerebras": FakeProvider(
+                "cerebras", AIProviderRateLimitError("429", provider="cerebras")
+            ),
+        }
+    )
+
+    with pytest.raises(AIProviderRateLimitError):
+        await _call(router)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_attributed_to_rate_limited_provider(monkeypatch):
+    # groq is rate-limited, later providers time out; the raised error should name groq,
+    # not the last provider in the chain.
+    _configure(monkeypatch, ["groq", "cerebras", "gemini"], {"groq", "cerebras", "gemini"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider("groq", AIProviderRateLimitError("429", provider="groq")),
+            "cerebras": FakeProvider("cerebras", asyncio.TimeoutError()),
+            "gemini": FakeProvider("gemini", asyncio.TimeoutError()),
+        }
+    )
+
+    with pytest.raises(AIProviderRateLimitError) as raised:
+        await _call(router)
+    assert raised.value.provider == "groq"
+
+
+def test_safe_error_message_redacts_secret_fragments():
+    from bot.services.llm.telemetry import safe_error_message
+
+    msg = safe_error_message(
+        RuntimeError("Incorrect API key provided: sk-abcd1234efgh. Authorization: Bearer zzz9999")
+    )
+    assert "sk-abcd1234efgh" not in msg
+    assert "Bearer zzz9999" not in msg
+    assert "[redacted]" in msg
