@@ -34,7 +34,10 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
-- No paid LLM provider abstraction yet; Groq remains the current AI provider.
+- Groq is the primary LLM provider, with an optional Cerebras/Gemini/Mistral fallback chain
+  (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
+  `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker and automatic
+  load balancing (routing before a rate limit is hit) are not built yet.
 - Local `state.json` fallback is single-instance oriented.
 
 ## Project Structure
@@ -80,6 +83,11 @@ Common configuration:
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
+- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,cerebras,gemini,mistral`)
+- `LLM_EVENT_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
+- `CEREBRAS_API_KEY` / `CEREBRAS_MODEL`
+- `GEMINI_API_KEY` / `GEMINI_MODEL`
+- `MISTRAL_API_KEY` / `MISTRAL_MODEL`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
 - `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`

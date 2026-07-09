@@ -215,7 +215,7 @@ async def build_admin_system_status_text(
                 summary="no analysis telemetry",
             ),
             ComponentHealth(
-                "Groq rate limit",
+                "LLM rate limit",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL usage telemetry unavailable",
                 summary="no usage telemetry",
@@ -480,23 +480,23 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
             active_backoffs.append(f"{label} {model} limited until {_format_utc(limited_until)}")
     if active_backoffs:
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.WARN,
             active_backoffs[0],
             tuple(active_backoffs),
             summary=f"active until {_format_utc(active_until)[11:16]} UTC",
         )
 
+    # Provider-agnostic: reflect the whole fallback chain (Groq + Cerebras/Gemini/Mistral),
+    # not just Groq. Per-provider breakdown lives in the ops-agent llm_usage_summary collector.
     latest_usage = await session.scalar(
         select(LlmUsageLog)
-        .where(LlmUsageLog.provider == "groq")
         .order_by(LlmUsageLog.created_at.desc(), LlmUsageLog.id.desc())
         .limit(1)
     )
     since = now - timedelta(hours=24)
     latest_rate_limit = await session.scalar(
         select(LlmUsageLog)
-        .where(LlmUsageLog.provider == "groq")
         .where(LlmUsageLog.created_at >= since)
         .where(
             or_(
@@ -514,30 +514,30 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
             else ""
         )
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.WARN,
             (
-                f"recent {latest_rate_limit.status} "
+                f"recent {latest_rate_limit.provider} {latest_rate_limit.status} "
                 f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
             ),
             summary=f"recent limit{retry_after}",
         )
     if latest_usage is None:
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.UNKNOWN,
             "no LLM usage telemetry",
             summary="no usage telemetry",
         )
     if latest_usage.status == "success":
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.OK,
             f"latest usage success at {_format_utc(latest_usage.created_at)}",
             summary="no active limit",
         )
     return ComponentHealth(
-        "Groq rate limit",
+        "LLM rate limit",
         ComponentStatus.UNKNOWN,
         f"latest usage status {latest_usage.status} at {_format_utc(latest_usage.created_at)}",
         summary="no usage telemetry",

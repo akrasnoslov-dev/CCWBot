@@ -179,7 +179,7 @@ async def test_system_status_uses_real_fresh_telemetry():
         assert "✅ Database — connected" in text
         assert "✅ Market data — BTC, ETH, GRAM, SOL fresh" in text
         assert "✅ AI analysis — latest success 5m ago" in text
-        assert "✅ Groq rate limit — no active limit" in text
+        assert "✅ LLM rate limit — no active limit" in text
         assert "✅ News — 1 usable items in 24h" in text
         assert "✅ Telegram delivery — sent 1 in 24h" in text
         assert len(text.splitlines()) <= 10
@@ -416,7 +416,7 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
             now=now,
         )
 
-        assert "⚠️ Groq rate limit — active until 17:00 UTC" in text
+        assert "⚠️ LLM rate limit — active until 17:00 UTC" in text
     finally:
         reset_llm_rate_limit_backoffs()
         await engine.dispose()
@@ -447,7 +447,7 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert "⚠️ Groq rate limit — recent limit, retry_after 10" in text
+        assert "⚠️ LLM rate limit — recent limit, retry_after 10" in text
     finally:
         await engine.dispose()
 

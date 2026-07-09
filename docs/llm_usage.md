@@ -1,6 +1,52 @@
 # LLM Usage Reporting
 
-`llm_usage_logs` records one row per Groq call when database storage is enabled.
+`llm_usage_logs` records one row per LLM call attempt when database storage is enabled. The
+`provider` column names which provider handled the request (`groq`, `cerebras`, `gemini`, or
+`mistral`), so per-provider statistics come from grouping by `provider` — no separate telemetry
+system.
+
+## Provider fallback (redundancy)
+
+Groq is the primary LLM provider. Cerebras, Gemini, and Mistral form an ordered fallback chain,
+configured via `LLM_PROVIDER_PRIORITY` (default `groq,cerebras,gemini,mistral`) with optional
+per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEARTBEAT_PROVIDERS`.
+All four providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
+OpenAI-compatible endpoint), so no extra client dependency is required.
+
+The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
+advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and surfaces
+deterministic errors (e.g. a 4xx bad request or JSON-mode validation failure) to the caller
+unchanged. When every provider is exhausted it raises the exception each existing caller already
+handles, so the deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they
+now trigger only after the whole chain is exhausted, not on the first Groq rate limit.
+
+A provider with no API key is excluded from the chain (logged once), so leaving the fallback keys
+blank keeps Groq-only behaviour. Rate-limit backoff is tracked per `(provider, model)`. The
+runtime LLM entry point remains `bot/services/ai_agent_groq.py`, now a thin facade over the router
+that keeps all public names/signatures (`AIGroqRateLimitError` is an alias of the provider-agnostic
+`AIProviderRateLimitError`).
+
+The persisted analysis/report provider and model reflect the provider that actually answered:
+`event_ai_analyses.provider/model` and `market_reports.provider/model` follow the fallback, not a
+hardcoded `groq`. Admin diagnostics (`bot/observability/system_status.py`) and the ops-agent
+`llm_usage_summary` collector are provider-agnostic.
+
+Per-provider usage counts (24h) — group by `provider`:
+
+```sql
+SELECT
+  provider,
+  status,
+  count(*) AS calls,
+  sum(total_tokens) AS total_tokens,
+  count(*) FILTER (WHERE status = 'rate_limit') AS rate_limit_errors,
+  count(*) FILTER (WHERE status = 'timeout') AS timeout_errors,
+  max(created_at) AS latest_at
+FROM llm_usage_logs
+WHERE created_at >= now() - interval '24 hours'
+GROUP BY provider, status
+ORDER BY provider, status;
+```
 
 Failure reasons stored in `llm_usage_logs.error_reason` and shown in admin diagnostics use
 snake_case safe categories:
