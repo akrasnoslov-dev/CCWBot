@@ -182,7 +182,9 @@ async def test_system_status_uses_real_fresh_telemetry():
         assert "✅ LLM rate limit — no active limit" in text
         assert "✅ News — 1 usable items in 24h" in text
         assert "✅ Telegram delivery — sent 1 in 24h" in text
-        assert len(text.splitlines()) <= 10
+        # Stage 9: compact per-provider LLM usage breakdown on the existing card.
+        assert "groq: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        assert len(text.splitlines()) <= 12
         assert "CoinGecko id" not in text
         assert "price_state" not in text
         assert "$" not in text
@@ -833,5 +835,56 @@ async def test_system_status_delivery_no_rows_is_compact_warning():
         assert "⚠️ Telegram delivery — no delivery rows in 24h" in text
         assert "Blocked users:" not in text
         assert "blocked_users" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_shows_per_provider_llm_breakdown():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            for status in ("success", "success", "rate_limit"):
+                session.add(
+                    LlmUsageLog(
+                        provider="groq",
+                        model="event-model",
+                        call_type="event_analysis",
+                        status=status,
+                        created_at=now - timedelta(minutes=10),
+                    )
+                )
+            session.add(
+                LlmUsageLog(
+                    provider="cerebras",
+                    model="cerebras-model",
+                    call_type="event_analysis",
+                    status="success",
+                    created_at=now - timedelta(minutes=8),
+                )
+            )
+            # Stale row (older than 24h) must be excluded from the breakdown.
+            session.add(
+                LlmUsageLog(
+                    provider="mistral",
+                    model="mistral-model",
+                    call_type="event_analysis",
+                    status="timeout",
+                    created_at=now - timedelta(hours=30),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "groq: 3 calls (2 ok, 1 rate_limit, 0 timeout) in 24h" in text
+        assert "cerebras: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        # Provider with only stale (>24h) usage is not surfaced.
+        assert "mistral:" not in text
     finally:
         await engine.dispose()

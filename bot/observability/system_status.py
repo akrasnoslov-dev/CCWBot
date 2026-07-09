@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.database import (
@@ -257,6 +257,12 @@ async def build_admin_system_status_text(
             )
             ai_health = await _ai_health(session, now=now)
             rate_limit_health = await _rate_limit_health(session, now=now)
+            provider_rows = await _llm_provider_breakdown_rows(session, now=now)
+            if provider_rows:
+                rate_limit_health = replace(
+                    rate_limit_health,
+                    info_rows=rate_limit_health.info_rows + provider_rows,
+                )
             news_health = await _news_health(session, now=now)
             delivery_health = await _delivery_health(session, now=now)
     except Exception:
@@ -465,6 +471,43 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
         summary=summary,
         problem_rows=tuple(problem_rows),
     )
+
+
+async def _llm_provider_breakdown_rows(
+    session: AsyncSession, *, now: datetime
+) -> tuple[str, ...]:
+    """Compact per-provider LLM usage counts over the last 24h, sourced from llm_usage_logs.
+
+    Surfaces Stage 9 metrics on the existing admin status card (one line per provider that
+    handled a call), so an operator does not have to run SQL by hand. Read-only; provider/status
+    names only (no secrets, tokens, or payloads).
+    """
+    since = now - timedelta(hours=24)
+    rows = (
+        await session.execute(
+            select(
+                LlmUsageLog.provider,
+                func.count().label("calls"),
+                func.sum(case((LlmUsageLog.status == "success", 1), else_=0)).label("ok"),
+                func.sum(
+                    case((LlmUsageLog.status == "rate_limit", 1), else_=0)
+                ).label("rate_limited"),
+                func.sum(case((LlmUsageLog.status == "timeout", 1), else_=0)).label("timeouts"),
+            )
+            .where(LlmUsageLog.created_at >= since)
+            .group_by(LlmUsageLog.provider)
+            .order_by(func.count().desc(), LlmUsageLog.provider)
+        )
+    ).all()
+    breakdown: list[str] = []
+    for row in rows:
+        provider = row.provider or "unknown"
+        breakdown.append(
+            f"{provider}: {int(row.calls)} calls "
+            f"({int(row.ok or 0)} ok, {int(row.rate_limited or 0)} rate_limit, "
+            f"{int(row.timeouts or 0)} timeout) in 24h"
+        )
+    return tuple(breakdown)
 
 
 async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
