@@ -845,7 +845,9 @@ async def test_system_status_shows_per_provider_llm_breakdown():
     engine, session_local = await build_session_factory()
     try:
         async with session_local() as session:
-            for status in ("success", "success", "rate_limit"):
+            # groq: 2 success, 1 rate_limit, 1 timeout, plus 1 "other" status (invalid_json)
+            # that must count toward total calls but not toward any bucket.
+            for status in ("success", "success", "rate_limit", "timeout", "invalid_json"):
                 session.add(
                     LlmUsageLog(
                         provider="groq",
@@ -882,7 +884,9 @@ async def test_system_status_shows_per_provider_llm_breakdown():
             now=now,
         )
 
-        assert "groq: 3 calls (2 ok, 1 rate_limit, 0 timeout) in 24h" in text
+        # 5 total calls; the invalid_json row inflates the count but is not bucketed,
+        # and the fresh timeout row proves the timeout column counts.
+        assert "groq: 5 calls (2 ok, 1 rate_limit, 1 timeout) in 24h" in text
         assert "cerebras: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
         # Provider with only stale (>24h) usage is not surfaced.
         assert "mistral:" not in text
