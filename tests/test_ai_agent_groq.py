@@ -2,12 +2,34 @@ import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.runtime as runtime
 import bot.services.ai_agent_groq as ai_agent_groq
 from bot.db.database import Base, LlmUsageLog
+from bot.services.llm import base_provider, groq_provider, telemetry
+
+
+def _set_groq_client(monkeypatch, client):
+    # The Groq chat client now lives on the GroqProvider (bot.services.llm.groq_provider),
+    # not on the ai_agent_groq facade. Tests inject a fake client there.
+    monkeypatch.setattr(groq_provider.get_provider(), "_client", client)
+
+
+@pytest.fixture(autouse=True)
+def _single_groq_provider(monkeypatch):
+    # Keep the fallback chain single-provider (Groq only) so these facade tests are deterministic,
+    # and start each test with a clean backoff registry and no cached client.
+    telemetry.reset_llm_rate_limit_backoffs()
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq")
+    monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
+    yield
+    telemetry.reset_llm_rate_limit_backoffs()
+    monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
+
 
 ALERT_ARGS = {
     "previous_price": 100000.0,
@@ -143,7 +165,6 @@ def test_build_fallback_alert_message_omits_missing_7d_trend():
 
 def test_create_ai_alert_payload_uses_fallback_without_groq_api_key(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setattr(ai_agent_groq, "_groq_client", None)
     expected_fallback = ai_agent_groq.build_fallback_alert_message(
         ALERT_ARGS["previous_price"],
         ALERT_ARGS["current_price"],
@@ -171,7 +192,7 @@ def test_ask_json_mode_success_returns_parsed_payload(monkeypatch):
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    _set_groq_client(monkeypatch, fake_client)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -195,7 +216,7 @@ def test_ask_json_requests_json_object_and_returns_none_for_invalid_json(monkeyp
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    _set_groq_client(monkeypatch, fake_client)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -217,7 +238,7 @@ def test_ask_json_omits_response_format_when_json_mode_disabled(monkeypatch):
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "false")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    _set_groq_client(monkeypatch, fake_client)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -240,7 +261,7 @@ def test_ask_json_validation_failure_retries_without_response_format(monkeypatch
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
     monkeypatch.setenv("GROQ_JSON_MODE_RETRY_PLAIN", "true")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    _set_groq_client(monkeypatch, fake_client)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -260,7 +281,7 @@ def test_ask_json_validation_failure_returns_none_when_plain_retry_disabled(monk
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
     monkeypatch.setenv("GROQ_JSON_MODE_RETRY_PLAIN", "false")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    _set_groq_client(monkeypatch, fake_client)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -283,8 +304,8 @@ def test_ask_json_uses_hard_15_second_timeout(monkeypatch):
         return await awaitable
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
-    monkeypatch.setattr(ai_agent_groq.asyncio, "wait_for", fake_wait_for)
+    _set_groq_client(monkeypatch, fake_client)
+    monkeypatch.setattr(base_provider.asyncio, "wait_for", fake_wait_for)
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
@@ -299,11 +320,7 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
         try:
             monkeypatch.setattr(runtime, "DB_ENABLED", True)
             runtime.DB_SESSION_LOCAL.set(session_local)
-            monkeypatch.setattr(
-                ai_agent_groq,
-                "GROQ_EVENT_ANALYSIS_MODEL",
-                "event-model",
-            )
+            monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "event-model")
 
             class FakeCompletions:
                 async def create(self, **kwargs):
@@ -332,7 +349,7 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
                     )
 
             fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
-            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+            _set_groq_client(monkeypatch, fake_client)
 
             await ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"})
 
@@ -453,8 +470,8 @@ def test_ask_market_heartbeat_raw_uses_heartbeat_model_and_max_tokens(monkeypatc
             )
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
-    monkeypatch.setattr(ai_agent_groq, "GROQ_MARKET_HEARTBEAT_MODEL", "heartbeat-model")
-    monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+    monkeypatch.setenv("GROQ_MARKET_HEARTBEAT_MODEL", "heartbeat-model")
+    _set_groq_client(monkeypatch, fake_client)
 
     asyncio.run(ai_agent_groq.ask_market_heartbeat_raw({"symbol": "BTC"}))
 
@@ -494,7 +511,7 @@ def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
         try:
             monkeypatch.setattr(runtime, "DB_ENABLED", True)
             runtime.DB_SESSION_LOCAL.set(session_local)
-            monkeypatch.setattr(ai_agent_groq, "GROQ_REPORT_MODEL", "report-model")
+            monkeypatch.setenv("GROQ_REPORT_MODEL", "report-model")
 
             class FakeCompletions:
                 async def create(self, **kwargs):
@@ -529,7 +546,7 @@ def test_ask_market_report_raw_uses_report_model_and_logs_success(monkeypatch):
                     )
 
             fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
-            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+            _set_groq_client(monkeypatch, fake_client)
 
             await ai_agent_groq.ask_market_report_raw({"report_type": "daily", "coins": []})
 
@@ -595,7 +612,7 @@ def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
                     raise RateLimitError("429 rate limit")
 
             fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
-            monkeypatch.setattr(ai_agent_groq, "get_groq_client", lambda: fake_client)
+            _set_groq_client(monkeypatch, fake_client)
 
             try:
                 await ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"})

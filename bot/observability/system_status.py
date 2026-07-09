@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.database import (
@@ -215,7 +215,7 @@ async def build_admin_system_status_text(
                 summary="no analysis telemetry",
             ),
             ComponentHealth(
-                "Groq rate limit",
+                "LLM rate limit",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL usage telemetry unavailable",
                 summary="no usage telemetry",
@@ -257,6 +257,12 @@ async def build_admin_system_status_text(
             )
             ai_health = await _ai_health(session, now=now)
             rate_limit_health = await _rate_limit_health(session, now=now)
+            provider_rows = await _llm_provider_breakdown_rows(session, now=now)
+            if provider_rows:
+                rate_limit_health = replace(
+                    rate_limit_health,
+                    info_rows=rate_limit_health.info_rows + provider_rows,
+                )
             news_health = await _news_health(session, now=now)
             delivery_health = await _delivery_health(session, now=now)
     except Exception:
@@ -467,6 +473,43 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
     )
 
 
+async def _llm_provider_breakdown_rows(
+    session: AsyncSession, *, now: datetime
+) -> tuple[str, ...]:
+    """Compact per-provider LLM usage counts over the last 24h, sourced from llm_usage_logs.
+
+    Surfaces Stage 9 metrics on the existing admin status card (one line per provider that
+    handled a call), so an operator does not have to run SQL by hand. Read-only; provider/status
+    names only (no secrets, tokens, or payloads).
+    """
+    since = now - timedelta(hours=24)
+    rows = (
+        await session.execute(
+            select(
+                LlmUsageLog.provider,
+                func.count().label("calls"),
+                func.sum(case((LlmUsageLog.status == "success", 1), else_=0)).label("ok"),
+                func.sum(
+                    case((LlmUsageLog.status == "rate_limit", 1), else_=0)
+                ).label("rate_limited"),
+                func.sum(case((LlmUsageLog.status == "timeout", 1), else_=0)).label("timeouts"),
+            )
+            .where(LlmUsageLog.created_at >= since)
+            .group_by(LlmUsageLog.provider)
+            .order_by(func.count().desc(), LlmUsageLog.provider)
+        )
+    ).all()
+    breakdown: list[str] = []
+    for row in rows:
+        provider = row.provider or "unknown"
+        breakdown.append(
+            f"{provider}: {int(row.calls)} calls "
+            f"({int(row.ok or 0)} ok, {int(row.rate_limited or 0)} rate_limit, "
+            f"{int(row.timeouts or 0)} timeout) in 24h"
+        )
+    return tuple(breakdown)
+
+
 async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
     active_backoffs = []
     active_until: datetime | None = None
@@ -480,23 +523,23 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
             active_backoffs.append(f"{label} {model} limited until {_format_utc(limited_until)}")
     if active_backoffs:
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.WARN,
             active_backoffs[0],
             tuple(active_backoffs),
             summary=f"active until {_format_utc(active_until)[11:16]} UTC",
         )
 
+    # Provider-agnostic: reflect the whole fallback chain (Groq + Cerebras/Gemini/Mistral),
+    # not just Groq. Per-provider breakdown lives in the ops-agent llm_usage_summary collector.
     latest_usage = await session.scalar(
         select(LlmUsageLog)
-        .where(LlmUsageLog.provider == "groq")
         .order_by(LlmUsageLog.created_at.desc(), LlmUsageLog.id.desc())
         .limit(1)
     )
     since = now - timedelta(hours=24)
     latest_rate_limit = await session.scalar(
         select(LlmUsageLog)
-        .where(LlmUsageLog.provider == "groq")
         .where(LlmUsageLog.created_at >= since)
         .where(
             or_(
@@ -514,30 +557,30 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
             else ""
         )
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.WARN,
             (
-                f"recent {latest_rate_limit.status} "
+                f"recent {latest_rate_limit.provider} {latest_rate_limit.status} "
                 f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
             ),
             summary=f"recent limit{retry_after}",
         )
     if latest_usage is None:
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.UNKNOWN,
             "no LLM usage telemetry",
             summary="no usage telemetry",
         )
     if latest_usage.status == "success":
         return ComponentHealth(
-            "Groq rate limit",
+            "LLM rate limit",
             ComponentStatus.OK,
             f"latest usage success at {_format_utc(latest_usage.created_at)}",
             summary="no active limit",
         )
     return ComponentHealth(
-        "Groq rate limit",
+        "LLM rate limit",
         ComponentStatus.UNKNOWN,
         f"latest usage status {latest_usage.status} at {_format_utc(latest_usage.created_at)}",
         summary="no usage telemetry",

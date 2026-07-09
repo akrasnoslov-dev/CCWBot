@@ -157,6 +157,8 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         raw_input_json = json.dumps(input_payload, ensure_ascii=False, sort_keys=True)
         llm_result = await ask_market_report_raw(input_payload)
         usage_log_id = getattr(llm_result, "usage_log_id", None)
+        report_provider = getattr(llm_result, "provider", None) or "groq"
+        report_model = getattr(llm_result, "model", None) or GROQ_REPORT_MODEL
         raw_output_json, parsed = llm_result
         decision = validate_market_report_output(
             parsed,
@@ -179,6 +181,8 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=message,
             error_message=None,
+            provider=report_provider,
+            model=report_model,
         )
     except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
         if isinstance(error, MarketReportValidationError):
@@ -344,6 +348,8 @@ async def _save_or_remember_report(
     raw_output_json: str | None,
     telegram_message: str | None,
     error_message: str | None,
+    provider: str = "groq",
+    model: str = GROQ_REPORT_MODEL,
 ) -> MarketReport | dict[str, Any]:
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
@@ -357,8 +363,8 @@ async def _save_or_remember_report(
                 raw_output_json=raw_output_json,
                 telegram_message=telegram_message,
                 error_message=error_message,
-                provider="groq",
-                model=GROQ_REPORT_MODEL,
+                provider=provider,
+                model=model,
             )
 
     cached = {
@@ -370,8 +376,8 @@ async def _save_or_remember_report(
         "raw_output_json": raw_output_json,
         "telegram_message": telegram_message,
         "error_message": error_message,
-        "provider": "groq",
-        "model": GROQ_REPORT_MODEL,
+        "provider": provider,
+        "model": model,
     }
     _memory_report_cache[report_type] = cached
     return cached

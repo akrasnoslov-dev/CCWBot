@@ -2632,6 +2632,8 @@ async def _save_event_analysis_attempt(
     error_reason: str | None = None,
     market_event_id: int | None = None,
     plain_text: str | None = None,
+    provider: str = "groq",
+    model: str = GROQ_EVENT_ANALYSIS_MODEL,
 ) -> int | None:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return None
@@ -2645,7 +2647,8 @@ async def _save_event_analysis_attempt(
             raw_input_json=_json_dumps(input_payload),
             raw_output_json=raw_output_json,
             status=status,
-            model=GROQ_EVENT_ANALYSIS_MODEL,
+            provider=provider,
+            model=model,
             market_event_id=market_event_id,
             parsed_result_json=_json_dumps(parsed_result) if parsed_result is not None else None,
             should_alert=decision.should_alert if decision else None,
@@ -2859,10 +2862,14 @@ async def _create_event_analysis_decision(
     raw_output = None
     parsed = None
     usage_log_id = None
+    analysis_provider = "groq"
+    analysis_model = GROQ_EVENT_ANALYSIS_MODEL
     try:
         result = await ask_event_analysis_raw(input_payload)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
+        analysis_provider = getattr(result, "provider", None) or analysis_provider
+        analysis_model = getattr(result, "model", None) or analysis_model
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
@@ -2945,6 +2952,8 @@ async def _create_event_analysis_decision(
             parsed_result=normalized_parsed,
             error_message=str(error),
             error_reason=classify_ai_error_reason(schema_error),
+            provider=analysis_provider,
+            model=analysis_model,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -2973,6 +2982,8 @@ async def _create_event_analysis_decision(
             status="no_alert",
             parsed_result=normalized_parsed,
             decision=rejected_decision,
+            provider=analysis_provider,
+            model=analysis_model,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3019,6 +3030,8 @@ async def _create_event_analysis_decision(
         status=status,
         parsed_result=normalized_parsed,
         decision=decision,
+        provider=analysis_provider,
+        model=analysis_model,
     )
     decision_reason = (
         DECISION_REASON_LLM_SHOULD_ALERT
