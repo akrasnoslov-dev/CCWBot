@@ -44,8 +44,10 @@ _KNOWN_MODEL_FAMILY = (
 )
 LONG_SECRET_ALLOWLIST_RES = (
     # LLM model identifiers, optionally vendor-prefixed: meta-llama/llama-4-scout-17b-...,
-    # llama-3.3-70b-versatile, gemini-2.0-flash.
-    re.compile(rf"(?i)^(?:[a-z0-9._-]+/)?{_KNOWN_MODEL_FAMILY}[a-z0-9._/-]*$"),
+    # llama-3.3-70b-versatile, gemini-2.0-flash. The lookahead requires a version-like
+    # continuation after the family name so random tokens that merely start with a short
+    # family string stay masked.
+    re.compile(rf"(?i)^(?:[a-z0-9._-]+/)?{_KNOWN_MODEL_FAMILY}(?=$|[-._/0-9])[a-z0-9._/-]*$"),
     # Absolute POSIX file paths with a file extension (traceback locations).
     re.compile(r"^/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,5}$"),
     # Lowercase snake_case structural keys (event_instance_key, canonical event keys,
@@ -55,7 +57,13 @@ LONG_SECRET_ALLOWLIST_RES = (
 )
 # Snake_case tokens starting with a credential-style prefix are never structural keys.
 _SECRET_PREFIX_RE = re.compile(
-    r"(?i)^(?:sk|pk|rk|whsec|ghp|gho|xox[a-z]|api|key|token|secret|bearer|aws|akia)_"
+    r"(?i)^(?:sk|pk|rk|gsk|csk|whsec|ghp|gho|ghs|ghu|ghr|github|xox[a-z]|api|key|token|"
+    r"secret|bearer|aws|akia)_"
+)
+# Credential-style words anywhere in a snake_case token disqualify it from the allowlist.
+_SECRET_SEGMENT_WORDS = frozenset(
+    {"secret", "secrets", "token", "tokens", "key", "keys", "apikey", "api", "pass",
+     "passwd", "password", "credential", "credentials", "auth"}
 )
 
 
@@ -65,6 +73,8 @@ def _is_allowlisted_long_token(value: str) -> bool:
     # name while "api_key=<random>" still masks because the value fits no structural shape.
     candidate = value.rsplit("=", 1)[-1]
     if not candidate or _SECRET_PREFIX_RE.match(candidate):
+        return False
+    if any(segment in _SECRET_SEGMENT_WORDS for segment in candidate.lower().split("_")):
         return False
     return any(pattern.match(candidate) for pattern in LONG_SECRET_ALLOWLIST_RES)
 

@@ -30,8 +30,9 @@ REPORT_FRESHNESS_VALUES_SQL = (
     f"{WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS})"
 )
 # Count of candidate news items inside an event analysis raw input payload (event analysis
-# uses key "news"; older payloads used "candidate_news"). Guarded so non-JSON or non-array
-# shapes yield NULL (unknown) instead of failing the whole query.
+# uses key "news"; older payloads used "candidate_news"). The first-char guard skips
+# obviously non-JSON values and non-array shapes yield NULL (unknown); rows are written by
+# json.dumps, and a malformed row would fail only this one isolated query.
 RELATED_NEWS_CANDIDATES_COUNT_SQL = (
     "(CASE WHEN left(ltrim(coalesce(raw_input_json, '')), 1) = '{' THEN "
     "coalesce("

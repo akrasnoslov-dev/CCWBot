@@ -154,6 +154,14 @@ def test_redaction_still_masks_real_secret_shapes():
         "sk-Abc123Def456Ghi789Jkl012Mno345Pqr678",
         "sk_live_1234567890abcdefghijklmnopqrstuvwxyz",
         "ghp_16c1234567890abcdefghijklmnopqrstu42",
+        # Groq-style key: the production primary provider's key shape.
+        "gsk_Abc123Def456Ghi789Jkl012Mno345Pqr678Stu9",
+        # The secret half of a Telegram bot token (the ':' splits the token).
+        "AAF9zXy8WvU7tS6rQ5pO4nM3lK2jI1hG0fEdCbA",
+        # JWT: dot-separated mixed-case segments.
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.Abc123Def456Ghi789",
+        # Lowercase snake-style passphrase containing credential words.
+        "prod_db_secret_pass_2026_xyz123_abcd",
     ]
 
     for value in secret_values:

@@ -290,7 +290,11 @@ unreadable, `restart_count` stays `null`, the docker evidence carries a
 `restart_counts_unavailable` warning, and the report renders restart counts as unknown —
 incomplete evidence, never healthy. After changing
 `ops-agent/scripts/ccwbot-ops-agent-collect`, re-install the copy in `/usr/local/bin`
-manually (see `docs/dev_ops_guide.md`); `git pull` does not update it.
+manually — `git pull` does not update it:
+
+```bash
+sudo install -m 755 -o root -g root /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+```
 
 ### Log pattern counting
 
