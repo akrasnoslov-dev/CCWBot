@@ -158,6 +158,46 @@ def test_alert_possible_action_advice_like_wording_no_longer_blocks_schema():
     assert "adjust your portfolio" in decision.possible_action
 
 
+def test_unknown_extra_field_is_stripped_not_rejected():
+    # Reproduces the production GRAM failure: strict validation rejected the whole
+    # analysis over an extra display_symbol field. Unknown fields are now dropped.
+    decision = validate_event_analysis_output(
+        alert_analysis_result(
+            symbol="GRAM",
+            event_key="gram_price_downtrend",
+            title="GRAM market conditions changed",
+            message_body="GRAM moved sharply while market context remains mixed.",
+            display_symbol="GRAM",
+        ),
+        expected_symbol="gram",
+        candidate_news_ids={"n1"},
+    )
+
+    assert decision.symbol == "GRAM"
+    assert decision.should_alert is True
+
+
+def test_missing_required_field_is_still_rejected():
+    result = event_analysis_result()
+    result.pop("confidence")
+
+    with pytest.raises(EventAnalysisValidationError, match="missing fields"):
+        validate_event_analysis_output(
+            result,
+            expected_symbol="sol",
+            candidate_news_ids={"n1"},
+        )
+
+
+def test_wrong_type_required_field_is_still_rejected():
+    with pytest.raises(EventAnalysisValidationError, match="should_alert must be boolean"):
+        validate_event_analysis_output(
+            event_analysis_result(should_alert="yes"),
+            expected_symbol="sol",
+            candidate_news_ids={"n1"},
+        )
+
+
 def test_alert_still_rejects_invalid_related_news_ids_shape():
     with pytest.raises(
         EventAnalysisValidationError,

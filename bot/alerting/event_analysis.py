@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
 from bot.domain.supported_coins import normalize_symbol
+
+logger = logging.getLogger(__name__)
 
 EVENT_ALERT_TYPE = "event_alert"
 EVENT_ANALYSIS_TYPE = "event_analysis"
@@ -516,7 +519,12 @@ def validate_event_analysis_output(
     extra_fields = set(result) - EVENT_RESULT_FIELDS
     missing_fields = EVENT_RESULT_FIELDS - set(result)
     if extra_fields:
-        raise EventAnalysisValidationError(f"unexpected fields: {sorted(extra_fields)}")
+        # Tolerance is additive only: unknown fields (e.g. an extra display_symbol) are
+        # dropped instead of rejecting the whole analysis. Field names only — never values.
+        logger.debug(
+            "event_analysis_unknown_fields_stripped fields=%s", sorted(extra_fields)
+        )
+        result = {key: value for key, value in result.items() if key in EVENT_RESULT_FIELDS}
     if missing_fields:
         raise EventAnalysisValidationError(f"missing fields: {sorted(missing_fields)}")
 

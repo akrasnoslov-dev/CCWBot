@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from datetime import timedelta
 from typing import Any
@@ -40,10 +41,18 @@ class MarketReportDataUnavailable(RuntimeError):
     """Raised when report generation has no usable market data."""
 
 
+logger = logging.getLogger(__name__)
+
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 REPORT_PROVIDER_BACKOFF_SECONDS = 300
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
+# The scheduled cache-refresh jobs fire at exactly the cache expiry interval (daily 4h,
+# weekly 24h), so at fire time the previous cache is always fresh by only a few seconds.
+# Without this grace the job skips, the cache expires right after, and the effective
+# regeneration cadence doubles (weekly: ~48h observed in production). A scheduled refresh
+# therefore regenerates when the cache expires within this grace window.
+REPORT_SCHEDULED_REFRESH_GRACE_SECONDS = 1800
 REPORT_UNAVAILABLE_MESSAGES = {
     "daily": "Daily report is temporarily unavailable. Please try again later.",
     "weekly": "Weekly report is temporarily unavailable. Please try again later.",
@@ -86,6 +95,16 @@ def _freshness_seconds(report_type: str) -> int:
     return REPORT_FRESHNESS_SECONDS[report_type]
 
 
+def _sanitize_schema_failure_detail(error: Exception) -> str:
+    """Collapse a validation message to one log-safe token.
+
+    Validation messages are built from field names and fixed phrases (never payload
+    content); this normalizes them for key=value log parsing as defense-in-depth.
+    """
+    text = " ".join(str(error).split()).replace("'", "").replace('"', "")
+    return text[:160].replace(" ", "_")
+
+
 def _is_report_provider_backoff_active(report_type: str) -> bool:
     backoff_until = _report_provider_backoff_until.get(report_type)
     if backoff_until is None:
@@ -120,6 +139,73 @@ def _is_fresh_memory_report(report: dict[str, Any] | None) -> bool:
     )
 
 
+def _report_cache_timestamps(report: MarketReport | dict[str, Any]) -> tuple[Any, Any]:
+    """Return timezone-aware (generated_at, expires_at) for a DB or in-memory report."""
+    if isinstance(report, dict):
+        generated_at = report.get("generated_at")
+        expires_at = report.get("expires_at")
+    else:
+        generated_at = getattr(report, "generated_at", None)
+        expires_at = getattr(report, "expires_at", None)
+    now_tzinfo = utc_now().tzinfo
+    if generated_at is not None and generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=now_tzinfo)
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=now_tzinfo)
+    return generated_at, expires_at
+
+
+def _scheduled_refresh_can_skip(report: MarketReport | dict[str, Any]) -> bool:
+    """True when the cached report survives past the scheduled-refresh grace window."""
+    _, expires_at = _report_cache_timestamps(report)
+    if expires_at is None:
+        return False
+    remaining_seconds = (expires_at - utc_now()).total_seconds()
+    return remaining_seconds > REPORT_SCHEDULED_REFRESH_GRACE_SECONDS
+
+
+def _log_scheduled_refresh_skip(report_type: str, report: MarketReport | dict[str, Any]) -> None:
+    generated_at, _ = _report_cache_timestamps(report)
+    cache_age_seconds = (
+        int((utc_now() - generated_at).total_seconds()) if generated_at is not None else "unknown"
+    )
+    log(
+        "ops_event=market_report_refresh_skipped "
+        f"report_type={report_type} cache_age_seconds={cache_age_seconds} "
+        f"expiry_seconds={_freshness_seconds(report_type)}"
+    )
+
+
+async def refresh_report_cache_scheduled(report_type: str) -> MarketReport | dict[str, Any] | None:
+    """Scheduled cache refresh: regenerate unless the cache stays fresh past the grace window.
+
+    Unlike the on-command path, the scheduled job regenerates a cache that is expired *or*
+    expiring within ``REPORT_SCHEDULED_REFRESH_GRACE_SECONDS``, and never skips silently:
+    a kept cache is logged as ``market_report_refresh_skipped`` with its age.
+    """
+    report_type = _validate_report_type(report_type)
+    cached = await _get_fresh_cached_report(report_type)
+    if cached is not None and _scheduled_refresh_can_skip(cached):
+        _log_scheduled_refresh_skip(report_type, cached)
+        return cached
+    if _is_report_provider_backoff_active(report_type):
+        log(f"ops_event=market_report_skipped report_type={report_type} reason=provider_backoff")
+        return None
+
+    async with _report_generation_locks[report_type]:
+        cached = await _get_fresh_cached_report(report_type)
+        if cached is not None and _scheduled_refresh_can_skip(cached):
+            _log_scheduled_refresh_skip(report_type, cached)
+            return cached
+        if _is_report_provider_backoff_active(report_type):
+            log(
+                "ops_event=market_report_skipped "
+                f"report_type={report_type} reason=provider_backoff"
+            )
+            return None
+        return await generate_report_cache(report_type)
+
+
 async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, Any] | None:
     """Return a fresh cached report, generating one global report if needed."""
     report_type = _validate_report_type(report_type)
@@ -152,10 +238,22 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
     raw_output_json: str | None = None
     usage_log_id: int | None = None
 
+    def _schema_check(parsed: dict) -> None:
+        # Run report schema validation during the provider pass so a schema-invalid answer
+        # from one provider falls back to the next provider before the deterministic fallback.
+        try:
+            validate_market_report_output(
+                parsed,
+                expected_report_type=report_type,
+                active_symbols=SUPPORTED_SYMBOLS,
+            )
+        except MarketReportValidationError as error:
+            raise AISchemaValidationError(str(error)) from error
+
     try:
         input_payload, news_items = await _build_market_report_input(report_type, generated_at)
         raw_input_json = json.dumps(input_payload, ensure_ascii=False, sort_keys=True)
-        llm_result = await ask_market_report_raw(input_payload)
+        llm_result = await ask_market_report_raw(input_payload, schema_check=_schema_check)
         usage_log_id = getattr(llm_result, "usage_log_id", None)
         report_provider = getattr(llm_result, "provider", None) or "groq"
         report_model = getattr(llm_result, "model", None) or GROQ_REPORT_MODEL
@@ -185,10 +283,13 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             model=report_model,
         )
     except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
-        if isinstance(error, MarketReportValidationError):
-            log(
-                "ops_event=market_report_failed "
-                f"report_type={report_type} reason=schema_error"
+        if isinstance(error, (AISchemaValidationError, MarketReportValidationError)):
+            # detail carries the sanitized validation reason (field names and kinds only,
+            # never payload content) so recurring schema_error events stay diagnosable.
+            logger.warning(
+                "ops_event=market_report_failed report_type=%s reason=schema_error detail=%s",
+                report_type,
+                _sanitize_schema_failure_detail(error),
             )
             await mark_llm_usage_log_status(
                 usage_log_id,
@@ -242,9 +343,9 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             error_message=str(error),
         )
     except MarketReportDataUnavailable:
-        log(
-            "ops_event=market_report_failed "
-            f"report_type={report_type} reason=data_unavailable"
+        logger.warning(
+            "ops_event=market_report_failed report_type=%s reason=data_unavailable",
+            report_type,
         )
         return await _save_or_remember_report(
             report_type=report_type,
@@ -258,9 +359,9 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         )
     except CoinGeckoRateLimitError:
         _start_report_provider_backoff(report_type)
-        log(
-            "ops_event=market_report_failed "
-            f"report_type={report_type} reason=coingecko_rate_limit"
+        logger.warning(
+            "ops_event=market_report_failed report_type=%s reason=coingecko_rate_limit",
+            report_type,
         )
         return await _save_or_remember_report(
             report_type=report_type,
@@ -273,9 +374,10 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             error_message="coingecko rate limit",
         )
     except Exception as error:
-        log(
-            "ops_event=market_report_failed "
-            f"report_type={report_type} reason={classify_ai_error_reason(error).replace(' ', '_')}"
+        logger.warning(
+            "ops_event=market_report_failed report_type=%s reason=%s",
+            report_type,
+            classify_ai_error_reason(error).replace(" ", "_"),
         )
         return await _save_or_remember_report(
             report_type=report_type,
@@ -290,11 +392,11 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
 
 
 async def generate_daily_report_cache_job(context=None) -> None:
-    await get_or_generate_report("daily")
+    await refresh_report_cache_scheduled("daily")
 
 
 async def generate_weekly_report_cache_job(context=None) -> None:
-    await get_or_generate_report("weekly")
+    await refresh_report_cache_scheduled("weekly")
 
 
 async def send_daily_report_message(target) -> None:

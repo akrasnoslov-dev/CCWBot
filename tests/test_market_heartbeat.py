@@ -540,6 +540,69 @@ async def test_heartbeat_is_sent_when_frequency_due(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_delivery_failure_logs_real_error_class(monkeypatch, caplog):
+    # heartbeat_delivery_failed used to log error_class=str (the type of the message
+    # string); it must log the actual exception class name.
+    from telegram.error import TimedOut
+
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await create_user(session)
+            await create_heartbeat(session)
+        send_error = TimedOut("Timed out")
+        monkeypatch.setattr(
+            alerts,
+            "_send_alert_to_recipient_with_retry",
+            AsyncMock(return_value=(False, "Timed out", send_error)),
+        )
+
+        with caplog.at_level(logging.INFO):
+            sent = await alerts._deliver_market_heartbeat(
+                app,
+                symbol="btc",
+                current_price=101000.0,
+                change_24h=1.5,
+                now=datetime.now(timezone.utc),
+            )
+
+        assert sent is False
+        failure_lines = [
+            record.getMessage()
+            for record in caplog.records
+            if "heartbeat_delivery_failed" in record.getMessage()
+        ]
+        assert failure_lines
+        assert all("error_class=TimedOut" in line for line in failure_lines)
+        assert all("error_class=str" not in line for line in failure_lines)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_send_alert_retry_returns_real_exception(monkeypatch):
+    # The retry helper must expose the underlying exception, not only its string form.
+    from telegram.error import Forbidden
+
+    send_error = Forbidden("bot was blocked by the user")
+    app = SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock(side_effect=send_error)))
+    recipient = alerts.AlertRecipient(chat_id=2001, user_id=1)
+
+    sent, error_message, error = await alerts._send_alert_to_recipient_with_retry(
+        app,
+        recipient,
+        {"plain_text": "message"},
+    )
+
+    assert sent is False
+    assert "blocked" in str(error_message)
+    assert error is send_error
+
+
+@pytest.mark.asyncio
 async def test_duplicate_heartbeat_delivery_for_same_cached_heartbeat_is_skipped(monkeypatch):
     engine, session_local = await build_session_factory()
     app = fake_app()
