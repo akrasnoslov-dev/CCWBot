@@ -422,6 +422,25 @@ def test_news_budget_query_uses_sanitized_aggregates_only():
     assert "llm_error" not in query.sql.lower()
 
 
+def test_news_candidates_signal_and_freshness_queries_expose_sanitized_columns():
+    query_names = {query.name: query for query in QUERIES}
+
+    samples = query_names["event_ai_analysis_samples"]
+    assert "related_news_candidates_count" in samples.sql
+    summary = query_names["event_analysis_news_candidates_summary"]
+    assert "zero_candidate_analyses" in summary.sql
+    assert "with_candidates_analyses" in summary.sql
+    assert "unknown_candidates_analyses" in summary.sql
+    assert "alerts_with_candidates_but_no_attached_news" in summary.sql
+    # Counts only — the signal must never select news content columns.
+    assert "title" not in summary.sql.lower()
+    assert "url" not in summary.sql.lower()
+    assert "link" not in summary.sql.lower()
+    freshness = query_names["market_reports_freshness"]
+    assert "runtime_interval_seconds" in freshness.sql
+    assert "expected_next_scheduled_refresh_at" in freshness.sql
+
+
 def test_heartbeat_report_and_news_freshness_queries_handle_empty_db_shape():
     query_names = {query.name: query for query in QUERIES}
 
@@ -1575,6 +1594,57 @@ def test_report_freshness_detector_triggers_for_stale_or_missing_reports():
     assert detector.status == "triggered"
     assert detector.metrics["stale_or_missing_reports"] == 2
     assert detector.metrics["affected_report_types"] == ["daily", "weekly"]
+
+
+def test_report_freshness_detector_surfaces_age_vs_expected_next_refresh():
+    # Explicit scheduler-grace evidence: age, runtime interval, grace, and the expected
+    # next scheduled refresh are surfaced so reports never speculate about cadence.
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_reports_summary": {"rows": []},
+                "market_reports_freshness": {
+                    "rows": [
+                        {
+                            "report_type": "weekly",
+                            "latest_status": "completed",
+                            "latest_generated_at": "2026-06-01T12:00:00Z",
+                            "latest_expires_at": "2026-06-02T12:00:00Z",
+                            "age_seconds": 43200,
+                            "max_age_seconds": 90000,
+                            "runtime_interval_seconds": 86400,
+                            "expected_next_scheduled_refresh_at": "2026-06-02T12:00:00Z",
+                        },
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    detector = results["failed_daily_weekly_reports"]
+    assert detector.status == "clear"
+    freshness_rows = detector.metrics["report_freshness"]
+    assert freshness_rows == [
+        {
+            "report_type": "weekly",
+            "latest_status": "completed",
+            "latest_generation_age_seconds": 43200,
+            "freshness_threshold_seconds": 90000,
+            "runtime_interval_seconds": 86400,
+            "scheduler_grace_seconds": 3600,
+            "expected_next_scheduled_refresh_at": "2026-06-02T12:00:00Z",
+        }
+    ]
+    assert "regeneration_semantics" in detector.metrics
 
 
 def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():

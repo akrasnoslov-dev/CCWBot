@@ -84,6 +84,7 @@ def record_collection(
     bundle_id: str,
     status: str,
     period: Period,
+    failed_collectors: list[str] | None = None,
 ) -> dict[str, Any]:
     state = dict(state)
     state["schema_version"] = 1
@@ -92,6 +93,9 @@ def record_collection(
         "status": status,
         "period_start": period.as_dict()["start"],
         "period_end": period.as_dict()["end"],
+        # Collector names only (e.g. "db.alerts_summary") so recurring partial runs are
+        # diagnosable from the state snapshot alone; never error text or evidence content.
+        "failed_collectors": sorted(failed_collectors or []),
     }
     recent_runs = list(state.get("recent_runs") or [])
     recent_runs.insert(0, state["last_collection"])

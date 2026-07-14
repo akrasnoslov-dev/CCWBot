@@ -236,6 +236,27 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     failed_reports = sum(
         _int(row.get("reports")) for row in reports if str(row.get("status")) != "completed"
     )
+    # Explicit scheduler-grace breakdown so reports never have to speculate about the
+    # regeneration cadence: threshold = runtime interval + grace; the bot refreshes each
+    # report on its runtime interval and on-command generation may refresh anytime.
+    report_freshness_details = [
+        {
+            "report_type": row.get("report_type"),
+            "latest_status": row.get("latest_status"),
+            "latest_generation_age_seconds": (
+                _int(row.get("age_seconds")) if row.get("age_seconds") is not None else None
+            ),
+            "freshness_threshold_seconds": _int(row.get("max_age_seconds")),
+            "runtime_interval_seconds": _int(row.get("runtime_interval_seconds")) or None,
+            "scheduler_grace_seconds": (
+                _int(row.get("max_age_seconds")) - _int(row.get("runtime_interval_seconds"))
+                if row.get("runtime_interval_seconds") is not None
+                else None
+            ),
+            "expected_next_scheduled_refresh_at": row.get("expected_next_scheduled_refresh_at"),
+        }
+        for row in report_freshness
+    ]
     stale_reports = [
         row
         for row in report_freshness
@@ -610,6 +631,12 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 "failed_reports": failed_reports,
                 "stale_or_missing_reports": len(stale_reports),
                 "affected_report_types": [row.get("report_type") for row in stale_reports],
+                "report_freshness": report_freshness_details,
+                "regeneration_semantics": (
+                    "scheduled refresh regenerates each report on its runtime interval; "
+                    "on-command generation may refresh the cache at any time; the "
+                    "freshness threshold adds scheduler grace on top of the interval"
+                ),
             },
         ),
         db_result(

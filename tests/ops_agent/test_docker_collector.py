@@ -17,7 +17,11 @@ def _period() -> Period:
     )
 
 
-def _config(tmp_path: Path, docker_status_json_path: Path | None) -> OpsAgentConfig:
+def _config(
+    tmp_path: Path,
+    docker_status_json_path: Path | None,
+    docker_restarts_json_path: Path | None = None,
+) -> OpsAgentConfig:
     return OpsAgentConfig(
         database_url=None,
         health_url=None,
@@ -25,6 +29,7 @@ def _config(tmp_path: Path, docker_status_json_path: Path | None) -> OpsAgentCon
         logs_dir=tmp_path / "logs",
         legacy_state_path=tmp_path / "state.json",
         docker_status_json_path=docker_status_json_path,
+        docker_restarts_json_path=docker_restarts_json_path,
     )
 
 
@@ -75,10 +80,56 @@ def test_docker_collector_handles_newline_delimited_compose_output(tmp_path):
 
     assert payload["service_count"] == 2
     assert payload["running_count"] == 1
-    assert payload["warnings"] == ["container_not_running"]
+    # No restart snapshot was provided, so restart evidence is explicitly incomplete.
+    assert payload["warnings"] == ["container_not_running", "restart_counts_unavailable"]
     assert payload["services"][1]["service"] == "ops-agent"
     assert payload["services"][1]["is_running"] is False
     assert status["status"] == "partial"
+    assert status["error"] == "container_not_running"
+
+
+def test_docker_collector_populates_restart_counts_from_inspect_snapshot(tmp_path):
+    status_path = tmp_path / "docker-status.json"
+    status_path.write_text(
+        '{"Service":"bot","Name":"ccwbot-bot-1","State":"running","Health":"healthy"}\n'
+        '{"Service":"postgres","Name":"ccwbot-postgres-1","State":"running","Health":"healthy"}\n',
+        encoding="utf-8",
+    )
+    restarts_path = tmp_path / "docker-restarts.json"
+    restarts_path.write_text(
+        '{"Name": "/ccwbot-bot-1", "RestartCount": 3}\n'
+        '{"Name": "/ccwbot-postgres-1", "RestartCount": 0}\n',
+        encoding="utf-8",
+    )
+
+    payload, status = collect_docker(
+        config=_config(tmp_path, status_path, restarts_path), period=_period()
+    )
+
+    by_service = {service["service"]: service for service in payload["services"]}
+    assert by_service["bot"]["restart_count"] == 3
+    assert by_service["postgres"]["restart_count"] == 0
+    assert "restart_counts_unavailable" not in payload["warnings"]
+    assert status == {"name": "docker", "status": "ok", "error": None}
+
+
+def test_docker_collector_missing_restart_snapshot_keeps_unknown_not_healthy(tmp_path):
+    status_path = tmp_path / "docker-status.json"
+    status_path.write_text(
+        '{"Service":"bot","Name":"ccwbot-bot-1","State":"running","Health":"healthy"}\n',
+        encoding="utf-8",
+    )
+
+    payload, status = collect_docker(
+        config=_config(tmp_path, status_path, tmp_path / "missing-restarts.json"),
+        period=_period(),
+    )
+
+    assert payload["services"][0]["restart_count"] is None
+    assert "restart_counts_unavailable" in payload["warnings"]
+    # The container-state collector itself stays ok; missing restart evidence is a
+    # payload warning, and the report renders restart counts as unknown.
+    assert status == {"name": "docker", "status": "ok", "error": None}
 
 
 def test_docker_collector_reports_unavailable_without_stopping_collection(tmp_path):

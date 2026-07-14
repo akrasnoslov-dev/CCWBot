@@ -264,6 +264,58 @@ content inside one bundle, but cannot be compared across separate bundles. Coold
 effectiveness is inferred from analysis, event, and delivery rows because suppression
 decisions are not stored as durable rows.
 
+### Report freshness semantics
+
+The `failed_daily_weekly_reports` detector uses freshness thresholds of runtime interval
+plus one hour of scheduler grace (daily: 4h + 1h = 18000s; weekly: 24h + 1h = 90000s).
+Expected regeneration semantics — reports should not speculate beyond this:
+
+* The bot's scheduled cache refresh regenerates each report on its runtime interval
+  (daily every 4h, weekly every 24h). The bot-side job regenerates whenever the cached
+  report expires within its own 30-minute grace window, so a healthy scheduler keeps the
+  cache age at or below interval + generation time.
+* On-command `/dailyreport` and `/weeklyreport` generation may additionally refresh the
+  cache at any time; a fresher-than-expected cache is normal.
+* Detector metrics include per-report-type `latest_generation_age_seconds`,
+  `runtime_interval_seconds`, `scheduler_grace_seconds`, and
+  `expected_next_scheduled_refresh_at` so age can be judged against the expected next
+  scheduled refresh directly from the evidence.
+
+### Container restart counts
+
+`compose ps --format json` does not include restart counts, so the collect wrapper also
+captures a sanitized `docker inspect` snapshot (container name + `RestartCount` only) and
+passes it via `OPS_AGENT_DOCKER_RESTARTS_JSON_PATH`. When the snapshot is missing or
+unreadable, `restart_count` stays `null`, the docker evidence carries a
+`restart_counts_unavailable` warning, and the report renders restart counts as unknown —
+incomplete evidence, never healthy. After changing
+`ops-agent/scripts/ccwbot-ops-agent-collect`, re-install the copy in `/usr/local/bin`
+manually (see `docs/dev_ops_guide.md`); `git pull` does not update it.
+
+### Log pattern counting
+
+`heartbeat_failure` counts per-failure lines only: per-delivery
+`ops_event=heartbeat_delivery_failed`, `ops_event=heartbeat_generation_failed`, and
+schema-validation failures. `heartbeat_delivery_summary ... failed=N` lines repeat
+already-counted per-delivery failures and are intentionally not matched, so the pattern
+count tracks the DB delivery-failure truth instead of double-counting.
+
+### News-candidate signal
+
+Event-analysis evidence includes `related_news_candidates_count` (aggregate
+`event_analysis_news_candidates_summary` and per-sample column): the number of candidate
+news items present in the analysis input. Counts only — never news content. A zero count
+means no relevant news existed for that analysis; `alerts_with_candidates_but_no_attached_news`
+counts should_alert=true analyses that had candidates available but attached none, which
+is the signal for a possible news-attach gap. This is observability only; it does not
+change news-attach behavior.
+
+### Collection state
+
+`state.json` records each run under `recent_runs` including `failed_collectors`
+(collector names only), so recurring `partial` runs are diagnosable from the state
+snapshot alone.
+
 Retention is automatic after collection and can be run manually:
 
 ```bash

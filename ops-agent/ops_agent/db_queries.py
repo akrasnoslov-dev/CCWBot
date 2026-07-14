@@ -24,8 +24,22 @@ WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS = (
 )
 REPORT_FRESHNESS_VALUES_SQL = (
     "VALUES "
-    f"('daily', {DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS}), "
-    f"('weekly', {WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS})"
+    f"('daily', {DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS}, "
+    f"{DAILY_REPORT_RUNTIME_INTERVAL_SECONDS}), "
+    f"('weekly', {WEEKLY_REPORT_FRESHNESS_THRESHOLD_SECONDS}, "
+    f"{WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS})"
+)
+# Count of candidate news items inside an event analysis raw input payload (event analysis
+# uses key "news"; older payloads used "candidate_news"). Guarded so non-JSON or non-array
+# shapes yield NULL (unknown) instead of failing the whole query.
+RELATED_NEWS_CANDIDATES_COUNT_SQL = (
+    "(CASE WHEN left(ltrim(coalesce(raw_input_json, '')), 1) = '{' THEN "
+    "coalesce("
+    "CASE WHEN jsonb_typeof(raw_input_json::jsonb->'news') = 'array' "
+    "THEN jsonb_array_length(raw_input_json::jsonb->'news') END, "
+    "CASE WHEN jsonb_typeof(raw_input_json::jsonb->'candidate_news') = 'array' "
+    "THEN jsonb_array_length(raw_input_json::jsonb->'candidate_news') END"
+    ") END)"
 )
 
 
@@ -278,9 +292,34 @@ QUERIES: tuple[DbQuery, ...] = (
         "event_ai_analysis_samples",
         "evidence/db/recent_llm_failures.json",
         "SELECT id, market_event_id, symbol, analysis_type, provider, model, status, should_alert, "
-        "error_reason, left(error_message, 300) AS error_message, created_at "
+        "error_reason, left(error_message, 300) AS error_message, created_at, "
+        # Sanitized signal: how many candidate news items the analysis input contained
+        # (a count only, never news content), so "no relevant news existed" is
+        # distinguishable from "news-attach path broken".
+        f"{RELATED_NEWS_CANDIDATES_COUNT_SQL} AS related_news_candidates_count "
         "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
         "AND status NOT IN ('success', 'completed') ORDER BY created_at DESC, id DESC LIMIT :sample_limit",
+    ),
+    DbQuery(
+        "event_analysis_news_candidates_summary",
+        "evidence/db/aggregate_metrics.json",
+        # Counts only (no news content): distinguishes analyses that genuinely had zero
+        # candidate news in their input from should_alert=true analyses that had
+        # candidates available but attached none (possible news-attach gap).
+        "WITH analysis_news AS ("
+        "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, should_alert, related_news_ids, "
+        f"{RELATED_NEWS_CANDIDATES_COUNT_SQL} AS related_news_candidates_count "
+        "FROM event_ai_analyses "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis') "
+        "SELECT symbol, count(*) AS analyses, "
+        "count(*) FILTER (WHERE related_news_candidates_count = 0) AS zero_candidate_analyses, "
+        "count(*) FILTER (WHERE related_news_candidates_count > 0) AS with_candidates_analyses, "
+        "count(*) FILTER (WHERE related_news_candidates_count IS NULL) AS unknown_candidates_analyses, "
+        "count(*) FILTER (WHERE related_news_candidates_count > 0 AND should_alert = true "
+        "AND (related_news_ids IS NULL OR related_news_ids::text IN ('[]', 'null', ''))) "
+        "AS alerts_with_candidates_but_no_attached_news "
+        "FROM analysis_news GROUP BY symbol ORDER BY symbol",
     ),
     DbQuery(
         "alerts_summary",
@@ -770,8 +809,12 @@ QUERIES: tuple[DbQuery, ...] = (
         "market_reports_freshness",
         "evidence/db/aggregate_metrics.json",
         # Ops freshness thresholds are runtime cadence plus scheduler/reporting grace.
-        # They do not change the report generation cadence.
-        "WITH report_types(report_type, max_age_seconds) AS ("
+        # They do not change the report generation cadence. Expected regeneration
+        # semantics: the bot's scheduled refresh regenerates each report at its runtime
+        # interval (daily 4h, weekly 24h), and on-command /dailyreport or /weeklyreport
+        # generation may refresh the cache at any time; the threshold adds 1h grace on
+        # top of the runtime interval for scheduler jitter and reporting lag.
+        "WITH report_types(report_type, max_age_seconds, runtime_interval_seconds) AS ("
         f"{REPORT_FRESHNESS_VALUES_SQL}"
         "), latest AS ("
         "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at, "
@@ -784,10 +827,13 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM market_reports WHERE generated_at >= :since AND generated_at < :until "
         "GROUP BY report_type"
         ") "
-        "SELECT rt.report_type, rt.max_age_seconds, l.status AS latest_status, "
+        "SELECT rt.report_type, rt.max_age_seconds, rt.runtime_interval_seconds, "
+        "l.status AS latest_status, "
         "l.generated_at AS latest_generated_at, l.expires_at AS latest_expires_at, "
         "l.latest_error_message, "
         "extract(epoch FROM (:until - l.generated_at)) AS age_seconds, "
+        "l.generated_at + make_interval(secs => rt.runtime_interval_seconds) "
+        "AS expected_next_scheduled_refresh_at, "
         "coalesce(pc.reports_in_period, 0) AS reports_in_period, "
         "coalesce(pc.completed_in_period, 0) AS completed_in_period, "
         "coalesce(pc.failed_in_period, 0) AS failed_in_period "
