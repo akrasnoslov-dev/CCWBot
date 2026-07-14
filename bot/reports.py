@@ -34,6 +34,7 @@ from bot.services.ai_agent_groq import (
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
+from bot.services.llm.telemetry import safe_error_message
 from bot.services.price_service import CoinGeckoRateLimitError, get_report_market_data_batch
 
 
@@ -295,7 +296,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
                 usage_log_id,
                 status="schema_error",
                 error_reason="schema_validation_failed",
-                error_message=str(error)[:500],
+                error_message=safe_error_message(error),
             )
         raw_output_json = getattr(error, "raw_content", raw_output_json)
         if raw_input_json:

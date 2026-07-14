@@ -520,9 +520,11 @@ def validate_event_analysis_output(
     missing_fields = EVENT_RESULT_FIELDS - set(result)
     if extra_fields:
         # Tolerance is additive only: unknown fields (e.g. an extra display_symbol) are
-        # dropped instead of rejecting the whole analysis. Field names only — never values.
+        # dropped instead of rejecting the whole analysis. Field names only — never values,
+        # truncated because the names themselves come from LLM output.
         logger.debug(
-            "event_analysis_unknown_fields_stripped fields=%s", sorted(extra_fields)
+            "event_analysis_unknown_fields_stripped fields=%s",
+            sorted(str(name)[:40] for name in extra_fields),
         )
         result = {key: value for key, value in result.items() if key in EVENT_RESULT_FIELDS}
     if missing_fields:

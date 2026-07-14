@@ -83,8 +83,12 @@ def validate_market_report_output(
     missing_fields = REPORT_RESULT_FIELDS - set(result)
     if extra_fields:
         # Tolerance is additive only: unknown top-level fields are dropped instead of
-        # rejecting the whole report. Field names only — never values.
-        logger.debug("market_report_unknown_fields_stripped fields=%s", sorted(extra_fields))
+        # rejecting the whole report. Field names only — never values, truncated because
+        # the names themselves come from LLM output.
+        logger.debug(
+            "market_report_unknown_fields_stripped fields=%s",
+            sorted(str(name)[:40] for name in extra_fields),
+        )
         result = {key: value for key, value in result.items() if key in REPORT_RESULT_FIELDS}
     if missing_fields:
         raise MarketReportValidationError(f"missing fields: {sorted(missing_fields)}")
@@ -271,7 +275,7 @@ def _validate_coin_cards(
             # Same additive tolerance as the top level: drop unknown coin-card fields.
             logger.debug(
                 "market_report_coin_card_unknown_fields_stripped fields=%s",
-                sorted(extra_fields),
+                sorted(str(name)[:40] for name in extra_fields),
             )
         if missing_fields:
             raise MarketReportValidationError(f"missing coin card fields: {sorted(missing_fields)}")
