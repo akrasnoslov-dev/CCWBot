@@ -25,10 +25,13 @@ LOG_PATTERNS = {
         re.IGNORECASE,
     ),
     "report_failure": re.compile(r"report.*failed|market_report_failed", re.IGNORECASE),
+    # Per-delivery failures already log one ops_event=heartbeat_delivery_failed line each;
+    # the heartbeat_delivery_summary line repeats them as failed=N and previously double-
+    # counted every failure (pattern count 2x the DB truth). Summary lines are therefore
+    # excluded; genuine failure lines (per-delivery, generation, schema-validation) match.
     "heartbeat_failure": re.compile(
         r"heartbeat.{0,40}\bfailed\b\s*:|"
-        r"ops_event=heartbeat_(?:generation|delivery)_failed|"
-        r"heartbeat.{0,40}\bfailed=[1-9]\d*\b",
+        r"ops_event=heartbeat_(?:generation|delivery)_failed\b",
         re.IGNORECASE,
     ),
     "payment_rejection": re.compile(r"payment.*rejected|invalid payload", re.IGNORECASE),

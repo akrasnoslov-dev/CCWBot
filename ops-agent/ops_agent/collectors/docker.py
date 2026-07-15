@@ -83,6 +83,37 @@ def _service_name(row: dict[str, Any]) -> str | None:
     )
 
 
+def _container_name(row: dict[str, Any]) -> str | None:
+    name = _clean_text(row.get("Name") or row.get("name") or row.get("Names"))
+    return name.lstrip("/") if name else None
+
+
+def _load_restart_counts(path: Path | None) -> dict[str, int] | None:
+    """Load {container_name: restart_count} from the sanitized inspect snapshot.
+
+    The snapshot is JSONL/JSON of ``{"Name": "/ccwbot-bot-1", "RestartCount": 0}`` rows
+    written by the collect wrapper. Returns None when the snapshot is not configured or
+    unreadable, so missing restart evidence stays "unknown" instead of a fake zero.
+    """
+    if path is None:
+        return None
+    try:
+        rows = _rows(_load_status_payload(path))
+    except Exception:
+        return None
+    counts: dict[str, int] = {}
+    for row in rows:
+        name = _clean_text(row.get("Name") or row.get("name"))
+        raw_count = row.get("RestartCount", row.get("restart_count"))
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            continue
+        if name and count >= 0:
+            counts[name.lstrip("/")] = count
+    return counts or None
+
+
 def _sanitize_service(row: dict[str, Any]) -> dict[str, Any] | None:
     service = _service_name(row)
     if not service:
@@ -121,11 +152,17 @@ def collect_docker(
         return base_payload, {"name": "docker", "status": "skipped", "error": message}
     try:
         rows = _rows(_load_status_payload(path))
-        services = [
-            service
-            for service in (_sanitize_service(row) for row in rows)
-            if service is not None
-        ]
+        restart_counts = _load_restart_counts(config.docker_restarts_json_path)
+        services = []
+        for row in rows:
+            service = _sanitize_service(row)
+            if service is None:
+                continue
+            if service.get("restart_count") is None and restart_counts is not None:
+                container = _container_name(row)
+                if container is not None and container in restart_counts:
+                    service["restart_count"] = restart_counts[container]
+            services.append(service)
     except Exception as error:
         message = _error_category(error)
         base_payload.update({"status": "failed", "error": message, "warnings": [message]})
@@ -138,13 +175,18 @@ def collect_docker(
         if str(service.get("health") or "").lower() in {"unhealthy", "starting"}
     ]
     status = "ok" if services and not stopped and not unhealthy else "failed"
-    warnings = []
+    status_warnings = []
     if not services:
-        warnings.append("docker_status_empty")
+        status_warnings.append("docker_status_empty")
     if stopped:
-        warnings.append("container_not_running")
+        status_warnings.append("container_not_running")
     if unhealthy:
-        warnings.append("container_health_not_ok")
+        status_warnings.append("container_health_not_ok")
+    warnings = list(status_warnings)
+    if services and any(service.get("restart_count") is None for service in services):
+        # Missing restart evidence is incomplete, not healthy; the report renders it as
+        # "unknown". This does not fail the collector — container state itself is intact.
+        warnings.append("restart_counts_unavailable")
     base_payload.update(
         {
             "status": status,
@@ -161,6 +203,6 @@ def collect_docker(
         {
             "name": "docker",
             "status": collector_status,
-            "error": "; ".join(warnings) if warnings else None,
+            "error": "; ".join(status_warnings) if status_warnings else None,
         },
     )

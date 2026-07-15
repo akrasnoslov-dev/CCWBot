@@ -104,7 +104,15 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "ps --all --format json" in script
     assert "OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json" in script
     assert '$docker_status_file:/tmp/ops-agent-docker-status.json:ro' in script
-    assert "docker inspect" not in script
+    # docker inspect is allowed for exactly one sanitized read-only purpose: container
+    # name + RestartCount, mounted read-only into the collector. No other inspect use.
+    assert script.count('"$DOCKER" inspect') == 1
+    assert (
+        '"$DOCKER" inspect --format '
+        "'{\"Name\": {{json .Name}}, \"RestartCount\": {{json .RestartCount}}}'"
+    ) in script
+    assert "OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json" in script
+    assert '$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro' in script
     assert " compose config" not in script
 
 

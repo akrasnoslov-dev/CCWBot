@@ -94,8 +94,9 @@ done
 
 cd /opt/CCWBot
 docker_status_file=$(mktemp)
+docker_restarts_file=$(mktemp)
 cleanup() {
-  rm -f "$docker_status_file"
+  rm -f "$docker_status_file" "$docker_restarts_file"
 }
 trap cleanup EXIT INT TERM
 
@@ -103,7 +104,16 @@ if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.ym
   printf '{"status":"failed","error":"docker_status_unavailable"}\n' > "$docker_status_file"
 fi
 
-set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm -v "$docker_status_file:/tmp/ops-agent-docker-status.json:ro" -e OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json ops-agent collect
+# Restart counts are not part of `compose ps --format json`; capture them read-only via
+# `docker inspect` as sanitized name+count JSONL. Any failure leaves the file empty and the
+# collector reports restart counts as unknown (incomplete evidence, never healthy).
+container_ids=$(env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --quiet 2>/dev/null || true)
+if [ -n "$container_ids" ]; then
+  # shellcheck disable=SC2086
+  env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" inspect --format '{"Name": {{json .Name}}, "RestartCount": {{json .RestartCount}}}' $container_ids > "$docker_restarts_file" 2>/dev/null || : > "$docker_restarts_file"
+fi
+
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm -v "$docker_status_file:/tmp/ops-agent-docker-status.json:ro" -e OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json -v "$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro" -e OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json ops-agent collect
 
 if [ -n "$since" ]; then
   set -- "$@" --since "$since"
