@@ -159,6 +159,11 @@ async def _collect(args: argparse.Namespace) -> int:
                 bundle_id=writer.bundle_id,
                 status=collection_status,
                 period=period,
+                failed_collectors=[
+                    status.name
+                    for status in writer.collector_status
+                    if status.status != "ok"
+                ],
             ),
         )
     apply_retention(config)

@@ -27,6 +27,7 @@ from .admin import (
     set_interval,
 )
 from .callbacks import button_router
+from .error_handler import handle_application_error
 from .plans import myplan, plan, subscribe, watchlist
 from .price import log_custom_emoji_ids, price
 from .reports import daily_report, reports, weekly_report
@@ -63,3 +64,6 @@ def register_bot_handlers(app: Application) -> None:
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_custom_emoji_ids))
     app.add_handler(CallbackQueryHandler(button_router))
+    # Log-only global error handler: keeps transient Telegram network errors to one
+    # WARNING line and everything else at ERROR with traceback.
+    app.add_error_handler(handle_application_error)

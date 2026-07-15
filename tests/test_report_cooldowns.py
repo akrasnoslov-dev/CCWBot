@@ -552,13 +552,13 @@ async def test_malformed_report_output_uses_deterministic_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scheduled_report_cache_generation_does_not_send_telegram(monkeypatch):
-    get_or_generate = AsyncMock(return_value={"telegram_message": _daily_message()})
-    monkeypatch.setattr(reports, "get_or_generate_report", get_or_generate)
+    scheduled_refresh = AsyncMock(return_value={"telegram_message": _daily_message()})
+    monkeypatch.setattr(reports, "refresh_report_cache_scheduled", scheduled_refresh)
     context = SimpleNamespace(application=SimpleNamespace(bot=AsyncMock()))
 
     await reports.generate_daily_report_cache_job(context)
 
-    get_or_generate.assert_awaited_once_with("daily")
+    scheduled_refresh.assert_awaited_once_with("daily")
     context.application.bot.send_message.assert_not_called()
 
 

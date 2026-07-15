@@ -90,9 +90,15 @@ def test_admin_keyboards_have_expected_items():
 
 def test_legacy_alert_commands_are_not_registered():
     handlers = []
-    app = SimpleNamespace(add_handler=handlers.append)
+    error_handlers = []
+    app = SimpleNamespace(
+        add_handler=handlers.append,
+        add_error_handler=error_handlers.append,
+    )
 
     register_handlers(app)
+
+    assert len(error_handlers) == 1  # the global log-only error handler is registered
 
     commands = {
         command

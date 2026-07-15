@@ -143,6 +143,11 @@ def test_heartbeat_failure_pattern_ignores_healthy_heartbeat_lines():
     non_failures = [
         "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
         "due=3 sent=3 failed=0",
+        # Summary lines with failed>0 repeat the per-delivery heartbeat_delivery_failed
+        # lines and previously double-counted every failure vs the DB truth; they are
+        # intentionally not matched.
+        "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
+        "due=3 sent=1 failed=2",
         "ops_event=heartbeat_generation_scheduled interval_seconds=3600",
         "ops_event=heartbeat_generation_completed symbols=4",
         "BTC market heartbeat skipped: no cached heartbeat.",
@@ -153,9 +158,20 @@ def test_heartbeat_failure_pattern_ignores_healthy_heartbeat_lines():
         "BTC market heartbeat schema validation failed: missing field",
         "ops_event=heartbeat_generation_failed symbol=BTC error=x",
         "ops_event=heartbeat_delivery_failed symbol=BTC error_class=Forbidden",
-        "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
-        "due=3 sent=1 failed=2",
     ]
 
     assert not any(pattern.search(line) for line in non_failures)
     assert all(pattern.search(line) for line in failures)
+
+
+def test_heartbeat_failure_pattern_counts_failed_delivery_once_not_twice():
+    # Regression for the July 2026 double-count (pattern 50 vs DB 25): one failed
+    # delivery produces a per-delivery line plus a summary line; only one may match.
+    pattern = LOG_PATTERNS["heartbeat_failure"]
+    paired_lines = [
+        "ops_event=heartbeat_delivery_failed symbol=BTC error_class=Forbidden",
+        "ops_event=heartbeat_delivery_summary symbol=BTC heartbeat_id=1 "
+        "due=1 sent=0 failed=1",
+    ]
+
+    assert sum(1 for line in paired_lines if pattern.search(line)) == 1

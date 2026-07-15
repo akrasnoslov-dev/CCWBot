@@ -150,12 +150,24 @@ def test_weekly_empty_next_week_focus_is_rejected():
         )
 
 
-def test_legacy_telegram_message_schema_is_rejected():
+def test_unknown_top_level_field_is_stripped_not_rejected():
+    # Tolerance is additive: an unknown extra field is dropped and the report accepted.
     report = _valid_report("daily")
     report["telegram_message"] = "Daily Market Report"
 
-    with pytest.raises(MarketReportValidationError, match="unexpected fields"):
-        validate_market_report_output(report, expected_report_type="daily")
+    decision = validate_market_report_output(report, expected_report_type="daily")
+
+    assert decision.report_type == "daily"
+    assert decision.title == "Daily Market Report"
+
+
+def test_legacy_telegram_message_only_schema_is_still_rejected():
+    # A legacy payload without the required report fields keeps failing validation.
+    with pytest.raises(MarketReportValidationError, match="missing fields"):
+        validate_market_report_output(
+            {"telegram_message": "Daily Market Report"},
+            expected_report_type="daily",
+        )
 
 
 def test_legacy_ton_symbol_is_normalized_to_gram():

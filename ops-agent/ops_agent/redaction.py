@@ -33,6 +33,50 @@ LONG_SECRET_RE = re.compile(
     r"\b(?=[A-Za-z0-9_./+=-]{32,}\b)(?=[A-Za-z0-9_./+=-]*[A-Za-z])"
     r"(?=[A-Za-z0-9_./+=-]*\d)[A-Za-z0-9_./+=-]{32,}\b"
 )
+# Structural, non-secret tokens the long-secret heuristic must not mask. These previously
+# rendered as [REDACTED_SECRET] in reports: LLM model identifiers (llm_usage_summary and
+# analysis samples), backend event keys such as event_instance_key, and traceback file
+# paths. Real secrets stay masked: key-like prefixes (sk-, bearer, api keys) are handled
+# by the dedicated patterns above and none of them fit these structural shapes.
+_KNOWN_MODEL_FAMILY = (
+    r"(?:meta-)?(?:llama|mixtral|mistral|magistral|gemma|gemini|qwen|deepseek|gpt|claude|"
+    r"kimi|command|phi|grok|sonar)"
+)
+LONG_SECRET_ALLOWLIST_RES = (
+    # LLM model identifiers, optionally vendor-prefixed: meta-llama/llama-4-scout-17b-...,
+    # llama-3.3-70b-versatile, gemini-2.0-flash. The lookahead requires a version-like
+    # continuation after the family name so random tokens that merely start with a short
+    # family string stay masked.
+    re.compile(rf"(?i)^(?:[a-z0-9._-]+/)?{_KNOWN_MODEL_FAMILY}(?=$|[-._/0-9])[a-z0-9._/-]*$"),
+    # Absolute POSIX file paths with a file extension (traceback locations).
+    re.compile(r"^/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,5}$"),
+    # Lowercase snake_case structural keys (event_instance_key, canonical event keys,
+    # semantic families): at least three short segments. The per-segment cap keeps
+    # key-with-long-random-tail secrets (e.g. sk_live_<40 chars>) masked.
+    re.compile(r"^[a-z0-9]{1,16}(?:_[a-z0-9]{1,16}){2,}$"),
+)
+# Snake_case tokens starting with a credential-style prefix are never structural keys.
+_SECRET_PREFIX_RE = re.compile(
+    r"(?i)^(?:sk|pk|rk|gsk|csk|whsec|ghp|gho|ghs|ghu|ghr|github|xox[a-z]|api|key|token|"
+    r"secret|bearer|aws|akia)_"
+)
+# Credential-style words anywhere in a snake_case token disqualify it from the allowlist.
+_SECRET_SEGMENT_WORDS = frozenset(
+    {"secret", "secrets", "token", "tokens", "key", "keys", "apikey", "api", "pass",
+     "passwd", "password", "credential", "credentials", "auth"}
+)
+
+
+def _is_allowlisted_long_token(value: str) -> bool:
+    # LONG_SECRET_RE spans can include a key= prefix (its character class contains '='),
+    # so allowlist by the value part: "model=llama-3.3-70b-versatile" passes on the model
+    # name while "api_key=<random>" still masks because the value fits no structural shape.
+    candidate = value.rsplit("=", 1)[-1]
+    if not candidate or _SECRET_PREFIX_RE.match(candidate):
+        return False
+    if any(segment in _SECRET_SEGMENT_WORDS for segment in candidate.lower().split("_")):
+        return False
+    return any(pattern.match(candidate) for pattern in LONG_SECRET_ALLOWLIST_RES)
 
 
 @dataclass
@@ -67,7 +111,18 @@ def redact_text(text: str, mapper: ReferenceMapper, report: RedactionReport) -> 
     redacted, url_count = SECRET_URL_RE.subn(r"\1[REDACTED]\3", redacted)
     redacted, db_url_count = DATABASE_URL_RE.subn("[REDACTED_DATABASE_URL]", redacted)
     redacted, key_count = KEY_VALUE_SECRET_RE.subn(r"\1[REDACTED]\3", redacted)
-    redacted, long_secret_count = LONG_SECRET_RE.subn("[REDACTED_SECRET]", redacted)
+
+    long_secret_count = 0
+
+    def _replace_long_secret(match: re.Match[str]) -> str:
+        nonlocal long_secret_count
+        value = match.group(0)
+        if _is_allowlisted_long_token(value):
+            return value
+        long_secret_count += 1
+        return "[REDACTED_SECRET]"
+
+    redacted = LONG_SECRET_RE.sub(_replace_long_secret, redacted)
     if url_count or db_url_count or key_count or long_secret_count:
         report.replacements["secret"] = (
             report.replacements.get("secret", 0)
@@ -135,9 +190,12 @@ def redact_value_by_key(
     if normalized in {"telegram_chat_id", "chat_id", "sent_to_chat_id"}:
         report.increment("chat")
         return mapper.ref("chat", value)
-    if any(
+    # "invoice_payload" / the exact payments.payload column — not any key containing
+    # "payload", which previously mislabeled non-payment fields (e.g. payload_points)
+    # as payment_ref:p_... references.
+    if normalized == "payload" or any(
         token in normalized
-        for token in ("payment_id", "charge_id", "payload", "subscription_id")
+        for token in ("payment_id", "charge_id", "invoice_payload", "subscription_id")
     ):
         report.increment("payment")
         return mapper.ref("payment", value)

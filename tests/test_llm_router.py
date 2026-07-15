@@ -1,13 +1,16 @@
 """Router fallback behaviour with mocked providers (no real provider calls)."""
 
 import asyncio
+import json
 
 import pytest
 
 from bot.services.llm import config
 from bot.services.llm.base_provider import BaseProvider, ProviderResult
 from bot.services.llm.errors import (
+    AIInvalidJsonError,
     AIProviderRateLimitError,
+    AISchemaValidationError,
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
@@ -295,6 +298,111 @@ async def test_rate_limit_attributed_to_rate_limited_provider(monkeypatch):
     with pytest.raises(AIProviderRateLimitError) as raised:
         await _call(router)
     assert raised.value.provider == "groq"
+
+
+def _content_result(name, model="m", content="{}"):
+    return ProviderResult(provider=name, model=model, raw_content=content, input_chars=1)
+
+
+async def _parse_json_validate(result):
+    try:
+        parsed = json.loads(result.raw_content)
+    except json.JSONDecodeError as error:
+        raise AIInvalidJsonError(str(error), raw_content=result.raw_content) from error
+    return (result.provider, parsed)
+
+
+async def _call_validated(router, validate, call_type="event_analysis"):
+    return await router.chat_completion(
+        call_type=call_type,
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        response_format=None,
+        validate_response=validate,
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_output_advances_to_next_provider(monkeypatch):
+    # The production 2026-07-10 case: primary switched out on 5xx is one thing, but a
+    # provider that answers with unparseable JSON must also advance the chain.
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider("groq", lambda name, model: _content_result(name, model, "not json"))
+    cerebras = FakeProvider(
+        "cerebras", lambda name, model: _content_result(name, model, '{"ok": true}')
+    )
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    provider, parsed = await _call_validated(router, _parse_json_validate)
+
+    assert provider == "cerebras"
+    assert parsed == {"ok": True}
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_all_providers_invalid_json_raises_last_invalid_error(monkeypatch):
+    # Exhaustion keeps the AIInvalidJsonError contract, and the chain is bounded to one
+    # full pass: each provider is attempted exactly once for this logical call.
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider("groq", lambda name, model: _content_result(name, model, "not json"))
+    cerebras = FakeProvider(
+        "cerebras", lambda name, model: _content_result(name, model, "also not json")
+    )
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    with pytest.raises(AIInvalidJsonError) as raised:
+        await _call_validated(router, _parse_json_validate)
+
+    assert raised.value.raw_content == "also not json"
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_schema_validation_failure_advances_to_next_provider(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = FakeProvider(
+        "groq", lambda name, model: _content_result(name, model, '{"wrong_schema": true}')
+    )
+    cerebras = FakeProvider(
+        "cerebras", lambda name, model: _content_result(name, model, '{"symbol": "BTC"}')
+    )
+    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+
+    async def _schema_validate(result):
+        parsed = json.loads(result.raw_content)
+        if "symbol" not in parsed:
+            raise AISchemaValidationError("missing fields: ['symbol']")
+        return (result.provider, parsed)
+
+    provider, parsed = await _call_validated(router, _schema_validate)
+
+    assert provider == "cerebras"
+    assert parsed == {"symbol": "BTC"}
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_output_then_rate_limit_exhaustion_raises_invalid_error(monkeypatch):
+    # Mixed exhaustion: invalid output was seen, so the invalid-output error wins and the
+    # caller reaches its deterministic-fallback handling instead of a rate-limit path.
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider(
+                "groq", lambda name, model: _content_result(name, model, "not json")
+            ),
+            "cerebras": FakeProvider(
+                "cerebras", AIProviderRateLimitError("429", provider="cerebras")
+            ),
+        }
+    )
+
+    with pytest.raises(AIInvalidJsonError):
+        await _call_validated(router, _parse_json_validate)
 
 
 def test_safe_error_message_redacts_secret_fragments():
