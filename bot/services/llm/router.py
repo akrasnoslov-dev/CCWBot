@@ -7,7 +7,17 @@ next provider; on a deterministic error (e.g. a 4xx bad request) it surfaces the
 caller unchanged. Per-attempt usage logging and ``(provider, model)`` backoff are handled
 inside each provider via the shared telemetry module.
 
+When callers pass ``validate_response``, invalid provider *output* is also fallback-eligible:
+the callback parses/validates each provider's raw response and raises ``AIInvalidJsonError``
+or ``AISchemaValidationError`` when the output cannot be trusted, which makes the router
+advance to the next provider (logged as ``llm_provider_switch reason=invalid_output``).
+Each provider is attempted at most once per logical call — one full pass over the chain,
+never a retry loop on the same provider.
+
 Exhaustion mapping preserves the exception contract existing callers already handle:
+- if any provider returned invalid output -> the last ``AIInvalidJsonError`` /
+  ``AISchemaValidationError`` is re-raised, so reports/event-analysis keep their existing
+  deterministic-fallback handling for malformed model output.
 - every provider skipped because it was already in active backoff -> ``LLMRateLimitBackoffActive``
   (so Event Analysis / Heartbeat still record ``skipped_due_to_rate_limit``).
 - otherwise, if any provider in the chain hit a rate limit -> ``AIProviderRateLimitError``
@@ -20,10 +30,11 @@ Exhaustion mapping preserves the exception contract existing callers already han
 import logging
 
 from bot.services.llm import config
-from bot.services.llm.base_provider import ProviderResult
 from bot.services.llm.cerebras_provider import get_provider as _cerebras_provider
 from bot.services.llm.errors import (
+    AIInvalidJsonError,
     AIProviderRateLimitError,
+    AISchemaValidationError,
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
@@ -91,7 +102,16 @@ class LLMRouter:
         timeout: int = 15,
         symbol: str | None = None,
         model_overrides: dict | None = None,
-    ) -> ProviderResult:
+        validate_response=None,
+    ):
+        """Run one logical LLM call over the provider chain.
+
+        ``validate_response`` is an optional async callback receiving the
+        :class:`ProviderResult`; it must return the validated value (which becomes this
+        method's return value) or raise ``AIInvalidJsonError`` / ``AISchemaValidationError``
+        to mark the provider's output as unusable and advance the chain. Without it the raw
+        :class:`ProviderResult` is returned unchanged.
+        """
         providers = self._providers_for(call_type)
         if not providers:
             raise AllProvidersFailedError(
@@ -107,6 +127,7 @@ class LLMRouter:
         rate_limited_name: str | None = None
         rate_limit_untils: list = []
         last_error: Exception | None = None
+        invalid_output_error: Exception | None = None
 
         for index, (name, provider) in enumerate(providers):
             model = (model_overrides or {}).get(name) or config.model_for(name, call_type)
@@ -161,15 +182,40 @@ class LLMRouter:
                 # Deterministic error (e.g. 4xx / JSON-mode validation) — surface unchanged.
                 raise
 
+            if validate_response is not None:
+                try:
+                    validated = await validate_response(result)
+                except (AIInvalidJsonError, AISchemaValidationError) as error:
+                    # Unusable output (broken JSON / schema mismatch) is fallback-eligible,
+                    # same as a provider 5xx: advance to the next provider in the chain.
+                    attempted += 1
+                    invalid_output_error = error
+                    last_error = error
+                    logger.warning(
+                        "ops_event=llm_provider_switch provider=%s call_type=%s "
+                        "reason=invalid_output",
+                        name,
+                        call_type,
+                    )
+                    continue
+            else:
+                validated = result
+
             if index > 0:
                 logger.info(
                     "ops_event=llm_provider_used provider=%s call_type=%s after_fallback=true",
                     name,
                     call_type,
                 )
-            return result
+            return validated
 
         # Chain exhausted. Choose the exception that matches existing caller handling.
+        if invalid_output_error is not None:
+            # Re-raise the last invalid-output error so callers keep their existing
+            # AIInvalidJsonError / AISchemaValidationError terminal handling
+            # (deterministic fallbacks for reports, failed-analysis records for events).
+            raise invalid_output_error
+
         only_pre_backoff = (
             first_backoff_error is not None
             and attempted == 0

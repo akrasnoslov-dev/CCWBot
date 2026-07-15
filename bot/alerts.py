@@ -2864,8 +2864,26 @@ async def _create_event_analysis_decision(
     usage_log_id = None
     analysis_provider = "groq"
     analysis_model = GROQ_EVENT_ANALYSIS_MODEL
+    expected_symbol = str(input_payload["symbol"])
+    candidate_news_ids = {
+        str(item["news_id"])
+        for item in input_payload.get("news", input_payload.get("candidate_news", []))
+    }
+
+    def _schema_check(provider_parsed: dict) -> None:
+        # Runs during the provider pass so a schema-invalid answer from one provider
+        # falls back to the next provider in the chain instead of losing the analysis.
+        try:
+            validate_event_analysis_output(
+                _normalize_event_analysis_result_for_validation(provider_parsed),
+                expected_symbol=expected_symbol,
+                candidate_news_ids=candidate_news_ids,
+            )
+        except EventAnalysisValidationError as error:
+            raise AISchemaValidationError(str(error)) from error
+
     try:
-        result = await ask_event_analysis_raw(input_payload)
+        result = await ask_event_analysis_raw(input_payload, schema_check=_schema_check)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
         analysis_provider = getattr(result, "provider", None) or analysis_provider
@@ -2895,6 +2913,37 @@ async def _create_event_analysis_decision(
             suppression_reason=SUPPRESSION_LLM_RATE_LIMITED,
             suppression_count=1,
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
+        )
+        return None, None
+    except AISchemaValidationError as error:
+        # Every provider in the chain returned schema-invalid output; keep the same
+        # terminal handling the post-call schema validation used before the router
+        # made schema failures fallback-eligible.
+        analysis_id = await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=getattr(error, "raw_content", None),
+            status="schema_error",
+            error_message=str(error),
+            error_reason=classify_ai_error_reason(error),
+            provider=getattr(error, "provider", None) or analysis_provider,
+            model=getattr(error, "model", None) or analysis_model,
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_FAILED,
+            reason_code=REASON_LLM_INVALID_RESPONSE,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            decision_stage=DECISION_STAGE_LLM,
+            decision_reason=DECISION_REASON_UNKNOWN,
+            context_fingerprint=_event_context_fingerprint(input_payload),
+            detail=classify_ai_error_reason(error),
+        )
+        logger.warning(
+            "%s event analysis schema validation failed: %s",
+            str(input_payload["symbol"]).upper(),
+            error,
         )
         return None, None
     except Exception as error:
@@ -2931,11 +2980,8 @@ async def _create_event_analysis_decision(
     try:
         decision = validate_event_analysis_output(
             normalized_parsed,
-            expected_symbol=str(input_payload["symbol"]),
-            candidate_news_ids={
-                str(item["news_id"])
-                for item in input_payload.get("news", input_payload.get("candidate_news", []))
-            },
+            expected_symbol=expected_symbol,
+            candidate_news_ids=candidate_news_ids,
         )
     except EventAnalysisValidationError as error:
         schema_error = AISchemaValidationError(str(error))
@@ -3543,20 +3589,27 @@ async def _send_alert_to_recipient_with_retry(
     alert_payload: dict,
     *,
     alert_id: int | None = None,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, BaseException | None]:
+    """Send with retries; returns (sent, error_message, last_exception).
+
+    The exception is returned alongside its string form so callers can log the real
+    error class (e.g. ``Forbidden``) instead of the type of the message string.
+    """
     last_error: str | None = None
+    last_exception: BaseException | None = None
     for attempt in range(1, TELEGRAM_DELIVERY_MAX_ATTEMPTS + 1):
         sent, error_message, error = await _send_alert_to_recipient_once(
             app, recipient, alert_payload
         )
         if sent:
-            return True, None
+            return True, None, None
         last_error = error_message
+        last_exception = error
         classification_error = error if error is not None else error_message
         if not _is_transient_telegram_delivery_error(classification_error):
-            return False, error_message
+            return False, error_message, error
         if attempt >= TELEGRAM_DELIVERY_MAX_ATTEMPTS:
-            return False, error_message
+            return False, error_message, error
 
         delay_seconds = _delivery_retry_delay_seconds(classification_error, attempt)
         next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
@@ -3578,17 +3631,23 @@ async def _send_alert_to_recipient_with_retry(
             type(classification_error).__name__,
         )
         await asyncio.sleep(delay_seconds)
-    return False, last_error
+    return False, last_error, last_exception
+
+def _delivery_error_class_name(error: BaseException | None) -> str:
+    """Real exception class name for delivery logs (never the type of a message string)."""
+    return type(error).__name__ if error is not None else "unknown"
 
 async def _disable_recipient_if_bot_blocked(
     recipient: AlertRecipient,
     error_message: str | None,
+    *,
+    error: BaseException | None = None,
 ) -> None:
     if not is_bot_blocked_error(error_message):
         if error_message:
             logger.info(
                 "ops_event=telegram_delivery_failure_not_permanent error_class=%s",
-                type(error_message).__name__,
+                _delivery_error_class_name(error),
             )
         return
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -3973,7 +4032,7 @@ async def _deliver_market_event_alert(
                 continue
         else:
             alert_id = None
-        sent, error_message = await _send_alert_to_recipient_with_retry(
+        sent, error_message, send_error = await _send_alert_to_recipient_with_retry(
             app,
             recipient,
             alert_payload,
@@ -4068,7 +4127,7 @@ async def _deliver_market_event_alert(
                 numeric_context=numeric_context,
             )
         else:
-            await _disable_recipient_if_bot_blocked(recipient, error_message)
+            await _disable_recipient_if_bot_blocked(recipient, error_message, error=send_error)
             _log_event_alert_suppression(
                 symbol=normalized_symbol,
                 suppression_reason=SUPPRESSION_DELIVERY_FAILED,
@@ -4082,7 +4141,8 @@ async def _deliver_market_event_alert(
             )
             log(
                 "ops_event=telegram_delivery_failed "
-                f"symbol={normalized_symbol.upper()} error_class={type(error_message).__name__}"
+                f"symbol={normalized_symbol.upper()} "
+                f"error_class={_delivery_error_class_name(send_error)}"
             )
     suppression_count = skipped_count + (len(recipients) - sent_count - skipped_count)
     summary_reason = None
@@ -4248,7 +4308,7 @@ async def _deliver_market_heartbeat(
                 alert_id = alert_row.id
             if not should_send:
                 continue
-        sent, error_message = await _send_alert_to_recipient_with_retry(
+        sent, error_message, send_error = await _send_alert_to_recipient_with_retry(
             app,
             recipient,
             alert_payload,
@@ -4292,10 +4352,11 @@ async def _deliver_market_heartbeat(
             delivered = True
             sent_count += 1
         else:
-            await _disable_recipient_if_bot_blocked(recipient, error_message)
+            await _disable_recipient_if_bot_blocked(recipient, error_message, error=send_error)
             log(
                 "ops_event=heartbeat_delivery_failed "
-                f"symbol={normalized_symbol.upper()} error_class={type(error_message).__name__}"
+                f"symbol={normalized_symbol.upper()} "
+                f"error_class={_delivery_error_class_name(send_error)}"
             )
     log(
         "ops_event=heartbeat_delivery_summary "

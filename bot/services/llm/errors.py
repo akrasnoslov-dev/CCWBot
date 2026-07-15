@@ -53,7 +53,15 @@ class AIInvalidJsonError(RuntimeError):
 
 
 class AISchemaValidationError(RuntimeError):
-    """Raised when validated JSON does not match the expected schema."""
+    """Raised when validated JSON does not match the expected schema.
+
+    ``raw_content`` optionally carries the offending provider output so terminal
+    handlers can persist it for diagnosis, mirroring ``AIInvalidJsonError``.
+    """
+
+    def __init__(self, message: str, raw_content: str | None = None):
+        super().__init__(message)
+        self.raw_content = raw_content
 
 
 class AllProvidersFailedError(RuntimeError):

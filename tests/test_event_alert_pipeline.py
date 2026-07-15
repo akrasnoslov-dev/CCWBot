@@ -1443,7 +1443,7 @@ async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
         monkeypatch.setattr(
             alerts,
             "_send_alert_to_recipient_with_retry",
-            AsyncMock(return_value=(True, None)),
+            AsyncMock(return_value=(True, None, None)),
         )
         monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
 
@@ -1519,7 +1519,7 @@ async def test_deliver_market_event_alert_does_not_create_ai_analysis(monkeypatc
         monkeypatch.setattr(
             alerts,
             "_send_alert_to_recipient_with_retry",
-            AsyncMock(return_value=(True, None)),
+            AsyncMock(return_value=(True, None, None)),
         )
 
         delivered = await alerts._deliver_market_event_alert(
@@ -1608,7 +1608,7 @@ async def test_should_alert_event_with_eligible_recipient_creates_delivery_rows(
         monkeypatch.setattr(
             alerts,
             "_send_alert_to_recipient_with_retry",
-            AsyncMock(return_value=(True, None)),
+            AsyncMock(return_value=(True, None, None)),
         )
 
         delivered = await alerts._deliver_market_event_alert(
@@ -1686,7 +1686,7 @@ async def test_automatic_should_alert_creates_delivery_rows_through_recipient_re
             "reason_for_no_alert": None,
         }
         groq_call = AsyncMock(return_value=("raw should-alert output", parsed))
-        send_alert = AsyncMock(return_value=(True, None))
+        send_alert = AsyncMock(return_value=(True, None, None))
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
@@ -2879,7 +2879,7 @@ async def test_delivery_reason_market_context_changed_is_per_recipient(monkeypat
         monkeypatch.setattr(
             alerts,
             "_send_alert_to_recipient_with_retry",
-            AsyncMock(return_value=(True, None)),
+            AsyncMock(return_value=(True, None, None)),
         )
         recipients = [
             alerts.AlertRecipient(chat_id=normal_user.telegram_chat_id, user_id=normal_user.id),

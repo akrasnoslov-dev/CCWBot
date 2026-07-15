@@ -130,6 +130,100 @@ class LLMJsonResult(tuple):
         return value
 
 
+def _json_response_validator(
+    *,
+    call_type: str,
+    symbol: str | None,
+    max_tokens: int,
+    schema_check=None,
+):
+    """Build the router ``validate_response`` callback for structured-JSON call types.
+
+    The callback parses one provider's raw output (stripping optional code fences), runs the
+    optional caller-supplied ``schema_check(parsed)`` (which raises
+    ``AISchemaValidationError`` on mismatch), writes the per-attempt usage log for that
+    provider, and returns an :class:`LLMJsonResult`. Raising ``AIInvalidJsonError`` /
+    ``AISchemaValidationError`` makes the router advance to the next provider in the chain,
+    so invalid output is handled like any other provider failure while keeping per-provider
+    attribution in ``llm_usage_logs``.
+    """
+
+    async def _validate(result) -> LLMJsonResult:
+        raw_content = result.raw_content
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        parsed = None
+        parse_error: AIInvalidJsonError | None = None
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as error:
+            parse_error = AIInvalidJsonError(str(error), raw_content=raw_content)
+            parse_error.__cause__ = error
+        if parse_error is None and not isinstance(parsed, dict):
+            parse_error = AIInvalidJsonError(
+                "top-level JSON is not an object", raw_content=raw_content
+            )
+        if parse_error is not None:
+            # Attribute the failure to the provider that produced it, for terminal handlers.
+            parse_error.provider = result.provider
+            parse_error.model = result.model
+            await write_llm_usage_log(
+                provider=result.provider,
+                call_type=call_type,
+                symbol=symbol,
+                model=result.model,
+                status="invalid_json",
+                input_chars=result.input_chars,
+                output_chars=len(raw_content),
+                max_tokens=max_tokens,
+                headers=result.headers,
+                response=result.response,
+                error_reason="invalid_json",
+                error_message=safe_error_message(parse_error),
+            )
+            raise parse_error
+        if schema_check is not None:
+            try:
+                schema_check(parsed)
+            except AISchemaValidationError as error:
+                if error.raw_content is None:
+                    error.raw_content = raw_content
+                error.provider = result.provider
+                error.model = result.model
+                await write_llm_usage_log(
+                    provider=result.provider,
+                    call_type=call_type,
+                    symbol=symbol,
+                    model=result.model,
+                    status="schema_error",
+                    input_chars=result.input_chars,
+                    output_chars=len(raw_content),
+                    max_tokens=max_tokens,
+                    headers=result.headers,
+                    response=result.response,
+                    error_reason="schema_validation_failed",
+                    error_message=safe_error_message(error),
+                )
+                raise
+        usage_log_id = await write_llm_usage_log(
+            provider=result.provider,
+            call_type=call_type,
+            symbol=symbol,
+            model=result.model,
+            status="success",
+            input_chars=result.input_chars,
+            output_chars=len(raw_content),
+            max_tokens=max_tokens,
+            headers=result.headers,
+            response=result.response,
+        )
+        return LLMJsonResult(
+            raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+        )
+
+    return _validate
+
+
 def _groq_json_mode_enabled() -> bool:
     return os.getenv("GROQ_JSON_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
 
@@ -825,6 +919,11 @@ async def _ask_json_with_usage(
     # Honour an explicit Groq model override for the primary provider; fallback providers use
     # their own configured models.
     model_overrides = {"groq": model} if model else None
+    validator = _json_response_validator(
+        call_type=call_type,
+        symbol=symbol,
+        max_tokens=max_tokens,
+    )
 
     try:
         result = await get_router().chat_completion(
@@ -834,6 +933,7 @@ async def _ask_json_with_usage(
             response_format=response_format,
             symbol=symbol,
             model_overrides=model_overrides,
+            validate_response=validator,
         )
     except Exception as error:
         # Rate-limit / all-providers-failed already carry the correct type from the router.
@@ -852,29 +952,19 @@ async def _ask_json_with_usage(
             response_format=None,
             symbol=symbol,
             model_overrides=model_overrides,
+            validate_response=validator,
         )
-    raw_content = result.raw_content
-    parsed = _parse_json(raw_content)
-    status = "success" if parsed is not None else "invalid_json"
-    usage_log_id = await write_llm_usage_log(
-        provider=result.provider,
-        call_type=call_type,
-        symbol=symbol,
-        model=result.model,
-        status=status,
-        input_chars=result.input_chars,
-        output_chars=len(raw_content),
-        max_tokens=max_tokens,
-        headers=result.headers,
-        response=result.response,
-        error_reason=None if parsed is not None else "invalid_json",
-        error_message=None if parsed is not None else "Provider response was not valid JSON.",
-    )
-    return parsed, usage_log_id
+    _, parsed = result
+    return parsed, result.usage_log_id
 
 
 async def _ask_json(prompt: str) -> dict | None:
-    parsed, _ = await _ask_json_with_usage(prompt)
+    try:
+        parsed, _ = await _ask_json_with_usage(prompt)
+    except AIInvalidJsonError:
+        # Chain exhausted on unparseable output; keep this helper's None contract so the
+        # legacy alert path builds its deterministic fallback exactly as before.
+        return None
     return parsed
 
 
@@ -925,8 +1015,13 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
     )
 
 
-async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one event-analysis decision and return raw + parsed JSON."""
+async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
+    """Ask the LLM for one event-analysis decision and return raw + parsed JSON.
+
+    ``schema_check(parsed)`` optionally validates each provider's parsed output during the
+    router pass (raising ``AISchemaValidationError`` on mismatch), so a schema-invalid answer
+    from one provider falls back to the next provider in the chain.
+    """
     prompt = build_event_analysis_prompt(input_payload)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -935,64 +1030,18 @@ async def ask_event_analysis_raw(input_payload: dict) -> tuple[str, dict]:
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
 
-    result = await get_router().chat_completion(
+    return await get_router().chat_completion(
         call_type="event_analysis",
         messages=messages,
         max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
         response_format=response_format,
         symbol=symbol,
-    )
-    raw_content = result.raw_content
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError as error:
-        await write_llm_usage_log(
-            provider=result.provider,
+        validate_response=_json_response_validator(
             call_type="event_analysis",
             symbol=symbol,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
             max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message=safe_error_message(error),
-        )
-        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
-    if not isinstance(parsed, dict):
-        await write_llm_usage_log(
-            provider=result.provider,
-            call_type="event_analysis",
-            symbol=symbol,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
-            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message="top-level JSON is not an object",
-        )
-        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await write_llm_usage_log(
-        provider=result.provider,
-        call_type="event_analysis",
-        symbol=symbol,
-        model=result.model,
-        status="success",
-        input_chars=result.input_chars,
-        output_chars=len(raw_content),
-        max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
-        headers=result.headers,
-        response=result.response,
-    )
-    return LLMJsonResult(
-        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+            schema_check=schema_check,
+        ),
     )
 
 
@@ -1035,64 +1084,17 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
 
-    result = await get_router().chat_completion(
+    return await get_router().chat_completion(
         call_type="market_heartbeat",
         messages=messages,
         max_tokens=350,
         response_format=response_format,
         symbol=symbol,
-    )
-    raw_content = result.raw_content
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError as error:
-        await write_llm_usage_log(
-            provider=result.provider,
+        validate_response=_json_response_validator(
             call_type="market_heartbeat",
             symbol=symbol,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
             max_tokens=350,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message=safe_error_message(error),
-        )
-        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
-    if not isinstance(parsed, dict):
-        await write_llm_usage_log(
-            provider=result.provider,
-            call_type="market_heartbeat",
-            symbol=symbol,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
-            max_tokens=350,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message="top-level JSON is not an object",
-        )
-        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await write_llm_usage_log(
-        provider=result.provider,
-        call_type="market_heartbeat",
-        symbol=symbol,
-        model=result.model,
-        status="success",
-        input_chars=result.input_chars,
-        output_chars=len(raw_content),
-        max_tokens=350,
-        headers=result.headers,
-        response=result.response,
-    )
-    return LLMJsonResult(
-        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+        ),
     )
 
 
@@ -1137,8 +1139,13 @@ def build_market_report_prompt(input_payload: dict) -> str:
     )
 
 
-async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one cached market-wide report and return raw + parsed JSON."""
+async def ask_market_report_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
+    """Ask the LLM for one cached market-wide report and return raw + parsed JSON.
+
+    ``schema_check(parsed)`` optionally validates each provider's parsed output during the
+    router pass (raising ``AISchemaValidationError`` on mismatch), so a schema-invalid answer
+    from one provider falls back to the next provider in the chain.
+    """
     report_type = str(input_payload.get("report_type") or "").strip().lower()
     call_type = f"{report_type}_report" if report_type in {"daily", "weekly"} else "market_report"
     prompt = build_market_report_prompt(input_payload)
@@ -1148,65 +1155,19 @@ async def ask_market_report_raw(input_payload: dict) -> tuple[str, dict]:
     ]
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
 
-    result = await get_router().chat_completion(
+    return await get_router().chat_completion(
         call_type=call_type,
         messages=messages,
         max_tokens=800,
         response_format=response_format,
         timeout=20,
         symbol=None,
-    )
-    raw_content = result.raw_content
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError as error:
-        await write_llm_usage_log(
-            provider=result.provider,
+        validate_response=_json_response_validator(
             call_type=call_type,
             symbol=None,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
             max_tokens=800,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message=safe_error_message(error),
-        )
-        raise AIInvalidJsonError(str(error), raw_content=raw_content) from error
-    if not isinstance(parsed, dict):
-        await write_llm_usage_log(
-            provider=result.provider,
-            call_type=call_type,
-            symbol=None,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
-            max_tokens=800,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message="top-level JSON is not an object",
-        )
-        raise AIInvalidJsonError("top-level JSON is not an object", raw_content=raw_content)
-    usage_log_id = await write_llm_usage_log(
-        provider=result.provider,
-        call_type=call_type,
-        symbol=None,
-        model=result.model,
-        status="success",
-        input_chars=result.input_chars,
-        output_chars=len(raw_content),
-        max_tokens=800,
-        headers=result.headers,
-        response=result.response,
-    )
-    return LLMJsonResult(
-        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+            schema_check=schema_check,
+        ),
     )
 
 
@@ -1219,7 +1180,7 @@ async def ask_news_intelligence_raw(
 ) -> tuple[str, dict]:
     """Ask the LLM for one compact structured news intelligence JSON response."""
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
-    result = await get_router().chat_completion(
+    return await get_router().chat_completion(
         call_type="news_intelligence",
         messages=messages,
         max_tokens=max_tokens,
@@ -1227,41 +1188,11 @@ async def ask_news_intelligence_raw(
         timeout=timeout,
         symbol=None,
         model_overrides={"groq": model} if model else None,
-    )
-
-    raw_content = result.raw_content
-    parsed = _parse_json(raw_content)
-    if parsed is None:
-        await write_llm_usage_log(
-            provider=result.provider,
+        validate_response=_json_response_validator(
             call_type="news_intelligence",
             symbol=None,
-            model=result.model,
-            status="invalid_json",
-            input_chars=result.input_chars,
-            output_chars=len(raw_content),
             max_tokens=max_tokens,
-            headers=result.headers,
-            response=result.response,
-            error_reason="invalid_json",
-            error_message="Provider response was not valid JSON.",
-        )
-        raise AIInvalidJsonError("Provider response was not valid JSON.", raw_content=raw_content)
-
-    usage_log_id = await write_llm_usage_log(
-        provider=result.provider,
-        call_type="news_intelligence",
-        symbol=None,
-        model=result.model,
-        status="success",
-        input_chars=result.input_chars,
-        output_chars=len(raw_content),
-        max_tokens=max_tokens,
-        headers=result.headers,
-        response=result.response,
-    )
-    return LLMJsonResult(
-        raw_content, parsed, usage_log_id, provider=result.provider, model=result.model
+        ),
     )
 
 

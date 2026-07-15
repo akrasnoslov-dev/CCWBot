@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol, normalize_symbol
+
+logger = logging.getLogger(__name__)
 
 REPORT_TYPES = {"daily", "weekly"}
 REPORT_RESULT_FIELDS = {
@@ -79,7 +82,14 @@ def validate_market_report_output(
     extra_fields = set(result) - REPORT_RESULT_FIELDS
     missing_fields = REPORT_RESULT_FIELDS - set(result)
     if extra_fields:
-        raise MarketReportValidationError(f"unexpected fields: {sorted(extra_fields)}")
+        # Tolerance is additive only: unknown top-level fields are dropped instead of
+        # rejecting the whole report. Field names only — never values, truncated because
+        # the names themselves come from LLM output.
+        logger.debug(
+            "market_report_unknown_fields_stripped fields=%s",
+            sorted(str(name)[:40] for name in extra_fields),
+        )
+        result = {key: value for key, value in result.items() if key in REPORT_RESULT_FIELDS}
     if missing_fields:
         raise MarketReportValidationError(f"missing fields: {sorted(missing_fields)}")
 
@@ -262,8 +272,10 @@ def _validate_coin_cards(
         extra_fields = set(item) - {"symbol", "summary", "watch"}
         missing_fields = {"symbol", "summary", "watch"} - set(item)
         if extra_fields:
-            raise MarketReportValidationError(
-                f"unexpected coin card fields: {sorted(extra_fields)}"
+            # Same additive tolerance as the top level: drop unknown coin-card fields.
+            logger.debug(
+                "market_report_coin_card_unknown_fields_stripped fields=%s",
+                sorted(str(name)[:40] for name in extra_fields),
             )
         if missing_fields:
             raise MarketReportValidationError(f"missing coin card fields: {sorted(missing_fields)}")

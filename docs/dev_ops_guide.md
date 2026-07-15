@@ -121,6 +121,16 @@ Do not run raw deployment, restart, migration, environment-printing, or secret-r
 part of diagnostics. A partial bundle means at least one collector failed; inspect the collector
 status table and rerun after the named collector is fixed.
 
+Important: after any change to `ops-agent/scripts/ccwbot-ops-agent-collect`, the installed copy at
+`/usr/local/bin/ccwbot-ops-agent-collect` must be re-installed manually on the VPS — `git pull`
+updates only the repo copy, never `/usr/local/bin`. A stale installed wrapper was the root cause of
+the July 2026 partial-bundle streak. Re-install with:
+
+```bash
+sudo cp /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
+```
+
 For post-deploy Event Alert verification, rebuild the `ops-agent` Docker image with the deploy and
 collect a short no-state bundle:
 
