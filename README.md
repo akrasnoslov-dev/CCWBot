@@ -36,8 +36,10 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
   entitlement naturally expires when `active_until <= now`.
 - Groq is the primary LLM provider, with an optional Cerebras/Gemini/Mistral fallback chain
   (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
-  `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker and automatic
-  load balancing (routing before a rate limit is hit) are not built yet.
+  `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
+  `(call type, provider, model)` triple that keeps failing deterministically and retries it on a
+  widening interval. Automatic load balancing (routing before a rate limit is hit) is not built
+  yet.
 - Local `state.json` fallback is single-instance oriented.
 
 ## Project Structure
@@ -79,6 +81,7 @@ Common configuration:
 - `GROQ_EVENT_ANALYSIS_MAX_TOKENS` (legacy name; superseded by `LLM_EVENT_ANALYSIS_MAX_TOKENS`)
 - `GROQ_MARKET_HEARTBEAT_MODEL`
 - `LLM_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS` (legacy name `GROQ_RATE_LIMIT_FALLBACK_BACKOFF_SECONDS` still honoured)
+- `LLM_BREAKER_ENABLED` / `LLM_BREAKER_FAILURE_THRESHOLD` / `LLM_BREAKER_BACKOFF_SECONDS` (circuit breaker for a persistently failing provider+model)
 - `GROQ_REPORT_MODEL`
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
