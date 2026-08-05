@@ -42,6 +42,15 @@ WITH recent_analyses AS (
     WHERE eai.created_at >= :since
       AND eai.created_at < :until
       AND coalesce(eai.analysis_type, 'event_analysis') = 'event_analysis'
+      -- Failed attempts carry no alert content, so they contribute nothing to repetition
+      -- evidence, yet they compete for the same per-bucket row cap. During the 2026-07 outage
+      -- 3396 llm_error rows filled every bucket and pushed out the delivered analyses that the
+      -- six alert-quality detectors read, leaving all of them unknown for the whole period.
+      -- Excluding them here means a failure storm can no longer blind those detectors. The
+      -- failures stay fully visible in llm_usage_logs and in the analysis summaries.
+      AND coalesce(eai.status, '') NOT IN (
+          'llm_error', 'invalid_json', 'schema_error', 'skipped_due_to_rate_limit'
+      )
     ORDER BY eai.created_at DESC, eai.id DESC
     LIMIT :alert_evidence_limit
 ),
@@ -271,7 +280,9 @@ async def collect_db(
             "warnings": [],
         }
     )
-    read_only_errors = validate_read_only_queries()
+    read_only_errors = validate_read_only_queries(
+        extra={"alert_repetition_evidence": ALERT_EVIDENCE_SQL}
+    )
     if read_only_errors:
         raise RuntimeError("; ".join(read_only_errors))
     warning = database_role_warning(config.database_url)
