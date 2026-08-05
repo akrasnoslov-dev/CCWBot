@@ -19,6 +19,7 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
+from bot.services.llm.env import get_int_env
 from bot.services.llm.errors import (
     AIInvalidJsonError,
     AIProviderRateLimitError,
@@ -30,14 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return value if value >= minimum else default
+    """Thin wrapper over the shared parser, which warns instead of failing silently."""
+    return get_int_env(name, default, minimum=minimum)
 
 
 def _rate_limit_fallback_backoff_seconds() -> int:

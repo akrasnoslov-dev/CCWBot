@@ -72,8 +72,13 @@ class BaseProvider(ABC):
         max_tokens: int,
         response_format: dict | None,
         timeout: int = 15,
+        reasoning_effort: str | None = None,
     ) -> ProviderResult:
-        """Run one chat completion and return a :class:`ProviderResult` on success."""
+        """Run one chat completion and return a :class:`ProviderResult` on success.
+
+        ``reasoning_effort`` is omitted from the request payload when ``None``, so providers
+        and models without reasoning support see exactly the payload they saw before.
+        """
         raise NotImplementedError
 
 
@@ -116,6 +121,7 @@ class OpenAICompatibleProvider(BaseProvider):
         max_tokens: int,
         response_format: dict | None,
         timeout: int = 15,
+        reasoning_effort: str | None = None,
     ) -> ProviderResult:
         input_chars = message_input_chars(messages)
         provider = self.name
@@ -156,10 +162,15 @@ class OpenAICompatibleProvider(BaseProvider):
             "model": model,
             "messages": messages,
             "temperature": 0.0,
+            # ``max_tokens`` rather than ``max_completion_tokens``: all four providers in the
+            # chain accept it, and Groq treats it as an alias of the newer name, so reasoning
+            # models still receive the correct budget. See the PR discussion in docs/llm_usage.md.
             "max_tokens": max_tokens,
         }
         if response_format is not None:
             request_kwargs["response_format"] = response_format
+        if reasoning_effort is not None:
+            request_kwargs["reasoning_effort"] = reasoning_effort
 
         try:
             completions = client.chat.completions

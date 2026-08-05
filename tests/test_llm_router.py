@@ -22,10 +22,12 @@ class FakeProvider(BaseProvider):
         self.name = name
         self._behavior = behavior
         self.calls = 0
+        self.last_reasoning_effort = None
 
     async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
-                              response_format, timeout=15):
+                              response_format, timeout=15, reasoning_effort=None):
         self.calls += 1
+        self.last_reasoning_effort = reasoning_effort
         behavior = self._behavior
         if isinstance(behavior, BaseException):
             raise behavior
@@ -211,7 +213,7 @@ def test_model_for_resolves_per_provider(monkeypatch):
     monkeypatch.delenv("GROQ_MARKET_HEARTBEAT_MODEL", raising=False)
     monkeypatch.delenv("CEREBRAS_MODEL", raising=False)
     assert config.model_for("groq", "market_heartbeat") == "llama-3.1-8b-instant"
-    assert config.model_for("cerebras", "daily_report") == "llama-3.3-70b"
+    assert config.model_for("cerebras", "daily_report") == "gpt-oss-120b"
     monkeypatch.setenv("CEREBRAS_MODEL", "custom-cerebras")
     assert config.model_for("cerebras", "event_analysis") == "custom-cerebras"
 
