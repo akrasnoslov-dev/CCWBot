@@ -28,7 +28,7 @@ class ContentProvider(BaseProvider):
         self.calls = 0
 
     async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
-                              response_format, timeout=15):
+                              response_format, timeout=15, reasoning_effort=None):
         self.calls += 1
         return ProviderResult(
             provider=self.name,

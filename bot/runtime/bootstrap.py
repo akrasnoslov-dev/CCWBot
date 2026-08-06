@@ -15,6 +15,7 @@ from bot.runtime import close_database, initialize_database, log
 from bot.runtime.event_loop import create_event_loop, get_stop_signals
 from bot.runtime.scheduler import schedule_runtime_jobs
 from bot.runtime.telegram_app import build_application, register_handlers
+from bot.services.llm.config import log_resolved_configuration
 from bot.services.price_service import warm_up_price_cache
 from bot.settings import get_runtime_alert_settings
 from bot.setup import setup_bot_commands
@@ -50,6 +51,15 @@ def main() -> None:
     log(f"ops_event=bot_start environment={ENVIRONMENT} health_port={HEALTH_PORT}")
 
     loop.run_until_complete(initialize_runtime())
+
+    # After initialize_runtime() so the warning-file handler is attached and any rejected
+    # config value is captured there too, and before any LLM call so "is the deploy using the
+    # models I configured?" is answerable from the log alone, without reading .env on the
+    # server. Guarded: this is observability only and must never keep the bot from starting.
+    try:
+        log_resolved_configuration()
+    except Exception as error:  # pragma: no cover - defensive
+        log(f"ops_event=llm_config_log_failed error={type(error).__name__}")
 
     app = build_application()
     register_handlers(app)

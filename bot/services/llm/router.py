@@ -131,6 +131,10 @@ class LLMRouter:
 
         for index, (name, provider) in enumerate(providers):
             model = (model_overrides or {}).get(name) or config.model_for(name, call_type)
+            # Resolved from the model this attempt will actually use: a chain that mixes
+            # reasoning and non-reasoning models sends the parameter only to the attempts that
+            # accept it, and omits it entirely everywhere else.
+            reasoning_effort = config.reasoning_effort_for(model, call_type)
             try:
                 result = await provider.chat_completion(
                     call_type=call_type,
@@ -140,6 +144,7 @@ class LLMRouter:
                     max_tokens=max_tokens,
                     response_format=response_format,
                     timeout=timeout,
+                    reasoning_effort=reasoning_effort,
                 )
             except LLMRateLimitBackoffActive as error:
                 # Provider was already in active backoff and did not make an HTTP call.
