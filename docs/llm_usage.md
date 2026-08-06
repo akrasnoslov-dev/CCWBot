@@ -14,11 +14,157 @@ All four providers are reached through the OpenAI-compatible chat-completions AP
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
-advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and surfaces
-deterministic errors (e.g. a 4xx bad request or JSON-mode validation failure) to the caller
-unchanged. When every provider is exhausted it raises the exception each existing caller already
-handles, so the deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they
-now trigger only after the whole chain is exhausted, not on the first Groq rate limit.
+advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
+provider-side model failure. It surfaces a genuine request defect to the caller unchanged. When
+every provider is exhausted it raises the exception each existing caller already handles, so the
+deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they now trigger only
+after the whole chain is exhausted, not on the first Groq rate limit.
+
+### Which 4xx responses fall back
+
+A 4xx is not one thing, and treating it as one is what kept the fallback chain from engaging for
+18 days when Groq decommissioned the `event_analysis` model. `error_reason` now distinguishes:
+
+| `error_reason` | Meaning | Falls back? |
+| --- | --- | --- |
+| `provider_model_error` | `404 model_not_found`, `model_decommissioned`, and the equivalents from Cerebras/Gemini/Mistral | yes |
+| `provider_json_validate_failed` | the provider's own JSON-mode validation rejected the model's output | yes |
+| `provider_bad_request` | malformed parameters, oversized payload, context length exceeded | no |
+| `provider_4xx` | any other 4xx (unchanged meaning) | no |
+
+All four keep the `provider_` prefix, so consumers that match `provider_%` — including the
+ops-agent `llm_failure_category_summary` query — continue to bucket them without modification.
+
+`provider_json_validate_failed` is fallback-eligible on purpose. It means the model produced no
+usable content, which is the same condition as a client-side `AIInvalidJsonError` — and that has
+always advanced the chain here. Making the server-detected variant behave like the client-detected
+one removes an inconsistency rather than adding retry cost: the prompt is fixed per call type and
+not user-controlled, so a genuinely bad prompt already fans out across the chain today via the
+client-side path, bounded to one pass. A malformed *request*, by contrast, would fail identically
+everywhere and stays terminal.
+
+### Circuit breaker
+
+A `(call_type, provider, model)` triple that fails `LLM_BREAKER_FAILURE_THRESHOLD` times in a row
+(default 5) is opened and skipped, then retried on the widening `LLM_BREAKER_BACKOFF_SECONDS`
+schedule (default `60,300,900,3600`). When an interval elapses the triple goes half-open and the
+next cycle probes it once; a success closes it immediately and clears all state, so a fixed
+provider is used again on the very next cycle.
+
+Three properties matter operationally:
+
+- **Skipping is not failing.** An open primary is skipped *within* the same cycle, so the fallback
+  answers that cycle. The breaker never costs a delivery opportunity.
+- **Only failures that are a property of the triple count.** The counted set is exactly
+  `provider_model_error`, `auth_error`, and `config_missing`. Everything else is excluded for a
+  specific reason:
+  - rate limits have their own `(provider, model)` backoff registry, and timeouts/5xx are
+    transient — neither should latch a breaker open;
+  - `provider_bad_request` and residual `provider_4xx` are terminal, so opening a breaker on them
+    would skip the primary next cycle and hand the same defective request to the fallback,
+    walking a purely client-side bug down the entire chain;
+  - `provider_json_validate_failed` depends on the prompt, which carries fresh market data every
+    cycle, and its client-side twin `AIInvalidJsonError` does not open a breaker either.
+- **A skip is still recorded.** Each skipped attempt writes an `llm_usage_logs` row with
+  `status = 'skipped_due_to_circuit_breaker'` and `error_reason = 'provider_circuit_broken'`,
+  mirroring `skipped_due_to_rate_limit`. Without it a broken provider would simply stop appearing
+  in the table once its breaker opened, and the evidence of an ongoing outage would fade out a few
+  cycles after it began.
+
+If every provider in a chain is circuit-broken, the router raises `AllProvidersFailedError` with
+`circuit_broken=True`, which classifies as `provider_circuit_broken` rather than a generic
+`other_error`, so "known-bad, waiting to probe" stays distinguishable from a fresh failure in
+`event_ai_analyses.error_reason`.
+
+Transitions log `ops_event=llm_breaker_opened` (WARNING), `ops_event=llm_breaker_half_open` and
+`ops_event=llm_breaker_closed` (INFO), alongside the existing `llm_provider_switch` and
+`llm_rate_limit_started` events. State is in-memory and per process; a restart clears it, costing
+at most one extra probe per triple.
+
+Set `LLM_BREAKER_ENABLED=false` to disable it entirely.
+
+## Models, token budgets, and reasoning effort
+
+Model identifiers are provider-controlled and do change; a decommissioned model answers
+`404 model_not_found`. Every call type is therefore configurable from the environment, so
+adopting a replacement model is an `.env` edit and a restart, not a code deploy.
+
+| Call type | Model | Completion budget | Reasoning effort |
+| --- | --- | --- | --- |
+| `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
+| `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
+| `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
+| `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
+
+Defaults in brackets are the values these budgets previously had hardcoded, so an unconfigured
+deployment is unchanged. `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
+event-analysis budget and is used when `LLM_EVENT_ANALYSIS_MAX_TOKENS` is unset.
+
+One budget covers every provider in that call type's chain, so a chain whose fallback runs a
+reasoning or thinking model needs a budget large enough for that model too. A per-provider budget
+override is a known gap, not a supported configuration.
+
+This matters for the shipped fallback defaults: `CEREBRAS_MODEL=gpt-oss-120b` reasons before it
+answers, and `GEMINI_MODEL=gemini-2.5-flash` thinks by default; both draw those tokens from the
+completion budget. At the llama-sized defaults (300 for `event_analysis`) those fallback attempts
+have no room to produce JSON. Startup therefore logs
+`ops_event=llm_config_budget_risk call_type=... provider=... model=... max_tokens=...` whenever a
+chain member is a thinking model and the call type's budget is below 1024. Raise the budget for
+that call type before relying on such a fallback.
+
+`reasoning_effort` (`low` / `medium` / `high`) is omitted from the request payload entirely when
+unset, so non-reasoning models are unaffected. `LLM_REASONING_EFFORT` sets a global default that a
+per-call-type variable overrides.
+
+The gate for sending the parameter is the resolved **model identifier**, not the provider: a
+provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
+a non-reasoning model is a 400 that the router treats as deterministic and does not fall back on.
+A model counts as reasoning-capable when its identifier contains one of
+`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss`). So with a `groq:llama-3.3-70b-versatile →
+cerebras:gpt-oss-120b` chain, a global `LLM_REASONING_EFFORT=low` reaches only the Cerebras
+attempt.
+
+Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually accepts the
+`reasoning_effort` request field. Gemini 2.5 and Mistral's reasoning models think internally but
+their OpenAI-compatible endpoints reject the parameter, so adding a marker that matches them
+converts a working fallback into a 400. The budget warning above covers those models instead.
+
+`openai/gpt-oss-120b` and `openai/gpt-oss-20b` are reasoning models: reasoning tokens are drawn
+from the same completion budget as the answer. At the llama-era budgets the model emits no JSON at
+all and the call fails with `400 json_validate_failed` and an empty `failed_generation`. Raise the
+call type's `*_MAX_TOKENS` substantially before pointing it at a gpt-oss model.
+
+The completion budget is sent as `max_tokens`. All four providers accept it, and Groq documents it
+as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
+per-provider payload difference. The `json_validate_failed` failures seen during the gpt-oss
+migration attempt were caused by the budget being too small, not by the field name — sending
+`max_completion_tokens` would not have changed the outcome.
+
+An unparseable value for any of these variables — or one below 1 or above 32768 — is rejected with
+a WARNING naming the variable and the rejected value (`ops_event=llm_config_invalid`), and the
+default is used; a typo is never applied silently. The same applies to an unrecognised provider
+name in `LLM_PROVIDER_PRIORITY` or a per-call-type chain override, which would otherwise shorten
+the fallback chain invisibly. Values of credential-like variables are redacted before logging.
+
+### Startup configuration log
+
+On startup the runtime logs the fully resolved configuration, one INFO line per call type:
+
+```text
+ops_event=llm_config call_type=event_analysis max_tokens=300
+  chain=groq:llama-3.3-70b-versatile,cerebras:gpt-oss-120b/effort=low(no_api_key)
+```
+
+This answers "is the running deploy actually using what I configured?" without reading `.env` on
+the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
+default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will
+exclude from the chain. The line carries provider names, model identifiers, budgets, and effort
+only — never credentials. An API key appears only as the `(no_api_key)` presence marker; the key
+value itself is never read into a log line.
+
+Changing a model identifier also invalidates the news-intelligence analysis cache, which is keyed
+on `(news item, llm_model)`. Expect one bounded re-analysis burst after a model swap, capped by
+`NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN` and `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR`.
 
 A provider with no API key is excluded from the chain (logged once), so leaving the fallback keys
 blank keeps Groq-only behaviour. Rate-limit backoff is tracked per `(provider, model)`. The
@@ -57,6 +203,10 @@ snake_case safe categories:
 - `schema_validation_failed`
 - `timeout`
 - `auth_error`
+- `provider_model_error`
+- `provider_json_validate_failed`
+- `provider_bad_request`
+- `provider_circuit_broken`
 - `provider_4xx`
 - `provider_5xx`
 - `network_error`

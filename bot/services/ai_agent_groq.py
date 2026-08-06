@@ -14,7 +14,9 @@ from dotenv import load_dotenv
 
 from bot.domain.supported_coins import display_symbol as coin_display_symbol
 from bot.news_titles import clean_news_title, clean_related_news_text
+from bot.services.llm import config as llm_config
 from bot.services.llm import get_router
+from bot.services.llm.env import get_int_env
 
 # Several names below are re-exports: they now live in bot.services.llm but remain importable
 # from this module for backward compatibility. `import x as x` marks a re-export intentionally
@@ -62,26 +64,20 @@ load_dotenv()
 
 
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return value if value >= minimum else default
+    """Backward-compatible wrapper over the shared parser, which now warns on a bad value."""
+    return get_int_env(name, default, minimum=minimum)
 
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-GROQ_EVENT_ANALYSIS_MODEL = os.getenv(
-    "GROQ_EVENT_ANALYSIS_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"
-)
-GROQ_EVENT_ANALYSIS_MAX_TOKENS = _get_int_env("GROQ_EVENT_ANALYSIS_MAX_TOKENS", 300, minimum=1)
-GROQ_MARKET_HEARTBEAT_MODEL = os.getenv(
-    "GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"
-)
-GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant")
-GROQ_NEWS_INTELLIGENCE_MODEL = os.getenv("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-3.1-8b-instant")
+# Import-time snapshots kept for backward compatibility: several modules import these names
+# directly. The live per-call values are resolved at call time via ``llm_config`` so an .env
+# change takes effect on restart without any code path holding a stale value.
+# "default" is not a real call type, so this resolves GROQ_MODEL — the generic Groq model.
+GROQ_MODEL = llm_config.model_for("groq", "default")
+GROQ_EVENT_ANALYSIS_MODEL = llm_config.model_for("groq", "event_analysis")
+GROQ_EVENT_ANALYSIS_MAX_TOKENS = llm_config.max_tokens_for("event_analysis")
+GROQ_MARKET_HEARTBEAT_MODEL = llm_config.model_for("groq", "market_heartbeat")
+GROQ_REPORT_MODEL = llm_config.model_for("groq", "daily_report")
+GROQ_NEWS_INTELLIGENCE_MODEL = llm_config.model_for("groq", "news_intelligence")
 
 logger = logging.getLogger(__name__)
 
@@ -907,9 +903,15 @@ async def _ask_json_with_usage(
     call_type: str = "legacy_alert_payload",
     symbol: str | None = None,
     model: str | None = None,
-    max_tokens: int = 450,
+    max_tokens: int | None = None,
 ) -> tuple[dict | None, int | None]:
-    """Request JSON from Groq/OpenAI-compatible API and parse it."""
+    """Request JSON from Groq/OpenAI-compatible API and parse it.
+
+    ``max_tokens=None`` resolves the configured budget for the call type, so this path is
+    covered by the same environment configuration as the others.
+    """
+    if max_tokens is None:
+        max_tokens = llm_config.max_tokens_for(call_type)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -1029,17 +1031,18 @@ async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> t
     ]
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
+    max_tokens = llm_config.max_tokens_for("event_analysis")
 
     return await get_router().chat_completion(
         call_type="event_analysis",
         messages=messages,
-        max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+        max_tokens=max_tokens,
         response_format=response_format,
         symbol=symbol,
         validate_response=_json_response_validator(
             call_type="event_analysis",
             symbol=symbol,
-            max_tokens=GROQ_EVENT_ANALYSIS_MAX_TOKENS,
+            max_tokens=max_tokens,
             schema_check=schema_check,
         ),
     )
@@ -1083,17 +1086,18 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
     ]
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     symbol = str(input_payload.get("symbol") or "").strip() or None
+    max_tokens = llm_config.max_tokens_for("market_heartbeat")
 
     return await get_router().chat_completion(
         call_type="market_heartbeat",
         messages=messages,
-        max_tokens=350,
+        max_tokens=max_tokens,
         response_format=response_format,
         symbol=symbol,
         validate_response=_json_response_validator(
             call_type="market_heartbeat",
             symbol=symbol,
-            max_tokens=350,
+            max_tokens=max_tokens,
         ),
     )
 
@@ -1154,18 +1158,19 @@ async def ask_market_report_raw(input_payload: dict, *, schema_check=None) -> tu
         {"role": "user", "content": prompt},
     ]
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
+    max_tokens = llm_config.max_tokens_for(call_type)
 
     return await get_router().chat_completion(
         call_type=call_type,
         messages=messages,
-        max_tokens=800,
+        max_tokens=max_tokens,
         response_format=response_format,
         timeout=20,
         symbol=None,
         validate_response=_json_response_validator(
             call_type=call_type,
             symbol=None,
-            max_tokens=800,
+            max_tokens=max_tokens,
             schema_check=schema_check,
         ),
     )
@@ -1174,11 +1179,18 @@ async def ask_market_report_raw(input_payload: dict, *, schema_check=None) -> tu
 async def ask_news_intelligence_raw(
     messages: list[dict],
     *,
-    model: str = GROQ_NEWS_INTELLIGENCE_MODEL,
+    model: str | None = None,
     timeout: int = 20,
-    max_tokens: int = 350,
+    max_tokens: int | None = None,
 ) -> tuple[str, dict]:
-    """Ask the LLM for one compact structured news intelligence JSON response."""
+    """Ask the LLM for one compact structured news intelligence JSON response.
+
+    ``max_tokens=None`` resolves the configured budget for this call type and ``model=None``
+    lets the router resolve the model; explicit values still win, so existing callers that pass
+    one keep their behaviour.
+    """
+    if max_tokens is None:
+        max_tokens = llm_config.max_tokens_for("news_intelligence")
     response_format = {"type": "json_object"} if _groq_json_mode_enabled() else None
     return await get_router().chat_completion(
         call_type="news_intelligence",

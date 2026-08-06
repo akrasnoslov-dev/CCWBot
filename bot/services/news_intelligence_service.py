@@ -33,7 +33,8 @@ from bot.db.database import (
 )
 from bot.domain.supported_coins import ALL_SUPPORTED_COINS
 from bot.news_titles import clean_news_title
-from bot.services.ai_agent_groq import GROQ_NEWS_INTELLIGENCE_MODEL, ask_news_intelligence_raw
+from bot.services.ai_agent_groq import ask_news_intelligence_raw
+from bot.services.llm import config as llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class NewsIntelligenceService:
         session: AsyncSession,
         *,
         llm_client: NewsLlmCallable | None = None,
-        model: str = GROQ_NEWS_INTELLIGENCE_MODEL,
+        model: str | None = None,
         max_items_per_run: int = NEWS_INTELLIGENCE_MAX_ITEMS_PER_RUN,
         max_llm_calls_per_run: int = NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN,
         max_llm_calls_per_hour: int = NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR,
@@ -125,7 +126,11 @@ class NewsIntelligenceService:
     ) -> None:
         self.session = session
         self.llm_client = llm_client or _default_llm_client
-        self.model = model
+        # Resolved per service instance rather than at import, so the configured Groq model
+        # reported by the startup configuration log is the one used here. Note the persisted
+        # llm_provider/llm_model still name Groq even when a fallback provider answered —
+        # pre-existing, tracked separately.
+        self.model = model or llm_config.model_for("groq", "news_intelligence")
         self.max_items_per_run = max_items_per_run
         self.max_llm_calls_per_run = max_llm_calls_per_run
         self.max_llm_calls_per_hour = max_llm_calls_per_hour

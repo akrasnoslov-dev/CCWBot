@@ -10,6 +10,7 @@ import bot.runtime as runtime
 import bot.services.ai_agent_groq as ai_agent_groq
 from bot.db.database import Base, LlmUsageLog
 from bot.services.llm import base_provider, groq_provider, telemetry
+from bot.services.llm import config as llm_config
 
 
 def _set_groq_client(monkeypatch, client):
@@ -380,12 +381,35 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
     asyncio.run(run_test())
 
 
-def test_event_analysis_model_and_max_token_defaults():
-    assert (
-        ai_agent_groq.GROQ_EVENT_ANALYSIS_MODEL
-        == "meta-llama/llama-4-scout-17b-16e-instruct"
-    )
-    assert ai_agent_groq.GROQ_EVENT_ANALYSIS_MAX_TOKENS == 300
+def test_event_analysis_model_and_max_token_defaults(monkeypatch):
+    # Asserted against a cleared environment on purpose: the previous version of this test read
+    # whatever the developer's .env pinned, so it kept passing while the code default still
+    # named a model Groq had decommissioned.
+    for name in ("GROQ_EVENT_ANALYSIS_MODEL", "LLM_EVENT_ANALYSIS_MAX_TOKENS",
+                 "GROQ_EVENT_ANALYSIS_MAX_TOKENS"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert llm_config.model_for("groq", "event_analysis") == "llama-3.3-70b-versatile"
+    assert llm_config.max_tokens_for("event_analysis") == 300
+
+
+def test_no_code_default_names_the_decommissioned_scout_model(monkeypatch):
+    # Regression guard for the 2026-07-17 outage: Groq removed
+    # meta-llama/llama-4-scout-17b-16e-instruct, which was the pinned event_analysis default.
+    for provider in ("groq", "cerebras", "gemini", "mistral"):
+        env = llm_config._PROVIDER_API_KEY_ENV[provider]
+        monkeypatch.delenv(env, raising=False)
+    for call_type in llm_config.KNOWN_CALL_TYPES:
+        for provider in ("groq", "cerebras", "gemini", "mistral"):
+            env_name = (
+                llm_config._GROQ_MODEL_ENV_BY_CALL_TYPE.get(
+                    call_type, llm_config._GROQ_DEFAULT_MODEL
+                )[0]
+                if provider == "groq"
+                else llm_config._FALLBACK_MODEL_ENV[provider][0]
+            )
+            monkeypatch.delenv(env_name, raising=False)
+            assert "llama-4-scout" not in llm_config.model_for(provider, call_type)
 
 
 def test_classify_ai_error_reason_uses_safe_snake_case_categories():
