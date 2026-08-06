@@ -13,7 +13,12 @@ from ops_agent.collectors.health import collect_health
 from ops_agent.collectors.local_state import collect_local_state
 from ops_agent.collectors.logs import collect_logs
 from ops_agent.config import load_config
-from ops_agent.detectors import detector_payload, detector_summary, run_detectors
+from ops_agent.detectors import (
+    detector_payload,
+    detector_summary,
+    event_analysis_call_totals,
+    run_detectors,
+)
 from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message
 from ops_agent.report_markdown import render_decision_report_context
 from ops_agent.retention import apply_retention
@@ -109,10 +114,19 @@ async def _collect(args: argparse.Namespace) -> int:
         "evidence/local_state/ops_agent_state_snapshot.json",
         local_state["ops_agent_state_snapshot"],
     )
+    # Registered as evidence, not only written to the bundle: detectors read the `evidence`
+    # dict, and the cross-cycle event-analysis streak is derived from prior runs recorded in
+    # this snapshot. Every other collector registers both; local_state did not.
+    evidence["evidence/local_state/ops_agent_state_snapshot.json"] = local_state[
+        "ops_agent_state_snapshot"
+    ]
     writer.write_json(
         "evidence/local_state/legacy_state_snapshot.json",
         local_state["legacy_state_snapshot"],
     )
+    evidence["evidence/local_state/legacy_state_snapshot.json"] = local_state[
+        "legacy_state_snapshot"
+    ]
     writer.add_status("local_state", "ok", None)
 
     if args.include_protected_identity_map:
@@ -164,6 +178,7 @@ async def _collect(args: argparse.Namespace) -> int:
                     for status in writer.collector_status
                     if status.status != "ok"
                 ],
+                event_analysis=_event_analysis_signal(evidence),
             ),
         )
     apply_retention(config)
@@ -178,6 +193,22 @@ async def _collect(args: argparse.Namespace) -> int:
         }
     )
     return 0
+
+
+def _event_analysis_signal(evidence: dict[str, Any]) -> dict[str, int]:
+    """Per-run event-analysis call counters carried forward in ops-agent state.
+
+    Persisted so the "zero successes" detector can span collection cycles: a single bundle
+    only sees its own period, but the failure this exists to catch runs for weeks.
+    """
+    payload = evidence.get("evidence/db/aggregate_metrics.json")
+    rows = []
+    if isinstance(payload, dict):
+        query = (payload.get("queries") or {}).get("llm_usage_summary")
+        if isinstance(query, dict):
+            rows = [row for row in (query.get("rows") or []) if isinstance(row, dict)]
+    successful, total = event_analysis_call_totals(rows)
+    return {"successful_calls": successful, "total_calls": total}
 
 
 def _summarize_log_evidence(log_index: dict[str, Any]) -> dict[str, Any]:

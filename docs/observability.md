@@ -2,6 +2,98 @@
 
 Use these read-only queries for production analysis. Adjust interval windows as needed.
 
+## Event Analysis Health
+
+Event Alerts were dead for 18 days in 2026-07 while every monitoring surface reported healthy.
+`/health` only proved that price polling ran, and the sole trace was one identical WARNING
+repeated 3396 times at unchanged severity. These four surfaces exist so an outage of that shape
+becomes visible in hours instead of weeks.
+
+**`/health` — Event Analysis block.** The endpoint now carries a nested block:
+
+```json
+{
+  "status": "ok",
+  "uptime_seconds": 1234,
+  "last_btc_check_at": "2026-08-05T12:00:00+00:00",
+  "event_analysis": {
+    "state": "degraded",
+    "last_success_at": "2026-07-17T23:00:01+00:00",
+    "last_success_age_seconds": 1555199,
+    "consecutive_failures": 3396
+  }
+}
+```
+
+The top-level `status` deliberately stays `"ok"`. The Compose healthcheck fails the container
+whenever `status != "ok"`, and nothing restarts it on that basis — `restart: always` reacts to
+process exit, not to health, and there is no autoheal or orchestrator in this deployment. Flipping
+`status` would therefore buy no remediation and would instead mark the container permanently
+`unhealthy` in `docker compose ps` and to any external monitor, on a bot that is still serving
+prices, heartbeats and reports. Degradation is reported *inside* the payload instead. `state` is
+`unknown` when there is no evidence to judge on, which per project rule is incomplete, not healthy. Tune with
+`EVENT_ANALYSIS_FAILURE_ESCALATION_THRESHOLD` (default 5) and
+`EVENT_ANALYSIS_HEALTH_MAX_AGE_SECONDS` (default 10800). The payload carries counters and
+timestamps only — no model identifiers, provider names, or environment values.
+
+**Log severity reflects duration.** The repeating per-symbol failure line escalates from WARNING
+to ERROR once consecutive failures reach the threshold, and carries the streak length:
+
+```text
+ops_event=event_analysis_failed symbol=BTC reason=provider_model_error consecutive_failures=5
+```
+
+**Candidate crossings are recorded independently of the LLM.** Market events are only created
+after a successful analysis, so a dead LLM produces zero events rather than events without
+analyses — the outage was silent by construction. Every symbol that reaches the analysis stage now
+emits, before the LLM is called:
+
+```text
+ops_event=event_alert_candidate_crossing symbol=BTC analysed_window_change_percent=-4.2
+  change_24h_percent=-6.1 threshold_percent=3.0 crossed_threshold=true analysed_window_minutes=30
+```
+
+This is evidence only: it creates no market event, triggers no alert, and feeds no decision.
+Comparing its count against created `market_events` turns "detections happening but zero events
+created" into a measurable gap.
+
+**Log-evidence baseline shifts once.** Traceback continuation lines now carry a leading
+`<timestamp> | ` prefix so every line of a record stays attributable. The ops-agent's log
+collector only counts lines with a parseable in-period timestamp, so traceback bodies — previously
+invisible to that filter — now count toward `period_matched_lines` and the error pattern counters.
+Expect a one-off step up in those numbers after deploy; it is higher fidelity, not a regression,
+and bundles from before and after this change are not directly comparable on those counters.
+
+**Ops-agent detectors.** `event_analysis_success_rate_zero` (critical) triggers when zero
+`event_analysis` calls succeeded, and counts consecutive collection cycles with the same result
+via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares the
+model recorded in `llm_usage_logs` against the shipped default, at `high` severity when the model
+in use is one the provider has withdrawn. Both read existing tables only.
+
+Last successful Event Analysis, and the size of the current failure streak:
+
+```sql
+SELECT
+  max(created_at) FILTER (WHERE status IN ('success', 'no_alert')) AS last_success_at,
+  count(*) FILTER (WHERE status NOT IN ('success', 'no_alert')) AS failures_24h,
+  count(*) AS attempts_24h
+FROM event_ai_analyses
+WHERE coalesce(analysis_type, 'event_analysis') = 'event_analysis'
+  AND created_at >= now() - interval '24 hours';
+```
+
+Detections versus created market events, the gap the candidate-crossing line measures:
+
+```sql
+SELECT
+  date_trunc('hour', created_at) AS hour,
+  count(*) AS market_events_created
+FROM market_events
+WHERE created_at >= now() - interval '48 hours'
+GROUP BY 1
+ORDER BY 1;
+```
+
 ## Admin System Status
 
 Admin -> System status is a compact Telegram-safe dashboard for live operators. It uses only

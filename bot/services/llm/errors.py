@@ -70,6 +70,11 @@ class AllProvidersFailedError(RuntimeError):
     ``last_error`` is the final underlying exception; ``rate_limited`` is True when the
     terminal failure was a rate limit, so callers can preserve the existing
     rate-limited deterministic-fallback behaviour.
+
+    ``circuit_broken`` is True when no provider was actually attempted because every one of
+    them was in an open circuit breaker. That is a materially different state from "attempted
+    them all and they failed", and it must survive to the persisted ``error_reason`` so the
+    evidence trail distinguishes "known-bad, waiting to probe" from a fresh failure.
     """
 
     def __init__(
@@ -79,8 +84,10 @@ class AllProvidersFailedError(RuntimeError):
         last_error: Exception | None = None,
         rate_limited: bool = False,
         attempts: list[str] | None = None,
+        circuit_broken: bool = False,
     ):
         super().__init__(message)
         self.last_error = last_error
         self.rate_limited = rate_limited
         self.attempts = attempts or []
+        self.circuit_broken = circuit_broken

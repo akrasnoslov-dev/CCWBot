@@ -957,12 +957,20 @@ QUERIES: tuple[DbQuery, ...] = (
 )
 
 
-def validate_read_only_queries() -> list[str]:
+def validate_read_only_queries(extra: dict[str, str] | None = None) -> list[str]:
+    """Assert every collector SQL statement is a read-only, single, unterminated statement.
+
+    ``extra`` carries statements that live outside ``QUERIES`` — notably the alert-evidence
+    statement in the collector module, which is the largest query the collector runs and was
+    previously not covered by this guard at all.
+    """
     errors: list[str] = []
-    for query in QUERIES:
-        normalized = query.sql.strip().lower()
+    named_sql = [(query.name, query.sql) for query in QUERIES]
+    named_sql.extend((name, sql) for name, sql in (extra or {}).items())
+    for name, sql in named_sql:
+        normalized = sql.strip().lower()
         if not (normalized.startswith("select") or normalized.startswith("with")):
-            errors.append(f"{query.name} is not read-only")
+            errors.append(f"{name} is not read-only")
         if ";" in normalized:
-            errors.append(f"{query.name} contains a semicolon")
+            errors.append(f"{name} contains a semicolon")
     return errors
