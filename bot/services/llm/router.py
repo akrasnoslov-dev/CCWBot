@@ -2,10 +2,17 @@
 
 The router is the single common path every LLM call goes through. It resolves the ordered
 provider chain for a call type, skips providers with no API key, and attempts each in turn.
-On a transient/transport failure (rate limit, timeout, 5xx, auth, network) it advances to the
-next provider; on a deterministic error (e.g. a 4xx bad request) it surfaces the error to the
-caller unchanged. Per-attempt usage logging and ``(provider, model)`` backoff are handled
-inside each provider via the shared telemetry module.
+It advances to the next provider on a transient/transport failure (rate limit, timeout, 5xx,
+auth, network) and on a provider-side model failure (``404 model_not_found``,
+``model_decommissioned``, and the equivalents from the other providers). It surfaces a genuine
+request defect — malformed parameters, oversized payload — to the caller unchanged, because
+retrying that across the chain only multiplies cost. Per-attempt usage logging and
+``(provider, model)`` backoff are handled inside each provider via the shared telemetry module.
+
+A ``(call_type, provider, model)`` triple that keeps failing deterministically is opened by
+the circuit breaker in :mod:`bot.services.llm.breaker` and skipped on later cycles until its
+backoff elapses. Skipping advances the chain immediately, so a broken primary means the
+fallback answers this cycle rather than the cycle being lost.
 
 When callers pass ``validate_response``, invalid provider *output* is also fallback-eligible:
 the callback parses/validates each provider's raw response and raises ``AIInvalidJsonError``
@@ -29,7 +36,7 @@ Exhaustion mapping preserves the exception contract existing callers already han
 
 import logging
 
-from bot.services.llm import config
+from bot.services.llm import breaker, config
 from bot.services.llm.cerebras_provider import get_provider as _cerebras_provider
 from bot.services.llm.errors import (
     AIInvalidJsonError,
@@ -41,11 +48,32 @@ from bot.services.llm.errors import (
 from bot.services.llm.gemini_provider import get_provider as _gemini_provider
 from bot.services.llm.groq_provider import get_provider as _groq_provider
 from bot.services.llm.mistral_provider import get_provider as _mistral_provider
-from bot.services.llm.telemetry import classify_ai_error_reason
+from bot.services.llm.telemetry import (
+    classify_ai_error_reason,
+    message_input_chars,
+    write_llm_usage_log,
+)
 
 logger = logging.getLogger(__name__)
 
 # Reasons that mean "this provider is unusable right now, try the next one".
+#
+# ``provider_model_error`` and ``provider_json_validate_failed`` are 4xx responses that are
+# nonetheless *provider-side* facts, so they belong here:
+#
+# - ``provider_model_error`` is "this model cannot serve the request" (404 model_not_found,
+#   model_decommissioned, and the equivalents from the other three providers). A different
+#   provider running a different model can answer it. This omission is what kept the fallback
+#   chain from engaging for 18 days when Groq decommissioned the event-analysis model.
+# - ``provider_json_validate_failed`` is the provider's own JSON-mode validation rejecting the
+#   model's output. That is unusable *output*, not a defective request — the same condition as
+#   ``AIInvalidJsonError``, which this router has always treated as fallback-eligible. It is
+#   here so the two paths agree regardless of whether the broken JSON was caught server-side
+#   or client-side.
+#
+# Deliberately NOT here: ``provider_bad_request`` and the residual ``provider_4xx``. A
+# malformed request, an oversized payload, or an unsupported parameter fails identically on
+# every provider, so retrying it across the chain only multiplies cost.
 _FALLBACK_REASONS = frozenset(
     {
         "rate_limit",
@@ -55,6 +83,8 @@ _FALLBACK_REASONS = frozenset(
         "network_error",
         "empty_response",
         "config_missing",
+        "provider_model_error",
+        "provider_json_validate_failed",
     }
 )
 
@@ -128,13 +158,46 @@ class LLMRouter:
         rate_limit_untils: list = []
         last_error: Exception | None = None
         invalid_output_error: Exception | None = None
+        breaker_skipped: list[str] = []
+        attempted_names: list[str] = []
+        input_chars = message_input_chars(messages)
 
         for index, (name, provider) in enumerate(providers):
             model = (model_overrides or {}).get(name) or config.model_for(name, call_type)
+            # An open breaker means "do not spend a request on this pair", not "give up this
+            # cycle": skipping here advances immediately to the next provider, so a dead
+            # primary costs nothing and the fallback still answers.
+            if breaker.should_skip(call_type=call_type, provider=name, model=model):
+                breaker_skipped.append(name)
+                # Record the skip in llm_usage_logs, mirroring the rate-limit pre-call skip.
+                # Without this a broken provider simply stops appearing in the table once its
+                # breaker opens, so the evidence of an ongoing outage would fade out a few
+                # cycles after it starts — the opposite of what this work is for.
+                await write_llm_usage_log(
+                    provider=name,
+                    call_type=call_type,
+                    symbol=symbol,
+                    model=model,
+                    status="skipped_due_to_circuit_breaker",
+                    input_chars=input_chars,
+                    output_chars=None,
+                    max_tokens=max_tokens,
+                    error_reason="provider_circuit_broken",
+                    error_message=f"{name} model {model} is circuit-broken for {call_type}",
+                )
+                logger.info(
+                    "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
+                    "status=skipped_due_to_circuit_breaker",
+                    name,
+                    model,
+                    call_type,
+                )
+                continue
             # Resolved from the model this attempt will actually use: a chain that mixes
             # reasoning and non-reasoning models sends the parameter only to the attempts that
             # accept it, and omits it entirely everywhere else.
             reasoning_effort = config.reasoning_effort_for(model, call_type)
+            attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
                     call_type=call_type,
@@ -147,7 +210,11 @@ class LLMRouter:
                     reasoning_effort=reasoning_effort,
                 )
             except LLMRateLimitBackoffActive as error:
-                # Provider was already in active backoff and did not make an HTTP call.
+                # Provider was already in active backoff and did not make an HTTP call, so a
+                # half-open breaker probe spent here learned nothing — give it back.
+                breaker.record_not_attempted(call_type=call_type, provider=name, model=model)
+                if attempted_names and attempted_names[-1] == name:
+                    attempted_names.pop()
                 if first_backoff_error is None:
                     first_backoff_error = error
                 last_error = error
@@ -168,6 +235,9 @@ class LLMRouter:
                 continue
             except Exception as error:
                 reason = classify_ai_error_reason(error)
+                breaker.record_failure(
+                    call_type=call_type, provider=name, model=model, reason=reason
+                )
                 if reason in _FALLBACK_REASONS:
                     attempted += 1
                     last_error = error
@@ -184,8 +254,13 @@ class LLMRouter:
                         reason,
                     )
                     continue
-                # Deterministic error (e.g. 4xx / JSON-mode validation) — surface unchanged.
+                # Genuine request defect — surface unchanged, without advancing the chain.
                 raise
+
+            # The provider answered over HTTP, so the pair is reachable and serving this model.
+            # Output that turns out to be unusable is handled by the chain below; it is not a
+            # reason to keep a breaker latched against a working endpoint.
+            breaker.record_success(call_type=call_type, provider=name, model=model)
 
             if validate_response is not None:
                 try:
@@ -242,11 +317,22 @@ class LLMRouter:
                 limited_until=limited_until,
             ) from last_error
 
+        if breaker_skipped and attempted == 0:
+            # Every configured provider is in an open breaker. Report that distinctly so the
+            # cause is "all known-bad, waiting to probe" rather than "all attempted and failed".
+            raise AllProvidersFailedError(
+                f"All providers circuit-broken for call_type={call_type}",
+                last_error=last_error,
+                rate_limited=False,
+                attempts=[],
+                circuit_broken=True,
+            ) from last_error
+
         raise AllProvidersFailedError(
             f"All providers failed for call_type={call_type}",
             last_error=last_error,
             rate_limited=False,
-            attempts=[name for name, _ in providers],
+            attempts=attempted_names,
         ) from last_error
 
 

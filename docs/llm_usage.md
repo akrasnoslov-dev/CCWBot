@@ -14,11 +14,74 @@ All four providers are reached through the OpenAI-compatible chat-completions AP
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
-advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and surfaces
-deterministic errors (e.g. a 4xx bad request or JSON-mode validation failure) to the caller
-unchanged. When every provider is exhausted it raises the exception each existing caller already
-handles, so the deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they
-now trigger only after the whole chain is exhausted, not on the first Groq rate limit.
+advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
+provider-side model failure. It surfaces a genuine request defect to the caller unchanged. When
+every provider is exhausted it raises the exception each existing caller already handles, so the
+deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they now trigger only
+after the whole chain is exhausted, not on the first Groq rate limit.
+
+### Which 4xx responses fall back
+
+A 4xx is not one thing, and treating it as one is what kept the fallback chain from engaging for
+18 days when Groq decommissioned the `event_analysis` model. `error_reason` now distinguishes:
+
+| `error_reason` | Meaning | Falls back? |
+| --- | --- | --- |
+| `provider_model_error` | `404 model_not_found`, `model_decommissioned`, and the equivalents from Cerebras/Gemini/Mistral | yes |
+| `provider_json_validate_failed` | the provider's own JSON-mode validation rejected the model's output | yes |
+| `provider_bad_request` | malformed parameters, oversized payload, context length exceeded | no |
+| `provider_4xx` | any other 4xx (unchanged meaning) | no |
+
+All four keep the `provider_` prefix, so consumers that match `provider_%` — including the
+ops-agent `llm_failure_category_summary` query — continue to bucket them without modification.
+
+`provider_json_validate_failed` is fallback-eligible on purpose. It means the model produced no
+usable content, which is the same condition as a client-side `AIInvalidJsonError` — and that has
+always advanced the chain here. Making the server-detected variant behave like the client-detected
+one removes an inconsistency rather than adding retry cost: the prompt is fixed per call type and
+not user-controlled, so a genuinely bad prompt already fans out across the chain today via the
+client-side path, bounded to one pass. A malformed *request*, by contrast, would fail identically
+everywhere and stays terminal.
+
+### Circuit breaker
+
+A `(call_type, provider, model)` triple that fails `LLM_BREAKER_FAILURE_THRESHOLD` times in a row
+(default 5) is opened and skipped, then retried on the widening `LLM_BREAKER_BACKOFF_SECONDS`
+schedule (default `60,300,900,3600`). When an interval elapses the triple goes half-open and the
+next cycle probes it once; a success closes it immediately and clears all state, so a fixed
+provider is used again on the very next cycle.
+
+Three properties matter operationally:
+
+- **Skipping is not failing.** An open primary is skipped *within* the same cycle, so the fallback
+  answers that cycle. The breaker never costs a delivery opportunity.
+- **Only failures that are a property of the triple count.** The counted set is exactly
+  `provider_model_error`, `auth_error`, and `config_missing`. Everything else is excluded for a
+  specific reason:
+  - rate limits have their own `(provider, model)` backoff registry, and timeouts/5xx are
+    transient — neither should latch a breaker open;
+  - `provider_bad_request` and residual `provider_4xx` are terminal, so opening a breaker on them
+    would skip the primary next cycle and hand the same defective request to the fallback,
+    walking a purely client-side bug down the entire chain;
+  - `provider_json_validate_failed` depends on the prompt, which carries fresh market data every
+    cycle, and its client-side twin `AIInvalidJsonError` does not open a breaker either.
+- **A skip is still recorded.** Each skipped attempt writes an `llm_usage_logs` row with
+  `status = 'skipped_due_to_circuit_breaker'` and `error_reason = 'provider_circuit_broken'`,
+  mirroring `skipped_due_to_rate_limit`. Without it a broken provider would simply stop appearing
+  in the table once its breaker opened, and the evidence of an ongoing outage would fade out a few
+  cycles after it began.
+
+If every provider in a chain is circuit-broken, the router raises `AllProvidersFailedError` with
+`circuit_broken=True`, which classifies as `provider_circuit_broken` rather than a generic
+`other_error`, so "known-bad, waiting to probe" stays distinguishable from a fresh failure in
+`event_ai_analyses.error_reason`.
+
+Transitions log `ops_event=llm_breaker_opened` (WARNING), `ops_event=llm_breaker_half_open` and
+`ops_event=llm_breaker_closed` (INFO), alongside the existing `llm_provider_switch` and
+`llm_rate_limit_started` events. State is in-memory and per process; a restart clears it, costing
+at most one extra probe per triple.
+
+Set `LLM_BREAKER_ENABLED=false` to disable it entirely.
 
 ## Models, token budgets, and reasoning effort
 
@@ -140,6 +203,10 @@ snake_case safe categories:
 - `schema_validation_failed`
 - `timeout`
 - `auth_error`
+- `provider_model_error`
+- `provider_json_validate_failed`
+- `provider_bad_request`
+- `provider_circuit_broken`
 - `provider_4xx`
 - `provider_5xx`
 - `network_error`

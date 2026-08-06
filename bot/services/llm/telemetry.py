@@ -54,10 +54,125 @@ RATE_LIMIT_BACKOFF_CALL_TYPES = {"event_analysis", "market_heartbeat"}
 _llm_rate_limit_backoffs: dict[tuple[str, str], datetime] = {}
 
 
+# A 4xx is not one thing. "This model no longer exists" is a provider-side fact that the next
+# provider in the chain can answer, while "this request is malformed" would fail identically
+# everywhere. Collapsing both into `provider_4xx` is what kept the fallback chain from engaging
+# when Groq decommissioned the event-analysis model. Each sub-kind keeps the `provider_` prefix
+# so existing consumers that match `provider_%` continue to bucket them.
+# Unambiguous provider error codes. Matched anywhere in the haystack.
+_MODEL_ERROR_MARKERS = (
+    "model_not_found",
+    "model_decommissioned",
+    "model_not_available",
+    "model_unavailable",
+    "unknown_model",
+    "invalid_model",
+)
+
+# Free-text variants. These require the word "model" near the failure phrase: bare phrases like
+# "does not exist" also appear in genuine request defects ("parameter 'foo' does not exist"),
+# which must stay terminal rather than being retried across the whole chain.
+_MODEL_ERROR_MESSAGE_RE = re.compile(
+    r"models?\b[^\n]{0,60}?"
+    r"(?:does not exist|is not found|not found|decommissioned|no longer supported"
+    r"|unsupported|unknown|invalid|deprecated)"
+    r"|(?:unknown|invalid|unsupported|decommissioned)\s+models?\b"
+)
+
+# Genuine request defects: retrying these across the chain only multiplies cost.
+_BAD_REQUEST_MARKERS = (
+    "context_length_exceeded",
+    "context length",
+    "too many tokens",
+    "string too long",
+    "request too large",
+    "payload too large",
+    "invalid_request_error",
+    "unsupported parameter",
+    "unknown parameter",
+    "unrecognized request argument",
+    "invalid value",
+    "missing required",
+)
+
+
+def is_model_unavailable_error(error: Exception) -> bool:
+    """True when the provider says the requested model cannot serve this request.
+
+    Covers ``404 model_not_found`` and the ``model_decommissioned`` / equivalent identifiers
+    the other providers use. A 404 from a chat-completions endpoint is treated as a model or
+    endpoint addressing failure either way — in both cases the next provider is worth trying.
+    """
+    status_code = _effective_status_code(error)
+    haystack = _error_haystack(error)
+    if any(marker in haystack for marker in _MODEL_ERROR_MARKERS):
+        return True
+    if _MODEL_ERROR_MESSAGE_RE.search(haystack):
+        return True
+    return status_code == 404
+
+
+def is_provider_bad_request_error(error: Exception) -> bool:
+    """True when the request itself is defective, so every provider would reject it."""
+    haystack = _error_haystack(error)
+    if any(marker in haystack for marker in _BAD_REQUEST_MARKERS):
+        return True
+    return _effective_status_code(error) == 413
+
+
+def _effective_status_code(error: Exception) -> int | None:
+    status_code = getattr(error, "status_code", None)
+    response = getattr(error, "response", None)
+    effective = status_code if status_code is not None else getattr(response, "status_code", None)
+    try:
+        return int(effective) if effective is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _error_fields(error: Exception) -> list[str]:
+    parts = [str(error)]
+    for attribute in ("code", "type"):
+        value = getattr(error, attribute, None)
+        if isinstance(value, str):
+            parts.append(value)
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        nested = body.get("error")
+        source = nested if isinstance(nested, dict) else body
+        for key in ("code", "type", "message"):
+            value = source.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return parts
+
+
+def _error_haystack(error: Exception) -> str:
+    """Lowercased text to match markers against: message, provider error code, and body.
+
+    Also folds in one level of wrapping (``last_error`` / ``__cause__``). Once a failure is
+    fallback-eligible the router surfaces it wrapped in ``AllProvidersFailedError``, and
+    callers that ask "was this a JSON-mode validation failure?" would otherwise see only the
+    wrapper's generic message — which silently disabled the ``GROQ_JSON_MODE_RETRY_PLAIN``
+    path. One level is enough and keeps this bounded.
+    """
+    parts = _error_fields(error)
+    for attribute in ("last_error", "__cause__"):
+        wrapped = getattr(error, attribute, None)
+        if isinstance(wrapped, BaseException) and wrapped is not error:
+            parts.extend(_error_fields(wrapped))
+    return " ".join(parts).lower()
+
+
 def classify_ai_error_reason(error: Exception) -> str:
     """Return an admin-safe LLM failure reason (stable across all providers)."""
     if isinstance(error, LLMRateLimitBackoffActive):
         return "rate_limit_backoff_active"
+    if getattr(error, "circuit_broken", False):
+        # Every provider was skipped by an open breaker, so nothing was attempted. Keeping
+        # this distinct from a fresh failure is what makes "known-bad, waiting to probe"
+        # readable in event_ai_analyses.error_reason instead of a generic other_error.
+        return "provider_circuit_broken"
     if isinstance(error, AIProviderRateLimitError) or is_rate_limit_error(error):
         return "rate_limit"
     if isinstance(error, AIInvalidJsonError):
@@ -78,6 +193,19 @@ def classify_ai_error_reason(error: Exception) -> str:
         except (TypeError, ValueError):
             status_code_int = None
         if status_code_int is not None and 400 <= status_code_int < 500:
+            # Sub-classify so the router can tell "this provider cannot serve this model"
+            # (worth trying the next provider) from "this request is broken" (is not).
+            #
+            # Order is load-bearing. Groq's real decommission response carries BOTH
+            # code="model_decommissioned" AND type="invalid_request_error", and the latter
+            # matches _BAD_REQUEST_MARKERS. Checking the model case first is what keeps the
+            # 2026-07 outage from reproducing; see the regression test that pins this.
+            if is_model_unavailable_error(error):
+                return "provider_model_error"
+            if is_json_validation_error(error):
+                return "provider_json_validate_failed"
+            if is_provider_bad_request_error(error):
+                return "provider_bad_request"
             return "provider_4xx"
         if status_code_int is not None and status_code_int >= 500:
             return "provider_5xx"
@@ -130,11 +258,15 @@ def safe_error_message(error: Exception, max_chars: int = 500) -> str:
 
 
 def is_json_validation_error(error: Exception) -> bool:
-    message = str(error).lower()
+    # Matches the full haystack (message plus provider ``code``/``type``/``body``), not just
+    # ``str(error)``: Groq carries the marker in ``code`` as well as the message, and a client
+    # that surfaces only the structured fields would otherwise fall through to the
+    # ``invalid_request_error`` marker and be misread as a defective request.
+    haystack = _error_haystack(error)
     return (
-        "json_validate_failed" in message
-        or "validate json" in message
-        or "json validation" in message
+        "json_validate_failed" in haystack
+        or "validate json" in haystack
+        or "json validation" in haystack
     )
 
 
