@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from ops_agent.expected_models import KNOWN_DECOMMISSIONED_MODELS, expected_model
 from ops_agent.schemas import DetectorResult, Period
 
 
@@ -787,8 +788,161 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             },
             None if logs_available else "Required evidence missing: evidence/logs/pattern_counts.json",
         ),
+        _event_analysis_dead_detector(evidence, llm_summary, db_result),
+        _event_analysis_model_drift_detector(evidence, llm_summary, db_result),
     ]
     return detectors
+
+
+# Statuses that count as a working call in `llm_usage_logs`, which uses `success`/`completed`.
+# `no_alert` belongs to `event_ai_analyses.status` and cannot appear here; it is listed only so
+# this stays correct if the summary is ever widened to that table. Deliberately NOT the same set
+# as bot/alerting/event_analysis.py's EVENT_ANALYSIS_SUCCESS_STATUSES, which describes a
+# different table — do not "unify" them.
+_EVENT_ANALYSIS_SUCCESS_STATUSES = {"success", "completed", "no_alert"}
+
+
+def event_analysis_call_totals(llm_summary: list[dict[str, Any]]) -> tuple[int, int]:
+    """Return ``(successful_calls, total_calls)`` for ``event_analysis`` in this period."""
+    total = 0
+    successful = 0
+    for row in llm_summary:
+        if str(row.get("call_type") or "") != "event_analysis":
+            continue
+        calls = _int(row.get("calls"))
+        total += calls
+        if str(row.get("status") or "") in _EVENT_ANALYSIS_SUCCESS_STATUSES:
+            successful += calls
+    return successful, total
+
+
+def consecutive_zero_success_runs(state_snapshot: dict[str, Any]) -> int:
+    """Count consecutive prior collection runs that recorded zero event-analysis successes.
+
+    Reads the recorded per-run signal from the ops-agent state snapshot. A run with no signal
+    (older state, or a run before this was recorded) stops the count rather than being assumed
+    healthy or unhealthy.
+    """
+    runs = state_snapshot.get("recent_runs")
+    if not isinstance(runs, list):
+        return 0
+    streak = 0
+    for run in runs:
+        if not isinstance(run, dict):
+            break
+        signal = run.get("event_analysis")
+        if not isinstance(signal, dict) or signal.get("successful_calls") is None:
+            break
+        if _int(signal.get("total_calls")) == 0:
+            # No attempts at all in that run says nothing about health — the bot may simply
+            # have been stopped. Skip rather than counting it toward an outage streak.
+            continue
+        if _int(signal.get("successful_calls")) > 0:
+            break
+        streak += 1
+    return streak
+
+
+def _event_analysis_dead_detector(
+    evidence: dict[str, Any],
+    llm_summary: list[dict[str, Any]],
+    db_result,
+) -> DetectorResult:
+    """Zero successful event analyses across this and prior collection cycles.
+
+    This is the detector that would have caught the 2026-07 outage on day one. It keys on the
+    *success rate*, not on error counts, because the failure mode produced a perfectly steady
+    stream of identical failures that looked unremarkable in every aggregate.
+    """
+    successful, total = event_analysis_call_totals(llm_summary)
+    state_snapshot = _file_payload(
+        evidence, "evidence/local_state/ops_agent_state_snapshot.json"
+    )
+    prior_zero_runs = consecutive_zero_success_runs(state_snapshot)
+    consecutive_cycles = prior_zero_runs + 1 if total > 0 and successful == 0 else 0
+
+    if total == 0:
+        # No event-analysis calls at all: nothing to judge. Unknown, never healthy.
+        status = "unknown"
+        summary = "No event_analysis calls recorded in this period"
+    elif successful == 0:
+        status = "triggered"
+        summary = (
+            f"Zero successful event_analysis calls across {consecutive_cycles} consecutive "
+            f"collection cycle(s); {total} attempts in this period"
+        )
+    else:
+        status = "clear"
+        summary = f"{successful}/{total} event_analysis calls succeeded"
+
+    return db_result(
+        "event_analysis_success_rate_zero",
+        "critical",
+        [("evidence/db/aggregate_metrics.json", "llm_usage_summary")],
+        status,
+        summary,
+        ["evidence/db/aggregate_metrics.json"],
+        {
+            "successful_calls": successful,
+            "total_calls": total,
+            "consecutive_zero_success_cycles": consecutive_cycles,
+        },
+    )
+
+
+def _event_analysis_model_drift_detector(
+    evidence: dict[str, Any],
+    llm_summary: list[dict[str, Any]],
+    db_result,
+) -> DetectorResult:
+    """Models actually used for event_analysis differ from the shipped default.
+
+    A deployed `.env` silently overrides the code default, which is exactly how the outage
+    persisted: the shipped default was changed while production kept calling a decommissioned
+    model. Comparing what the database says was *used* against what the code ships makes that
+    disagreement visible without reading `.env` on the server.
+    """
+    expected = expected_model("event_analysis")
+    used_models = sorted(
+        {
+            str(row.get("model") or "").strip()
+            for row in llm_summary
+            if str(row.get("call_type") or "") == "event_analysis" and row.get("model")
+        }
+    )
+    drifted = [model for model in used_models if expected and model != expected]
+    decommissioned = [model for model in used_models if model in KNOWN_DECOMMISSIONED_MODELS]
+
+    if not used_models:
+        status = "unknown"
+        summary = "No event_analysis model recorded in this period"
+    elif decommissioned:
+        status = "triggered"
+        summary = (
+            "event_analysis is calling a model the provider has withdrawn; "
+            "expected the shipped default"
+        )
+    elif drifted:
+        status = "triggered"
+        summary = "event_analysis model in use differs from the shipped default"
+    else:
+        status = "clear"
+        summary = "event_analysis model matches the shipped default"
+
+    return db_result(
+        "event_analysis_model_drift",
+        "high" if decommissioned else "medium",
+        [("evidence/db/aggregate_metrics.json", "llm_usage_summary")],
+        status,
+        summary,
+        ["evidence/db/aggregate_metrics.json"],
+        {
+            "expected_model": expected,
+            "models_in_use": used_models,
+            "drifted_models": drifted,
+            "decommissioned_models_in_use": decommissioned,
+        },
+    )
 
 
 def detector_payload(period: Period, results: list[DetectorResult]) -> dict[str, Any]:

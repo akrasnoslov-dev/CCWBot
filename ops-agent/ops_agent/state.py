@@ -85,6 +85,7 @@ def record_collection(
     status: str,
     period: Period,
     failed_collectors: list[str] | None = None,
+    event_analysis: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     state = dict(state)
     state["schema_version"] = 1
@@ -97,6 +98,13 @@ def record_collection(
         # diagnosable from the state snapshot alone; never error text or evidence content.
         "failed_collectors": sorted(failed_collectors or []),
     }
+    if event_analysis is not None:
+        # Two counters only, so "zero successes for N cycles running" is answerable across
+        # collections instead of only within the current period. No identifiers, no content.
+        state["last_collection"]["event_analysis"] = {
+            "successful_calls": int(event_analysis.get("successful_calls") or 0),
+            "total_calls": int(event_analysis.get("total_calls") or 0),
+        }
     recent_runs = list(state.get("recent_runs") or [])
     recent_runs.insert(0, state["last_collection"])
     state["recent_runs"] = recent_runs[:20]

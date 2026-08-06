@@ -937,6 +937,25 @@ async def get_latest_event_analysis_by_statuses(
 
 
 
+async def get_latest_event_analysis_success_at(
+    session: AsyncSession,
+    statuses: set[str],
+) -> datetime | None:
+    """Return only the timestamp of the latest event-analysis row in ``statuses``.
+
+    Deliberately a scalar projection rather than the full ORM row: this runs on every
+    ``/health`` request, and ``event_ai_analyses`` carries large JSON columns (input payload,
+    raw model output) that would otherwise be materialised just to read one timestamp.
+    """
+    return await session.scalar(
+        select(EventAiAnalysis.created_at)
+        .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
+        .where(EventAiAnalysis.status.in_(sorted(statuses)))
+        .order_by(EventAiAnalysis.created_at.desc(), EventAiAnalysis.id.desc())
+        .limit(1)
+    )
+
+
 async def count_market_events(session: AsyncSession, symbol: str | None = None) -> int:
     """Return the number of stored market events, optionally for one symbol."""
     statement = select(func.count()).select_from(MarketEvent)

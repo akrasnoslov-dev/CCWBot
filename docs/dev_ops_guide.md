@@ -108,6 +108,44 @@ WantedBy=timers.target
 Install either cron or systemd on the VPS manually; this repository does not auto-install a backup
 schedule.
 
+## Deploying Ops-Agent Changes
+
+Ops-agent code does not reach production the way bot code does. Two steps are easy to miss, and
+both have caused real deployment gaps where an operator believed a fix was live and it was not.
+
+**1. The `ops-agent` image must be rebuilt explicitly.** The ops-agent is not declared in the
+root `docker-compose.yml` at all — it lives in the `ops-agent/docker-compose.ops-agent.yml`
+overlay under the `ops` profile. A plain `docker compose up -d --build`, which is what the deploy
+checklist runs, therefore never sees the service and never rebuilds it. After any change under
+`ops-agent/`, rebuild it explicitly with the overlay:
+
+```bash
+cd /opt/CCWBot
+docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml build ops-agent
+```
+
+Until that runs, collection keeps using the previously built image: old queries, old collectors,
+old detectors. The bundle will look healthy and current, because nothing reports which image
+version produced it.
+
+**2. The host wrapper is not updated by Git.** `/usr/local/bin/ccwbot-ops-agent-collect` is an
+installed copy. `git pull` updates only `ops-agent/scripts/ccwbot-ops-agent-collect` in the repo,
+and `docker compose up -d --build` never touches `/usr/local/bin` at all. Reinstall it manually
+whenever that script changes:
+
+```bash
+sudo install -m 755 /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+```
+
+A stale installed wrapper was the root cause of the July 2026 partial-bundle streak.
+
+Checklist after deploying an ops-agent change:
+
+1. Rebuild the image with the overlay (command above).
+2. Reinstall the host wrapper if `ops-agent/scripts/ccwbot-ops-agent-collect` changed.
+3. Collect a short no-state bundle and confirm the expected new collectors or detectors appear.
+4. Confirm `Collector Status` lists no failures.
+
 ## Ops-Agent Diagnostics
 
 The production ops-agent wrapper should point at the repo-managed `ops-agent/` source. Use only the
@@ -121,15 +159,8 @@ Do not run raw deployment, restart, migration, environment-printing, or secret-r
 part of diagnostics. A partial bundle means at least one collector failed; inspect the collector
 status table and rerun after the named collector is fixed.
 
-Important: after any change to `ops-agent/scripts/ccwbot-ops-agent-collect`, the installed copy at
-`/usr/local/bin/ccwbot-ops-agent-collect` must be re-installed manually on the VPS — `git pull`
-updates only the repo copy, never `/usr/local/bin`. A stale installed wrapper was the root cause of
-the July 2026 partial-bundle streak. Re-install with:
-
-```bash
-sudo cp /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
-sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
-```
+Both deployment steps that ops-agent changes require — the explicit image rebuild and the manual
+host-wrapper reinstall — are documented above under **Deploying Ops-Agent Changes**.
 
 For post-deploy Event Alert verification, rebuild the `ops-agent` Docker image with the deploy and
 collect a short no-state bundle:

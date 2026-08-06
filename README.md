@@ -99,6 +99,7 @@ Common configuration:
 - `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`
 - `PRICE_CACHE_TTL_SECONDS`
 - `HEALTH_PORT`
+- `EVENT_ANALYSIS_FAILURE_ESCALATION_THRESHOLD` / `EVENT_ANALYSIS_HEALTH_MAX_AGE_SECONDS` (Event Analysis health reporting and log escalation)
 - `ERROR_LOG_FILE`
 - `PREMIUM_MONTHLY_STARS`
 - `ENABLE_NEWS_INTELLIGENCE`
@@ -404,9 +405,11 @@ Normal work should be opened as pull requests against `dev`. Only open pull requ
 3. Verify `/opt/backups` has a recent backup or create one with `sudo scripts/backup_postgres.sh`.
 4. If migrations are needed, run `docker compose run --rm migrate`.
 5. Run `docker compose up -d --build`.
-6. Check container health with `docker compose ps`.
-7. Check bot logs with `docker compose logs -f`.
-8. Verify bot functionality in Telegram.
+6. If the release changed anything under `ops-agent/`, rebuild that image separately — step 5
+   does not touch it. See "Deploying Ops-Agent Changes" in `docs/dev_ops_guide.md`.
+7. Check container health with `docker compose ps`.
+8. Check bot logs with `docker compose logs -f`.
+9. Verify bot functionality in Telegram.
 
 Production tracked files should not be edited manually on the VPS. Deploy production changes
 through Git only:
@@ -448,9 +451,23 @@ Example:
 {
   "status": "ok",
   "last_btc_check_at": "2026-05-08T12:00:00+00:00",
-  "uptime_seconds": 42
+  "uptime_seconds": 42,
+  "event_analysis": {
+    "state": "ok",
+    "last_success_at": "2026-05-08T11:58:00+00:00",
+    "last_success_age_seconds": 120,
+    "consecutive_failures": 0
+  }
 }
 ```
+
+The `event_analysis` block reports whether Event Alert analysis is actually working: `state` is
+`ok`, `degraded`, or `unknown` (no evidence yet — treated as incomplete, not healthy). It never
+changes the top-level `status`. The Compose healthcheck fails the container whenever `status` is
+not `"ok"`, and nothing restarts it on that basis (`restart: always` reacts to process exit, not to
+health), so flipping it would mark the container permanently `unhealthy` without fixing anything —
+while prices, heartbeats and reports keep working. Tune with
+`EVENT_ANALYSIS_FAILURE_ESCALATION_THRESHOLD` and `EVENT_ANALYSIS_HEALTH_MAX_AGE_SECONDS`.
 
 If runtime state cannot be read, the endpoint returns `status: degraded` without exposing
 internal error details.

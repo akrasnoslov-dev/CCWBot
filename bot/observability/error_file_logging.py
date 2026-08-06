@@ -22,7 +22,29 @@ class LogExport:
     content: bytes
 
 
-class RedactingFormatter(logging.Formatter):
+class AttributableFormatter(logging.Formatter):
+    """Formatter that keeps every line of a record attributable to its record.
+
+    A traceback is appended verbatim, so its continuation lines carry no timestamp, level, or
+    logger name. Once such a record lands at the end of a captured log tail — which is exactly
+    what happens when a bundle is collected mid-incident — the surviving lines cannot be tied
+    to the event that produced them, or even recognised as belonging to one. Prefixing each
+    continuation line with the record's timestamp makes the whole block attributable and keeps
+    line-oriented log tooling working.
+    """
+
+    _CONTINUATION_MARKER = "|"
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        if "\n" not in text:
+            return text
+        first, *rest = text.split("\n")
+        prefix = f"{self.formatTime(record, self.datefmt)} {self._CONTINUATION_MARKER} "
+        return "\n".join([first, *(f"{prefix}{line}" for line in rest)])
+
+
+class RedactingFormatter(AttributableFormatter):
     """Formatter that masks common secret values before writing persistent logs."""
 
     def __init__(self, fmt: str):

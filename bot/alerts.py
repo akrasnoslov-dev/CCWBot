@@ -97,6 +97,7 @@ from bot.news import (
     select_intelligence_news_for_symbol,
 )
 from bot.news_titles import clean_news_title, clean_related_news_text
+from bot.observability import event_analysis_health
 from bot.reports import generate_daily_report_cache_job, generate_weekly_report_cache_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
@@ -230,6 +231,13 @@ SUPPRESSION_DELIVERY_FAILED = "delivery_failed"
 SUPPRESSION_LLM_RATE_LIMITED = "llm_rate_limited"
 SUPPRESSION_STALE_HEARTBEAT = "stale_heartbeat"
 SUPPRESSION_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
+# Explicit tokens for two cases that previously logged `unknown` while the durable
+# alert_delivery_outcomes row recorded a real reason_code. That mismatch made 27.9% of
+# suppression log lines unattributable, so log-side and DB-side evidence could not be joined.
+# Both mirror the reason_code vocabulary below.
+SUPPRESSION_LLM_NO_ALERT = "llm_no_alert"
+SUPPRESSION_ALREADY_DELIVERED = "already_delivered"
+SUPPRESSION_DELIVERY_NOT_SCHEDULED = "delivery_not_scheduled"
 SUPPRESSION_UNKNOWN = "unknown"
 SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_EXACT_COOLDOWN,
@@ -242,6 +250,9 @@ SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_LLM_RATE_LIMITED,
     SUPPRESSION_STALE_HEARTBEAT,
     SUPPRESSION_SIMILAR_CONTEXT_REUSED,
+    SUPPRESSION_LLM_NO_ALERT,
+    SUPPRESSION_ALREADY_DELIVERED,
+    SUPPRESSION_DELIVERY_NOT_SCHEDULED,
     SUPPRESSION_UNKNOWN,
 }
 OUTCOME_DELIVERED = "delivered"
@@ -328,6 +339,72 @@ def _count_suppression(
 
 def _recipient_decision_key(recipient: AlertRecipient) -> tuple[int | None, int]:
     return recipient.user_id, recipient.chat_id
+
+def _log_event_alert_candidate_crossing(
+    symbol: str,
+    input_payload: dict,
+    *,
+    alert_threshold_percent: float | None,
+    skipped_llm: str | None = None,
+) -> None:
+    """Record that a symbol reached the point of being analysed, before the LLM is asked.
+
+    Purely evidence: it creates no market event, triggers no alert, and feeds no decision. It
+    exists because market events are only created *after* a successful analysis, so a dead LLM
+    produces zero events rather than events without analyses — the outage was silent by
+    construction. Emitting the candidate here makes "detections happening but zero market
+    events created" a measurable gap instead of an inference.
+
+    Numeric market context only; no recipient identity, message text, or payload internals.
+    """
+    try:
+        market_data = input_payload.get("market") or {}
+        analysed_window_change = _optional_float(market_data.get("chg_window"))
+        change_24h = _optional_float(
+            market_data.get("chg24h", market_data.get("change_24h_percent"))
+        )
+        crossed = (
+            alert_threshold_percent is not None
+            and analysed_window_change is not None
+            and abs(analysed_window_change) >= abs(alert_threshold_percent)
+        )
+        logger.info(
+            "ops_event=event_alert_candidate_crossing symbol=%s "
+            "analysed_window_change_percent=%s change_24h_percent=%s threshold_percent=%s "
+            "crossed_threshold=%s analysed_window_minutes=%s skipped_llm=%s",
+            normalize_symbol(symbol).upper(),
+            analysed_window_change,
+            change_24h,
+            alert_threshold_percent,
+            str(crossed).lower(),
+            _analysed_window_minutes_from_payload(input_payload),
+            skipped_llm or "none",
+        )
+    except Exception as error:  # pragma: no cover - defensive
+        # This runs on the alert path immediately before the LLM call. It records evidence and
+        # nothing else, so it must never be able to abort a symbol's cycle.
+        logger.debug("candidate crossing log failed: %s", type(error).__name__)
+
+
+def _log_event_analysis_failure(symbol: str, reason: str) -> None:
+    """Log a failed event analysis, escalating to ERROR once failures stop being isolated.
+
+    The 2026-07 outage produced 3396 identical WARNING lines at unchanged severity, so nothing
+    in the log distinguished "failed once" from "has failed continuously for 18 days". The
+    first occurrences stay at WARNING because a single failure is normal; past the configured
+    threshold the severity reflects duration, and the streak length is on the line itself.
+    """
+    streak = event_analysis_health.record_failure(reason=reason)
+    threshold = event_analysis_health.failure_escalation_threshold()
+    level = logging.ERROR if streak >= threshold else logging.WARNING
+    logger.log(
+        level,
+        "ops_event=event_analysis_failed symbol=%s reason=%s consecutive_failures=%s",
+        normalize_symbol(symbol).upper(),
+        reason,
+        streak,
+    )
+
 
 def _log_event_alert_suppression(
     *,
@@ -2940,10 +3017,10 @@ async def _create_event_analysis_decision(
             context_fingerprint=_event_context_fingerprint(input_payload),
             detail=classify_ai_error_reason(error),
         )
-        logger.warning(
-            "%s event analysis schema validation failed: %s",
-            str(input_payload["symbol"]).upper(),
-            error,
+        # Counts toward the failure streak: a schema failure is a failed analysis, and a
+        # continuous schema-failure outage must escalate exactly like any other.
+        _log_event_analysis_failure(
+            str(input_payload["symbol"]), classify_ai_error_reason(error)
         )
         return None, None
     except Exception as error:
@@ -2969,11 +3046,7 @@ async def _create_event_analysis_decision(
             context_fingerprint=_event_context_fingerprint(input_payload),
             detail=reason,
         )
-        logger.warning(
-            "%s event analysis failed: %s",
-            str(input_payload["symbol"]).upper(),
-            reason,
-        )
+        _log_event_analysis_failure(str(input_payload["symbol"]), reason)
         return None, None
 
     normalized_parsed = _normalize_event_analysis_result_for_validation(parsed)
@@ -3013,12 +3086,17 @@ async def _create_event_analysis_decision(
             context_fingerprint=_event_context_fingerprint(input_payload),
             detail=classify_ai_error_reason(schema_error),
         )
-        logger.warning(
-            "%s event analysis schema validation failed: %s",
-            str(input_payload["symbol"]).upper(),
-            error,
+        _log_event_analysis_failure(
+            str(input_payload["symbol"]), classify_ai_error_reason(schema_error)
         )
         return None, None
+
+    # The LLM answered and the answer validated. Recorded here, above every branch that
+    # follows, because all of them are successful analyses: `no_alert` and a news-only
+    # rejection both mean the pipeline worked and decided against alerting. Recording it
+    # further down would leave the failure streak elevated through a run of news-only
+    # rejections, so /health would report degraded while the LLM was demonstrably working.
+    event_analysis_health.record_success()
 
     if _is_news_only_event_alert_decision(decision, input_payload):
         rejected_decision = _as_news_only_rejected_decision(decision)
@@ -3966,6 +4044,7 @@ async def _deliver_market_event_alert(
     delivered = False
     sent_count = 0
     skipped_count = 0
+    skipped_already_delivered = 0
     for recipient in recipients:
         delivery_decision_reason = (
             delivery_decision_reasons_by_recipient or {}
@@ -4029,6 +4108,8 @@ async def _deliver_market_event_alert(
                     detail=f"existing_alert_status:{alert_row.status}",
                 )
                 skipped_count += 1
+                if alert_row.status == "sent":
+                    skipped_already_delivered += 1
                 continue
         else:
             alert_id = None
@@ -4149,7 +4230,15 @@ async def _deliver_market_event_alert(
     if len(recipients) - sent_count - skipped_count > 0:
         summary_reason = SUPPRESSION_DELIVERY_FAILED
     elif skipped_count > 0:
-        summary_reason = SUPPRESSION_UNKNOWN
+        # A skip is either "this recipient already got it" or "this delivery was never
+        # scheduled", and the durable outcome row distinguishes them. Report the dominant one
+        # and carry both counts, so the log token still matches a real reason_code instead of
+        # collapsing two different causes into one label.
+        summary_reason = (
+            SUPPRESSION_ALREADY_DELIVERED
+            if skipped_already_delivered * 2 >= skipped_count
+            else SUPPRESSION_DELIVERY_NOT_SCHEDULED
+        )
     log(
         "ops_event=event_alert_delivery_summary "
         f"symbol={normalized_symbol.upper()} market_event_id={market_event_id} "
@@ -4158,7 +4247,9 @@ async def _deliver_market_event_alert(
         f"delivery_count={sent_count} suppression_count={suppression_count} "
         f"suppression_reason={summary_reason} analysed_window_minutes={analysed_window_minutes} "
         f"eligible={len(recipients)} sent={sent_count} "
-        f"failed={len(recipients) - sent_count - skipped_count} skipped_duplicates={skipped_count}"
+        f"failed={len(recipients) - sent_count - skipped_count} skipped_duplicates={skipped_count} "
+        f"skipped_already_delivered={skipped_already_delivered} "
+        f"skipped_not_scheduled={skipped_count - skipped_already_delivered}"
     )
     return delivered
 
@@ -4753,6 +4844,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 now=now,
             )
             if similar_context_outcome is not None:
+                # Still a detection, even though the LLM is skipped. Recording it here keeps
+                # candidate counts complete: context reuse is a legitimate reason for zero
+                # market events, and omitting these would under-count detections.
+                _log_event_alert_candidate_crossing(
+                    symbol,
+                    input_payload,
+                    alert_threshold_percent=_optional_float(
+                        alert_settings.get("price_move_alert_percent")
+                    ),
+                    skipped_llm="similar_context_reused",
+                )
                 await _record_similar_context_reuse(input_payload, similar_context_outcome)
                 logger.info(
                     "%s event analysis skipped before LLM due to similar recent context.",
@@ -4775,6 +4877,15 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     last_alert_at=None,
                 )
                 continue
+            # Recorded before the LLM call so the candidate survives an LLM failure. Purely
+            # evidence — it does not create a market event or influence any alert decision.
+            _log_event_alert_candidate_crossing(
+                symbol,
+                input_payload,
+                alert_threshold_percent=_optional_float(
+                    alert_settings.get("price_move_alert_percent")
+                ),
+            )
             decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
             context_fingerprint = _event_context_fingerprint(input_payload)
             if decision is None:
@@ -4833,7 +4944,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 )
                 _log_event_alert_suppression(
                     symbol=symbol,
-                    suppression_reason=SUPPRESSION_UNKNOWN,
+                    # The durable outcome row records llm_no_alert here; the log line said
+                    # `unknown`, which is what made the two sides impossible to join.
+                    suppression_reason=SUPPRESSION_LLM_NO_ALERT,
                     suppression_count=1,
                     raw_event_key=_raw_event_key_from_payload(input_payload, decision),
                     canonical_event_key=decision.event_key,

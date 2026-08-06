@@ -1378,6 +1378,7 @@ _REEXPORTS = {
         "get_latest_market_heartbeat",
         "get_latest_event_analysis_attempt",
         "get_latest_event_analysis_by_statuses",
+        "get_latest_event_analysis_success_at",
         "count_market_events",
         "get_recent_market_events",
     ),
