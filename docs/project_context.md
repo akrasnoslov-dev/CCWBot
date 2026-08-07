@@ -54,6 +54,7 @@ Current product behavior:
 Primary context files:
 
 - `AGENTS.md`
+- `CLAUDE.md`
 - `docs/README.md`
 - `docs/codex_instructions.md`
 - `docs/codex_skills.md`
@@ -66,12 +67,14 @@ Primary context files:
 - `docs/llm_usage.md`
 - `docs/ops_agent_service.md`
 - `docs/codex_task_prompt_template.md`
+- `.claude/agents/*.md`
 
 Documentation ownership:
 
 - Product invariants and runtime behavior belong here.
 - Codex workflow belongs in `AGENTS.md`, `docs/codex_instructions.md`, and
   `docs/codex_agent_workflow.md`.
+- Claude Code workflow belongs in `CLAUDE.md` and native review lenses under `.claude/agents/`.
 - Deploy, backup, migration, and recovery steps belong in `docs/dev_ops_guide.md`.
 - Release gates belong in `docs/release_checklist.md`.
 - Local development details and gradual refactor policy belong in `docs/development.md`.

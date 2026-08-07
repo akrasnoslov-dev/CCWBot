@@ -3,6 +3,7 @@
 .env.local
 .env.production
 .ops-agent.env
+.claude/settings.local.json
 __pycache__/
 *.py[cod]
 .pytest_cache/

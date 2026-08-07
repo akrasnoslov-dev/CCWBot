@@ -1,13 +1,13 @@
 # CCWBot
 
 CCWBot is a Python Telegram crypto watcher bot. It provides manual crypto price checks,
-cached market-wide reports, and automatic Event Alerts decided by Groq-backed LLM market
+cached market-wide reports, and automatic Event Alerts decided by LLM-backed market
 analysis.
 
 ## Features
 
-- Manual `/price` checks for the active runtime symbols: `btc`, `eth`, `ton`, and `sol`.
-  The internal `ton` key is displayed as GRAM, and `/price gram` is accepted as an alias.
+- Manual `/price` checks for the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
+  Legacy `/price ton` and `/price toncoin` are accepted as aliases for GRAM.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
 - Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
@@ -15,7 +15,8 @@ analysis.
 - Daily and weekly reports are cached market-wide LLM reports across all active symbols.
   Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
-- If Groq is unavailable or returns invalid JSON, no fallback threshold alert is sent.
+- If the configured LLM provider chain is unavailable or returns invalid output, no fallback
+  threshold alert is sent.
 - If report generation fails, the bot stores the failed attempt when DB storage is enabled and
   shows a temporary unavailable message instead of a fake deterministic report.
 - Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
@@ -49,11 +50,13 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - `bot/alerting/` contains alert rule and severity helpers.
 - `bot/db/` contains async SQLAlchemy models, persistence helpers, and migration startup.
 - `bot/domain/` contains pure domain rules such as supported coins and Premium entitlement.
-- `bot/services/` contains external service integrations for CoinGecko, RSS news, and Groq.
+- `bot/services/` contains external service integrations for CoinGecko, RSS news, and LLM
+  providers.
 - `alembic/` contains database migrations.
 - `ops-agent/` contains the repo-managed production diagnostics collector and sanitized
   report-context generator.
-- `tests/` contains unit tests that avoid real Telegram, Groq, CoinGecko, and PostgreSQL calls.
+- `tests/` contains unit tests that avoid real Telegram, LLM provider, CoinGecko, and PostgreSQL
+  calls.
 
 PostgreSQL is the primary runtime store when `DATABASE_URL` is configured. The bot uses async
 SQLAlchemy with `asyncpg`, and Alembic manages schema changes. If `DATABASE_URL` is missing,
@@ -63,7 +66,7 @@ the bot falls back to local `state.json`.
 
 Copy `.env.example` to `.env` and fill real values locally. Do not commit `.env`.
 
-Required:
+Required for the default Groq-primary configuration:
 
 - `ENVIRONMENT`
 - `TELEGRAM_BOT_TOKEN`
@@ -134,10 +137,10 @@ log should show `symbol_first_delays=BTC:0s,ETH:300s,GRAM:600s,SOL:900s` at the 
 The first-delay calculation is anchored to the wall-clock cycle, so restarts preserve the same
 symbol spacing instead of pairing symbols together.
 
-GRAM is stored internally as the legacy `ton` symbol to preserve existing PostgreSQL rows and
-cooldowns. User-facing messages, reports, keyboards, and watchlists display GRAM /
-Gram (prev. Toncoin). CoinGecko lookups for internal `ton` use `the-open-network`; the old
-`toncoin` id is not used for price resolution.
+GRAM is stored internally as `gram`. Legacy `ton` and `toncoin` user input normalizes to `gram`,
+and migration `0024_gram_symbol` moved existing TON rows to GRAM where applicable. User-facing
+messages, reports, keyboards, and watchlists display GRAM / Gram (prev. Toncoin). CoinGecko
+lookups use `ids=the-open-network`; the old `toncoin` id is not used for price resolution.
 
 ## Local Development Setup
 
@@ -474,7 +477,7 @@ internal error details.
 
 ## Admin System Status
 
-Admin -> System status groups runtime, database, market data, AI, Groq rate-limit, RSS/news,
+Admin -> System status groups runtime, database, market data, AI, LLM provider rate-limit, RSS/news,
 and Telegram delivery telemetry into a compact Telegram dashboard. Component icons mean:
 
 - `✅`: fresh successful telemetry exists.
@@ -536,12 +539,13 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 ## Roadmap
 
 - Explicit Telegram Stars cancellation/refund event handling when Telegram support is clear.
-- Additional provider abstraction when there is a clear product need.
+- Per-provider token-budget overrides when fallback models need materially different budgets.
 
 ## Documentation
 
 - Documentation index: [docs/README.md](docs/README.md)
 - Developer notes: [docs/development.md](docs/development.md)
 - Read-only operational SQL snippets: [docs/observability.md](docs/observability.md)
+- Claude Code instructions: [CLAUDE.md](CLAUDE.md)
 - Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md)
 - Codex skill locations and usage notes: [docs/codex_skills.md](docs/codex_skills.md)

@@ -250,7 +250,7 @@ GROUP BY symbol
 ORDER BY calls DESC, symbol;
 ```
 
-Latest known Groq rate-limit headers by model and call type:
+Latest known LLM provider rate-limit headers by model and call type:
 
 ```sql
 SELECT DISTINCT ON (model, call_type)
@@ -373,7 +373,8 @@ Avoidable LLM-call checks:
   snapshots as the primary basis, `market.chg24h` as broader context, and news as supporting
   context only. News alone must return no alert, and a backend guard rejects clear news-only
   `should_alert=true` decisions before market event creation or delivery.
-- Before Event Analysis calls Groq, the runtime checks a sanitized similar-context fingerprint
+- Before Event Analysis calls the LLM provider chain, the runtime checks a sanitized
+  similar-context fingerprint
   against recent durable outcomes. Clear repeats of no-alert, news-only rejection, semantic
   cooldown suppression, similar-context reuse, or delivered decisions are recorded as
   `decision_stage = 'pre_llm'` and `decision_reason = 'similar_context_reused'` without creating a
