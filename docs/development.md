@@ -20,7 +20,7 @@ python -m pytest tests/ -v -ra --durations=20
 docker compose config >/dev/null
 ```
 
-These checks do not require real Telegram, Groq, CoinGecko, or PostgreSQL calls.
+These checks do not require real Telegram, LLM provider, CoinGecko, or PostgreSQL calls.
 Use dummy values from `.env.example` for Compose validation. Do not publish
 `docker compose config` output generated from a real `.env`, because Compose can expand secrets.
 `docker compose config` validates Compose syntax only; it does not prove that Alembic migrations

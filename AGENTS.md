@@ -121,6 +121,9 @@ Codex task-review agents live in `agents/*.toml`; routing rules live in
 `agents/routing.toml`. These are not runtime Telegram bot agents and are not imported by
 `main.py` or `bot/`. The runtime LLM service remains `bot/services/ai_agent_groq.py`.
 
+Claude Code review-lens agents also live in `.claude/agents/*.md`. They are development tooling
+only, derived from the Codex TOML agents, and are not imported by runtime code.
+
 - `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
 - `security_review_agent`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
 - `code_quality_agent`: maintainability, async boundaries, error handling, logging levels, and focused refactors.
@@ -189,8 +192,9 @@ Optional agent examples:
 - `python main.py` and Docker Compose startup must keep working.
 - Update docs when setup, config, commands, dependencies, architecture, or behaviour changes.
 - Keep project and process documentation under `docs/`. Root `README.md` is the public entry
-  point, and root `AGENTS.md` stays at the repository root for agent tooling. Subtree README.md
-  files are acceptable when they document only that local tool or package directory.
+  point, while root `AGENTS.md` and `CLAUDE.md` stay at the repository root for agent tooling.
+  Subtree README.md files are acceptable when they document only that local tool or package
+  directory.
 
 ## Verification
 Default checks:
