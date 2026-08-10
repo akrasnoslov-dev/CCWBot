@@ -47,12 +47,23 @@ _LEVEL_TRAIT_TERMS = frozenset(
     }
 )
 _VOLATILITY_TRAIT_TERMS = frozenset({"choppy", "volatile", "volatility", "whipsaw"})
-_LEVEL_BREAK_PHRASES = (
-    "break_above", "break_below", "break_through", "breakdown", "breaks_above",
-    "breaks_below", "breaks_through",
-)
 _LEVEL_TEST_TERMS = frozenset({"approach", "approaches", "hold", "holds", "near", "test"})
 _RANGE_STATE_TERMS = frozenset({"consolidation", "range", "rangebound", "sideways"})
+_BREAK_VERBS = frozenset({"break", "breaks", "breaking", "broke", "broken"})
+_BREAK_DIRECTIONS = frozenset({"above", "below", "through"})
+_CROSSING_VERB_DIRECTIONS = {
+    "drop": "below", "dropped": "below", "drops": "below", "fall": "below",
+    "falls": "below", "fell": "below", "rallies": "above", "rally": "above",
+    "rose": "above", "rise": "above", "rises": "above", "surge": "above",
+    "surges": "above",
+}
+_BREAK_MODIFIERS = frozenset(
+    {"and", "back", "briefly", "cleanly", "decisively", "firmly", "holds", "now"}
+)
+_BREAK_NEGATIONS = frozenset(
+    {"cannot", "didn", "failed", "fails", "hasn", "hadn", "no", "not", "never", "without", "yet"}
+)
+_BREAK_CLAUSE_BOUNDARIES = frozenset({"although", "and", "as", "but", "however", "then", "while"})
 
 def _stable_float(value: float | None, digits: int) -> float | None:
     if value is None:
@@ -273,9 +284,11 @@ def _price_action_context_traits(
         traits.add("level_interaction")
     if tokens.intersection(_VOLATILITY_TRAIT_TERMS):
         traits.add("volatility_regime")
-    normalized_text = "_".join(re.findall(r"[a-z0-9]+", text))
-    if any(phrase in normalized_text for phrase in _LEVEL_BREAK_PHRASES):
+    ordered_tokens = re.findall(r"[a-z0-9]+", text)
+    if _has_non_negated_level_break(ordered_tokens):
         traits.add("level_break")
+    for side in _asserted_level_sides(ordered_tokens):
+        traits.add(f"level_side_{side}")
     if tokens.intersection(_LEVEL_TEST_TERMS):
         traits.add("level_test_or_hold")
     if tokens.intersection(_RANGE_STATE_TERMS):
@@ -283,6 +296,50 @@ def _price_action_context_traits(
     if tokens.intersection({"reversal", "reversals", "whipsaw"}):
         traits.add("volatility_reversal")
     return sorted(traits)
+
+def _has_non_negated_level_break(tokens: list[str]) -> bool:
+    """Return true only for an asserted level break, not a negated clause."""
+    for index, token in enumerate(tokens):
+        is_break_phrase = token in {"breakdown", "breakout"}
+        allowed_directions = _BREAK_DIRECTIONS
+        if token in _CROSSING_VERB_DIRECTIONS:
+            allowed_directions = frozenset({_CROSSING_VERB_DIRECTIONS[token]})
+        if token in _BREAK_VERBS or token in _CROSSING_VERB_DIRECTIONS:
+            following = tokens[index + 1:index + 5]
+            for offset, following_token in enumerate(following):
+                if following_token in allowed_directions:
+                    is_break_phrase = all(
+                        modifier in _BREAK_MODIFIERS for modifier in following[:offset]
+                    )
+                    break
+                if following_token not in _BREAK_MODIFIERS:
+                    break
+        if not is_break_phrase:
+            continue
+        preceding_clause = _preceding_clause_tokens(tokens, index)
+        if not preceding_clause.intersection(_BREAK_NEGATIONS):
+            return True
+    return False
+
+def _asserted_level_sides(tokens: list[str]) -> set[str]:
+    sides: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token not in {"above", "below"}:
+            continue
+        nearby = set(tokens[max(0, index - 3):index + 4])
+        if not nearby.intersection(_LEVEL_TRAIT_TERMS):
+            continue
+        if not _preceding_clause_tokens(tokens, index).intersection(_BREAK_NEGATIONS):
+            sides.add(token)
+    return sides
+
+def _preceding_clause_tokens(tokens: list[str], index: int) -> set[str]:
+    clause_start = 0
+    for boundary_index in range(index - 1, -1, -1):
+        if tokens[boundary_index] in _BREAK_CLAUSE_BOUNDARIES:
+            clause_start = boundary_index + 1
+            break
+    return set(tokens[max(clause_start, index - 5):index])
 
 def _event_cross_family_context_matches(
     *,
