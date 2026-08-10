@@ -89,8 +89,8 @@ Common configuration:
 - `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,cerebras,gemini,mistral`)
 - `LLM_EVENT_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
 - `LLM_EVENT_ANALYSIS_MAX_TOKENS` / `LLM_MARKET_HEARTBEAT_MAX_TOKENS` / `LLM_REPORT_MAX_TOKENS` / `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` / `LLM_LEGACY_ALERT_PAYLOAD_MAX_TOKENS` (completion budget per call type)
-- `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (optional; `low` / `medium` / `high`, omitted when unset)
-- `LLM_REASONING_MODEL_MARKERS` (model-identifier substrings that accept `reasoning_effort`; default `gpt-oss`)
+- `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (`low` / `medium` / `high`; reasoning models default to `low`)
+- `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gemini-2.5`)
 - `CEREBRAS_API_KEY` / `CEREBRAS_MODEL`
 - `GEMINI_API_KEY` / `GEMINI_MODEL`
 - `MISTRAL_API_KEY` / `MISTRAL_MODEL`

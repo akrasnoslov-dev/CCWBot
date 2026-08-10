@@ -886,6 +886,14 @@ def _detector_user_impact(result: DetectorResult) -> str:
             f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures"
         )
     if result.id == "repeated_llm_failures_or_rate_limits":
+        categories_by_call_type = metrics.get("failure_categories_by_call_type")
+        if isinstance(categories_by_call_type, dict) and categories_by_call_type:
+            return ", ".join(
+                f"{call_type}/{category}: {_int(count)}"
+                for call_type, categories in sorted(categories_by_call_type.items())
+                if isinstance(categories, dict)
+                for category, count in sorted(categories.items())
+            )
         categories = metrics.get("failure_categories")
         if isinstance(categories, dict) and categories:
             return ", ".join(

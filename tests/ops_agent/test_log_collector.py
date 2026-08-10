@@ -137,6 +137,24 @@ def test_llm_failure_pattern_ignores_healthy_llm_lines_and_failed_zero_counters(
     assert all(pattern.search(line) for line in failures)
 
 
+def test_coingecko_rate_limit_pattern_is_provider_specific():
+    pattern = LOG_PATTERNS["coingecko_rate_limit"]
+    coingecko_limits = [
+        "ops_event=coingecko_rate_limit attempt=1 max_retries=3",
+        "CoinGecko request failed with HTTP 429",
+        "429 rate limit returned by CoinGecko",
+    ]
+    unrelated_limits = [
+        "ops_event=llm_rate_limit_started provider=groq model=x",
+        "Groq rate_limit retry_after_seconds=30",
+        "numeric counters: requests=429 successes=428",
+        "CoinGecko request completed successfully",
+    ]
+
+    assert all(pattern.search(line) for line in coingecko_limits)
+    assert not any(pattern.search(line) for line in unrelated_limits)
+
+
 def test_heartbeat_failure_pattern_ignores_healthy_heartbeat_lines():
     pattern = LOG_PATTERNS["heartbeat_failure"]
 

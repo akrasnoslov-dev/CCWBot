@@ -12,7 +12,11 @@ from hashlib import sha256
 from uuid import uuid4
 
 from bot.alerting.alert_rules import calculate_price_change_percent
-from bot.alerting.event_analysis import EVENT_ANALYSIS_TYPE, EventAnalysisDecision
+from bot.alerting.event_analysis import (
+    EVENT_ANALYSIS_TYPE,
+    EventAnalysisDecision,
+    normalize_event_semantic_family,
+)
 from bot.alerting.market_heartbeat import MARKET_HEARTBEAT_ANALYSIS_TYPE
 from bot.alerting.news_context import _news_driven_identity
 from bot.db.database import make_news_key
@@ -21,6 +25,14 @@ from bot.domain.supported_coins import SUPPORTED_SYMBOLS, normalize_symbol
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 EVENT_ANALYSIS_PAYLOAD_POINTS = 6
 EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
+PRICE_ACTION_SEMANTIC_FAMILIES = frozenset(
+    {
+        "price_downtrend",
+        "price_uptrend",
+        "price_level_range",
+        "volatility",
+    }
+)
 
 def _stable_float(value: float | None, digits: int) -> float | None:
     if value is None:
@@ -180,6 +192,78 @@ def _event_semantic_cooldown_escalation_details(
         "current_news_count": len(current_news_ids),
         "new_news_driver": bool(new_news_ids),
     }
+
+def _event_cooldown_namespace(
+    *,
+    semantic_family: str | None,
+    movement_percent: float | None,
+) -> str | None:
+    """Return a cooldown-only identity without changing market-event identity.
+
+    Only explicit price-action families can share this namespace. Unknown and topical
+    families stay distinct even when they reference the same article.
+    """
+    family = str(semantic_family or "").strip().lower() or None
+    if family not in PRICE_ACTION_SEMANTIC_FAMILIES:
+        return None
+    direction = _movement_direction(movement_percent)
+    if direction not in {"up", "down"}:
+        return None
+    return f"price_action:{direction}"
+
+def _event_cross_family_context_matches(
+    *,
+    symbol: str,
+    previous_event_key: str | None,
+    previous_semantic_family: str | None,
+    previous_numeric_context: dict,
+    current_semantic_family: str | None,
+    current_movement_percent: float | None,
+    current_analysed_window_minutes: int | None,
+) -> bool:
+    """Return whether two differently named price events share cooldown context.
+
+    Both events must be explicit price-action events with the same movement direction
+    and analysed window. News is supporting context and never decides equivalence;
+    urgency and materially larger movement are evaluated by the caller as escalation.
+    """
+    if normalize_symbol(symbol) != "btc":
+        return False
+    previous_family = str(previous_semantic_family or "").strip().lower() or None
+    if previous_family is None:
+        context_family = str(previous_numeric_context.get("semantic_family") or "").strip()
+        previous_family = context_family.lower() or normalize_event_semantic_family(
+            symbol,
+            previous_event_key,
+        )
+    current_family = str(current_semantic_family or "").strip().lower() or None
+    if previous_family == current_family and previous_family is not None:
+        return False
+
+    previous_movement = _optional_float(
+        previous_numeric_context.get("analysed_window_change_percent")
+    )
+    previous_namespace = _event_cooldown_namespace(
+        semantic_family=previous_family,
+        movement_percent=previous_movement,
+    )
+    current_namespace = _event_cooldown_namespace(
+        semantic_family=current_family,
+        movement_percent=current_movement_percent,
+    )
+    if previous_namespace is None or previous_namespace != current_namespace:
+        return False
+
+    previous_window = previous_numeric_context.get("analysed_window_minutes")
+    try:
+        normalized_previous_window = int(previous_window)
+        normalized_current_window = int(current_analysed_window_minutes)
+    except (TypeError, ValueError):
+        return False
+    if normalized_previous_window != normalized_current_window:
+        return False
+
+    return True
 
 def _optional_float(value: object) -> float | None:
     try:

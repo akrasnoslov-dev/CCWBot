@@ -56,14 +56,14 @@ _PROVIDER_BASE_URL = {
 # via {PROVIDER}_MODEL. Defaults name models proven to work in production; none of them may
 # point at a model the provider has decommissioned.
 _GROQ_MODEL_ENV_BY_CALL_TYPE = {
-    "event_analysis": ("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile"),
-    "market_heartbeat": ("GROQ_MARKET_HEARTBEAT_MODEL", "llama-3.1-8b-instant"),
-    "daily_report": ("GROQ_REPORT_MODEL", "llama-3.1-8b-instant"),
-    "weekly_report": ("GROQ_REPORT_MODEL", "llama-3.1-8b-instant"),
-    "market_report": ("GROQ_REPORT_MODEL", "llama-3.1-8b-instant"),
-    "news_intelligence": ("GROQ_NEWS_INTELLIGENCE_MODEL", "llama-3.1-8b-instant"),
+    "event_analysis": ("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
+    "market_heartbeat": ("GROQ_MARKET_HEARTBEAT_MODEL", "openai/gpt-oss-20b"),
+    "daily_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
+    "weekly_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
+    "market_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
+    "news_intelligence": ("GROQ_NEWS_INTELLIGENCE_MODEL", "openai/gpt-oss-20b"),
 }
-_GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "llama-3.3-70b-versatile")
+_GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
     "cerebras": ("CEREBRAS_MODEL", "gpt-oss-120b"),
@@ -125,18 +125,23 @@ REASONING_EFFORT_CHOICES = ("low", "medium", "high")
 # model is a 400, which the router treats as deterministic and does not fall back on — the
 # exact failure shape this work exists to remove. So the parameter is gated on the resolved
 # model identifier, matched against these substrings, and never on the provider name.
-_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss",)
+_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5")
 
 # Models whose internal reasoning/thinking is billed against the *completion* budget, so a
-# budget sized for a plain chat model leaves nothing for the answer. This is deliberately a
-# superset of the reasoning-effort markers above: Gemini 2.5 thinks by default but its
-# OpenAI-compatible endpoint does not accept ``reasoning_effort``, so it belongs here (warn
-# about the budget) but not there (never send the parameter).
+# budget sized for a plain chat model leaves nothing for the answer. Gemini 2.5's current
+# OpenAI-compatible endpoint accepts ``reasoning_effort`` and maps ``low`` to 1,024 thinking
+# tokens, so it is in both capability sets.
 _THINKING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5", "magistral", "deepseek-r", "-o1", "-o3")
 
-# Below this, a thinking model has no realistic room to emit JSON after reasoning. Used only
-# to warn at startup; it never changes the budget that is actually sent.
-_THINKING_MODEL_MIN_RECOMMENDED_MAX_TOKENS = 1024
+# Reserve this much completion capacity for a thinking model's internal reasoning in addition
+# to the call type's configured answer budget. Gemini 2.5 maps low reasoning effort to a
+# 1,024-token thinking budget; using the same explicit headroom for known thinking models keeps
+# the configured schema-answer ceiling intact instead of letting reasoning consume it.
+_REASONING_HEADROOM_TOKENS_BY_EFFORT = {
+    "low": 1024,
+    "medium": 8192,
+    "high": 24576,
+}
 
 
 def _parse_priority_list(raw: str | None, *, env_name: str | None = None) -> list[str]:
@@ -257,6 +262,36 @@ def max_tokens_for(call_type: str) -> int:
     return default
 
 
+def effective_max_tokens_for(
+    *,
+    call_type: str,
+    provider: str,
+    model: str | None,
+    requested_max_tokens: int | None = None,
+) -> int:
+    """Return the completion budget for one concrete provider attempt.
+
+    The public call-type budget remains the primary/plain-model ceiling. Thinking models need
+    room for hidden reasoning before emitting the JSON answer, so only those attempts receive
+    explicit reasoning headroom in addition to the configured answer ceiling. This avoids
+    raising plain-model attempts merely because a thinking model exists later in the chain.
+    """
+    del provider  # Reserved for future provider-specific constraints without changing callers.
+    budget = max_tokens_for(call_type) if requested_max_tokens is None else requested_max_tokens
+    if is_thinking_model(model):
+        headroom = reasoning_headroom_tokens_for(model=model, call_type=call_type)
+        return min(budget + headroom, _MAX_TOKENS_CEILING)
+    return budget
+
+
+def reasoning_headroom_tokens_for(*, model: str | None, call_type: str) -> int:
+    """Return reasoning capacity reserved in addition to the configured answer budget."""
+    if not is_thinking_model(model):
+        return 0
+    effort = reasoning_effort_for(model, call_type) or "low"
+    return _REASONING_HEADROOM_TOKENS_BY_EFFORT[effort]
+
+
 def reasoning_model_markers() -> tuple[str, ...]:
     """Substrings that mark a model identifier as reasoning-capable (overridable via env)."""
     raw = os.getenv("LLM_REASONING_MODEL_MARKERS")
@@ -273,7 +308,7 @@ def reasoning_model_markers() -> tuple[str, ...]:
             ",".join(_DEFAULT_REASONING_MODEL_MARKERS),
         )
         return _DEFAULT_REASONING_MODEL_MARKERS
-    return parsed
+    return tuple(dict.fromkeys((*_DEFAULT_REASONING_MODEL_MARKERS, *parsed)))
 
 
 def is_reasoning_model(model: str | None) -> bool:
@@ -294,11 +329,13 @@ def reasoning_effort_for(model: str | None, call_type: str) -> str | None:
         return None
     env_name = _CALL_TYPE_REASONING_EFFORT_ENV.get(call_type)
     if env_name and os.getenv(env_name) is not None and os.getenv(env_name, "").strip():
-        # An explicitly-set-but-invalid per-call-type value must not silently inherit the
-        # global default: the operator asked for something specific, and quietly applying a
-        # third value is the kind of surprise this module exists to prevent.
-        return get_choice_env(env_name, REASONING_EFFORT_CHOICES)
-    return get_choice_env("LLM_REASONING_EFFORT", REASONING_EFFORT_CHOICES)
+        # Do not inherit a different global value after rejecting a call-type override. Use the
+        # shipped safe default explicitly so request effort and reserved headroom stay aligned.
+        return get_choice_env(env_name, REASONING_EFFORT_CHOICES) or "low"
+    configured = get_choice_env("LLM_REASONING_EFFORT", REASONING_EFFORT_CHOICES)
+    # Shipped gpt-oss defaults must not silently use a provider's more expensive reasoning
+    # default. Low is sufficient for the compact structured contracts used by this service.
+    return configured or "low"
 
 
 def resolved_configuration() -> list[dict]:
@@ -319,6 +356,14 @@ def resolved_configuration() -> list[dict]:
                 "models": {name: model_for(name, call_type) for name in chain},
                 "configured": {name: api_key(name) is not None for name in chain},
                 "max_tokens": max_tokens_for(call_type),
+                "effective_max_tokens": {
+                    name: effective_max_tokens_for(
+                        call_type=call_type,
+                        provider=name,
+                        model=model_for(name, call_type),
+                    )
+                    for name in chain
+                },
                 "reasoning_effort": {
                     name: reasoning_effort_for(model_for(name, call_type), call_type)
                     for name in chain
@@ -352,11 +397,13 @@ def _format_chain(entry: dict) -> str:
     parts = []
     for name in entry["providers"]:
         effort = entry["reasoning_effort"].get(name)
+        effective_budget = entry["effective_max_tokens"].get(name)
         parts.append(
-            "{provider}:{model}{effort}{unconfigured}".format(
+            "{provider}:{model}{effort}/max={effective_budget}{unconfigured}".format(
                 provider=name,
                 model=_safe_log_value(entry["models"].get(name)),
                 effort=f"/effort={effort}" if effort else "",
+                effective_budget=effective_budget,
                 unconfigured="" if entry["configured"].get(name) else "(no_api_key)",
             )
         )
@@ -389,15 +436,19 @@ def _warn_undersized_thinking_budgets(entry: dict) -> None:
     sized for the llama primary. That combination fails with an empty completion rather than a
     recognisable error, so it is surfaced at startup instead of one dead call at a time.
     """
-    budget = entry["max_tokens"]
-    if budget >= _THINKING_MODEL_MIN_RECOMMENDED_MAX_TOKENS:
-        return
     for name in entry["providers"]:
         if not entry["configured"].get(name):
             # No API key, so the router never attempts it; warning would be noise.
             continue
         model = entry["models"].get(name)
         if not is_thinking_model(model):
+            continue
+        budget = entry["effective_max_tokens"].get(name, entry["max_tokens"])
+        desired_budget = entry["max_tokens"] + reasoning_headroom_tokens_for(
+            model=model,
+            call_type=entry["call_type"],
+        )
+        if desired_budget <= _MAX_TOKENS_CEILING and budget >= desired_budget:
             continue
         logger.warning(
             "ops_event=llm_config_budget_risk call_type=%s provider=%s model=%s max_tokens=%s "
@@ -406,5 +457,5 @@ def _warn_undersized_thinking_budgets(entry: dict) -> None:
             name,
             _safe_log_value(model),
             budget,
-            _THINKING_MODEL_MIN_RECOMMENDED_MAX_TOKENS,
+            desired_budget,
         )

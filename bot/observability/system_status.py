@@ -21,11 +21,7 @@ from bot.db.database import (
     User,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, display_symbol
-from bot.services.ai_agent_groq import (
-    GROQ_EVENT_ANALYSIS_MODEL,
-    GROQ_MARKET_HEARTBEAT_MODEL,
-    get_llm_rate_limit_backoff,
-)
+from bot.services.llm.telemetry import get_active_llm_rate_limit_backoffs
 from bot.settings import DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
 from bot.storage import load_state
 from bot.telegram_errors import is_bot_blocked_error
@@ -44,6 +40,7 @@ _STATUS_RANK = {
     ComponentStatus.WARN: 2,
     ComponentStatus.FAIL: 3,
 }
+MAX_LLM_PROVIDER_BREAKDOWN_ROWS = 8
 _SECRET_DETAIL_RE = re.compile(
     r"(?i)\b("
     r"api[_ -]?key|authorization|auth[_ -]?header|bearer|token|"
@@ -476,58 +473,135 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
 async def _llm_provider_breakdown_rows(
     session: AsyncSession, *, now: datetime
 ) -> tuple[str, ...]:
-    """Compact per-provider LLM usage counts over the last 24h, sourced from llm_usage_logs.
+    """Compact per-call-type/provider attempt counts over the last 24h.
 
-    Surfaces Stage 9 metrics on the existing admin status card (one line per provider that
-    handled a call), so an operator does not have to run SQL by hand. Read-only; provider/status
-    names only (no secrets, tokens, or payloads).
+    These are provider-attempt diagnostics, not final product outcomes. Event Analysis health
+    remains authoritative in ``_ai_health`` even when another call type is degraded. Only
+    normalized categories are rendered; raw errors and provider payloads never reach Telegram.
     """
     since = now - timedelta(hours=24)
+    rate_limit_attempt = or_(
+        LlmUsageLog.status == "rate_limit",
+        LlmUsageLog.error_reason == "rate_limit",
+    )
+    backoff_skip = or_(
+        LlmUsageLog.status == "skipped_due_to_rate_limit",
+        LlmUsageLog.error_reason == "rate_limit_backoff_active",
+    )
+    circuit_skip = or_(
+        LlmUsageLog.status == "skipped_due_to_circuit_breaker",
+        LlmUsageLog.error_reason == "provider_circuit_broken",
+    )
+    schema_invalid = or_(
+        LlmUsageLog.status.in_(["invalid_json", "schema_error", "invalid_output"]),
+        LlmUsageLog.error_reason.in_(
+            ["invalid_json", "schema_validation_failed", "invalid_output"]
+        ),
+    )
     rows = (
         await session.execute(
             select(
+                LlmUsageLog.call_type,
                 LlmUsageLog.provider,
                 func.count().label("calls"),
-                func.sum(case((LlmUsageLog.status == "success", 1), else_=0)).label("ok"),
-                func.sum(
-                    case((LlmUsageLog.status == "rate_limit", 1), else_=0)
-                ).label("rate_limited"),
-                func.sum(case((LlmUsageLog.status == "timeout", 1), else_=0)).label("timeouts"),
+                func.sum(case((LlmUsageLog.status == "success", 1), else_=0)).label(
+                    "successful"
+                ),
+                func.sum(case((rate_limit_attempt, 1), else_=0)).label("rate_limited"),
+                func.sum(case((backoff_skip, 1), else_=0)).label("backoff_skips"),
+                func.sum(case((circuit_skip, 1), else_=0)).label("circuit_skips"),
+                func.sum(case((schema_invalid, 1), else_=0)).label("schema_invalid"),
             )
             .where(LlmUsageLog.created_at >= since)
-            .group_by(LlmUsageLog.provider)
-            .order_by(func.count().desc(), LlmUsageLog.provider)
+            .group_by(LlmUsageLog.call_type, LlmUsageLog.provider)
+            .order_by(LlmUsageLog.call_type, func.count().desc(), LlmUsageLog.provider)
         )
     ).all()
     breakdown: list[str] = []
     for row in rows:
-        provider = row.provider or "unknown"
-        breakdown.append(
-            f"{provider}: {int(row.calls)} calls "
-            f"({int(row.ok or 0)} ok, {int(row.rate_limited or 0)} rate_limit, "
-            f"{int(row.timeouts or 0)} timeout) in 24h"
+        call_type = _llm_call_type_label(row.call_type)
+        provider = _llm_provider_label(row.provider)
+        calls = int(row.calls or 0)
+        successful = int(row.successful or 0)
+        rate_limited = int(row.rate_limited or 0)
+        backoff_skips = int(row.backoff_skips or 0)
+        circuit_skips = int(row.circuit_skips or 0)
+        schema_invalid_count = int(row.schema_invalid or 0)
+        provider_failures = max(
+            calls
+            - successful
+            - rate_limited
+            - backoff_skips
+            - circuit_skips
+            - schema_invalid_count,
+            0,
         )
-    return tuple(breakdown)
+        attempt_label = "attempt" if calls == 1 else "attempts"
+        breakdown.append(
+            f"{call_type} / {provider}: {calls} {attempt_label} "
+            f"({successful} success, {rate_limited} rate-limit, "
+            f"{backoff_skips} backoff, {circuit_skips} circuit, "
+            f"{schema_invalid_count} schema-invalid, {provider_failures} provider failure) in 24h"
+        )
+    omitted = max(len(breakdown) - MAX_LLM_PROVIDER_BREAKDOWN_ROWS, 0)
+    visible = breakdown[:MAX_LLM_PROVIDER_BREAKDOWN_ROWS]
+    if omitted:
+        visible.append(f"{omitted} additional call-type/provider rows omitted")
+    return tuple(visible)
+
+
+def _llm_call_type_label(value: str | None) -> str:
+    return {
+        "event_analysis": "Event Analysis",
+        "market_heartbeat": "Market Heartbeat",
+        "daily_report": "Daily report",
+        "weekly_report": "Weekly report",
+        "news_intelligence": "News intelligence",
+    }.get(str(value or "").strip().lower(), "Other LLM")
+
+
+def _llm_provider_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return {
+        "groq": "groq",
+        "cerebras": "cerebras",
+        "gemini": "gemini",
+        "mistral": "mistral",
+    }.get(normalized, "other provider")
 
 
 async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
-    active_backoffs = []
+    active_backoffs: list[str] = []
+    active_call_types: set[str] = set()
     active_until: datetime | None = None
-    for label, model in (
-        ("event-analysis", GROQ_EVENT_ANALYSIS_MODEL),
-        ("heartbeat", GROQ_MARKET_HEARTBEAT_MODEL),
-    ):
-        limited_until = get_llm_rate_limit_backoff(model=model, now=now)
-        if limited_until is not None:
-            active_until = limited_until
-            active_backoffs.append(f"{label} {model} limited until {_format_utc(limited_until)}")
+    for backoff in get_active_llm_rate_limit_backoffs(now=now):
+        limited_until = backoff["limited_until"]
+        if not isinstance(limited_until, datetime):
+            continue
+        active_until = max(active_until, limited_until) if active_until else limited_until
+        provider = _llm_provider_label(str(backoff.get("provider") or ""))
+        call_types = backoff.get("call_types") or ("unknown",)
+        labels = [_llm_call_type_label(str(call_type)) for call_type in call_types]
+        active_call_types.update(labels)
+        active_backoffs.append(
+            f"{', '.join(labels)}: {provider} backoff active until {_format_utc(limited_until)}"
+        )
     if active_backoffs:
+        summary = (
+            f"{next(iter(active_call_types))} backoff active until "
+            f"{_format_utc(active_until)[11:16]} UTC"
+            if len(active_call_types) == 1
+            else (
+                f"{len(active_call_types)} call types in backoff until "
+                f"{_format_utc(active_until)[11:16]} UTC"
+            )
+        )
         return ComponentHealth(
             "LLM rate limit",
             ComponentStatus.WARN,
             active_backoffs[0],
-            tuple(active_backoffs),
-            summary=f"active until {_format_utc(active_until)[11:16]} UTC",
+            summary=summary,
+            info_rows=tuple(active_backoffs),
         )
 
     # Provider-agnostic: reflect the whole fallback chain (Groq + Cerebras/Gemini/Mistral),
@@ -551,19 +625,28 @@ async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> Compone
         .limit(1)
     )
     if latest_rate_limit is not None:
+        call_type = _llm_call_type_label(latest_rate_limit.call_type)
+        provider = _llm_provider_label(latest_rate_limit.provider)
+        category = (
+            "backoff"
+            if latest_rate_limit.status == "skipped_due_to_rate_limit"
+            or latest_rate_limit.error_reason == "rate_limit_backoff_active"
+            else "rate-limit"
+        )
+        safe_retry_after = _safe_detail(latest_rate_limit.retry_after, max_chars=24)
         retry_after = (
-            f", retry_after {latest_rate_limit.retry_after}"
-            if latest_rate_limit.retry_after
-            else ""
+            f", retry_after {safe_retry_after}" if safe_retry_after else ""
+        )
+        detail = (
+            f"{call_type}: recent {provider} {category} "
+            f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
         )
         return ComponentHealth(
             "LLM rate limit",
             ComponentStatus.WARN,
-            (
-                f"recent {latest_rate_limit.provider} {latest_rate_limit.status} "
-                f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
-            ),
-            summary=f"recent limit{retry_after}",
+            detail,
+            summary=f"{call_type} recent limit{retry_after}",
+            info_rows=(detail,),
         )
     if latest_usage is None:
         return ComponentHealth(

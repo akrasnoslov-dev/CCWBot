@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from ops_agent.db_queries import MARKET_DATA_FRESHNESS_GRACE_SECONDS
 from ops_agent.expected_models import KNOWN_DECOMMISSIONED_MODELS, expected_model
 from ops_agent.schemas import DetectorResult, Period
 
@@ -213,11 +214,14 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     total_deliveries = sum(_int(row.get("deliveries")) for row in alert_summary)
     failed_rate = failed_deliveries / total_deliveries if total_deliveries else 0
     llm_category_counts: dict[str, int] = {}
+    llm_categories_by_call_type: dict[str, dict[str, int]] = {}
     for row in llm_category_rows:
+        call_type = str(row.get("call_type") or "unknown")
         category = str(row.get("failure_category") or "other")
-        llm_category_counts[category] = llm_category_counts.get(category, 0) + _int(
-            row.get("calls")
-        )
+        calls = _int(row.get("calls"))
+        llm_category_counts[category] = llm_category_counts.get(category, 0) + calls
+        call_type_categories = llm_categories_by_call_type.setdefault(call_type, {})
+        call_type_categories[category] = call_type_categories.get(category, 0) + calls
     llm_failures = (
         sum(
             calls
@@ -231,7 +235,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             if str(row.get("status") or "") not in {"success", "completed"}
         )
     )
-    rate_limits = llm_category_counts.get("rate_limit_backoff", 0) or sum(
+    categorized_rate_limits = llm_category_counts.get(
+        "provider_rate_limit", 0
+    ) + llm_category_counts.get("active_backoff", 0)
+    rate_limits = categorized_rate_limits or sum(
         _int(row.get("rate_limit_count")) for row in llm_summary
     )
     failed_reports = sum(
@@ -264,10 +271,6 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         if row.get("latest_generated_at") is None
         or str(row.get("latest_status") or "") != "completed"
         or _int(row.get("age_seconds")) > _int(row.get("max_age_seconds"))
-        or (
-            _parse_datetime(row.get("latest_expires_at")) is not None
-            and _parse_datetime(row.get("latest_expires_at")) <= period.end
-        )
     ]
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))
@@ -439,7 +442,14 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         default=0,
     )
     stale_price_rows = []
-    freshness_threshold_seconds = max(interval_seconds * 2, 1800) if interval_seconds else None
+    freshness_base_threshold_seconds = (
+        max(interval_seconds * 2, interval_seconds + 900) if interval_seconds else None
+    )
+    freshness_threshold_seconds = (
+        freshness_base_threshold_seconds + MARKET_DATA_FRESHNESS_GRACE_SECONDS
+        if freshness_base_threshold_seconds is not None
+        else None
+    )
     for row in price_state:
         checked_at = _parse_datetime(row.get("last_checked_at"))
         if checked_at and freshness_threshold_seconds is not None:
@@ -618,7 +628,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             {
                 "llm_failures": llm_failures,
                 "rate_limits": rate_limits,
-                "failure_categories": llm_category_counts,
+                "failure_categories_by_call_type": llm_categories_by_call_type,
             },
         ),
         db_result(
@@ -758,6 +768,8 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             {
                 "price_state_rows": len(price_state),
                 "stale_rows": len(stale_price_rows),
+                "freshness_base_threshold_seconds": freshness_base_threshold_seconds,
+                "freshness_grace_seconds": MARKET_DATA_FRESHNESS_GRACE_SECONDS,
                 "freshness_threshold_seconds": freshness_threshold_seconds,
                 "sample_symbols": [row.get("symbol") for row in stale_price_rows[:5]],
             },

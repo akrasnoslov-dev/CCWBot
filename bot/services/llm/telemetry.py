@@ -48,10 +48,19 @@ def _rate_limit_fallback_backoff_seconds() -> int:
 
 
 # Only these call types consult the pre-call backoff registry before attempting a request.
-RATE_LIMIT_BACKOFF_CALL_TYPES = {"event_analysis", "market_heartbeat"}
+RATE_LIMIT_BACKOFF_CALL_TYPES = {
+    "event_analysis",
+    "market_heartbeat",
+    "daily_report",
+    "weekly_report",
+    "market_report",
+    "news_intelligence",
+    "legacy_alert_payload",
+}
 
 # Temporary in-memory backoff keyed by (provider, model). Shared process-wide.
 _llm_rate_limit_backoffs: dict[tuple[str, str], datetime] = {}
+_llm_rate_limit_backoff_call_types: dict[tuple[str, str], set[str]] = {}
 
 
 # A 4xx is not one thing. "This model no longer exists" is a provider-side fact that the next
@@ -414,6 +423,7 @@ def active_rate_limit_backoff(
     limited_until = limited_until.astimezone(timezone.utc)
     if limited_until <= now:
         _llm_rate_limit_backoffs.pop(key, None)
+        _llm_rate_limit_backoff_call_types.pop(key, None)
         return None
     return limited_until
 
@@ -428,15 +438,40 @@ def get_llm_rate_limit_backoff(
     return active_rate_limit_backoff(provider=provider, model=model, now=now)
 
 
+def get_active_llm_rate_limit_backoffs(
+    *, now: datetime | None = None
+) -> tuple[dict[str, object], ...]:
+    """Return a sanitized snapshot of active provider/model backoffs and their call types."""
+    now = now or datetime.now(timezone.utc)
+    rows: list[dict[str, object]] = []
+    for provider, model in sorted(_llm_rate_limit_backoffs):
+        limited_until = active_rate_limit_backoff(provider=provider, model=model, now=now)
+        if limited_until is None:
+            continue
+        rows.append(
+            {
+                "provider": provider,
+                "model": model,
+                "limited_until": limited_until,
+                "call_types": tuple(
+                    sorted(_llm_rate_limit_backoff_call_types.get((provider, model), set()))
+                ),
+            }
+        )
+    return tuple(rows)
+
+
 def reset_llm_rate_limit_backoffs() -> None:
     """Clear in-memory provider/model backoffs for tests and controlled restarts."""
     _llm_rate_limit_backoffs.clear()
+    _llm_rate_limit_backoff_call_types.clear()
 
 
 def start_llm_rate_limit_backoff(
     *,
     provider: str,
     model: str,
+    call_type: str,
     error: Exception,
     headers,
 ) -> tuple[int, datetime]:
@@ -449,10 +484,13 @@ def start_llm_rate_limit_backoff(
         limited_until = existing
         retry_after_seconds = max(int((limited_until - now).total_seconds()), 1)
     _llm_rate_limit_backoffs[key] = limited_until
+    _llm_rate_limit_backoff_call_types.setdefault(key, set()).add(call_type)
     logger.warning(
-        "ops_event=llm_rate_limit_started provider=%s model=%s retry_after_seconds=%s",
+        "ops_event=llm_rate_limit_started provider=%s model=%s call_type=%s "
+        "retry_after_seconds=%s",
         provider,
         model,
+        call_type,
         retry_after_seconds,
     )
     return retry_after_seconds, limited_until

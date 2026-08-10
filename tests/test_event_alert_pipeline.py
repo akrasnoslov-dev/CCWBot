@@ -76,6 +76,7 @@ async def seed_sent_event_alert(
     event_key: str,
     created_at: datetime,
     urgency: str | None = None,
+    analysed_window_minutes: int | None = None,
     analysed_window_change_percent: float | None = None,
     stable_related_news_ids: list[str] | None = None,
     semantic_family: str | None = None,
@@ -108,6 +109,7 @@ async def seed_sent_event_alert(
             {
                 "notification_type": alerts.EVENT_ALERT_TYPE,
                 "notification_severity": urgency,
+                "analysed_window_minutes": analysed_window_minutes,
                 "analysed_window_change_percent": analysed_window_change_percent,
                 "stable_related_news_ids": stable_related_news_ids or [],
                 "semantic_family": semantic_family,
@@ -2674,6 +2676,294 @@ async def test_semantic_event_alert_cooldown_suppresses_different_keys_in_same_f
         assert "suppression_reason=semantic_cooldown" in caplog.text
         assert "user_id=" not in caplog.text
         assert "chat_id=" not in caplog.text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_cooldown_suppresses_equivalent_cross_family_price_context(
+    monkeypatch,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=[],
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key="btc_price_level_range",
+            semantic_family="price_level_range",
+            current_movement_percent=-3.2,
+            current_analysed_window_minutes=180,
+            current_stable_news_ids=[],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+            return_summary=True,
+        )
+
+        assert result.recipients == []
+        assert result.suppression_reason_counts == {"semantic_cooldown": 1}
+        assert result.suppressed[0].previous_alert_id is not None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("urgency", "movement"),
+    [("high", -3.2), ("normal", -5.5)],
+)
+async def test_semantic_cooldown_allows_cross_family_market_escalation(
+    monkeypatch,
+    urgency,
+    movement,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["article:old"],
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency=urgency,
+            cooldown_seconds=0,
+            canonical_event_key="btc_price_level_range",
+            semantic_family="price_level_range",
+            current_movement_percent=movement,
+            current_analysed_window_minutes=180,
+            current_stable_news_ids=["article:shared"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+            return_summary=True,
+        )
+
+        assert result.recipients == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+        assert result.delivery_decision_reasons_by_recipient[(user.id, 2001)] == (
+            "allowed_market_context_changed"
+        )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_cooldown_cross_family_new_news_only_does_not_bypass(
+    monkeypatch,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["article:shared"],
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key="btc_volatility",
+            semantic_family="volatility",
+            current_movement_percent=-3.1,
+            current_analysed_window_minutes=180,
+            current_stable_news_ids=["article:new"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert result == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("current_family", "movement", "window"),
+    [
+        ("regulatory", -3.1, 180),
+        ("price_uptrend", 3.1, 180),
+        ("price_level_range", -3.1, 60),
+    ],
+)
+async def test_semantic_cooldown_keeps_distinct_cross_family_events_deliverable(
+    monkeypatch,
+    current_family,
+    movement,
+    window,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["article:shared"],
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key=f"btc_{current_family}",
+            semantic_family=current_family,
+            current_movement_percent=movement,
+            current_analysed_window_minutes=window,
+            current_stable_news_ids=["article:shared"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert result == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_semantic_cooldown_keeps_unknown_events_distinct_despite_shared_news(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_custom_alpha",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                stable_related_news_ids=["article:shared"],
+                semantic_family=None,
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key="btc_custom_beta",
+            semantic_family=None,
+            current_movement_percent=-3.1,
+            current_analysed_window_minutes=180,
+            current_stable_news_ids=["article:shared"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert result == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_cross_family_price_namespace_does_not_change_non_btc_delivery(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="eth",
+                event_key="eth_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                semantic_family="price_downtrend",
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="eth",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key="eth_volatility",
+            semantic_family="volatility",
+            current_movement_percent=-3.1,
+            current_analysed_window_minutes=180,
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert result == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
     finally:
         await engine.dispose()
 

@@ -33,7 +33,7 @@ from bot.db.database import (
 )
 from bot.domain.supported_coins import ALL_SUPPORTED_COINS
 from bot.news_titles import clean_news_title
-from bot.services.ai_agent_groq import ask_news_intelligence_raw
+from bot.services.ai_agent_groq import AISchemaValidationError, ask_news_intelligence_raw
 from bot.services.llm import config as llm_config
 
 logger = logging.getLogger(__name__)
@@ -351,7 +351,18 @@ class NewsIntelligenceService:
 async def _default_llm_client(
     messages: list[dict], model: str, timeout_seconds: int
 ) -> tuple[str, dict]:
-    return await ask_news_intelligence_raw(messages, model=model, timeout=timeout_seconds)
+    def _schema_check(parsed: dict) -> None:
+        try:
+            validate_news_intelligence_schema(parsed)
+        except ValueError as error:
+            raise AISchemaValidationError(str(error)) from error
+
+    return await ask_news_intelligence_raw(
+        messages,
+        model=model,
+        timeout=timeout_seconds,
+        schema_check=_schema_check,
+    )
 
 
 def normalize_news_item(raw_item: dict) -> NormalizedNewsItem | None:
@@ -483,6 +494,54 @@ def validate_llm_output(parsed: dict[str, Any]) -> dict[str, Any]:
         "is_noise": is_noise,
         "is_alert_worthy": is_alert_worthy,
     }
+
+
+def validate_news_intelligence_schema(parsed: dict[str, Any]) -> None:
+    """Reject parseable provider output that does not satisfy the requested news contract."""
+    required_fields = {
+        "summary",
+        "category",
+        "related_symbols",
+        "primary_symbol",
+        "impact_score",
+        "impact_level",
+        "relevance_score",
+        "is_noise",
+        "is_alert_worthy",
+        "alert_reason",
+        "dedup_hint",
+    }
+    missing_fields = required_fields - set(parsed)
+    if missing_fields:
+        raise ValueError(f"missing fields: {sorted(missing_fields)}")
+    if not isinstance(parsed["summary"], str) or not isinstance(parsed["alert_reason"], str):
+        raise ValueError("summary and alert_reason must be text")
+    if not isinstance(parsed["dedup_hint"], str):
+        raise ValueError("dedup_hint must be text")
+    if str(parsed["category"]).strip().lower() not in ALLOWED_CATEGORIES:
+        raise ValueError("invalid category")
+    if str(parsed["impact_level"]).strip().lower() not in ALLOWED_IMPACT_LEVELS:
+        raise ValueError("invalid impact_level")
+    if not isinstance(parsed["related_symbols"], list) or not all(
+        isinstance(symbol, str) and symbol.strip().lower() in ALLOWED_SYMBOLS
+        for symbol in parsed["related_symbols"]
+    ):
+        raise ValueError("related_symbols must contain allowed symbol strings")
+    primary_symbol = parsed["primary_symbol"]
+    if primary_symbol is not None and not isinstance(primary_symbol, str):
+        raise ValueError("invalid primary_symbol")
+    if isinstance(primary_symbol, str) and primary_symbol.strip() and (
+        primary_symbol.strip().lower() not in ALLOWED_SYMBOLS
+    ):
+        raise ValueError("invalid primary_symbol")
+    for field_name in ("impact_score", "relevance_score"):
+        value = parsed[field_name]
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+            raise ValueError(f"{field_name} must be an integer from 0 to 100")
+    if not isinstance(parsed["is_noise"], bool) or not isinstance(
+        parsed["is_alert_worthy"], bool
+    ):
+        raise ValueError("is_noise and is_alert_worthy must be booleans")
 
 
 def derive_impact_level(score: int) -> str:

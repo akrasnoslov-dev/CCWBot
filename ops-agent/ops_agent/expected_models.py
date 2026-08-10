@@ -25,12 +25,12 @@ _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._/@-]{1,120}$")
 
 # Mirrors bot/services/llm/config.py `_GROQ_MODEL_ENV_BY_CALL_TYPE` defaults.
 SHIPPED_DEFAULT_MODELS: dict[str, str] = {
-    "event_analysis": "llama-3.3-70b-versatile",
-    "market_heartbeat": "llama-3.1-8b-instant",
-    "daily_report": "llama-3.1-8b-instant",
-    "weekly_report": "llama-3.1-8b-instant",
-    "market_report": "llama-3.1-8b-instant",
-    "news_intelligence": "llama-3.1-8b-instant",
+    "event_analysis": "openai/gpt-oss-120b",
+    "market_heartbeat": "openai/gpt-oss-20b",
+    "daily_report": "openai/gpt-oss-20b",
+    "weekly_report": "openai/gpt-oss-20b",
+    "market_report": "openai/gpt-oss-20b",
+    "news_intelligence": "openai/gpt-oss-20b",
 }
 
 # Models the provider has withdrawn. A recorded call against one of these is not drift, it is

@@ -59,13 +59,13 @@ from bot.db.database import (
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
     get_latest_sent_event_alert_context_for_symbol,
-    get_latest_sent_event_alert_for_event_key,
     get_latest_success_event_ai_analysis,
     get_market_event_by_instance_key,
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
     get_recent_alert_delivery_outcome_by_context_fingerprint,
+    get_recent_sent_event_alert_contexts,
     get_reference_price_snapshot,
     make_news_key,
     mark_user_bot_blocked,
@@ -148,6 +148,7 @@ _event_semantic_cooldown_allows_escalation = (
 _event_semantic_cooldown_escalation_details = (
     _event_identity._event_semantic_cooldown_escalation_details
 )
+_event_cross_family_context_matches = _event_identity._event_cross_family_context_matches
 _format_analysed_window_label = _event_identity._format_analysed_window_label
 _json_dumps = _event_identity._json_dumps
 _numeric_context_payload = _event_identity._numeric_context_payload
@@ -2635,8 +2636,23 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
     parsed = None
     usage_log_id = None
+    candidate_news_ids = {
+        str(item["news_id"])
+        for item in input_payload.get("news", input_payload.get("candidate_news", []))
+    }
+
+    def _schema_check(provider_parsed: dict) -> None:
+        try:
+            validate_market_heartbeat_output(
+                provider_parsed,
+                expected_symbol=str(input_payload["symbol"]),
+                candidate_news_ids=candidate_news_ids,
+            )
+        except MarketHeartbeatValidationError as error:
+            raise AISchemaValidationError(str(error)) from error
+
     try:
-        result = await ask_market_heartbeat_raw(input_payload)
+        result = await ask_market_heartbeat_raw(input_payload, schema_check=_schema_check)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
     except LLMRateLimitBackoffActive as error:
@@ -2666,10 +2682,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         decision = validate_market_heartbeat_output(
             parsed,
             expected_symbol=str(input_payload["symbol"]),
-            candidate_news_ids={
-                str(item["news_id"])
-                for item in input_payload.get("news", input_payload.get("candidate_news", []))
-            },
+            candidate_news_ids=candidate_news_ids,
         )
     except MarketHeartbeatValidationError as error:
         await mark_llm_usage_log_status(
@@ -3283,6 +3296,7 @@ async def _filter_event_recipients_for_cooldown(
     canonical_event_key: str | None = None,
     semantic_family: str | None = None,
     current_movement_percent: float | None = None,
+    current_analysed_window_minutes: int | None = None,
     current_stable_news_ids: list[str] | None = None,
     semantic_cooldown_seconds: int = EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
     now: datetime,
@@ -3315,19 +3329,55 @@ async def _filter_event_recipients_for_cooldown(
     suppression_reason_counts: dict[str, int] = {}
     delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = {}
     async with DB_SESSION_LOCAL() as session:
+        recent_contexts_by_user: dict[int, list[tuple[object, str | None, str | None]]] = {}
+        if canonical_event_key and semantic_cooldown_seconds > 0:
+            user_ids = [recipient.user_id for recipient in recipients if recipient.user_id]
+            recent_contexts = await get_recent_sent_event_alert_contexts(
+                session,
+                user_ids=user_ids,
+                symbol=symbol,
+                alert_type=EVENT_ALERT_TYPE,
+                since=now - timedelta(seconds=semantic_cooldown_seconds),
+            )
+            for alert, previous_event_key, previous_semantic_family in recent_contexts:
+                recent_contexts_by_user.setdefault(alert.user_id, []).append(
+                    (alert, previous_event_key, previous_semantic_family)
+                )
         for recipient in recipients:
             if recipient.user_id is None:
                 filtered.append(recipient)
                 continue
             if canonical_event_key and semantic_cooldown_seconds > 0:
-                previous_semantic_alert = await get_latest_sent_event_alert_for_event_key(
-                    session,
-                    user_id=recipient.user_id,
-                    symbol=symbol,
-                    canonical_event_key=canonical_event_key,
-                    alert_type=EVENT_ALERT_TYPE,
-                    semantic_family=semantic_family,
-                )
+                previous_semantic_alert = None
+                for previous_alert, previous_event_key, previous_family in (
+                    recent_contexts_by_user.get(recipient.user_id, [])
+                ):
+                    previous_context = _numeric_context_payload(previous_alert.numeric_context)
+                    stored_family = (
+                        str(previous_family or previous_context.get("semantic_family") or "")
+                        .strip()
+                        .lower()
+                        or None
+                    )
+                    normalized_current_family = (
+                        str(semantic_family or "").strip().lower() or None
+                    )
+                    exact_identity_match = previous_event_key == canonical_event_key or (
+                        normalized_current_family is not None
+                        and stored_family == normalized_current_family
+                    )
+                    cross_family_match = _event_cross_family_context_matches(
+                        symbol=symbol,
+                        previous_event_key=previous_event_key,
+                        previous_semantic_family=stored_family,
+                        previous_numeric_context=previous_context,
+                        current_semantic_family=semantic_family,
+                        current_movement_percent=current_movement_percent,
+                        current_analysed_window_minutes=current_analysed_window_minutes,
+                    )
+                    if exact_identity_match or cross_family_match:
+                        previous_semantic_alert = previous_alert
+                        break
                 last_semantic_sent_at = (
                     previous_semantic_alert.created_at if previous_semantic_alert else None
                 )
@@ -5061,6 +5111,9 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 canonical_event_key=decision.event_key,
                 semantic_family=_semantic_family_from_payload(input_payload),
                 current_movement_percent=_event_movement_percent_from_payload(input_payload),
+                current_analysed_window_minutes=_analysed_window_minutes_from_payload(
+                    input_payload
+                ),
                 current_stable_news_ids=_stable_related_news_ids(
                     input_payload,
                     decision.related_news_ids,

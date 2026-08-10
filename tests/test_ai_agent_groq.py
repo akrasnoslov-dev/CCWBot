@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -43,6 +44,15 @@ ALERT_ARGS = {
     ],
     "alert_threshold_percent": 2.0,
     "check_interval_seconds": 300,
+}
+
+VALID_LEGACY_LLM_RESULT = {
+    "news_relevance": "not_relevant",
+    "risk_level": "Medium",
+    "risk_reason": "The move is limited.",
+    "context_sentence": "Conditions remain routine.",
+    "possible_action": "Watch the next alert window.",
+    "related_news_ids": [],
 }
 
 
@@ -187,9 +197,9 @@ def test_ask_json_mode_success_returns_parsed_payload(monkeypatch):
     class FakeCompletions:
         async def create(self, **kwargs):
             captured_kwargs.update(kwargs)
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
-            )
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content=json.dumps(VALID_LEGACY_LLM_RESULT))
+            )])
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
@@ -197,7 +207,7 @@ def test_ask_json_mode_success_returns_parsed_payload(monkeypatch):
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
-    assert result == {"risk_level": "Medium"}
+    assert result == VALID_LEGACY_LLM_RESULT
     assert captured_kwargs["response_format"] == {"type": "json_object"}
 
 
@@ -233,9 +243,9 @@ def test_ask_json_omits_response_format_when_json_mode_disabled(monkeypatch):
     class FakeCompletions:
         async def create(self, **kwargs):
             captured_kwargs.update(kwargs)
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
-            )
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content=json.dumps(VALID_LEGACY_LLM_RESULT))
+            )])
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "false")
@@ -243,7 +253,7 @@ def test_ask_json_omits_response_format_when_json_mode_disabled(monkeypatch):
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
-    assert result == {"risk_level": "Medium"}
+    assert result == VALID_LEGACY_LLM_RESULT
     assert "response_format" not in captured_kwargs
 
 
@@ -255,9 +265,9 @@ def test_ask_json_validation_failure_retries_without_response_format(monkeypatch
             request_kwargs.append(kwargs)
             if len(request_kwargs) == 1:
                 raise RuntimeError("Failed to validate JSON. Please adjust your prompt.")
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
-            )
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content=json.dumps(VALID_LEGACY_LLM_RESULT))
+            )])
 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
@@ -266,7 +276,7 @@ def test_ask_json_validation_failure_retries_without_response_format(monkeypatch
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
-    assert result == {"risk_level": "Medium"}
+    assert result == VALID_LEGACY_LLM_RESULT
     assert request_kwargs[0]["response_format"] == {"type": "json_object"}
     assert "response_format" not in request_kwargs[1]
 
@@ -295,9 +305,9 @@ def test_ask_json_uses_hard_15_second_timeout(monkeypatch):
 
     class FakeCompletions:
         async def create(self, **kwargs):
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content='{"risk_level":"Medium"}'))]
-            )
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content=json.dumps(VALID_LEGACY_LLM_RESULT))
+            )])
 
     async def fake_wait_for(awaitable, timeout):
         nonlocal captured_timeout
@@ -310,7 +320,7 @@ def test_ask_json_uses_hard_15_second_timeout(monkeypatch):
 
     result = asyncio.run(ai_agent_groq._ask_json("prompt"))
 
-    assert result == {"risk_level": "Medium"}
+    assert result == VALID_LEGACY_LLM_RESULT
     assert captured_timeout == 15
 
 
@@ -389,7 +399,7 @@ def test_event_analysis_model_and_max_token_defaults(monkeypatch):
                  "GROQ_EVENT_ANALYSIS_MAX_TOKENS"):
         monkeypatch.delenv(name, raising=False)
 
-    assert llm_config.model_for("groq", "event_analysis") == "llama-3.3-70b-versatile"
+    assert llm_config.model_for("groq", "event_analysis") == "openai/gpt-oss-120b"
     assert llm_config.max_tokens_for("event_analysis") == 300
 
 
