@@ -6,6 +6,7 @@ Does not belong here: LLM calls, Telegram delivery, recipient lookup, or DB writ
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -33,6 +34,25 @@ PRICE_ACTION_SEMANTIC_FAMILIES = frozenset(
         "volatility",
     }
 )
+_DIRECTIONAL_TRAIT_TERMS = frozenset(
+    {
+        "bearish", "breakout", "decline", "downside", "downtrend", "drop", "fall",
+        "higher", "lower", "rally", "rebound", "selloff", "surge", "upside", "uptrend",
+    }
+)
+_LEVEL_TRAIT_TERMS = frozenset(
+    {
+        "consolidation", "level", "range", "rangebound", "resistance", "sideways",
+        "support",
+    }
+)
+_VOLATILITY_TRAIT_TERMS = frozenset({"choppy", "volatile", "volatility", "whipsaw"})
+_LEVEL_BREAK_PHRASES = (
+    "break_above", "break_below", "break_through", "breakdown", "breaks_above",
+    "breaks_below", "breaks_through",
+)
+_LEVEL_TEST_TERMS = frozenset({"approach", "approaches", "hold", "holds", "near", "test"})
+_RANGE_STATE_TERMS = frozenset({"consolidation", "range", "rangebound", "sideways"})
 
 def _stable_float(value: float | None, digits: int) -> float | None:
     if value is None:
@@ -211,6 +231,59 @@ def _event_cooldown_namespace(
         return None
     return f"price_action:{direction}"
 
+def _price_action_context_traits(
+    *,
+    semantic_family: str | None,
+    raw_event_key: str | None,
+    title: str | None = None,
+    message_body: str | None = None,
+) -> list[str]:
+    """Return backend-owned price-action traits used only for cross-family cooldown.
+
+    A family contributes its native trait, while the event wording may add other explicit
+    traits. Cross-family alerts are equivalent only when both describe the same complete trait
+    set; a trend, level interaction, and volatility regime therefore remain distinct by default.
+    """
+    family = str(semantic_family or "").strip().lower()
+    traits: set[str] = set()
+    if family in {"price_downtrend", "price_uptrend"}:
+        traits.add("directional_move")
+    elif family == "price_level_range":
+        traits.add("level_interaction")
+    elif family == "volatility":
+        traits.add("volatility_regime")
+    else:
+        return []
+
+    raw_tokens = re.findall(r"[a-z0-9]+", str(raw_event_key or "").lower())
+    generic_family_tokens = {
+        "btc", "event", "price", "downtrend", "uptrend", "level", "range", "volatility",
+    }
+    descriptive_raw_key = "_".join(
+        token for token in raw_tokens if token not in generic_family_tokens
+    )
+    text = "_".join(
+        str(value or "").strip().lower()
+        for value in (descriptive_raw_key, title, message_body)
+    )
+    tokens = set(re.findall(r"[a-z0-9]+", text))
+    if tokens.intersection(_DIRECTIONAL_TRAIT_TERMS):
+        traits.add("directional_move")
+    if tokens.intersection(_LEVEL_TRAIT_TERMS):
+        traits.add("level_interaction")
+    if tokens.intersection(_VOLATILITY_TRAIT_TERMS):
+        traits.add("volatility_regime")
+    normalized_text = "_".join(re.findall(r"[a-z0-9]+", text))
+    if any(phrase in normalized_text for phrase in _LEVEL_BREAK_PHRASES):
+        traits.add("level_break")
+    if tokens.intersection(_LEVEL_TEST_TERMS):
+        traits.add("level_test_or_hold")
+    if tokens.intersection(_RANGE_STATE_TERMS):
+        traits.add("range_state")
+    if tokens.intersection({"reversal", "reversals", "whipsaw"}):
+        traits.add("volatility_reversal")
+    return sorted(traits)
+
 def _event_cross_family_context_matches(
     *,
     symbol: str,
@@ -220,12 +293,13 @@ def _event_cross_family_context_matches(
     current_semantic_family: str | None,
     current_movement_percent: float | None,
     current_analysed_window_minutes: int | None,
+    current_price_action_traits: list[str] | None,
 ) -> bool:
     """Return whether two differently named price events share cooldown context.
 
-    Both events must be explicit price-action events with the same movement direction
-    and analysed window. News is supporting context and never decides equivalence;
-    urgency and materially larger movement are evaluated by the caller as escalation.
+    Both events must be explicit price-action events with the same backend-owned trait set,
+    movement direction, and analysed window. News is supporting context and never decides
+    equivalence; urgency and materially larger movement are evaluated by the caller.
     """
     if normalize_symbol(symbol) != "btc":
         return False
@@ -252,6 +326,16 @@ def _event_cross_family_context_matches(
         movement_percent=current_movement_percent,
     )
     if previous_namespace is None or previous_namespace != current_namespace:
+        return False
+
+    previous_traits = {
+        str(value).strip() for value in previous_numeric_context.get("price_action_traits") or []
+        if str(value).strip()
+    }
+    current_traits = {
+        str(value).strip() for value in current_price_action_traits or [] if str(value).strip()
+    }
+    if not previous_traits or previous_traits != current_traits:
         return False
 
     previous_window = previous_numeric_context.get("analysed_window_minutes")

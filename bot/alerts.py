@@ -149,6 +149,7 @@ _event_semantic_cooldown_escalation_details = (
     _event_identity._event_semantic_cooldown_escalation_details
 )
 _event_cross_family_context_matches = _event_identity._event_cross_family_context_matches
+_price_action_context_traits = _event_identity._price_action_context_traits
 _format_analysed_window_label = _event_identity._format_analysed_window_label
 _json_dumps = _event_identity._json_dumps
 _numeric_context_payload = _event_identity._numeric_context_payload
@@ -1427,6 +1428,12 @@ def _event_numeric_context(
             "event_key": decision.event_key,
             "raw_event_key": _raw_event_key_from_payload(input_payload, decision),
             "semantic_family": _semantic_family_from_payload(input_payload),
+            "price_action_traits": _price_action_context_traits(
+                semantic_family=_semantic_family_from_payload(input_payload),
+                raw_event_key=_raw_event_key_from_payload(input_payload, decision),
+                title=decision.title,
+                message_body=decision.message_body,
+            ),
             "event_instance_key": event_instance_key,
             "stable_related_news_ids": _stable_related_news_ids(
                 input_payload,
@@ -3297,6 +3304,7 @@ async def _filter_event_recipients_for_cooldown(
     semantic_family: str | None = None,
     current_movement_percent: float | None = None,
     current_analysed_window_minutes: int | None = None,
+    current_price_action_traits: list[str] | None = None,
     current_stable_news_ids: list[str] | None = None,
     semantic_cooldown_seconds: int = EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
     now: datetime,
@@ -3374,6 +3382,7 @@ async def _filter_event_recipients_for_cooldown(
                         current_semantic_family=semantic_family,
                         current_movement_percent=current_movement_percent,
                         current_analysed_window_minutes=current_analysed_window_minutes,
+                        current_price_action_traits=current_price_action_traits,
                     )
                     if exact_identity_match or cross_family_match:
                         previous_semantic_alert = previous_alert
@@ -5113,6 +5122,12 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 current_movement_percent=_event_movement_percent_from_payload(input_payload),
                 current_analysed_window_minutes=_analysed_window_minutes_from_payload(
                     input_payload
+                ),
+                current_price_action_traits=_price_action_context_traits(
+                    semantic_family=_semantic_family_from_payload(input_payload),
+                    raw_event_key=_raw_event_key_from_payload(input_payload, decision),
+                    title=decision.title,
+                    message_body=decision.message_body,
                 ),
                 current_stable_news_ids=_stable_related_news_ids(
                     input_payload,

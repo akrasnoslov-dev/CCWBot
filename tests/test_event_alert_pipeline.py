@@ -80,6 +80,7 @@ async def seed_sent_event_alert(
     analysed_window_change_percent: float | None = None,
     stable_related_news_ids: list[str] | None = None,
     semantic_family: str | None = None,
+    price_action_traits: list[str] | None = None,
     trigger_reason: str | None = None,
     possible_action: str | None = None,
 ):
@@ -113,6 +114,7 @@ async def seed_sent_event_alert(
                 "analysed_window_change_percent": analysed_window_change_percent,
                 "stable_related_news_ids": stable_related_news_ids or [],
                 "semantic_family": semantic_family,
+                "price_action_traits": price_action_traits or [],
                 "possible_action": possible_action,
             }
         ),
@@ -478,6 +480,50 @@ def test_semantic_event_family_keeps_distinct_drivers_separate():
     assert canonicalize_event_key("btc", "btc_low_volatility").canonical_event_key == (
         "btc_volatility"
     )
+
+
+def test_cross_family_price_traits_require_explicit_shared_market_theme():
+    downtrend_near_support = alerts._price_action_context_traits(
+        semantic_family="price_downtrend",
+        raw_event_key="btc_price_downtrend",
+        title="BTC decline approaches support",
+    )
+    level_with_decline = alerts._price_action_context_traits(
+        semantic_family="price_level_range",
+        raw_event_key="btc_price_level_range",
+        title="BTC decline approaches support",
+    )
+    distinct_volatility = alerts._price_action_context_traits(
+        semantic_family="volatility",
+        raw_event_key="btc_volatility",
+        title="BTC turns choppy",
+    )
+
+    assert downtrend_near_support == [
+        "directional_move",
+        "level_interaction",
+        "level_test_or_hold",
+    ]
+    assert level_with_decline == downtrend_near_support
+    assert distinct_volatility == ["volatility_regime"]
+
+
+def test_cross_family_price_traits_distinguish_level_test_from_level_break():
+    approaching_support = alerts._price_action_context_traits(
+        semantic_family="price_downtrend",
+        raw_event_key="btc_price_downtrend",
+        title="BTC decline approaches support",
+    )
+    breaking_support = alerts._price_action_context_traits(
+        semantic_family="price_level_range",
+        raw_event_key="btc_break_below_support",
+        title="BTC decline breaks below support",
+    )
+
+    assert "level_test_or_hold" in approaching_support
+    assert "level_break" not in approaching_support
+    assert "level_break" in breaking_support
+    assert approaching_support != breaking_support
 
 
 def test_canonical_event_key_replaces_random_analysis_key_with_stable_fallback():
@@ -2700,6 +2746,9 @@ async def test_semantic_cooldown_suppresses_equivalent_cross_family_price_contex
                 analysed_window_change_percent=-3.0,
                 stable_related_news_ids=[],
                 semantic_family="price_downtrend",
+                price_action_traits=[
+                    "directional_move", "level_interaction", "level_test_or_hold"
+                ],
                 created_at=now - timedelta(hours=1),
             )
 
@@ -2715,6 +2764,9 @@ async def test_semantic_cooldown_suppresses_equivalent_cross_family_price_contex
             semantic_family="price_level_range",
             current_movement_percent=-3.2,
             current_analysed_window_minutes=180,
+            current_price_action_traits=[
+                "directional_move", "level_interaction", "level_test_or_hold"
+            ],
             current_stable_news_ids=[],
             semantic_cooldown_seconds=4 * 3600,
             now=now,
@@ -2754,6 +2806,9 @@ async def test_semantic_cooldown_allows_cross_family_market_escalation(
                 analysed_window_change_percent=-3.0,
                 stable_related_news_ids=["article:old"],
                 semantic_family="price_downtrend",
+                price_action_traits=[
+                    "directional_move", "level_interaction", "level_test_or_hold"
+                ],
                 created_at=now - timedelta(hours=1),
             )
 
@@ -2769,6 +2824,9 @@ async def test_semantic_cooldown_allows_cross_family_market_escalation(
             semantic_family="price_level_range",
             current_movement_percent=movement,
             current_analysed_window_minutes=180,
+            current_price_action_traits=[
+                "directional_move", "level_interaction", "level_test_or_hold"
+            ],
             current_stable_news_ids=["article:shared"],
             semantic_cooldown_seconds=4 * 3600,
             now=now,
@@ -2803,6 +2861,7 @@ async def test_semantic_cooldown_cross_family_new_news_only_does_not_bypass(
                 analysed_window_change_percent=-3.0,
                 stable_related_news_ids=["article:shared"],
                 semantic_family="price_downtrend",
+                price_action_traits=["directional_move", "volatility_regime"],
                 created_at=now - timedelta(hours=1),
             )
 
@@ -2818,6 +2877,7 @@ async def test_semantic_cooldown_cross_family_new_news_only_does_not_bypass(
             semantic_family="volatility",
             current_movement_percent=-3.1,
             current_analysed_window_minutes=180,
+            current_price_action_traits=["directional_move", "volatility_regime"],
             current_stable_news_ids=["article:new"],
             semantic_cooldown_seconds=4 * 3600,
             now=now,
@@ -2875,6 +2935,60 @@ async def test_semantic_cooldown_keeps_distinct_cross_family_events_deliverable(
             current_movement_percent=movement,
             current_analysed_window_minutes=window,
             current_stable_news_ids=["article:shared"],
+            semantic_cooldown_seconds=4 * 3600,
+            now=now,
+        )
+
+        assert result == [alerts.AlertRecipient(chat_id=2001, user_id=user.id)]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("current_family", "current_traits"),
+    [
+        ("price_level_range", ["level_interaction"]),
+        ("volatility", ["volatility_regime"]),
+    ],
+)
+async def test_cross_family_same_direction_and_window_keeps_distinct_price_traits_deliverable(
+    monkeypatch,
+    current_family,
+    current_traits,
+):
+    engine, session_local = await build_session_factory()
+    now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_local() as session:
+            user = await create_user(session)
+            await seed_sent_event_alert(
+                session,
+                user_id=user.id,
+                chat_id=user.telegram_chat_id,
+                symbol="btc",
+                event_key="btc_price_downtrend",
+                urgency="normal",
+                analysed_window_minutes=180,
+                analysed_window_change_percent=-3.0,
+                semantic_family="price_downtrend",
+                price_action_traits=["directional_move"],
+                created_at=now - timedelta(hours=1),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+
+        result = await alerts._filter_event_recipients_for_cooldown(
+            [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
+            symbol="btc",
+            urgency="normal",
+            cooldown_seconds=0,
+            canonical_event_key=f"btc_{current_family}",
+            semantic_family=current_family,
+            current_movement_percent=-3.1,
+            current_analysed_window_minutes=180,
+            current_price_action_traits=current_traits,
             semantic_cooldown_seconds=4 * 3600,
             now=now,
         )

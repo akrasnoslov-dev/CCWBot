@@ -233,7 +233,12 @@ def test_ask_json_requests_json_object_and_returns_none_for_invalid_json(monkeyp
 
     assert result is None
     assert captured_kwargs["temperature"] == 0.0
-    assert captured_kwargs["max_tokens"] == 450
+    assert captured_kwargs["max_tokens"] == llm_config.effective_max_tokens_for(
+        call_type="legacy_alert_payload",
+        provider="groq",
+        model=llm_config.model_for("groq", "legacy_alert_payload"),
+        requested_max_tokens=llm_config.max_tokens_for("legacy_alert_payload"),
+    )
     assert captured_kwargs["response_format"] == {"type": "json_object"}
 
 
@@ -382,7 +387,12 @@ def test_ask_event_analysis_raw_uses_event_model_max_tokens_and_logs_usage(monke
             assert row.symbol == "BTC"
             assert row.status == "success"
             assert row.total_tokens == 20
-            assert row.max_tokens == 300
+            assert row.max_tokens == llm_config.effective_max_tokens_for(
+                call_type="event_analysis",
+                provider="groq",
+                model=llm_config.model_for("groq", "event_analysis"),
+                requested_max_tokens=llm_config.max_tokens_for("event_analysis"),
+            )
             assert row.rate_limit_remaining_requests == "999"
         finally:
             runtime.DB_SESSION_LOCAL.clear()
@@ -657,7 +667,12 @@ def test_llm_usage_log_is_written_on_rate_limit(monkeypatch):
                 row = await session.scalar(select(LlmUsageLog))
             assert row.call_type == "event_analysis"
             assert row.status == "rate_limit"
-            assert row.max_tokens == 300
+            assert row.max_tokens == llm_config.effective_max_tokens_for(
+                call_type="event_analysis",
+                provider="groq",
+                model=llm_config.model_for("groq", "event_analysis"),
+                requested_max_tokens=llm_config.max_tokens_for("event_analysis"),
+            )
             assert row.retry_after == "10"
         finally:
             runtime.DB_SESSION_LOCAL.clear()
