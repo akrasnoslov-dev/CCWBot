@@ -196,6 +196,23 @@ After every deploy:
 3. Check `/health` from the VPS.
 4. Verify basic Telegram functionality.
 
+When a release changes shipped LLM model defaults, inspect the existing production `.env`
+before restarting. A pinned value overrides the new code default. Edit only the affected model
+variables in place; never copy `.env.example` over production `.env`. For the 2026-08 gpt-oss
+migration, the intended values are:
+
+```dotenv
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_EVENT_ANALYSIS_MODEL=openai/gpt-oss-120b
+GROQ_MARKET_HEARTBEAT_MODEL=openai/gpt-oss-20b
+GROQ_REPORT_MODEL=openai/gpt-oss-20b
+GROQ_NEWS_INTELLIGENCE_MODEL=openai/gpt-oss-20b
+```
+
+After restart, inspect the sanitized `ops_event=llm_config` startup lines. Confirm every call type
+uses the intended model, `effort=low`, and the expected effective completion budget; confirm no old
+Llama model, `llm_config_invalid`, or `llm_config_budget_risk` remains.
+
 Normal bot restarts do not run migrations. For migrations, test locally first, confirm CI migration
 validation passed, verify a current backup, run `docker compose run --rm migrate` explicitly, then
 start or restart the bot.

@@ -48,6 +48,8 @@ REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 REPORT_PROVIDER_BACKOFF_SECONDS = 300
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
+DETERMINISTIC_REPORT_PROVIDER = "deterministic"
+DETERMINISTIC_REPORT_MODEL = "deterministic-market-report-v1"
 # The scheduled cache-refresh jobs fire at exactly the cache expiry interval (daily 4h,
 # weekly 24h), so at fire time the previous cache is always fresh by only a few seconds.
 # Without this grace the job skips, the cache expires right after, and the effective
@@ -332,6 +334,8 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
                     raw_output_json=raw_output_json,
                     telegram_message=message,
                     error_message=f"deterministic fallback after {reason}",
+                    provider=DETERMINISTIC_REPORT_PROVIDER,
+                    model=DETERMINISTIC_REPORT_MODEL,
                 )
         return await _save_or_remember_report(
             report_type=report_type,

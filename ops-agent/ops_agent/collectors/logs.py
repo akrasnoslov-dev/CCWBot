@@ -12,7 +12,12 @@ from ops_agent.schemas import Period
 LOG_PATTERNS = {
     "error": re.compile(r"\bERROR\b|Traceback|Exception|uncaught", re.IGNORECASE),
     "warning": re.compile(r"\bWARNING\b", re.IGNORECASE),
-    "coingecko_rate_limit": re.compile(r"CoinGecko|coingecko.*429|rate_limit", re.IGNORECASE),
+    "coingecko_rate_limit": re.compile(
+        r"\bops_event=coingecko_rate_limit\b|"
+        r"\bcoingecko\b.{0,80}\b(?:429|rate[ _-]?limit(?:ed|ing)?)\b|"
+        r"\b(?:429|rate[ _-]?limit(?:ed|ing)?)\b.{0,80}\bcoingecko\b",
+        re.IGNORECASE,
+    ),
     "telegram_delivery_failure": re.compile(
         r"telegram.*fail|delivery_failure|Forbidden",
         re.IGNORECASE,

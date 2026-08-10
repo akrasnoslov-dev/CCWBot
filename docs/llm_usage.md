@@ -96,43 +96,41 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
 
-Defaults in brackets are the values these budgets previously had hardcoded, so an unconfigured
-deployment is unchanged. `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
+Defaults in brackets are the base budgets retained from the prior configuration.
+`GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
 event-analysis budget and is used when `LLM_EVENT_ANALYSIS_MAX_TOKENS` is unset.
 
-One budget covers every provider in that call type's chain, so a chain whose fallback runs a
-reasoning or thinking model needs a budget large enough for that model too. A per-provider budget
-override is a known gap, not a supported configuration.
+The router resolves an effective budget per provider/model attempt. Plain models keep the base
+answer ceiling; known thinking models add 1024, 8192, or 24576 completion tokens of reasoning
+headroom for low, medium, or high effort so the configured JSON-answer capacity remains available.
+This avoids raising a plain primary's ceiling merely because a thinking model exists later in the
+fallback chain. Startup chain entries include `/max=N` for the effective attempt budget. The
+sanity ceiling remains 32768; startup emits `llm_config_budget_risk` if answer budget plus reasoning
+headroom would exceed it.
 
-This matters for the shipped fallback defaults: `CEREBRAS_MODEL=gpt-oss-120b` reasons before it
-answers, and `GEMINI_MODEL=gemini-2.5-flash` thinks by default; both draw those tokens from the
-completion budget. At the llama-sized defaults (300 for `event_analysis`) those fallback attempts
-have no room to produce JSON. Startup therefore logs
-`ops_event=llm_config_budget_risk call_type=... provider=... model=... max_tokens=...` whenever a
-chain member is a thinking model and the call type's budget is below 1024. Raise the budget for
-that call type before relying on such a fallback.
-
-`reasoning_effort` (`low` / `medium` / `high`) is omitted from the request payload entirely when
-unset, so non-reasoning models are unaffected. `LLM_REASONING_EFFORT` sets a global default that a
+`reasoning_effort` (`low` / `medium` / `high`) defaults to `low` for reasoning-capable models and
+is omitted for non-reasoning models. `LLM_REASONING_EFFORT` sets a global override that a
 per-call-type variable overrides.
 
 The gate for sending the parameter is the resolved **model identifier**, not the provider: a
 provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
 a non-reasoning model is a 400 that the router treats as deterministic and does not fall back on.
 A model counts as reasoning-capable when its identifier contains one of
-`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss`). So with a `groq:llama-3.3-70b-versatile →
-cerebras:gpt-oss-120b` chain, a global `LLM_REASONING_EFFORT=low` reaches only the Cerebras
-attempt.
+`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5`). In a chain that mixes plain and
+reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible attempts.
 
 Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually accepts the
-`reasoning_effort` request field. Gemini 2.5 and Mistral's reasoning models think internally but
-their OpenAI-compatible endpoints reject the parameter, so adding a marker that matches them
-converts a working fallback into a 400. The budget warning above covers those models instead.
+`reasoning_effort` request field. Gemini 2.5's OpenAI-compatible endpoint supports it and maps
+`low` to a 1024-token thinking budget. Other thinking models stay outside the effort gate until
+their endpoint contract is verified; known names still receive token headroom.
 
-`openai/gpt-oss-120b` and `openai/gpt-oss-20b` are reasoning models: reasoning tokens are drawn
-from the same completion budget as the answer. At the llama-era budgets the model emits no JSON at
-all and the call fails with `400 json_validate_failed` and an empty `failed_generation`. Raise the
-call type's `*_MAX_TOKENS` substantially before pointing it at a gpt-oss model.
+Groq GPT-OSS supports JSON Object Mode and `reasoning_effort`, but Groq explicitly documents that
+GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests; it is
+for other Groq reasoning-model families.
+
+The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-oss-20b` for the
+other structured call types. They replace the Llama 3 defaults scheduled to shut down on
+2026-08-16. Their attempts use low reasoning effort and the additional headroom above.
 
 The completion budget is sent as `max_tokens`. All four providers accept it, and Groq documents it
 as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
@@ -152,7 +150,7 @@ On startup the runtime logs the fully resolved configuration, one INFO line per 
 
 ```text
 ops_event=llm_config call_type=event_analysis max_tokens=300
-  chain=groq:llama-3.3-70b-versatile,cerebras:gpt-oss-120b/effort=low(no_api_key)
+  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,cerebras:gpt-oss-120b/effort=low/max=1324(no_api_key)
 ```
 
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
@@ -167,12 +165,15 @@ on `(news item, llm_model)`. Expect one bounded re-analysis burst after a model 
 `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN` and `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR`.
 
 A provider with no API key is excluded from the chain (logged once), so leaving the fallback keys
-blank keeps Groq-only behaviour. Rate-limit backoff is tracked per `(provider, model)`. The
+blank keeps Groq-only behaviour. Rate-limit backoff is tracked per `(provider, model)` and is
+consulted by every active call type; the triggering call type is logged for attribution. The
 runtime LLM entry point remains `bot/services/ai_agent_groq.py`, now a thin facade over the router
 that keeps all public names/signatures (`AIGroqRateLimitError` is an alias of the provider-agnostic
 `AIProviderRateLimitError`).
 
-The persisted analysis/report provider and model reflect the provider that actually answered:
+The persisted analysis/report provider and model reflect the provider that actually answered.
+Reports produced after provider-chain exhaustion use the explicit
+`deterministic:deterministic-market-report-v1` attribution:
 `event_ai_analyses.provider/model` and `market_reports.provider/model` follow the fallback, not a
 hardcoded `groq`. Admin diagnostics (`bot/observability/system_status.py`) and the ops-agent
 `llm_usage_summary` collector are provider-agnostic.

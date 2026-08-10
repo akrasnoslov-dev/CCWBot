@@ -30,12 +30,21 @@ class ContentProvider(BaseProvider):
     async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
                               response_format, timeout=15, reasoning_effort=None):
         self.calls += 1
+        if isinstance(self._content, Exception):
+            raise self._content
         return ProviderResult(
             provider=self.name,
             model=model,
             raw_content=self._content,
             input_chars=1,
         )
+
+
+class ProviderHttpError(RuntimeError):
+    def __init__(self, message, *, status_code, code=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
 
 
 def _configure(monkeypatch, priority, keys):
@@ -190,6 +199,109 @@ async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    invalid = {
+        "symbol": "ETH",
+        "title": "Wrong symbol",
+        "message_body": "Routine conditions.",
+        "related_news_ids": [],
+        "possible_action": "Watch the range.",
+        "confidence": "low",
+    }
+    valid = dict(invalid, symbol="BTC", title="BTC heartbeat")
+    groq = ContentProvider("groq", json.dumps(invalid))
+    cerebras = ContentProvider("cerebras", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+
+    def schema_check(parsed):
+        if parsed.get("symbol") != "BTC":
+            raise AISchemaValidationError("symbol mismatch")
+
+    result = await ai_agent_groq.ask_market_heartbeat_raw(
+        {"symbol": "BTC", "candidate_news": []}, schema_check=schema_check
+    )
+
+    assert result.provider == "cerebras"
+    assert result[1] == valid
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call_path", ["news_intelligence", "legacy_alert_payload"])
+async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
+    monkeypatch, call_path
+):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    valid_legacy = {
+        "news_relevance": "not_relevant",
+        "risk_level": "low",
+        "risk_reason": "The move is limited.",
+        "context_sentence": "Conditions remain routine.",
+        "possible_action": "Watch the next alert window.",
+        "related_news_ids": [],
+    }
+    valid_news = {
+        "summary": "Routine market update.",
+        "category": "market",
+        "related_symbols": ["btc"],
+        "primary_symbol": "btc",
+        "impact_score": 25,
+        "impact_level": "medium",
+        "relevance_score": 50,
+        "is_noise": False,
+        "is_alert_worthy": False,
+        "alert_reason": "No immediate alert condition.",
+        "dedup_hint": "routine market update",
+    }
+    valid = valid_news if call_path == "news_intelligence" else valid_legacy
+    groq = ContentProvider("groq", '{"ok": true}')
+    cerebras = ContentProvider("cerebras", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+
+    if call_path == "news_intelligence":
+        from bot.services.news_intelligence_service import validate_news_intelligence_schema
+
+        def schema_check(parsed):
+            try:
+                validate_news_intelligence_schema(parsed)
+            except ValueError as error:
+                raise AISchemaValidationError(str(error)) from error
+
+        result = await ai_agent_groq.ask_news_intelligence_raw(
+            [{"role": "user", "content": "classify"}], schema_check=schema_check
+        )
+        parsed = result[1]
+    else:
+        def schema_check(parsed):
+            if ai_agent_groq._normalize_alert_structured_fields(parsed) is None:
+                raise AISchemaValidationError("legacy alert payload schema mismatch")
+
+        parsed, _usage_log_id = await ai_agent_groq._ask_json_with_usage(
+            "build a legacy alert",
+            call_type="legacy_alert_payload",
+            schema_check=schema_check,
+        )
+
+    assert parsed == valid
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_schema_exhaustion_preserves_none_contract(monkeypatch):
+    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    groq = ContentProvider("groq", '{"ok": true}')
+    cerebras = ContentProvider("cerebras", '{"risk_level": "low"}')
+    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+
+    assert await ai_agent_groq._ask_json("build a legacy alert") is None
+    assert groq.calls == 1
+    assert cerebras.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
     _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
     schema_invalid = {"report_type": "daily", "title": "Daily Market Report"}
@@ -254,6 +366,8 @@ async def test_report_all_providers_schema_invalid_uses_deterministic_fallback(
     # Terminal behaviour is unchanged: deterministic fallback, completed report.
     assert report["status"] == "completed"
     assert "deterministic fallback after schema_validation_failed" in report["error_message"]
+    assert report["provider"] == reports.DETERMINISTIC_REPORT_PROVIDER
+    assert report["model"] == reports.DETERMINISTIC_REPORT_MODEL
     failed_records = [
         record for record in caplog.records if "market_report_failed" in record.getMessage()
     ]
@@ -262,3 +376,104 @@ async def test_report_all_providers_schema_invalid_uses_deterministic_fallback(
     # The sanitized failure reason (field names only) makes the schema_error diagnosable.
     assert any("detail=" in record.getMessage() for record in failed_records)
     assert any("missing_fields" in record.getMessage() for record in failed_records)
+
+
+async def _install_report_inputs(monkeypatch):
+    async def fake_market_data(symbols):
+        return _market_data()
+
+    async def fake_news(symbols, prefer_unseen=True):
+        return _empty_report_news_context()
+
+    async def fake_remember(news_items):
+        return None
+
+    monkeypatch.setattr(reports, "get_report_market_data_batch", fake_market_data)
+    monkeypatch.setattr(reports, "fetch_report_news_context", fake_news)
+    monkeypatch.setattr(reports, "remember_news_context", fake_remember)
+
+
+@pytest.mark.asyncio
+async def test_production_report_chain_reaches_mistral_and_persists_actual_route(monkeypatch):
+    providers = ("groq", "cerebras", "gemini", "mistral")
+    _configure(monkeypatch, providers, set(providers))
+    schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
+    registry = {
+        "groq": ContentProvider("groq", schema_invalid),
+        "cerebras": ContentProvider("cerebras", schema_invalid),
+        "gemini": ContentProvider(
+            "gemini",
+            ProviderHttpError("model route unavailable", status_code=404, code="model_not_found"),
+        ),
+        "mistral": ContentProvider("mistral", json.dumps(_valid_report_payload())),
+    }
+    _install_router(monkeypatch, registry)
+    await _install_report_inputs(monkeypatch)
+
+    report = await reports.generate_report_cache("daily")
+
+    assert report["status"] == "completed"
+    assert report["provider"] == "mistral"
+    assert report["model"] == config.model_for("mistral", "daily_report")
+    assert [registry[name].calls for name in providers] == [1, 1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_production_report_chain_can_succeed_before_final_provider(monkeypatch):
+    providers = ("groq", "cerebras", "gemini", "mistral")
+    _configure(monkeypatch, providers, set(providers))
+    schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
+    registry = {
+        "groq": ContentProvider("groq", schema_invalid),
+        "cerebras": ContentProvider("cerebras", schema_invalid),
+        "gemini": ContentProvider("gemini", json.dumps(_valid_report_payload())),
+        "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
+    }
+    _install_router(monkeypatch, registry)
+    await _install_report_inputs(monkeypatch)
+
+    report = await reports.generate_report_cache("daily")
+
+    assert report["provider"] == "gemini"
+    assert report["model"] == config.model_for("gemini", "daily_report")
+    assert [registry[name].calls for name in providers] == [1, 1, 1, 0]
+
+
+@pytest.mark.asyncio
+async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
+    providers = ("groq", "cerebras", "gemini", "mistral")
+    _configure(monkeypatch, providers, set(providers))
+    registry = {
+        "groq": ContentProvider(
+            "groq", ProviderHttpError("malformed request", status_code=400, code="bad_request")
+        ),
+        "cerebras": ContentProvider("cerebras", RuntimeError("must not be called")),
+        "gemini": ContentProvider("gemini", RuntimeError("must not be called")),
+        "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
+    }
+    _install_router(monkeypatch, registry)
+
+    with pytest.raises(ProviderHttpError):
+        await ai_agent_groq.ask_market_report_raw(
+            {"report_type": "daily", "active_symbols": ["BTC", "ETH", "GRAM", "SOL"]}
+        )
+
+    assert [registry[name].calls for name in providers] == [1, 0, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_four_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
+    providers = ("groq", "cerebras", "gemini", "mistral")
+    _configure(monkeypatch, providers, set(providers))
+    schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
+    registry = {name: ContentProvider(name, schema_invalid) for name in providers}
+    _install_router(monkeypatch, registry)
+    await _install_report_inputs(monkeypatch)
+
+    report = await reports.generate_report_cache("daily")
+
+    assert report["status"] == "completed"
+    assert report["provider"] == reports.DETERMINISTIC_REPORT_PROVIDER
+    assert report["model"] == reports.DETERMINISTIC_REPORT_MODEL
+    assert report["error_message"] == "deterministic fallback after schema_validation_failed"
+    assert [registry[name].calls for name in providers] == [1, 1, 1, 1]

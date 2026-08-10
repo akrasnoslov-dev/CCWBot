@@ -182,8 +182,10 @@ async def test_system_status_uses_real_fresh_telemetry():
         assert "✅ LLM rate limit — no active limit" in text
         assert "✅ News — 1 usable items in 24h" in text
         assert "✅ Telegram delivery — sent 1 in 24h" in text
-        # Stage 9: compact per-provider LLM usage breakdown on the existing card.
-        assert "groq: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        assert (
+            "Event Analysis / groq: 1 attempt (1 success, 0 rate-limit, 0 backoff, "
+            "0 circuit, 0 schema-invalid, 0 provider failure) in 24h"
+        ) in text
         assert len(text.splitlines()) <= 12
         assert "CoinGecko id" not in text
         assert "price_state" not in text
@@ -407,10 +409,16 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
     try:
         monkeypatch.setattr(
             system_status,
-            "get_llm_rate_limit_backoff",
-            lambda **kwargs: limited_until if kwargs["model"] == "event-model" else None,
+            "get_active_llm_rate_limit_backoffs",
+            lambda **kwargs: (
+                {
+                    "provider": "groq",
+                    "model": "event-model",
+                    "limited_until": limited_until,
+                    "call_types": ("event_analysis",),
+                },
+            ),
         )
-        monkeypatch.setattr(system_status, "GROQ_EVENT_ANALYSIS_MODEL", "event-model")
 
         text = await build_admin_system_status_text(
             db_enabled=True,
@@ -418,9 +426,42 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
             now=now,
         )
 
-        assert "⚠️ LLM rate limit — active until 17:00 UTC" in text
+        assert "⚠️ LLM rate limit — Event Analysis backoff active until 17:00 UTC" in text
+        assert "Event Analysis: groq backoff active until 2026-06-15 17:00 UTC" in text
     finally:
         reset_llm_rate_limit_backoffs()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_attributes_shared_model_backoff_to_triggering_call_type(monkeypatch):
+    now = _now()
+    engine, session_local = await build_session_factory()
+    limited_until = now + timedelta(minutes=5)
+    try:
+        monkeypatch.setattr(
+            system_status,
+            "get_active_llm_rate_limit_backoffs",
+            lambda **kwargs: (
+                {
+                    "provider": "mistral",
+                    "model": "shared-model",
+                    "limited_until": limited_until,
+                    "call_types": ("daily_report",),
+                },
+            ),
+        )
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "Daily report backoff active until 17:00 UTC" in text
+        assert "Daily report: mistral backoff active" in text
+        assert "Market Heartbeat backoff" not in text
+    finally:
         await engine.dispose()
 
 
@@ -449,7 +490,12 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert "⚠️ LLM rate limit — recent limit, retry_after 10" in text
+        assert (
+            "⚠️ LLM rate limit — Event Analysis recent limit, retry_after 10"
+        ) in text
+        assert (
+            "Event Analysis: recent groq rate-limit at 2026-06-15 16:25 UTC, retry_after 10"
+        ) in text
     finally:
         await engine.dispose()
 
@@ -840,14 +886,20 @@ async def test_system_status_delivery_no_rows_is_compact_warning():
 
 
 @pytest.mark.asyncio
-async def test_system_status_shows_per_provider_llm_breakdown():
+async def test_system_status_shows_per_call_type_provider_llm_breakdown():
     now = _now()
     engine, session_local = await build_session_factory()
     try:
         async with session_local() as session:
-            # groq: 2 success, 1 rate_limit, 1 timeout, plus 1 "other" status (invalid_json)
-            # that must count toward total calls but not toward any bucket.
-            for status in ("success", "success", "rate_limit", "timeout", "invalid_json"):
+            for status in (
+                "success",
+                "success",
+                "rate_limit",
+                "skipped_due_to_rate_limit",
+                "skipped_due_to_circuit_breaker",
+                "invalid_json",
+                "timeout",
+            ):
                 session.add(
                     LlmUsageLog(
                         provider="groq",
@@ -861,7 +913,7 @@ async def test_system_status_shows_per_provider_llm_breakdown():
                 LlmUsageLog(
                     provider="cerebras",
                     model="cerebras-model",
-                    call_type="event_analysis",
+                    call_type="market_heartbeat",
                     status="success",
                     created_at=now - timedelta(minutes=8),
                 )
@@ -884,11 +936,118 @@ async def test_system_status_shows_per_provider_llm_breakdown():
             now=now,
         )
 
-        # 5 total calls; the invalid_json row inflates the count but is not bucketed,
-        # and the fresh timeout row proves the timeout column counts.
-        assert "groq: 5 calls (2 ok, 1 rate_limit, 1 timeout) in 24h" in text
-        assert "cerebras: 1 calls (1 ok, 0 rate_limit, 0 timeout) in 24h" in text
+        assert (
+            "Event Analysis / groq: 7 attempts (2 success, 1 rate-limit, 1 backoff, "
+            "1 circuit, 1 schema-invalid, 1 provider failure) in 24h"
+        ) in text
+        assert (
+            "Market Heartbeat / cerebras: 1 attempt (1 success, 0 rate-limit, "
+            "0 backoff, 0 circuit, 0 schema-invalid, 0 provider failure) in 24h"
+        ) in text
         # Provider with only stale (>24h) usage is not surfaced.
-        assert "mistral:" not in text
+        assert "/ mistral:" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_bounds_provider_breakdown_for_telegram_card():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            await _seed_healthy_status_dependencies(session, now)
+            for index in range(28):
+                session.add(
+                    LlmUsageLog(
+                        provider=f"provider-{index}",
+                        model=f"model-{index}",
+                        call_type=f"call-type-{index}",
+                        status="timeout",
+                        created_at=now - timedelta(minutes=1),
+                    )
+                )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "additional call-type/provider rows omitted" in text
+        assert len(text) < 4096
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            await _seed_healthy_status_dependencies(session, now)
+            session.add(
+                LlmUsageLog(
+                    provider="groq",
+                    model="heartbeat-model",
+                    call_type="market_heartbeat",
+                    status="rate_limit",
+                    error_reason="rate_limit",
+                    created_at=now - timedelta(minutes=2),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_system_status_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "✅ AI analysis — latest success 5m ago" in text
+        assert "⚠️ AI analysis" not in text
+        assert "⚠️ LLM rate limit — Market Heartbeat recent limit" in text
+        assert "Market Heartbeat / groq:" in text
+        assert "Event Analysis / groq:" in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("age_seconds", "expected_market_status"),
+    [
+        (3599, "✅ Market data — BTC, ETH, GRAM, SOL fresh"),
+        (3600, "✅ Market data — BTC, ETH, GRAM, SOL fresh"),
+        (3601, "⚠️ Market data — stale/missing symbols"),
+    ],
+)
+async def test_market_freshness_runtime_grace_boundary(age_seconds, expected_market_status):
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            for index, symbol in enumerate(SUPPORTED_SYMBOLS):
+                session.add(
+                    PriceState(
+                        symbol=symbol.upper(),
+                        last_price=1000.0 + index,
+                        last_24h_change=1.0,
+                        last_checked_at=now - timedelta(seconds=age_seconds),
+                    )
+                )
+            await session.commit()
+
+        async with session_local() as session:
+            health = await system_status._market_data_health(
+                session,
+                interval_seconds=1800,
+                now=now,
+            )
+        assert f"{system_status._STATUS_ICON[health.status]} Market data — {health.summary}" == (
+            expected_market_status
+        )
     finally:
         await engine.dispose()

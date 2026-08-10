@@ -1357,6 +1357,7 @@ _REEXPORTS = {
         "get_last_sent_alert_at",
         "get_last_sent_event_alert_at_for_event_key",
         "get_latest_sent_event_alert_for_event_key",
+        "get_recent_sent_event_alert_contexts",
         "get_last_sent_alert",
         "get_latest_sent_alert_for_symbol",
         "get_latest_sent_event_alert_context_for_symbol",
