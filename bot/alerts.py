@@ -758,6 +758,8 @@ def _stored_event_analysis_decision(analysis, *, event_key: str) -> EventAnalysi
 
 async def _get_reusable_event_analysis_by_context(
     input_payload: dict,
+    *,
+    candidate_news: list[dict] | None = None,
 ) -> ReusableEventAnalysis | None:
     """Reuse one canonical attached analysis for this exact deterministic event context."""
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -817,6 +819,7 @@ async def _get_reusable_event_analysis_by_context(
             if isinstance(item, dict)
         }
         translated_related_news_ids: list[str] = []
+        translated_related_news_keys: list[str] = []
         for stored_news_id in decision.related_news_ids:
             stored_item = stored_news_by_id.get(str(stored_news_id))
             if stored_item is None:
@@ -833,6 +836,7 @@ async def _get_reusable_event_analysis_by_context(
                 translated_related_news_ids = []
                 break
             translated_related_news_ids.append(current_news_id)
+            translated_related_news_keys.append(stable_identity)
         if decision.related_news_ids and not translated_related_news_ids:
             continue
         identity_decision = EventAnalysisDecision(
@@ -853,6 +857,52 @@ async def _get_reusable_event_analysis_by_context(
         )
         if current_instance_key != event_instance_key:
             continue
+        stored_html_text = str(getattr(analysis, "html_text", None) or "")
+        reconstructed_entities = None
+        if not stored_html_text.strip() and decision.related_news_ids:
+            candidates_by_stable_identity: dict[str, list[dict]] = {}
+            for item in candidate_news or []:
+                if not isinstance(item, dict):
+                    continue
+                stable_identity = make_news_key(
+                    {
+                        "source": item.get("source"),
+                        "title": item.get("title"),
+                    }
+                )
+                candidates_by_stable_identity.setdefault(stable_identity, []).append(item)
+            current_related_news = []
+            for stable_identity in translated_related_news_keys:
+                matching_items = candidates_by_stable_identity.get(stable_identity, [])
+                if len(matching_items) != 1:
+                    current_related_news = []
+                    break
+                current_related_news.append(matching_items[0])
+            if len(current_related_news) != len(translated_related_news_keys):
+                continue
+            reconstructed_payload = _build_event_alert_payload(
+                decision=identity_decision,
+                input_payload=input_payload,
+                related_news=current_related_news,
+            )
+            if reconstructed_payload["plain_text"] != plain_text:
+                continue
+            expected_urls = {
+                url
+                for item in current_related_news
+                if (url := _safe_telegram_link_url(item.get("url") or item.get("link")))
+            }
+            reconstructed_entities = reconstructed_payload.get("entities")
+            reconstructed_urls = {
+                str(getattr(entity, "url", None) or "")
+                for entity in reconstructed_entities or []
+                if getattr(entity, "url", None)
+            }
+            if len(expected_urls) != len(current_related_news) or not expected_urls.issubset(
+                reconstructed_urls
+            ):
+                continue
+            stored_html_text = str(reconstructed_payload.get("html_text") or "")
         semantic_family = str(
             analysis_input_payload.get("semantic_family") or ""
         ).strip() or None
@@ -871,13 +921,34 @@ async def _get_reusable_event_analysis_by_context(
             event_ai_analysis_id=int(analysis.id),
             alert_payload={
                 "plain_text": plain_text,
-                "html_text": getattr(analysis, "html_text", None),
-                "entities": None,
+                "html_text": stored_html_text or None,
+                "entities": None if stored_html_text else reconstructed_entities,
             },
             semantic_family=semantic_family,
             analysis_input_payload=analysis_input_payload,
         )
     return None
+
+
+def _merge_existing_event_analysis_payload(
+    alert_payload: dict,
+    existing_analysis,
+) -> dict:
+    """Use one coherent render; incomplete canonical content cannot replace fresh content."""
+    stored_plain_text = getattr(existing_analysis, "plain_text", None)
+    stored_html_text = getattr(existing_analysis, "html_text", None)
+    if not (
+        isinstance(stored_plain_text, str)
+        and stored_plain_text.strip()
+        and isinstance(stored_html_text, str)
+        and stored_html_text.strip()
+    ):
+        return dict(alert_payload)
+    return {
+        "plain_text": stored_plain_text,
+        "html_text": stored_html_text,
+        "entities": None,
+    }
 
 
 async def _record_similar_context_reuse(
@@ -5067,6 +5138,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
             )
             reusable_analysis = await _get_reusable_event_analysis_by_context(
                 input_payload,
+                candidate_news=candidate_news,
             )
             similar_context_outcome = (
                 None
@@ -5288,11 +5360,10 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     )
                     if existing_analysis:
                         event_ai_analysis_id = existing_analysis.id
-                        alert_payload = {
-                            "plain_text": existing_analysis.plain_text,
-                            "html_text": existing_analysis.html_text,
-                            "entities": None,
-                        }
+                        alert_payload = _merge_existing_event_analysis_payload(
+                            alert_payload,
+                            existing_analysis,
+                        )
                     else:
                         analysis = await attach_analysis_to_market_event(
                             session,
