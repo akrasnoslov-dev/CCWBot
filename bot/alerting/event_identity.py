@@ -149,17 +149,21 @@ def _stable_market_movement_bucket(input_payload: dict) -> str:
 
 def _event_movement_percent_from_payload(input_payload: dict) -> float | None:
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    value = (
-        market_data.get("chg_window")
-        or market_data.get("chg_since_msg")
-        or market_data.get("change_since_last_user_visible_message_percent")
-        or market_data.get("chg24h")
-        or market_data.get("change_24h_percent")
-    )
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    for field_name in (
+        "chg_window",
+        "chg_since_msg",
+        "change_since_last_user_visible_message_percent",
+        "chg24h",
+        "change_24h_percent",
+    ):
+        value = market_data.get(field_name)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def _urgency_rank(value: str | None) -> int:
     return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)

@@ -1372,6 +1372,7 @@ _REEXPORTS = {
         "get_market_event_by_instance_key",
         "get_event_ai_analysis",
         "get_latest_success_event_ai_analysis",
+        "get_reusable_event_analysis_candidates",
         "save_event_ai_analysis",
         "save_event_llm_analysis",
         "attach_analysis_to_market_event",
