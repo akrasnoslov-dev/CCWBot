@@ -251,10 +251,11 @@ GROUP BY symbol
 ORDER BY calls DESC, symbol;
 ```
 
-Latest known LLM provider rate-limit headers by model and call type:
+Latest known LLM rate-limit headers by provider, model, and call type:
 
 ```sql
-SELECT DISTINCT ON (model, call_type)
+SELECT DISTINCT ON (provider, model, call_type)
+  provider,
   model,
   call_type,
   created_at,
@@ -265,7 +266,7 @@ SELECT DISTINCT ON (model, call_type)
   retry_after
 FROM llm_usage_logs
 WHERE created_at >= now() - interval '48 hours'
-ORDER BY model, call_type, created_at DESC;
+ORDER BY provider, model, call_type, created_at DESC, id DESC;
 ```
 
 Recent event-analysis token averages after deployment:

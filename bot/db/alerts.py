@@ -680,6 +680,37 @@ async def get_latest_success_event_ai_analysis(
     )
 
 
+async def get_reusable_event_analysis_candidates(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    bucket_started_at: datetime,
+    bucket_ended_at: datetime,
+) -> list[tuple[MarketEvent, EventAiAnalysis]]:
+    """Return canonical attached analyses that can be checked for exact event reuse."""
+    result = await session.execute(
+        select(MarketEvent, EventAiAnalysis)
+        .join(
+            EventAiAnalysis,
+            EventAiAnalysis.market_event_id == MarketEvent.id,
+        )
+        .where(MarketEvent.symbol == symbol.upper())
+        .where(MarketEvent.event_type == alert_type)
+        .where(MarketEvent.detected_at >= bucket_started_at)
+        .where(MarketEvent.detected_at < bucket_ended_at)
+        .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
+        .where(EventAiAnalysis.status.in_(SUCCESS_ANALYSIS_STATUSES))
+        .where(EventAiAnalysis.should_alert.is_(True))
+        .where(EventAiAnalysis.plain_text.is_not(None))
+        .order_by(
+            MarketEvent.detected_at.desc(),
+            EventAiAnalysis.id.asc(),
+        )
+    )
+    return list(result.all())
+
+
 
 async def save_event_ai_analysis(
     session: AsyncSession,

@@ -169,6 +169,19 @@ def event_decision(*, should_alert=True, urgency="normal", related_news_ids=None
     )
 
 
+@pytest.mark.parametrize(
+    ("market", "expected"),
+    [
+        ({"chg_window": 0.0, "chg_since_msg": 3.0, "chg24h": 8.0}, 0.0),
+        ({"chg_window": None, "chg_since_msg": 0.0, "chg24h": -8.0}, 0.0),
+        ({"chg_window": "invalid", "chg_since_msg": -1.25, "chg24h": 8.0}, -1.25),
+        ({"chg_window": 1.5, "chg_since_msg": -3.0, "chg24h": -8.0}, 1.5),
+    ],
+)
+def test_event_movement_uses_first_numeric_value_without_losing_zero(market, expected):
+    assert alerts._event_movement_percent_from_payload({"market": market}) == expected
+
+
 def test_event_instance_key_reuses_same_bucket_and_splits_distinct_occurrences():
     first = alerts._build_event_instance_key(
         symbol="btc",
@@ -1403,20 +1416,52 @@ async def test_llm_should_alert_true_creates_event_alert_candidate(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
+@pytest.mark.parametrize("canonical_html", ["<b>Canonical stored HTML</b>", None])
+async def test_reused_market_event_uses_existing_attached_analysis(
+    monkeypatch,
+    canonical_html,
+):
     engine, session_local = await build_session_factory()
     try:
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        decision = event_decision()
+        analysis_input = {
+            "analysis_id": "event_analysis_btc_current",
+            "symbol": "btc",
+            "timestamp_utc": now.isoformat(),
+            "market": {
+                "price": 103.0,
+                "chg_window": -3.0,
+                "chg_since_msg": 3.0,
+                "chg24h": -1.0,
+                "analysed_window_minutes": 180,
+            },
+            "news": [],
+            "raw_event_key": decision.event_key,
+            "canonical_event_key": decision.event_key,
+            "semantic_family": "price_downtrend",
+        }
+        canonical_payload = alerts._build_event_alert_payload(
+            decision=decision,
+            input_payload=analysis_input,
+            related_news=[],
+        )
+        event_instance_key = alerts._event_instance_key_for_decision(
+            decision=decision,
+            input_payload=analysis_input,
+        )
         async with session_local() as session:
-            user = await create_user(session)
+            first_user = await create_user(session)
+            second_user = await create_user(session, telegram_user_id=1002, chat_id=2002)
             market_event = MarketEvent(
                 symbol="BTC",
                 event_type=alerts.EVENT_ALERT_TYPE,
-                event_key="btc_downward_pressure_2026_05_20",
-                event_instance_key="instance-a",
+                event_key=str(decision.event_key),
+                event_instance_key=event_instance_key,
                 price=103.0,
                 previous_price=100.0,
                 price_change_percent=3.0,
-                detected_at=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc),
+                detected_at=now,
             )
             session.add(market_event)
             await session.commit()
@@ -1429,35 +1474,25 @@ async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
                 provider="groq",
                 model="llama-test",
                 input_hash="canonical",
+                raw_input_json=alerts._json_dumps(analysis_input),
                 status="success",
                 should_alert=True,
-                plain_text="Canonical alert text. Not financial advice.",
+                event_key=decision.event_key,
+                title=decision.title,
+                message_body=decision.message_body,
+                related_news_ids=alerts._json_dumps(decision.related_news_ids),
+                possible_action=decision.possible_action,
+                urgency=decision.urgency,
+                confidence=decision.confidence,
+                plain_text=canonical_payload["plain_text"],
+                html_text=canonical_html,
             )
             session.add(canonical)
             await session.commit()
             await session.refresh(canonical)
             canonical_id = canonical.id
             market_event_id = market_event.id
-            user_id = user.id
-
-        async def create_fresh_attempt(input_payload):
-            async with session_local() as session:
-                fresh = EventAiAnalysis(
-                    market_event_id=None,
-                    analysis_id=str(input_payload["analysis_id"]),
-                    symbol="BTC",
-                    analysis_type=alerts.EVENT_ANALYSIS_TYPE,
-                    provider="groq",
-                    model="llama-test",
-                    input_hash="fresh",
-                    status="success",
-                    should_alert=True,
-                    plain_text="Fresh alert text. Not financial advice.",
-                )
-                session.add(fresh)
-                await session.commit()
-                await session.refresh(fresh)
-                return event_decision(), fresh.id
+            user_ids = {first_user.id, second_user.id}
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
@@ -1484,44 +1519,51 @@ async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
         )
         monkeypatch.setattr(
             alerts,
+            "_build_event_analysis_input",
+            AsyncMock(return_value=dict(analysis_input)),
+        )
+        monkeypatch.setattr(
+            alerts,
             "resolve_alert_recipient_outcomes",
             AsyncMock(
                 return_value=alerts.AlertRecipientResolution(
-                    recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)]
+                    recipients=[
+                        alerts.AlertRecipient(chat_id=2001, user_id=first_user.id),
+                        alerts.AlertRecipient(chat_id=2002, user_id=second_user.id),
+                    ]
                 )
             ),
         )
+        create_analysis = AsyncMock()
         monkeypatch.setattr(
             alerts,
             "_create_event_analysis_decision",
-            AsyncMock(side_effect=create_fresh_attempt),
+            create_analysis,
         )
+        create_market_event = AsyncMock()
         monkeypatch.setattr(
             alerts,
             "_get_or_create_event_alert_market_event",
-            AsyncMock(
-                return_value=(
-                    market_event_id,
-                    "btc_downward_pressure_2026_05_20",
-                    "instance-a",
-                    True,
-                )
-            ),
+            create_market_event,
         )
         monkeypatch.setattr(
             alerts,
             "_filter_event_recipients_for_cooldown",
             AsyncMock(
                 return_value=alerts.EventRecipientFilterResult(
-                    recipients=[alerts.AlertRecipient(chat_id=2001, user_id=user_id)],
+                    recipients=[
+                        alerts.AlertRecipient(chat_id=2001, user_id=first_user.id),
+                        alerts.AlertRecipient(chat_id=2002, user_id=second_user.id),
+                    ],
                     suppression_reason_counts={},
                 )
             ),
         )
+        send_alert = AsyncMock(return_value=(True, None, None))
         monkeypatch.setattr(
             alerts,
             "_send_alert_to_recipient_with_retry",
-            AsyncMock(return_value=(True, None, None)),
+            send_alert,
         )
         monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
 
@@ -1534,20 +1576,423 @@ async def test_reused_market_event_uses_existing_attached_analysis(monkeypatch):
                 .where(EventAiAnalysis.market_event_id == market_event_id)
                 .where(EventAiAnalysis.analysis_type == alerts.EVENT_ANALYSIS_TYPE)
             )
-            delivery = await session.scalar(select(Alert).where(Alert.user_id == user_id))
-            fresh = await session.scalar(
-                select(EventAiAnalysis).where(
-                    EventAiAnalysis.analysis_id != "event_analysis_btc_canonical"
-                )
+            deliveries = list(
+                (
+                    await session.scalars(
+                        select(Alert).where(Alert.user_id.in_(user_ids)).order_by(Alert.id)
+                    )
+                ).all()
+            )
+            analysis_count = await session.scalar(
+                select(func.count()).select_from(EventAiAnalysis)
+            )
+            delivered_outcomes = list(
+                (
+                    await session.scalars(
+                        select(AlertDeliveryOutcome).where(
+                            AlertDeliveryOutcome.status == alerts.OUTCOME_DELIVERED
+                        )
+                    )
+                ).all()
             )
 
+        create_analysis.assert_not_awaited()
+        create_market_event.assert_not_awaited()
         assert attached_count == 1
-        assert delivery.event_ai_analysis_id == canonical_id
-        assert "Canonical alert text." in delivery.message
-        assert "Fresh alert text." not in delivery.message
-        assert fresh.market_event_id is None
+        assert analysis_count == 1
+        assert len(deliveries) == 2
+        assert {delivery.event_ai_analysis_id for delivery in deliveries} == {canonical_id}
+        assert {delivery.message for delivery in deliveries} == {
+            canonical_payload["plain_text"]
+        }
+        assert len(delivered_outcomes) == 2
+        assert {outcome.event_ai_analysis_id for outcome in delivered_outcomes} == {
+            canonical_id
+        }
+        assert send_alert.await_count == 2
+        assert all(
+            call.args[2]["plain_text"] == canonical_payload["plain_text"]
+            and call.args[2]["html_text"] == canonical_html
+            and call.args[2]["entities"] is None
+            for call in send_alert.await_args_list
+        )
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reusable_event_analysis_matches_reordered_news_by_stable_identity(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        stored_news = [
+            {"news_id": "n1", "source": "Source A", "title": "Article A"},
+            {"news_id": "n2", "source": "Source B", "title": "Article B"},
+        ]
+        current_news = [
+            {"news_id": "n1", "source": "Source B", "title": "Article B"},
+            {"news_id": "n2", "source": "Source A", "title": "Article A"},
+        ]
+        decision = event_decision(related_news_ids=["n1"])
+        stored_input = {
+            "analysis_id": "event_analysis_btc_stored",
+            "symbol": "btc",
+            "timestamp_utc": now.isoformat(),
+            "market": {
+                "price": 103.0,
+                "chg_window": -3.0,
+                "chg_since_msg": 3.0,
+                "chg24h": -1.0,
+                "analysed_window_minutes": 180,
+            },
+            "news": stored_news,
+            "raw_event_key": decision.event_key,
+            "canonical_event_key": decision.event_key,
+            "semantic_family": "price_downtrend",
+        }
+        current_input = {**stored_input, "news": current_news}
+        event_instance_key = alerts._event_instance_key_for_decision(
+            decision=decision,
+            input_payload=stored_input,
+        )
+        canonical_plain = "Legacy canonical wording. Not financial advice."
+        canonical_html = '<a href="https://example.test/a">Article A - Source A</a>'
+        async with session_local() as session:
+            market_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=str(decision.event_key),
+                event_instance_key=event_instance_key,
+                price=103.0,
+                previous_price=100.0,
+                price_change_percent=3.0,
+                detected_at=now,
+            )
+            session.add(market_event)
+            await session.flush()
+            analysis = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_stored",
+                symbol="BTC",
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash="canonical-news",
+                raw_input_json=alerts._json_dumps(stored_input),
+                status="success",
+                should_alert=True,
+                event_key=decision.event_key,
+                title=decision.title,
+                message_body=decision.message_body,
+                related_news_ids=alerts._json_dumps(decision.related_news_ids),
+                possible_action=decision.possible_action,
+                urgency=decision.urgency,
+                confidence=decision.confidence,
+                plain_text=canonical_plain,
+                html_text=canonical_html,
+            )
+            session.add(analysis)
+            await session.commit()
+            await session.refresh(market_event)
+            await session.refresh(analysis)
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        llm_call = AsyncMock()
+        monkeypatch.setattr(alerts, "ask_event_analysis_raw", llm_call)
+        reusable = await alerts._get_reusable_event_analysis_by_context(current_input)
+
+        llm_call.assert_not_awaited()
+        assert reusable is not None
+        assert reusable.market_event_id == market_event.id
+        assert reusable.event_ai_analysis_id == analysis.id
+        assert reusable.decision.related_news_ids == ["n1"]
+        assert reusable.current_context_decision.related_news_ids == ["n2"]
+        assert alerts._stable_related_news_ids(
+            current_input,
+            reusable.current_context_decision.related_news_ids,
+        ) == [alerts.make_news_key({"source": "Source A", "title": "Article A"})]
+        assert reusable.alert_payload == {
+            "plain_text": canonical_plain,
+            "html_text": canonical_html,
+            "entities": None,
+        }
+        assert "Article A - Source A" in reusable.alert_payload["html_text"]
+        assert "https://example.test/a" in reusable.alert_payload["html_text"]
+        assert "Article B - Source B" not in reusable.alert_payload["html_text"]
+        assert "https://example.test/b" not in reusable.alert_payload["html_text"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_reusable_analysis_reconstructs_real_news_link_when_html_missing(
+    monkeypatch,
+):
+    engine, session_local = await build_session_factory()
+    try:
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        compact_news = [
+            {"news_id": "n1", "source": "Source A", "title": "Article A"},
+        ]
+        candidate_news = [
+            {
+                "news_id": "n1",
+                "source": "Source A",
+                "title": "Article A",
+                "url": "https://example.test/article-a",
+            },
+        ]
+        decision = event_decision(related_news_ids=["n1"])
+        input_payload = {
+            "analysis_id": "event_analysis_btc_legacy_links",
+            "symbol": "btc",
+            "timestamp_utc": now.isoformat(),
+            "market": {
+                "price": 103.0,
+                "chg_window": -3.0,
+                "chg_since_msg": 3.0,
+                "chg24h": -1.0,
+                "analysed_window_minutes": 180,
+            },
+            "news": compact_news,
+            "raw_event_key": decision.event_key,
+            "canonical_event_key": decision.event_key,
+            "semantic_family": "price_downtrend",
+        }
+        canonical_payload = alerts._build_event_alert_payload(
+            decision=decision,
+            input_payload=input_payload,
+            related_news=candidate_news,
+        )
+        event_instance_key = alerts._event_instance_key_for_decision(
+            decision=decision,
+            input_payload=input_payload,
+        )
+        async with session_local() as session:
+            market_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=str(decision.event_key),
+                event_instance_key=event_instance_key,
+                price=103.0,
+                previous_price=100.0,
+                price_change_percent=3.0,
+                detected_at=now,
+            )
+            session.add(market_event)
+            await session.flush()
+            analysis = EventAiAnalysis(
+                market_event_id=market_event.id,
+                analysis_id="event_analysis_btc_legacy_links",
+                symbol="BTC",
+                analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                provider="groq",
+                model="llama-test",
+                input_hash="legacy-links",
+                raw_input_json=alerts._json_dumps(input_payload),
+                status="success",
+                should_alert=True,
+                event_key=decision.event_key,
+                title=decision.title,
+                message_body=decision.message_body,
+                related_news_ids=alerts._json_dumps(decision.related_news_ids),
+                possible_action=decision.possible_action,
+                urgency=decision.urgency,
+                confidence=decision.confidence,
+                plain_text=canonical_payload["plain_text"],
+                html_text=None,
+            )
+            session.add(analysis)
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        reusable = await alerts._get_reusable_event_analysis_by_context(
+            dict(input_payload),
+            candidate_news=candidate_news,
+        )
+
+        assert reusable is not None
+        assert reusable.alert_payload["plain_text"] == canonical_payload["plain_text"]
+        if reusable.alert_payload["html_text"]:
+            assert "https://example.test/article-a" in reusable.alert_payload["html_text"]
+        else:
+            assert reusable.alert_payload["entities"] is not None
+            assert "https://example.test/article-a" in {
+                entity.url for entity in reusable.alert_payload["entities"] if entity.url
+            }
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_reusable_analysis_declines_ambiguous_news_links(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        compact_news = [
+            {"news_id": "n1", "source": "Source A", "title": "Article A"},
+        ]
+        decision = event_decision(related_news_ids=["n1"])
+        input_payload = {
+            "analysis_id": "event_analysis_btc_ambiguous_links",
+            "symbol": "btc",
+            "timestamp_utc": now.isoformat(),
+            "market": {
+                "price": 103.0,
+                "chg_window": -3.0,
+                "chg_since_msg": 3.0,
+                "chg24h": -1.0,
+                "analysed_window_minutes": 180,
+            },
+            "news": compact_news,
+        }
+        canonical_payload = alerts._build_event_alert_payload(
+            decision=decision,
+            input_payload=input_payload,
+            related_news=[
+                {
+                    **compact_news[0],
+                    "url": "https://example.test/original",
+                }
+            ],
+        )
+        async with session_local() as session:
+            market_event = MarketEvent(
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                event_key=str(decision.event_key),
+                event_instance_key=alerts._event_instance_key_for_decision(
+                    decision=decision,
+                    input_payload=input_payload,
+                ),
+                price=103.0,
+                previous_price=100.0,
+                price_change_percent=3.0,
+                detected_at=now,
+            )
+            session.add(market_event)
+            await session.flush()
+            session.add(
+                EventAiAnalysis(
+                    market_event_id=market_event.id,
+                    analysis_id="event_analysis_btc_ambiguous_links",
+                    symbol="BTC",
+                    analysis_type=alerts.EVENT_ANALYSIS_TYPE,
+                    provider="groq",
+                    model="llama-test",
+                    input_hash="ambiguous-links",
+                    raw_input_json=alerts._json_dumps(input_payload),
+                    status="success",
+                    should_alert=True,
+                    event_key=decision.event_key,
+                    title=decision.title,
+                    message_body=decision.message_body,
+                    related_news_ids=alerts._json_dumps(decision.related_news_ids),
+                    possible_action=decision.possible_action,
+                    urgency=decision.urgency,
+                    confidence=decision.confidence,
+                    plain_text=canonical_payload["plain_text"],
+                    html_text=None,
+                )
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        reusable = await alerts._get_reusable_event_analysis_by_context(
+            dict(input_payload),
+            candidate_news=[
+                {**compact_news[0], "url": "https://example.test/a"},
+                {
+                    "news_id": "n2",
+                    "source": "Source A",
+                    "title": "Article A",
+                    "url": "https://example.test/b",
+                },
+            ],
+        )
+
+        assert reusable is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("stored_plain_text", "stored_html_text"),
+    [(None, None), ("", ""), ("   ", "\t")],
+)
+def test_late_existing_analysis_preserves_fresh_payload_for_missing_canonical_text(
+    stored_plain_text,
+    stored_html_text,
+):
+    fresh_entities = [object()]
+    fresh_payload = {
+        "plain_text": "Fresh rendered text. Not financial advice.",
+        "html_text": "<b>Fresh rendered text.</b>",
+        "entities": fresh_entities,
+    }
+
+    merged = alerts._merge_existing_event_analysis_payload(
+        fresh_payload,
+        SimpleNamespace(
+            plain_text=stored_plain_text,
+            html_text=stored_html_text,
+        ),
+    )
+
+    assert merged == fresh_payload
+    assert merged["entities"] is fresh_entities
+
+
+@pytest.mark.parametrize(
+    ("stored_plain_text", "stored_html_text"),
+    [
+        ("Canonical plain. Not financial advice.", ""),
+        ("", "<b>Canonical HTML.</b>"),
+    ],
+)
+def test_late_existing_analysis_does_not_mix_partial_canonical_and_fresh_payloads(
+    stored_plain_text,
+    stored_html_text,
+):
+    fresh_entities = [object()]
+    fresh_payload = {
+        "plain_text": "Fresh rendered text. Not financial advice.",
+        "html_text": "<b>Fresh rendered text.</b>",
+        "entities": fresh_entities,
+    }
+    merged = alerts._merge_existing_event_analysis_payload(
+        fresh_payload,
+        SimpleNamespace(
+            plain_text=stored_plain_text,
+            html_text=stored_html_text,
+        ),
+    )
+
+    assert merged == fresh_payload
+    assert merged["entities"] is fresh_entities
+
+
+def test_late_existing_analysis_uses_complete_canonical_payload_atomically():
+    merged = alerts._merge_existing_event_analysis_payload(
+        {
+            "plain_text": "Fresh rendered text. Not financial advice.",
+            "html_text": "<b>Fresh rendered text.</b>",
+            "entities": [object()],
+        },
+        SimpleNamespace(
+            plain_text="Canonical plain. Not financial advice.",
+            html_text="<b>Canonical HTML.</b>",
+        ),
+    )
+
+    assert merged == {
+        "plain_text": "Canonical plain. Not financial advice.",
+        "html_text": "<b>Canonical HTML.</b>",
+        "entities": None,
+    }
 
 
 @pytest.mark.asyncio
