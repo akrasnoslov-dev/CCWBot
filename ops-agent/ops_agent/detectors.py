@@ -4,7 +4,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ops_agent.db_queries import MARKET_DATA_FRESHNESS_GRACE_SECONDS
+from ops_agent.db_queries import (
+    EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS,
+    MARKET_DATA_FRESHNESS_GRACE_SECONDS,
+)
 from ops_agent.expected_models import KNOWN_DECOMMISSIONED_MODELS, expected_model
 from ops_agent.schemas import DetectorResult, Period
 
@@ -434,16 +437,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         _int(row.get("gap_count")) for row in delivery_explanation_gap_rows
     )
 
-    interval_seconds = max(
-        (
-            _int(row.get("automatic_check_interval_seconds"))
-            for row in _query_rows(evidence, aggregate, "app_settings")
-        ),
-        default=0,
-    )
+    interval_seconds = EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS
     stale_price_rows = []
     freshness_base_threshold_seconds = (
-        max(interval_seconds * 2, interval_seconds + 900) if interval_seconds else None
+        interval_seconds
     )
     freshness_threshold_seconds = (
         freshness_base_threshold_seconds + MARKET_DATA_FRESHNESS_GRACE_SECONDS

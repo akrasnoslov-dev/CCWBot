@@ -282,6 +282,8 @@ def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     assert "coalesce(e.active_symbols, 0) * 86400.0" in query.sql
     assert "estimated_event_alert_llm_calls_per_hour" in query.sql
     assert "estimated_event_alert_llm_calls_per_day" in query.sql
+    assert "SELECT 1800 AS event_analysis_interval_seconds" in query.sql
+    assert "greatest(coalesce(automatic_check_interval_seconds" not in query.sql
 
 
 def test_delivery_funnel_downstream_counts_are_event_alert_only():
@@ -1730,7 +1732,7 @@ def test_market_data_freshness_uses_explicit_scheduler_grace_at_boundary():
         evidence = {
             "evidence/db/aggregate_metrics.json": {
                 "queries": {
-                    "app_settings": {"rows": [{"automatic_check_interval_seconds": 900}]},
+                    "app_settings": {"rows": [{"automatic_check_interval_seconds": 600}]},
                     "price_state_current": {
                         "rows": [
                             {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from telegram import InlineKeyboardMarkup, Message, Update
-from telegram.error import NetworkError, TimedOut
+from telegram.error import BadRequest, NetworkError, TelegramError, TimedOut
 
 from bot.db.database import (
     ensure_default_coin_subscriptions,
@@ -65,10 +65,20 @@ async def _safe_reply_text(message: Message, text: str, **kwargs) -> bool:
     return True
 
 
-async def _safe_edit_message_text(query, *, text: str, reply_markup: InlineKeyboardMarkup) -> bool:
+async def _safe_edit_message_text(
+    query,
+    *,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     try:
         await query.edit_message_text(text=text, reply_markup=reply_markup)
-    except (TimedOut, NetworkError) as error:
+    except BadRequest as error:
+        if "message is not modified" in str(error).lower():
+            return True
+        log(f"Telegram watchlist edit failed: {type(error).__name__}")
+        return False
+    except TelegramError as error:
         log(f"Telegram watchlist edit failed: {type(error).__name__}")
         return False
     return True
@@ -308,6 +318,18 @@ async def myplan_command(update: Update) -> None:
         await _reply_db_required(update.message)
         return
     await _safe_reply_text(update.message, build_plan_message(user))
+
+
+async def edit_myplan_message(update: Update, query) -> None:
+    from bot.keyboards import build_my_plan_keyboard
+
+    user, _ = await _load_current_user(update)
+    text = (
+        build_plan_message(user)
+        if user is not None
+        else "Plan storage is temporarily unavailable."
+    )
+    await _safe_edit_message_text(query, text=text, reply_markup=build_my_plan_keyboard())
 
 
 async def handle_watchlist_callback(update: Update, data: str) -> bool:

@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_market_check
-from bot.keyboards import build_interval_keyboard
+from bot.keyboards import build_interval_keyboard, build_plan_keyboard
 from bot.prices import send_manual_rate_limit_message, send_price_message
 from bot.reports import send_daily_report_message, send_weekly_report_message
 from bot.services.price_service import CoinGeckoRateLimitError
@@ -17,7 +17,14 @@ from bot.settings import (
 from bot.storage import load_state
 
 from .admin import send_admin_callback_response
-from .common import _callback_command_update, _mark_denied, handlers_module, log_request, logger
+from .common import (
+    _callback_command_update,
+    _mark_denied,
+    handlers_module,
+    log_request,
+    logger,
+    safe_edit_callback_message,
+)
 
 
 @log_request("callback")
@@ -38,7 +45,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if data.startswith("admin:"):
             await query.answer()
-            if await send_admin_callback_response(data, query.message, context.application):
+            if await send_admin_callback_response(data, query, context.application):
                 return
 
         if data.startswith("watchlist:"):
@@ -48,7 +55,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
 
         if data.startswith("price:"):
-            await send_price_message(query.message, data.split(":", maxsplit=1)[1])
+            await send_price_message(query, data.split(":", maxsplit=1)[1], edit=True)
             return
         if data == "reports:daily":
             await send_daily_report_message(query.message)
@@ -57,7 +64,12 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_weekly_report_message(query.message)
             return
         if data == "plan:my_plan":
-            await root.myplan_command(_callback_command_update(update))
+            await root.edit_myplan_message(_callback_command_update(update), query)
+            return
+        if data == "plan:back":
+            await safe_edit_callback_message(
+                query, "Plan & subscription", reply_markup=build_plan_keyboard()
+            )
             return
         if data == "plan:subscribe":
             await root.send_subscribe_invoice(_callback_command_update(update), context)
@@ -68,7 +80,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 state = load_state()
                 alert_settings = get_state_alert_settings(state)
-            await query.message.reply_text(
+            await safe_edit_callback_message(
+                query,
                 "Current alert settings ⚙️\n\n"
                 "Event decision: Groq LLM JSON analysis\n"
                 "Movement thresholds: disabled for automatic Event Alerts\n"
@@ -77,7 +90,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         if data == "settings:interval_menu":
-            await query.message.reply_text(
+            await safe_edit_callback_message(
+                query,
                 "Choose a new Event Alert analysis interval:",
                 reply_markup=build_interval_keyboard(),
             )
@@ -88,9 +102,11 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_interval_setting(applied_interval)
             schedule_automatic_market_check(context.application, applied_interval)
             interval = applied_interval
-            await query.message.reply_text(
+            await safe_edit_callback_message(
+                query,
                 f"Event Alert analysis interval updated to {interval} seconds ✅ "
-                "Applied immediately."
+                "Applied immediately.",
+                reply_markup=build_interval_keyboard(),
             )
             return
     except CoinGeckoRateLimitError:

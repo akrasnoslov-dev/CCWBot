@@ -13,7 +13,7 @@ async def setup_bot_commands(app: Application) -> None:
     default_commands = [
         BotCommand("start", "Main bot menu"),
         BotCommand("price", "Check crypto prices"),
-        BotCommand("settings", "Alert settings / watchlist"),
+        BotCommand("watchlist", "Alert watchlist"),
         BotCommand("reports", "Reports"),
         BotCommand("plan", "Plan & subscription"),
     ]
@@ -22,6 +22,7 @@ async def setup_bot_commands(app: Application) -> None:
     if TELEGRAM_ADMIN_USER_IDS:
         admin_commands = default_commands + [
             BotCommand("admin", "Open admin menu"),
+            BotCommand("settings", "Global alert settings"),
         ]
         for admin_chat_id in TELEGRAM_ADMIN_USER_IDS:
             await app.bot.set_my_commands(

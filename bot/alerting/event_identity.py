@@ -34,6 +34,9 @@ PRICE_ACTION_SEMANTIC_FAMILIES = frozenset(
         "volatility",
     }
 )
+PRICE_CONTEXT_EQUIVALENT_FAMILIES = PRICE_ACTION_SEMANTIC_FAMILIES | frozenset(
+    {"news_catalyst", "etf_flows"}
+)
 _DIRECTIONAL_TRAIT_TERMS = frozenset(
     {
         "bearish", "breakout", "decline", "downside", "downtrend", "drop", "fall",
@@ -218,7 +221,11 @@ def _event_semantic_cooldown_escalation_details(
         "previous_urgency": previous_urgency or None,
         "current_urgency": str(current_urgency or "").strip().lower() or None,
         "urgency_increased": (
-            previous_urgency_rank > 0 and current_urgency_rank > previous_urgency_rank
+            previous_urgency_rank > 0
+            and current_urgency_rank > previous_urgency_rank
+            and previous_movement is not None
+            and current_movement_percent is not None
+            and abs(current_movement_percent) >= max(abs(previous_movement) + 0.5, 1.0)
         ),
         "previous_movement_percent": previous_movement,
         "current_movement_percent": current_movement_percent,
@@ -267,7 +274,7 @@ def _price_action_context_traits(
         traits.add("level_interaction")
     elif family == "volatility":
         traits.add("volatility_regime")
-    else:
+    elif family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES:
         return []
 
     raw_tokens = re.findall(r"[a-z0-9]+", str(raw_event_key or "").lower())
@@ -362,8 +369,6 @@ def _event_cross_family_context_matches(
     movement direction, and analysed window. News is supporting context and never decides
     equivalence; urgency and materially larger movement are evaluated by the caller.
     """
-    if normalize_symbol(symbol) != "btc":
-        return False
     previous_family = str(previous_semantic_family or "").strip().lower() or None
     if previous_family is None:
         context_family = str(previous_numeric_context.get("semantic_family") or "").strip()
@@ -378,15 +383,12 @@ def _event_cross_family_context_matches(
     previous_movement = _optional_float(
         previous_numeric_context.get("analysed_window_change_percent")
     )
-    previous_namespace = _event_cooldown_namespace(
-        semantic_family=previous_family,
-        movement_percent=previous_movement,
-    )
-    current_namespace = _event_cooldown_namespace(
-        semantic_family=current_family,
-        movement_percent=current_movement_percent,
-    )
-    if previous_namespace is None or previous_namespace != current_namespace:
+    if (
+        previous_family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES
+        or current_family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES
+        or _movement_direction(previous_movement)
+        != _movement_direction(current_movement_percent)
+    ):
         return False
 
     previous_traits = {

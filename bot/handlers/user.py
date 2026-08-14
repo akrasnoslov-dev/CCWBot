@@ -14,7 +14,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "I monitor crypto prices and alert settings.\n\n"
         "Use:\n"
         "/price - check crypto prices"
-        "\n/settings - manage alert settings"
+        "\n/watchlist - manage alert watchlist"
         "\n/reports - open market reports"
         "\n/plan - plan and subscription"
     )

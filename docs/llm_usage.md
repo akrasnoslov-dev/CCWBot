@@ -362,6 +362,9 @@ ORDER BY calls DESC, latest_at DESC;
 
 Avoidable LLM-call checks:
 
+- Admin System status summarizes final feature outcomes. Admin LLM diagnostics separately shows
+  mutually exclusive provider-attempt categories whose displayed counts reconcile to the total.
+
 - `event_analysis` should only run once per symbol check, before recipient delivery and outside
   recipient loops.
 - A resolved market event may have at most one attached `event_ai_analyses` row with

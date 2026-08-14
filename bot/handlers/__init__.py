@@ -11,6 +11,7 @@ from bot.permissions import is_admin_update, is_admin_user, sync_user_from_updat
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 from bot.settings import get_runtime_error_file_logging_enabled, save_error_file_logging_enabled
 from bot.watchlist import (
+    edit_myplan_message,
     grant_premium_command,
     handle_watchlist_callback,
     myplan_command,
@@ -85,6 +86,7 @@ __all__ = [
     "error_logging_off",
     "error_logging_on",
     "error_logging_status",
+    "edit_myplan_message",
     "get_runtime_error_file_logging_enabled",
     "grant_premium",
     "grant_premium_command",
