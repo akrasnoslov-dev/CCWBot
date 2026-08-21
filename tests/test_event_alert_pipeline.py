@@ -753,6 +753,42 @@ def test_event_alert_payload_never_renders_direct_financial_instructions(
 
 
 @pytest.mark.parametrize(
+    "possible_action",
+    [
+        "Consider buying only if the move confirms.",
+        "Consider entering only if it fits your risk plan.",
+        "Consider reducing exposure if momentum weakens.",
+        "Consider tightening a stop-loss if volatility persists.",
+        "Consider taking profit if your target is reached.",
+    ],
+)
+def test_event_alert_payload_preserves_conditional_trading_oriented_suggestions(
+    possible_action,
+):
+    decision = event_decision()
+    decision = alerts.EventAnalysisDecision(
+        symbol=decision.symbol,
+        should_alert=decision.should_alert,
+        event_key=decision.event_key,
+        title=decision.title,
+        message_body=decision.message_body,
+        related_news_ids=decision.related_news_ids,
+        possible_action=possible_action,
+        urgency=decision.urgency,
+        confidence=decision.confidence,
+        reason_for_no_alert=decision.reason_for_no_alert,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"price": 100000.0, "chg_window": -2.0}},
+        related_news=[],
+    )
+
+    assert f"Possible action:\n{possible_action}" in payload["plain_text"]
+
+
+@pytest.mark.parametrize(
     ("minutes", "expected_label"),
     [
         (30, "30m market move"),

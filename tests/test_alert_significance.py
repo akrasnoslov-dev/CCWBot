@@ -124,9 +124,14 @@ def test_compact_elapsed_formats_required_boundaries():
 
 
 def test_message_quality_guards_preserve_conditional_advice_and_replace_hard_commands():
-    assert soften_possible_action(
-        "Consider reducing exposure if momentum weakens.", urgency="normal"
-    ) == "Consider reducing exposure if momentum weakens."
+    for suggestion in (
+        "Consider buying only if the move confirms.",
+        "Consider entering only if it fits your risk plan.",
+        "Consider reducing exposure if momentum weakens.",
+        "Consider tightening a stop-loss if volatility persists.",
+        "Consider taking profit if your target is reached.",
+    ):
+        assert soften_possible_action(suggestion, urgency="normal") == suggestion
     assert soften_possible_action("Buy now.", urgency="high").startswith(
         "Consider a cautious entry"
     )
