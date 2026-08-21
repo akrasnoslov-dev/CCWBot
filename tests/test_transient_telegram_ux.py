@@ -48,6 +48,19 @@ async def test_callback_navigation_edits_existing_message():
 
 
 @pytest.mark.asyncio
+async def test_callback_edit_failures_stay_transient():
+    unchanged = SimpleNamespace(
+        edit_message_text=AsyncMock(side_effect=BadRequest("Message is not modified"))
+    )
+    failed = SimpleNamespace(
+        edit_message_text=AsyncMock(side_effect=BadRequest("message cannot be edited"))
+    )
+
+    assert await safe_edit_callback_message(unchanged, "System status") is True
+    assert await safe_edit_callback_message(failed, "System status") is False
+
+
+@pytest.mark.asyncio
 async def test_settings_denies_non_admin_without_loading_settings(monkeypatch):
     reply = AsyncMock()
     update = SimpleNamespace(

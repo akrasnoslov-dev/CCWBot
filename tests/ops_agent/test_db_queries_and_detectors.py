@@ -268,6 +268,15 @@ def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explaine
     assert "expected_backend_cooldown_active" in query.sql
 
 
+def test_no_delivery_classification_uses_effective_cooldown_without_settings_row():
+    query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+
+    assert "SELECT 1800 AS cooldown_seconds)," in query.sql
+    assert "FROM app_settings ORDER BY id DESC LIMIT 1" not in query.sql
+
+
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
 

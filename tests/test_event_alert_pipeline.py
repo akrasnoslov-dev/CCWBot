@@ -688,6 +688,71 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
 
 
 @pytest.mark.parametrize(
+    ("title", "message_body", "possible_action"),
+    [
+        (
+            "Buy BTC now before the next move.",
+            "You should consider selling before the next leg lower.",
+            "We recommend that you sell immediately.",
+        ),
+        (
+            "BTC market update",
+            "It is time to exit your position.",
+            "You must immediately sell BTC.",
+        ),
+        (
+            "Go long now.",
+            "Open a short position before the next move.",
+            "Take profit immediately.",
+        ),
+        (
+            "Hold BTC now.",
+            "DCA into BTC today.",
+            "Buy-side liquidity is thin.",
+        ),
+    ],
+)
+def test_event_alert_payload_never_renders_direct_financial_instructions(
+    title, message_body, possible_action
+):
+    decision = event_decision()
+    decision = alerts.EventAnalysisDecision(
+        symbol=decision.symbol,
+        should_alert=decision.should_alert,
+        event_key=decision.event_key,
+        title=title,
+        message_body=message_body,
+        related_news_ids=decision.related_news_ids,
+        possible_action=possible_action,
+        urgency=decision.urgency,
+        confidence=decision.confidence,
+        reason_for_no_alert=decision.reason_for_no_alert,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"price": 100000.0, "chg_window": -2.0}},
+        related_news=[],
+    )
+    rendered = payload["plain_text"].lower()
+
+    assert "buy btc now" not in rendered
+    assert "consider selling" not in rendered
+    assert "recommend that you sell" not in rendered
+    assert "time to exit" not in rendered
+    assert "must immediately sell" not in rendered
+    assert "go long now" not in rendered
+    assert "open a short" not in rendered
+    assert "take profit immediately" not in rendered
+    assert "hold btc now" not in rendered
+    assert "dca into btc" not in rendered
+    if possible_action.startswith("Buy-side"):
+        assert "buy-side liquidity is thin" in rendered
+    else:
+        assert "consider" in rendered
+
+
+@pytest.mark.parametrize(
     ("minutes", "expected_label"),
     [
         (30, "30m market move"),

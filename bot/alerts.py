@@ -40,6 +40,7 @@ from bot.alerting.event_significance import (
 from bot.alerting.event_text import (
     compact_elapsed_since,
     ensure_useful_situation,
+    sanitize_financial_instruction,
     soften_possible_action,
 )
 from bot.alerting.market_heartbeat import (
@@ -1576,6 +1577,7 @@ def _build_event_alert_payload(
         symbol=symbol,
         market_data=market_data,
     )
+    title = sanitize_financial_instruction(title, fallback=f"{symbol} market conditions changed")
     message_body = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(
             decision.message_body,
@@ -1593,6 +1595,10 @@ def _build_event_alert_payload(
     message_body = ensure_useful_situation(
         message_body,
         significance_reason=(input_payload.get("backend_significance") or {}).get("reason"),
+    )
+    message_body = sanitize_financial_instruction(
+        message_body,
+        fallback="Market conditions changed; review the market context and your risk plan.",
     )
     possible_action = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(

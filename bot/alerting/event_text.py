@@ -12,11 +12,17 @@ _MOVE_RE = re.compile(
 _EXPLANATION_RE = re.compile(
     r"(?i)\b(after|because|due to|amid|following|confirmed|protocol|exploit|etf|news)\b"
 )
-_HARD_ACTION_RE = re.compile(
-    r"(?i)^\s*(?:(?:please|immediately|now)\s+|"
-    r"you\s+(?:should|must|need\s+to|have\s+to)\s+|"
-    r"(?:i\s+)?(?:recommend|advise)\s+(?:you\s+to\s+)?)?"
-    r"(buy|sell|close|exit|enter|short|long|add|reduce|tighten|liquidate)\b"
+_ACTION_VERB = (
+    r"buy|sell(?:ing)?|close|exit|enter|short|long|add|reduce|tighten|liquidate|"
+    r"go\s+(?:long|short)|open(?:ing)?|take\s+profit|hold|dca"
+)
+_DIRECT_FINANCIAL_INSTRUCTION_RE = re.compile(
+    rf"(?ix)(?:^\s*(?:please\s+)?"
+    rf"(?!(?:selling\b|(?:buy|sell|short|long)-))|"
+    rf"\b(?:you|we|i)\s+(?:should|must|need\s+to|have\s+to|recommend|advise)"
+    rf"(?:\s+\w+){{0,4}}\s+|"
+    rf"\bit\s+is\s+time\s+to\s+|\b(?:now|immediately)\s+)"
+    rf"(?P<verb>{_ACTION_VERB})\b"
 )
 _EXTREME_ACTION_RE = re.compile(
     r"(?i)\b(?:entire|all|fully|immediately)\b.*\b(?:position|exposure)\b|"
@@ -80,21 +86,30 @@ def ensure_useful_situation(
 
 def soften_possible_action(value: str, *, urgency: str | None) -> str:
     """Keep trading-oriented guidance conditional and proportionate."""
-    match = _HARD_ACTION_RE.match(value)
+    match = _DIRECT_FINANCIAL_INSTRUCTION_RE.search(value)
     if not match and _EXTREME_ACTION_RE.search(value):
         return "Consider reducing exposure only if your predefined risk limits are breached."
     if not match:
         return value
-    verb = match.group(1).lower()
-    if verb in {"buy", "enter", "long", "add"}:
+    verb = match.group("verb").lower()
+    if verb == "selling":
+        verb = "sell"
+    if verb in {"buy", "enter", "long", "add", "go long", "open", "opening", "dca"}:
         return "Consider a cautious entry only if the move confirms and fits your risk plan."
-    if verb in {"sell", "reduce", "liquidate"}:
+    if verb in {"sell", "reduce", "liquidate", "take profit"}:
         return "Consider reducing exposure if the change no longer fits your risk plan."
-    if verb in {"close", "exit", "short"}:
+    if verb in {"close", "exit", "short", "go short"}:
         return "Consider reducing or closing exposure if your risk limits are breached."
     if str(urgency or "").lower() == "high":
         return "Consider tightening risk controls if the move continues to accelerate."
     return "Consider reviewing risk controls and waiting for confirmation."
+
+
+def sanitize_financial_instruction(value: str, *, fallback: str) -> str:
+    """Reject direct trading instructions in every user-visible Event Alert field."""
+    if _DIRECT_FINANCIAL_INSTRUCTION_RE.search(value):
+        return fallback
+    return value
 
 
 def _parse_datetime(value: object) -> datetime | None:

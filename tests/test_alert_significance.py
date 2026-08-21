@@ -142,6 +142,15 @@ def test_message_quality_guards_preserve_conditional_advice_and_replace_hard_com
     assert soften_possible_action("Please buy now.", urgency="normal").startswith(
         "Consider a cautious entry"
     )
+    assert soften_possible_action("Go long now.", urgency="normal").startswith(
+        "Consider a cautious entry"
+    )
+    assert soften_possible_action("Take profit immediately.", urgency="normal").startswith(
+        "Consider reducing exposure"
+    )
+    assert soften_possible_action("Selling pressure has eased.", urgency="normal") == (
+        "Selling pressure has eased."
+    )
     assert ensure_useful_situation(
         "BTC fell 1.2% after a confirmed protocol exploit.",
         significance_reason="material_analysed_window_move",
