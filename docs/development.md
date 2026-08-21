@@ -128,7 +128,8 @@ under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Us
   any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
   sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
   `event_ai_analyses` rows.
-- Admin System status is read-only observability. It must use persisted telemetry such as
+- Admin System status is compact, feature-level, read-only observability. Detailed provider and
+  call-type attempts live in the separate admin LLM diagnostics screen. Both use telemetry such as
   `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and `alerts`, plus existing
   in-memory Groq backoff state. It must not perform live CoinGecko, Groq, RSS, or Telegram probes.
   Use `OK`, `WARN`, `FAIL`, and `UNKNOWN` only when the underlying telemetry supports that state.

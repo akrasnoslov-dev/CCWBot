@@ -488,7 +488,8 @@ def test_event_analysis_prompt_quality_requirements():
     assert "recent short-term snapshot behavior" in prompt
     assert "Do not generate UUID-like or random event keys" in prompt
     assert "event_analysis_btc_<random>" in prompt
-    assert "Possible action" not in prompt
+    assert "Possible action must remain conditional" in prompt
+    assert "Buy now, Sell now, or Close immediately" in prompt
     assert "below 1%" not in prompt
 
 

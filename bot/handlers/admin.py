@@ -13,12 +13,16 @@ from telegram.ext import ContextTypes
 from bot.alerts import schedule_automatic_market_check
 from bot.keyboards import (
     build_admin_alert_settings_keyboard,
+    build_admin_back_keyboard,
     build_admin_keyboard,
     build_admin_logs_keyboard,
     build_admin_premium_keyboard,
     build_interval_keyboard,
 )
-from bot.observability.system_status import build_admin_system_status_text
+from bot.observability.system_status import (
+    build_admin_llm_diagnostics_text,
+    build_admin_system_status_text,
+)
 from bot.settings import (
     get_db_alert_settings,
     get_state_alert_settings,
@@ -27,7 +31,7 @@ from bot.settings import (
 )
 from bot.storage import load_state
 
-from .common import _mark_denied, handlers_module, log_request
+from .common import _mark_denied, handlers_module, log_request, safe_edit_callback_message
 
 
 def _format_admin_alert_settings(alert_settings: dict) -> str:
@@ -43,6 +47,14 @@ def _format_admin_alert_settings(alert_settings: dict) -> str:
 async def _build_admin_system_status_text() -> str:
     root = handlers_module()
     return await build_admin_system_status_text(
+        db_enabled=root.DB_ENABLED,
+        session_factory=root.DB_SESSION_LOCAL,
+    )
+
+
+async def _build_admin_llm_diagnostics_text() -> str:
+    root = handlers_module()
+    return await build_admin_llm_diagnostics_text(
         db_enabled=root.DB_ENABLED,
         session_factory=root.DB_SESSION_LOCAL,
     )
@@ -206,39 +218,63 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def send_admin_callback_response(data: str, message, application) -> bool:
+async def send_admin_callback_response(data: str, query, application) -> bool:
     if data == "admin:alert_settings":
-        await message.reply_text(
+        await safe_edit_callback_message(
+            query,
             "Alert settings",
             reply_markup=build_admin_alert_settings_keyboard(),
         )
         return True
     if data == "admin:back":
-        await message.reply_text("Admin menu", reply_markup=build_admin_keyboard())
+        await safe_edit_callback_message(query, "Admin menu", reply_markup=build_admin_keyboard())
         return True
     if data == "admin:system_status":
-        await message.reply_text(await _build_admin_system_status_text())
+        await safe_edit_callback_message(
+            query,
+            await _build_admin_system_status_text(),
+            reply_markup=build_admin_back_keyboard(),
+        )
+        return True
+    if data == "admin:llm_diagnostics":
+        await safe_edit_callback_message(
+            query,
+            await _build_admin_llm_diagnostics_text(),
+            reply_markup=build_admin_back_keyboard(),
+        )
         return True
     if data == "admin:premium_menu":
-        await message.reply_text("Premium management", reply_markup=build_admin_premium_keyboard())
+        await safe_edit_callback_message(
+            query, "Premium management", reply_markup=build_admin_premium_keyboard()
+        )
         return True
     if data == "admin:premium_grant":
-        await message.reply_text(_premium_grant_usage_text())
+        await safe_edit_callback_message(
+            query, _premium_grant_usage_text(), reply_markup=build_admin_back_keyboard()
+        )
         return True
     if data == "admin:premium_revoke":
-        await message.reply_text(_premium_revoke_usage_text())
+        await safe_edit_callback_message(
+            query, _premium_revoke_usage_text(), reply_markup=build_admin_back_keyboard()
+        )
         return True
     if data == "admin:logs_menu":
-        await message.reply_text("Logs", reply_markup=build_admin_logs_keyboard())
+        await safe_edit_callback_message(query, "Logs", reply_markup=build_admin_logs_keyboard())
         return True
     if data == "admin:logs_toggle":
-        await message.reply_text(await _toggle_error_logging())
+        await safe_edit_callback_message(
+            query, await _toggle_error_logging(), reply_markup=build_admin_logs_keyboard()
+        )
         return True
     if data == "admin:logs_status":
-        await message.reply_text(await _build_error_logging_status_text())
+        await safe_edit_callback_message(
+            query,
+            await _build_error_logging_status_text(),
+            reply_markup=build_admin_logs_keyboard(),
+        )
         return True
     if data == "admin:logs_export":
-        await _send_log_exports(message)
+        await _send_log_exports(query.message)
         return True
     if data == "admin:current":
         root = handlers_module()
@@ -247,10 +283,15 @@ async def send_admin_callback_response(data: str, message, application) -> bool:
             if root.DB_ENABLED and root.DB_SESSION_LOCAL
             else get_state_alert_settings(load_state())
         )
-        await message.reply_text(_format_admin_alert_settings(alert_settings))
+        await safe_edit_callback_message(
+            query,
+            _format_admin_alert_settings(alert_settings),
+            reply_markup=build_admin_alert_settings_keyboard(),
+        )
         return True
     if data == "admin:interval_menu":
-        await message.reply_text(
+        await safe_edit_callback_message(
+            query,
             "Choose a new Event Alert analysis interval:",
             reply_markup=build_interval_keyboard(),
         )
@@ -261,8 +302,10 @@ async def send_admin_callback_response(data: str, message, application) -> bool:
         await save_interval_setting(applied_interval)
         schedule_automatic_market_check(application, applied_interval)
         interval = applied_interval
-        await message.reply_text(
-            f"Automatic check interval updated to {interval} seconds. Applied immediately."
+        await safe_edit_callback_message(
+            query,
+            f"Automatic check interval updated to {interval} seconds. Applied immediately.",
+            reply_markup=build_admin_alert_settings_keyboard(),
         )
         return True
     return False

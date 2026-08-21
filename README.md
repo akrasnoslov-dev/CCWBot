@@ -477,21 +477,25 @@ internal error details.
 
 ## Admin System Status
 
-Admin -> System status groups runtime, database, market data, AI, LLM provider rate-limit, RSS/news,
+Admin -> System status groups runtime, database, market data, final AI feature outcomes, RSS/news,
 and Telegram delivery telemetry into a compact Telegram dashboard. Component icons mean:
 
 - `✅`: fresh successful telemetry exists.
 - `⚠️`: telemetry is stale, partial, degraded, or not enough to claim healthy.
 - `❌`: the latest required operation failed or a core dependency is unavailable.
 
-Status uses persisted `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and
+Status uses persisted `price_state`, `event_ai_analyses`, `news_items`, and
 `alerts` rows. It does not call CoinGecko, Groq, RSS feeds, or Telegram while rendering the admin
-screen. Default output shows one line per component and adds short indented details for degraded
-or failing components, plus compact informational rows such as blocked-user counts only when they
-are non-zero. Expected Telegram permanent failures from blocked users or unavailable chats are
+screen. Default output shows one line per component and adds short indented details only for degraded
+or failing components. Expected Telegram permanent failures from blocked users or unavailable chats are
 shown separately from real delivery failures and do not mark the system as broken by themselves.
 Older AI failures do not clutter the dashboard when a newer `success` or `no_alert` event-analysis
 row exists. Failure details are sanitized/redacted.
+
+Admin -> LLM diagnostics separately summarizes provider/call-type attempts, rate limits, backoffs,
+circuit skips, schema failures, other failures, and active limits from `llm_usage_logs`. Categories
+are aggregate and mutually exclusive; raw prompts, responses, errors, identifiers, and secrets are
+never rendered.
 
 ## Testing And Linting
 
@@ -523,8 +527,10 @@ After deploy, verify with a private chat:
 9. Send `/reports`; daily/weekly report buttons should respond without diagnostic labels, and repeated report requests should be briefly rate-limited.
 10. Open Admin -> System status; component lines should show compact `✅`, `⚠️`, or `❌`
     status icons from persisted telemetry, with details only for degraded or failing components.
-11. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
-12. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
+11. Open Admin -> LLM diagnostics; attempt totals should reconcile and no raw provider payloads,
+    prompts, identifiers, or secrets should appear.
+12. Trigger or wait for an automatic alert sanity check; BTC remains free, non-BTC delivery requires active Premium and enabled watchlist choices. No Important Alert, Critical Alert, Market Update, or Strong Signal labels should be sent.
+13. In a group chat, send `/start`; automatic alert delivery should not retarget to that group.
 
 Do not paste bot logs, `.env`, Compose config output, or private Telegram text into PRs.
 

@@ -16,6 +16,7 @@ ACTIVE_SYMBOL_VALUES_SQL = "VALUES " + ", ".join(
     f"('{symbol}')" for symbol in ACTIVE_SYMBOLS
 )
 MARKET_DATA_FRESHNESS_GRACE_SECONDS = 120
+EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS = 1800
 DAILY_REPORT_RUNTIME_INTERVAL_SECONDS = 14400
 WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS = 86400
 DAILY_REPORT_FRESHNESS_GRACE_SECONDS = 3600
@@ -104,10 +105,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         "WITH settings AS ("
         "SELECT event_analysis_interval_seconds FROM ("
-        "(SELECT greatest(coalesce(automatic_check_interval_seconds, 1800), 1) AS event_analysis_interval_seconds, 0 AS priority "
+        f"(SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS event_analysis_interval_seconds, 0 AS priority "
         "FROM app_settings ORDER BY id DESC LIMIT 1) "
         "UNION ALL "
-        "(SELECT 1800 AS event_analysis_interval_seconds, 1 AS priority "
+        f"(SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS event_analysis_interval_seconds, 1 AS priority "
         "WHERE NOT EXISTS (SELECT 1 FROM app_settings))"
         ") rows ORDER BY priority LIMIT 1), "
         "active_symbols(symbol) AS ("
@@ -700,8 +701,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
         "GROUP BY ucs.symbol), "
         "settings AS ("
-        "SELECT coalesce(automatic_check_interval_seconds, 0) AS cooldown_seconds "
-        "FROM app_settings ORDER BY id DESC LIMIT 1), "
+        f"SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS cooldown_seconds), "
         "recent_event_alerts AS ("
         "SELECT e.market_event_id, max(a.created_at) AS recent_sent_at "
         "FROM events_without_delivery e JOIN alerts a ON lower(a.symbol) = lower(e.symbol) "

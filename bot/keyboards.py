@@ -81,11 +81,21 @@ def build_plan_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def build_my_plan_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Subscribe", callback_data="plan:subscribe")],
+            [InlineKeyboardButton("Back", callback_data="plan:back")],
+        ]
+    )
+
+
 def build_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Alert settings", callback_data="admin:alert_settings")],
             [InlineKeyboardButton("System status", callback_data="admin:system_status")],
+            [InlineKeyboardButton("LLM diagnostics", callback_data="admin:llm_diagnostics")],
             [InlineKeyboardButton("Premium management", callback_data="admin:premium_menu")],
             [InlineKeyboardButton("Logs", callback_data="admin:logs_menu")],
         ]
@@ -120,6 +130,12 @@ def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("Export logs", callback_data="admin:logs_export")],
             [InlineKeyboardButton("Back", callback_data="admin:back")],
         ]
+    )
+
+
+def build_admin_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Back", callback_data="admin:back")]]
     )
 
 

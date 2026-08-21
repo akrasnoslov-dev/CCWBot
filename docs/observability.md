@@ -96,9 +96,15 @@ ORDER BY 1;
 
 ## Admin System Status
 
-Admin -> System status is a compact Telegram-safe dashboard for live operators. It uses only
-persisted telemetry and in-memory Groq backoff state; opening the screen must not call CoinGecko,
-Groq, RSS feeds, or Telegram delivery APIs.
+Admin -> System status is a compact Telegram-safe dashboard for live operators. It uses persisted
+final-feature telemetry. Admin -> LLM diagnostics also reads in-memory provider backoff state.
+Opening either screen must not call CoinGecko, an LLM provider, RSS feeds, or Telegram delivery
+APIs.
+
+Provider and call-type attempt details are shown separately under Admin -> LLM diagnostics. A
+recovered primary-provider failure remains visible there but does not make headline feature health
+unhealthy when the final feature outcome succeeded. Market-data freshness uses the normalized
+1,800-second cadence plus 120 seconds of scheduler grace.
 
 Default output is designed for mobile scanning:
 
@@ -106,9 +112,8 @@ Default output is designed for mobile scanning:
 - `⚠️`: telemetry is stale, partial, degraded, or not enough to claim healthy.
 - `❌`: the latest required operation failed or a core dependency is unavailable.
 
-The default Telegram message shows one main line per component. It adds indented problem lines for
-degraded or failing components, plus compact informational rows such as blocked-user counts only
-when they are non-zero. Long OK details, repeated timestamps, price values, CoinGecko ids, raw
+The default Telegram message shows one main line per component. It adds indented details only for
+degraded or failing components. Long OK details, repeated timestamps, price values, CoinGecko ids, raw
 table names, provider payloads, traces, and secrets are not shown in the default dashboard.
 
 Signals currently summarized:
@@ -121,8 +126,6 @@ Signals currently summarized:
   `event_ai_analyses`; failure details are sanitized and redacted if they look like provider
   payloads, traces, headers, connection strings, or secrets. Old failures resolved by newer
   success/no-alert rows do not clutter the default dashboard.
-- Groq rate limit: active event-analysis/heartbeat in-memory backoff plus recent
-  `llm_usage_logs` rate-limit telemetry.
 - News: cache freshness and usable non-noise/non-duplicate rows in the last 24h. Fresh usable
   news remains OK even when enrichment telemetry has not run yet.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
@@ -143,11 +146,14 @@ Overall: ⚠️ Needs attention
 ⚠️ Market data — stale/missing symbols
    BTC stale: last check 32h ago
    Missing: ETH, GRAM, SOL
-✅ AI analysis — latest success 32h ago
-⚠️ Groq rate limit — recent limit, retry_after 1s
+✅ AI — latest success 32h ago
 ✅ News — 5 usable items in 24h
-⚠️ Telegram delivery — no delivery rows in 24h
+⚠️ Telegram — no delivery rows in 24h
 ```
+
+Provider attempts, rate limits, backoffs, circuit skips, schema failures, and active limits are
+shown separately under Admin -> LLM diagnostics. Mutually exclusive aggregate categories reconcile
+to total attempts and do not degrade System Status after a successful final feature outcome.
 
 Current limitations:
 
@@ -567,11 +573,7 @@ ORDER BY latest_attempt_at DESC;
 
 ```sql
 WITH settings AS (
-  SELECT greatest(coalesce(automatic_check_interval_seconds, 1800), 1)
-    AS event_analysis_interval_seconds
-  FROM app_settings
-  ORDER BY id DESC
-  LIMIT 1
+  SELECT 1800 AS event_analysis_interval_seconds
 ),
 eligible_symbols AS (
   SELECT count(DISTINCT lower(ucs.symbol)) AS symbols

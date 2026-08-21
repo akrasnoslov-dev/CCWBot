@@ -268,6 +268,15 @@ def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explaine
     assert "expected_backend_cooldown_active" in query.sql
 
 
+def test_no_delivery_classification_uses_effective_cooldown_without_settings_row():
+    query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+
+    assert "SELECT 1800 AS cooldown_seconds)," in query.sql
+    assert "FROM app_settings ORDER BY id DESC LIMIT 1" not in query.sql
+
+
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
 
@@ -282,6 +291,8 @@ def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     assert "coalesce(e.active_symbols, 0) * 86400.0" in query.sql
     assert "estimated_event_alert_llm_calls_per_hour" in query.sql
     assert "estimated_event_alert_llm_calls_per_day" in query.sql
+    assert "SELECT 1800 AS event_analysis_interval_seconds" in query.sql
+    assert "greatest(coalesce(automatic_check_interval_seconds" not in query.sql
 
 
 def test_delivery_funnel_downstream_counts_are_event_alert_only():
@@ -1730,7 +1741,7 @@ def test_market_data_freshness_uses_explicit_scheduler_grace_at_boundary():
         evidence = {
             "evidence/db/aggregate_metrics.json": {
                 "queries": {
-                    "app_settings": {"rows": [{"automatic_check_interval_seconds": 900}]},
+                    "app_settings": {"rows": [{"automatic_check_interval_seconds": 600}]},
                     "price_state_current": {
                         "rows": [
                             {

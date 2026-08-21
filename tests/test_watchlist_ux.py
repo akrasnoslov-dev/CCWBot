@@ -261,21 +261,22 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert default_commands == [
         "start",
         "price",
-        "settings",
+        "watchlist",
         "reports",
         "plan",
     ]
     assert admin_commands == [
         "start",
         "price",
-        "settings",
+        "watchlist",
         "reports",
         "plan",
         "admin",
+        "settings",
     ]
     assert second_admin_commands == admin_commands
-    assert "watchlist" not in default_commands
-    assert "watchlist" not in admin_commands
+    assert "watchlist" in default_commands
+    assert "watchlist" in admin_commands
     assert "alerts" not in default_commands
     assert "alerts" not in admin_commands
     assert "grantpremium" not in default_commands
@@ -313,7 +314,7 @@ async def test_start_text_mentions_subscription_commands_for_regular_users(monke
 
     text = message.replies[0][0]
     assert "/price - check crypto prices" in text
-    assert "/settings - manage alert settings" in text
+    assert "/watchlist - manage alert watchlist" in text
     assert "/reports - open market reports" in text
     assert "/plan - plan and subscription" in text
     assert "/myplan" not in text
@@ -362,24 +363,25 @@ async def test_plan_command_opens_inline_keyboard(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_plan_my_plan_callback_reuses_myplan_command(monkeypatch):
+async def test_plan_my_plan_callback_edits_existing_message(monkeypatch):
     calls = []
     query = CallbackQuery("plan:my_plan", telegram_user_id=1001)
     update = SimpleNamespace(callback_query=query, effective_user=query.from_user)
     context = SimpleNamespace(user_data={})
 
-    async def fake_myplan_command(command_update):
-        calls.append(command_update)
+    async def fake_edit_myplan_message(command_update, callback_query):
+        calls.append((command_update, callback_query))
 
     monkeypatch.setattr("bot.handlers.sync_user_from_update", AsyncNoop())
     monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
-    monkeypatch.setattr("bot.handlers.myplan_command", fake_myplan_command)
+    monkeypatch.setattr("bot.handlers.edit_myplan_message", fake_edit_myplan_message)
 
     await button_router(update, context)
 
     assert query.answers == [(None, None)]
-    assert calls[0].message is query.message
-    assert calls[0].effective_user is query.from_user
+    assert calls[0][0].message is query.message
+    assert calls[0][0].effective_user is query.from_user
+    assert calls[0][1] is query
 
 
 @pytest.mark.asyncio
