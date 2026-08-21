@@ -6,13 +6,18 @@ Does not belong here: LLM calls, Telegram delivery, recipient lookup, or DB writ
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from uuid import uuid4
 
 from bot.alerting.alert_rules import calculate_price_change_percent
-from bot.alerting.event_analysis import EVENT_ANALYSIS_TYPE, EventAnalysisDecision
+from bot.alerting.event_analysis import (
+    EVENT_ANALYSIS_TYPE,
+    EventAnalysisDecision,
+    normalize_event_semantic_family,
+)
 from bot.alerting.market_heartbeat import MARKET_HEARTBEAT_ANALYSIS_TYPE
 from bot.alerting.news_context import _news_driven_identity
 from bot.db.database import make_news_key
@@ -21,6 +26,47 @@ from bot.domain.supported_coins import SUPPORTED_SYMBOLS, normalize_symbol
 AUTOMATIC_MARKET_CHECK_JOB_NAME = "automatic_market_check"
 EVENT_ANALYSIS_PAYLOAD_POINTS = 6
 EVENT_SEMANTIC_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
+PRICE_ACTION_SEMANTIC_FAMILIES = frozenset(
+    {
+        "price_downtrend",
+        "price_uptrend",
+        "price_level_range",
+        "volatility",
+    }
+)
+PRICE_CONTEXT_EQUIVALENT_FAMILIES = PRICE_ACTION_SEMANTIC_FAMILIES | frozenset(
+    {"news_catalyst", "etf_flows"}
+)
+_DIRECTIONAL_TRAIT_TERMS = frozenset(
+    {
+        "bearish", "breakout", "decline", "downside", "downtrend", "drop", "fall",
+        "higher", "lower", "rally", "rebound", "selloff", "surge", "upside", "uptrend",
+    }
+)
+_LEVEL_TRAIT_TERMS = frozenset(
+    {
+        "consolidation", "level", "range", "rangebound", "resistance", "sideways",
+        "support",
+    }
+)
+_VOLATILITY_TRAIT_TERMS = frozenset({"choppy", "volatile", "volatility", "whipsaw"})
+_LEVEL_TEST_TERMS = frozenset({"approach", "approaches", "hold", "holds", "near", "test"})
+_RANGE_STATE_TERMS = frozenset({"consolidation", "range", "rangebound", "sideways"})
+_BREAK_VERBS = frozenset({"break", "breaks", "breaking", "broke", "broken"})
+_BREAK_DIRECTIONS = frozenset({"above", "below", "through"})
+_CROSSING_VERB_DIRECTIONS = {
+    "drop": "below", "dropped": "below", "drops": "below", "fall": "below",
+    "falls": "below", "fell": "below", "rallies": "above", "rally": "above",
+    "rose": "above", "rise": "above", "rises": "above", "surge": "above",
+    "surges": "above",
+}
+_BREAK_MODIFIERS = frozenset(
+    {"and", "back", "briefly", "cleanly", "decisively", "firmly", "holds", "now"}
+)
+_BREAK_NEGATIONS = frozenset(
+    {"cannot", "didn", "failed", "fails", "hasn", "hadn", "no", "not", "never", "without", "yet"}
+)
+_BREAK_CLAUSE_BOUNDARIES = frozenset({"although", "and", "as", "but", "however", "then", "while"})
 
 def _stable_float(value: float | None, digits: int) -> float | None:
     if value is None:
@@ -106,17 +152,21 @@ def _stable_market_movement_bucket(input_payload: dict) -> str:
 
 def _event_movement_percent_from_payload(input_payload: dict) -> float | None:
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    value = (
-        market_data.get("chg_window")
-        or market_data.get("chg_since_msg")
-        or market_data.get("change_since_last_user_visible_message_percent")
-        or market_data.get("chg24h")
-        or market_data.get("change_24h_percent")
-    )
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    for field_name in (
+        "chg_window",
+        "chg_since_msg",
+        "change_since_last_user_visible_message_percent",
+        "chg24h",
+        "change_24h_percent",
+    ):
+        value = market_data.get(field_name)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def _urgency_rank(value: str | None) -> int:
     return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)
@@ -171,7 +221,11 @@ def _event_semantic_cooldown_escalation_details(
         "previous_urgency": previous_urgency or None,
         "current_urgency": str(current_urgency or "").strip().lower() or None,
         "urgency_increased": (
-            previous_urgency_rank > 0 and current_urgency_rank > previous_urgency_rank
+            previous_urgency_rank > 0
+            and current_urgency_rank > previous_urgency_rank
+            and previous_movement is not None
+            and current_movement_percent is not None
+            and abs(current_movement_percent) >= max(abs(previous_movement) + 0.5, 1.0)
         ),
         "previous_movement_percent": previous_movement,
         "current_movement_percent": current_movement_percent,
@@ -180,6 +234,183 @@ def _event_semantic_cooldown_escalation_details(
         "current_news_count": len(current_news_ids),
         "new_news_driver": bool(new_news_ids),
     }
+
+def _event_cooldown_namespace(
+    *,
+    semantic_family: str | None,
+    movement_percent: float | None,
+) -> str | None:
+    """Return a cooldown-only identity without changing market-event identity.
+
+    Only explicit price-action families can share this namespace. Unknown and topical
+    families stay distinct even when they reference the same article.
+    """
+    family = str(semantic_family or "").strip().lower() or None
+    if family not in PRICE_ACTION_SEMANTIC_FAMILIES:
+        return None
+    direction = _movement_direction(movement_percent)
+    if direction not in {"up", "down"}:
+        return None
+    return f"price_action:{direction}"
+
+def _price_action_context_traits(
+    *,
+    semantic_family: str | None,
+    raw_event_key: str | None,
+    title: str | None = None,
+    message_body: str | None = None,
+) -> list[str]:
+    """Return backend-owned price-action traits used only for cross-family cooldown.
+
+    A family contributes its native trait, while the event wording may add other explicit
+    traits. Cross-family alerts are equivalent only when both describe the same complete trait
+    set; a trend, level interaction, and volatility regime therefore remain distinct by default.
+    """
+    family = str(semantic_family or "").strip().lower()
+    traits: set[str] = set()
+    if family in {"price_downtrend", "price_uptrend"}:
+        traits.add("directional_move")
+    elif family == "price_level_range":
+        traits.add("level_interaction")
+    elif family == "volatility":
+        traits.add("volatility_regime")
+    elif family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES:
+        return []
+
+    raw_tokens = re.findall(r"[a-z0-9]+", str(raw_event_key or "").lower())
+    generic_family_tokens = {
+        "btc", "event", "price", "downtrend", "uptrend", "level", "range", "volatility",
+    }
+    descriptive_raw_key = "_".join(
+        token for token in raw_tokens if token not in generic_family_tokens
+    )
+    text = "_".join(
+        str(value or "").strip().lower()
+        for value in (descriptive_raw_key, title, message_body)
+    )
+    tokens = set(re.findall(r"[a-z0-9]+", text))
+    if tokens.intersection(_DIRECTIONAL_TRAIT_TERMS):
+        traits.add("directional_move")
+    if tokens.intersection(_LEVEL_TRAIT_TERMS):
+        traits.add("level_interaction")
+    if tokens.intersection(_VOLATILITY_TRAIT_TERMS):
+        traits.add("volatility_regime")
+    ordered_tokens = re.findall(r"[a-z0-9]+", text)
+    if _has_non_negated_level_break(ordered_tokens):
+        traits.add("level_break")
+    for side in _asserted_level_sides(ordered_tokens):
+        traits.add(f"level_side_{side}")
+    if tokens.intersection(_LEVEL_TEST_TERMS):
+        traits.add("level_test_or_hold")
+    if tokens.intersection(_RANGE_STATE_TERMS):
+        traits.add("range_state")
+    if tokens.intersection({"reversal", "reversals", "whipsaw"}):
+        traits.add("volatility_reversal")
+    return sorted(traits)
+
+def _has_non_negated_level_break(tokens: list[str]) -> bool:
+    """Return true only for an asserted level break, not a negated clause."""
+    for index, token in enumerate(tokens):
+        is_break_phrase = token in {"breakdown", "breakout"}
+        allowed_directions = _BREAK_DIRECTIONS
+        if token in _CROSSING_VERB_DIRECTIONS:
+            allowed_directions = frozenset({_CROSSING_VERB_DIRECTIONS[token]})
+        if token in _BREAK_VERBS or token in _CROSSING_VERB_DIRECTIONS:
+            following = tokens[index + 1:index + 5]
+            for offset, following_token in enumerate(following):
+                if following_token in allowed_directions:
+                    is_break_phrase = all(
+                        modifier in _BREAK_MODIFIERS for modifier in following[:offset]
+                    )
+                    break
+                if following_token not in _BREAK_MODIFIERS:
+                    break
+        if not is_break_phrase:
+            continue
+        preceding_clause = _preceding_clause_tokens(tokens, index)
+        if not preceding_clause.intersection(_BREAK_NEGATIONS):
+            return True
+    return False
+
+def _asserted_level_sides(tokens: list[str]) -> set[str]:
+    sides: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token not in {"above", "below"}:
+            continue
+        nearby = set(tokens[max(0, index - 3):index + 4])
+        if not nearby.intersection(_LEVEL_TRAIT_TERMS):
+            continue
+        if not _preceding_clause_tokens(tokens, index).intersection(_BREAK_NEGATIONS):
+            sides.add(token)
+    return sides
+
+def _preceding_clause_tokens(tokens: list[str], index: int) -> set[str]:
+    clause_start = 0
+    for boundary_index in range(index - 1, -1, -1):
+        if tokens[boundary_index] in _BREAK_CLAUSE_BOUNDARIES:
+            clause_start = boundary_index + 1
+            break
+    return set(tokens[max(clause_start, index - 5):index])
+
+def _event_cross_family_context_matches(
+    *,
+    symbol: str,
+    previous_event_key: str | None,
+    previous_semantic_family: str | None,
+    previous_numeric_context: dict,
+    current_semantic_family: str | None,
+    current_movement_percent: float | None,
+    current_analysed_window_minutes: int | None,
+    current_price_action_traits: list[str] | None,
+) -> bool:
+    """Return whether two differently named price events share cooldown context.
+
+    Both events must be explicit price-action events with the same backend-owned trait set,
+    movement direction, and analysed window. News is supporting context and never decides
+    equivalence; urgency and materially larger movement are evaluated by the caller.
+    """
+    previous_family = str(previous_semantic_family or "").strip().lower() or None
+    if previous_family is None:
+        context_family = str(previous_numeric_context.get("semantic_family") or "").strip()
+        previous_family = context_family.lower() or normalize_event_semantic_family(
+            symbol,
+            previous_event_key,
+        )
+    current_family = str(current_semantic_family or "").strip().lower() or None
+    if previous_family == current_family and previous_family is not None:
+        return False
+
+    previous_movement = _optional_float(
+        previous_numeric_context.get("analysed_window_change_percent")
+    )
+    if (
+        previous_family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES
+        or current_family not in PRICE_CONTEXT_EQUIVALENT_FAMILIES
+        or _movement_direction(previous_movement)
+        != _movement_direction(current_movement_percent)
+    ):
+        return False
+
+    previous_traits = {
+        str(value).strip() for value in previous_numeric_context.get("price_action_traits") or []
+        if str(value).strip()
+    }
+    current_traits = {
+        str(value).strip() for value in current_price_action_traits or [] if str(value).strip()
+    }
+    if not previous_traits or previous_traits != current_traits:
+        return False
+
+    previous_window = previous_numeric_context.get("analysed_window_minutes")
+    try:
+        normalized_previous_window = int(previous_window)
+        normalized_current_window = int(current_analysed_window_minutes)
+    except (TypeError, ValueError):
+        return False
+    if normalized_previous_window != normalized_current_window:
+        return False
+
+    return True
 
 def _optional_float(value: object) -> float | None:
     try:

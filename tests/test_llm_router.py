@@ -212,7 +212,7 @@ def test_provider_priority_defaults_when_unset(monkeypatch):
 def test_model_for_resolves_per_provider(monkeypatch):
     monkeypatch.delenv("GROQ_MARKET_HEARTBEAT_MODEL", raising=False)
     monkeypatch.delenv("CEREBRAS_MODEL", raising=False)
-    assert config.model_for("groq", "market_heartbeat") == "llama-3.1-8b-instant"
+    assert config.model_for("groq", "market_heartbeat") == "openai/gpt-oss-20b"
     assert config.model_for("cerebras", "daily_report") == "gpt-oss-120b"
     monkeypatch.setenv("CEREBRAS_MODEL", "custom-cerebras")
     assert config.model_for("cerebras", "event_analysis") == "custom-cerebras"

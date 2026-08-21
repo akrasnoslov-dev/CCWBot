@@ -47,6 +47,7 @@ class ProviderResult:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    max_tokens: int | None = None
     # Raw provider response object, retained so callers can reuse existing usage-logging
     # helpers that read token counts from the response.
     response: object = None
@@ -207,6 +208,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 retry_after_seconds, limited_until = start_llm_rate_limit_backoff(
                     provider=provider,
                     model=model,
+                    call_type=call_type,
                     error=error,
                     headers=headers,
                 )
@@ -233,5 +235,6 @@ class OpenAICompatibleProvider(BaseProvider):
             prompt_tokens=usage_int(response, "prompt_tokens"),
             completion_tokens=usage_int(response, "completion_tokens"),
             total_tokens=usage_int(response, "total_tokens"),
+            max_tokens=max_tokens,
             response=response,
         )

@@ -33,6 +33,16 @@ from bot.alerting.event_analysis import (
     validate_event_analysis_output,
     with_canonical_event_key,
 )
+from bot.alerting.event_significance import (
+    evaluate_event_significance,
+    significance_context,
+)
+from bot.alerting.event_text import (
+    compact_elapsed_since,
+    ensure_useful_situation,
+    sanitize_financial_instruction,
+    soften_possible_action,
+)
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_ANALYSIS_TYPE,
     MARKET_HEARTBEAT_TYPE,
@@ -59,14 +69,15 @@ from bot.db.database import (
     get_latest_market_heartbeat,
     get_latest_sent_alert_for_symbol,
     get_latest_sent_event_alert_context_for_symbol,
-    get_latest_sent_event_alert_for_event_key,
     get_latest_success_event_ai_analysis,
     get_market_event_by_instance_key,
     get_or_create_market_event,
     get_price_snapshots_since,
     get_price_state,
     get_recent_alert_delivery_outcome_by_context_fingerprint,
+    get_recent_sent_event_alert_contexts,
     get_reference_price_snapshot,
+    get_reusable_event_analysis_candidates,
     make_news_key,
     mark_user_bot_blocked,
     reserve_alert_delivery,
@@ -148,6 +159,8 @@ _event_semantic_cooldown_allows_escalation = (
 _event_semantic_cooldown_escalation_details = (
     _event_identity._event_semantic_cooldown_escalation_details
 )
+_event_cross_family_context_matches = _event_identity._event_cross_family_context_matches
+_price_action_context_traits = _event_identity._price_action_context_traits
 _format_analysed_window_label = _event_identity._format_analysed_window_label
 _json_dumps = _event_identity._json_dumps
 _numeric_context_payload = _event_identity._numeric_context_payload
@@ -231,6 +244,7 @@ SUPPRESSION_DELIVERY_FAILED = "delivery_failed"
 SUPPRESSION_LLM_RATE_LIMITED = "llm_rate_limited"
 SUPPRESSION_STALE_HEARTBEAT = "stale_heartbeat"
 SUPPRESSION_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
+SUPPRESSION_INSUFFICIENT_SIGNIFICANCE = "insufficient_significance"
 # Explicit tokens for two cases that previously logged `unknown` while the durable
 # alert_delivery_outcomes row recorded a real reason_code. That mismatch made 27.9% of
 # suppression log lines unattributable, so log-side and DB-side evidence could not be joined.
@@ -250,6 +264,7 @@ SUPPRESSION_REASON_VALUES = {
     SUPPRESSION_LLM_RATE_LIMITED,
     SUPPRESSION_STALE_HEARTBEAT,
     SUPPRESSION_SIMILAR_CONTEXT_REUSED,
+    SUPPRESSION_INSUFFICIENT_SIGNIFICANCE,
     SUPPRESSION_LLM_NO_ALERT,
     SUPPRESSION_ALREADY_DELIVERED,
     SUPPRESSION_DELIVERY_NOT_SCHEDULED,
@@ -282,18 +297,22 @@ REASON_LLM_SHOULD_ALERT = "llm_should_alert"
 REASON_LLM_NO_ALERT = "llm_no_alert"
 REASON_NEWS_ONLY_REJECTED = "news_only_rejected"
 REASON_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
+REASON_INSUFFICIENT_SIGNIFICANCE = "insufficient_significance"
 REASON_TELEGRAM_BOT_BLOCKED = "telegram_bot_blocked"
 
 DECISION_STAGE_PRE_LLM = "pre_llm"
 DECISION_STAGE_LLM = "llm"
+DECISION_STAGE_SIGNIFICANCE = "significance"
 DECISION_STAGE_SEMANTIC_COOLDOWN = "semantic_cooldown"
 DECISION_STAGE_DELIVERY = "delivery"
 DECISION_REASON_NEWS_ONLY_REJECTED = "news_only_rejected"
 DECISION_REASON_LLM_SHOULD_ALERT = "llm_should_alert"
 DECISION_REASON_LLM_NO_ALERT = "llm_no_alert"
 DECISION_REASON_SEMANTIC_COOLDOWN_SUPPRESSED = "semantic_cooldown_suppressed"
-DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED = "allowed_market_context_changed"
+DECISION_REASON_ALLOWED_URGENCY_ESCALATION = "allowed_urgency_escalation"
+DECISION_REASON_ALLOWED_STRONGER_MOVEMENT = "allowed_stronger_movement"
 DECISION_REASON_SIMILAR_CONTEXT_REUSED = "similar_context_reused"
+DECISION_REASON_SIGNIFICANCE_REJECTED = "significance_rejected"
 DECISION_REASON_DELIVERED = "delivered"
 DECISION_REASON_DELIVERY_FAILED = "delivery_failed"
 DECISION_REASON_NO_ELIGIBLE_RECIPIENT = "no_eligible_recipient"
@@ -324,6 +343,17 @@ class EventRecipientFilterResult:
     delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = field(
         default_factory=dict
     )
+
+@dataclass(frozen=True)
+class ReusableEventAnalysis:
+    decision: EventAnalysisDecision
+    current_context_decision: EventAnalysisDecision
+    market_event_id: int
+    event_instance_key: str
+    event_ai_analysis_id: int
+    alert_payload: dict
+    semantic_family: str | None
+    analysis_input_payload: dict
 
 @dataclass(frozen=True)
 class AlertRecipientResolution:
@@ -574,6 +604,7 @@ def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) 
                 "time": str(item.get("published_at") or "").strip(),
                 "summary": _truncate_text(str(item.get("summary") or ""), 300),
                 "relevance_label": str(item.get("relevance_label") or "").strip(),
+                "material": bool(is_material_news_item(item)),
             }
         )
     return compacted
@@ -711,6 +742,232 @@ async def _get_recent_event_analysis_decision_by_similarity(
             statuses={OUTCOME_DELIVERED},
         )
 
+def _stored_event_analysis_decision(analysis, *, event_key: str) -> EventAnalysisDecision | None:
+    required_text = {
+        "symbol": getattr(analysis, "symbol", None),
+        "title": getattr(analysis, "title", None),
+        "message_body": getattr(analysis, "message_body", None),
+        "possible_action": getattr(analysis, "possible_action", None),
+        "urgency": getattr(analysis, "urgency", None),
+        "confidence": getattr(analysis, "confidence", None),
+    }
+    if any(not str(value or "").strip() for value in required_text.values()):
+        return None
+    try:
+        related_news_ids = json.loads(str(getattr(analysis, "related_news_ids", None) or "[]"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(related_news_ids, list):
+        return None
+    return EventAnalysisDecision(
+        symbol=str(required_text["symbol"]),
+        should_alert=True,
+        event_key=event_key,
+        title=str(required_text["title"]),
+        message_body=str(required_text["message_body"]),
+        related_news_ids=[str(value) for value in related_news_ids],
+        possible_action=str(required_text["possible_action"]),
+        urgency=str(required_text["urgency"]),
+        confidence=str(required_text["confidence"]),
+        reason_for_no_alert=None,
+    )
+
+
+async def _get_reusable_event_analysis_by_context(
+    input_payload: dict,
+    *,
+    candidate_news: list[dict] | None = None,
+) -> ReusableEventAnalysis | None:
+    """Reuse one canonical attached analysis for this exact deterministic event context."""
+    if not DB_ENABLED or not DB_SESSION_LOCAL:
+        return None
+    bucket_started_at = datetime.fromisoformat(
+        _event_instance_bucket(input_payload.get("timestamp_utc"))
+    )
+    bucket_ended_at = bucket_started_at + timedelta(hours=1)
+    async with DB_SESSION_LOCAL() as session:
+        candidates = await get_reusable_event_analysis_candidates(
+            session,
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            bucket_started_at=bucket_started_at - timedelta(hours=1),
+            bucket_ended_at=bucket_ended_at + timedelta(hours=1),
+        )
+    for market_event, analysis in candidates:
+        plain_text = str(getattr(analysis, "plain_text", None) or "")
+        event_instance_key = str(
+            getattr(market_event, "event_instance_key", None) or ""
+        ).strip()
+        event_key = str(getattr(market_event, "event_key", None) or "").strip()
+        decision = _stored_event_analysis_decision(analysis, event_key=event_key)
+        if not plain_text.strip() or not event_instance_key or decision is None:
+            continue
+        try:
+            analysis_input_payload = json.loads(
+                str(getattr(analysis, "raw_input_json", None) or "")
+            )
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(analysis_input_payload, dict):
+            continue
+        stored_news = analysis_input_payload.get(
+            "news",
+            analysis_input_payload.get("candidate_news", []),
+        )
+        current_news = input_payload.get(
+            "news",
+            input_payload.get("candidate_news", []),
+        )
+        if not isinstance(stored_news, list) or not isinstance(current_news, list):
+            continue
+        stored_news_by_id = {
+            str(item.get("news_id") or ""): item
+            for item in stored_news
+            if isinstance(item, dict)
+        }
+        current_id_by_stable_identity = {
+            make_news_key(
+                {
+                    "source": item.get("source"),
+                    "title": item.get("title"),
+                }
+            ): str(item.get("news_id") or "")
+            for item in current_news
+            if isinstance(item, dict)
+        }
+        translated_related_news_ids: list[str] = []
+        translated_related_news_keys: list[str] = []
+        for stored_news_id in decision.related_news_ids:
+            stored_item = stored_news_by_id.get(str(stored_news_id))
+            if stored_item is None:
+                translated_related_news_ids = []
+                break
+            stable_identity = make_news_key(
+                {
+                    "source": stored_item.get("source"),
+                    "title": stored_item.get("title"),
+                }
+            )
+            current_news_id = current_id_by_stable_identity.get(stable_identity)
+            if not stable_identity or not current_news_id:
+                translated_related_news_ids = []
+                break
+            translated_related_news_ids.append(current_news_id)
+            translated_related_news_keys.append(stable_identity)
+        if decision.related_news_ids and not translated_related_news_ids:
+            continue
+        identity_decision = EventAnalysisDecision(
+            symbol=decision.symbol,
+            should_alert=True,
+            event_key=decision.event_key,
+            title=decision.title,
+            message_body=decision.message_body,
+            related_news_ids=translated_related_news_ids,
+            possible_action=decision.possible_action,
+            urgency=decision.urgency,
+            confidence=decision.confidence,
+            reason_for_no_alert=None,
+        )
+        current_instance_key = _event_instance_key_for_decision(
+            decision=identity_decision,
+            input_payload=input_payload,
+        )
+        if current_instance_key != event_instance_key:
+            continue
+        stored_html_text = str(getattr(analysis, "html_text", None) or "")
+        reconstructed_entities = None
+        if not stored_html_text.strip() and decision.related_news_ids:
+            candidates_by_stable_identity: dict[str, list[dict]] = {}
+            for item in candidate_news or []:
+                if not isinstance(item, dict):
+                    continue
+                stable_identity = make_news_key(
+                    {
+                        "source": item.get("source"),
+                        "title": item.get("title"),
+                    }
+                )
+                candidates_by_stable_identity.setdefault(stable_identity, []).append(item)
+            current_related_news = []
+            for stable_identity in translated_related_news_keys:
+                matching_items = candidates_by_stable_identity.get(stable_identity, [])
+                if len(matching_items) != 1:
+                    current_related_news = []
+                    break
+                current_related_news.append(matching_items[0])
+            if len(current_related_news) != len(translated_related_news_keys):
+                continue
+            reconstructed_payload = _build_event_alert_payload(
+                decision=identity_decision,
+                input_payload=input_payload,
+                related_news=current_related_news,
+            )
+            if reconstructed_payload["plain_text"] != plain_text:
+                continue
+            expected_urls = {
+                url
+                for item in current_related_news
+                if (url := _safe_telegram_link_url(item.get("url") or item.get("link")))
+            }
+            reconstructed_entities = reconstructed_payload.get("entities")
+            reconstructed_urls = {
+                str(getattr(entity, "url", None) or "")
+                for entity in reconstructed_entities or []
+                if getattr(entity, "url", None)
+            }
+            if len(expected_urls) != len(current_related_news) or not expected_urls.issubset(
+                reconstructed_urls
+            ):
+                continue
+            stored_html_text = str(reconstructed_payload.get("html_text") or "")
+        semantic_family = str(
+            analysis_input_payload.get("semantic_family") or ""
+        ).strip() or None
+        input_payload["raw_event_key"] = str(
+            analysis_input_payload.get("raw_event_key")
+            or getattr(analysis, "event_key", None)
+            or event_key
+        )
+        input_payload["canonical_event_key"] = event_key
+        input_payload["semantic_family"] = semantic_family
+        return ReusableEventAnalysis(
+            decision=decision,
+            current_context_decision=identity_decision,
+            market_event_id=int(market_event.id),
+            event_instance_key=event_instance_key,
+            event_ai_analysis_id=int(analysis.id),
+            alert_payload={
+                "plain_text": plain_text,
+                "html_text": stored_html_text or None,
+                "entities": None if stored_html_text else reconstructed_entities,
+            },
+            semantic_family=semantic_family,
+            analysis_input_payload=analysis_input_payload,
+        )
+    return None
+
+
+def _merge_existing_event_analysis_payload(
+    alert_payload: dict,
+    existing_analysis,
+) -> dict:
+    """Use one coherent render; incomplete canonical content cannot replace fresh content."""
+    stored_plain_text = getattr(existing_analysis, "plain_text", None)
+    stored_html_text = getattr(existing_analysis, "html_text", None)
+    if not (
+        isinstance(stored_plain_text, str)
+        and stored_plain_text.strip()
+        and isinstance(stored_html_text, str)
+        and stored_html_text.strip()
+    ):
+        return dict(alert_payload)
+    return {
+        "plain_text": stored_plain_text,
+        "html_text": stored_html_text,
+        "entities": None,
+    }
+
+
 async def _record_similar_context_reuse(
     input_payload: dict,
     previous_outcome,
@@ -786,7 +1043,9 @@ def _compact_event_snapshot(snapshot: dict, *, now: datetime) -> dict:
     minutes = int(round(delta_seconds / 60))
     return {
         "m": minutes,
-        "p": _stable_float(float(snapshot["price_usd"]), 2),
+        # Preserve enough significant digits for low-priced assets such as GRAM.
+        # Message rendering rounds separately; these points are backend evidence.
+        "p": float(f'{float(snapshot["price_usd"]):.10g}'),
     }
 
 def _compact_event_snapshots(snapshots_payload: list[dict], *, now: datetime) -> list[dict]:
@@ -1267,6 +1526,8 @@ def _event_alert_market_context_lines(
     symbol: str,
     price: float | None,
     change_since_message: float | None,
+    last_message_at: object = None,
+    current_at: object = None,
     analysed_window_minutes: int | None,
     analysed_window_change: float | None,
 ) -> list[str]:
@@ -1274,8 +1535,11 @@ def _event_alert_market_context_lines(
     if price is not None:
         lines.append(f"Price: {_format_optional_price(price)}")
     if change_since_message is not None:
+        elapsed = compact_elapsed_since(last_message_at, current_at)
+        elapsed_suffix = f" ({elapsed})" if elapsed else ""
         lines.append(
-            f"Since last alert/message: {_format_optional_percent(change_since_message)}"
+            "Since last alert/message"
+            f"{elapsed_suffix}: {_format_optional_percent(change_since_message)}"
         )
     if analysed_window_minutes is not None and analysed_window_change is not None:
         analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
@@ -1313,6 +1577,7 @@ def _build_event_alert_payload(
         symbol=symbol,
         market_data=market_data,
     )
+    title = sanitize_financial_instruction(title, fallback=f"{symbol} market conditions changed")
     message_body = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(
             decision.message_body,
@@ -1326,6 +1591,14 @@ def _build_event_alert_payload(
         field_name="message_body",
         symbol=symbol,
         market_data=market_data,
+    )
+    message_body = ensure_useful_situation(
+        message_body,
+        significance_reason=(input_payload.get("backend_significance") or {}).get("reason"),
+    )
+    message_body = sanitize_financial_instruction(
+        message_body,
+        fallback="Market conditions changed; review the market context and your risk plan.",
     )
     possible_action = _guard_small_move_dramatic_event_text(
         _sanitize_event_text(
@@ -1341,6 +1614,7 @@ def _build_event_alert_payload(
         symbol=symbol,
         market_data=market_data,
     )
+    possible_action = soften_possible_action(possible_action, urgency=decision.urgency)
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
         empty_text="",
@@ -1355,6 +1629,8 @@ def _build_event_alert_payload(
         symbol=symbol,
         price=price,
         change_since_message=change_since_message,
+        last_message_at=(input_payload.get("last_msg") or {}).get("time"),
+        current_at=input_payload.get("timestamp_utc"),
         analysed_window_minutes=analysed_window_minutes,
         analysed_window_change=analysed_window_change,
     )
@@ -1420,12 +1696,27 @@ def _event_numeric_context(
             ),
             "analysed_window_minutes": market_data.get("analysed_window_minutes"),
             "analysed_window_change_percent": market_data.get("chg_window"),
+            "cumulative_change_percent": (input_payload.get("backend_significance") or {}).get(
+                "cumulative_change_percent"
+            ),
+            "persistence_ratio": (input_payload.get("backend_significance") or {}).get(
+                "persistence_ratio"
+            ),
+            "acceleration_ratio": (input_payload.get("backend_significance") or {}).get(
+                "acceleration_ratio"
+            ),
             "twenty_four_hour_change_percent": market_data.get(
                 "chg24h", market_data.get("change_24h_percent")
             ),
             "event_key": decision.event_key,
             "raw_event_key": _raw_event_key_from_payload(input_payload, decision),
             "semantic_family": _semantic_family_from_payload(input_payload),
+            "price_action_traits": _price_action_context_traits(
+                semantic_family=_semantic_family_from_payload(input_payload),
+                raw_event_key=_raw_event_key_from_payload(input_payload, decision),
+                title=decision.title,
+                message_body=decision.message_body,
+            ),
             "event_instance_key": event_instance_key,
             "stable_related_news_ids": _stable_related_news_ids(
                 input_payload,
@@ -2470,10 +2761,6 @@ async def _build_event_analysis_input(
             }
             for snapshot in selection.window_snapshots
         )
-        snapshots_payload = _select_representative_snapshots(
-            snapshots_payload,
-            limit=EVENT_ANALYSIS_PAYLOAD_POINTS,
-        )
     else:
         last_message_at = state.get("last_alert_at")
         last_message_type = EVENT_ALERT_TYPE if last_message_at else None
@@ -2503,6 +2790,20 @@ async def _build_event_analysis_input(
                     "price_usd": fallback_previous_price,
                 }
             ]
+    current_observation = {
+        "timestamp_utc": now.astimezone(timezone.utc).isoformat(),
+        "price_usd": float(current_price),
+    }
+    if not snapshots_payload or (
+        float(snapshots_payload[-1]["price_usd"]) != float(current_price)
+        or str(snapshots_payload[-1]["timestamp_utc"])
+        != current_observation["timestamp_utc"]
+    ):
+        snapshots_payload.append(current_observation)
+    snapshots_payload = _select_representative_snapshots(
+        snapshots_payload,
+        limit=EVENT_ANALYSIS_PAYLOAD_POINTS,
+    )
     if window_reference_price is None and snapshots_payload and not db_snapshots_available:
         window_reference_price = float(snapshots_payload[0]["price_usd"])
     analysed_window_change = _calculate_price_change(current_price, window_reference_price)
@@ -2635,8 +2936,23 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
     parsed = None
     usage_log_id = None
+    candidate_news_ids = {
+        str(item["news_id"])
+        for item in input_payload.get("news", input_payload.get("candidate_news", []))
+    }
+
+    def _schema_check(provider_parsed: dict) -> None:
+        try:
+            validate_market_heartbeat_output(
+                provider_parsed,
+                expected_symbol=str(input_payload["symbol"]),
+                candidate_news_ids=candidate_news_ids,
+            )
+        except MarketHeartbeatValidationError as error:
+            raise AISchemaValidationError(str(error)) from error
+
     try:
-        result = await ask_market_heartbeat_raw(input_payload)
+        result = await ask_market_heartbeat_raw(input_payload, schema_check=_schema_check)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
     except LLMRateLimitBackoffActive as error:
@@ -2666,10 +2982,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         decision = validate_market_heartbeat_output(
             parsed,
             expected_symbol=str(input_payload["symbol"]),
-            candidate_news_ids={
-                str(item["news_id"])
-                for item in input_payload.get("news", input_payload.get("candidate_news", []))
-            },
+            candidate_news_ids=candidate_news_ids,
         )
     except MarketHeartbeatValidationError as error:
         await mark_llm_usage_log_status(
@@ -3283,6 +3596,10 @@ async def _filter_event_recipients_for_cooldown(
     canonical_event_key: str | None = None,
     semantic_family: str | None = None,
     current_movement_percent: float | None = None,
+    current_analysed_window_minutes: int | None = None,
+    current_price_action_traits: list[str] | None = None,
+    current_cumulative_change_percent: float | None = None,
+    current_persistence_ratio: float | None = None,
     current_stable_news_ids: list[str] | None = None,
     semantic_cooldown_seconds: int = EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS,
     now: datetime,
@@ -3315,19 +3632,56 @@ async def _filter_event_recipients_for_cooldown(
     suppression_reason_counts: dict[str, int] = {}
     delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] = {}
     async with DB_SESSION_LOCAL() as session:
+        recent_contexts_by_user: dict[int, list[tuple[object, str | None, str | None]]] = {}
+        if canonical_event_key and semantic_cooldown_seconds > 0:
+            user_ids = [recipient.user_id for recipient in recipients if recipient.user_id]
+            recent_contexts = await get_recent_sent_event_alert_contexts(
+                session,
+                user_ids=user_ids,
+                symbol=symbol,
+                alert_type=EVENT_ALERT_TYPE,
+                since=now - timedelta(seconds=semantic_cooldown_seconds),
+            )
+            for alert, previous_event_key, previous_semantic_family in recent_contexts:
+                recent_contexts_by_user.setdefault(alert.user_id, []).append(
+                    (alert, previous_event_key, previous_semantic_family)
+                )
         for recipient in recipients:
             if recipient.user_id is None:
                 filtered.append(recipient)
                 continue
             if canonical_event_key and semantic_cooldown_seconds > 0:
-                previous_semantic_alert = await get_latest_sent_event_alert_for_event_key(
-                    session,
-                    user_id=recipient.user_id,
-                    symbol=symbol,
-                    canonical_event_key=canonical_event_key,
-                    alert_type=EVENT_ALERT_TYPE,
-                    semantic_family=semantic_family,
-                )
+                previous_semantic_alert = None
+                for previous_alert, previous_event_key, previous_family in (
+                    recent_contexts_by_user.get(recipient.user_id, [])
+                ):
+                    previous_context = _numeric_context_payload(previous_alert.numeric_context)
+                    stored_family = (
+                        str(previous_family or previous_context.get("semantic_family") or "")
+                        .strip()
+                        .lower()
+                        or None
+                    )
+                    normalized_current_family = (
+                        str(semantic_family or "").strip().lower() or None
+                    )
+                    exact_identity_match = previous_event_key == canonical_event_key or (
+                        normalized_current_family is not None
+                        and stored_family == normalized_current_family
+                    )
+                    cross_family_match = _event_cross_family_context_matches(
+                        symbol=symbol,
+                        previous_event_key=previous_event_key,
+                        previous_semantic_family=stored_family,
+                        previous_numeric_context=previous_context,
+                        current_semantic_family=semantic_family,
+                        current_movement_percent=current_movement_percent,
+                        current_analysed_window_minutes=current_analysed_window_minutes,
+                        current_price_action_traits=current_price_action_traits,
+                    )
+                    if exact_identity_match or cross_family_match:
+                        previous_semantic_alert = previous_alert
+                        break
                 last_semantic_sent_at = (
                     previous_semantic_alert.created_at if previous_semantic_alert else None
                 )
@@ -3344,6 +3698,39 @@ async def _filter_event_recipients_for_cooldown(
                             current_stable_news_ids=current_stable_news_ids or [],
                         )
                     )
+                    previous_context = _numeric_context_payload(
+                        previous_semantic_alert.numeric_context
+                    )
+                    previous_movement = _optional_float(
+                        previous_context.get("analysed_window_change_percent")
+                    )
+                    previous_traits = {
+                        str(value) for value in previous_context.get("price_action_traits") or []
+                    }
+                    current_traits = {str(value) for value in current_price_action_traits or []}
+                    high_signal_traits = {
+                        "level_break", "volatility_reversal",
+                        "level_side_above", "level_side_below",
+                    }
+                    direction_reversed = (
+                        previous_movement is not None
+                        and current_movement_percent is not None
+                        and previous_movement * current_movement_percent < 0
+                    )
+                    structure_changed = bool(
+                        (previous_traits ^ current_traits) & high_signal_traits
+                    )
+                    previous_cumulative = _optional_float(
+                        previous_context.get("cumulative_change_percent")
+                    )
+                    cumulative_strengthened = (
+                        previous_cumulative is not None
+                        and current_cumulative_change_percent is not None
+                        and current_persistence_ratio is not None
+                        and current_persistence_ratio >= 0.67
+                        and abs(current_cumulative_change_percent)
+                        >= abs(previous_cumulative) + 1.0
+                    )
                     if last_semantic_sent_at.tzinfo is None:
                         last_semantic_sent_at = last_semantic_sent_at.replace(
                             tzinfo=timezone.utc
@@ -3353,6 +3740,14 @@ async def _filter_event_recipients_for_cooldown(
                     ).total_seconds()
                     semantic_remaining = max(0, int(semantic_cooldown_seconds - elapsed))
                     semantic_allowed = elapsed >= semantic_cooldown_seconds
+                    if not semantic_allowed:
+                        if direction_reversed:
+                            semantic_allowed, semantic_allow_reason = True, "direction_reversed"
+                        elif structure_changed:
+                            semantic_allowed, semantic_allow_reason = True, "structure_changed"
+                        elif cumulative_strengthened:
+                            semantic_allowed = True
+                            semantic_allow_reason = "cumulative_strengthened"
                     if not semantic_allowed:
                         (
                             semantic_allowed,
@@ -3421,11 +3816,24 @@ async def _filter_event_recipients_for_cooldown(
                     )
                     continue
                 if semantic_allow_reason:
-                    delivery_decision_reasons_by_recipient[_recipient_decision_key(recipient)] = (
-                        DECISION_REASON_ALLOWED_MARKET_CONTEXT_CHANGED
-                    )
+                    reason_by_allow = {
+                        "urgency_increased": DECISION_REASON_ALLOWED_URGENCY_ESCALATION,
+                        "material_movement_increased": DECISION_REASON_ALLOWED_STRONGER_MOVEMENT,
+                        "direction_reversed": "allowed_direction_reversal",
+                        "structure_changed": "allowed_market_structure_change",
+                        "cumulative_strengthened": "allowed_cumulative_strengthening",
+                    }
+                    recipient_key = _recipient_decision_key(recipient)
+                    delivery_decision_reasons_by_recipient[recipient_key] = reason_by_allow[
+                        semantic_allow_reason
+                    ]
                     filtered.append(recipient)
                     continue
+            if canonical_event_key:
+                # A genuinely different significant event is not blocked by a broad
+                # same-symbol quota. Exact/semantic repeats were handled above.
+                filtered.append(recipient)
+                continue
             if effective_cooldown <= 0:
                 filtered.append(recipient)
                 continue
@@ -4839,9 +5247,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_settings.get("automatic_check_interval_seconds", 300)
                 ),
             )
-            similar_context_outcome = await _get_recent_event_analysis_decision_by_similarity(
+            reusable_analysis = await _get_reusable_event_analysis_by_context(
                 input_payload,
-                now=now,
+                candidate_news=candidate_news,
+            )
+            similar_context_outcome = (
+                None
+                if reusable_analysis is not None
+                else await _get_recent_event_analysis_decision_by_similarity(
+                    input_payload,
+                    now=now,
+                )
             )
             if similar_context_outcome is not None:
                 # Still a detection, even though the LLM is skipped. Recording it here keeps
@@ -4885,8 +5301,23 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 alert_threshold_percent=_optional_float(
                     alert_settings.get("price_move_alert_percent")
                 ),
+                skipped_llm=(
+                    "existing_event_analysis_reused"
+                    if reusable_analysis is not None
+                    else None
+                ),
             )
-            decision, event_ai_analysis_id = await _create_event_analysis_decision(input_payload)
+            if reusable_analysis is not None:
+                decision = reusable_analysis.decision
+                event_ai_analysis_id = reusable_analysis.event_ai_analysis_id
+                logger.info(
+                    "%s existing market event analysis reused before LLM.",
+                    symbol.upper(),
+                )
+            else:
+                decision, event_ai_analysis_id = await _create_event_analysis_decision(
+                    input_payload
+                )
             context_fingerprint = _event_context_fingerprint(input_payload)
             if decision is None:
                 news_delivered = False
@@ -5001,27 +5432,93 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 )
                 continue
 
-            (
-                market_event_id,
-                _,
-                event_instance_key,
-                _reused_market_event,
-            ) = await _get_or_create_event_alert_market_event(
-                decision=decision,
-                input_payload=input_payload,
+            significance = evaluate_event_significance(
+                input_payload,
+                urgency=decision.urgency,
+                related_news=_selected_event_analysis_news(
+                    input_payload, decision.related_news_ids
+                ),
             )
-            related_news = _related_news_by_id(
-                candidate_news,
-                decision.related_news_ids,
-                symbol=symbol,
-                context="event analysis",
-            )
-            alert_payload = _build_event_alert_payload(
-                decision=decision,
-                input_payload=input_payload,
-                related_news=related_news,
-            )
-            if DB_ENABLED and DB_SESSION_LOCAL and market_event_id is not None:
+            input_payload["backend_significance"] = significance_context(significance)
+            if not significance.is_significant:
+                await _record_alert_delivery_outcome(
+                    symbol=symbol,
+                    alert_type=EVENT_ALERT_TYPE,
+                    status=OUTCOME_NOT_SCHEDULED,
+                    reason_code=REASON_INSUFFICIENT_SIGNIFICANCE,
+                    event_ai_analysis_id=event_ai_analysis_id,
+                    trigger_source=EVENT_ANALYSIS_TYPE,
+                    semantic_family=_semantic_family_from_payload(input_payload),
+                    decision_stage=DECISION_STAGE_SIGNIFICANCE,
+                    decision_reason=DECISION_REASON_SIGNIFICANCE_REJECTED,
+                    previous_alert_id=await _get_previous_event_alert_id(symbol),
+                    context_fingerprint=context_fingerprint,
+                    detail=significance.reason,
+                )
+                _log_event_alert_suppression(
+                    symbol=symbol,
+                    suppression_reason=SUPPRESSION_INSUFFICIENT_SIGNIFICANCE,
+                    suppression_count=1,
+                    raw_event_key=_raw_event_key_from_payload(input_payload, decision),
+                    canonical_event_key=decision.event_key,
+                    semantic_family=_semantic_family_from_payload(input_payload),
+                    analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
+                )
+                logger.info(
+                    "%s Event Alert rejected by backend significance policy: %s",
+                    symbol.upper(),
+                    significance.reason,
+                )
+                await _deliver_market_heartbeat(
+                    app,
+                    symbol=symbol,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    now=now,
+                )
+                await _save_price_state(
+                    symbol=symbol,
+                    state=state,
+                    current_price=current_price,
+                    change_24h=change_24h,
+                    change_7d=change_7d if isinstance(change_7d, float) else None,
+                    checked_at=checked_at,
+                    last_alert_at=None,
+                )
+                continue
+
+            if reusable_analysis is not None:
+                market_event_id = reusable_analysis.market_event_id
+                event_instance_key = reusable_analysis.event_instance_key
+                alert_payload = reusable_analysis.alert_payload
+                news_items = []
+            else:
+                (
+                    market_event_id,
+                    _,
+                    event_instance_key,
+                    _reused_market_event,
+                ) = await _get_or_create_event_alert_market_event(
+                    decision=decision,
+                    input_payload=input_payload,
+                )
+                related_news = _related_news_by_id(
+                    candidate_news,
+                    decision.related_news_ids,
+                    symbol=symbol,
+                    context="event analysis",
+                )
+                alert_payload = _build_event_alert_payload(
+                    decision=decision,
+                    input_payload=input_payload,
+                    related_news=related_news,
+                )
+            if (
+                reusable_analysis is None
+                and DB_ENABLED
+                and DB_SESSION_LOCAL
+                and market_event_id is not None
+            ):
                 async with DB_SESSION_LOCAL() as session:
                     existing_analysis = await get_latest_success_event_ai_analysis(
                         session,
@@ -5029,16 +5526,17 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     )
                     if existing_analysis:
                         event_ai_analysis_id = existing_analysis.id
-                        if existing_analysis.plain_text:
-                            alert_payload["plain_text"] = existing_analysis.plain_text
-                        if existing_analysis.html_text:
-                            alert_payload["html_text"] = existing_analysis.html_text
+                        alert_payload = _merge_existing_event_analysis_payload(
+                            alert_payload,
+                            existing_analysis,
+                        )
                     else:
                         analysis = await attach_analysis_to_market_event(
                             session,
                             analysis_id=analysis_id,
                             market_event_id=market_event_id,
                             plain_text=alert_payload["plain_text"],
+                            html_text=alert_payload["html_text"],
                         )
                         event_ai_analysis_id = analysis.id if analysis else event_ai_analysis_id
             await _record_recipient_outcomes(
@@ -5053,17 +5551,36 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 context_fingerprint=context_fingerprint,
             )
 
+            cooldown_decision = (
+                reusable_analysis.current_context_decision
+                if reusable_analysis is not None
+                else decision
+            )
             recipient_filter = await _filter_event_recipients_for_cooldown(
                 candidate_recipients,
                 symbol=symbol,
-                urgency=decision.urgency,
+                urgency=cooldown_decision.urgency,
                 cooldown_seconds=int(alert_settings.get("automatic_check_interval_seconds", 300)),
-                canonical_event_key=decision.event_key,
+                canonical_event_key=cooldown_decision.event_key,
                 semantic_family=_semantic_family_from_payload(input_payload),
                 current_movement_percent=_event_movement_percent_from_payload(input_payload),
+                current_analysed_window_minutes=_analysed_window_minutes_from_payload(
+                    input_payload
+                ),
+                current_price_action_traits=_price_action_context_traits(
+                    semantic_family=_semantic_family_from_payload(input_payload),
+                    raw_event_key=_raw_event_key_from_payload(
+                        input_payload,
+                        cooldown_decision,
+                    ),
+                    title=cooldown_decision.title,
+                    message_body=cooldown_decision.message_body,
+                ),
+                current_cumulative_change_percent=significance.cumulative_change_percent,
+                current_persistence_ratio=significance.persistence_ratio,
                 current_stable_news_ids=_stable_related_news_ids(
                     input_payload,
-                    decision.related_news_ids,
+                    cooldown_decision.related_news_ids,
                 ),
                 now=now,
                 return_summary=True,
@@ -5164,7 +5681,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 event_instance_key=event_instance_key,
                 analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
                 numeric_context=_event_numeric_context(
-                    input_payload,
+                    (
+                        reusable_analysis.analysis_input_payload
+                        if reusable_analysis is not None
+                        else input_payload
+                    ),
                     decision,
                     event_instance_key=event_instance_key,
                 ),

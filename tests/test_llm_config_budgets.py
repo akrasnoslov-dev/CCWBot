@@ -174,7 +174,7 @@ def test_invalid_reasoning_effort_falls_back_and_warns(monkeypatch, caplog):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") is None
+        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "low"
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
 
@@ -193,9 +193,9 @@ def test_unknown_provider_name_in_a_chain_warns(monkeypatch, caplog):
 # --- reasoning effort ------------------------------------------------------------------
 
 
-def test_reasoning_effort_is_unset_by_default():
+def test_reasoning_effort_defaults_to_low_for_reasoning_models():
     for call_type in llm_config.KNOWN_CALL_TYPES:
-        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", call_type) is None
+        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", call_type) == "low"
 
 
 def test_reasoning_effort_per_call_type_wins_over_global(monkeypatch):
@@ -214,7 +214,7 @@ def test_reasoning_effort_only_reaches_reasoning_models(monkeypatch):
     assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for("gpt-oss-20b", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for("llama-3.3-70b-versatile", "event_analysis") is None
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") is None
+    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for(None, "event_analysis") is None
 
 
@@ -235,7 +235,12 @@ def test_invalid_per_call_type_effort_does_not_inherit_the_global_value(monkeypa
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") is None
+        assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") == "low"
+        assert llm_config.effective_max_tokens_for(
+            call_type="event_analysis",
+            provider="groq",
+            model="gpt-oss-120b",
+        ) == llm_config.max_tokens_for("event_analysis") + 1024
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
 
@@ -245,12 +250,10 @@ def test_reasoning_model_markers_are_configurable(monkeypatch):
     monkeypatch.setenv("LLM_REASONING_MODEL_MARKERS", "magistral")
 
     assert llm_config.reasoning_effort_for("magistral-medium-latest", "event_analysis") == "low"
-    assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") is None
+    assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") == "low"
 
 
-def test_global_reasoning_effort_does_not_reach_the_default_chain(monkeypatch):
-    # Regression guard: setting only the global knob must not put reasoning_effort on the
-    # llama models the default configuration actually runs.
+def test_global_reasoning_effort_reaches_only_reasoning_models_in_default_chain(monkeypatch):
     monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
     for name in ("GROQ_EVENT_ANALYSIS_MODEL", "GROQ_MARKET_HEARTBEAT_MODEL", "GROQ_REPORT_MODEL",
                  "GROQ_NEWS_INTELLIGENCE_MODEL", "GEMINI_MODEL", "MISTRAL_MODEL"):
@@ -259,7 +262,8 @@ def test_global_reasoning_effort_does_not_reach_the_default_chain(monkeypatch):
     for call_type in llm_config.KNOWN_CALL_TYPES:
         for provider in ("groq", "gemini", "mistral"):
             model = llm_config.model_for(provider, call_type)
-            assert llm_config.reasoning_effort_for(model, call_type) is None
+            expected = "high" if llm_config.is_reasoning_model(model) else None
+            assert llm_config.reasoning_effort_for(model, call_type) == expected
 
 
 class _RecordingProvider(BaseProvider):
@@ -289,11 +293,33 @@ async def _route(monkeypatch, provider, *, call_type="event_analysis", max_token
 
 
 @pytest.mark.asyncio
-async def test_router_omits_reasoning_effort_when_unset(monkeypatch):
+async def test_router_uses_low_reasoning_effort_by_default(monkeypatch):
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
     provider = _RecordingProvider("groq")
     await _route(monkeypatch, provider)
-    assert provider.seen[0]["reasoning_effort"] is None
+    assert provider.seen[0]["reasoning_effort"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_router_raises_only_thinking_attempt_budget(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,mistral")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("MISTRAL_MODEL", "mistral-small-latest")
+    groq = _RecordingProvider("groq")
+    mistral = _RecordingProvider("mistral")
+    router = LLMRouter(registry={"groq": groq, "mistral": mistral})
+
+    await router.chat_completion(
+        call_type="event_analysis",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=300,
+        response_format=None,
+    )
+
+    assert groq.seen[0]["max_tokens"] == 1324
+    assert mistral.seen == []
 
 
 @pytest.mark.asyncio
@@ -303,6 +329,21 @@ async def test_router_passes_configured_reasoning_effort(monkeypatch):
     provider = _RecordingProvider("groq")
     await _route(monkeypatch, provider)
     assert provider.seen[0]["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_router_uses_low_effort_and_matching_headroom_after_invalid_override(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
+    provider = _RecordingProvider("groq")
+
+    await _route(monkeypatch, provider, max_tokens=300)
+
+    assert provider.seen[0] == {
+        "model": "openai/gpt-oss-120b",
+        "max_tokens": 1324,
+        "reasoning_effort": "low",
+    }
 
 
 @pytest.mark.asyncio
@@ -377,6 +418,35 @@ async def test_request_payload_includes_reasoning_effort_when_set(monkeypatch):
     assert kwargs["reasoning_effort"] == "low"
 
 
+@pytest.mark.asyncio
+async def test_gemini_adapter_uses_verified_openai_compatible_reasoning_contract(monkeypatch):
+    from bot.services.llm.gemini_provider import GeminiProvider
+
+    provider = GeminiProvider()
+    client = _CapturingClient()
+    monkeypatch.setattr(provider, "get_client", lambda: client)
+    model = "gemini-2.5-flash"
+    max_tokens = llm_config.effective_max_tokens_for(
+        call_type="daily_report",
+        provider="gemini",
+        model=model,
+        requested_max_tokens=800,
+    )
+    await provider.chat_completion(
+        call_type="daily_report",
+        symbol=None,
+        model=model,
+        messages=[{"role": "user", "content": "Return JSON."}],
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+        reasoning_effort=llm_config.reasoning_effort_for(model, "daily_report"),
+    )
+
+    assert client.completions.kwargs["reasoning_effort"] == "low"
+    assert client.completions.kwargs["max_tokens"] == 1824
+    assert client.completions.kwargs["response_format"] == {"type": "json_object"}
+
+
 def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_MAX_TOKENS", "300000")
 
@@ -392,7 +462,7 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
 @pytest.mark.parametrize(
     ("provider", "env_name", "expected"),
     [
-        ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile"),
+        ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
         ("cerebras", "CEREBRAS_MODEL", "gpt-oss-120b"),
         ("gemini", "GEMINI_MODEL", "gemini-2.5-flash"),
         ("mistral", "MISTRAL_MODEL", "mistral-small-latest"),
@@ -447,7 +517,7 @@ def test_startup_log_marks_providers_without_an_api_key(monkeypatch, caplog):
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
-    assert "cerebras:gpt-oss-120b(no_api_key)" in joined
+    assert "cerebras:gpt-oss-120b/effort=low/max=1324(no_api_key)" in joined
     assert "groq:llama-3.3-70b-versatile(no_api_key)" not in joined
 
 
@@ -465,22 +535,19 @@ def test_startup_log_contains_no_environment_values_or_credentials(monkeypatch, 
     assert "effort=low" in joined
 
 
-def test_startup_log_warns_when_a_thinking_model_has_no_room_to_answer(monkeypatch, caplog):
-    # The shipped default: gpt-oss on Cerebras behind a 300-token event-analysis budget. The
-    # model spends the budget reasoning and returns an empty completion, so the fallback is
-    # configured to fail. That must be visible at startup, not one dead call at a time.
+def test_startup_log_reports_safe_effective_budget_for_thinking_model(monkeypatch, caplog):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cerebras")
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
     monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-key")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
     monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
 
-    with caplog.at_level(logging.WARNING, logger="bot.services.llm.config"):
+    with caplog.at_level(logging.INFO, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
 
-    risks = [r.getMessage() for r in caplog.records if "llm_config_budget_risk" in r.getMessage()]
-    assert any("provider=cerebras" in message for message in risks)
-    assert all("provider=groq" not in message for message in risks)
+    joined = "\n".join(record.getMessage() for record in caplog.records)
+    assert "cerebras:gpt-oss-120b/effort=low/max=1324" in joined
+    assert "llm_config_budget_risk" not in joined
 
 
 def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, caplog):
@@ -514,12 +581,54 @@ def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch
     assert not [r for r in caplog.records if "llm_config_budget_risk" in r.getMessage()]
 
 
-def test_gemini_thinking_model_is_flagged_but_never_sent_reasoning_effort(monkeypatch):
-    # Gemini 2.5 thinks by default, but its OpenAI-compatible endpoint rejects
-    # reasoning_effort, so it must warn on budget yet stay out of the effort gate.
-    monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+def test_gemini_thinking_model_uses_supported_low_reasoning_effort(monkeypatch):
     assert llm_config.is_thinking_model("gemini-2.5-flash") is True
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") is None
+    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "low"
+
+
+@pytest.mark.parametrize(
+    ("call_type", "base_budget", "effective_budget"),
+    [
+        ("event_analysis", 300, 1324),
+        ("market_heartbeat", 350, 1374),
+        ("daily_report", 800, 1824),
+        ("weekly_report", 800, 1824),
+        ("news_intelligence", 350, 1374),
+        ("legacy_alert_payload", 450, 1474),
+    ],
+)
+def test_thinking_budget_preserves_call_type_answer_ceiling(
+    call_type, base_budget, effective_budget
+):
+    assert llm_config.max_tokens_for(call_type) == base_budget
+    assert llm_config.effective_max_tokens_for(
+        call_type=call_type,
+        provider="groq",
+        model="openai/gpt-oss-20b",
+    ) == effective_budget
+
+
+@pytest.mark.parametrize(
+    ("effort", "effective_budget"),
+    [("low", 1824), ("medium", 8992), ("high", 25376)],
+)
+def test_gemini_budget_tracks_configured_reasoning_effort(
+    monkeypatch, effort, effective_budget
+):
+    monkeypatch.setenv("LLM_REPORT_REASONING_EFFORT", effort)
+
+    assert llm_config.effective_max_tokens_for(
+        call_type="daily_report",
+        provider="gemini",
+        model="gemini-2.5-flash",
+        requested_max_tokens=800,
+    ) == effective_budget
+
+
+def test_builtin_reasoning_markers_survive_legacy_extension_value(monkeypatch):
+    monkeypatch.setenv("LLM_REASONING_MODEL_MARKERS", "gpt-oss")
+
+    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "daily_report") == "low"
 
 
 def test_startup_log_cannot_be_forged_by_a_newline_in_a_model_value(monkeypatch, caplog):

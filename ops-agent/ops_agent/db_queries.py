@@ -11,7 +11,12 @@ class DbQuery:
     sql: str
 
 
-ACTIVE_SYMBOL_VALUES_SQL = "VALUES ('btc'), ('eth'), ('gram'), ('sol')"
+ACTIVE_SYMBOLS = ("btc", "eth", "gram", "sol")
+ACTIVE_SYMBOL_VALUES_SQL = "VALUES " + ", ".join(
+    f"('{symbol}')" for symbol in ACTIVE_SYMBOLS
+)
+MARKET_DATA_FRESHNESS_GRACE_SECONDS = 120
+EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS = 1800
 DAILY_REPORT_RUNTIME_INTERVAL_SECONDS = 14400
 WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS = 86400
 DAILY_REPORT_FRESHNESS_GRACE_SECONDS = 3600
@@ -100,28 +105,38 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         "WITH settings AS ("
         "SELECT event_analysis_interval_seconds FROM ("
-        "(SELECT greatest(coalesce(automatic_check_interval_seconds, 1800), 1) AS event_analysis_interval_seconds, 0 AS priority "
+        f"(SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS event_analysis_interval_seconds, 0 AS priority "
         "FROM app_settings ORDER BY id DESC LIMIT 1) "
         "UNION ALL "
-        "(SELECT 1800 AS event_analysis_interval_seconds, 1 AS priority "
+        f"(SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS event_analysis_interval_seconds, 1 AS priority "
         "WHERE NOT EXISTS (SELECT 1 FROM app_settings))"
         ") rows ORDER BY priority LIMIT 1), "
-        "eligible_symbols AS ("
-        "SELECT count(DISTINCT lower(ucs.symbol)) AS symbols "
+        "active_symbols(symbol) AS ("
+        f"{ACTIVE_SYMBOL_VALUES_SQL}"
+        "), eligible_subscription_symbols AS ("
+        "SELECT DISTINCT lower(ucs.symbol) AS symbol "
         "FROM user_coin_subscriptions ucs "
         "JOIN users u ON u.id = ucs.user_id "
         "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
         "WHERE u.telegram_chat_id IS NOT NULL AND u.is_active = true AND u.bot_blocked = false "
         "AND ucs.is_enabled = true "
-        "AND (lower(ucs.symbol) = 'btc' OR ups.active_until >= :until)) "
+        "AND (lower(ucs.symbol) = 'btc' OR ups.active_until > :until)) "
+        ", eligible_symbol_counts AS ("
+        "SELECT count(*) AS configured_symbols, "
+        "count(*) FILTER (WHERE es.symbol IN (SELECT symbol FROM active_symbols)) AS active_symbols, "
+        "count(*) FILTER (WHERE es.symbol NOT IN (SELECT symbol FROM active_symbols)) "
+        "AS inactive_configured_symbols FROM eligible_subscription_symbols es) "
         "SELECT s.event_analysis_interval_seconds, 6 AS payload_points, "
         "ceil((s.event_analysis_interval_seconds * 6) / 60.0)::integer AS analysed_window_minutes, "
-        "coalesce(e.symbols, 0) AS eligible_symbols, "
-        "round((coalesce(e.symbols, 0) * 3600.0 / s.event_analysis_interval_seconds)::numeric, 2) "
+        "coalesce(e.configured_symbols, 0) AS configured_eligible_symbols, "
+        "coalesce(e.active_symbols, 0) AS active_eligible_symbols, "
+        "coalesce(e.inactive_configured_symbols, 0) AS inactive_configured_eligible_symbols, "
+        "coalesce(e.active_symbols, 0) AS eligible_symbols, "
+        "round((coalesce(e.active_symbols, 0) * 3600.0 / s.event_analysis_interval_seconds)::numeric, 2) "
         "AS estimated_event_alert_llm_calls_per_hour, "
-        "round((coalesce(e.symbols, 0) * 86400.0 / s.event_analysis_interval_seconds)::numeric, 2) "
+        "round((coalesce(e.active_symbols, 0) * 86400.0 / s.event_analysis_interval_seconds)::numeric, 2) "
         "AS estimated_event_alert_llm_calls_per_day "
-        "FROM settings s CROSS JOIN eligible_symbols e",
+        "FROM settings s CROSS JOIN eligible_symbol_counts e",
     ),
     DbQuery(
         "premium_summary",
@@ -686,8 +701,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
         "GROUP BY ucs.symbol), "
         "settings AS ("
-        "SELECT coalesce(automatic_check_interval_seconds, 0) AS cooldown_seconds "
-        "FROM app_settings ORDER BY id DESC LIMIT 1), "
+        f"SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS cooldown_seconds), "
         "recent_event_alerts AS ("
         "SELECT e.market_event_id, max(a.created_at) AS recent_sent_at "
         "FROM events_without_delivery e JOIN alerts a ON lower(a.symbol) = lower(e.symbol) "
@@ -818,8 +832,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "WITH report_types(report_type, max_age_seconds, runtime_interval_seconds) AS ("
         f"{REPORT_FRESHNESS_VALUES_SQL}"
         "), latest AS ("
-        "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at, "
-        "left(error_message, 160) AS latest_error_message "
+        "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at "
         "FROM market_reports ORDER BY report_type, generated_at DESC, id DESC"
         "), period_counts AS ("
         "SELECT report_type, count(*) AS reports_in_period, "
@@ -831,7 +844,6 @@ QUERIES: tuple[DbQuery, ...] = (
         "SELECT rt.report_type, rt.max_age_seconds, rt.runtime_interval_seconds, "
         "l.status AS latest_status, "
         "l.generated_at AS latest_generated_at, l.expires_at AS latest_expires_at, "
-        "l.latest_error_message, "
         "extract(epoch FROM (:until - l.generated_at)) AS age_seconds, "
         "l.generated_at + make_interval(secs => rt.runtime_interval_seconds) "
         "AS expected_next_scheduled_refresh_at, "
@@ -864,13 +876,21 @@ QUERIES: tuple[DbQuery, ...] = (
         "SELECT call_type, "
         "CASE "
         "WHEN status IN ('success', 'completed') THEN 'successful' "
-        "WHEN status LIKE '%rate_limit%' OR retry_after IS NOT NULL "
-        "OR error_reason IN ('rate_limit', 'rate_limited') THEN 'rate_limit_backoff' "
-        "WHEN error_reason = 'schema_validation_failed' THEN 'schema_validation_failed' "
+        "WHEN status = 'skipped_due_to_rate_limit' "
+        "OR error_reason = 'rate_limit_backoff_active' THEN 'active_backoff' "
+        "WHEN status = 'skipped_due_to_circuit_breaker' "
+        "OR error_reason = 'provider_circuit_broken' THEN 'circuit_breaker' "
+        "WHEN status = 'rate_limit' OR retry_after IS NOT NULL "
+        "OR error_reason IN ('rate_limit', 'rate_limited') THEN 'provider_rate_limit' "
+        "WHEN error_reason = 'provider_model_error' THEN 'provider_model_error' "
+        "WHEN error_reason IN ('schema_validation_failed', 'invalid_json', "
+        "'provider_json_validate_failed') THEN 'schema_invalid_output' "
+        "WHEN error_reason IN ('provider_bad_request', 'provider_4xx') THEN 'bad_request' "
         "WHEN error_reason = 'timeout' THEN 'timeout' "
-        "WHEN error_reason IN ('network_error', 'provider_error', 'provider_4xx', 'provider_5xx') "
-        "OR error_reason LIKE 'provider_%' THEN 'provider_network_error' "
-        "WHEN error_reason = 'invalid_json' THEN 'invalid_json' "
+        "WHEN error_reason IN ('network_error', 'provider_error', 'provider_5xx', "
+        "'empty_response') THEN 'network_error' "
+        "WHEN error_reason IN ('auth_error', 'config_missing') THEN 'provider_auth_config' "
+        "WHEN error_reason LIKE 'provider_%' THEN 'provider_other' "
         "ELSE 'other' END AS failure_category "
         "FROM llm_usage_logs WHERE created_at >= :since AND created_at < :until"
         ") "

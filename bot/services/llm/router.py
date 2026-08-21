@@ -164,6 +164,12 @@ class LLMRouter:
 
         for index, (name, provider) in enumerate(providers):
             model = (model_overrides or {}).get(name) or config.model_for(name, call_type)
+            attempt_max_tokens = config.effective_max_tokens_for(
+                call_type=call_type,
+                provider=name,
+                model=model,
+                requested_max_tokens=max_tokens,
+            )
             # An open breaker means "do not spend a request on this pair", not "give up this
             # cycle": skipping here advances immediately to the next provider, so a dead
             # primary costs nothing and the fallback still answers.
@@ -181,7 +187,7 @@ class LLMRouter:
                     status="skipped_due_to_circuit_breaker",
                     input_chars=input_chars,
                     output_chars=None,
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max_tokens,
                     error_reason="provider_circuit_broken",
                     error_message=f"{name} model {model} is circuit-broken for {call_type}",
                 )
@@ -204,7 +210,7 @@ class LLMRouter:
                     symbol=symbol,
                     model=model,
                     messages=messages,
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max_tokens,
                     response_format=response_format,
                     timeout=timeout,
                     reasoning_effort=reasoning_effort,
@@ -261,6 +267,9 @@ class LLMRouter:
             # Output that turns out to be unusable is handled by the chain below; it is not a
             # reason to keep a breaker latched against a working endpoint.
             breaker.record_success(call_type=call_type, provider=name, model=model)
+            # Validators persist usage after parsing/schema checks. Carry the actual per-attempt
+            # budget so telemetry never reports the smaller plain-model base for a thinking model.
+            result.max_tokens = attempt_max_tokens
 
             if validate_response is not None:
                 try:

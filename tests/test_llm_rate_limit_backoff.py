@@ -53,6 +53,31 @@ def clear_rate_limit_backoffs(monkeypatch):
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
 
 
+def test_active_backoff_snapshot_preserves_triggering_call_types():
+    error = RuntimeError("429 rate limit")
+    telemetry.start_llm_rate_limit_backoff(
+        provider="mistral",
+        model="shared-model",
+        call_type="daily_report",
+        error=error,
+        headers=None,
+    )
+    telemetry.start_llm_rate_limit_backoff(
+        provider="mistral",
+        model="shared-model",
+        call_type="news_intelligence",
+        error=error,
+        headers=None,
+    )
+
+    rows = telemetry.get_active_llm_rate_limit_backoffs()
+
+    assert len(rows) == 1
+    assert rows[0]["provider"] == "mistral"
+    assert rows[0]["model"] == "shared-model"
+    assert rows[0]["call_types"] == ("daily_report", "news_intelligence")
+
+
 @pytest.mark.asyncio
 async def test_rate_limit_error_starts_provider_model_backoff(monkeypatch):
     create_mock = AsyncMock(

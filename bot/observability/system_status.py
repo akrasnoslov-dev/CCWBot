@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from sqlalchemy import case, func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.database import (
@@ -21,12 +21,12 @@ from bot.db.database import (
     User,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, display_symbol
-from bot.services.ai_agent_groq import (
-    GROQ_EVENT_ANALYSIS_MODEL,
-    GROQ_MARKET_HEARTBEAT_MODEL,
-    get_llm_rate_limit_backoff,
+from bot.services.llm.telemetry import get_active_llm_rate_limit_backoffs
+from bot.settings import (
+    AUTOMATIC_CHECK_SCHEDULER_GRACE_SECONDS,
+    DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS,
+    normalize_automatic_check_interval_seconds,
 )
-from bot.settings import DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
 from bot.storage import load_state
 from bot.telegram_errors import is_bot_blocked_error
 
@@ -44,6 +44,7 @@ _STATUS_RANK = {
     ComponentStatus.WARN: 2,
     ComponentStatus.FAIL: 3,
 }
+MAX_LLM_PROVIDER_BREAKDOWN_ROWS = 8
 _SECRET_DETAIL_RE = re.compile(
     r"(?i)\b("
     r"api[_ -]?key|authorization|auth[_ -]?header|bearer|token|"
@@ -209,16 +210,10 @@ async def build_admin_system_status_text(
                 problem_rows=market_problem_rows,
             ),
             ComponentHealth(
-                "AI analysis",
+                "AI",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL AI telemetry unavailable",
                 summary="no analysis telemetry",
-            ),
-            ComponentHealth(
-                "LLM rate limit",
-                ComponentStatus.UNKNOWN,
-                "PostgreSQL usage telemetry unavailable",
-                summary="no usage telemetry",
             ),
             ComponentHealth(
                 "News",
@@ -227,7 +222,7 @@ async def build_admin_system_status_text(
                 summary="no cache telemetry",
             ),
             ComponentHealth(
-                "Telegram delivery",
+                "Telegram",
                 ComponentStatus.UNKNOWN,
                 "PostgreSQL delivery telemetry unavailable",
                 summary="no delivery telemetry",
@@ -256,13 +251,6 @@ async def build_admin_system_status_text(
                 now=now,
             )
             ai_health = await _ai_health(session, now=now)
-            rate_limit_health = await _rate_limit_health(session, now=now)
-            provider_rows = await _llm_provider_breakdown_rows(session, now=now)
-            if provider_rows:
-                rate_limit_health = replace(
-                    rate_limit_health,
-                    info_rows=rate_limit_health.info_rows + provider_rows,
-                )
             news_health = await _news_health(session, now=now)
             delivery_health = await _delivery_health(session, now=now)
     except Exception:
@@ -290,7 +278,6 @@ async def build_admin_system_status_text(
             database_health,
             price_health,
             ai_health,
-            rate_limit_health,
             news_health,
             delivery_health,
         ],
@@ -305,7 +292,7 @@ async def _get_status_interval_seconds(session: AsyncSession) -> int:
         interval = int(row.automatic_check_interval_seconds)
     except (TypeError, ValueError):
         return DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
-    return interval if interval > 0 else DEFAULT_AUTOMATIC_CHECK_INTERVAL_SECONDS
+    return normalize_automatic_check_interval_seconds(interval)
 
 
 async def _market_data_health(
@@ -317,7 +304,8 @@ async def _market_data_health(
     symbols = [symbol.upper() for symbol in SUPPORTED_SYMBOLS]
     rows = await session.scalars(select(PriceState).where(PriceState.symbol.in_(symbols)))
     states = {row.symbol.upper(): row for row in rows.all()}
-    stale_after = timedelta(seconds=max(interval_seconds * 2, interval_seconds + 900))
+    effective_interval = normalize_automatic_check_interval_seconds(interval_seconds)
+    stale_after = timedelta(seconds=effective_interval + AUTOMATIC_CHECK_SCHEDULER_GRACE_SECONDS)
     details: list[str] = []
     problem_rows: list[str] = []
     fresh_symbols: list[str] = []
@@ -344,15 +332,13 @@ async def _market_data_health(
         elif age is not None and age > stale_after:
             status = ComponentStatus.WARN
             detail = (
-                f"stale, last checked {_format_utc(checked_at)} "
-                f"({_age_label(checked_at, now=now)})"
+                f"stale, last checked {_format_utc(checked_at)} ({_age_label(checked_at, now=now)})"
             )
             problem_rows.append(f"{display} stale: last check {_age_label(checked_at, now=now)}")
         else:
             status = ComponentStatus.OK
             detail = (
-                f"fresh, last checked {_format_utc(checked_at)} "
-                f"({_age_label(checked_at, now=now)})"
+                f"fresh, last checked {_format_utc(checked_at)} ({_age_label(checked_at, now=now)})"
             )
             fresh_symbols.append(display)
         statuses.append(status)
@@ -411,7 +397,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
 
     if latest is None:
         return ComponentHealth(
-            "AI analysis",
+            "AI",
             ComponentStatus.UNKNOWN,
             "no event-analysis attempt recorded yet",
             summary="no analysis telemetry",
@@ -435,8 +421,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
     problem_rows: list[str] = []
     if latest_success is not None:
         rows.append(
-            f"Latest success: {latest_success.status} "
-            f"at {_format_utc(latest_success.created_at)}"
+            f"Latest success: {latest_success.status} at {_format_utc(latest_success.created_at)}"
         )
     if latest_failure is not None:
         reason = latest_failure.error_reason or latest_failure.status
@@ -447,9 +432,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
             and _as_utc(latest_success.created_at) > _as_utc(latest_failure.created_at)
         )
         suffix = " - resolved by newer success" if resolved else ""
-        rows.append(
-            f"Latest failure: {reason} at {_format_utc(latest_failure.created_at)}{suffix}"
-        )
+        rows.append(f"Latest failure: {reason} at {_format_utc(latest_failure.created_at)}{suffix}")
         safe_detail = _safe_detail(latest_failure.error_message)
         if safe_detail:
             rows.append(f"Failure detail: {safe_detail}")
@@ -464,7 +447,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
                 problem_rows.append(f"Reason: {problem_reason}")
 
     return ComponentHealth(
-        "AI analysis",
+        "AI",
         status,
         detail,
         tuple(rows),
@@ -473,118 +456,148 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
     )
 
 
-async def _llm_provider_breakdown_rows(
-    session: AsyncSession, *, now: datetime
-) -> tuple[str, ...]:
-    """Compact per-provider LLM usage counts over the last 24h, sourced from llm_usage_logs.
+async def _llm_provider_breakdown_rows(session: AsyncSession, *, now: datetime) -> tuple[str, ...]:
+    """Compact per-call-type/provider attempt counts over the last 24h.
 
-    Surfaces Stage 9 metrics on the existing admin status card (one line per provider that
-    handled a call), so an operator does not have to run SQL by hand. Read-only; provider/status
-    names only (no secrets, tokens, or payloads).
+    These are provider-attempt diagnostics, not final product outcomes. Event Analysis health
+    remains authoritative in ``_ai_health`` even when another call type is degraded. Only
+    normalized categories are rendered; raw errors and provider payloads never reach Telegram.
     """
     since = now - timedelta(hours=24)
     rows = (
         await session.execute(
             select(
+                LlmUsageLog.call_type,
                 LlmUsageLog.provider,
-                func.count().label("calls"),
-                func.sum(case((LlmUsageLog.status == "success", 1), else_=0)).label("ok"),
-                func.sum(
-                    case((LlmUsageLog.status == "rate_limit", 1), else_=0)
-                ).label("rate_limited"),
-                func.sum(case((LlmUsageLog.status == "timeout", 1), else_=0)).label("timeouts"),
+                LlmUsageLog.status,
+                LlmUsageLog.error_reason,
             )
             .where(LlmUsageLog.created_at >= since)
-            .group_by(LlmUsageLog.provider)
-            .order_by(func.count().desc(), LlmUsageLog.provider)
+            .order_by(LlmUsageLog.call_type, LlmUsageLog.provider, LlmUsageLog.id)
         )
     ).all()
+    grouped: dict[tuple[str, str], dict[str, int]] = {}
+    for call_type_value, provider_value, status, error_reason in rows:
+        key = (
+            _llm_call_type_label(call_type_value),
+            _llm_provider_label(provider_value),
+        )
+        counters = grouped.setdefault(
+            key,
+            {
+                "attempts": 0,
+                "success": 0,
+                "rate_limit": 0,
+                "backoff": 0,
+                "circuit": 0,
+                "schema": 0,
+                "failure": 0,
+            },
+        )
+        counters["attempts"] += 1
+        counters[_llm_outcome_category(status, error_reason)] += 1
     breakdown: list[str] = []
-    for row in rows:
-        provider = row.provider or "unknown"
+    for (call_type, provider), counters in sorted(grouped.items()):
+        calls = counters["attempts"]
+        attempt_label = "attempt" if calls == 1 else "attempts"
         breakdown.append(
-            f"{provider}: {int(row.calls)} calls "
-            f"({int(row.ok or 0)} ok, {int(row.rate_limited or 0)} rate_limit, "
-            f"{int(row.timeouts or 0)} timeout) in 24h"
+            f"{call_type} / {provider}: {calls} {attempt_label} "
+            f"({counters['success']} success, {counters['rate_limit']} rate-limit, "
+            f"{counters['backoff']} backoff, {counters['circuit']} circuit, "
+            f"{counters['schema']} schema/JSON, {counters['failure']} provider/network)"
         )
-    return tuple(breakdown)
+    omitted = max(len(breakdown) - MAX_LLM_PROVIDER_BREAKDOWN_ROWS, 0)
+    visible = breakdown[:MAX_LLM_PROVIDER_BREAKDOWN_ROWS]
+    if omitted:
+        visible.append(f"{omitted} additional call-type/provider rows omitted")
+    return tuple(visible)
 
 
-async def _rate_limit_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
-    active_backoffs = []
-    active_until: datetime | None = None
-    for label, model in (
-        ("event-analysis", GROQ_EVENT_ANALYSIS_MODEL),
-        ("heartbeat", GROQ_MARKET_HEARTBEAT_MODEL),
+def _llm_outcome_category(status: str | None, error_reason: str | None) -> str:
+    normalized_status = str(status or "").strip().lower()
+    normalized_reason = str(error_reason or "").strip().lower()
+    if normalized_status == "success":
+        return "success"
+    if (
+        normalized_status == "skipped_due_to_rate_limit"
+        or normalized_reason == "rate_limit_backoff_active"
     ):
-        limited_until = get_llm_rate_limit_backoff(model=model, now=now)
-        if limited_until is not None:
-            active_until = limited_until
-            active_backoffs.append(f"{label} {model} limited until {_format_utc(limited_until)}")
-    if active_backoffs:
-        return ComponentHealth(
-            "LLM rate limit",
-            ComponentStatus.WARN,
-            active_backoffs[0],
-            tuple(active_backoffs),
-            summary=f"active until {_format_utc(active_until)[11:16]} UTC",
-        )
+        return "backoff"
+    if (
+        normalized_status == "skipped_due_to_circuit_breaker"
+        or normalized_reason == "provider_circuit_broken"
+    ):
+        return "circuit"
+    if normalized_status == "rate_limit" or normalized_reason == "rate_limit":
+        return "rate_limit"
+    if normalized_status in {
+        "invalid_json",
+        "schema_error",
+        "invalid_output",
+    } or normalized_reason in {
+        "invalid_json",
+        "schema_validation_failed",
+        "invalid_output",
+    }:
+        return "schema"
+    return "failure"
 
-    # Provider-agnostic: reflect the whole fallback chain (Groq + Cerebras/Gemini/Mistral),
-    # not just Groq. Per-provider breakdown lives in the ops-agent llm_usage_summary collector.
-    latest_usage = await session.scalar(
-        select(LlmUsageLog)
-        .order_by(LlmUsageLog.created_at.desc(), LlmUsageLog.id.desc())
-        .limit(1)
-    )
-    since = now - timedelta(hours=24)
-    latest_rate_limit = await session.scalar(
-        select(LlmUsageLog)
-        .where(LlmUsageLog.created_at >= since)
-        .where(
-            or_(
-                LlmUsageLog.status.in_(["rate_limit", "skipped_due_to_rate_limit"]),
-                LlmUsageLog.error_reason.in_(["rate_limit", "rate_limit_backoff_active"]),
-            )
+
+async def build_admin_llm_diagnostics_text(
+    *,
+    db_enabled: bool,
+    session_factory,
+    now: datetime | None = None,
+) -> str:
+    """Return admin-safe provider-attempt diagnostics separate from feature health."""
+    now = _as_utc(now) or _utc_now()
+    if not db_enabled or not session_factory:
+        return "LLM diagnostics\n\nTelemetry unavailable."
+    try:
+        async with session_factory() as session:
+            rows = await _llm_provider_breakdown_rows(session, now=now)
+    except Exception:
+        return "LLM diagnostics\n\nTelemetry query failed."
+    active = []
+    for backoff in get_active_llm_rate_limit_backoffs(now=now):
+        provider = _llm_provider_label(str(backoff.get("provider") or ""))
+        call_types = (
+            ", ".join(_llm_call_type_label(str(value)) for value in backoff.get("call_types") or ())
+            or "Other LLM"
         )
-        .order_by(LlmUsageLog.created_at.desc(), LlmUsageLog.id.desc())
-        .limit(1)
-    )
-    if latest_rate_limit is not None:
-        retry_after = (
-            f", retry_after {latest_rate_limit.retry_after}"
-            if latest_rate_limit.retry_after
+        limited_until = backoff.get("limited_until")
+        until = (
+            f" until {_format_utc(limited_until)}"
+            if isinstance(limited_until, datetime)
             else ""
         )
-        return ComponentHealth(
-            "LLM rate limit",
-            ComponentStatus.WARN,
-            (
-                f"recent {latest_rate_limit.provider} {latest_rate_limit.status} "
-                f"at {_format_utc(latest_rate_limit.created_at)}{retry_after}"
-            ),
-            summary=f"recent limit{retry_after}",
-        )
-    if latest_usage is None:
-        return ComponentHealth(
-            "LLM rate limit",
-            ComponentStatus.UNKNOWN,
-            "no LLM usage telemetry",
-            summary="no usage telemetry",
-        )
-    if latest_usage.status == "success":
-        return ComponentHealth(
-            "LLM rate limit",
-            ComponentStatus.OK,
-            f"latest usage success at {_format_utc(latest_usage.created_at)}",
-            summary="no active limit",
-        )
-    return ComponentHealth(
-        "LLM rate limit",
-        ComponentStatus.UNKNOWN,
-        f"latest usage status {latest_usage.status} at {_format_utc(latest_usage.created_at)}",
-        summary="no usage telemetry",
-    )
+        active.append(f"Active limit: {call_types} / {provider}{until}")
+    lines = ["LLM diagnostics — last 24h", ""]
+    lines.extend(rows or ("No provider attempts recorded.",))
+    if active:
+        lines.extend(("", *active))
+    lines.extend(("", "Final feature outcomes are summarized in System status."))
+    return "\n".join(lines)
+
+
+def _llm_call_type_label(value: str | None) -> str:
+    return {
+        "event_analysis": "Event Analysis",
+        "market_heartbeat": "Market Heartbeat",
+        "daily_report": "Daily report",
+        "weekly_report": "Weekly report",
+        "news_intelligence": "News intelligence",
+    }.get(str(value or "").strip().lower(), "Other LLM")
+
+
+def _llm_provider_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return {
+        "groq": "groq",
+        "cerebras": "cerebras",
+        "gemini": "gemini",
+        "mistral": "mistral",
+    }.get(normalized, "other provider")
 
 
 async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
@@ -634,8 +647,7 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
         rows.append("News intelligence: UNKNOWN - no enrichment telemetry")
     elif latest_intel.llm_status == "failed":
         rows.append(
-            f"News intelligence: WARN - latest failed "
-            f"at {_format_utc(latest_intel.updated_at)}"
+            f"News intelligence: WARN - latest failed at {_format_utc(latest_intel.updated_at)}"
         )
         status = ComponentStatus.WARN
     else:
@@ -666,9 +678,7 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
 async def _delivery_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
     since = now - timedelta(hours=24)
     result = await session.execute(
-        select(Alert.status, func.count())
-        .where(Alert.created_at >= since)
-        .group_by(Alert.status)
+        select(Alert.status, func.count()).where(Alert.created_at >= since).group_by(Alert.status)
     )
     counts = {str(status or "unknown"): int(count) for status, count in result.all()}
     final_failed = int(
@@ -708,14 +718,14 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     if total == 0 and final_failed == 0:
         if blocked_users > 0:
             return ComponentHealth(
-                "Telegram delivery",
+                "Telegram",
                 ComponentStatus.WARN,
                 f"no delivery rows in last 24h, blocked_users {blocked_users}",
                 summary="no delivery rows in 24h",
                 info_rows=(f"Blocked users: {blocked_users}",),
             )
         return ComponentHealth(
-            "Telegram delivery",
+            "Telegram",
             ComponentStatus.WARN,
             f"no delivery rows in last 24h, blocked_users {blocked_users}",
             summary="no delivery rows in 24h",
@@ -766,7 +776,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     else:
         summary = "no delivery rows in 24h"
     return ComponentHealth(
-        "Telegram delivery",
+        "Telegram",
         status,
         detail,
         summary=summary,
@@ -807,5 +817,5 @@ def _render_status(
         lines.append(f"{_STATUS_ICON[section.status]} {section.name} — {summary}")
         if section.status != ComponentStatus.OK:
             lines.extend(f"   {row}" for row in section.problem_rows)
-        lines.extend(f"   {row}" for row in section.info_rows)
+            lines.extend(f"   {row}" for row in section.info_rows)
     return "\n".join(lines).strip()

@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from bot.db.database import (
     Alert,
@@ -147,6 +148,40 @@ async def get_latest_sent_event_alert_for_event_key(
         .limit(1)
     )
     return await session.scalar(statement)
+
+
+async def get_recent_sent_event_alert_contexts(
+    session: AsyncSession,
+    *,
+    user_ids: list[int],
+    symbol: str,
+    alert_type: str,
+    since: datetime,
+) -> list[tuple[Alert, str | None, str | None]]:
+    """Return recent sent Event Alerts for many recipients in one query."""
+    if not user_ids:
+        return []
+    delivered_family = (
+        select(AlertDeliveryOutcome.semantic_family)
+        .where(AlertDeliveryOutcome.alert_id == Alert.id)
+        .where(AlertDeliveryOutcome.status == "delivered")
+        .where(AlertDeliveryOutcome.semantic_family.isnot(None))
+        .order_by(AlertDeliveryOutcome.id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    statement = (
+        select(Alert, MarketEvent.event_key, delivered_family.label("semantic_family"))
+        .options(load_only(Alert.id, Alert.user_id, Alert.created_at, Alert.numeric_context))
+        .outerjoin(MarketEvent, Alert.market_event_id == MarketEvent.id)
+        .where(Alert.user_id.in_(sorted(set(user_ids))))
+        .where(Alert.symbol == symbol.upper())
+        .where(Alert.alert_type == alert_type)
+        .where(Alert.status == "sent")
+        .where(Alert.created_at >= since)
+        .order_by(Alert.created_at.desc(), Alert.id.desc())
+    )
+    return [tuple(row) for row in (await session.execute(statement)).all()]
 
 
 
@@ -643,6 +678,37 @@ async def get_latest_success_event_ai_analysis(
         .order_by(EventAiAnalysis.id.asc())
         .limit(1)
     )
+
+
+async def get_reusable_event_analysis_candidates(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    bucket_started_at: datetime,
+    bucket_ended_at: datetime,
+) -> list[tuple[MarketEvent, EventAiAnalysis]]:
+    """Return canonical attached analyses that can be checked for exact event reuse."""
+    result = await session.execute(
+        select(MarketEvent, EventAiAnalysis)
+        .join(
+            EventAiAnalysis,
+            EventAiAnalysis.market_event_id == MarketEvent.id,
+        )
+        .where(MarketEvent.symbol == symbol.upper())
+        .where(MarketEvent.event_type == alert_type)
+        .where(MarketEvent.detected_at >= bucket_started_at)
+        .where(MarketEvent.detected_at < bucket_ended_at)
+        .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
+        .where(EventAiAnalysis.status.in_(SUCCESS_ANALYSIS_STATUSES))
+        .where(EventAiAnalysis.should_alert.is_(True))
+        .where(EventAiAnalysis.plain_text.is_not(None))
+        .order_by(
+            MarketEvent.detected_at.desc(),
+            EventAiAnalysis.id.asc(),
+        )
+    )
+    return list(result.all())
 
 
 

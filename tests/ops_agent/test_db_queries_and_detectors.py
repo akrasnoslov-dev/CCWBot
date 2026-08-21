@@ -11,9 +11,13 @@ from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.config import OpsAgentConfig
 from ops_agent.db_queries import (
+    ACTIVE_SYMBOLS as OPS_AGENT_ACTIVE_SYMBOLS,
+)
+from ops_agent.db_queries import (
     DAILY_REPORT_FRESHNESS_GRACE_SECONDS,
     DAILY_REPORT_FRESHNESS_THRESHOLD_SECONDS,
     DAILY_REPORT_RUNTIME_INTERVAL_SECONDS,
+    MARKET_DATA_FRESHNESS_GRACE_SECONDS,
     QUERIES,
     REPORT_FRESHNESS_VALUES_SQL,
     WEEKLY_REPORT_FRESHNESS_GRACE_SECONDS,
@@ -264,14 +268,31 @@ def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explaine
     assert "expected_backend_cooldown_active" in query.sql
 
 
+def test_no_delivery_classification_uses_effective_cooldown_without_settings_row():
+    query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+
+    assert "SELECT 1800 AS cooldown_seconds)," in query.sql
+    assert "FROM app_settings ORDER BY id DESC LIMIT 1" not in query.sql
+
+
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
 
     assert "event_analysis_interval_seconds" in query.sql
     assert "payload_points" in query.sql
     assert "analysed_window_minutes" in query.sql
+    assert "configured_eligible_symbols" in query.sql
+    assert "active_eligible_symbols" in query.sql
+    assert "inactive_configured_eligible_symbols" in query.sql
+    assert "coalesce(e.active_symbols, 0) AS eligible_symbols" in query.sql
+    assert "coalesce(e.active_symbols, 0) * 3600.0" in query.sql
+    assert "coalesce(e.active_symbols, 0) * 86400.0" in query.sql
     assert "estimated_event_alert_llm_calls_per_hour" in query.sql
     assert "estimated_event_alert_llm_calls_per_day" in query.sql
+    assert "SELECT 1800 AS event_analysis_interval_seconds" in query.sql
+    assert "greatest(coalesce(automatic_check_interval_seconds" not in query.sql
 
 
 def test_delivery_funnel_downstream_counts_are_event_alert_only():
@@ -369,7 +390,7 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "telegram_bot_blocked_count" in outcomes.sql
     assert "llm_invalid_response_count" in outcomes.sql
     assert "pre_llm_similar_context_reused_count" in outcomes.sql
-    assert "latest_error_message" in next(
+    assert "error_message" not in next(
         query for query in QUERIES if query.name == "market_reports_freshness"
     ).sql
     assert "decision_reason = 'similar_context_reused'" in reuse.sql
@@ -399,14 +420,19 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
     assert "timeout_count" in query.sql
     assert "invalid_json_schema_error_count" in query.sql
     for category in (
-        "schema_validation_failed",
+        "active_backoff",
+        "circuit_breaker",
+        "provider_rate_limit",
+        "provider_model_error",
+        "schema_invalid_output",
+        "bad_request",
         "timeout",
-        "provider_network_error",
-        "rate_limit_backoff",
-        "invalid_json",
+        "network_error",
+        "provider_auth_config",
         "other",
     ):
         assert category in category_query.sql
+    assert "SELECT call_type, failure_category" in category_query.sql
 
 
 def test_news_budget_query_uses_sanitized_aggregates_only():
@@ -1476,12 +1502,17 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
                     "rows": [
                         {
                             "call_type": "event_analysis",
-                            "failure_category": "schema_validation_failed",
+                            "failure_category": "schema_invalid_output",
                             "calls": 2,
                         },
                         {
                             "call_type": "event_analysis",
-                            "failure_category": "rate_limit_backoff",
+                            "failure_category": "active_backoff",
+                            "calls": 1,
+                        },
+                        {
+                            "call_type": "market_heartbeat",
+                            "failure_category": "provider_model_error",
                             "calls": 1,
                         },
                     ]
@@ -1496,9 +1527,12 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
 
     detector = results["repeated_llm_failures_or_rate_limits"]
     assert detector.status == "triggered"
-    assert detector.metrics["llm_failures"] == 3
+    assert detector.metrics["llm_failures"] == 4
     assert detector.metrics["rate_limits"] == 1
-    assert detector.metrics["failure_categories"]["schema_validation_failed"] == 2
+    assert detector.metrics["failure_categories_by_call_type"] == {
+        "event_analysis": {"active_backoff": 1, "schema_invalid_output": 2},
+        "market_heartbeat": {"provider_model_error": 1},
+    }
 
 
 def test_payment_premium_detector_aggregates_inconsistency_types():
@@ -1645,6 +1679,103 @@ def test_report_freshness_detector_surfaces_age_vs_expected_next_refresh():
         }
     ]
     assert "regeneration_semantics" in detector.metrics
+
+
+@pytest.mark.parametrize(
+    ("age_seconds", "latest_status", "expected_status"),
+    [
+        (86399, "completed", "clear"),
+        (86401, "completed", "clear"),
+        (90000, "completed", "clear"),
+        (90001, "completed", "triggered"),
+        (1, "failed", "triggered"),
+        (60, "completed", "clear"),
+    ],
+)
+def test_weekly_report_freshness_respects_interval_plus_grace_boundaries(
+    age_seconds, latest_status, expected_status
+):
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_reports_summary": {"rows": []},
+                "market_reports_freshness": {
+                    "rows": [
+                        {
+                            "report_type": "weekly",
+                            "latest_status": latest_status,
+                            "latest_generated_at": "2026-06-01T00:00:00Z",
+                            # Nominal expiry may pass inside grace without being stale.
+                            "latest_expires_at": "2026-06-01T23:59:59Z",
+                            "age_seconds": age_seconds,
+                            "max_age_seconds": 90000,
+                            "runtime_interval_seconds": 86400,
+                        }
+                    ]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+
+    results = {result.id: result for result in run_detectors(evidence, period)}
+
+    assert results["failed_daily_weekly_reports"].status == expected_status
+
+
+def test_market_data_freshness_uses_explicit_scheduler_grace_at_boundary():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+
+    def detector_for_age(age_seconds):
+        checked_at = period.end.timestamp() - age_seconds
+        evidence = {
+            "evidence/db/aggregate_metrics.json": {
+                "queries": {
+                    "app_settings": {"rows": [{"automatic_check_interval_seconds": 600}]},
+                    "price_state_current": {
+                        "rows": [
+                            {
+                                "symbol": "ETH",
+                                "last_checked_at": datetime.fromtimestamp(
+                                    checked_at, tz=timezone.utc
+                                ).isoformat(),
+                            }
+                        ]
+                    },
+                }
+            },
+            "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+            "evidence/health/health.json": {"status": "ok"},
+        }
+        return {
+            result.id: result for result in run_detectors(evidence, period)
+        }["stale_price_snapshots"]
+
+    assert MARKET_DATA_FRESHNESS_GRACE_SECONDS == 120
+    at_boundary = detector_for_age(1800 + MARKET_DATA_FRESHNESS_GRACE_SECONDS)
+    beyond_boundary = detector_for_age(1801 + MARKET_DATA_FRESHNESS_GRACE_SECONDS)
+
+    assert at_boundary.status == "clear"
+    assert beyond_boundary.status == "triggered"
+    assert at_boundary.metrics["freshness_base_threshold_seconds"] == 1800
+    assert at_boundary.metrics["freshness_grace_seconds"] == 120
+    assert at_boundary.metrics["freshness_threshold_seconds"] == 1920
+
+
+def test_ops_agent_active_symbols_match_runtime_active_symbols():
+    from bot.domain.supported_coins import ACTIVE_SYMBOLS as BOT_ACTIVE_SYMBOLS
+
+    assert OPS_AGENT_ACTIVE_SYMBOLS == BOT_ACTIVE_SYMBOLS
 
 
 def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():

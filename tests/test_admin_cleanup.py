@@ -1,4 +1,6 @@
+from importlib import import_module
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from telegram.ext import CommandHandler
@@ -56,6 +58,7 @@ def test_admin_keyboards_have_expected_items():
             [
                 ("Alert settings", "admin:alert_settings"),
                 ("System status", "admin:system_status"),
+                ("LLM diagnostics", "admin:llm_diagnostics"),
                 ("Premium management", "admin:premium_menu"),
                 ("Logs", "admin:logs_menu"),
             ],
@@ -158,6 +161,21 @@ async def test_premium_menu_usage_callbacks(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_llm_diagnostics_callback_denies_non_admin_before_render(monkeypatch):
+    replies = []
+    update, context = _callback_update("admin:llm_diagnostics", replies=replies)
+    builder = AsyncMock(return_value="must not render")
+    monkeypatch.setattr("bot.handlers.is_admin_user", AsyncFalse())
+    monkeypatch.setattr(
+        import_module("bot.handlers.admin"), "_build_admin_llm_diagnostics_text", builder
+    )
+
+    await button_router(update, context)
+
+    builder.assert_not_awaited()
+    assert all("must not render" not in reply for reply in replies)
+
+@pytest.mark.asyncio
 async def test_logs_status_callback_matches_error_logging_status(monkeypatch):
     replies = []
     update, context = _callback_update("admin:logs_status", replies=replies)
@@ -243,6 +261,9 @@ class FakeQuery:
 
     async def answer(self, text=None):
         self.answers.append(text)
+
+    async def edit_message_text(self, text, **kwargs):
+        self.message.replies.append(text)
 
 
 class FakeMessage:

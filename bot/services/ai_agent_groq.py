@@ -146,6 +146,7 @@ def _json_response_validator(
 
     async def _validate(result) -> LLMJsonResult:
         raw_content = result.raw_content
+        attempt_max_tokens = getattr(result, "max_tokens", max_tokens)
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_content.strip())
         cleaned = re.sub(r"\s*```$", "", cleaned)
         parsed = None
@@ -171,7 +172,7 @@ def _json_response_validator(
                 status="invalid_json",
                 input_chars=result.input_chars,
                 output_chars=len(raw_content),
-                max_tokens=max_tokens,
+                max_tokens=attempt_max_tokens,
                 headers=result.headers,
                 response=result.response,
                 error_reason="invalid_json",
@@ -194,7 +195,7 @@ def _json_response_validator(
                     status="schema_error",
                     input_chars=result.input_chars,
                     output_chars=len(raw_content),
-                    max_tokens=max_tokens,
+                    max_tokens=attempt_max_tokens,
                     headers=result.headers,
                     response=result.response,
                     error_reason="schema_validation_failed",
@@ -209,7 +210,7 @@ def _json_response_validator(
             status="success",
             input_chars=result.input_chars,
             output_chars=len(raw_content),
-            max_tokens=max_tokens,
+            max_tokens=attempt_max_tokens,
             headers=result.headers,
             response=result.response,
         )
@@ -904,6 +905,7 @@ async def _ask_json_with_usage(
     symbol: str | None = None,
     model: str | None = None,
     max_tokens: int | None = None,
+    schema_check=None,
 ) -> tuple[dict | None, int | None]:
     """Request JSON from Groq/OpenAI-compatible API and parse it.
 
@@ -925,6 +927,7 @@ async def _ask_json_with_usage(
         call_type=call_type,
         symbol=symbol,
         max_tokens=max_tokens,
+        schema_check=schema_check,
     )
 
     try:
@@ -961,11 +964,15 @@ async def _ask_json_with_usage(
 
 
 async def _ask_json(prompt: str) -> dict | None:
+    def _schema_check(parsed: dict) -> None:
+        if _normalize_alert_structured_fields(parsed) is None:
+            raise AISchemaValidationError("legacy alert payload schema mismatch")
+
     try:
-        parsed, _ = await _ask_json_with_usage(prompt)
-    except AIInvalidJsonError:
-        # Chain exhausted on unparseable output; keep this helper's None contract so the
-        # legacy alert path builds its deterministic fallback exactly as before.
+        parsed, _ = await _ask_json_with_usage(prompt, schema_check=_schema_check)
+    except (AIInvalidJsonError, AISchemaValidationError):
+        # Chain exhausted on unusable structured output; keep this helper's None contract so
+        # the legacy alert path builds its deterministic fallback exactly as before.
         return None
     return parsed
 
@@ -986,7 +993,11 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
         "must not trigger should_alert=true. If the only notable input is repeated, "
         "similar, or old news and the analysed-window market context does not justify "
         "a new alert, set should_alert=false.\n"
-        "Do not claim news caused a price move. Avoid overconfident trading instructions.\n"
+        "Do not claim news caused a price move. Situation must explain why the event matters "
+        "through trajectory, accumulation, acceleration, broader context, or escalation; do "
+        "not merely repeat the visible percentage. Possible action must remain conditional "
+        "and cautious (for example, Consider ... if ...). Never use hard imperatives such as "
+        "Buy now, Sell now, or Close immediately.\n"
         "Use market.chg_window and the short-term snapshots as the primary trigger basis; "
         "market.chg24h is broader context, not the primary trigger.\n"
         "Do not ignore meaningful price moves only because direct news is absent. For "
@@ -1077,8 +1088,12 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
     )
 
 
-async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
-    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON."""
+async def ask_market_heartbeat_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
+    """Ask the LLM for one cached market heartbeat and return raw + parsed JSON.
+
+    ``schema_check(parsed)`` validates each provider response during the router pass, so a
+    schema-invalid heartbeat can fall through to the next configured provider.
+    """
     prompt = build_market_heartbeat_prompt(input_payload)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -1098,6 +1113,7 @@ async def ask_market_heartbeat_raw(input_payload: dict) -> tuple[str, dict]:
             call_type="market_heartbeat",
             symbol=symbol,
             max_tokens=max_tokens,
+            schema_check=schema_check,
         ),
     )
 
@@ -1182,6 +1198,7 @@ async def ask_news_intelligence_raw(
     model: str | None = None,
     timeout: int = 20,
     max_tokens: int | None = None,
+    schema_check=None,
 ) -> tuple[str, dict]:
     """Ask the LLM for one compact structured news intelligence JSON response.
 
@@ -1204,6 +1221,7 @@ async def ask_news_intelligence_raw(
             call_type="news_intelligence",
             symbol=None,
             max_tokens=max_tokens,
+            schema_check=schema_check,
         ),
     )
 

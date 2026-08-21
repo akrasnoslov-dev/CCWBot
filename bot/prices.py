@@ -14,7 +14,7 @@ def build_supported_symbols_message() -> str:
     return supported_symbols_display(include_alias_note=True)
 
 
-async def send_price_message(target, symbol: str) -> None:
+async def send_price_message(target, symbol: str, *, edit: bool = False) -> None:
     coin_price, change_24h, resolved_symbol = await get_coin_price(symbol)
     checked_at = datetime.now(timezone.utc).isoformat()
 
@@ -39,11 +39,15 @@ async def send_price_message(target, symbol: str) -> None:
                 state["last_alert_at"] = None
             save_state(state)
 
-    await target.reply_text(
+    text = (
         f"{display_symbol(resolved_symbol)} price\n\n"
         f"Current USD price: ${coin_price:,.2f}\n"
         f"24h change: {change_24h:.2f}%"
     )
+    if edit:
+        await target.edit_message_text(text=text)
+    else:
+        await target.reply_text(text)
 
 
 async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:
