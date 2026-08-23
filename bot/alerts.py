@@ -3307,6 +3307,9 @@ async def _create_event_analysis_decision(
             suppression_count=1,
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
+        _log_event_analysis_failure(
+            str(input_payload["symbol"]), classify_ai_error_reason(error)
+        )
         return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(

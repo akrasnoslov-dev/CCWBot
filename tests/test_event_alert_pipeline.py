@@ -28,6 +28,7 @@ from bot.db.database import (
     upsert_user_symbol_alert_state,
 )
 from bot.handlers import _build_admin_system_status_text
+from bot.observability import event_analysis_health
 from bot.services.ai_agent_groq import AIInvalidJsonError, AIProviderRateLimitError
 
 FORBIDDEN_EVENT_PLACEHOLDERS = ("n/a", "null", "unknown", "unavailable")
@@ -3262,6 +3263,7 @@ async def test_llm_unavailable_creates_no_delivery_and_marks_ai_not_ok(monkeypat
 @pytest.mark.asyncio
 async def test_all_provider_rate_limits_record_a_terminal_rate_limited_outcome(monkeypatch):
     engine, session_local = await build_session_factory()
+    event_analysis_health.reset()
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
@@ -3292,7 +3294,10 @@ async def test_all_provider_rate_limits_record_a_terminal_rate_limited_outcome(m
             assert analysis.error_reason == "rate_limit"
             assert outcome.status == "rate_limited"
             assert outcome.reason_code == "llm_rate_limited"
+        assert event_analysis_health.snapshot()["consecutive_failures"] == 1
+        assert event_analysis_health.snapshot()["last_failure_reason"] == "rate_limit"
     finally:
+        event_analysis_health.reset()
         await engine.dispose()
 
 

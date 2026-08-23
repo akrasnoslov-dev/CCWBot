@@ -302,8 +302,9 @@ def test_a_news_only_rejection_clears_the_failure_streak():
     assert success_at < news_only_at
 
 
-def test_schema_failures_count_toward_the_failure_streak(caplog):
-    # A continuous schema-failure outage must escalate exactly like a provider outage.
+def test_terminal_event_analysis_failures_count_toward_the_failure_streak(caplog):
+    # Schema, generic, and exhausted-provider rate-limit failures are terminal analyses;
+    # active-backoff skips are intentionally not counted.
     import inspect
 
     from bot import alerts
@@ -311,7 +312,7 @@ def test_schema_failures_count_toward_the_failure_streak(caplog):
     source = inspect.getsource(alerts._create_event_analysis_decision)
 
     assert "event analysis schema validation failed" not in source
-    assert source.count("_log_event_analysis_failure(") == 3
+    assert source.count("_log_event_analysis_failure(") == 4
 
 
 def test_skipped_delivery_reasons_are_reported_separately():

@@ -240,7 +240,13 @@ def test_fallback_only_evidence_is_unknown_not_primary_model_drift():
 
 
 def test_repetition_evidence_query_excludes_failed_analyses():
-    for status in ("llm_error", "invalid_json", "schema_error", "skipped_due_to_rate_limit"):
+    for status in (
+        "llm_error",
+        "invalid_json",
+        "schema_error",
+        "rate_limit",
+        "skipped_due_to_rate_limit",
+    ):
         assert f"'{status}'" in ALERT_EVIDENCE_SQL
     assert "NOT IN" in ALERT_EVIDENCE_SQL
 
@@ -280,7 +286,7 @@ def test_a_failure_storm_no_longer_starves_delivered_analyses_of_the_row_cap():
     for index in range(3396):
         rows.append(
             {
-                "status": "llm_error",
+                "status": "rate_limit" if index % 2 else "llm_error",
                 "created_at": PERIOD.end - timedelta(seconds=30 * (index + 1)),
             }
         )
@@ -295,7 +301,13 @@ def test_a_failure_storm_no_longer_starves_delivered_analyses_of_the_row_cap():
     before = _simulate_row_cap(rows, row_cap=500)
     assert [row for row in before if row["status"] == "success"] == []
 
-    excluded = {"llm_error", "invalid_json", "schema_error", "skipped_due_to_rate_limit"}
+    excluded = {
+        "llm_error",
+        "invalid_json",
+        "schema_error",
+        "rate_limit",
+        "skipped_due_to_rate_limit",
+    }
     after = _simulate_row_cap(
         [row for row in rows if row["status"] not in excluded], row_cap=500
     )
