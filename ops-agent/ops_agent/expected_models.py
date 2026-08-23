@@ -33,6 +33,10 @@ SHIPPED_DEFAULT_MODELS: dict[str, str] = {
     "news_intelligence": "openai/gpt-oss-20b",
 }
 
+# The fallback chain is intentionally provider-specific. Model drift compares the configured
+# Groq primary only; fallback models are reported separately and must never be mislabelled drift.
+EVENT_ANALYSIS_PRIMARY_PROVIDER = "groq"
+
 # Models the provider has withdrawn. A recorded call against one of these is not drift, it is
 # an outage in progress, and is reported at a higher severity.
 KNOWN_DECOMMISSIONED_MODELS: frozenset[str] = frozenset(

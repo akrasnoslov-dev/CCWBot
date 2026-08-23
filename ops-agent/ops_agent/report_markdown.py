@@ -886,6 +886,17 @@ def _detector_user_impact(result: DetectorResult) -> str:
             f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures"
         )
     if result.id == "repeated_llm_failures_or_rate_limits":
+        if "provider_attempt_incidents" in metrics:
+            return (
+                f"{_int(metrics.get('provider_attempt_incidents'))} provider-attempt incidents, "
+                f"{_int(metrics.get('actual_provider_rate_limits'))} actual provider rate limits, "
+                f"{_int(metrics.get('active_backoff_skips'))} active-backoff skips, "
+                f"{_int(metrics.get('circuit_breaker_skips'))} circuit-breaker skips, "
+                f"{_int(metrics.get('terminal_event_analysis_failures'))} terminal Event Analysis failures, "
+                f"{_int(metrics.get('terminal_event_analysis_rate_limited'))} terminal rate-limited, "
+                f"{_int(metrics.get('terminal_event_analysis_backoff_blocked'))} terminal backoff-blocked, "
+                f"{_int(metrics.get('terminal_event_analysis_circuit_blocked'))} terminal circuit-blocked"
+            )
         categories_by_call_type = metrics.get("failure_categories_by_call_type")
         if isinstance(categories_by_call_type, dict) and categories_by_call_type:
             return ", ".join(
@@ -930,7 +941,10 @@ def _recommended_action(detector_id: str) -> str:
             "which includes scheduler grace; investigate only drift beyond that grace."
         )
     if detector_id == "repeated_llm_failures_or_rate_limits":
-        return "Use safe LLM failure categories to separate schema bugs, provider/network issues, timeouts, invalid JSON, and rate-limit/backoff."
+        return (
+            "Investigate provider-attempt pressure separately from durable terminal product "
+            "outcomes; active backoff and circuit skips are prevented requests, not fresh failures."
+        )
     if detector_id == "news_intelligence_failures":
         return "Treat small skipped-budget counts as expected; investigate failed rows or excessive high/medium budget skips before considering any LLM budget change."
     if detector_id == "market_event_analysis_invariant":

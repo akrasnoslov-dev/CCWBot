@@ -28,7 +28,7 @@ from bot.db.database import (
     upsert_user_symbol_alert_state,
 )
 from bot.handlers import _build_admin_system_status_text
-from bot.services.ai_agent_groq import AIInvalidJsonError
+from bot.services.ai_agent_groq import AIInvalidJsonError, AIProviderRateLimitError
 
 FORBIDDEN_EVENT_PLACEHOLDERS = ("n/a", "null", "unknown", "unavailable")
 
@@ -3255,6 +3255,43 @@ async def test_llm_unavailable_creates_no_delivery_and_marks_ai_not_ok(monkeypat
         status_text = await _build_admin_system_status_text()
         assert "❌ AI — latest failed: other_error" in status_text
         assert "Reason: provider unavailable" in status_text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_all_provider_rate_limits_record_a_terminal_rate_limited_outcome(monkeypatch):
+    engine, session_local = await build_session_factory()
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(
+            alerts,
+            "ask_event_analysis_raw",
+            AsyncMock(
+                side_effect=AIProviderRateLimitError(
+                    "all providers rate limited", provider="groq", model="primary"
+                )
+            ),
+        )
+        payload = {
+            "analysis_id": "event_analysis_btc_rate_limited",
+            "symbol": "BTC",
+            "candidate_news": [],
+            "market_data": {},
+        }
+
+        decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+        assert decision is None
+        assert analysis_id is None
+        async with session_local() as session:
+            analysis = await session.scalar(select(EventAiAnalysis))
+            outcome = await session.scalar(select(AlertDeliveryOutcome))
+            assert analysis.status == "rate_limit"
+            assert analysis.error_reason == "rate_limit"
+            assert outcome.status == "rate_limited"
+            assert outcome.reason_code == "llm_rate_limited"
     finally:
         await engine.dispose()
 

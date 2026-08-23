@@ -66,9 +66,11 @@ and bundles from before and after this change are not directly comparable on tho
 
 **Ops-agent detectors.** `event_analysis_success_rate_zero` (critical) triggers when zero
 `event_analysis` calls succeeded, and counts consecutive collection cycles with the same result
-via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares the
-model recorded in `llm_usage_logs` against the shipped default, at `high` severity when the model
-in use is one the provider has withdrawn. Both read existing tables only.
+via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares only
+Groq primary-provider evidence in `llm_usage_logs` against the shipped default (or an explicit
+operator override); Cerebras, Gemini, and Mistral fallback models are reported separately and do
+not count as drift. Missing Groq evidence is inconclusive, never healthy. A withdrawn primary
+model is high severity. Both read existing tables only.
 
 Last successful Event Analysis, and the size of the current failure streak:
 

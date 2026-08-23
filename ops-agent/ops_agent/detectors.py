@@ -8,7 +8,11 @@ from ops_agent.db_queries import (
     EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS,
     MARKET_DATA_FRESHNESS_GRACE_SECONDS,
 )
-from ops_agent.expected_models import KNOWN_DECOMMISSIONED_MODELS, expected_model
+from ops_agent.expected_models import (
+    EVENT_ANALYSIS_PRIMARY_PROVIDER,
+    KNOWN_DECOMMISSIONED_MODELS,
+    expected_model,
+)
 from ops_agent.schemas import DetectorResult, Period
 
 
@@ -168,6 +172,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
     llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
+    event_analysis_logical_rows = _query_rows(
+        evidence, aggregate, "event_analysis_logical_outcome_summary"
+    )
     reports = _query_rows(evidence, aggregate, "market_reports_summary")
     report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
@@ -225,24 +232,37 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         llm_category_counts[category] = llm_category_counts.get(category, 0) + calls
         call_type_categories = llm_categories_by_call_type.setdefault(call_type, {})
         call_type_categories[category] = call_type_categories.get(category, 0) + calls
-    llm_failures = (
-        sum(
-            calls
-            for category, calls in llm_category_counts.items()
-            if category != "successful"
-        )
-        if llm_category_rows
-        else sum(
-            _int(row.get("calls"))
-            for row in llm_summary
-            if str(row.get("status") or "") not in {"success", "completed"}
-        )
+    # llm_usage_logs is provider-attempt telemetry.  Backoff and circuit rows document a
+    # prevented HTTP request, not a fresh provider incident or a failed product operation.
+    prevented_attempt_categories = {"active_backoff", "circuit_breaker"}
+    provider_attempt_categories = {
+        category: calls
+        for category, calls in llm_category_counts.items()
+        if category not in {"successful", *prevented_attempt_categories}
+    }
+    provider_attempt_incidents = sum(provider_attempt_categories.values())
+    actual_provider_rate_limits = llm_category_counts.get("provider_rate_limit", 0)
+    active_backoff_skips = llm_category_counts.get("active_backoff", 0)
+    circuit_breaker_skips = llm_category_counts.get("circuit_breaker", 0)
+
+    # A terminal Event Analysis row is a durable logical outcome. It deliberately remains
+    # independent from provider-attempt rows because there is no correlation id proving which
+    # failed attempt, if any, was recovered by a particular fallback success.
+    event_analysis_logical_outcomes: dict[str, int] = {}
+    for row in event_analysis_logical_rows:
+        outcome = str(row.get("logical_outcome") or "logical_failed")
+        event_analysis_logical_outcomes[outcome] = event_analysis_logical_outcomes.get(
+            outcome, 0
+        ) + _int(row.get("analyses"))
+    terminal_event_analysis_failures = event_analysis_logical_outcomes.get("logical_failed", 0)
+    terminal_event_analysis_rate_limited = event_analysis_logical_outcomes.get(
+        "logical_rate_limited", 0
     )
-    categorized_rate_limits = llm_category_counts.get(
-        "provider_rate_limit", 0
-    ) + llm_category_counts.get("active_backoff", 0)
-    rate_limits = categorized_rate_limits or sum(
-        _int(row.get("rate_limit_count")) for row in llm_summary
+    terminal_event_analysis_backoff_blocked = event_analysis_logical_outcomes.get(
+        "logical_backoff_blocked", 0
+    )
+    terminal_event_analysis_circuit_blocked = event_analysis_logical_outcomes.get(
+        "logical_circuit_breaker_blocked", 0
     )
     failed_reports = sum(
         _int(row.get("reports")) for row in reports if str(row.get("status")) != "completed"
@@ -617,15 +637,48 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         ),
         db_result(
             "repeated_llm_failures_or_rate_limits",
-            "high" if llm_failures >= 3 else "medium",
-            [(aggregate, "llm_usage_summary"), (aggregate, "llm_failure_category_summary")],
-            "triggered" if llm_failures >= 3 or rate_limits else "clear",
-            f"{llm_failures} LLM failures and {rate_limits} rate-limit signals",
+            "high" if terminal_event_analysis_failures >= 3 else "medium",
+            [
+                (aggregate, "llm_failure_category_summary"),
+                (aggregate, "event_analysis_logical_outcome_summary"),
+            ],
+            "triggered"
+            if (
+                provider_attempt_incidents
+                or active_backoff_skips
+                or circuit_breaker_skips
+                or terminal_event_analysis_failures
+                or terminal_event_analysis_rate_limited
+                or terminal_event_analysis_backoff_blocked
+                or terminal_event_analysis_circuit_blocked
+            )
+            else "clear",
+            (
+                f"{provider_attempt_incidents} provider-attempt incidents, "
+                f"{active_backoff_skips} active-backoff skips, "
+                f"{circuit_breaker_skips} circuit-breaker skips; "
+                f"{terminal_event_analysis_failures} terminal Event Analysis failures, "
+                f"{terminal_event_analysis_rate_limited} terminal rate-limited, "
+                f"{terminal_event_analysis_backoff_blocked} terminal backoff-blocked, "
+                f"{terminal_event_analysis_circuit_blocked} terminal circuit-blocked"
+            ),
             ["evidence/db/aggregate_metrics.json", "evidence/db/recent_llm_failures.json"],
             {
-                "llm_failures": llm_failures,
-                "rate_limits": rate_limits,
+                "provider_attempt_incidents": provider_attempt_incidents,
+                "provider_attempt_categories": provider_attempt_categories,
+                "actual_provider_rate_limits": actual_provider_rate_limits,
+                "active_backoff_skips": active_backoff_skips,
+                "circuit_breaker_skips": circuit_breaker_skips,
                 "failure_categories_by_call_type": llm_categories_by_call_type,
+                "event_analysis_logical_outcomes": event_analysis_logical_outcomes,
+                "terminal_event_analysis_failures": terminal_event_analysis_failures,
+                "terminal_event_analysis_rate_limited": terminal_event_analysis_rate_limited,
+                "terminal_event_analysis_backoff_blocked": terminal_event_analysis_backoff_blocked,
+                "terminal_event_analysis_circuit_blocked": terminal_event_analysis_circuit_blocked,
+                "correlation_limit": (
+                    "Provider attempts and terminal logical outcomes are reported separately; "
+                    "the stored evidence has no per-operation correlation id."
+                ),
             },
         ),
         db_result(
@@ -912,19 +965,32 @@ def _event_analysis_model_drift_detector(
     disagreement visible without reading `.env` on the server.
     """
     expected = expected_model("event_analysis")
-    used_models = sorted(
+    primary_models = sorted(
         {
             str(row.get("model") or "").strip()
             for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis" and row.get("model")
+            if str(row.get("call_type") or "") == "event_analysis"
+            and str(row.get("provider") or "").strip().lower()
+            == EVENT_ANALYSIS_PRIMARY_PROVIDER
+            and row.get("model")
         }
     )
-    drifted = [model for model in used_models if expected and model != expected]
-    decommissioned = [model for model in used_models if model in KNOWN_DECOMMISSIONED_MODELS]
+    fallback_models = sorted(
+        {
+            str(row.get("model") or "").strip()
+            for row in llm_summary
+            if str(row.get("call_type") or "") == "event_analysis"
+            and str(row.get("provider") or "").strip().lower()
+            != EVENT_ANALYSIS_PRIMARY_PROVIDER
+            and row.get("model")
+        }
+    )
+    drifted = [model for model in primary_models if expected and model != expected]
+    decommissioned = [model for model in primary_models if model in KNOWN_DECOMMISSIONED_MODELS]
 
-    if not used_models:
+    if not primary_models:
         status = "unknown"
-        summary = "No event_analysis model recorded in this period"
+        summary = "No primary-provider event_analysis model recorded in this period"
     elif decommissioned:
         status = "triggered"
         summary = (
@@ -947,9 +1013,11 @@ def _event_analysis_model_drift_detector(
         ["evidence/db/aggregate_metrics.json"],
         {
             "expected_model": expected,
-            "models_in_use": used_models,
-            "drifted_models": drifted,
-            "decommissioned_models_in_use": decommissioned,
+            "expected_primary_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
+            "primary_models_in_use": primary_models,
+            "fallback_models_in_use": fallback_models,
+            "drifted_primary_models": drifted,
+            "decommissioned_primary_models_in_use": decommissioned,
         },
     )
 
