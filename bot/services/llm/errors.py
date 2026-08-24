@@ -75,6 +75,10 @@ class AllProvidersFailedError(RuntimeError):
     them was in an open circuit breaker. That is a materially different state from "attempted
     them all and they failed", and it must survive to the persisted ``error_reason`` so the
     evidence trail distinguishes "known-bad, waiting to probe" from a fresh failure.
+
+    ``mixed_failure`` is True when some providers were rate-limited while others failed for
+    another fallback-eligible reason. This is a terminal logical failure, not proof that the
+    logical call itself was rate-limited.
     """
 
     def __init__(
@@ -85,9 +89,11 @@ class AllProvidersFailedError(RuntimeError):
         rate_limited: bool = False,
         attempts: list[str] | None = None,
         circuit_broken: bool = False,
+        mixed_failure: bool = False,
     ):
         super().__init__(message)
         self.last_error = last_error
         self.rate_limited = rate_limited
         self.attempts = attempts or []
         self.circuit_broken = circuit_broken
+        self.mixed_failure = mixed_failure
