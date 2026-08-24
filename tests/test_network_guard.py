@@ -16,7 +16,7 @@ def test_external_host_resolution_is_blocked():
 
 @pytest.mark.parametrize(
     "host",
-    ["api.cerebras.ai", "generativelanguage.googleapis.com", "api.mistral.ai"],
+    ["generativelanguage.googleapis.com", "api.mistral.ai"],
 )
 def test_fallback_provider_hosts_are_blocked(host):
     with pytest.raises(RuntimeError, match="Blocked real network access"):

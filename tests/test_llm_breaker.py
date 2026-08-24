@@ -84,7 +84,7 @@ def _configure(monkeypatch, priority, keys):
     # developer's .env would otherwise silently reorder the chain under these tests.
     for override in ("LLM_EVENT_PROVIDERS", "LLM_REPORT_PROVIDERS", "LLM_HEARTBEAT_PROVIDERS"):
         monkeypatch.delenv(override, raising=False)
-    for provider in ("groq", "cerebras", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "mistral"):
         env = llm_config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
@@ -137,8 +137,17 @@ def test_json_validate_failed_gets_its_own_reason():
     assert classify_ai_error_reason(error) == "provider_json_validate_failed"
 
 
-def test_unclassified_4xx_still_reports_provider_4xx():
-    assert classify_ai_error_reason(_error(402, "payment required")) == "provider_4xx"
+@pytest.mark.parametrize(
+    "error",
+    [
+        _error(402, "payment required rate limit"),
+        _error(400, "provider refusal", code="payment_required_error"),
+        _error(400, "provider refusal", body={"error": {"code": "insufficient_credits"}}),
+        _error(429, "rate limit", code="insufficient_quota"),
+    ],
+)
+def test_payment_and_quota_errors_get_a_safe_provider_reason(error):
+    assert classify_ai_error_reason(error) == "provider_quota_exhausted"
 
 
 def test_real_groq_decommission_payload_classifies_as_model_error():
@@ -167,14 +176,14 @@ def test_json_validate_marker_in_the_body_alone_is_enough():
 
 @pytest.mark.asyncio
 async def test_real_groq_decommission_payload_advances_the_chain(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _groq_decommissioned_error())
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     result = await _call(router)
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
 
 
 def test_new_reasons_keep_the_provider_prefix_ops_agent_matches_on():
@@ -201,70 +210,100 @@ def test_new_reasons_keep_the_provider_prefix_ops_agent_matches_on():
 @pytest.mark.asyncio
 async def test_model_not_found_advances_the_chain(monkeypatch):
     # The 2026-07-17 outage: Groq answered 404 model_not_found for the pinned event-analysis
-    # model and the configured Cerebras fallback was never attempted.
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    # model and the configured Gemini fallback was never attempted.
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(404, "model_not_found", code="model_not_found"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     result = await _call(router)
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_payment_required_advances_from_gemini_to_mistral(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    groq = FakeProvider("groq", _error(500, "server error"))
+    gemini = FakeProvider("gemini", _error(402, "payment required"))
+    mistral = FakeProvider("mistral", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+
+    result = await _call(router)
+
+    assert result.provider == "mistral"
+    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_quota_chain_keeps_the_safe_terminal_reason(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    router = LLMRouter(
+        registry={
+            "groq": FakeProvider("groq", _error(402, "payment required")),
+            "gemini": FakeProvider("gemini", _error(400, "quota", code="insufficient_quota")),
+        }
+    )
+
+    with pytest.raises(AllProvidersFailedError) as raised:
+        await _call(router)
+
+    assert classify_ai_error_reason(raised.value) == "provider_quota_exhausted"
 
 
 @pytest.mark.asyncio
 async def test_genuine_bad_request_does_not_advance_the_chain(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(400, "context_length_exceeded"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     with pytest.raises(RuntimeError) as raised:
         await _call(router)
 
     assert "context_length_exceeded" in str(raised.value)
-    assert cerebras.calls == 0
+    assert gemini.calls == 0
 
 
 @pytest.mark.asyncio
 async def test_json_validate_failed_advances_the_chain(monkeypatch):
     # Positive case for the step-2 decision: unusable model *output* is fallback-eligible,
     # matching how a client-side AIInvalidJsonError has always been handled.
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(400, "json_validate_failed", code="json_validate_failed"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     result = await _call(router)
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_json_validate_failed_does_not_advance_past_a_bad_request(monkeypatch):
     # Negative case for the same decision: the fallback-eligible set was widened for output
     # failures only. A malformed request is still terminal on the first provider.
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(400, "invalid_request_error: bad messages"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     with pytest.raises(RuntimeError):
         await _call(router)
-    assert cerebras.calls == 0
+    assert gemini.calls == 0
 
 
 @pytest.mark.asyncio
 async def test_all_providers_model_broken_raises_all_failed(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", _error(404, "model_not_found")),
-            "cerebras": FakeProvider("cerebras", _error(404, "model_not_found")),
+            "gemini": FakeProvider("gemini", _error(404, "model_not_found")),
         }
     )
 
@@ -278,19 +317,19 @@ async def test_all_providers_model_broken_raises_all_failed(monkeypatch):
 @pytest.mark.asyncio
 async def test_breaker_opens_after_threshold_and_skips_the_pair(monkeypatch):
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "3")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(404, "model_not_found"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     for _ in range(3):
-        assert (await _call(router)).provider == "cerebras"
+        assert (await _call(router)).provider == "gemini"
     assert groq.calls == 3
 
     # Fourth cycle: groq is open, so it is skipped without spending a request.
-    assert (await _call(router)).provider == "cerebras"
+    assert (await _call(router)).provider == "gemini"
     assert groq.calls == 3
-    assert cerebras.calls == 4
+    assert gemini.calls == 4
 
 
 @pytest.mark.asyncio
@@ -298,15 +337,30 @@ async def test_open_breaker_does_not_cost_a_cycle(monkeypatch):
     # The important half of "must not suppress the fallback chain": skipping a broken primary
     # means the fallback answers *this* cycle, not that the cycle produces nothing.
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "1")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(404, "model_not_found"))
-    router = LLMRouter(registry={"groq": groq, "cerebras": FakeProvider("cerebras", _ok)})
+    router = LLMRouter(registry={"groq": groq, "gemini": FakeProvider("gemini", _ok)})
 
     await _call(router)
     result = await _call(router)
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     assert groq.calls == 1  # attempted once, then skipped rather than re-attempted
+
+
+@pytest.mark.asyncio
+async def test_payment_quota_failures_open_the_breaker_and_keep_fallback_available(monkeypatch):
+    monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "2")
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    groq = FakeProvider("groq", _error(402, "payment required"))
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
+
+    for _ in range(3):
+        assert (await _call(router)).provider == "gemini"
+
+    assert groq.calls == 2
+    assert gemini.calls == 3
 
 
 def test_breaker_half_opens_on_schedule_then_closes_on_success():
@@ -374,7 +428,7 @@ def test_breaker_state_is_per_call_type_and_model():
     ) is False
     # Different provider -> unaffected.
     assert breaker.should_skip(
-        call_type="event_analysis", provider="cerebras", model="dead-model", now=now
+        call_type="event_analysis", provider="gemini", model="dead-model", now=now
     ) is False
 
 
@@ -510,10 +564,10 @@ def test_an_abandoned_probe_does_not_skip_the_pair_forever():
 @pytest.mark.asyncio
 async def test_rate_limit_does_not_open_the_breaker_through_the_router(monkeypatch):
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "2")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", AIProviderRateLimitError("429", provider="groq", model="m"))
-    cerebras = FakeProvider("cerebras", _ok)
-    router = LLMRouter(registry={"groq": groq, "cerebras": cerebras})
+    gemini = FakeProvider("gemini", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
 
     for _ in range(4):
         await _call(router)
@@ -557,11 +611,11 @@ async def test_success_resets_the_failure_count(monkeypatch):
 @pytest.mark.asyncio
 async def test_every_provider_broken_reports_circuit_broken(monkeypatch):
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "1")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", _error(404, "model_not_found")),
-            "cerebras": FakeProvider("cerebras", _error(404, "model_not_found")),
+            "gemini": FakeProvider("gemini", _error(404, "model_not_found")),
         }
     )
 
@@ -653,11 +707,11 @@ async def test_skipped_provider_still_writes_a_usage_log_row(monkeypatch):
 
     monkeypatch.setattr(router_module, "write_llm_usage_log", _capture)
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "1")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", _error(404, "model_not_found")),
-            "cerebras": FakeProvider("cerebras", _ok),
+            "gemini": FakeProvider("gemini", _ok),
         }
     )
 
@@ -678,11 +732,11 @@ async def test_skipped_provider_still_writes_a_usage_log_row(monkeypatch):
 @pytest.mark.asyncio
 async def test_mixed_skip_and_attempt_reports_only_attempted_providers(monkeypatch):
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "1")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", _error(404, "model_not_found")),
-            "cerebras": FakeProvider("cerebras", _error(500, "server error")),
+            "gemini": FakeProvider("gemini", _error(500, "server error")),
         }
     )
 
@@ -692,8 +746,8 @@ async def test_mixed_skip_and_attempt_reports_only_attempted_providers(monkeypat
     with pytest.raises(AllProvidersFailedError) as raised:
         await _call(router)
 
-    # groq was skipped, cerebras was really attempted: the message must not claim otherwise.
-    assert raised.value.attempts == ["cerebras"]
+    # groq was skipped, gemini was really attempted: the message must not claim otherwise.
+    assert raised.value.attempts == ["gemini"]
     assert raised.value.circuit_broken is False
     assert "circuit-broken" not in str(raised.value)
 
@@ -703,9 +757,9 @@ async def test_auth_error_opens_the_breaker_through_the_router(monkeypatch):
     # auth_error and config_missing are counted alongside provider_model_error; only the
     # latter was previously exercised end-to-end.
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "2")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(401, "invalid api key"))
-    router = LLMRouter(registry={"groq": groq, "cerebras": FakeProvider("cerebras", _ok)})
+    router = LLMRouter(registry={"groq": groq, "gemini": FakeProvider("gemini", _ok)})
 
     for _ in range(3):
         await _call(router)
@@ -741,9 +795,9 @@ async def test_rate_limit_backoff_during_a_probe_does_not_spend_it(monkeypatch):
     from bot.services.llm.errors import LLMRateLimitBackoffActive
 
     monkeypatch.setenv("LLM_BREAKER_FAILURE_THRESHOLD", "1")
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider("groq", _error(404, "model_not_found"))
-    router = LLMRouter(registry={"groq": groq, "cerebras": FakeProvider("cerebras", _ok)})
+    router = LLMRouter(registry={"groq": groq, "gemini": FakeProvider("gemini", _ok)})
 
     await _call(router)  # opens groq's breaker
     model = llm_config.model_for("groq", "event_analysis")

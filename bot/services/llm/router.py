@@ -37,7 +37,6 @@ Exhaustion mapping preserves the exception contract existing callers already han
 import logging
 
 from bot.services.llm import breaker, config
-from bot.services.llm.cerebras_provider import get_provider as _cerebras_provider
 from bot.services.llm.errors import (
     AIInvalidJsonError,
     AIProviderRateLimitError,
@@ -85,6 +84,7 @@ _FALLBACK_REASONS = frozenset(
         "config_missing",
         "provider_model_error",
         "provider_json_validate_failed",
+        "provider_quota_exhausted",
     }
 )
 
@@ -95,7 +95,6 @@ _warned_missing_keys: set[str] = set()
 def _default_registry() -> dict:
     return {
         "groq": _groq_provider(),
-        "cerebras": _cerebras_provider(),
         "gemini": _gemini_provider(),
         "mistral": _mistral_provider(),
     }

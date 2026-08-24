@@ -906,6 +906,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHEN status = 'rate_limit' OR retry_after IS NOT NULL "
         "OR error_reason IN ('rate_limit', 'rate_limited') THEN 'provider_rate_limit' "
         "WHEN error_reason = 'provider_model_error' THEN 'provider_model_error' "
+        "WHEN error_reason = 'provider_quota_exhausted' THEN 'provider_quota_exhausted' "
         "WHEN error_reason = 'provider_json_validate_failed' "
         "THEN 'provider_json_validation_failure' "
         "WHEN error_reason = 'invalid_json' THEN 'client_json_validation_failure' "

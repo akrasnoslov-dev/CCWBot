@@ -454,6 +454,7 @@ def test_llm_failure_category_query_keeps_provider_and_client_reasons_distinct()
         rows = [
             ("groq", "m1", "event_analysis", "llm_error", "provider_bad_request", None),
             ("groq", "m1", "event_analysis", "llm_error", "provider_4xx", None),
+            ("groq", "m1", "event_analysis", "llm_error", "provider_quota_exhausted", None),
             (
                 "cerebras",
                 "m2",
@@ -502,6 +503,7 @@ def test_llm_failure_category_query_keeps_provider_and_client_reasons_distinct()
         "provider_5xx": 1,
         "provider_bad_request": 1,
         "provider_json_validation_failure": 1,
+        "provider_quota_exhausted": 1,
         "provider_rate_limit": 1,
     }
 

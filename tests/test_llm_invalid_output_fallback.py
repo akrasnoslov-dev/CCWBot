@@ -49,7 +49,7 @@ class ProviderHttpError(RuntimeError):
 
 def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
-    for provider in ("groq", "cerebras", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "mistral"):
         env = config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
@@ -140,11 +140,11 @@ def _clear_report_caches():
 
 @pytest.mark.asyncio
 async def test_event_analysis_invalid_json_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     valid = _valid_no_alert_analysis()
     groq = ContentProvider("groq", "not json at all")
-    cerebras = ContentProvider("cerebras", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     result = await ai_agent_groq.ask_event_analysis_raw(
         {"symbol": "BTC", "analysis_id": "a1", "news": [], "market": {}}
@@ -152,18 +152,18 @@ async def test_event_analysis_invalid_json_falls_back_to_next_provider(monkeypat
 
     raw_content, parsed = result
     assert parsed == valid
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     # One analysis, one pass over providers: each provider was called exactly once.
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_all_providers_invalid_json_keeps_terminal_error(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = ContentProvider("groq", "not json")
-    cerebras = ContentProvider("cerebras", "still not json")
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", "still not json")
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     with pytest.raises(AIInvalidJsonError):
         await ai_agent_groq.ask_event_analysis_raw(
@@ -171,18 +171,18 @@ async def test_event_analysis_all_providers_invalid_json_keeps_terminal_error(mo
         )
 
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     valid = _valid_no_alert_analysis()
     schema_invalid = dict(valid)
     schema_invalid.pop("reason_for_no_alert")
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    cerebras = ContentProvider("cerebras", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     def schema_check(parsed):
         if "reason_for_no_alert" not in parsed:
@@ -193,14 +193,14 @@ async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeyp
         schema_check=schema_check,
     )
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     invalid = {
         "symbol": "ETH",
         "title": "Wrong symbol",
@@ -211,8 +211,8 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
     }
     valid = dict(invalid, symbol="BTC", title="BTC heartbeat")
     groq = ContentProvider("groq", json.dumps(invalid))
-    cerebras = ContentProvider("cerebras", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     def schema_check(parsed):
         if parsed.get("symbol") != "BTC":
@@ -222,10 +222,10 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
         {"symbol": "BTC", "candidate_news": []}, schema_check=schema_check
     )
 
-    assert result.provider == "cerebras"
+    assert result.provider == "gemini"
     assert result[1] == valid
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
@@ -233,7 +233,7 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
 async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
     monkeypatch, call_path
 ):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     valid_legacy = {
         "news_relevance": "not_relevant",
         "risk_level": "low",
@@ -257,8 +257,8 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
     }
     valid = valid_news if call_path == "news_intelligence" else valid_legacy
     groq = ContentProvider("groq", '{"ok": true}')
-    cerebras = ContentProvider("cerebras", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     if call_path == "news_intelligence":
         from bot.services.news_intelligence_service import validate_news_intelligence_schema
@@ -286,28 +286,28 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
 
     assert parsed == valid
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_legacy_schema_exhaustion_preserves_none_contract(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = ContentProvider("groq", '{"ok": true}')
-    cerebras = ContentProvider("cerebras", '{"risk_level": "low"}')
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", '{"risk_level": "low"}')
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     assert await ai_agent_groq._ask_json("build a legacy alert") is None
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     schema_invalid = {"report_type": "daily", "title": "Daily Market Report"}
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    cerebras = ContentProvider("cerebras", json.dumps(_valid_report_payload()))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(_valid_report_payload()))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     async def fake_market_data(symbols):
         return _market_data()
@@ -330,20 +330,20 @@ async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
     # The fallback provider answered, so this is a real LLM report, not the
     # deterministic fallback.
     assert report["error_message"] is None
-    assert report["provider"] == "cerebras"
+    assert report["provider"] == "gemini"
     assert groq.calls == 1
-    assert cerebras.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_report_all_providers_schema_invalid_uses_deterministic_fallback(
     monkeypatch, caplog
 ):
-    _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     schema_invalid = {"report_type": "daily", "title": "Daily Market Report"}
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    cerebras = ContentProvider("cerebras", json.dumps(schema_invalid))
-    _install_router(monkeypatch, {"groq": groq, "cerebras": cerebras})
+    gemini = ContentProvider("gemini", json.dumps(schema_invalid))
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
 
     async def fake_market_data(symbols):
         return _market_data()
@@ -395,12 +395,11 @@ async def _install_report_inputs(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_production_report_chain_reaches_mistral_and_persists_actual_route(monkeypatch):
-    providers = ("groq", "cerebras", "gemini", "mistral")
+    providers = ("groq", "gemini", "mistral")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
-        "cerebras": ContentProvider("cerebras", schema_invalid),
         "gemini": ContentProvider(
             "gemini",
             ProviderHttpError("model route unavailable", status_code=404, code="model_not_found"),
@@ -415,17 +414,16 @@ async def test_production_report_chain_reaches_mistral_and_persists_actual_route
     assert report["status"] == "completed"
     assert report["provider"] == "mistral"
     assert report["model"] == config.model_for("mistral", "daily_report")
-    assert [registry[name].calls for name in providers] == [1, 1, 1, 1]
+    assert [registry[name].calls for name in providers] == [1, 1, 1]
 
 
 @pytest.mark.asyncio
 async def test_production_report_chain_can_succeed_before_final_provider(monkeypatch):
-    providers = ("groq", "cerebras", "gemini", "mistral")
+    providers = ("groq", "gemini", "mistral")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
-        "cerebras": ContentProvider("cerebras", schema_invalid),
         "gemini": ContentProvider("gemini", json.dumps(_valid_report_payload())),
         "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
     }
@@ -436,18 +434,17 @@ async def test_production_report_chain_can_succeed_before_final_provider(monkeyp
 
     assert report["provider"] == "gemini"
     assert report["model"] == config.model_for("gemini", "daily_report")
-    assert [registry[name].calls for name in providers] == [1, 1, 1, 0]
+    assert [registry[name].calls for name in providers] == [1, 1, 0]
 
 
 @pytest.mark.asyncio
 async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
-    providers = ("groq", "cerebras", "gemini", "mistral")
+    providers = ("groq", "gemini", "mistral")
     _configure(monkeypatch, providers, set(providers))
     registry = {
         "groq": ContentProvider(
             "groq", ProviderHttpError("malformed request", status_code=400, code="bad_request")
         ),
-        "cerebras": ContentProvider("cerebras", RuntimeError("must not be called")),
         "gemini": ContentProvider("gemini", RuntimeError("must not be called")),
         "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
     }
@@ -458,12 +455,12 @@ async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
             {"report_type": "daily", "active_symbols": ["BTC", "ETH", "GRAM", "SOL"]}
         )
 
-    assert [registry[name].calls for name in providers] == [1, 0, 0, 0]
+    assert [registry[name].calls for name in providers] == [1, 0, 0]
 
 
 @pytest.mark.asyncio
-async def test_four_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
-    providers = ("groq", "cerebras", "gemini", "mistral")
+async def test_three_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
+    providers = ("groq", "gemini", "mistral")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {name: ContentProvider(name, schema_invalid) for name in providers}
@@ -476,4 +473,4 @@ async def test_four_provider_schema_exhaustion_uses_safe_deterministic_report(mo
     assert report["provider"] == reports.DETERMINISTIC_REPORT_PROVIDER
     assert report["model"] == reports.DETERMINISTIC_REPORT_MODEL
     assert report["error_message"] == "deterministic fallback after schema_validation_failed"
-    assert [registry[name].calls for name in providers] == [1, 1, 1, 1]
+    assert [registry[name].calls for name in providers] == [1, 1, 1]

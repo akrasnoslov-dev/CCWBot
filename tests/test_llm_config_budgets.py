@@ -182,10 +182,10 @@ def test_invalid_reasoning_effort_falls_back_and_warns(monkeypatch, caplog):
 def test_unknown_provider_name_in_a_chain_warns(monkeypatch, caplog):
     # A typo here silently shortens the fallback chain, which is the same class of invisible
     # misconfiguration as a bad token budget.
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "grok,cerebras")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "grok,gemini")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.provider_priority("event_analysis") == ["cerebras"]
+        assert llm_config.provider_priority("event_analysis") == ["gemini"]
 
     assert any("LLM_EVENT_PROVIDERS" in r.getMessage() for r in caplog.records)
 
@@ -463,7 +463,6 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     ("provider", "env_name", "expected"),
     [
         ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
-        ("cerebras", "CEREBRAS_MODEL", "gpt-oss-120b"),
         ("gemini", "GEMINI_MODEL", "gemini-2.5-flash"),
         ("mistral", "MISTRAL_MODEL", "mistral-small-latest"),
     ],
@@ -489,11 +488,11 @@ def test_model_value_is_stripped(monkeypatch):
 
 
 def _startup_log_messages(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cerebras")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
     monkeypatch.setenv("GROQ_API_KEY", "groq-secret-key-value")
-    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
     for name in ("LLM_EVENT_PROVIDERS", "LLM_REPORT_PROVIDERS", "LLM_HEARTBEAT_PROVIDERS"):
         monkeypatch.delenv(name, raising=False)
 
@@ -509,55 +508,63 @@ def test_startup_log_reports_every_call_type_with_models_and_budgets(monkeypatch
     for call_type in llm_config.KNOWN_CALL_TYPES:
         assert f"call_type={call_type}" in joined
     assert "groq:llama-3.3-70b-versatile" in joined
-    assert "cerebras:gpt-oss-120b" in joined
+    assert "gemini:gpt-oss-120b" in joined
     assert "max_tokens=300" in joined
+
+
+def test_startup_log_does_not_advertise_the_retired_provider(monkeypatch, caplog):
+    monkeypatch.setenv("CEREBRAS_API_KEY", "retired-provider-key")
+    monkeypatch.setenv("CEREBRAS_MODEL", "retired-model")
+    messages = _startup_log_messages(monkeypatch, caplog)
+
+    assert "cerebras" not in "\n".join(messages).lower()
 
 
 def test_startup_log_marks_providers_without_an_api_key(monkeypatch, caplog):
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
-    assert "cerebras:gpt-oss-120b/effort=low/max=1324(no_api_key)" in joined
+    assert "gemini:gpt-oss-120b/effort=low/max=1324(no_api_key)" in joined
     assert "groq:llama-3.3-70b-versatile(no_api_key)" not in joined
 
 
 def test_startup_log_contains_no_environment_values_or_credentials(monkeypatch, caplog):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "low")
-    monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
     assert "groq-secret-key-value" not in joined
     # Credential variable *names* must not appear either, so no line can be mistaken for one.
-    for name in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "TELEGRAM_BOT_TOKEN", "DATABASE_URL"):
+    for name in ("GROQ_API_KEY", "GEMINI_API_KEY", "TELEGRAM_BOT_TOKEN", "DATABASE_URL"):
         assert name not in joined
     # Model identifiers and the resolved effort are explicitly allowed in operational logs.
     assert "effort=low" in joined
 
 
 def test_startup_log_reports_safe_effective_budget_for_thinking_model(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cerebras")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
 
     with caplog.at_level(logging.INFO, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
 
     joined = "\n".join(record.getMessage() for record in caplog.records)
-    assert "cerebras:gpt-oss-120b/effort=low/max=1324" in joined
+    assert "gemini:gpt-oss-120b/effort=low/max=1324" in joined
     assert "llm_config_budget_risk" not in joined
 
 
 def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, caplog):
     # A provider without a key is excluded from the chain, so warning about its budget is
     # noise on every start of a Groq-only deployment.
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cerebras")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
@@ -566,9 +573,9 @@ def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, ca
 
 
 def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "cerebras")
-    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-key")
-    monkeypatch.setenv("CEREBRAS_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_MAX_TOKENS", "4000")
     monkeypatch.setenv("LLM_MARKET_HEARTBEAT_MAX_TOKENS", "4000")
     monkeypatch.setenv("LLM_REPORT_MAX_TOKENS", "4000")
