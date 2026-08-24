@@ -15,6 +15,7 @@ from bot.services.llm.errors import (
     LLMRateLimitBackoffActive,
 )
 from bot.services.llm.router import LLMRouter
+from bot.services.llm.telemetry import classify_ai_error_reason
 
 
 class FakeProvider(BaseProvider):
@@ -242,8 +243,8 @@ async def test_backoff_skip_then_next_provider_succeeds(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mixed_failure_exhaustion_prefers_rate_limit(monkeypatch):
-    # timeout then rate_limit -> rate-limit wins so callers reach the rate-limited fallback.
+async def test_mixed_timeout_and_rate_limit_remains_a_terminal_failure(monkeypatch):
+    # A late 429 does not erase the earlier timeout from this exhausted logical call.
     _configure(monkeypatch, ["groq", "cerebras"], {"groq", "cerebras"})
     router = LLMRouter(
         registry={
@@ -254,8 +255,10 @@ async def test_mixed_failure_exhaustion_prefers_rate_limit(monkeypatch):
         }
     )
 
-    with pytest.raises(AIProviderRateLimitError):
+    with pytest.raises(AllProvidersFailedError) as raised:
         await _call(router)
+    assert raised.value.mixed_failure is True
+    assert classify_ai_error_reason(raised.value) == "mixed_provider_failures"
 
 
 @pytest.mark.asyncio
@@ -285,9 +288,9 @@ async def test_mixed_prebackoff_and_live_rate_limit_raises_rate_limit(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_rate_limit_attributed_to_rate_limited_provider(monkeypatch):
-    # groq is rate-limited, later providers time out; the raised error should name groq,
-    # not the last provider in the chain.
+async def test_mixed_rate_limit_and_timeout_raises_all_failed(monkeypatch):
+    # A 429 from Groq is provider pressure, but does not make the logical call terminally
+    # rate-limited after later fallbacks time out.
     _configure(monkeypatch, ["groq", "cerebras", "gemini"], {"groq", "cerebras", "gemini"})
     router = LLMRouter(
         registry={
@@ -297,9 +300,12 @@ async def test_rate_limit_attributed_to_rate_limited_provider(monkeypatch):
         }
     )
 
-    with pytest.raises(AIProviderRateLimitError) as raised:
+    with pytest.raises(AllProvidersFailedError) as raised:
         await _call(router)
-    assert raised.value.provider == "groq"
+    assert isinstance(raised.value.last_error, asyncio.TimeoutError)
+    assert raised.value.rate_limited is False
+    assert raised.value.mixed_failure is True
+    assert classify_ai_error_reason(raised.value) == "mixed_provider_failures"
 
 
 def _content_result(name, model="m", content="{}"):

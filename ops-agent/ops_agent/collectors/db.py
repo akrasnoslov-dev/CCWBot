@@ -49,7 +49,7 @@ WITH recent_analyses AS (
       -- Excluding them here means a failure storm can no longer blind those detectors. The
       -- failures stay fully visible in llm_usage_logs and in the analysis summaries.
       AND coalesce(eai.status, '') NOT IN (
-          'llm_error', 'invalid_json', 'schema_error', 'skipped_due_to_rate_limit'
+          'llm_error', 'invalid_json', 'schema_error', 'rate_limit', 'skipped_due_to_rate_limit'
       )
     ORDER BY eai.created_at DESC, eai.id DESC
     LIMIT :alert_evidence_limit

@@ -292,6 +292,27 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY analyses DESC LIMIT :limit",
     ),
     DbQuery(
+        "event_analysis_logical_outcome_summary",
+        "evidence/db/aggregate_metrics.json",
+        # event_ai_analyses holds one terminal product outcome; unlike llm_usage_logs,
+        # its rows are not individual provider attempts in a fallback pass.
+        "WITH classified AS ("
+        "SELECT provider, model, status, coalesce(error_reason, '') AS error_reason, "
+        "CASE "
+        "WHEN status IN ('success', 'completed', 'no_alert') THEN 'logical_success' "
+        "WHEN status = 'skipped_due_to_rate_limit' "
+        "OR error_reason = 'rate_limit_backoff_active' THEN 'logical_backoff_blocked' "
+        "WHEN error_reason IN ('rate_limit', 'rate_limited') THEN 'logical_rate_limited' "
+        "WHEN error_reason = 'provider_circuit_broken' THEN 'logical_circuit_breaker_blocked' "
+        "ELSE 'logical_failed' END AS logical_outcome "
+        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis'"
+        ") "
+        "SELECT provider, model, logical_outcome, count(*) AS analyses "
+        "FROM classified GROUP BY provider, model, logical_outcome "
+        "ORDER BY analyses DESC, provider, model, logical_outcome LIMIT :limit",
+    ),
+    DbQuery(
         "event_ai_analysis_invariant_checks",
         "evidence/db/anomalies.json",
         "SELECT 'multiple_event_ai_analyses_for_event' AS anomaly, symbol, market_event_id, "
@@ -308,7 +329,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "event_ai_analysis_samples",
         "evidence/db/recent_llm_failures.json",
         "SELECT id, market_event_id, symbol, analysis_type, provider, model, status, should_alert, "
-        "error_reason, left(error_message, 300) AS error_message, created_at, "
+        # Provider errors can echo request content.  Closed error_reason values are enough for
+        # operational triage and keep normal bundles free of private prompt/response fragments.
+        "error_reason, created_at, "
         # Sanitized signal: how many candidate news items the analysis input contained
         # (a count only, never news content), so "no relevant news existed" is
         # distinguishable from "news-attach path broken".
@@ -873,7 +896,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "llm_failure_category_summary",
         "evidence/db/aggregate_metrics.json",
         "WITH classified AS ("
-        "SELECT call_type, "
+        "SELECT provider, model, call_type, "
         "CASE "
         "WHEN status IN ('success', 'completed') THEN 'successful' "
         "WHEN status = 'skipped_due_to_rate_limit' "
@@ -883,20 +906,25 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHEN status = 'rate_limit' OR retry_after IS NOT NULL "
         "OR error_reason IN ('rate_limit', 'rate_limited') THEN 'provider_rate_limit' "
         "WHEN error_reason = 'provider_model_error' THEN 'provider_model_error' "
-        "WHEN error_reason IN ('schema_validation_failed', 'invalid_json', "
-        "'provider_json_validate_failed') THEN 'schema_invalid_output' "
-        "WHEN error_reason IN ('provider_bad_request', 'provider_4xx') THEN 'bad_request' "
+        "WHEN error_reason = 'provider_json_validate_failed' "
+        "THEN 'provider_json_validation_failure' "
+        "WHEN error_reason = 'invalid_json' THEN 'client_json_validation_failure' "
+        "WHEN error_reason = 'schema_validation_failed' "
+        "THEN 'client_schema_validation_failure' "
+        "WHEN error_reason = 'provider_bad_request' THEN 'provider_bad_request' "
+        "WHEN error_reason = 'provider_4xx' THEN 'provider_4xx' "
         "WHEN error_reason = 'timeout' THEN 'timeout' "
-        "WHEN error_reason IN ('network_error', 'provider_error', 'provider_5xx', "
+        "WHEN error_reason = 'provider_5xx' THEN 'provider_5xx' "
+        "WHEN error_reason IN ('network_error', 'provider_error', "
         "'empty_response') THEN 'network_error' "
         "WHEN error_reason IN ('auth_error', 'config_missing') THEN 'provider_auth_config' "
         "WHEN error_reason LIKE 'provider_%' THEN 'provider_other' "
         "ELSE 'other' END AS failure_category "
         "FROM llm_usage_logs WHERE created_at >= :since AND created_at < :until"
         ") "
-        "SELECT call_type, failure_category, count(*) AS calls "
-        "FROM classified GROUP BY call_type, failure_category "
-        "ORDER BY calls DESC, call_type, failure_category LIMIT :limit",
+        "SELECT provider, model, call_type, failure_category, count(*) AS calls "
+        "FROM classified GROUP BY provider, model, call_type, failure_category "
+        "ORDER BY calls DESC, provider, model, call_type, failure_category LIMIT :limit",
     ),
     DbQuery(
         "news_freshness_summary",

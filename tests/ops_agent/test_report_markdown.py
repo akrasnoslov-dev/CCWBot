@@ -386,14 +386,19 @@ def test_report_markdown_explains_safe_news_llm_and_docker_evidence():
                 "repeated_llm_failures_or_rate_limits",
                 "high",
                 "triggered",
-                "3 LLM failures and 1 rate-limit signals",
+                (
+                    "3 provider-attempt incidents, 1 active-backoff skip, "
+                    "0 circuit-breaker skips; 0 terminal Event Analysis failures"
+                ),
                 metrics={
-                    "llm_failures": 3,
-                    "rate_limits": 1,
-                    "failure_categories": {
-                        "schema_validation_failed": 2,
-                        "rate_limit_backoff": 1,
-                    },
+                    "provider_attempt_incidents": 3,
+                    "actual_provider_rate_limits": 1,
+                    "active_backoff_skips": 1,
+                    "circuit_breaker_skips": 0,
+                    "terminal_event_analysis_failures": 0,
+                    "terminal_event_analysis_rate_limited": 0,
+                    "terminal_event_analysis_backoff_blocked": 0,
+                    "terminal_event_analysis_circuit_blocked": 0,
                 },
             ),
         ],
@@ -406,8 +411,10 @@ def test_report_markdown_explains_safe_news_llm_and_docker_evidence():
 
     assert "container state summary" in markdown
     assert "budget-skipped" in markdown
-    assert "schema_validation_failed: 2" in markdown
-    assert "provider/network issues" in markdown
+    assert "provider-attempt incidents" in markdown
+    assert "actual provider rate limits" in markdown
+    assert "terminal Event Analysis failures" in markdown
+    assert "terminal rate-limited" in markdown
     assert "before considering any LLM budget change" in markdown
 
 
