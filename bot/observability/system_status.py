@@ -594,6 +594,7 @@ def _llm_provider_label(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
     return {
         "groq": "groq",
+        # Retired providers remain labelable so historical telemetry is readable.
         "cerebras": "cerebras",
         "gemini": "gemini",
         "mistral": "mistral",

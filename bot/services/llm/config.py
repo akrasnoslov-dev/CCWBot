@@ -22,8 +22,8 @@ from bot.services.llm.env import (
 
 logger = logging.getLogger(__name__)
 
-# Ordered default chain: Groq primary, then Cerebras, Gemini, Mistral.
-DEFAULT_PROVIDER_PRIORITY = ["groq", "cerebras", "gemini", "mistral"]
+# Ordered default chain: Groq primary, then Gemini and Mistral.
+DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini", "mistral"]
 KNOWN_PROVIDERS = frozenset(DEFAULT_PROVIDER_PRIORITY)
 
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
@@ -37,17 +37,15 @@ _CALL_TYPE_PRIORITY_ENV = {
 
 _PROVIDER_API_KEY_ENV = {
     "groq": "GROQ_API_KEY",
-    "cerebras": "CEREBRAS_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
 }
 
-# All four providers are reached through the OpenAI-compatible chat-completions API, so we
+# All providers are reached through the OpenAI-compatible chat-completions API, so we
 # only need a base URL per provider — no extra client library. Gemini exposes an
 # OpenAI-compatible endpoint, which keeps the provider code uniform and avoids a new dependency.
 _PROVIDER_BASE_URL = {
     "groq": "https://api.groq.com/openai/v1",
-    "cerebras": "https://api.cerebras.ai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "mistral": "https://api.mistral.ai/v1",
 }
@@ -66,7 +64,6 @@ _GROQ_MODEL_ENV_BY_CALL_TYPE = {
 _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
-    "cerebras": ("CEREBRAS_MODEL", "gpt-oss-120b"),
     "gemini": ("GEMINI_MODEL", "gemini-2.5-flash"),
     "mistral": ("MISTRAL_MODEL", "mistral-small-latest"),
 }
@@ -216,7 +213,7 @@ def _model_from_env(env_name: str, default: str) -> str:
     """Resolve a model identifier, treating a present-but-empty value as unset.
 
     ``os.getenv(name, default)`` only falls back when the variable is *absent*, so
-    ``CEREBRAS_MODEL=`` would otherwise resolve to ``""`` and be sent as the model — a 400 the
+    An empty model override would otherwise resolve to ``""`` and be sent as the model — a 400 the
     router treats as deterministic, which aborts the chain instead of falling through. Blanking
     the API key is the supported way to drop a provider; blanking the model is a mistake.
     """
@@ -432,7 +429,7 @@ def log_resolved_configuration() -> None:
 def _warn_undersized_thinking_budgets(entry: dict) -> None:
     """Warn when a chain member reasons internally but has no budget left to answer.
 
-    The shipped Cerebras/Gemini defaults are thinking models while the call-type budgets are
+    The shipped Gemini default is a thinking model while the call-type budgets are
     sized for the llama primary. That combination fails with an empty completion rather than a
     recognisable error, so it is surfaced at startup instead of one dead call at a time.
     """

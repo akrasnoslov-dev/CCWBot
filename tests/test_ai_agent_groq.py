@@ -416,11 +416,11 @@ def test_event_analysis_model_and_max_token_defaults(monkeypatch):
 def test_no_code_default_names_the_decommissioned_scout_model(monkeypatch):
     # Regression guard for the 2026-07-17 outage: Groq removed
     # meta-llama/llama-4-scout-17b-16e-instruct, which was the pinned event_analysis default.
-    for provider in ("groq", "cerebras", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "mistral"):
         env = llm_config._PROVIDER_API_KEY_ENV[provider]
         monkeypatch.delenv(env, raising=False)
     for call_type in llm_config.KNOWN_CALL_TYPES:
-        for provider in ("groq", "cerebras", "gemini", "mistral"):
+        for provider in ("groq", "gemini", "mistral"):
             env_name = (
                 llm_config._GROQ_MODEL_ENV_BY_CALL_TYPE.get(
                     call_type, llm_config._GROQ_DEFAULT_MODEL

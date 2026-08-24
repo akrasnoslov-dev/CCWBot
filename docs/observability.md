@@ -68,7 +68,7 @@ and bundles from before and after this change are not directly comparable on tho
 `event_analysis` calls succeeded, and counts consecutive collection cycles with the same result
 via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares only
 Groq primary-provider evidence in `llm_usage_logs` against the shipped default (or an explicit
-operator override); Cerebras, Gemini, and Mistral fallback models are reported separately and do
+operator override); Gemini and Mistral fallback models are reported separately and do
 not count as drift. Missing Groq evidence is inconclusive, never healthy. A withdrawn primary
 model is high severity. Both read existing tables only.
 

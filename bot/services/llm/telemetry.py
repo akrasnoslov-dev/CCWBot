@@ -79,6 +79,23 @@ _MODEL_ERROR_MARKERS = (
     "invalid_model",
 )
 
+# Billing/quota errors are provider availability failures, not client request defects and not
+# temporary 429 rate limits. Keep this list to explicit provider error identifiers; arbitrary
+# response text can contain user-controlled data and must not change routing semantics.
+_QUOTA_EXHAUSTED_MARKERS = frozenset(
+    {
+        "payment_required",
+        "payment_required_error",
+        "quota",
+        "quota_exceeded",
+        "insufficient_quota",
+        "credits_exhausted",
+        "insufficient_credits",
+        "billing_quota_exhausted",
+        "account_quota_exhausted",
+    }
+)
+
 # Free-text variants. These require the word "model" near the failure phrase: bare phrases like
 # "does not exist" also appear in genuine request defects ("parameter 'foo' does not exist"),
 # which must stay terminal rather than being retried across the whole chain.
@@ -157,6 +174,38 @@ def _error_fields(error: Exception) -> list[str]:
     return parts
 
 
+def _provider_error_identifiers(error: Exception) -> set[str]:
+    """Return provider code/type fields without inspecting free-text response messages."""
+    identifiers: set[str] = set()
+    for attribute in ("code", "type"):
+        value = getattr(error, attribute, None)
+        if isinstance(value, str):
+            identifiers.add(value.strip().lower())
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        nested = body.get("error")
+        source = nested if isinstance(nested, dict) else body
+        for key in ("code", "type"):
+            value = source.get(key)
+            if isinstance(value, str):
+                identifiers.add(value.strip().lower())
+    return identifiers
+
+
+def is_provider_quota_exhausted_error(error: Exception) -> bool:
+    """True for a provider billing/quota refusal that another provider can serve."""
+    candidates = [error]
+    for attribute in ("last_error", "__cause__"):
+        wrapped = getattr(error, attribute, None)
+        if isinstance(wrapped, BaseException) and wrapped is not error:
+            candidates.append(wrapped)
+    return any(
+        _effective_status_code(candidate) == 402
+        or bool(_provider_error_identifiers(candidate) & _QUOTA_EXHAUSTED_MARKERS)
+        for candidate in candidates
+    )
+
+
 def _error_haystack(error: Exception) -> str:
     """Lowercased text to match markers against: message, provider error code, and body.
 
@@ -185,6 +234,11 @@ def classify_ai_error_reason(error: Exception) -> str:
         return "provider_circuit_broken"
     if isinstance(error, AllProvidersFailedError) and error.mixed_failure:
         return "mixed_provider_failures"
+    # Billing/quota codes are a provider availability failure even when a provider assigns a
+    # 429 status or includes rate-limit-like wording. Rate limits without an explicit quota
+    # code remain below, so only the provider's structured quota signal changes this routing.
+    if is_provider_quota_exhausted_error(error):
+        return "provider_quota_exhausted"
     if isinstance(error, AIProviderRateLimitError) or is_rate_limit_error(error):
         return "rate_limit"
     if isinstance(error, AIInvalidJsonError):

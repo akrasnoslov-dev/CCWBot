@@ -43,7 +43,7 @@ _DEFAULT_BACKOFF_SECONDS = (60, 300, 900, 3600)
 #    (``provider_bad_request``, residual ``provider_4xx``) is a defect in our own request, so
 #    it fails identically everywhere. Opening a breaker on it would skip the primary next
 #    cycle and hand the same broken request to the fallback, which opens its breaker too —
-#    a purely client-side bug would walk down the chain and take out all four providers.
+#    a purely client-side bug would walk down the chain and take out every provider.
 # 2. The failure must not be self-resolving. Rate limits have their own backoff registry;
 #    timeouts and 5xx are transient. Neither should latch a breaker open.
 #
@@ -54,6 +54,7 @@ _DEFAULT_BACKOFF_SECONDS = (60, 300, 900, 3600)
 DETERMINISTIC_BREAKER_REASONS = frozenset(
     {
         "provider_model_error",
+        "provider_quota_exhausted",
         "auth_error",
         "config_missing",
     }
