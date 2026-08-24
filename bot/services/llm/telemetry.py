@@ -24,6 +24,7 @@ from bot.services.llm.errors import (
     AIInvalidJsonError,
     AIProviderRateLimitError,
     AISchemaValidationError,
+    AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
 
@@ -182,6 +183,8 @@ def classify_ai_error_reason(error: Exception) -> str:
         # this distinct from a fresh failure is what makes "known-bad, waiting to probe"
         # readable in event_ai_analyses.error_reason instead of a generic other_error.
         return "provider_circuit_broken"
+    if isinstance(error, AllProvidersFailedError) and error.mixed_failure:
+        return "mixed_provider_failures"
     if isinstance(error, AIProviderRateLimitError) or is_rate_limit_error(error):
         return "rate_limit"
     if isinstance(error, AIInvalidJsonError):

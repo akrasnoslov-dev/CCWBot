@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.detectors import (
     consecutive_zero_success_runs,
@@ -30,7 +31,11 @@ PERIOD = Period(
 def _evidence(llm_rows, *, state_runs=None):
     return {
         "evidence/db/aggregate_metrics.json": {
-            "queries": {"llm_usage_summary": {"rows": llm_rows}}
+            "queries": {
+                "llm_usage_summary": {"rows": llm_rows},
+                "llm_failure_category_summary": {"rows": []},
+                "event_analysis_logical_outcome_summary": {"rows": []},
+            }
         },
         "evidence/local_state/ops_agent_state_snapshot.json": {"recent_runs": state_runs or []},
     }
@@ -43,9 +48,16 @@ def _detector(evidence, detector_id):
     raise AssertionError(f"detector {detector_id} not registered")
 
 
-def _row(status, calls, *, model="llama-3.3-70b-versatile", call_type="event_analysis"):
+def _row(
+    status,
+    calls,
+    *,
+    model="llama-3.3-70b-versatile",
+    call_type="event_analysis",
+    provider="groq",
+):
     return {"call_type": call_type, "status": status, "calls": calls, "model": model,
-            "provider": "groq"}
+            "provider": provider}
 
 
 # --- zero success rate -------------------------------------------------------------------
@@ -159,7 +171,7 @@ def test_decommissioned_model_in_use_triggers_at_high_severity():
 
     assert result.status == "triggered"
     assert result.severity == "high"
-    assert result.metrics["decommissioned_models_in_use"] == [
+    assert result.metrics["decommissioned_primary_models_in_use"] == [
         "meta-llama/llama-4-scout-17b-16e-instruct"
     ]
 
@@ -172,7 +184,7 @@ def test_any_other_divergence_triggers_at_medium_severity():
 
     assert result.status == "triggered"
     assert result.severity == "medium"
-    assert result.metrics["drifted_models"] == ["llama-3.1-8b-instant"]
+    assert result.metrics["drifted_primary_models"] == ["llama-3.1-8b-instant"]
 
 
 def test_operator_can_declare_an_intentional_model_override(monkeypatch):
@@ -190,11 +202,51 @@ def test_no_recorded_model_is_unknown():
     assert result.status == "unknown"
 
 
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [
+        ("cerebras", "gpt-oss-120b"),
+        ("gemini", "gemini-2.5-flash"),
+        ("mistral", "mistral-small-latest"),
+    ],
+)
+def test_fallback_models_do_not_count_as_primary_model_drift(provider, model):
+    result = _detector(
+        _evidence(
+            [
+                _row("success", 1, model=SHIPPED_DEFAULT_MODELS["event_analysis"]),
+                _row("success", 1, provider=provider, model=model),
+            ]
+        ),
+        "event_analysis_model_drift",
+    )
+
+    assert result.status == "clear"
+    assert result.metrics["fallback_models_in_use"] == [model]
+
+
+def test_fallback_only_evidence_is_unknown_not_primary_model_drift():
+    result = _detector(
+        _evidence([_row("success", 1, provider="cerebras", model="gpt-oss-120b")]),
+        "event_analysis_model_drift",
+    )
+
+    assert result.status == "unknown"
+    assert result.metrics["primary_models_in_use"] == []
+    assert result.metrics["fallback_models_in_use"] == ["gpt-oss-120b"]
+
+
 # --- repetition-evidence row cap ---------------------------------------------------------
 
 
 def test_repetition_evidence_query_excludes_failed_analyses():
-    for status in ("llm_error", "invalid_json", "schema_error", "skipped_due_to_rate_limit"):
+    for status in (
+        "llm_error",
+        "invalid_json",
+        "schema_error",
+        "rate_limit",
+        "skipped_due_to_rate_limit",
+    ):
         assert f"'{status}'" in ALERT_EVIDENCE_SQL
     assert "NOT IN" in ALERT_EVIDENCE_SQL
 
@@ -234,7 +286,7 @@ def test_a_failure_storm_no_longer_starves_delivered_analyses_of_the_row_cap():
     for index in range(3396):
         rows.append(
             {
-                "status": "llm_error",
+                "status": "rate_limit" if index % 2 else "llm_error",
                 "created_at": PERIOD.end - timedelta(seconds=30 * (index + 1)),
             }
         )
@@ -249,7 +301,13 @@ def test_a_failure_storm_no_longer_starves_delivered_analyses_of_the_row_cap():
     before = _simulate_row_cap(rows, row_cap=500)
     assert [row for row in before if row["status"] == "success"] == []
 
-    excluded = {"llm_error", "invalid_json", "schema_error", "skipped_due_to_rate_limit"}
+    excluded = {
+        "llm_error",
+        "invalid_json",
+        "schema_error",
+        "rate_limit",
+        "skipped_due_to_rate_limit",
+    }
     after = _simulate_row_cap(
         [row for row in rows if row["status"] not in excluded], row_cap=500
     )

@@ -27,7 +27,7 @@ Exhaustion mapping preserves the exception contract existing callers already han
   deterministic-fallback handling for malformed model output.
 - every provider skipped because it was already in active backoff -> ``LLMRateLimitBackoffActive``
   (so Event Analysis / Heartbeat still record ``skipped_due_to_rate_limit``).
-- otherwise, if any provider in the chain hit a rate limit -> ``AIProviderRateLimitError``
+- otherwise, if every provider that made a request hit a rate limit -> ``AIProviderRateLimitError``
   (== ``AIGroqRateLimitError`` alias, so the price-alert path still produces its rate-limited
   deterministic fallback, and reports/event-analysis fall through to their existing handlers);
   attributed to the first rate-limited provider.
@@ -314,9 +314,11 @@ class LLMRouter:
         if only_pre_backoff:
             raise first_backoff_error
 
-        if saw_rate_limit:
-            # Attribute to the first provider that was actually rate limited, not just the last
-            # provider in the chain (which may have failed for a different reason).
+        if saw_rate_limit and not saw_other_fallback:
+            # A terminal rate-limit outcome is accurate only when every provider that made a
+            # request was rate-limited. Mixed exhausted chains remain AllProvidersFailedError:
+            # a 429 from one provider is provider pressure, not proof that the logical call was
+            # terminally rate-limited.
             terminal_name = rate_limited_name or providers[-1][0]
             limited_until = min(rate_limit_untils) if rate_limit_untils else None
             raise AIProviderRateLimitError(
@@ -342,6 +344,7 @@ class LLMRouter:
             last_error=last_error,
             rate_limited=False,
             attempts=attempted_names,
+            mixed_failure=saw_rate_limit and saw_other_fallback,
         ) from last_error
 
 

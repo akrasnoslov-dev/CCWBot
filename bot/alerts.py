@@ -113,6 +113,7 @@ from bot.reports import generate_daily_report_cache_job, generate_weekly_report_
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
+    AIProviderRateLimitError,
     AISchemaValidationError,
     LLMRateLimitBackoffActive,
     ask_event_analysis_raw,
@@ -3278,6 +3279,38 @@ async def _create_event_analysis_decision(
         usage_log_id = getattr(result, "usage_log_id", None)
         analysis_provider = getattr(result, "provider", None) or analysis_provider
         analysis_model = getattr(result, "model", None) or analysis_model
+    except AIProviderRateLimitError as error:
+        analysis_id = await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=None,
+            status="rate_limit",
+            error_message=str(error),
+            error_reason=classify_ai_error_reason(error),
+            provider=getattr(error, "provider", None) or analysis_provider,
+            model=getattr(error, "model", None) or analysis_model,
+        )
+        await _record_alert_delivery_outcome(
+            symbol=str(input_payload["symbol"]),
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_RATE_LIMITED,
+            reason_code=REASON_LLM_RATE_LIMITED,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            decision_stage=DECISION_STAGE_LLM,
+            decision_reason=DECISION_REASON_UNKNOWN,
+            context_fingerprint=_event_context_fingerprint(input_payload),
+            detail="event_analysis_provider_rate_limited",
+        )
+        _log_event_alert_suppression(
+            symbol=str(input_payload["symbol"]),
+            suppression_reason=SUPPRESSION_LLM_RATE_LIMITED,
+            suppression_count=1,
+            analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
+        )
+        _log_event_analysis_failure(
+            str(input_payload["symbol"]), classify_ai_error_reason(error)
+        )
+        return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,

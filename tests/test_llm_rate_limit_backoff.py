@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
 from bot.db.database import AlertDeliveryOutcome, Base, EventAiAnalysis
+from bot.observability import event_analysis_health
 from bot.services.llm import groq_provider, telemetry
 from bot.services.llm.errors import AIGroqRateLimitError, LLMRateLimitBackoffActive
 
@@ -102,6 +103,7 @@ async def test_rate_limit_error_starts_provider_model_backoff(monkeypatch):
 @pytest.mark.asyncio
 async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch):
     engine, session_local = await build_session_factory()
+    event_analysis_health.reset()
     try:
         # The backoff registry is keyed by (provider, model). The first call below arms the
         # backoff using the event-analysis model, and the production path (through the router)
@@ -154,7 +156,9 @@ async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch)
         assert outcome.decision_stage == "llm"
         assert outcome.decision_reason == "unknown"
         assert outcome.context_fingerprint
+        assert event_analysis_health.consecutive_failures() == 0
     finally:
+        event_analysis_health.reset()
         await engine.dispose()
 
 

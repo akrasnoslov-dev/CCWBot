@@ -33,7 +33,19 @@ A 4xx is not one thing, and treating it as one is what kept the fallback chain f
 | `provider_4xx` | any other 4xx (unchanged meaning) | no |
 
 All four keep the `provider_` prefix, so consumers that match `provider_%` — including the
-ops-agent `llm_failure_category_summary` query — continue to bucket them without modification.
+ops-agent `llm_failure_category_summary` query preserves these two categories separately. It also
+keeps actual provider rate limits distinct from active-backoff and circuit-breaker skips, and
+groups sanitized provider/model attempt pressure without exporting provider error messages.
+
+`llm_usage_logs` is provider-attempt telemetry, not a logical-operation ledger. Ops reports use
+durable `event_ai_analyses`, `news_items`, `market_heartbeats`, and `market_reports` rows for
+terminal product outcomes and never claim a specific failed provider attempt was recovered by a
+specific fallback success without a correlation id.
+
+News Intelligence's cached `news_items.llm_model` remains a configured cache identity, not a
+served-provider attribution field. Changing it to a fallback responder's model would break the
+existing cache key and increase LLM calls; exact News fallback attribution therefore remains in
+`llm_usage_logs` pending a separate cache-identity versus served-attribution design.
 
 `provider_json_validate_failed` is fallback-eligible on purpose. It means the model produced no
 usable content, which is the same condition as a client-side `AIInvalidJsonError` — and that has

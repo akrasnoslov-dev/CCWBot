@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -247,6 +248,7 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_heartbeat_delivery_freshness" in query_names
     assert "news_intelligence_budget_summary" in query_names
     assert "llm_failure_category_summary" in query_names
+    assert "event_analysis_logical_outcome_summary" in query_names
     no_delivery = next(
         query for query in QUERIES if query.name == "market_events_without_delivery_classification"
     )
@@ -424,15 +426,84 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
         "circuit_breaker",
         "provider_rate_limit",
         "provider_model_error",
-        "schema_invalid_output",
-        "bad_request",
+        "provider_json_validation_failure",
+        "client_json_validation_failure",
+        "client_schema_validation_failure",
+        "provider_bad_request",
+        "provider_4xx",
         "timeout",
+        "provider_5xx",
         "network_error",
         "provider_auth_config",
         "other",
     ):
         assert category in category_query.sql
-    assert "SELECT call_type, failure_category" in category_query.sql
+    assert "SELECT provider, model, call_type, failure_category" in category_query.sql
+    assert "GROUP BY provider, model, call_type, failure_category" in category_query.sql
+
+
+def test_llm_failure_category_query_keeps_provider_and_client_reasons_distinct():
+    query = next(query for query in QUERIES if query.name == "llm_failure_category_summary")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE llm_usage_logs ("
+            "provider TEXT, model TEXT, call_type TEXT, status TEXT, error_reason TEXT, "
+            "retry_after TEXT, created_at TEXT)"
+        )
+        rows = [
+            ("groq", "m1", "event_analysis", "llm_error", "provider_bad_request", None),
+            ("groq", "m1", "event_analysis", "llm_error", "provider_4xx", None),
+            (
+                "cerebras",
+                "m2",
+                "event_analysis",
+                "llm_error",
+                "provider_json_validate_failed",
+                None,
+            ),
+            ("gemini", "m3", "event_analysis", "invalid_json", "invalid_json", None),
+            (
+                "mistral",
+                "m4",
+                "event_analysis",
+                "schema_error",
+                "schema_validation_failed",
+                None,
+            ),
+            ("groq", "m1", "event_analysis", "llm_error", "provider_5xx", None),
+            ("groq", "m1", "event_analysis", "rate_limit", "rate_limit", "30"),
+            (
+                "groq",
+                "m1",
+                "event_analysis",
+                "skipped_due_to_rate_limit",
+                "rate_limit_backoff_active",
+                None,
+            ),
+        ]
+        connection.executemany(
+            "INSERT INTO llm_usage_logs VALUES (?, ?, ?, ?, ?, ?, '2026-06-01T00:00:00Z')",
+            rows,
+        )
+        result = connection.execute(
+            query.sql,
+            {"since": "2026-06-01T00:00:00Z", "until": "2026-06-02T00:00:00Z", "limit": 100},
+        ).fetchall()
+    finally:
+        connection.close()
+
+    categories = {row[3]: row[4] for row in result}
+    assert categories == {
+        "active_backoff": 1,
+        "client_json_validation_failure": 1,
+        "client_schema_validation_failure": 1,
+        "provider_4xx": 1,
+        "provider_5xx": 1,
+        "provider_bad_request": 1,
+        "provider_json_validation_failure": 1,
+        "provider_rate_limit": 1,
+    }
 
 
 def test_news_budget_query_uses_sanitized_aggregates_only():
@@ -453,6 +524,9 @@ def test_news_candidates_signal_and_freshness_queries_expose_sanitized_columns()
 
     samples = query_names["event_ai_analysis_samples"]
     assert "related_news_candidates_count" in samples.sql
+    # raw_input_json is read only to derive a candidate count, never selected into the bundle.
+    for forbidden in ("error_message", "raw_output_json", "prompt", "response"):
+        assert forbidden not in samples.sql.lower()
     summary = query_names["event_analysis_news_candidates_summary"]
     assert "zero_candidate_analyses" in summary.sql
     assert "with_candidates_analyses" in summary.sql
@@ -1501,20 +1575,43 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
                 "llm_failure_category_summary": {
                     "rows": [
                         {
+                            "provider": "groq",
+                            "model": "primary",
                             "call_type": "event_analysis",
-                            "failure_category": "schema_invalid_output",
+                            "failure_category": "provider_rate_limit",
                             "calls": 2,
                         },
                         {
+                            "provider": "groq",
+                            "model": "primary",
                             "call_type": "event_analysis",
                             "failure_category": "active_backoff",
                             "calls": 1,
                         },
                         {
+                            "provider": "cerebras",
+                            "model": "fallback",
+                            "call_type": "event_analysis",
+                            "failure_category": "successful",
+                            "calls": 2,
+                        },
+                        {
+                            "provider": "groq",
+                            "model": "heartbeat",
                             "call_type": "market_heartbeat",
                             "failure_category": "provider_model_error",
                             "calls": 1,
                         },
+                    ]
+                },
+                "event_analysis_logical_outcome_summary": {
+                    "rows": [
+                        {
+                            "provider": "cerebras",
+                            "model": "fallback",
+                            "logical_outcome": "logical_success",
+                            "analyses": 2,
+                        }
                     ]
                 },
             }
@@ -1527,12 +1624,82 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
 
     detector = results["repeated_llm_failures_or_rate_limits"]
     assert detector.status == "triggered"
-    assert detector.metrics["llm_failures"] == 4
-    assert detector.metrics["rate_limits"] == 1
+    assert detector.metrics["provider_attempt_incidents"] == 3
+    assert detector.metrics["actual_provider_rate_limits"] == 2
+    assert detector.metrics["active_backoff_skips"] == 1
+    assert detector.metrics["terminal_event_analysis_failures"] == 0
+    assert detector.metrics["terminal_event_analysis_rate_limited"] == 0
+    assert detector.metrics["event_analysis_logical_outcomes"] == {"logical_success": 2}
     assert detector.metrics["failure_categories_by_call_type"] == {
-        "event_analysis": {"active_backoff": 1, "schema_invalid_output": 2},
+        "event_analysis": {
+            "active_backoff": 1,
+            "provider_rate_limit": 2,
+            "successful": 2,
+        },
         "market_heartbeat": {"provider_model_error": 1},
     }
+
+
+def test_llm_terminal_event_analysis_failure_is_visible_separately_from_provider_pressure():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "llm_failure_category_summary": {
+                    "rows": [
+                        {
+                            "provider": "groq",
+                            "model": "primary",
+                            "call_type": "event_analysis",
+                            "failure_category": "provider_rate_limit",
+                            "calls": 2,
+                        }
+                    ]
+                },
+                "event_analysis_logical_outcome_summary": {
+                    "rows": [
+                        {
+                            "provider": "groq",
+                            "model": "primary",
+                            "logical_outcome": "logical_failed",
+                            "analyses": 1,
+                        }
+                    ]
+                },
+            }
+        }
+    }
+
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["repeated_llm_failures_or_rate_limits"]
+
+    assert detector.status == "triggered"
+    assert detector.metrics["provider_attempt_incidents"] == 2
+    assert detector.metrics["terminal_event_analysis_failures"] == 1
+
+
+def test_llm_detector_is_unknown_when_logical_outcome_evidence_is_missing():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {"llm_failure_category_summary": {"rows": []}}
+        }
+    }
+
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["repeated_llm_failures_or_rate_limits"]
+
+    assert detector.status == "unknown"
 
 
 def test_payment_premium_detector_aggregates_inconsistency_types():
