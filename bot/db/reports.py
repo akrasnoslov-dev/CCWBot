@@ -17,6 +17,7 @@ async def save_market_report(
     session: AsyncSession,
     *,
     report_type: str,
+    llm_operation_id: str | None = None,
     generated_at: datetime,
     expires_at: datetime,
     status: str,
@@ -30,6 +31,7 @@ async def save_market_report(
     """Save one cached market report generation attempt."""
     report = MarketReport(
         report_type=report_type.lower(),
+        llm_operation_id=llm_operation_id,
         generated_at=generated_at,
         expires_at=expires_at,
         status=status,

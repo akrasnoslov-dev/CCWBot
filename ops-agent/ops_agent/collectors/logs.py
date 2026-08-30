@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_agent.config import OpsAgentConfig
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_text
+from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
 
 LOG_PATTERNS = {
@@ -43,6 +43,18 @@ LOG_PATTERNS = {
 }
 OPS_EVENT_RE = re.compile(r"\bops_event=([a-z0-9_]+)")
 SUPPRESSION_REASON_RE = re.compile(r"\bsuppression_reason=([a-z0-9_]+)")
+_SAFE_FIELD_RE = re.compile(
+    r"\b(?P<key>call_type|symbol|provider|model|status|reason|operation_id)="
+    r"(?P<value>[^\s]+)"
+)
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-"
+    r"[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_SAFE_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_SAFE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
+_SAFE_SYMBOLS = frozenset({"BTC", "ETH", "GRAM", "SOL"})
 LOG_TIMESTAMP_RE = re.compile(
     r"^(?P<stamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}"
     r"(?:,\d{1,6}|\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})?)"
@@ -88,15 +100,44 @@ def _line_patterns(line: str) -> list[str]:
     return matches
 
 
-def _encode_excerpt(
-    lines: list[str],
+def _structured_match_record(
+    line: str,
     *,
+    parsed_at: datetime | None,
+    patterns: list[str],
     mapper: ReferenceMapper,
-    redaction_report: RedactionReport,
-    max_bytes: int,
-) -> bytes:
-    redacted = redact_text("\n".join(lines), mapper, redaction_report)
-    return redacted.encode("utf-8")[:max_bytes]
+) -> dict[str, Any]:
+    """Export a strict allowlist, never a redacted copy of a raw log line."""
+    fields = {match.group("key"): match.group("value") for match in _SAFE_FIELD_RE.finditer(line)}
+    record: dict[str, Any] = {
+        "timestamp": parsed_at.isoformat().replace("+00:00", "Z") if parsed_at else None,
+        "patterns": sorted(pattern for pattern in patterns if pattern != "ops_event"),
+        "event": (OPS_EVENT_RE.search(line).group(1) if OPS_EVENT_RE.search(line) else None),
+    }
+    for key in ("call_type", "provider", "status", "reason"):
+        value = fields.get(key, "")
+        if _SAFE_TOKEN_RE.fullmatch(value):
+            record[key] = value
+    symbol = fields.get("symbol", "").upper()
+    if symbol in _SAFE_SYMBOLS:
+        record["symbol"] = symbol
+    model = fields.get("model", "")
+    if _SAFE_MODEL_RE.fullmatch(model):
+        record["model"] = model
+    operation_id = fields.get("operation_id", "")
+    if _UUID_RE.fullmatch(operation_id):
+        record["operation_ref"] = mapper.ref("operation", operation_id)
+    return record
+
+
+def _safe_collector_error(error: Exception) -> str:
+    if isinstance(error, PermissionError):
+        category = "permission_error"
+    elif isinstance(error, OSError):
+        category = "io_error"
+    else:
+        category = "collector_error"
+    return f"{type(error).__name__}: {category}"
 
 
 def collect_logs(
@@ -115,14 +156,15 @@ def collect_logs(
     period_suppression_reason_counts: dict[str, int] = {}
     tail_suppression_reason_counts: dict[str, int] = {}
     excerpts: dict[str, dict[str, Any]] = {}
-    total_exported = 0
+    period_match_records: list[dict[str, Any]] = []
+    tail_match_records: list[dict[str, Any]] = []
     statuses = []
     for path in log_files:
         try:
+            period_records_before = len(period_match_records)
+            tail_records_before = len(tail_match_records)
             text = _tail_bytes(path, config.limits.max_log_tail_bytes)
             lines = text.splitlines()
-            period_selected: list[str] = []
-            tail_selected: list[str] = []
             ops_events: dict[str, int] = {}
             period_suppression_reasons: dict[str, int] = {}
             tail_suppression_reasons: dict[str, int] = {}
@@ -148,8 +190,12 @@ def collect_logs(
                             period_suppression_reason_counts[reason] = (
                                 period_suppression_reason_counts.get(reason, 0) + 1
                             )
-                        if matches and len(period_selected) < 200:
-                            period_selected.append(line)
+                        if matches and len(period_match_records) < 500:
+                            period_match_records.append(
+                                _structured_match_record(
+                                    line, parsed_at=parsed_at, patterns=matches, mapper=mapper
+                                )
+                            )
                     else:
                         outside_period_lines += 1
                 else:
@@ -165,34 +211,16 @@ def collect_logs(
                         tail_suppression_reason_counts[reason] = (
                             tail_suppression_reason_counts.get(reason, 0) + 1
                         )
-                    if matches and len(tail_selected) < 200:
-                        tail_selected.append(line)
+                    if matches and len(tail_match_records) < 500:
+                        tail_match_records.append(
+                            _structured_match_record(
+                                line, parsed_at=None, patterns=matches, mapper=mapper
+                            )
+                        )
                 match = OPS_EVENT_RE.search(line)
                 if match:
                     ops_events[match.group(1)] = ops_events.get(match.group(1), 0) + 1
 
-            period_encoded = _encode_excerpt(
-                period_selected,
-                mapper=mapper,
-                redaction_report=redaction_report,
-                max_bytes=config.limits.max_log_export_bytes_per_file,
-            )
-            tail_encoded = _encode_excerpt(
-                tail_selected,
-                mapper=mapper,
-                redaction_report=redaction_report,
-                max_bytes=config.limits.max_log_export_bytes_per_file,
-            )
-            export_bytes = total_exported + len(period_encoded) + len(tail_encoded)
-            if export_bytes > config.limits.max_log_export_bytes_total:
-                index["warnings"].append(
-                    "log export total limit reached; remaining excerpts omitted"
-                )
-                period_encoded = b""
-                tail_encoded = b""
-            total_exported += len(period_encoded) + len(tail_encoded)
-            period_excerpt_name = f"{path.name}.period.redacted.log"
-            tail_excerpt_name = f"{path.name}.tail-context.redacted.log"
             if parseable_timestamps == 0:
                 index["warnings"].append(
                     f"{path.name}: no parseable timestamps; excerpts are tail context only"
@@ -201,12 +229,6 @@ def collect_logs(
                 {
                     "name": path.name,
                     "bytes_read": len(text.encode("utf-8")),
-                    "period_matched_excerpt": (
-                        f"evidence/logs/excerpts/{period_excerpt_name}"
-                    ),
-                    "tail_context_excerpt": (
-                        f"evidence/logs/excerpts/{tail_excerpt_name}"
-                    ),
                     "timestamp_parse": {
                         "parseable_lines": parseable_timestamps,
                         "period_matched_lines": period_matched_lines,
@@ -217,12 +239,16 @@ def collect_logs(
                     },
                     "evidence_scopes": {
                         "period_matched": {
-                            "matching_excerpt_lines": len(period_selected),
-                            "description": "timestamped lines within requested period",
+                            "matching_records": len(period_match_records) - period_records_before,
+                            "description": (
+                                "allowlisted records from timestamped lines within requested period"
+                            ),
                         },
                         "tail_context": {
-                            "matching_excerpt_lines": len(tail_selected),
-                            "description": "matching lines without parseable timestamps",
+                            "matching_records": len(tail_match_records) - tail_records_before,
+                            "description": (
+                                "allowlisted records from lines without parseable timestamps"
+                            ),
                         },
                     },
                     "ops_events": ops_events,
@@ -232,15 +258,9 @@ def collect_logs(
                     },
                 }
             )
-            excerpts[f"evidence/logs/excerpts/{period_excerpt_name}"] = {
-                "text": period_encoded.decode("utf-8", errors="replace")
-            }
-            excerpts[f"evidence/logs/excerpts/{tail_excerpt_name}"] = {
-                "text": tail_encoded.decode("utf-8", errors="replace")
-            }
             statuses.append({"name": f"logs.{path.name}", "status": "ok", "error": None})
         except Exception as error:
-            message = f"{type(error).__name__}: {str(error)[:300]}"
+            message = _safe_collector_error(error)
             index["warnings"].append(f"{path.name}: {message}")
             statuses.append({"name": f"logs.{path.name}", "status": "partial", "error": message})
     if not log_files:
@@ -264,8 +284,11 @@ def collect_logs(
                 set(period_suppression_reason_counts) | set(tail_suppression_reason_counts)
             )
         },
+        "period_matched_records": period_match_records,
+        "tail_context_records": tail_match_records,
         "notes": [
             "period_matched_pattern_counts are timestamped lines within the requested period",
             "tail_context_pattern_counts are unscoped lines without parseable timestamps",
+            "match records are strict allowlisted fields, never raw or redacted log lines",
         ],
     }, excerpts, statuses

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 
 import pytest
 
@@ -14,6 +15,7 @@ from bot.services.llm.errors import (
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
+from bot.services.llm.operation import current_llm_operation_id, llm_operation_scope
 from bot.services.llm.router import LLMRouter
 from bot.services.llm.telemetry import classify_ai_error_reason
 
@@ -24,10 +26,12 @@ class FakeProvider(BaseProvider):
         self._behavior = behavior
         self.calls = 0
         self.last_reasoning_effort = None
+        self.operation_ids = []
 
     async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
                               response_format, timeout=15, reasoning_effort=None):
         self.calls += 1
+        self.operation_ids.append(current_llm_operation_id())
         self.last_reasoning_effort = reasoning_effort
         behavior = self._behavior
         if isinstance(behavior, BaseException):
@@ -101,6 +105,35 @@ async def test_fallback_to_next_provider(monkeypatch, failure):
     assert result.provider == "gemini"
     assert groq.calls == 1
     assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_fallback_attempts_share_one_opaque_logical_operation_id(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    groq = FakeProvider("groq", asyncio.TimeoutError())
+    gemini = FakeProvider("gemini", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
+    operation_id = "123e4567-e89b-42d3-a456-426614174000"
+
+    with llm_operation_scope(operation_id):
+        result = await _call(router)
+
+    assert groq.operation_ids == [operation_id]
+    assert gemini.operation_ids == [operation_id]
+    assert result.operation_id == operation_id
+
+
+@pytest.mark.asyncio
+async def test_separate_logical_operations_receive_different_ids(monkeypatch):
+    _configure(monkeypatch, ["groq"], {"groq"})
+    provider = FakeProvider("groq", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": provider})
+
+    first = await _call(router)
+    second = await _call(router)
+
+    assert first.operation_id != second.operation_id
+    assert "user" not in first.operation_id
 
 
 @pytest.mark.asyncio
@@ -383,7 +416,7 @@ async def test_all_providers_invalid_json_raises_last_invalid_error(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_schema_validation_failure_advances_to_next_provider(monkeypatch):
+async def test_schema_validation_failure_advances_to_next_provider(monkeypatch, caplog):
     _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
     groq = FakeProvider(
         "groq", lambda name, model: _content_result(name, model, '{"wrong_schema": true}')
@@ -399,12 +432,19 @@ async def test_schema_validation_failure_advances_to_next_provider(monkeypatch):
             raise AISchemaValidationError("missing fields: ['symbol']")
         return (result.provider, parsed)
 
-    provider, parsed = await _call_validated(router, _schema_validate)
+    with caplog.at_level(logging.WARNING, logger="bot.services.llm.router"):
+        provider, parsed = await _call_validated(router, _schema_validate)
 
     assert provider == "gemini"
     assert parsed == {"symbol": "BTC"}
     assert groq.calls == 1
     assert gemini.calls == 1
+    switch_log = next(
+        record.getMessage()
+        for record in caplog.records
+        if "ops_event=llm_provider_switch" in record.getMessage()
+    )
+    assert f"operation_id={groq.operation_ids[0]}" in switch_log
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 
 from bot.services.llm import config
 from bot.services.llm.errors import AIProviderRateLimitError, LLMRateLimitBackoffActive
+from bot.services.llm.operation import current_llm_operation_id
 from bot.services.llm.telemetry import (
     RATE_LIMIT_BACKOFF_CALL_TYPES,
     active_rate_limit_backoff,
@@ -148,10 +149,11 @@ class OpenAICompatibleProvider(BaseProvider):
             )
             logger.info(
                 "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
-                "status=skipped_due_to_rate_limit",
+                "status=skipped_due_to_rate_limit operation_id=%s",
                 provider,
                 model,
                 call_type,
+                current_llm_operation_id(),
             )
             raise LLMRateLimitBackoffActive(
                 provider=provider,
@@ -222,10 +224,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 ) from error
             raise
         logger.debug(
-            "ops_event=llm_call_completed provider=%s model=%s call_type=%s status=success",
+            "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
+            "status=success operation_id=%s",
             provider,
             model,
             call_type,
+            current_llm_operation_id(),
         )
         return ProviderResult(
             provider=provider,

@@ -768,6 +768,7 @@ async def save_event_llm_analysis(
     session: AsyncSession,
     *,
     analysis_id: str,
+    llm_operation_id: str | None = None,
     symbol: str,
     input_hash: str,
     raw_input_json: str,
@@ -820,6 +821,7 @@ async def save_event_llm_analysis(
     analysis = EventAiAnalysis(
         market_event_id=market_event_id,
         analysis_id=analysis_id,
+        llm_operation_id=llm_operation_id,
         symbol=symbol.upper(),
         analysis_type=analysis_type,
         provider=provider,
@@ -927,6 +929,7 @@ async def save_market_heartbeat(
     *,
     symbol: str,
     generated_at: datetime,
+    llm_operation_id: str | None = None,
     raw_input_json: str | None,
     raw_output_json: str | None,
     title: str | None = None,
@@ -940,6 +943,7 @@ async def save_market_heartbeat(
     heartbeat = MarketHeartbeat(
         symbol=symbol.upper(),
         generated_at=generated_at,
+        llm_operation_id=llm_operation_id,
         raw_input_json=raw_input_json,
         raw_output_json=raw_output_json,
         title=title,

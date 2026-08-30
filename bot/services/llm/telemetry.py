@@ -27,6 +27,7 @@ from bot.services.llm.errors import (
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
+from bot.services.llm.operation import current_llm_operation_id
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +402,10 @@ def rate_limit_header_payload(headers) -> dict:
         "rate_limit_remaining_tokens": header_value(headers, "x-ratelimit-remaining-tokens"),
         "rate_limit_reset_tokens": header_value(headers, "x-ratelimit-reset-tokens"),
         "retry_after": header_value(headers, "retry-after"),
+        # This exact allowlist entry is an opaque provider trace identifier.  Do not add
+        # arbitrary headers here: headers can include credentials or account metadata.
+        "provider_request_id": header_value(headers, "x-request-id")
+        or header_value(headers, "request-id"),
     }
 
 
@@ -544,11 +549,12 @@ def start_llm_rate_limit_backoff(
     _llm_rate_limit_backoff_call_types.setdefault(key, set()).add(call_type)
     logger.warning(
         "ops_event=llm_rate_limit_started provider=%s model=%s call_type=%s "
-        "retry_after_seconds=%s",
+        "retry_after_seconds=%s operation_id=%s",
         provider,
         model,
         call_type,
         retry_after_seconds,
+        current_llm_operation_id(),
     )
     return retry_after_seconds, limited_until
 
@@ -567,6 +573,7 @@ async def write_llm_usage_log(
     response=None,
     error_reason: str | None = None,
     error_message: str | None = None,
+    operation_id: str | None = None,
 ) -> int | None:
     try:
         from bot.db.database import save_llm_usage_log
@@ -580,6 +587,7 @@ async def write_llm_usage_log(
                 provider=provider,
                 model=model,
                 call_type=call_type,
+                llm_operation_id=operation_id or current_llm_operation_id(),
                 symbol=symbol,
                 status=status,
                 prompt_tokens=usage_int(response, "prompt_tokens"),

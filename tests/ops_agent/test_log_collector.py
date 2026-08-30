@@ -72,15 +72,55 @@ def test_collect_logs_separates_period_matched_and_tail_context(tmp_path):
         "delivery_failed": 1,
         "semantic_cooldown": 1,
     }
-    period_excerpt = excerpts[file_index["period_matched_excerpt"]]["text"]
-    tail_excerpt = excerpts[file_index["tail_context_excerpt"]]["text"]
+    assert excerpts == {}
     assert file_index["suppression_reasons"]["period_matched"] == {"semantic_cooldown": 1}
     assert file_index["suppression_reasons"]["tail_context"] == {"delivery_failed": 1}
-    assert "00:30:00" in period_excerpt
-    assert "outside period" not in period_excerpt
-    assert "unscoped tail context" in tail_excerpt
-    assert "user_ref:" in period_excerpt
-    assert "user_ref:" in tail_excerpt
+    period_records = pattern_counts["period_matched_records"]
+    tail_records = pattern_counts["tail_context_records"]
+    delivery_record = next(
+        record for record in period_records if record["event"] == "event_alert_delivery_summary"
+    )
+    assert delivery_record["timestamp"] == "2026-06-01T00:30:00Z"
+    assert tail_records[0]["timestamp"] is None
+    encoded = str(pattern_counts)
+    assert "user_id=123" not in encoded
+    assert "user_id=456" not in encoded
+
+
+def test_collect_logs_exports_only_allowlisted_structured_match_fields(tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    operation_id = "123e4567-e89b-42d3-a456-426614174000"
+    (logs_dir / "ccwbot-operational.log").write_text(
+        "2026-06-01 00:30:00Z ERROR bot.llm: "
+        f"ops_event=llm_provider_switch provider=groq model=openai/gpt-oss-120b "
+        f"call_type=event_analysis symbol=BTC reason=rate_limit operation_id={operation_id} "
+        "chat_id=123 prompt=private_text authorization=Bearer_secret\n",
+        encoding="utf-8",
+    )
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+    config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
+
+    _, counts, _, _ = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"2" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    record = counts["period_matched_records"][0]
+    assert record["operation_ref"].startswith("operation_ref:h_")
+    assert record["provider"] == "groq"
+    assert record["model"] == "openai/gpt-oss-120b"
+    encoded = str(counts)
+    assert operation_id not in encoded
+    assert "private_text" not in encoded
+    assert "chat_id" not in encoded
+    assert "Bearer_secret" not in encoded
 
 
 def test_collect_logs_warns_when_timestamps_are_unparseable(tmp_path):

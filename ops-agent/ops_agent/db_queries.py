@@ -893,6 +893,28 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY calls DESC LIMIT :limit",
     ),
     DbQuery(
+        "llm_operation_reconciliation",
+        "evidence/db/llm_operation_reconciliation.json",
+        "WITH feature_rows AS ("
+        "SELECT llm_operation_id, 'event_analysis' AS feature_kind, status AS feature_status, "
+        "'event_analysis:' || id::text AS durable_row_ref_source FROM event_ai_analyses "
+        "WHERE llm_operation_id IS NOT NULL "
+        "UNION ALL SELECT llm_operation_id, 'market_heartbeat', status, "
+        "'market_heartbeat:' || id::text FROM market_heartbeats WHERE llm_operation_id IS NOT NULL "
+        "UNION ALL SELECT llm_operation_id, report_type || '_report', status, "
+        "'market_report:' || id::text FROM market_reports WHERE llm_operation_id IS NOT NULL"
+        ") "
+        "SELECT l.llm_operation_id, l.call_type, l.provider, l.model, l.status AS attempt_status, "
+        "coalesce(l.error_reason, 'none') AS error_reason, count(*) AS provider_attempts, "
+        "f.feature_kind, f.feature_status, f.durable_row_ref_source "
+        "FROM llm_usage_logs l LEFT JOIN feature_rows f ON f.llm_operation_id = l.llm_operation_id "
+        "AND f.feature_kind = l.call_type "
+        "WHERE l.created_at >= :since AND l.created_at < :until AND l.llm_operation_id IS NOT NULL "
+        "GROUP BY l.llm_operation_id, l.call_type, l.provider, l.model, l.status, l.error_reason, "
+        "f.feature_kind, f.feature_status, f.durable_row_ref_source "
+        "ORDER BY max(l.created_at) DESC LIMIT :limit",
+    ),
+    DbQuery(
         "llm_failure_category_summary",
         "evidence/db/aggregate_metrics.json",
         "WITH classified AS ("

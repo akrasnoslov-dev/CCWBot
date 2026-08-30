@@ -16,6 +16,7 @@ async def save_llm_usage_log(
     provider: str,
     model: str,
     call_type: str,
+    llm_operation_id: str | None = None,
     status: str,
     symbol: str | None = None,
     prompt_tokens: int | None = None,
@@ -31,6 +32,7 @@ async def save_llm_usage_log(
     rate_limit_remaining_tokens: str | None = None,
     rate_limit_reset_tokens: str | None = None,
     retry_after: str | None = None,
+    provider_request_id: str | None = None,
     error_reason: str | None = None,
     error_message: str | None = None,
 ) -> LlmUsageLog:
@@ -39,6 +41,7 @@ async def save_llm_usage_log(
         provider=provider,
         model=model,
         call_type=call_type,
+        llm_operation_id=llm_operation_id,
         symbol=symbol.upper() if symbol else None,
         status=status,
         prompt_tokens=prompt_tokens,
@@ -54,6 +57,7 @@ async def save_llm_usage_log(
         rate_limit_remaining_tokens=rate_limit_remaining_tokens,
         rate_limit_reset_tokens=rate_limit_reset_tokens,
         retry_after=retry_after,
+        provider_request_id=provider_request_id,
         error_reason=error_reason,
         error_message=error_message,
     )

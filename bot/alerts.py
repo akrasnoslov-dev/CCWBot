@@ -122,6 +122,7 @@ from bot.services.ai_agent_groq import (
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
+from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
 from bot.services.price_service import (
     DEFAULT_SYMBOL,
     CoinGeckoRateLimitError,
@@ -2913,6 +2914,7 @@ async def _save_market_heartbeat_attempt(
     status: str,
     decision: MarketHeartbeatDecision | None = None,
     error_message: str | None = None,
+    llm_operation_id: str | None = None,
 ) -> int | None:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return None
@@ -2921,6 +2923,7 @@ async def _save_market_heartbeat_attempt(
             session,
             symbol=str(input_payload["symbol"]),
             generated_at=datetime.now(timezone.utc),
+            llm_operation_id=llm_operation_id,
             raw_input_json=_json_dumps(input_payload),
             raw_output_json=raw_output_json,
             title=decision.title if decision else None,
@@ -2937,6 +2940,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
     raw_output = None
     parsed = None
     usage_log_id = None
+    llm_operation_id = new_llm_operation_id()
     candidate_news_ids = {
         str(item["news_id"])
         for item in input_payload.get("news", input_payload.get("candidate_news", []))
@@ -2953,7 +2957,8 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             raise AISchemaValidationError(str(error)) from error
 
     try:
-        result = await ask_market_heartbeat_raw(input_payload, schema_check=_schema_check)
+        with llm_operation_scope(llm_operation_id):
+            result = await ask_market_heartbeat_raw(input_payload, schema_check=_schema_check)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
     except LLMRateLimitBackoffActive as error:
@@ -2962,6 +2967,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             raw_output_json=None,
             status="skipped_due_to_rate_limit",
             error_message=str(error),
+            llm_operation_id=llm_operation_id,
         )
         return None
     except Exception as error:
@@ -2971,6 +2977,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             raw_output_json=raw_output,
             status="failed",
             error_message=str(error),
+            llm_operation_id=llm_operation_id,
         )
         logger.warning(
             "%s market heartbeat generation failed: %s",
@@ -2991,6 +2998,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             status="schema_error",
             error_reason="schema_validation_failed",
             error_message=str(error),
+            llm_operation_id=llm_operation_id,
         )
         heartbeat_id = await _save_market_heartbeat_attempt(
             input_payload=input_payload,
@@ -3010,6 +3018,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
         raw_output_json=raw_output,
         status="completed",
         decision=decision,
+        llm_operation_id=llm_operation_id,
     )
 
 async def _save_event_analysis_attempt(
@@ -3025,6 +3034,7 @@ async def _save_event_analysis_attempt(
     plain_text: str | None = None,
     provider: str = "groq",
     model: str = GROQ_EVENT_ANALYSIS_MODEL,
+    llm_operation_id: str | None = None,
 ) -> int | None:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return None
@@ -3033,6 +3043,7 @@ async def _save_event_analysis_attempt(
         analysis = await save_event_llm_analysis(
             session,
             analysis_id=str(input_payload["analysis_id"]),
+            llm_operation_id=llm_operation_id,
             symbol=str(input_payload["symbol"]),
             input_hash=_event_input_hash(input_payload),
             raw_input_json=_json_dumps(input_payload),
@@ -3255,6 +3266,7 @@ async def _create_event_analysis_decision(
     usage_log_id = None
     analysis_provider = "groq"
     analysis_model = GROQ_EVENT_ANALYSIS_MODEL
+    llm_operation_id = new_llm_operation_id()
     expected_symbol = str(input_payload["symbol"])
     candidate_news_ids = {
         str(item["news_id"])
@@ -3274,7 +3286,8 @@ async def _create_event_analysis_decision(
             raise AISchemaValidationError(str(error)) from error
 
     try:
-        result = await ask_event_analysis_raw(input_payload, schema_check=_schema_check)
+        with llm_operation_scope(llm_operation_id):
+            result = await ask_event_analysis_raw(input_payload, schema_check=_schema_check)
         raw_output, parsed = result
         usage_log_id = getattr(result, "usage_log_id", None)
         analysis_provider = getattr(result, "provider", None) or analysis_provider
@@ -3288,6 +3301,7 @@ async def _create_event_analysis_decision(
             error_reason=classify_ai_error_reason(error),
             provider=getattr(error, "provider", None) or analysis_provider,
             model=getattr(error, "model", None) or analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3318,6 +3332,7 @@ async def _create_event_analysis_decision(
             status="skipped_due_to_rate_limit",
             error_message=str(error),
             error_reason=classify_ai_error_reason(error),
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3350,6 +3365,7 @@ async def _create_event_analysis_decision(
             error_reason=classify_ai_error_reason(error),
             provider=getattr(error, "provider", None) or analysis_provider,
             model=getattr(error, "model", None) or analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3379,6 +3395,7 @@ async def _create_event_analysis_decision(
             status=status,
             error_message=str(error),
             error_reason=reason,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3419,6 +3436,7 @@ async def _create_event_analysis_decision(
             error_reason=classify_ai_error_reason(schema_error),
             provider=analysis_provider,
             model=analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3454,6 +3472,7 @@ async def _create_event_analysis_decision(
             decision=rejected_decision,
             provider=analysis_provider,
             model=analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
             symbol=str(input_payload["symbol"]),
@@ -3502,6 +3521,7 @@ async def _create_event_analysis_decision(
         decision=decision,
         provider=analysis_provider,
         model=analysis_model,
+        llm_operation_id=llm_operation_id,
     )
     decision_reason = (
         DECISION_REASON_LLM_SHOULD_ALERT

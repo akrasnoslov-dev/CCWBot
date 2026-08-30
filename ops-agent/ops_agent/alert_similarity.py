@@ -93,7 +93,7 @@ class BundleHasher:
             self._salt,
             f"{namespace}:{raw}".encode(),
             hashlib.sha256,
-        ).hexdigest()[:12]
+        ).hexdigest()[:32]
         return f"{namespace}_ref:h_{digest}"
 
 
@@ -192,6 +192,32 @@ def _analysis_ref(hasher: BundleHasher, value: Any) -> str | None:
     return hasher.ref("analysis", value) if value is not None else None
 
 
+def _delivery_members(row: dict[str, Any], hasher: BundleHasher) -> list[dict[str, Any]]:
+    raw_members = row.get("delivery_members")
+    if not isinstance(raw_members, list):
+        return []
+    members: list[dict[str, Any]] = []
+    for item in raw_members:
+        if not isinstance(item, dict):
+            continue
+        recipient = item.get("recipient_id")
+        alert = item.get("alert_id")
+        if recipient is None or alert is None:
+            continue
+        status = str(item.get("status") or "unknown")
+        if not re.fullmatch(r"[a-z_]{1,64}", status):
+            status = "unknown"
+        members.append(
+            {
+                "recipient_ref": hasher.ref("recipient", recipient),
+                "alert_ref": hasher.ref("alert", alert),
+                "outcome_ref": hasher.ref("outcome", f"{alert}:{status}"),
+                "status": status,
+            }
+        )
+    return members
+
+
 def _event_instance_ref(hasher: BundleHasher, value: Any) -> str | None:
     return hasher.ref("event_instance", value) if value else None
 
@@ -265,7 +291,7 @@ def build_alert_evidence_payloads(
             indexed, period, warnings
         ),
         "evidence/db/alert_similarity_groups.json": _similarity_groups(
-            indexed, period, warnings
+            indexed, period, warnings, hasher=hasher
         ),
         "evidence/db/backend_suppression_effectiveness.json": suppression_payload,
         "evidence/db/event_identity_quality.json": _event_identity_quality(
@@ -294,9 +320,12 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     sent_delivery_count = _int(row.get("sent_delivery_count"))
     first_delivery_at = _iso(row.get("first_delivery_at"))
     last_delivery_at = _iso(row.get("last_delivery_at"))
+    # Quality detectors are assertions about delivered Telegram copy.  ``full_text`` also
+    # contains analysis-only fields and remains useful for similarity work, but must never
+    # become evidence that a user received an obsolete label.
     quality_issues = _quality_issues(
         row,
-        full_text=full_text,
+        delivered_text=str(row.get("alert_message") or ""),
         related_news_count=len(related_news),
     )
     return {
@@ -343,13 +372,14 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         ],
         "related_news_count": len(related_news),
         "quality_issues": quality_issues,
+        "delivery_members": _delivery_members(row, hasher),
     }
 
 
 def _quality_issues(
-    row: dict[str, Any], *, full_text: str, related_news_count: int
+    row: dict[str, Any], *, delivered_text: str, related_news_count: int
 ) -> list[str]:
-    lowered = full_text.lower()
+    lowered = delivered_text.lower()
     issues: list[str] = []
     if NA_RE.search(lowered):
         issues.append("contains_n_a")
@@ -363,9 +393,9 @@ def _quality_issues(
         issues.append("old_since_last_btc_alert_label")
     if is_event_alert and "analysed-window change" in lowered:
         issues.append("old_analysed_window_change_label")
-    if is_event_alert and OLD_GENERIC_PRICE_CHANGE_LABEL_RE.search(full_text):
+    if is_event_alert and OLD_GENERIC_PRICE_CHANGE_LABEL_RE.search(delivered_text):
         issues.append("old_generic_price_change_label")
-    if is_event_alert and OLD_GENERIC_MARKET_CHANGE_LABEL_RE.search(full_text):
+    if is_event_alert and OLD_GENERIC_MARKET_CHANGE_LABEL_RE.search(delivered_text):
         issues.append("old_generic_market_change_label")
     if is_event_alert and "24h change" in lowered:
         issues.append("old_24h_change_label")
@@ -609,7 +639,7 @@ def _content_fingerprints(
 
 
 def _similarity_groups(
-    rows: list[dict[str, Any]], period: Period, warnings: list[str]
+    rows: list[dict[str, Any]], period: Period, warnings: list[str], *, hasher: BundleHasher
 ) -> dict[str, Any]:
     payload = _base_payload(period, warnings)
     source_groups = [
@@ -629,11 +659,12 @@ def _similarity_groups(
             clusters.append([row])
 
     groups = []
+    memberships = []
     for cluster in clusters:
         if len(cluster) < 2:
             continue
         counter = Counter(term for row in cluster for term in row["terms"])
-        group_id = BundleHasher().ref(
+        group_id = hasher.ref(
             "similarity",
             "|".join(sorted(str(row.get("content_hash")) for row in cluster)),
         )
@@ -666,10 +697,30 @@ def _similarity_groups(
             _extend_time_range(group, row.get("last_delivery_at") or row.get("analysis_created_at"))
             if row.get("market_event_ref") and len(group["sample_event_refs"]) < 5:
                 group["sample_event_refs"].append(row["market_event_ref"])
+            for member in row.get("delivery_members") or []:
+                memberships.append(
+                    {
+                        "semantic_group_id": group_id,
+                        "recipient_ref": member["recipient_ref"],
+                        "alert_ref": member["alert_ref"],
+                        "outcome_ref": member["outcome_ref"],
+                        "market_event_ref": row.get("market_event_ref"),
+                        "analysis_ref": row.get("analysis_ref"),
+                        "status": member["status"],
+                    }
+                )
         groups.append(group)
     payload["groups"] = sorted(
         groups,
         key=lambda item: (-item["sent_deliveries"], -item["market_events"], item["symbols"]),
+    )
+    payload["memberships"] = sorted(
+        memberships,
+        key=lambda item: (item["semantic_group_id"], item["recipient_ref"], item["alert_ref"]),
+    )
+    payload["membership_contract"] = (
+        "References are HMAC-derived and stable only within this bundle; membership records "
+        "support recipient/event/analysis/outcome joins without exporting source identifiers."
     )
     return payload
 

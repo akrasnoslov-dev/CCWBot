@@ -112,6 +112,11 @@ delivery_rollup AS (
         (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_message,
         (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
             AS alert_numeric_context,
+        jsonb_agg(jsonb_build_object(
+            'recipient_id', a.user_id,
+            'alert_id', a.id,
+            'status', a.status
+        ) ORDER BY a.created_at, a.id) AS delivery_members,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
             FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family,
         (array_agg(ado.decision_reason ORDER BY ado.created_at DESC, ado.id DESC)
@@ -160,6 +165,7 @@ SELECT
     dr.status,
     dr.alert_message,
     dr.alert_numeric_context,
+    dr.delivery_members,
     dr.semantic_family,
     dr.decision_reason
 FROM recent_analyses ra

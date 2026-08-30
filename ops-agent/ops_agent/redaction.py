@@ -97,10 +97,12 @@ class ReferenceMapper:
 
     def ref(self, namespace: str, value: Any) -> str:
         raw = str(value)
-        digest = hmac.new(self._salt, f"{namespace}:{raw}".encode(), hashlib.sha256).hexdigest()[:6]
-        prefix = {"user": "user_ref:u_", "chat": "chat_ref:c_", "payment": "payment_ref:p_"}[
-            namespace
-        ]
+        digest = hmac.new(
+            self._salt, f"{namespace}:{raw}".encode(), hashlib.sha256
+        ).hexdigest()[:32]
+        prefix = {"user": "user_ref:u_", "chat": "chat_ref:c_", "payment": "payment_ref:p_"}.get(
+            namespace, f"{namespace}_ref:h_"
+        )
         ref = f"{prefix}{digest}"
         self.identity_map.setdefault(namespace, {})[raw] = ref
         return ref
@@ -187,6 +189,10 @@ def redact_value_by_key(
     if normalized in {"telegram_user_id", "user_id"}:
         report.increment("user")
         return mapper.ref("user", value)
+    if normalized == "llm_operation_id":
+        return mapper.ref("operation", value)
+    if normalized == "durable_row_ref_source":
+        return mapper.ref("durable", value)
     if normalized in {"telegram_chat_id", "chat_id", "sent_to_chat_id"}:
         report.increment("chat")
         return mapper.ref("chat", value)
