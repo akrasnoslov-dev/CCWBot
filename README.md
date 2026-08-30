@@ -259,8 +259,8 @@ LLM choosing the canonical name.
 
 Cooldown checks use `symbol + semantic family` through the canonical event key stored on
 `market_events.event_key`. For example, `btc_price_drop` and `btc_selloff_prediction` both cool
-down as `BTC + price_downtrend`. Same-family alerts are suppressed when the new event has the same or lower urgency and no
-materially larger analysed-window movement. New news remains supporting/diagnostic context only
+down as `BTC + price_downtrend`. Same-family alerts are suppressed when the new event has
+same or lower urgency and no materially larger analysed-window movement. New news remains supporting/diagnostic context only
 and does not by itself bypass semantic cooldown. A higher urgency or an absolute analysed-window
 movement increase of at least 2.5 percentage points can allow a repeat. Operators can inspect
 `raw_event_key`, `canonical_event_key`, `semantic_family`, `event_instance_key`, `delivery_count`,
@@ -269,8 +269,8 @@ movement increase of at least 2.5 percentage points can allow a repeat. Operator
 
 Market event instance identity uses stable components: symbol, canonical semantic key, a rounded
 UTC time bucket, stable selected-news identities, and for market-only events a coarse urgency and
-movement bucket. This avoids splitting events on transient LLM input hashes while preserving stable event
-identity. Delivery still applies the same-family semantic cooldown rules above; distinct news alone
+movement bucket. This avoids splitting events on transient LLM input hashes while preserving stable
+backend event identity. Delivery still applies the same-family semantic cooldown rules above; distinct news alone
 does not authorize a repeat.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
