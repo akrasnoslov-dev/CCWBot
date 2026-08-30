@@ -242,7 +242,10 @@ test documented in `docs/development.md`.
 - Never use the production Telegram bot token locally.
 - Never manually edit tracked production files on the VPS; commit changes and deploy from Git.
 - Never overwrite the production `.env`.
-- Production forensic SQL investigations must use the dedicated `ccwbot_investigator` role through the SSH tunnel. Before querying, verify `current_user = ccwbot_investigator`, `transaction_read_only = on`, and `default_transaction_read_only = on`. Do not use the application owner/admin role, run DDL/DML, or change grants from an investigation session.
+- Production forensic SQL investigations must use the dedicated `ccwbot_investigator` role
+  through the SSH tunnel. Before querying, verify `current_user = ccwbot_investigator`,
+  `transaction_read_only = on`, and `default_transaction_read_only = on`. Do not use the
+  application owner/admin role, run DDL/DML, or change grants from an investigation session.
 - Test database migrations locally before production.
 - Verify a current backup before destructive database operations.
 - After every deploy, check `docker compose ps`, bot logs, and basic Telegram functionality.
