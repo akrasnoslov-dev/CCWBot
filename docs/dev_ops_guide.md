@@ -108,6 +108,43 @@ WantedBy=timers.target
 Install either cron or systemd on the VPS manually; this repository does not auto-install a backup
 schedule.
 
+## Read-Only Forensic Database Access
+
+Interactive production investigations by Codex or an operator should use the dedicated
+`ccwbot_investigator` PostgreSQL role through the existing SSH tunnel to
+`127.0.0.1:5433`. Do not use the application owner role or a PostgreSQL superuser for normal
+forensics.
+
+Verify every new investigation session before evidence queries:
+
+```sql
+SELECT current_user;
+SHOW transaction_read_only;
+SHOW default_transaction_read_only;
+```
+
+Expected values are `ccwbot_investigator`, `on`, and `on`. For an explicit transaction,
+use `BEGIN READ ONLY;` and finish with `ROLLBACK;`.
+
+The minimum current forensic evidence set requires `SELECT` access to:
+
+- `market_events`
+- `event_ai_analyses`
+- `llm_usage_logs`
+- `market_heartbeats`
+- `alerts`
+- `alert_delivery_outcomes`
+- `market_reports`
+
+If a required query returns `permission denied`, treat that as an access-provisioning gap.
+Do not switch to a more privileged role. An operator/admin must apply any required `GRANT SELECT`
+outside the investigator session, after which the investigator reconnects and reruns the
+read-only verification above. Additional tables should receive explicit `SELECT` only when an
+investigation actually requires them.
+
+Never print or commit the investigator password, connection string, SSH private key, or expanded
+environment values.
+
 ## Deploying Ops-Agent Changes
 
 Ops-agent code does not reach production the way bot code does. Two steps are easy to miss, and

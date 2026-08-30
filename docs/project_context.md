@@ -30,6 +30,9 @@ Permanent guardrails:
   or diagnostic internals in user-facing Telegram messages.
 - Do not commit `.env`, `.ops-agent.env`, logs, generated reports, DB dumps, caches, local state,
   or secrets.
+- Production forensic SQL investigations use the dedicated read-only `ccwbot_investigator`
+  role through an SSH tunnel. Lack of table `SELECT` permission is an access-provisioning gap,
+  not a reason to switch to the application/admin DB role.
 
 Current product behavior:
 

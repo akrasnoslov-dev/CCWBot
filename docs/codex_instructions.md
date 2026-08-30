@@ -56,6 +56,10 @@ Safe defaults:
   live under `.agents/skills/` when present and may be pinned by `skills-lock.json`.
 - For documentation work, apply `documentation-writer` for general docs and `agents-md` for
   agent-facing files such as `AGENTS.md` and Codex workflow docs.
+- For production forensic SQL, connect only through the SSH tunnel with `ccwbot_investigator`.
+  Verify the session is read-only before evidence queries. If a required table returns
+  `permission denied`, stop and report the missing grant; never switch to the application/admin
+  role or modify privileges from the investigation session.
 
 Product guardrails:
 
