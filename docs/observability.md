@@ -2,6 +2,26 @@
 
 Use these read-only queries for production analysis. Adjust interval windows as needed.
 
+## Production Forensic Session
+
+For interactive production investigation, connect through the SSH tunnel with the dedicated
+`ccwbot_investigator` PostgreSQL role. Verify the session before running evidence queries:
+
+```sql
+SELECT current_user;
+SHOW transaction_read_only;
+SHOW default_transaction_read_only;
+```
+
+Expected values are `ccwbot_investigator`, `on`, and `on`. If a required evidence table
+returns `permission denied`, stop the investigation and have an operator/admin provision the
+missing `SELECT` grant. Do not switch to the application/admin role and do not run `GRANT`,
+DDL, DML, migrations, or privilege changes from the investigator session.
+
+The minimum current forensic table set is `market_events`, `event_ai_analyses`,
+`llm_usage_logs`, `market_heartbeats`, `alerts`, `alert_delivery_outcomes`, and
+`market_reports`. See `docs/dev_ops_guide.md` for the access model.
+
 ## Event Analysis Health
 
 Event Alerts were dead for 18 days in 2026-07 while every monitoring surface reported healthy.
