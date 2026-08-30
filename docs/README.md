@@ -31,7 +31,7 @@ index or from `README.md` when they are useful for users.
 
 ## Operations
 
-- `observability.md`: read-only SQL and operational diagnostics.
+- `observability.md`: read-only SQL, investigator session checks, and operational diagnostics.
 - `llm_usage.md`: LLM usage and rate-limit reporting snippets.
 - `ops_agent_service.md`: current ops-agent service contract and report flow.
 - `ops-agent-report-codex-prompt.md`: reusable Codex prompt for ops-agent bundle analysis.
