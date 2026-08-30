@@ -21,9 +21,10 @@ analysis.
   shows a temporary unavailable message instead of a fake deterministic report.
 - Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- User `/settings` for watchlist and heartbeat frequency, plus admin-only `/admin`,
-  `/chatid`, `/grantpremium`, and `/revokepremium` commands. System status is available
-  from `/admin` as a compact persisted-telemetry dashboard instead of live provider probes.
+- Admin-only `/settings`, `/admin`, `/chatid`, `/grantpremium`, and `/revokepremium`
+  commands. User watchlist and plan flows remain under `/watchlist`, `/plan`, and `/myplan`.
+  System status is available from `/admin` as a compact persisted-telemetry dashboard instead
+  of live provider probes.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -258,19 +259,19 @@ LLM choosing the canonical name.
 
 Cooldown checks use `symbol + semantic family` through the canonical event key stored on
 `market_events.event_key`. For example, `btc_price_drop` and `btc_selloff_prediction` both cool
-down as `BTC + price_downtrend`. Same-family alerts are suppressed only when the new event has
-the same or lower urgency, no materially larger analysed-window movement, and no new stable
-related-news driver. A higher urgency, an absolute movement increase of at least 2.5 percentage
-points, or a new stable related-news identity bypasses the semantic cooldown. Operators can inspect
+down as `BTC + price_downtrend`. Same-family alerts are suppressed when the new event has the same or lower urgency and no
+materially larger analysed-window movement. New news remains supporting/diagnostic context only
+and does not by itself bypass semantic cooldown. A higher urgency or an absolute analysed-window
+movement increase of at least 2.5 percentage points can allow a repeat. Operators can inspect
 `raw_event_key`, `canonical_event_key`, `semantic_family`, `event_instance_key`, `delivery_count`,
 `suppression_count`, and `suppression_reason` in logs, stored numeric context, and
 `alert_delivery_outcomes`; these diagnostic fields are not included in Telegram alert text.
 
 Market event instance identity uses stable components: symbol, canonical semantic key, a rounded
 UTC time bucket, stable selected-news identities, and for market-only events a coarse urgency and
-movement bucket. This avoids splitting events on transient LLM input hashes while still allowing
-new alerts when severity increases, movement becomes materially larger, or a distinct news driver
-appears.
+movement bucket. This avoids splitting events on transient LLM input hashes while preserving stable event
+identity. Delivery still applies the same-family semantic cooldown rules above; distinct news alone
+does not authorize a repeat.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
 symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,
@@ -329,14 +330,17 @@ PostgreSQL is intentionally not publicly exposed. Compose binds it to `127.0.0.1
 VPS and keeps in-container traffic on Docker service networking. The bot container must connect
 to PostgreSQL with the `postgres:5432` service address, not `localhost` or host networking.
 
-Remote database access should happen only through an SSH tunnel. Expected DBeaver setup:
+Remote database access should happen only through an SSH tunnel. For read-only forensic or
+Codex investigation sessions, use the dedicated `ccwbot_investigator` PostgreSQL role rather than
+the application role. Expected read-only DBeaver/SQL-client setup:
 
 - SSH tunnel host: the VPS hostname or IP
 - SSH tunnel user/key: your VPS SSH credentials
 - Database host: `localhost`
 - Database port: `5433`
-- Database name/user: `ccwbot`
-- Password: the environment-local `POSTGRES_PASSWORD`
+- Database name: `ccwbot`
+- Database user: `ccwbot_investigator`
+- Password: the separately provisioned investigator password; never commit or document its value
 
 After production updates, `docker ps` should show loopback bindings such as
 `127.0.0.1:8080->8080/tcp` and `127.0.0.1:5433->5432/tcp`, not `0.0.0.0` bindings.
