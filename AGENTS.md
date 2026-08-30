@@ -39,7 +39,8 @@ Never put LLM/Groq calls inside a recipient loop.
 - Do not change product behaviour unless explicitly asked.
 - Do not change Event Alert business logic unless explicitly asked.
 - Do not change Premium, watchlist, subscription, payment, or grant/revoke behaviour unless explicitly asked.
-- BTC automatic alerts remain free; enabled non-BTC automatic alerts require active Premium and saved watchlist choices.
+- BTC automatic alerts remain free; enabled non-BTC automatic alerts require active Premium and
+  saved watchlist choices.
 - Manual `/price` supports configured supported coins and remains free.
 - `/reports`, `/dailyreport`, `/weeklyreport` are available to all users.
 - `/settings` is admin-only.
