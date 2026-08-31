@@ -138,6 +138,10 @@ async def test_usage_status_update_fills_missing_operation_id_without_overwritin
         ("x" * 128, "x" * 128),
         ("x" * 129, None),
         ("Bearer_secret-value", None),
+        ("sk_live_abcdefghijklmnopqrstuvwxyz123456", None),
+        ("sk_abcdefghijklmnopqrstuvwxyz123456", None),
+        ("AKIA1234567890ABCDEF", None),
+        ("unsafe/id", None),
     ],
 )
 @pytest.mark.asyncio

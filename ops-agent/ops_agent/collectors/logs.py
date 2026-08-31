@@ -122,10 +122,10 @@ def _structured_match_record(
     }
     for key in ("call_type", "provider", "status", "reason"):
         value = fields.get(key, "")
-        if _SAFE_TOKEN_RE.fullmatch(value):
+        if _SAFE_TOKEN_RE.fullmatch(value) and not looks_like_secret_value(value):
             record[key] = value
     symbol = fields.get("symbol", "").upper()
-    if symbol in _SAFE_SYMBOLS:
+    if symbol in _SAFE_SYMBOLS and not looks_like_secret_value(symbol):
         record["symbol"] = symbol
     model = fields.get("model", "")
     if _SAFE_MODEL_RE.fullmatch(model) and not looks_like_secret_value(model):

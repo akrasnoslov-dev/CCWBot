@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
+from ops_agent.redaction import looks_like_secret_value
 
 from bot.services.llm.env import get_int_env
 from bot.services.llm.errors import (
@@ -31,10 +32,6 @@ from bot.services.llm.operation import current_llm_operation_id
 
 logger = logging.getLogger(__name__)
 _SAFE_PROVIDER_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_UNSAFE_PROVIDER_REQUEST_ID_RE = re.compile(
-    r"^(?:bearer|sk-|gsk_|pk_|rk_|whsec_|ghp_|github_pat_|xox|akia|aiza|api[_-]?key|token|secret|password)",
-    re.IGNORECASE,
-)
 
 
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
@@ -410,7 +407,7 @@ def _safe_provider_request_id(headers) -> str | None:
         if not isinstance(value, str):
             continue
         is_safe = _SAFE_PROVIDER_REQUEST_ID_RE.fullmatch(value) is not None
-        is_secret_shaped = _UNSAFE_PROVIDER_REQUEST_ID_RE.match(value) is not None
+        is_secret_shaped = looks_like_secret_value(value)
         if is_safe and not is_secret_shaped:
             return value
     return None
