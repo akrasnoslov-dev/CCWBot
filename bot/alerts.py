@@ -3005,6 +3005,7 @@ async def _create_market_heartbeat(input_payload: dict) -> int | None:
             raw_output_json=raw_output,
             status="failed",
             error_message=str(error),
+            llm_operation_id=llm_operation_id,
         )
         logger.warning(
             "%s market heartbeat schema validation failed: %s",

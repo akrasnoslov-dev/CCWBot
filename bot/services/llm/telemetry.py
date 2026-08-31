@@ -612,6 +612,7 @@ async def mark_llm_usage_log_status(
     status: str,
     error_reason: str | None = None,
     error_message: str | None = None,
+    llm_operation_id: str | None = None,
 ) -> None:
     if usage_log_id is None:
         return
@@ -628,6 +629,7 @@ async def mark_llm_usage_log_status(
                 status=status,
                 error_reason=error_reason,
                 error_message=error_message,
+                llm_operation_id=llm_operation_id,
             )
     except Exception as log_error:
         logger.debug("LLM usage status update failed: %s", log_error)

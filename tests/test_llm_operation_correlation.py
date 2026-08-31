@@ -15,6 +15,7 @@ from bot.db.database import (
     save_llm_usage_log,
     save_market_heartbeat,
     save_market_report,
+    update_llm_usage_log_status,
 )
 from bot.services.llm.operation import new_llm_operation_id
 
@@ -89,4 +90,41 @@ async def test_durable_feature_rows_join_only_their_logical_provider_attempts():
     assert report.llm_operation_id == report_operation
     assert len({event_operation, heartbeat_operation, report_operation}) == 3
     assert all("user" not in operation for operation in (event_operation, heartbeat_operation))
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_usage_status_update_fills_missing_operation_id_without_overwriting_it():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_local = async_sessionmaker(engine, expire_on_commit=False)
+    first_operation = new_llm_operation_id()
+    second_operation = new_llm_operation_id()
+
+    async with session_local() as session:
+        usage = await save_llm_usage_log(
+            session,
+            provider="groq",
+            model="primary",
+            call_type="market_heartbeat",
+            status="success",
+        )
+        updated = await update_llm_usage_log_status(
+            session,
+            usage_log_id=usage.id,
+            status="schema_error",
+            llm_operation_id=first_operation,
+        )
+        preserved = await update_llm_usage_log_status(
+            session,
+            usage_log_id=usage.id,
+            status="schema_error",
+            llm_operation_id=second_operation,
+        )
+
+    assert updated is not None
+    assert updated.llm_operation_id == first_operation
+    assert preserved is not None
+    assert preserved.llm_operation_id == first_operation
     await engine.dispose()

@@ -202,7 +202,8 @@ def _delivery_members(row: dict[str, Any], hasher: BundleHasher) -> list[dict[st
             continue
         recipient = item.get("recipient_id")
         alert = item.get("alert_id")
-        if recipient is None or alert is None:
+        outcome = item.get("outcome_id")
+        if recipient is None or (alert is None and outcome is None):
             continue
         status = str(item.get("status") or "unknown")
         if not re.fullmatch(r"[a-z_]{1,64}", status):
@@ -210,8 +211,8 @@ def _delivery_members(row: dict[str, Any], hasher: BundleHasher) -> list[dict[st
         members.append(
             {
                 "recipient_ref": hasher.ref("recipient", recipient),
-                "alert_ref": hasher.ref("alert", alert),
-                "outcome_ref": hasher.ref("outcome", f"{alert}:{status}"),
+                "alert_ref": hasher.ref("alert", alert) if alert is not None else None,
+                "outcome_ref": hasher.ref("outcome", outcome) if outcome is not None else None,
                 "status": status,
             }
         )
@@ -716,7 +717,12 @@ def _similarity_groups(
     )
     payload["memberships"] = sorted(
         memberships,
-        key=lambda item: (item["semantic_group_id"], item["recipient_ref"], item["alert_ref"]),
+        key=lambda item: (
+            item["semantic_group_id"],
+            item["recipient_ref"],
+            item["alert_ref"] or "",
+            item["outcome_ref"] or "",
+        ),
     )
     payload["membership_contract"] = (
         "References are HMAC-derived and stable only within this bundle; membership records "

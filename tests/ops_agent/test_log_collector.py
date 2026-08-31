@@ -123,6 +123,35 @@ def test_collect_logs_exports_only_allowlisted_structured_match_fields(tmp_path)
     assert "Bearer_secret" not in encoded
 
 
+def test_collect_logs_never_exports_credential_shaped_model_values(tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    credential = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    (logs_dir / "ccwbot-operational.log").write_text(
+        "2026-06-01 00:30:00Z ERROR bot.llm: "
+        f"ops_event=llm_provider_switch provider=groq model={credential} "
+        "call_type=event_analysis reason=invalid_output\n",
+        encoding="utf-8",
+    )
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+    config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
+
+    _, counts, _, _ = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"3" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    record = counts["period_matched_records"][0]
+    assert "model" not in record
+    assert credential not in str(counts)
+
+
 def test_collect_logs_warns_when_timestamps_are_unparseable(tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()

@@ -504,7 +504,14 @@ def test_similarity_memberships_link_recipients_without_exporting_source_ids():
             event_ai_analysis_id=102,
             event_instance_key="instance-c",
             input_hash="input-c",
-            delivery_members=[{"recipient_id": 202, "alert_id": 1003, "status": "suppressed"}],
+            delivery_members=[
+                {
+                    "recipient_id": 202,
+                    "alert_id": None,
+                    "outcome_id": 2003,
+                    "status": "suppressed",
+                }
+            ],
             alert_message="BTC volatility expanded after ETF news near $102000.",
         ),
     ]
@@ -521,7 +528,10 @@ def test_similarity_memberships_link_recipients_without_exporting_source_ids():
     assert any(recipient_refs.count(reference) == 2 for reference in recipient_refs)
     assert {member["status"] for member in memberships} == {"sent", "suppressed"}
     assert all(member["market_event_ref"] and member["analysis_ref"] for member in memberships)
+    suppressed = next(member for member in memberships if member["status"] == "suppressed")
+    assert suppressed["alert_ref"] is None
+    assert suppressed["outcome_ref"].startswith("outcome_ref:h_")
     encoded = json.dumps(evidence, sort_keys=True)
-    for source_id in ("101", "202", "1001", "1002", "1003"):
+    for source_id in ("101", "202", "1001", "1002", "2003"):
         assert f'"{source_id}"' not in encoded
     assert "volatility expanded" not in encoded

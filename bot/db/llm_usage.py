@@ -75,6 +75,7 @@ async def update_llm_usage_log_status(
     status: str,
     error_reason: str | None = None,
     error_message: str | None = None,
+    llm_operation_id: str | None = None,
 ) -> LlmUsageLog | None:
     """Update a usage row when downstream JSON schema validation fails."""
     row = await session.get(LlmUsageLog, usage_log_id)
@@ -83,6 +84,8 @@ async def update_llm_usage_log_status(
     row.status = status
     row.error_reason = error_reason
     row.error_message = error_message
+    if row.llm_operation_id is None and llm_operation_id is not None:
+        row.llm_operation_id = llm_operation_id
     await session.commit()
     await session.refresh(row)
     return row

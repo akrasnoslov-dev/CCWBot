@@ -58,7 +58,10 @@ LONG_SECRET_ALLOWLIST_RES = (
 # Snake_case tokens starting with a credential-style prefix are never structural keys.
 _SECRET_PREFIX_RE = re.compile(
     r"(?i)^(?:sk|pk|rk|gsk|csk|whsec|ghp|gho|ghs|ghu|ghr|github|xox[a-z]|api|key|token|"
-    r"secret|bearer|aws|akia)_"
+    r"secret|bearer|aws|akia)[_-]"
+)
+_CREDENTIAL_VALUE_RE = re.compile(
+    r"(?i)^(?:akia[0-9a-z]{16}|aiza[a-z0-9_-]{20,}|bearer[_-]|github_pat_)"
 )
 # Credential-style words anywhere in a snake_case token disqualify it from the allowlist.
 _SECRET_SEGMENT_WORDS = frozenset(
@@ -77,6 +80,18 @@ def _is_allowlisted_long_token(value: str) -> bool:
     if any(segment in _SECRET_SEGMENT_WORDS for segment in candidate.lower().split("_")):
         return False
     return any(pattern.match(candidate) for pattern in LONG_SECRET_ALLOWLIST_RES)
+
+
+def looks_like_secret_value(value: str) -> bool:
+    """Return whether an otherwise allowlisted field value looks credential-shaped."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    if _SECRET_PREFIX_RE.match(candidate) or _CREDENTIAL_VALUE_RE.match(candidate):
+        return True
+    return bool(LONG_SECRET_RE.fullmatch(candidate)) and not _is_allowlisted_long_token(
+        candidate
+    )
 
 
 @dataclass

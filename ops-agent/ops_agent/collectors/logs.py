@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ops_agent.config import OpsAgentConfig
-from ops_agent.redaction import RedactionReport, ReferenceMapper
+from ops_agent.redaction import RedactionReport, ReferenceMapper, looks_like_secret_value
 from ops_agent.schemas import Period
 
 LOG_PATTERNS = {
@@ -122,7 +122,7 @@ def _structured_match_record(
     if symbol in _SAFE_SYMBOLS:
         record["symbol"] = symbol
     model = fields.get("model", "")
-    if _SAFE_MODEL_RE.fullmatch(model):
+    if _SAFE_MODEL_RE.fullmatch(model) and not looks_like_secret_value(model):
         record["model"] = model
     operation_id = fields.get("operation_id", "")
     if _UUID_RE.fullmatch(operation_id):

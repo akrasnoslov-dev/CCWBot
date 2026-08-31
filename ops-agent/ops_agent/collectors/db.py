@@ -112,11 +112,6 @@ delivery_rollup AS (
         (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_message,
         (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
             AS alert_numeric_context,
-        jsonb_agg(jsonb_build_object(
-            'recipient_id', a.user_id,
-            'alert_id', a.id,
-            'status', a.status
-        ) ORDER BY a.created_at, a.id) AS delivery_members,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
             FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family,
         (array_agg(ado.decision_reason ORDER BY ado.created_at DESC, ado.id DESC)
@@ -124,6 +119,49 @@ delivery_rollup AS (
     FROM delivery_candidates a
     LEFT JOIN alert_delivery_outcomes ado ON ado.alert_id = a.id
     GROUP BY a.rollup_event_ai_analysis_id
+),
+membership_candidates AS (
+    SELECT
+        ra.event_ai_analysis_id AS rollup_event_ai_analysis_id,
+        ado.user_id AS recipient_id,
+        ado.alert_id,
+        ado.id AS outcome_id,
+        ado.status,
+        ado.created_at
+    FROM recent_analyses ra
+    JOIN alert_delivery_outcomes ado
+      ON ado.event_ai_analysis_id = ra.event_ai_analysis_id
+    WHERE ado.created_at >= :since
+      AND ado.created_at < :until
+      AND ado.alert_type = 'event_alert'
+      AND ado.user_id IS NOT NULL
+    UNION ALL
+    SELECT
+        a.rollup_event_ai_analysis_id,
+        a.user_id AS recipient_id,
+        a.id AS alert_id,
+        NULL::integer AS outcome_id,
+        a.status,
+        a.created_at
+    FROM delivery_candidates a
+    WHERE a.user_id IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM alert_delivery_outcomes ado
+          WHERE ado.alert_id = a.id
+      )
+),
+membership_rollup AS (
+    SELECT
+        rollup_event_ai_analysis_id,
+        jsonb_agg(jsonb_build_object(
+            'recipient_id', recipient_id,
+            'alert_id', alert_id,
+            'outcome_id', outcome_id,
+            'status', status
+        ) ORDER BY created_at, outcome_id NULLS LAST, alert_id NULLS LAST) AS delivery_members
+    FROM membership_candidates
+    GROUP BY rollup_event_ai_analysis_id
 )
 SELECT
     coalesce(me.symbol, ra.analysis_symbol, 'UNKNOWN') AS symbol,
@@ -165,12 +203,13 @@ SELECT
     dr.status,
     dr.alert_message,
     dr.alert_numeric_context,
-    dr.delivery_members,
+    mr.delivery_members,
     dr.semantic_family,
     dr.decision_reason
 FROM recent_analyses ra
 LEFT JOIN market_events me ON me.id = ra.market_event_id
 LEFT JOIN delivery_rollup dr ON dr.rollup_event_ai_analysis_id = ra.event_ai_analysis_id
+LEFT JOIN membership_rollup mr ON mr.rollup_event_ai_analysis_id = ra.event_ai_analysis_id
 ORDER BY ra.analysis_created_at DESC, ra.event_ai_analysis_id DESC
 """
 
