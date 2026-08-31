@@ -18,6 +18,7 @@ from bot.db.database import (
     update_llm_usage_log_status,
 )
 from bot.services.llm.operation import new_llm_operation_id
+from bot.services.llm.telemetry import rate_limit_header_payload
 
 
 @pytest.mark.asyncio
@@ -127,4 +128,35 @@ async def test_usage_status_update_fills_missing_operation_id_without_overwritin
     assert updated.llm_operation_id == first_operation
     assert preserved is not None
     assert preserved.llm_operation_id == first_operation
+    await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("request_id", "expected"),
+    [
+        ("request-1", "request-1"),
+        ("x" * 128, "x" * 128),
+        ("x" * 129, None),
+        ("Bearer_secret-value", None),
+    ],
+)
+@pytest.mark.asyncio
+async def test_provider_request_id_is_bounded_before_usage_persistence(request_id, expected):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_local = async_sessionmaker(engine, expire_on_commit=False)
+    payload = rate_limit_header_payload({"x-request-id": request_id})
+
+    async with session_local() as session:
+        usage = await save_llm_usage_log(
+            session,
+            provider="groq",
+            model="primary",
+            call_type="event_analysis",
+            status="success",
+            **payload,
+        )
+
+    assert usage.provider_request_id == expected
     await engine.dispose()

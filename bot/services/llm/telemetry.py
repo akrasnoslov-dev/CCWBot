@@ -30,6 +30,11 @@ from bot.services.llm.errors import (
 from bot.services.llm.operation import current_llm_operation_id
 
 logger = logging.getLogger(__name__)
+_SAFE_PROVIDER_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_UNSAFE_PROVIDER_REQUEST_ID_RE = re.compile(
+    r"^(?:bearer|sk-|gsk_|pk_|rk_|whsec_|ghp_|github_pat_|xox|akia|aiza|api[_-]?key|token|secret|password)",
+    re.IGNORECASE,
+)
 
 
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
@@ -393,7 +398,26 @@ def header_value(headers, name: str) -> str | None:
     return None
 
 
+def _safe_provider_request_id(headers) -> str | None:
+    """Return a bounded opaque provider trace ID, never a raw header value."""
+    if headers is None:
+        return None
+    for name in ("x-request-id", "request-id"):
+        try:
+            value = headers.get(name)
+        except AttributeError:
+            continue
+        if not isinstance(value, str):
+            continue
+        is_safe = _SAFE_PROVIDER_REQUEST_ID_RE.fullmatch(value) is not None
+        is_secret_shaped = _UNSAFE_PROVIDER_REQUEST_ID_RE.match(value) is not None
+        if is_safe and not is_secret_shaped:
+            return value
+    return None
+
+
 def rate_limit_header_payload(headers) -> dict:
+    provider_request_id = _safe_provider_request_id(headers)
     return {
         "rate_limit_limit_requests": header_value(headers, "x-ratelimit-limit-requests"),
         "rate_limit_remaining_requests": header_value(headers, "x-ratelimit-remaining-requests"),
@@ -404,8 +428,7 @@ def rate_limit_header_payload(headers) -> dict:
         "retry_after": header_value(headers, "retry-after"),
         # This exact allowlist entry is an opaque provider trace identifier.  Do not add
         # arbitrary headers here: headers can include credentials or account metadata.
-        "provider_request_id": header_value(headers, "x-request-id")
-        or header_value(headers, "request-id"),
+        "provider_request_id": provider_request_id,
     }
 
 

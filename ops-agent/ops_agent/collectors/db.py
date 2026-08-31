@@ -149,6 +149,10 @@ membership_candidates AS (
           SELECT 1
           FROM alert_delivery_outcomes ado
           WHERE ado.alert_id = a.id
+            AND ado.created_at >= :since
+            AND ado.created_at < :until
+            AND ado.alert_type = 'event_alert'
+            AND ado.user_id IS NOT NULL
       )
 ),
 membership_rollup AS (

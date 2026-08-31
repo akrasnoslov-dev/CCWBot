@@ -122,6 +122,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                     900002, 'BTC', 'event_alert', 'btc_price_downtrend',
                     'ops-agent-malformed-context-b', 64000, 65000, -1.6,
                     :since, :since
+                ),
+                (
+                    900003, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-period-boundary', 63000, 64000, -1.7,
+                    :since, :since
                 )
             """
         ),
@@ -143,6 +148,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                 (
                     900002, 900002, 'ops_agent_contract_b', 'BTC', 'event_analysis',
                     'groq', 'contract-model', 'ops-agent-contract-b', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                ),
+                (
+                    900003, 900003, 'ops_agent_contract_c', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-c', true, '["n1"]',
                     'success', 'Sanitized text. Not financial advice.', :since
                 )
             """
@@ -166,6 +176,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                 (
                     900002, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
                     9900001, 900002, 900002, 900001, 'sent', 0, '{bad json',
+                    :since
+                ),
+                (
+                    900003, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900003, 900003, 900001, 'sent', 0, '{bad json',
                     :since
                 )
             """
@@ -251,6 +266,40 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
     for source_id in ("900001", "900002", "900003", "9900001"):
         assert f'"{source_id}"' not in serialized
     assert "Sanitized text. Not financial advice." not in serialized
+
+    await connection.execute(text("""
+        INSERT INTO alert_delivery_outcomes (
+            id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+            user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+            recipient_eligible, event_instance_key, created_at
+        ) VALUES (900004, 'BTC', 'event_alert', 900003, 900003, 900003, 900001,
+            9900001, 'delivered', 'delivered', true, true, 'ops-agent-period-boundary',
+            :until + interval '1 microsecond')
+    """), params)
+    boundary_result = await connection.execute(text(ALERT_EVIDENCE_SQL), params)
+    boundary_rows = [dict(row) for row in boundary_result.mappings()]
+    boundary_members = next(
+        row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
+    )["delivery_members"]
+    assert boundary_members == [
+        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": None, "status": "sent"}
+    ]
+    await connection.execute(text("""
+        INSERT INTO alert_delivery_outcomes (
+            id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+            user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+            recipient_eligible, event_instance_key, created_at
+        ) VALUES (900005, 'BTC', 'event_alert', 900003, 900003, 900003, 900001,
+            9900001, 'delivered', 'delivered', true, true, 'ops-agent-period-boundary', :since)
+    """), params)
+    boundary_result = await connection.execute(text(ALERT_EVIDENCE_SQL), params)
+    boundary_rows = [dict(row) for row in boundary_result.mappings()]
+    boundary_members = next(
+        row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
+    )["delivery_members"]
+    assert boundary_members == [
+        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": 900005, "status": "delivered"}
+    ]
 
 
 def test_price_state_query_uses_existing_price_state_columns_only():
