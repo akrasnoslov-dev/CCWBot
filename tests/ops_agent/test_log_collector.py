@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+from ops_agent.collectors import logs as log_collector
 from ops_agent.collectors.logs import LOG_PATTERNS, collect_logs, parse_log_timestamp
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport, ReferenceMapper
@@ -150,6 +152,136 @@ def test_collect_logs_never_exports_credential_shaped_model_values(tmp_path):
     record = counts["period_matched_records"][0]
     assert "model" not in record
     assert credential not in str(counts)
+
+
+def test_collect_logs_keeps_newest_records_and_reports_record_cap_truncation(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "ccwbot-operational.log").write_text(
+        "\n".join(
+            [
+                "2026-06-01 00:00:00Z ERROR ops_event=event_old",
+                "2026-06-01 00:01:00Z ERROR ops_event=event_mid",
+                "2026-06-01 00:02:00Z ERROR ops_event=event_new",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_collector, "STRUCTURED_RECORD_CAP", 2)
+    config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+
+    index, counts, _, statuses = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"4" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    assert [record["event"] for record in counts["period_matched_records"]] == [
+        "event_mid",
+        "event_new",
+    ]
+    assert counts["structured_record_export"]["period_matched"] == {
+        "matched_records": 3,
+        "exported_records": 2,
+        "omitted_records": 1,
+    }
+    assert "structured log match records were truncated" in index["warnings"][-1]
+    assert statuses[-1] == {
+        "name": "logs.structured_evidence",
+        "status": "partial",
+        "error": "structured_record_export_truncated",
+    }
+
+
+@pytest.mark.parametrize(
+    ("per_file_limit", "total_limit"),
+    [(150, 500), (500, 150)],
+)
+def test_collect_logs_enforces_structured_record_byte_caps_with_newest_evidence(
+    tmp_path, per_file_limit, total_limit
+):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "ccwbot-operational.log").write_text(
+        "\n".join(
+            [
+                "2026-06-01 00:00:00Z ERROR ops_event=event_old",
+                "2026-06-01 00:01:00Z ERROR ops_event=event_mid",
+                "2026-06-01 00:02:00Z ERROR ops_event=event_new",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config = OpsAgentConfig(
+        None,
+        None,
+        tmp_path,
+        logs_dir,
+        tmp_path / "state.json",
+        limits=OpsAgentLimits(
+            max_log_tail_bytes=20_000,
+            max_log_export_bytes_per_file=per_file_limit,
+            max_log_export_bytes_total=total_limit,
+        ),
+    )
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+
+    _index, counts, _, _statuses = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"5" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    exported_events = [record["event"] for record in counts["period_matched_records"]]
+    assert "event_new" in exported_events
+    assert "event_old" not in exported_events
+    assert counts["structured_record_export"]["exported_bytes"] <= min(
+        per_file_limit, total_limit
+    )
+    assert counts["structured_record_export"]["period_matched"]["omitted_records"] >= 1
+
+
+def test_collect_logs_rejects_unbounded_event_and_suppression_reason_values(tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    unsafe_event = "e" * 128
+    unsafe_reason = "r" * 128
+    (logs_dir / "ccwbot-operational.log").write_text(
+        "2026-06-01 00:00:00Z ERROR "
+        f"ops_event={unsafe_event} suppression_reason={unsafe_reason}\n",
+        encoding="utf-8",
+    )
+    config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+
+    index, counts, _, _statuses = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"6" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    record = counts["period_matched_records"][0]
+    assert record["event"] is None
+    assert index["files"][0]["ops_events"] == {}
+    assert counts["suppression_reason_counts"] == {}
+    assert unsafe_event not in str(counts)
+    assert unsafe_reason not in str(counts)
 
 
 def test_collect_logs_warns_when_timestamps_are_unparseable(tmp_path):
