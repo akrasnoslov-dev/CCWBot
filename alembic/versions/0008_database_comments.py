@@ -335,6 +335,7 @@ COLUMN_COMMENTS = {
         "status": "Analysis state such as completed or failed.",
         "error_message": "Failure detail when analysis generation fails.",
         "error_reason": "Normalized LLM failure reason for admin status.",
+        "llm_operation_id": "Opaque backend correlation id for the logical LLM operation.",
         "created_at": "When this AI analysis row was created.",
     },
     "market_heartbeats": {
@@ -350,6 +351,7 @@ COLUMN_COMMENTS = {
         "confidence": "LLM heartbeat confidence: low, medium, or high.",
         "status": "Heartbeat generation state such as completed or failed.",
         "error_message": "Failure detail when heartbeat generation fails.",
+        "llm_operation_id": "Opaque backend correlation id for the logical LLM operation.",
         "created_at": "When this heartbeat row was created.",
     },
     "market_reports": {
@@ -364,6 +366,7 @@ COLUMN_COMMENTS = {
         "error_message": "Failure detail when report generation failed.",
         "provider": "LLM provider used for this report generation.",
         "model": "LLM model used for this report generation.",
+        "llm_operation_id": "Opaque backend correlation id for the logical LLM operation.",
         "created_at": "When this report row was created.",
     },
     "llm_usage_logs": {
@@ -389,6 +392,12 @@ COLUMN_COMMENTS = {
         "retry_after": "Provider retry-after header when rate limited.",
         "error_reason": "Normalized safe error reason for failed calls.",
         "error_message": "Sanitized provider or parser error message.",
+        "llm_operation_id": (
+            "Opaque backend correlation id shared by provider attempts in one logical operation."
+        ),
+        "provider_request_id": (
+            "Allowlisted opaque provider request id when the response exposes one."
+        ),
     },
 }
 

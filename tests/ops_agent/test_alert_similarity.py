@@ -214,6 +214,71 @@ def test_alert_quality_ignores_price_change_in_normal_sentences(alert_message):
     assert "old_generic_price_change_label" not in issues
 
 
+def test_alert_quality_ignores_old_label_in_internal_analysis_only():
+    payloads = build_alert_evidence_payloads(
+        [
+            _row(
+                alert_message=(
+                    "BTC Event Alert\n\nMarket context remains mixed. Not financial advice."
+                ),
+                analysis_plain_text="Internal analysis: 24h change: -4.2%.",
+                analysis_message_body="24h change: -4.2%.",
+            )
+        ],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]}
+
+    assert "old_24h_change_label" not in issues
+
+
+def test_alert_quality_detects_old_24h_label_in_delivered_event_alert():
+    payloads = build_alert_evidence_payloads(
+        [_row(alert_message="BTC Event Alert\n24h change: -4.2%\nNot financial advice.")],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]}
+
+    assert "old_24h_change_label" in issues
+
+
+def test_alert_quality_preserves_other_delivered_old_label_detection():
+    payloads = build_alert_evidence_payloads(
+        [_row(alert_message="BTC Event Alert\nSince last BTC alert: -4.2%\nNot financial advice.")],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]}
+
+    assert "old_since_last_btc_alert_label" in issues
+
+
+def test_alert_quality_clean_delivered_event_alert_stays_clean():
+    payloads = build_alert_evidence_payloads(
+        [_row(alert_message="BTC Event Alert\nMarket context is mixed. Not financial advice.")],
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+
+    issues = {row["issue"] for row in payloads["evidence/db/alert_quality.json"]["issues"]}
+
+    assert not {
+        "old_24h_change_label",
+        "old_since_last_btc_alert_label",
+        "old_analysed_window_change_label",
+        "old_generic_price_change_label",
+    }.intersection(issues)
+
+
 def test_exact_and_similar_alert_groups_are_derived():
     rows = [
         _row(
@@ -418,3 +483,55 @@ def test_suppression_effectiveness_does_not_allow_new_news_driver_alone():
 
     assert groups[0]["delivered_inside_cooldown_candidates"] == 1
     assert groups[0]["allowed_escalation_reasons"] == {}
+
+
+def test_similarity_memberships_link_recipients_without_exporting_source_ids():
+    rows = [
+        _row(
+            delivery_members=[{"recipient_id": 101, "alert_id": 1001, "status": "sent"}],
+            alert_message="BTC volatility expanded after ETF news near $100000.",
+        ),
+        _row(
+            market_event_id=11,
+            event_ai_analysis_id=101,
+            event_instance_key="instance-b",
+            input_hash="input-b",
+            delivery_members=[{"recipient_id": 101, "alert_id": 1002, "status": "sent"}],
+            alert_message="BTC volatility expanded after ETF news near $101000.",
+        ),
+        _row(
+            market_event_id=12,
+            event_ai_analysis_id=102,
+            event_instance_key="instance-c",
+            input_hash="input-c",
+            delivery_members=[
+                {
+                    "recipient_id": 202,
+                    "alert_id": None,
+                    "outcome_id": 2003,
+                    "status": "suppressed",
+                }
+            ],
+            alert_message="BTC volatility expanded after ETF news near $102000.",
+        ),
+    ]
+
+    payloads = build_alert_evidence_payloads(
+        rows, period=_period(), row_cap=10, semantic_cooldown_seconds=14400
+    )
+    evidence = payloads["evidence/db/alert_similarity_groups.json"]
+    memberships = evidence["memberships"]
+
+    assert len(memberships) == 3
+    recipient_refs = [member["recipient_ref"] for member in memberships]
+    assert len(set(recipient_refs)) == 2
+    assert any(recipient_refs.count(reference) == 2 for reference in recipient_refs)
+    assert {member["status"] for member in memberships} == {"sent", "suppressed"}
+    assert all(member["market_event_ref"] and member["analysis_ref"] for member in memberships)
+    suppressed = next(member for member in memberships if member["status"] == "suppressed")
+    assert suppressed["alert_ref"] is None
+    assert suppressed["outcome_ref"].startswith("outcome_ref:h_")
+    encoded = json.dumps(evidence, sort_keys=True)
+    for source_id in ("101", "202", "1001", "1002", "2003"):
+        assert f'"{source_id}"' not in encoded
+    assert "volatility expanded" not in encoded

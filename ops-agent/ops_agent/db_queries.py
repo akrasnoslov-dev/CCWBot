@@ -893,6 +893,40 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY calls DESC LIMIT :limit",
     ),
     DbQuery(
+        "llm_operation_reconciliation",
+        "evidence/db/llm_operation_reconciliation.json",
+        "WITH usage_rows AS ("
+        "SELECT llm_operation_id, call_type, jsonb_agg(jsonb_build_object("
+        "'provider', provider, 'model', model, 'status', status, "
+        "'error_reason', coalesce(error_reason, 'none')) ORDER BY created_at, id) AS attempts, "
+        "count(*) AS provider_attempts, max(created_at) AS observed_at FROM llm_usage_logs "
+        "WHERE created_at >= :since AND created_at < :until AND llm_operation_id IS NOT NULL "
+        "AND call_type IN ('event_analysis', 'market_heartbeat', 'daily_report', 'weekly_report') "
+        "GROUP BY llm_operation_id, call_type"
+        "), feature_source_rows AS ("
+        "SELECT llm_operation_id, 'event_analysis' AS feature_kind, status AS feature_status, "
+        "'event_analysis:' || id::text AS durable_row_ref_source, created_at AS observed_at "
+        "FROM event_ai_analyses WHERE llm_operation_id IS NOT NULL AND created_at >= :since AND created_at < :until "
+        "UNION ALL SELECT llm_operation_id, 'market_heartbeat', status, 'market_heartbeat:' || id::text, generated_at "
+        "FROM market_heartbeats WHERE llm_operation_id IS NOT NULL AND generated_at >= :since AND generated_at < :until "
+        "UNION ALL SELECT llm_operation_id, report_type || '_report', status, 'market_report:' || id::text, generated_at "
+        "FROM market_reports WHERE llm_operation_id IS NOT NULL AND generated_at >= :since AND generated_at < :until"
+        "), feature_rows AS ("
+        "SELECT llm_operation_id, feature_kind, max(feature_status) AS feature_status, "
+        "max(durable_row_ref_source) AS durable_row_ref_source, max(observed_at) AS observed_at "
+        "FROM feature_source_rows GROUP BY llm_operation_id, feature_kind"
+        ") "
+        "SELECT coalesce(u.llm_operation_id, f.llm_operation_id) AS llm_operation_id, "
+        "coalesce(u.call_type, f.feature_kind) AS call_type, u.attempts, "
+        "coalesce(u.provider_attempts, 0) AS provider_attempts, "
+        "CASE WHEN u.llm_operation_id IS NULL THEN 'feature_only_missing_usage_telemetry' "
+        "WHEN f.llm_operation_id IS NULL THEN 'attempt_only_missing_durable_feature' "
+        "ELSE 'correlated' END AS reconciliation_state, f.feature_kind, f.feature_status, "
+        "f.durable_row_ref_source FROM usage_rows u FULL OUTER JOIN feature_rows f "
+        "ON f.llm_operation_id = u.llm_operation_id AND f.feature_kind = u.call_type "
+        "ORDER BY greatest(coalesce(u.observed_at, :since), coalesce(f.observed_at, :since)) DESC LIMIT :limit",
+    ),
+    DbQuery(
         "llm_failure_category_summary",
         "evidence/db/aggregate_metrics.json",
         "WITH classified AS ("

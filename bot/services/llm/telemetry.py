@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
+from ops_agent.redaction import looks_like_secret_value
 
 from bot.services.llm.env import get_int_env
 from bot.services.llm.errors import (
@@ -27,8 +28,10 @@ from bot.services.llm.errors import (
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
+from bot.services.llm.operation import current_llm_operation_id
 
 logger = logging.getLogger(__name__)
+_SAFE_PROVIDER_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
 def _get_int_env(name: str, default: int, minimum: int = 0) -> int:
@@ -392,7 +395,26 @@ def header_value(headers, name: str) -> str | None:
     return None
 
 
+def _safe_provider_request_id(headers) -> str | None:
+    """Return a bounded opaque provider trace ID, never a raw header value."""
+    if headers is None:
+        return None
+    for name in ("x-request-id", "request-id"):
+        try:
+            value = headers.get(name)
+        except AttributeError:
+            continue
+        if not isinstance(value, str):
+            continue
+        is_safe = _SAFE_PROVIDER_REQUEST_ID_RE.fullmatch(value) is not None
+        is_secret_shaped = looks_like_secret_value(value)
+        if is_safe and not is_secret_shaped:
+            return value
+    return None
+
+
 def rate_limit_header_payload(headers) -> dict:
+    provider_request_id = _safe_provider_request_id(headers)
     return {
         "rate_limit_limit_requests": header_value(headers, "x-ratelimit-limit-requests"),
         "rate_limit_remaining_requests": header_value(headers, "x-ratelimit-remaining-requests"),
@@ -401,6 +423,9 @@ def rate_limit_header_payload(headers) -> dict:
         "rate_limit_remaining_tokens": header_value(headers, "x-ratelimit-remaining-tokens"),
         "rate_limit_reset_tokens": header_value(headers, "x-ratelimit-reset-tokens"),
         "retry_after": header_value(headers, "retry-after"),
+        # This exact allowlist entry is an opaque provider trace identifier.  Do not add
+        # arbitrary headers here: headers can include credentials or account metadata.
+        "provider_request_id": provider_request_id,
     }
 
 
@@ -544,11 +569,12 @@ def start_llm_rate_limit_backoff(
     _llm_rate_limit_backoff_call_types.setdefault(key, set()).add(call_type)
     logger.warning(
         "ops_event=llm_rate_limit_started provider=%s model=%s call_type=%s "
-        "retry_after_seconds=%s",
+        "retry_after_seconds=%s operation_id=%s",
         provider,
         model,
         call_type,
         retry_after_seconds,
+        current_llm_operation_id(),
     )
     return retry_after_seconds, limited_until
 
@@ -567,6 +593,7 @@ async def write_llm_usage_log(
     response=None,
     error_reason: str | None = None,
     error_message: str | None = None,
+    operation_id: str | None = None,
 ) -> int | None:
     try:
         from bot.db.database import save_llm_usage_log
@@ -580,6 +607,7 @@ async def write_llm_usage_log(
                 provider=provider,
                 model=model,
                 call_type=call_type,
+                llm_operation_id=operation_id or current_llm_operation_id(),
                 symbol=symbol,
                 status=status,
                 prompt_tokens=usage_int(response, "prompt_tokens"),
@@ -604,6 +632,7 @@ async def mark_llm_usage_log_status(
     status: str,
     error_reason: str | None = None,
     error_message: str | None = None,
+    llm_operation_id: str | None = None,
 ) -> None:
     if usage_log_id is None:
         return
@@ -620,6 +649,7 @@ async def mark_llm_usage_log_status(
                 status=status,
                 error_reason=error_reason,
                 error_message=error_message,
+                llm_operation_id=llm_operation_id,
             )
     except Exception as log_error:
         logger.debug("LLM usage status update failed: %s", log_error)

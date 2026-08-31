@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,6 +12,7 @@ from bot.db.database import AlertDeliveryOutcome, Base, EventAiAnalysis
 from bot.observability import event_analysis_health
 from bot.services.llm import groq_provider, telemetry
 from bot.services.llm.errors import AIGroqRateLimitError, LLMRateLimitBackoffActive
+from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
 
 # The Groq chat-completion mechanism (and its (provider, model) rate-limit backoff) now lives in
 # bot.services.llm. These tests exercise the GroqProvider directly and the production event-analysis
@@ -54,22 +56,25 @@ def clear_rate_limit_backoffs(monkeypatch):
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
 
 
-def test_active_backoff_snapshot_preserves_triggering_call_types():
+def test_active_backoff_snapshot_preserves_triggering_call_types(caplog):
     error = RuntimeError("429 rate limit")
-    telemetry.start_llm_rate_limit_backoff(
-        provider="mistral",
-        model="shared-model",
-        call_type="daily_report",
-        error=error,
-        headers=None,
-    )
-    telemetry.start_llm_rate_limit_backoff(
-        provider="mistral",
-        model="shared-model",
-        call_type="news_intelligence",
-        error=error,
-        headers=None,
-    )
+    operation_id = new_llm_operation_id()
+    with caplog.at_level(logging.WARNING, logger=telemetry.logger.name):
+        with llm_operation_scope(operation_id):
+            telemetry.start_llm_rate_limit_backoff(
+                provider="mistral",
+                model="shared-model",
+                call_type="daily_report",
+                error=error,
+                headers=None,
+            )
+            telemetry.start_llm_rate_limit_backoff(
+                provider="mistral",
+                model="shared-model",
+                call_type="news_intelligence",
+                error=error,
+                headers=None,
+            )
 
     rows = telemetry.get_active_llm_rate_limit_backoffs()
 
@@ -77,6 +82,11 @@ def test_active_backoff_snapshot_preserves_triggering_call_types():
     assert rows[0]["provider"] == "mistral"
     assert rows[0]["model"] == "shared-model"
     assert rows[0]["call_types"] == ("daily_report", "news_intelligence")
+    assert all(
+        f"operation_id={operation_id}" in record.getMessage()
+        for record in caplog.records
+        if "ops_event=llm_rate_limit_started" in record.getMessage()
+    )
 
 
 @pytest.mark.asyncio

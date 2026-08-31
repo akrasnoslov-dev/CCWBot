@@ -38,10 +38,22 @@ ops-agent `llm_failure_category_summary` query preserves these two categories se
 keeps actual provider rate limits distinct from active-backoff and circuit-breaker skips, and
 groups sanitized provider/model attempt pressure without exporting provider error messages.
 
-`llm_usage_logs` is provider-attempt telemetry, not a logical-operation ledger. Ops reports use
-durable `event_ai_analyses`, `news_items`, `market_heartbeats`, and `market_reports` rows for
-terminal product outcomes and never claim a specific failed provider attempt was recovered by a
-specific fallback success without a correlation id.
+`llm_usage_logs` is provider-attempt telemetry. Each new logical LLM operation now receives one
+opaque backend UUID in `llm_operation_id`; every provider attempt, fallback, pre-call backoff
+skip, and circuit-breaker skip for that operation keeps the same value. The final
+`event_ai_analyses`, `market_heartbeats`, and `market_reports` row stores the same nullable value,
+so ops can join attempts to the terminal feature outcome without timing inference. Historical rows
+remain `NULL`; a telemetry write can still fail open, which is an evidence gap rather than proof
+of no attempt. The identifier contains no user identity, Telegram ID, prompt, output, or secret.
+
+This is observability-only: provider ordering, retry/backoff/circuit behavior, prompts, and LLM
+call placement/count are unchanged. `news_intelligence` attempts receive an operation ID in
+usage telemetry, but its cached `news_items` row has no durable join field yet.
+
+Only explicit response-header allowlist fields are persisted. `provider_request_id` is retained
+when `x-request-id` or `request-id` is available; raw headers and bodies are never stored. Groq
+request/token counters, resets, retry metadata, and request IDs still cannot distinguish quota,
+burst, concurrency, or account-policy enforcement unless Groq supplies an explicit safe signal.
 
 News Intelligence's cached `news_items.llm_model` remains a configured cache identity, not a
 served-provider attribution field. Changing it to a fallback responder's model would break the

@@ -100,6 +100,24 @@ user-facing copy regression was found.
 - Do not download generated bundles or reports into the repo worktree. If temporary local
   copies are unavoidable, place them under `.cache/tmp` and clean them up.
 
+## Forensic Correlation Evidence
+
+`evidence/db/llm_operation_reconciliation.json` groups provider attempts by the opaque logical
+operation reference and joins them to a final Event Analysis, Market Heartbeat, or market-report
+row when both sides retain the correlation field. Historical `NULL` values and failed telemetry
+writes are inconclusive, not successful operations.
+
+`evidence/logs/pattern_counts.json` retains aggregate counters and adds strict allowlisted match
+records. They contain only timestamp/scope, pattern/category, safe event/call/provider/model/
+symbol/status/reason fields, and a bundle-local operation reference when logged. They never
+contain raw or redacted log lines, user text, IDs, prompt/output, exception bodies, headers, or
+credentials.
+
+Similarity groups include HMAC-derived membership references for recipient, delivery, event,
+analysis, and outcome status. They are stable only inside the current bundle and allow a report to
+distinguish repeated recipient delivery, distinct recipients, multiple events, and suppressed
+outcomes without exposing source IDs. Similarity remains evidence, not proof of duplication.
+
 ## Local References
 
 - Current operator runbook: `ops-agent/README.md`

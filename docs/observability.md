@@ -511,7 +511,10 @@ Event Alert percentage labels distinguish two different movements:
 If an Event Alert numeric field is missing, the line is omitted. User-facing Event Alert bodies
 must not render placeholder text such as `n/a`, `unknown`, `unavailable`, or `null`. Event Alert
 bodies should also avoid old/confusing labels such as `Since last BTC alert`,
-`Analysed-window change`, or generic `Price change`.
+`Analysed-window change`, or generic `Price change`. The old-label detector evaluates only the
+persisted delivered Event Alert message; analysis body, raw/parsed LLM output, decision context,
+and numeric context are intentionally excluded. `24h change` remains valid for non-Event-Alert
+surfaces such as Market Heartbeats.
 
 When the analysed-window move is below the semantic material-movement threshold, backend formatting
 applies a narrow deterministic wording guard for dramatic terms such as crash, surge, collapse,

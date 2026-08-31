@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from ops_agent.alert_similarity import build_alert_evidence_payloads
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.config import OpsAgentConfig
@@ -120,6 +122,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                     900002, 'BTC', 'event_alert', 'btc_price_downtrend',
                     'ops-agent-malformed-context-b', 64000, 65000, -1.6,
                     :since, :since
+                ),
+                (
+                    900003, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-period-boundary', 63000, 64000, -1.7,
+                    :since, :since
                 )
             """
         ),
@@ -141,6 +148,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                 (
                     900002, 900002, 'ops_agent_contract_b', 'BTC', 'event_analysis',
                     'groq', 'contract-model', 'ops-agent-contract-b', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.', :since
+                ),
+                (
+                    900003, 900003, 'ops_agent_contract_c', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-c', true, '["n1"]',
                     'success', 'Sanitized text. Not financial advice.', :since
                 )
             """
@@ -164,6 +176,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                 (
                     900002, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
                     9900001, 900002, 900002, 900001, 'sent', 0, '{bad json',
+                    :since
+                ),
+                (
+                    900003, 'BTC', 'event_alert', 'Sanitized text. Not financial advice.',
+                    9900001, 900003, 900003, 900001, 'sent', 0, '{bad json',
                     :since
                 )
             """
@@ -202,6 +219,87 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
         result = await connection.execute(text(query.sql), params)
         rows = result.fetchall()
         assert rows, f"{query_name} should handle malformed numeric_context and return rows"
+
+    await connection.execute(
+        text(
+            """
+            INSERT INTO alert_delivery_outcomes (
+                id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+                user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+                recipient_eligible, event_instance_key, semantic_family, created_at
+            )
+            VALUES (
+                900003, 'BTC', 'event_alert', 900002, 900002, NULL, 900001,
+                9900001, 'suppressed', 'similar_event_suppressed', true, true,
+                'ops-agent-malformed-context-b', 'price_downtrend', :since
+            )
+            """
+        ),
+        params,
+    )
+    evidence_rows = [dict(row) for row in (
+        await connection.execute(text(ALERT_EVIDENCE_SQL), params)
+    ).mappings()]
+    suppressed_row = next(
+        row for row in evidence_rows if row["event_ai_analysis_id"] == 900002
+    )
+    assert any(
+        member["alert_id"] is None
+        and member["outcome_id"] == 900003
+        and member["status"] == "suppressed"
+        for member in suppressed_row["delivery_members"]
+    )
+    payloads = build_alert_evidence_payloads(
+        evidence_rows,
+        period=Period(start=params["since"], end=params["until"], source="test"),
+        row_cap=100,
+        semantic_cooldown_seconds=14400,
+    )
+    evidence = payloads["evidence/db/alert_similarity_groups.json"]
+    membership = next(
+        member for member in evidence["memberships"] if member["status"] == "suppressed"
+    )
+    assert membership["alert_ref"] is None
+    assert membership["recipient_ref"].startswith("recipient_ref:h_")
+    assert membership["outcome_ref"].startswith("outcome_ref:h_")
+    serialized = json.dumps(evidence, sort_keys=True)
+    for source_id in ("900001", "900002", "900003", "9900001"):
+        assert f'"{source_id}"' not in serialized
+    assert "Sanitized text. Not financial advice." not in serialized
+
+    await connection.execute(text("""
+        INSERT INTO alert_delivery_outcomes (
+            id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+            user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+            recipient_eligible, event_instance_key, created_at
+        ) VALUES (900004, 'BTC', 'event_alert', 900003, 900003, 900003, 900001,
+            9900001, 'delivered', 'delivered', true, true, 'ops-agent-period-boundary',
+            CAST(:until AS timestamptz) + interval '1 microsecond')
+    """), params)
+    boundary_result = await connection.execute(text(ALERT_EVIDENCE_SQL), params)
+    boundary_rows = [dict(row) for row in boundary_result.mappings()]
+    boundary_members = next(
+        row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
+    )["delivery_members"]
+    assert boundary_members == [
+        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": None, "status": "sent"}
+    ]
+    await connection.execute(text("""
+        INSERT INTO alert_delivery_outcomes (
+            id, symbol, alert_type, market_event_id, event_ai_analysis_id, alert_id,
+            user_id, sent_to_chat_id, status, reason_code, recipient_considered,
+            recipient_eligible, event_instance_key, created_at
+        ) VALUES (900005, 'BTC', 'event_alert', 900003, 900003, 900003, 900001,
+            9900001, 'delivered', 'delivered', true, true, 'ops-agent-period-boundary', :since)
+    """), params)
+    boundary_result = await connection.execute(text(ALERT_EVIDENCE_SQL), params)
+    boundary_rows = [dict(row) for row in boundary_result.mappings()]
+    boundary_members = next(
+        row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
+    )["delivery_members"]
+    assert boundary_members == [
+        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": 900005, "status": "delivered"}
+    ]
 
 
 def test_price_state_query_uses_existing_price_state_columns_only():
@@ -584,6 +682,9 @@ def test_alert_repetition_evidence_rolls_up_only_selected_recent_analyses():
     assert "JOIN alerts a ON a.event_ai_analysis_id = ra.event_ai_analysis_id" in ALERT_EVIDENCE_SQL
     assert "JOIN alerts a ON a.event_ai_analysis_id IS NULL" in ALERT_EVIDENCE_SQL
     assert "GROUP BY a.rollup_event_ai_analysis_id" in ALERT_EVIDENCE_SQL
+    assert "membership_candidates AS" in ALERT_EVIDENCE_SQL
+    assert "ON ado.event_ai_analysis_id = ra.event_ai_analysis_id" in ALERT_EVIDENCE_SQL
+    assert "ado.alert_id" in ALERT_EVIDENCE_SQL
     assert "OR (dr.event_ai_analysis_id IS NULL" not in ALERT_EVIDENCE_SQL
 
 

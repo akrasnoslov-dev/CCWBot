@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_text, redact_value
+from ops_agent.redaction import (
+    RedactionReport,
+    ReferenceMapper,
+    looks_like_secret_value,
+    redact_text,
+    redact_value,
+)
 from ops_agent.state import record_collection, record_report_success, resolve_period
 
 
@@ -168,6 +174,12 @@ def test_redaction_still_masks_real_secret_shapes():
         redacted = redact_text(value, mapper, report)
         assert value not in redacted, value
         assert "[REDACTED_SECRET]" in redacted, value
+
+
+def test_telegram_bot_token_is_a_secret_shaped_value():
+    token = "123456789:AAEabcdefghijklmnopqrstuvwxyz_123456789"
+
+    assert looks_like_secret_value(token)
 
 
 def test_redact_value_does_not_mislabel_non_payment_payload_fields():
