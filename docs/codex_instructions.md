@@ -1,6 +1,13 @@
 # Codex Instructions
 
-Follow `AGENTS.md` first. This file is a short context pointer for ChatGPT/Codex sessions.
+This file is the canonical owner for CCWBot implementation workflow, branch/PR rules,
+PR-readiness gates, and review policy.
+
+Read `docs/source_of_truth.md` first. `AGENTS.md` and external task prompts are bootstrap/context
+only and must not contain independent standing workflow or project rules.
+
+Do not copy durable CCWBot rules into ChatGPT/Codex/Claude project instructions, chat memory,
+PR comments, or generated task prompts. A task prompt may define only the requested delta.
 
 Before non-trivial work:
 
@@ -28,9 +35,14 @@ Mandatory implementation and PR-readiness workflow for every non-trivial task:
    `Self-review / risk check`. Include risky assumptions checked, edge cases tested, files
    intentionally not changed and why, data migration coverage when relevant, rollback/downgrade
    considerations when relevant, and known limitations or follow-ups.
-5. If automated PR review is available, check open review comments or threads before saying the
-   PR is ready. Address all valid review comments, explain any intentionally unresolved comment,
-   and do not claim the PR is ready to merge while valid review threads remain unresolved.
+5. Check existing automated PR review comments or threads before saying the PR is ready.
+   Address all valid P0/P1/P2 findings and do not claim merge readiness while a valid blocking
+   thread remains unresolved. External GitHub `@codex review` is optional, not a recursive gate:
+   do not automatically trigger it after every fix. By default, use internal task-review agents
+   plus self-review as the primary review mechanism. If an external review is explicitly requested
+   or already running, inspect that result once. After a narrow review-fix, do not start another
+   external review unless the user explicitly asks or the fix materially changes architecture,
+   security, database behavior, or product logic.
 6. Run the required verification commands from the project docs. If a command cannot be run, state
    exactly which command was not run, why it was not run, and what risk remains.
 7. Do not claim a PR is ready to merge when there are unresolved valid review threads, untested
@@ -117,3 +129,13 @@ Alembic revision ids must be 32 characters or shorter because
 
 Short future prompts can use `docs/codex_task_prompt_template.md` and only describe the concrete
 task-specific problem, goal, scope, verification, and PR notes.
+
+
+## PR description and merge ownership
+
+Every non-trivial PR should state: summary, files changed, behavior impact, database/schema impact,
+verification performed, manual verification status, protected-file changes when relevant, known
+limitations/follow-ups, and `Self-review / risk check`.
+
+Normal task PRs target `dev`. Production release PRs target `main` only when explicitly
+requested. Do not auto-merge unless the user explicitly asks for the merge.
