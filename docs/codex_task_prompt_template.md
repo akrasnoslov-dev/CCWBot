@@ -1,11 +1,12 @@
 # Codex Task Prompt Template
 
-Use this template for normal CCWBot Codex tasks. The standing workflow, branch rules, product
-guardrails, agent routing, verification defaults, and PR requirements live in `AGENTS.md`,
-`docs/codex_instructions.md`, `docs/project_context.md`, and `agents/routing.toml`.
+Use this template for normal CCWBot Codex tasks.
 
-Non-trivial tasks must follow the mandatory implementation and PR-readiness workflow in
-`docs/codex_instructions.md`.
+Standing project/workflow rules must not be copied into task prompts. They live only in the
+canonical repository owners defined by `docs/source_of_truth.md`.
+
+A task prompt should describe only the requested delta. Codex must load standing rules from the
+repository before implementation.
 
 ```markdown
 Task: <short task title>
@@ -20,15 +21,20 @@ Scope:
 - <files, modules, docs, commands, or behavior that may change>
 
 Out of scope:
-- <explicit non-goals and protected behavior>
+- <explicit non-goals>
+
+Evidence / acceptance criteria:
+- <task-specific facts, reproduced failure, or expected result>
 
 Verification:
-- <default checks, focused tests, or why a check is not applicable>
+- <task-specific checks beyond the repository defaults, or why a check is not applicable>
 
 PR notes:
-- <anything the PR body must explicitly confirm, including skills used or why no skill applied>
-- Non-trivial PRs must include `Self-review / risk check`.
+- <task-specific PR notes only>
 ```
 
-For production releases, explicitly say the PR is `dev` -> `main`. Otherwise, Codex opens PRs
-against `dev`.
+Do not restate branch policy, product guardrails, agent routing, review policy, verification
+defaults, release rules, deployment rules, or other standing CCWBot rules in the prompt.
+
+For production releases, the task-specific delta may explicitly say that this task is a
+`dev` -> `main` release.
