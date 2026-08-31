@@ -274,7 +274,7 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
             recipient_eligible, event_instance_key, created_at
         ) VALUES (900004, 'BTC', 'event_alert', 900003, 900003, 900003, 900001,
             9900001, 'delivered', 'delivered', true, true, 'ops-agent-period-boundary',
-            :until + interval '1 microsecond')
+            CAST(:until AS timestamptz) + interval '1 microsecond')
     """), params)
     boundary_result = await connection.execute(text(ALERT_EVIDENCE_SQL), params)
     boundary_rows = [dict(row) for row in boundary_result.mappings()]
