@@ -552,9 +552,11 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 
 ## Documentation
 
+- Repository source of truth: [docs/source_of_truth.md](docs/source_of_truth.md)
 - Documentation index: [docs/README.md](docs/README.md)
 - Developer notes: [docs/development.md](docs/development.md)
 - Read-only operational SQL snippets: [docs/observability.md](docs/observability.md)
-- Claude Code instructions: [CLAUDE.md](CLAUDE.md)
-- Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md)
+- Claude Code bootstrap: [CLAUDE.md](CLAUDE.md)
+- Codex implementation workflow: [docs/codex_instructions.md](docs/codex_instructions.md)
+- Codex agent routing: [agents/routing.toml](agents/routing.toml)
 - Codex skill locations and usage notes: [docs/codex_skills.md](docs/codex_skills.md)
