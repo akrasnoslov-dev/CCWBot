@@ -118,7 +118,9 @@ def _structured_match_record(
     record: dict[str, Any] = {
         "timestamp": parsed_at.isoformat().replace("+00:00", "Z") if parsed_at else None,
         "patterns": sorted(pattern for pattern in patterns if pattern != "ops_event"),
-        "event": event if _SAFE_TOKEN_RE.fullmatch(event) else None,
+        "event": event
+        if _SAFE_TOKEN_RE.fullmatch(event) and not looks_like_secret_value(event)
+        else None,
     }
     for key in ("call_type", "provider", "status", "reason"):
         value = fields.get(key, "")
@@ -334,7 +336,11 @@ def collect_logs(
                             ),
                         )
                 match = OPS_EVENT_RE.search(line)
-                if match and _SAFE_TOKEN_RE.fullmatch(match.group(1)):
+                if (
+                    match
+                    and _SAFE_TOKEN_RE.fullmatch(match.group(1))
+                    and not looks_like_secret_value(match.group(1))
+                ):
                     event = match.group(1)
                     ops_events[event] = ops_events.get(event, 0) + 1
 
