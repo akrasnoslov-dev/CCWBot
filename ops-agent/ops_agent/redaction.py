@@ -63,6 +63,9 @@ _SECRET_PREFIX_RE = re.compile(
 _CREDENTIAL_VALUE_RE = re.compile(
     r"(?i)^(?:akia[0-9a-z]{16}|aiza[a-z0-9_-]{20,}|bearer[_-]|github_pat_)"
 )
+# Telegram Bot API tokens are an integer bot id plus a long opaque token. Keep this
+# intentionally specific so ordinary colon-delimited structural values are unaffected.
+_TELEGRAM_BOT_TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,}$")
 # Credential-style words anywhere in a snake_case token disqualify it from the allowlist.
 _SECRET_SEGMENT_WORDS = frozenset(
     {"secret", "secrets", "token", "tokens", "key", "keys", "apikey", "api", "pass",
@@ -87,7 +90,11 @@ def looks_like_secret_value(value: str) -> bool:
     candidate = str(value or "").strip()
     if not candidate:
         return False
-    if _SECRET_PREFIX_RE.match(candidate) or _CREDENTIAL_VALUE_RE.match(candidate):
+    if (
+        _SECRET_PREFIX_RE.match(candidate)
+        or _CREDENTIAL_VALUE_RE.match(candidate)
+        or _TELEGRAM_BOT_TOKEN_RE.fullmatch(candidate)
+    ):
         return True
     return bool(LONG_SECRET_RE.fullmatch(candidate)) and not _is_allowlisted_long_token(
         candidate

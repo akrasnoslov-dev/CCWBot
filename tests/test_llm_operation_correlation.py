@@ -142,6 +142,7 @@ async def test_usage_status_update_fills_missing_operation_id_without_overwritin
         ("sk_abcdefghijklmnopqrstuvwxyz123456", None),
         ("AKIA1234567890ABCDEF", None),
         ("unsafe/id", None),
+        ("123456789:AAEabcdefghijklmnopqrstuvwxyz_123456789", None),
     ],
 )
 @pytest.mark.asyncio
