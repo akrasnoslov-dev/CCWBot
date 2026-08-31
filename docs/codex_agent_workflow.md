@@ -2,92 +2,33 @@
 
 CCWBot has two separate agent concepts:
 
-- Runtime LLM service: `bot/services/ai_agent_groq.py`, used by the Telegram bot for market
-  analysis, reports, and alert text.
-- Codex task-review subagents: `agents/*.toml`, used during repository work for specialised
-  review, planning, and risk checks.
+- Runtime LLM services used by the Telegram bot.
+- Repository task-review agents used during development.
 
-The Telegram bot does not load `agents/*.toml` at runtime. Those files are a durable Codex
-workflow contract.
+Task-review agent definitions live in `agents/*.toml`. The authoritative routing rules live in
+`agents/routing.toml`.
 
-Codex skills are separate developer tooling. Local user skills live under
-`C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills live
-under `.agents/skills/` when present and may be pinned by `skills-lock.json`. See
-`docs/codex_skills.md`. Use skills when relevant, but do not treat them as runtime bot code or
-replacements for the required project agents below.
+This document is explanatory only. Do not copy routing triggers, mandatory-agent lists, or standing
+workflow rules here. If this document disagrees with `agents/routing.toml` or
+`docs/codex_instructions.md`, those canonical owners win according to
+`docs/source_of_truth.md`.
 
-## Current Agents
+## How to use repository review agents
 
-- `architecture_guardian`: cross-cutting design and the one-event/one-analysis/many-deliveries invariant.
-- `security_review_agent`: authorization, secrets, privacy, logging, payment abuse, and user-controlled data exposure.
-- `code_quality_agent`: maintainability, async boundaries, error handling, logging levels, and focused refactors.
-- `test_ci_agent`: regression coverage, validation commands, and CI confidence.
-- `product_policy_agent`: Telegram command access, alert wording, premium/free UX, and product-rule consistency.
-- `market_pipeline_agent`: CoinGecko/news/LLM payloads, event detection, delivery flow, and rate-limit handling.
-- `db_migration_guardian`: PostgreSQL, async SQLAlchemy, Alembic, persistence contracts, and data integrity.
-- `telegram_stars_payments_agent`: Premium, Telegram Stars, subscription expiry, grants/revokes, and payment idempotency.
-- `devops_release_agent`: Docker, CI, config, health monitoring, dependencies, and release safety.
+Before non-trivial work:
 
-## Installed Skills
+1. Read `agents/routing.toml`.
+2. Select the required agents for the task.
+3. Use Codex subagent/delegation support when available.
+4. If delegation is unavailable, read and apply the relevant `agents/*.toml` definitions
+   manually.
+5. Record task-specific findings in the PR; do not copy the standing routing rules into the PR.
 
-- `documentation-writer`: use for general documentation quality, structure, guides, references,
-  and explanations.
-- `agents-md`: use for `AGENTS.md`, Codex-facing instructions, and agent workflow docs.
-- `supabase-postgres-best-practices`: use alongside `db_migration_guardian` for PostgreSQL
-  schema, query, index, connection, RLS/security, and performance work.
-- `requesting-code-review`: use at review checkpoints after major features, after
-  subagent-driven tasks, and before merge or PR finalization when review support is available.
+Platform adapters such as `.claude/agents/*.md` may expose equivalent review lenses for other
+tools. They must not redefine project policy or routing.
 
-## Routing Rules
+Codex skills are separate developer tooling. Their canonical location/usage notes are in
+`docs/codex_skills.md`.
 
-Detailed routing lives in `agents/routing.toml`. Before starting any non-trivial task, Codex
-must check that file and decide which agents apply.
-
-Agents are mandatory for:
-
-- Security-sensitive changes.
-- Database or schema changes.
-- Alert or report logic changes.
-- LLM prompt, model setting, or output format changes.
-- Production debugging, deployment, CI, health, or log analysis.
-- Refactors affecting multiple modules or shared boundaries.
-- Changes that may increase API calls, LLM calls, token usage, or rate-limit pressure.
-- Premium, Telegram Stars, subscription, grant/revoke, or payment-idempotency changes.
-
-If Codex subagent/delegation support is available, use it for the required agents. If not,
-Codex must read and apply the relevant `agents/*.toml` instructions manually and state that in
-the PR description. High-risk areas must not skip required agents silently.
-
-## Mandatory Examples
-
-- Changing Event Alert recipient selection requires `architecture_guardian`,
-  `market_pipeline_agent`, and `product_policy_agent`.
-- Editing `bot/services/ai_agent_groq.py` prompts requires `architecture_guardian`,
-  `market_pipeline_agent`, and `product_policy_agent`; add `test_ci_agent` for prompt/output
-  tests and `security_review_agent` when user-visible text or diagnostics change.
-- Adding an Alembic migration requires `db_migration_guardian` and `test_ci_agent`.
-- Changing `/settings`, `/status`, `/grantpremium`, or `/revokepremium` requires
-  `security_review_agent` and `product_policy_agent`.
-- Changing Docker, CI, health, `.env.example`, or release docs requires
-  `devops_release_agent`; add `security_review_agent` when secrets or diagnostics are involved.
-- Changing CoinGecko polling, RSS fetches, or LLM call frequency requires
-  `architecture_guardian`, `market_pipeline_agent`, and `test_ci_agent`.
-
-## Optional Examples
-
-Agents are optional after an explicit relevance check for:
-
-- Typo-only documentation changes.
-- Comment-only clarifications.
-- Narrow formatting-only edits.
-- Updating test names without changing tested behaviour.
-
-## PR Notes
-
-Every PR description should include one of:
-
-- Agents used: list the relevant agents and their findings.
-- Agents not used: explain why the task was trivial or why subagent support was unavailable.
-
-For sensitive changes, also confirm alert scope, recipient delivery behaviour, LLM call
-placement, payment/subscription impact, and no secrets exposed.
+PR-readiness and review policy, including external review behavior, is owned by
+`docs/codex_instructions.md`.
