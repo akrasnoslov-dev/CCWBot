@@ -37,7 +37,6 @@ Exhaustion mapping preserves the exception contract existing callers already han
 import logging
 
 from bot.services.llm import breaker, config
-from bot.services.llm.cerebras_provider import get_provider as _cerebras_provider
 from bot.services.llm.errors import (
     AIInvalidJsonError,
     AIProviderRateLimitError,
@@ -48,6 +47,11 @@ from bot.services.llm.errors import (
 from bot.services.llm.gemini_provider import get_provider as _gemini_provider
 from bot.services.llm.groq_provider import get_provider as _groq_provider
 from bot.services.llm.mistral_provider import get_provider as _mistral_provider
+from bot.services.llm.operation import (
+    current_llm_operation_id,
+    llm_operation_scope,
+    new_llm_operation_id,
+)
 from bot.services.llm.telemetry import (
     classify_ai_error_reason,
     message_input_chars,
@@ -85,6 +89,7 @@ _FALLBACK_REASONS = frozenset(
         "config_missing",
         "provider_model_error",
         "provider_json_validate_failed",
+        "provider_quota_exhausted",
     }
 )
 
@@ -95,7 +100,6 @@ _warned_missing_keys: set[str] = set()
 def _default_registry() -> dict:
     return {
         "groq": _groq_provider(),
-        "cerebras": _cerebras_provider(),
         "gemini": _gemini_provider(),
         "mistral": _mistral_provider(),
     }
@@ -123,6 +127,40 @@ class LLMRouter:
         return selected
 
     async def chat_completion(
+        self,
+        *,
+        call_type: str,
+        messages: list[dict],
+        max_tokens: int,
+        response_format: dict | None,
+        timeout: int = 15,
+        symbol: str | None = None,
+        model_overrides: dict | None = None,
+        validate_response=None,
+    ):
+        operation_id = current_llm_operation_id() or new_llm_operation_id()
+        with llm_operation_scope(operation_id):
+            try:
+                result = await self._chat_completion(
+                    call_type=call_type,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                    timeout=timeout,
+                    symbol=symbol,
+                    model_overrides=model_overrides,
+                    validate_response=validate_response,
+                )
+            except Exception as error:
+                error.operation_id = operation_id
+                raise
+            try:
+                result.operation_id = operation_id
+            except AttributeError:
+                pass
+            return result
+
+    async def _chat_completion(
         self,
         *,
         call_type: str,
@@ -193,10 +231,11 @@ class LLMRouter:
                 )
                 logger.info(
                     "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
-                    "status=skipped_due_to_circuit_breaker",
+                    "status=skipped_due_to_circuit_breaker operation_id=%s",
                     name,
                     model,
                     call_type,
+                    current_llm_operation_id(),
                 )
                 continue
             # Resolved from the model this attempt will actually use: a chain that mixes
@@ -234,9 +273,11 @@ class LLMRouter:
                 if error.limited_until is not None:
                     rate_limit_untils.append(error.limited_until)
                 logger.warning(
-                    "ops_event=llm_provider_switch provider=%s call_type=%s reason=rate_limit",
+                    "ops_event=llm_provider_switch provider=%s call_type=%s "
+                    "reason=rate_limit operation_id=%s",
                     name,
                     call_type,
+                    current_llm_operation_id(),
                 )
                 continue
             except Exception as error:
@@ -254,10 +295,12 @@ class LLMRouter:
                     else:
                         saw_other_fallback = True
                     logger.warning(
-                        "ops_event=llm_provider_switch provider=%s call_type=%s reason=%s",
+                        "ops_event=llm_provider_switch provider=%s call_type=%s "
+                        "reason=%s operation_id=%s",
                         name,
                         call_type,
                         reason,
+                        current_llm_operation_id(),
                     )
                     continue
                 # Genuine request defect — surface unchanged, without advancing the chain.
@@ -282,9 +325,10 @@ class LLMRouter:
                     last_error = error
                     logger.warning(
                         "ops_event=llm_provider_switch provider=%s call_type=%s "
-                        "reason=invalid_output",
+                        "reason=invalid_output operation_id=%s",
                         name,
                         call_type,
+                        current_llm_operation_id(),
                     )
                     continue
             else:
@@ -292,9 +336,11 @@ class LLMRouter:
 
             if index > 0:
                 logger.info(
-                    "ops_event=llm_provider_used provider=%s call_type=%s after_fallback=true",
+                    "ops_event=llm_provider_used provider=%s call_type=%s "
+                    "after_fallback=true operation_id=%s",
                     name,
                     call_type,
+                    current_llm_operation_id(),
                 )
             return validated
 

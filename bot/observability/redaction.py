@@ -17,13 +17,12 @@ _PRIVATE_KEY_VALUE_RE = re.compile(
 
 
 def collect_secret_values() -> tuple[str, ...]:
-    # Every provider in the LLM fallback chain, not just Groq: a Cerebras/Gemini/Mistral error
+    # Every provider in the LLM fallback chain, not just Groq: a Gemini/Mistral error
     # body can echo its own key in a shape the generic pattern above does not match, and that
     # message is persisted to llm_usage_logs and exportable to an admin.
     secret_names = {
         "TELEGRAM_BOT_TOKEN",
         "GROQ_API_KEY",
-        "CEREBRAS_API_KEY",
         "GEMINI_API_KEY",
         "MISTRAL_API_KEY",
         "DATABASE_URL",

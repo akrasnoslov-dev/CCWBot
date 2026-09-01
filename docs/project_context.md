@@ -30,6 +30,9 @@ Permanent guardrails:
   or diagnostic internals in user-facing Telegram messages.
 - Do not commit `.env`, `.ops-agent.env`, logs, generated reports, DB dumps, caches, local state,
   or secrets.
+- Production forensic SQL investigations use the dedicated read-only `ccwbot_investigator`
+  role through an SSH tunnel. Lack of table `SELECT` permission is an access-provisioning gap,
+  not a reason to switch to the application/admin DB role.
 
 Current product behavior:
 
@@ -51,34 +54,8 @@ Current product behavior:
 - `/userid` works manually but stays hidden from menus/help.
 - Alert copy must stay cautious and include `Not financial advice.` where applicable.
 
-Primary context files:
+Repository authority and ownership are defined in `docs/source_of_truth.md`.
 
-- `AGENTS.md`
-- `CLAUDE.md`
-- `docs/README.md`
-- `docs/codex_instructions.md`
-- `docs/codex_skills.md`
-- `docs/release_checklist.md`
-- `docs/dev_ops_guide.md`
-- `README.md`
-- `docs/development.md`
-- `docs/codex_agent_workflow.md`
-- `docs/observability.md`
-- `docs/llm_usage.md`
-- `docs/ops_agent_service.md`
-- `docs/codex_task_prompt_template.md`
-- `.claude/agents/*.md`
-
-Documentation ownership:
-
-- Product invariants and runtime behavior belong here.
-- Codex workflow belongs in `AGENTS.md`, `docs/codex_instructions.md`, and
-  `docs/codex_agent_workflow.md`.
-- Claude Code workflow belongs in `CLAUDE.md` and native review lenses under `.claude/agents/`.
-- Deploy, backup, migration, and recovery steps belong in `docs/dev_ops_guide.md`.
-- Release gates belong in `docs/release_checklist.md`.
-- Local development details and gradual refactor policy belong in `docs/development.md`.
-
-Some guardrails are intentionally repeated for AI-agent visibility. When changing product
-invariants, secret-handling rules, Premium/free boundaries, or deployment safety rules, update all
-listed owner and summary files in the same PR.
+This file is the canonical owner for product behavior, product boundaries, and architecture
+invariants. Workflow, release, operational, and agent-routing rules belong to their canonical
+owners and should be linked rather than repeated here.

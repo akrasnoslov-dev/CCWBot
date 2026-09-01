@@ -34,6 +34,7 @@ from bot.services.ai_agent_groq import (
     mark_llm_usage_log_status,
     sanitize_alert_message,
 )
+from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
 from bot.services.llm.telemetry import safe_error_message
 from bot.services.price_service import CoinGeckoRateLimitError, get_report_market_data_batch
 
@@ -240,6 +241,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
     raw_input_json: str | None = None
     raw_output_json: str | None = None
     usage_log_id: int | None = None
+    llm_operation_id: str | None = None
 
     def _schema_check(parsed: dict) -> None:
         # Run report schema validation during the provider pass so a schema-invalid answer
@@ -256,7 +258,9 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
     try:
         input_payload, news_items = await _build_market_report_input(report_type, generated_at)
         raw_input_json = json.dumps(input_payload, ensure_ascii=False, sort_keys=True)
-        llm_result = await ask_market_report_raw(input_payload, schema_check=_schema_check)
+        llm_operation_id = new_llm_operation_id()
+        with llm_operation_scope(llm_operation_id):
+            llm_result = await ask_market_report_raw(input_payload, schema_check=_schema_check)
         usage_log_id = getattr(llm_result, "usage_log_id", None)
         report_provider = getattr(llm_result, "provider", None) or "groq"
         report_model = getattr(llm_result, "model", None) or GROQ_REPORT_MODEL
@@ -284,6 +288,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             error_message=None,
             provider=report_provider,
             model=report_model,
+            llm_operation_id=llm_operation_id,
         )
     except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
         if isinstance(error, (AISchemaValidationError, MarketReportValidationError)):
@@ -336,6 +341,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
                     error_message=f"deterministic fallback after {reason}",
                     provider=DETERMINISTIC_REPORT_PROVIDER,
                     model=DETERMINISTIC_REPORT_MODEL,
+                    llm_operation_id=llm_operation_id,
                 )
         return await _save_or_remember_report(
             report_type=report_type,
@@ -346,6 +352,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message=str(error),
+            llm_operation_id=llm_operation_id,
         )
     except MarketReportDataUnavailable:
         logger.warning(
@@ -361,6 +368,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message="market data unavailable",
+            llm_operation_id=llm_operation_id,
         )
     except CoinGeckoRateLimitError:
         _start_report_provider_backoff(report_type)
@@ -377,6 +385,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message="coingecko rate limit",
+            llm_operation_id=llm_operation_id,
         )
     except Exception as error:
         logger.warning(
@@ -393,6 +402,7 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             raw_output_json=raw_output_json,
             telegram_message=None,
             error_message=classify_ai_error_reason(error),
+            llm_operation_id=llm_operation_id,
         )
 
 
@@ -457,12 +467,14 @@ async def _save_or_remember_report(
     error_message: str | None,
     provider: str = "groq",
     model: str = GROQ_REPORT_MODEL,
+    llm_operation_id: str | None = None,
 ) -> MarketReport | dict[str, Any]:
     if DB_ENABLED and DB_SESSION_LOCAL:
         async with DB_SESSION_LOCAL() as session:
             return await save_market_report(
                 session,
                 report_type=report_type,
+                llm_operation_id=llm_operation_id,
                 generated_at=generated_at,
                 expires_at=expires_at,
                 status=status,
@@ -476,6 +488,7 @@ async def _save_or_remember_report(
 
     cached = {
         "report_type": report_type,
+        "llm_operation_id": llm_operation_id,
         "generated_at": generated_at,
         "expires_at": expires_at,
         "status": status,

@@ -24,6 +24,7 @@ from bot.alerting.market_heartbeat import (
 from bot.db.database import (
     Alert,
     Base,
+    LlmUsageLog,
     MarketHeartbeat,
     User,
     UserPremiumSubscription,
@@ -465,6 +466,65 @@ async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
         assert len(heartbeats) == 1
         assert heartbeats[0].status == "completed"
         assert deliveries == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_defensive_validation_persists_original_failure_and_operation_id(
+    monkeypatch,
+):
+    engine, session_local = await build_session_factory()
+    operation_id = "123e4567-e89b-42d3-a456-426614174001"
+    raw_output = '{"symbol":"BTC"}'
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        import bot.runtime as runtime
+
+        monkeypatch.setattr(runtime, "DB_ENABLED", True)
+        monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            usage = LlmUsageLog(
+                provider="groq",
+                model="test-model",
+                call_type="market_heartbeat",
+                status="success",
+            )
+            session.add(usage)
+            await session.commit()
+            await session.refresh(usage)
+
+        monkeypatch.setattr(alerts, "new_llm_operation_id", lambda: operation_id)
+        monkeypatch.setattr(
+            alerts,
+            "ask_market_heartbeat_raw",
+            AsyncMock(
+                return_value=ai_agent_groq.LLMJsonResult(
+                    raw_output,
+                    {"symbol": "BTC"},
+                    usage_log_id=usage.id,
+                )
+            ),
+        )
+
+        heartbeat_id = await alerts._create_market_heartbeat(
+            {"symbol": "BTC", "candidate_news": []}
+        )
+
+        async with session_local() as session:
+            heartbeat = await session.get(MarketHeartbeat, heartbeat_id)
+            updated_usage = await session.get(LlmUsageLog, usage.id)
+        assert heartbeat is not None
+        assert heartbeat.status == "failed"
+        assert heartbeat.raw_output_json == raw_output
+        assert heartbeat.llm_operation_id == operation_id
+        assert updated_usage is not None
+        assert updated_usage.status == "schema_error"
+        assert updated_usage.error_reason == "schema_validation_failed"
+        assert updated_usage.llm_operation_id == operation_id
+        assert heartbeat.error_message == updated_usage.error_message
+        assert "missing fields" in heartbeat.error_message
     finally:
         await engine.dispose()
 

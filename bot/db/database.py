@@ -980,6 +980,10 @@ class EventAiAnalysis(Base):
         index=True,
         comment="External stable id for this LLM analysis attempt.",
     )
+    llm_operation_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True,
+        comment="Opaque backend correlation id for the logical LLM operation.",
+    )
     symbol: Mapped[str | None] = mapped_column(
         String(32),
         nullable=True,
@@ -1095,6 +1099,10 @@ class MarketHeartbeat(Base):
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), index=True, comment="When this heartbeat generation ran."
     )
+    llm_operation_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True,
+        comment="Opaque backend correlation id for the logical LLM operation.",
+    )
     raw_input_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
     )
@@ -1151,6 +1159,10 @@ class MarketReport(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), index=True, comment="When this cached report should be refreshed."
     )
+    llm_operation_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True,
+        comment="Opaque backend correlation id for the logical LLM operation.",
+    )
     status: Mapped[str] = mapped_column(
         String(64),
         default="completed",
@@ -1185,6 +1197,7 @@ class LlmUsageLog(Base):
     __table_args__ = (
         Index("ix_llm_usage_logs_call_type_model_status", "call_type", "model", "status"),
         Index("ix_llm_usage_logs_symbol_created_at", "symbol", "created_at"),
+        Index("ix_llm_usage_logs_operation_id", "llm_operation_id"),
         {
             "comment": (
                 "Per-call LLM usage and rate-limit telemetry captured without extra provider calls."
@@ -1204,6 +1217,12 @@ class LlmUsageLog(Base):
     )
     call_type: Mapped[str] = mapped_column(
         String(64), index=True, comment="Purpose of the LLM call such as event_analysis."
+    )
+    llm_operation_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True,
+        comment=(
+            "Opaque backend correlation id shared by provider attempts in one logical operation."
+        ),
     )
     symbol: Mapped[str | None] = mapped_column(
         String(32), nullable=True, index=True, comment="Uppercase coin symbol for this call."
@@ -1249,6 +1268,10 @@ class LlmUsageLog(Base):
     )
     retry_after: Mapped[str | None] = mapped_column(
         String(128), nullable=True, comment="Provider retry-after header when rate limited."
+    )
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True,
+        comment="Allowlisted opaque provider request id when the response exposes one.",
     )
     error_reason: Mapped[str | None] = mapped_column(
         String(64), nullable=True, comment="Normalized safe error reason for failed calls."

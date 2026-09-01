@@ -906,6 +906,7 @@ async def test_system_status_shows_per_call_type_provider_llm_breakdown():
                     )
                 )
             session.add(
+                # Historical telemetry remains readable after runtime support is removed.
                 LlmUsageLog(
                     provider="cerebras",
                     model="cerebras-model",

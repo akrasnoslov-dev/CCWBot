@@ -1,5 +1,9 @@
 # Documentation
 
+`source_of_truth.md` defines repository documentation authority and canonical ownership. Durable
+CCWBot project/workflow rules must live in their canonical repository owner, not in external
+prompts, chat/project instructions, PR comments, or copied source files.
+
 All project and process documentation belongs in `docs/`, except:
 
 - root `README.md`, which is the public project entry point;
@@ -12,6 +16,11 @@ All project and process documentation belongs in `docs/`, except:
 Do not add new standalone project documentation at the repository root. Add it here, or add a
 subtree README.md when the documentation belongs only to that directory. Link new docs from this
 index or from `README.md` when they are useful for users.
+
+## Source of Truth
+
+- `source_of_truth.md`: authority, ownership map, conflict resolution, and the rule against
+  standing project/workflow policy outside the repository.
 
 ## Project Context
 
@@ -31,7 +40,7 @@ index or from `README.md` when they are useful for users.
 
 ## Operations
 
-- `observability.md`: read-only SQL and operational diagnostics.
+- `observability.md`: read-only SQL, investigator session checks, and operational diagnostics.
 - `llm_usage.md`: LLM usage and rate-limit reporting snippets.
 - `ops_agent_service.md`: current ops-agent service contract and report flow.
 - `ops-agent-report-codex-prompt.md`: reusable Codex prompt for ops-agent bundle analysis.

@@ -58,8 +58,14 @@ LONG_SECRET_ALLOWLIST_RES = (
 # Snake_case tokens starting with a credential-style prefix are never structural keys.
 _SECRET_PREFIX_RE = re.compile(
     r"(?i)^(?:sk|pk|rk|gsk|csk|whsec|ghp|gho|ghs|ghu|ghr|github|xox[a-z]|api|key|token|"
-    r"secret|bearer|aws|akia)_"
+    r"secret|bearer|aws|akia)[_-]"
 )
+_CREDENTIAL_VALUE_RE = re.compile(
+    r"(?i)^(?:akia[0-9a-z]{16}|aiza[a-z0-9_-]{20,}|bearer[_-]|github_pat_)"
+)
+# Telegram Bot API tokens are an integer bot id plus a long opaque token. Keep this
+# intentionally specific so ordinary colon-delimited structural values are unaffected.
+_TELEGRAM_BOT_TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,}$")
 # Credential-style words anywhere in a snake_case token disqualify it from the allowlist.
 _SECRET_SEGMENT_WORDS = frozenset(
     {"secret", "secrets", "token", "tokens", "key", "keys", "apikey", "api", "pass",
@@ -77,6 +83,22 @@ def _is_allowlisted_long_token(value: str) -> bool:
     if any(segment in _SECRET_SEGMENT_WORDS for segment in candidate.lower().split("_")):
         return False
     return any(pattern.match(candidate) for pattern in LONG_SECRET_ALLOWLIST_RES)
+
+
+def looks_like_secret_value(value: str) -> bool:
+    """Return whether an otherwise allowlisted field value looks credential-shaped."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    if (
+        _SECRET_PREFIX_RE.match(candidate)
+        or _CREDENTIAL_VALUE_RE.match(candidate)
+        or _TELEGRAM_BOT_TOKEN_RE.fullmatch(candidate)
+    ):
+        return True
+    return bool(LONG_SECRET_RE.fullmatch(candidate)) and not _is_allowlisted_long_token(
+        candidate
+    )
 
 
 @dataclass
@@ -97,10 +119,12 @@ class ReferenceMapper:
 
     def ref(self, namespace: str, value: Any) -> str:
         raw = str(value)
-        digest = hmac.new(self._salt, f"{namespace}:{raw}".encode(), hashlib.sha256).hexdigest()[:6]
-        prefix = {"user": "user_ref:u_", "chat": "chat_ref:c_", "payment": "payment_ref:p_"}[
-            namespace
-        ]
+        digest = hmac.new(
+            self._salt, f"{namespace}:{raw}".encode(), hashlib.sha256
+        ).hexdigest()[:32]
+        prefix = {"user": "user_ref:u_", "chat": "chat_ref:c_", "payment": "payment_ref:p_"}.get(
+            namespace, f"{namespace}_ref:h_"
+        )
         ref = f"{prefix}{digest}"
         self.identity_map.setdefault(namespace, {})[raw] = ref
         return ref
@@ -187,6 +211,10 @@ def redact_value_by_key(
     if normalized in {"telegram_user_id", "user_id"}:
         report.increment("user")
         return mapper.ref("user", value)
+    if normalized == "llm_operation_id":
+        return mapper.ref("operation", value)
+    if normalized == "durable_row_ref_source":
+        return mapper.ref("durable", value)
     if normalized in {"telegram_chat_id", "chat_id", "sent_to_chat_id"}:
         report.increment("chat")
         return mapper.ref("chat", value)

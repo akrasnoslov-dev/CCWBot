@@ -1,7 +1,7 @@
 """Provider-agnostic LLM error types shared across the provider router.
 
 These were previously defined inside ``bot/services/ai_agent_groq.py`` with Groq-specific
-names. They now live here so every provider (Groq, Cerebras, Gemini, Mistral) and the
+names. They now live here so every provider (Groq, Gemini, Mistral) and the
 router raise the same types. ``AIGroqRateLimitError`` is kept as an alias of
 ``AIProviderRateLimitError`` for backward compatibility with existing callers and tests.
 """

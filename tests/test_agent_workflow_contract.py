@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
-AGENT_NAME_RE = re.compile(r"`([a-z][a-z0-9_]*(?:_agent|_guardian))`")
 
 MANDATORY_RULE_IDS = {
     "security_sensitive",
@@ -76,22 +74,52 @@ def test_agent_routing_references_existing_agents():
         assert set(rule.get("also_consider", [])) <= agent_names
 
 
-def test_agent_docs_match_definition_files():
-    agent_names = _agent_names()
+def test_source_of_truth_declares_canonical_owners():
+    content = (ROOT / "docs/source_of_truth.md").read_text(encoding="utf-8")
 
-    for relative_path in (
-        "AGENTS.md",
-        "agents/README.md",
-        "docs/codex_agent_workflow.md",
+    for required_path in (
+        "docs/project_context.md",
+        "docs/codex_instructions.md",
+        "agents/routing.toml",
+        "docs/development.md",
+        "docs/release_checklist.md",
+        "docs/dev_ops_guide.md",
     ):
+        assert required_path in content
+
+    assert "only durable source of truth" in content
+    assert "No standing rules outside the repository" in content
+
+
+def test_bootstrap_docs_point_to_canonical_repository_owners():
+    for relative_path in ("AGENTS.md", "CLAUDE.md"):
         content = (ROOT / relative_path).read_text(encoding="utf-8")
-        documented_names = set(AGENT_NAME_RE.findall(content))
-        assert documented_names == agent_names
+
+        assert "docs/source_of_truth.md" in content
+        assert "docs/project_context.md" in content
+        assert "docs/codex_instructions.md" in content
+        assert "agents/routing.toml" in content
 
 
-def test_development_docs_link_to_agent_workflow():
-    content = (ROOT / "docs/development.md").read_text(encoding="utf-8")
+def test_supporting_docs_link_to_canonical_workflow_without_owning_routing():
+    development = (ROOT / "docs/development.md").read_text(encoding="utf-8")
+    agent_workflow = (ROOT / "docs/codex_agent_workflow.md").read_text(encoding="utf-8")
+    agent_readme = (ROOT / "agents/README.md").read_text(encoding="utf-8")
 
-    assert "agents/routing.toml" in content
-    assert "docs/codex_agent_workflow.md" in content
-    assert "Before starting any non-trivial task" in content
+    assert "docs/source_of_truth.md" in development
+    assert "docs/codex_instructions.md" in development
+    assert "agents/routing.toml" in development
+
+    assert "agents/routing.toml" in agent_workflow
+    assert "docs/codex_instructions.md" in agent_workflow
+    assert "explanatory only" in agent_workflow
+
+    assert "agents/routing.toml" in agent_readme
+    assert "docs/source_of_truth.md" in agent_readme
+
+
+def test_external_codex_review_is_non_recursive():
+    content = (ROOT / "docs/codex_instructions.md").read_text(encoding="utf-8")
+
+    assert "External GitHub `@codex review` is optional, not a recursive gate" in content
+    assert "do not automatically trigger it after every fix" in content

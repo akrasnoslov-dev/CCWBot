@@ -39,20 +39,10 @@ Alembic revision ids must be 32 characters or shorter because the default
 `alembic_version.version_num` column is `VARCHAR(32)`. Prefer compact numeric/descriptive ids such
 as `0022_unique_event_analysis`; long revision ids can break migration execution.
 
-## Codex Agent Workflow
+## Repository workflow authority
 
-Codex task-review agents live in `agents/*.toml`, with mandatory routing rules in
-`agents/routing.toml`. They are development workflow prompts, not Telegram bot runtime code.
-Before starting any non-trivial task, Codex must check whether one or more agents apply, use
-them when required, or explain why they were not needed. See
-`docs/codex_agent_workflow.md`.
-
-Codex skills are developer tooling, not runtime bot code. Local user skills live under
-`C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills live
-under `.agents/skills/` when present and may be pinned by `skills-lock.json`. Use
-`documentation-writer` for general docs, `agents-md` for `AGENTS.md` and Codex-facing docs,
-`supabase-postgres-best-practices` for PostgreSQL/schema/performance work, and
-`requesting-code-review` for review checkpoints when available. See `docs/codex_skills.md`.
+Standing implementation, PR, review, and agent-routing rules are not owned by this file.
+Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing.toml`.
 
 ## Runtime Notes
 

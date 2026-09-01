@@ -153,7 +153,10 @@ The command prints one JSON object with the generated bundle path. Codex should 
 
 Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. The generated `decision_report_context.md` is Markdown-only decision context; use it to start the final report, then verify important claims against detectors and evidence. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
-Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped period-matched excerpts from unscoped tail-context excerpts and include skipped/unparseable counts. Period-matched logs are stronger evidence for the requested report period.
+Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped
+period-matched structured match records from unscoped tail-context records and include
+skipped/unparseable counts. Records use a strict safe-field allowlist; bundles never include raw
+or redacted log lines. Period-matched evidence is stronger for the requested report period.
 
 Detector `unknown` means evidence is missing or inconclusive, not healthy. Market events without deliveries are classified into expected no-delivery, LLM failure/rate-limit, `should_alert=true` delivery gaps, and unknown buckets where the available schema cannot prove the reason.
 
@@ -256,11 +259,14 @@ Generated files include:
 * `evidence/db/event_analysis_decision_timeline.json`
 * `evidence/db/alert_content_fingerprints.json`
 * `evidence/db/alert_similarity_groups.json`
+* `evidence/db/llm_operation_reconciliation.json`
 * `evidence/db/backend_suppression_effectiveness.json`
 * `evidence/db/event_identity_quality.json`
 
 Content and analysis hashes are bundle-local HMAC references. They can group repeated
-content inside one bundle, but cannot be compared across separate bundles. Cooldown
+content inside one bundle, but cannot be compared across separate bundles. Similarity membership
+records add bundle-local recipient, alert, event, analysis, and outcome references so a report can
+classify repeated deliveries without source identifiers. Cooldown
 effectiveness is inferred from analysis, event, and delivery rows because suppression
 decisions are not stored as durable rows.
 

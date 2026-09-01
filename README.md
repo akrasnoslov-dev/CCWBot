@@ -21,9 +21,10 @@ analysis.
   shows a temporary unavailable message instead of a fake deterministic report.
 - Premium-aware `/plan`, `/watchlist`, `/myplan`, and Telegram Stars `/subscribe` commands.
 - `/reports`, `/dailyreport`, and `/weeklyreport` report flows.
-- User `/settings` for watchlist and heartbeat frequency, plus admin-only `/admin`,
-  `/chatid`, `/grantpremium`, and `/revokepremium` commands. System status is available
-  from `/admin` as a compact persisted-telemetry dashboard instead of live provider probes.
+- Admin-only `/settings`, `/admin`, `/chatid`, `/grantpremium`, and `/revokepremium`
+  commands. User watchlist and plan flows remain under `/watchlist`, `/plan`, and `/myplan`.
+  System status is available from `/admin` as a compact persisted-telemetry dashboard instead
+  of live provider probes.
 - Hidden `/userid` utility command.
 - Related news links from `bot/services/news_service.py` data.
 - Health endpoint for runtime checks.
@@ -35,7 +36,7 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
-- Groq is the primary LLM provider, with an optional Cerebras/Gemini/Mistral fallback chain
+- Groq is the primary LLM provider, with an optional Gemini/Mistral fallback chain
   (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
   `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
   `(call type, provider, model)` triple that keeps failing deterministically and retries it on a
@@ -89,12 +90,11 @@ Common configuration:
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
 - `GROQ_JSON_MODE_RETRY_PLAIN`
-- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,cerebras,gemini,mistral`)
+- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,gemini,mistral`)
 - `LLM_EVENT_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
 - `LLM_EVENT_ANALYSIS_MAX_TOKENS` / `LLM_MARKET_HEARTBEAT_MAX_TOKENS` / `LLM_REPORT_MAX_TOKENS` / `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` / `LLM_LEGACY_ALERT_PAYLOAD_MAX_TOKENS` (completion budget per call type)
 - `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (`low` / `medium` / `high`; reasoning models default to `low`)
 - `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gemini-2.5`)
-- `CEREBRAS_API_KEY` / `CEREBRAS_MODEL`
 - `GEMINI_API_KEY` / `GEMINI_MODEL`
 - `MISTRAL_API_KEY` / `MISTRAL_MODEL`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
@@ -259,19 +259,19 @@ LLM choosing the canonical name.
 
 Cooldown checks use `symbol + semantic family` through the canonical event key stored on
 `market_events.event_key`. For example, `btc_price_drop` and `btc_selloff_prediction` both cool
-down as `BTC + price_downtrend`. Same-family alerts are suppressed only when the new event has
-the same or lower urgency, no materially larger analysed-window movement, and no new stable
-related-news driver. A higher urgency, an absolute movement increase of at least 2.5 percentage
-points, or a new stable related-news identity bypasses the semantic cooldown. Operators can inspect
+down as `BTC + price_downtrend`. Same-family alerts are suppressed when the new event has
+same or lower urgency and no materially larger analysed-window movement. New news remains supporting/diagnostic context only
+and does not by itself bypass semantic cooldown. A higher urgency or an absolute analysed-window
+movement increase of at least 2.5 percentage points can allow a repeat. Operators can inspect
 `raw_event_key`, `canonical_event_key`, `semantic_family`, `event_instance_key`, `delivery_count`,
 `suppression_count`, and `suppression_reason` in logs, stored numeric context, and
 `alert_delivery_outcomes`; these diagnostic fields are not included in Telegram alert text.
 
 Market event instance identity uses stable components: symbol, canonical semantic key, a rounded
 UTC time bucket, stable selected-news identities, and for market-only events a coarse urgency and
-movement bucket. This avoids splitting events on transient LLM input hashes while still allowing
-new alerts when severity increases, movement becomes materially larger, or a distinct news driver
-appears.
+movement bucket. This avoids splitting events on transient LLM input hashes while preserving stable
+backend event identity. Delivery still applies the same-family semantic cooldown rules above; distinct news alone
+does not authorize a repeat.
 
 Candidate news is filtered before it reaches the LLM. The bot selects coin-specific news by
 symbol/name, adds limited high-impact general crypto market news, prefers fresh/unseen items,
@@ -330,14 +330,17 @@ PostgreSQL is intentionally not publicly exposed. Compose binds it to `127.0.0.1
 VPS and keeps in-container traffic on Docker service networking. The bot container must connect
 to PostgreSQL with the `postgres:5432` service address, not `localhost` or host networking.
 
-Remote database access should happen only through an SSH tunnel. Expected DBeaver setup:
+Remote database access should happen only through an SSH tunnel. For read-only forensic or
+Codex investigation sessions, use the dedicated `ccwbot_investigator` PostgreSQL role rather than
+the application role. Expected read-only DBeaver/SQL-client setup:
 
 - SSH tunnel host: the VPS hostname or IP
 - SSH tunnel user/key: your VPS SSH credentials
 - Database host: `localhost`
 - Database port: `5433`
-- Database name/user: `ccwbot`
-- Password: the environment-local `POSTGRES_PASSWORD`
+- Database name: `ccwbot`
+- Database user: `ccwbot_investigator`
+- Password: the separately provisioned investigator password; never commit or document its value
 
 After production updates, `docker ps` should show loopback bindings such as
 `127.0.0.1:8080->8080/tcp` and `127.0.0.1:5433->5432/tcp`, not `0.0.0.0` bindings.
@@ -549,9 +552,11 @@ Do not paste bot logs, `.env`, Compose config output, or private Telegram text i
 
 ## Documentation
 
+- Repository source of truth: [docs/source_of_truth.md](docs/source_of_truth.md)
 - Documentation index: [docs/README.md](docs/README.md)
 - Developer notes: [docs/development.md](docs/development.md)
 - Read-only operational SQL snippets: [docs/observability.md](docs/observability.md)
-- Claude Code instructions: [CLAUDE.md](CLAUDE.md)
-- Codex agent routing and review rules: [docs/codex_agent_workflow.md](docs/codex_agent_workflow.md)
+- Claude Code bootstrap: [CLAUDE.md](CLAUDE.md)
+- Codex implementation workflow: [docs/codex_instructions.md](docs/codex_instructions.md)
+- Codex agent routing: [agents/routing.toml](agents/routing.toml)
 - Codex skill locations and usage notes: [docs/codex_skills.md](docs/codex_skills.md)

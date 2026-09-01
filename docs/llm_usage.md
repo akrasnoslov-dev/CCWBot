@@ -1,16 +1,16 @@
 # LLM Usage Reporting
 
 `llm_usage_logs` records one row per LLM call attempt when database storage is enabled. The
-`provider` column names which provider handled the request (`groq`, `cerebras`, `gemini`, or
-`mistral`), so per-provider statistics come from grouping by `provider` — no separate telemetry
-system.
+`provider` column names which provider handled the request, so per-provider statistics come from
+grouping by `provider` — no separate telemetry system. Historical rows retain the provider value
+recorded at the time of the call.
 
 ## Provider fallback (redundancy)
 
-Groq is the primary LLM provider. Cerebras, Gemini, and Mistral form an ordered fallback chain,
-configured via `LLM_PROVIDER_PRIORITY` (default `groq,cerebras,gemini,mistral`) with optional
+Groq is the primary LLM provider. Gemini and Mistral form an ordered fallback chain, configured
+via `LLM_PROVIDER_PRIORITY` (default `groq,gemini,mistral`) with optional
 per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEARTBEAT_PROVIDERS`.
-All four providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
+All providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
@@ -27,20 +27,33 @@ A 4xx is not one thing, and treating it as one is what kept the fallback chain f
 
 | `error_reason` | Meaning | Falls back? |
 | --- | --- | --- |
-| `provider_model_error` | `404 model_not_found`, `model_decommissioned`, and the equivalents from Cerebras/Gemini/Mistral | yes |
+| `provider_model_error` | `404 model_not_found`, `model_decommissioned`, and provider equivalents | yes |
+| `provider_quota_exhausted` | `402`, `payment_required`, or an explicit provider billing/quota code | yes |
 | `provider_json_validate_failed` | the provider's own JSON-mode validation rejected the model's output | yes |
 | `provider_bad_request` | malformed parameters, oversized payload, context length exceeded | no |
 | `provider_4xx` | any other 4xx (unchanged meaning) | no |
 
-All four keep the `provider_` prefix, so consumers that match `provider_%` — including the
+These categories keep the `provider_` prefix, so consumers that match `provider_%` — including the
 ops-agent `llm_failure_category_summary` query preserves these two categories separately. It also
 keeps actual provider rate limits distinct from active-backoff and circuit-breaker skips, and
 groups sanitized provider/model attempt pressure without exporting provider error messages.
 
-`llm_usage_logs` is provider-attempt telemetry, not a logical-operation ledger. Ops reports use
-durable `event_ai_analyses`, `news_items`, `market_heartbeats`, and `market_reports` rows for
-terminal product outcomes and never claim a specific failed provider attempt was recovered by a
-specific fallback success without a correlation id.
+`llm_usage_logs` is provider-attempt telemetry. Each new logical LLM operation now receives one
+opaque backend UUID in `llm_operation_id`; every provider attempt, fallback, pre-call backoff
+skip, and circuit-breaker skip for that operation keeps the same value. The final
+`event_ai_analyses`, `market_heartbeats`, and `market_reports` row stores the same nullable value,
+so ops can join attempts to the terminal feature outcome without timing inference. Historical rows
+remain `NULL`; a telemetry write can still fail open, which is an evidence gap rather than proof
+of no attempt. The identifier contains no user identity, Telegram ID, prompt, output, or secret.
+
+This is observability-only: provider ordering, retry/backoff/circuit behavior, prompts, and LLM
+call placement/count are unchanged. `news_intelligence` attempts receive an operation ID in
+usage telemetry, but its cached `news_items` row has no durable join field yet.
+
+Only explicit response-header allowlist fields are persisted. `provider_request_id` is retained
+when `x-request-id` or `request-id` is available; raw headers and bodies are never stored. Groq
+request/token counters, resets, retry metadata, and request IDs still cannot distinguish quota,
+burst, concurrency, or account-policy enforcement unless Groq supplies an explicit safe signal.
 
 News Intelligence's cached `news_items.llm_model` remains a configured cache identity, not a
 served-provider attribution field. Changing it to a fallback responder's model would break the
@@ -68,7 +81,8 @@ Three properties matter operationally:
 - **Skipping is not failing.** An open primary is skipped *within* the same cycle, so the fallback
   answers that cycle. The breaker never costs a delivery opportunity.
 - **Only failures that are a property of the triple count.** The counted set is exactly
-  `provider_model_error`, `auth_error`, and `config_missing`. Everything else is excluded for a
+  `provider_model_error`, `provider_quota_exhausted`, `auth_error`, and `config_missing`.
+  Everything else is excluded for a
   specific reason:
   - rate limits have their own `(provider, model)` backoff registry, and timeouts/5xx are
     transient — neither should latch a breaker open;
@@ -144,7 +158,7 @@ The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-o
 other structured call types. They replace the Llama 3 defaults scheduled to shut down on
 2026-08-16. Their attempts use low reasoning effort and the additional headroom above.
 
-The completion budget is sent as `max_tokens`. All four providers accept it, and Groq documents it
+The completion budget is sent as `max_tokens`. All providers accept it, and Groq documents it
 as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
 per-provider payload difference. The `json_validate_failed` failures seen during the gpt-oss
 migration attempt were caused by the budget being too small, not by the field name — sending
@@ -162,7 +176,7 @@ On startup the runtime logs the fully resolved configuration, one INFO line per 
 
 ```text
 ops_event=llm_config call_type=event_analysis max_tokens=300
-  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,cerebras:gpt-oss-120b/effort=low/max=1324(no_api_key)
+  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-2.5-flash/effort=low/max=1324(no_api_key)
 ```
 
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
@@ -217,6 +231,7 @@ snake_case safe categories:
 - `timeout`
 - `auth_error`
 - `provider_model_error`
+- `provider_quota_exhausted`
 - `provider_json_validate_failed`
 - `provider_bad_request`
 - `provider_circuit_broken`

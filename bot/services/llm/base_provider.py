@@ -2,7 +2,7 @@
 
 ``BaseProvider`` is the common contract. ``OpenAICompatibleProvider`` holds the chat-completion
 logic generalized out of the old ``_run_groq_chat_completion`` (JSON mode, raw-response header
-capture, rate-limit backoff parsing, and usage logging). Groq, Cerebras, Gemini, and Mistral
+capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, and Mistral
 all speak the OpenAI chat-completions protocol, so each concrete provider is a thin subclass
 that only sets its name and reads its base URL / API key from :mod:`bot.services.llm.config`.
 """
@@ -17,11 +17,13 @@ from openai import AsyncOpenAI
 
 from bot.services.llm import config
 from bot.services.llm.errors import AIProviderRateLimitError, LLMRateLimitBackoffActive
+from bot.services.llm.operation import current_llm_operation_id
 from bot.services.llm.telemetry import (
     RATE_LIMIT_BACKOFF_CALL_TYPES,
     active_rate_limit_backoff,
     classify_ai_error_reason,
     headers_from_error,
+    is_provider_quota_exhausted_error,
     is_rate_limit_error,
     message_input_chars,
     response_content,
@@ -147,10 +149,11 @@ class OpenAICompatibleProvider(BaseProvider):
             )
             logger.info(
                 "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
-                "status=skipped_due_to_rate_limit",
+                "status=skipped_due_to_rate_limit operation_id=%s",
                 provider,
                 model,
                 call_type,
+                current_llm_operation_id(),
             )
             raise LLMRateLimitBackoffActive(
                 provider=provider,
@@ -163,7 +166,7 @@ class OpenAICompatibleProvider(BaseProvider):
             "model": model,
             "messages": messages,
             "temperature": 0.0,
-            # ``max_tokens`` rather than ``max_completion_tokens``: all four providers in the
+            # ``max_tokens`` rather than ``max_completion_tokens``: all providers in the
             # chain accept it, and Groq treats it as an alias of the newer name, so reasoning
             # models still receive the correct budget. See the PR discussion in docs/llm_usage.md.
             "max_tokens": max_tokens,
@@ -204,7 +207,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 error_reason=classify_ai_error_reason(error),
                 error_message=safe_error_message(error),
             )
-            if is_rate_limit_error(error):
+            if is_rate_limit_error(error) and not is_provider_quota_exhausted_error(error):
                 retry_after_seconds, limited_until = start_llm_rate_limit_backoff(
                     provider=provider,
                     model=model,
@@ -221,10 +224,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 ) from error
             raise
         logger.debug(
-            "ops_event=llm_call_completed provider=%s model=%s call_type=%s status=success",
+            "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
+            "status=success operation_id=%s",
             provider,
             model,
             call_type,
+            current_llm_operation_id(),
         )
         return ProviderResult(
             provider=provider,

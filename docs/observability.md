@@ -2,6 +2,26 @@
 
 Use these read-only queries for production analysis. Adjust interval windows as needed.
 
+## Production Forensic Session
+
+For interactive production investigation, connect through the SSH tunnel with the dedicated
+`ccwbot_investigator` PostgreSQL role. Verify the session before running evidence queries:
+
+```sql
+SELECT current_user;
+SHOW transaction_read_only;
+SHOW default_transaction_read_only;
+```
+
+Expected values are `ccwbot_investigator`, `on`, and `on`. If a required evidence table
+returns `permission denied`, stop the investigation and have an operator/admin provision the
+missing `SELECT` grant. Do not switch to the application/admin role and do not run `GRANT`,
+DDL, DML, migrations, or privilege changes from the investigator session.
+
+The minimum current forensic table set is `market_events`, `event_ai_analyses`,
+`llm_usage_logs`, `market_heartbeats`, `alerts`, `alert_delivery_outcomes`, and
+`market_reports`. See `docs/dev_ops_guide.md` for the access model.
+
 ## Event Analysis Health
 
 Event Alerts were dead for 18 days in 2026-07 while every monitoring surface reported healthy.
@@ -68,7 +88,7 @@ and bundles from before and after this change are not directly comparable on tho
 `event_analysis` calls succeeded, and counts consecutive collection cycles with the same result
 via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares only
 Groq primary-provider evidence in `llm_usage_logs` against the shipped default (or an explicit
-operator override); Cerebras, Gemini, and Mistral fallback models are reported separately and do
+operator override); Gemini and Mistral fallback models are reported separately and do
 not count as drift. Missing Groq evidence is inconclusive, never healthy. A withdrawn primary
 model is high severity. Both read existing tables only.
 
@@ -491,7 +511,10 @@ Event Alert percentage labels distinguish two different movements:
 If an Event Alert numeric field is missing, the line is omitted. User-facing Event Alert bodies
 must not render placeholder text such as `n/a`, `unknown`, `unavailable`, or `null`. Event Alert
 bodies should also avoid old/confusing labels such as `Since last BTC alert`,
-`Analysed-window change`, or generic `Price change`.
+`Analysed-window change`, or generic `Price change`. The old-label detector evaluates only the
+persisted delivered Event Alert message; analysis body, raw/parsed LLM output, decision context,
+and numeric context are intentionally excluded. `24h change` remains valid for non-Event-Alert
+surfaces such as Market Heartbeats.
 
 When the analysed-window move is below the semantic material-movement threshold, backend formatting
 applies a narrow deterministic wording guard for dramatic terms such as crash, surge, collapse,

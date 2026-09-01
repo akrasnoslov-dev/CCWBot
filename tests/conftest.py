@@ -5,7 +5,7 @@ os.environ.setdefault("PREMIUM_MONTHLY_STARS", "199")
 
 # --- Test network safety net -------------------------------------------------------------------
 # Block real outbound network connections during the whole test suite so no test can ever call a
-# real service: LLM providers (Groq/Cerebras/Gemini/Mistral), CoinGecko, Telegram, or an RSS host.
+# real service: LLM providers (Groq/Gemini/Mistral), CoinGecko, Telegram, or an RSS host.
 # An accidental real call would otherwise hang CI (there is no fast failure) instead of failing
 # loudly. Everything external in the bot must be mocked in tests. Loopback is allowed so the
 # Alembic/PostgreSQL migration tests and any local sockets keep working. This intercepts DNS

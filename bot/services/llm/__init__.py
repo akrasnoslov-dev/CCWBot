@@ -1,6 +1,6 @@
 """LLM provider fallback package.
 
-Groq stays the primary provider; Cerebras, Gemini, and Mistral form an ordered fallback
+Groq stays the primary provider; Gemini and Mistral form an ordered fallback
 chain. ``bot/services/ai_agent_groq.py`` remains the public entry point / facade and delegates
 its HTTP calls to :func:`bot.services.llm.router.get_router`. This package owns provider
 abstraction, routing, error types, and shared usage/rate-limit telemetry.
