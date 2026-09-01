@@ -608,6 +608,28 @@ async def test_locked_coin_callback_does_not_send_new_message(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_watchlist_open_callback_edits_dashboard_message(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session, telegram_user_id=7287293904)
+        monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
+        monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery(telegram_user_id=user.telegram_user_id)
+
+        handled = await handle_watchlist_callback(
+            SimpleNamespace(callback_query=query),
+            "watchlist:open",
+        )
+
+        assert handled is True
+        assert query.answers == [(None, None)]
+        assert "Alert settings" in query.edits[-1][0]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_unlocked_coin_callback_updates_db_and_edits_message(monkeypatch):
     engine, session = await build_session()
     try:
