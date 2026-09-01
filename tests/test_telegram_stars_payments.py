@@ -12,6 +12,7 @@ from bot.config import PREMIUM_MONTHLY_STARS
 from bot.db.database import (
     Base,
     Payment,
+    ProductEvent,
     User,
     activate_premium_from_telegram_stars_payment,
     ensure_default_coin_subscriptions,
@@ -161,8 +162,18 @@ async def test_subscribe_creates_recurring_stars_invoice_link(monkeypatch):
         assert invoice["payload"] == build_premium_invoice_payload(1001)
         assert "provider_token" not in invoice
         assert message.replies[0][0] == build_subscribe_message()
-        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
-            "https://t.me/"
+        assert (
+            message.replies[0][1]["reply_markup"]
+            .inline_keyboard[0][0]
+            .url.startswith("https://t.me/")
+        )
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(ProductEvent)
+                .where(ProductEvent.event_name == "checkout_started")
+            )
+            == 1
         )
     finally:
         await session.close()
@@ -233,8 +244,10 @@ async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
             in message.replies[0][0]
         )
         assert "Paying again adds another month" in message.replies[0][0]
-        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
-            "https://t.me/"
+        assert (
+            message.replies[0][1]["reply_markup"]
+            .inline_keyboard[0][0]
+            .url.startswith("https://t.me/")
         )
     finally:
         await session.close()
@@ -427,44 +440,50 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
     try:
         user = await create_user(session)
 
-        first_payment, first_subscription, created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-1",
-                telegram_payment_charge_id="tg-charge-1",
-                provider_payment_charge_id="provider-charge-1",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now,
-            )
+        (
+            first_payment,
+            first_subscription,
+            created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-1",
+            telegram_payment_charge_id="tg-charge-1",
+            provider_payment_charge_id="provider-charge-1",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now,
         )
-        duplicate_payment, duplicate_subscription, duplicate_created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-1",
-                telegram_payment_charge_id="tg-charge-1",
-                provider_payment_charge_id="provider-charge-1",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now + timedelta(days=1),
-            )
+        (
+            duplicate_payment,
+            duplicate_subscription,
+            duplicate_created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-1",
+            telegram_payment_charge_id="tg-charge-1",
+            provider_payment_charge_id="provider-charge-1",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
         )
-        second_payment, second_subscription, second_created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-2",
-                telegram_payment_charge_id="tg-charge-2",
-                provider_payment_charge_id="provider-charge-2",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now + timedelta(days=1),
-            )
+        (
+            second_payment,
+            second_subscription,
+            second_created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-2",
+            telegram_payment_charge_id="tg-charge-2",
+            provider_payment_charge_id="provider-charge-2",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
         )
 
         assert created is True
@@ -475,6 +494,12 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
         assert first_subscription.active_until == now.replace(tzinfo=None) + timedelta(days=60)
         assert second_subscription.last_payment_id == str(second_payment.id)
         assert await session.scalar(select(func.count()).select_from(Payment)) == 2
+        payment_events = await session.scalar(
+            select(func.count())
+            .select_from(ProductEvent)
+            .where(ProductEvent.event_name == "payment_succeeded")
+        )
+        assert payment_events == 2
     finally:
         await session.close()
         await engine.dispose()

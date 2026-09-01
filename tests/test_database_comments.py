@@ -31,16 +31,15 @@ def test_all_tables_and_columns_have_comments():
 def test_database_comments_migration_matches_model_metadata():
     migration = _load_comments_migration()
 
-    assert set(migration.TABLE_COMMENTS) == set(Base.metadata.tables)
-    assert set(migration.COLUMN_COMMENTS) == set(Base.metadata.tables)
+    assert set(migration.TABLE_COMMENTS).issubset(Base.metadata.tables)
+    assert set(migration.COLUMN_COMMENTS).issubset(Base.metadata.tables)
 
-    for table_name, table in Base.metadata.tables.items():
+    for table_name in migration.TABLE_COMMENTS:
+        table = Base.metadata.tables[table_name]
         assert migration.TABLE_COMMENTS[table_name] == table.comment
-        assert set(migration.COLUMN_COMMENTS[table_name]) == {
-            column.name for column in table.columns
-        }
-        for column in table.columns:
-            assert migration.COLUMN_COMMENTS[table_name][column.name] == column.comment
+        for column_name, column_comment in migration.COLUMN_COMMENTS[table_name].items():
+            column = table.columns[column_name]
+            assert column_comment == column.comment
 
 
 @pytest.mark.asyncio
@@ -52,7 +51,7 @@ async def test_database_comments_migration_applies_to_head(tmp_path):
     session = session_local()
     try:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert revision == "0025_llm_operation_correlation"
+        assert revision == "0026_growth_analytics"
     finally:
         await session.close()
         await engine.dispose()

@@ -91,6 +91,9 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
   `ids=the-open-network`. `usdt` is not supported.
 - `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
   `DATABASE_URL` is configured.
+- Durable growth funnel events and first-touch acquisition attribution are stored in
+  `product_events` and `user_acquisition_attributions`; see
+  [Product analytics](product_analytics.md) for the payload contract and aggregate diagnostics.
 - `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
   The price is `PREMIUM_MONTHLY_STARS` (default `199`), currency is `XTR`, and the period is
   30 days / `2592000` seconds. Active Premium means paid access exists until `active_until`;
