@@ -31,6 +31,11 @@ index or from `README.md` when they are useful for users.
 - `codex_skills.md`: user-level and project-copied Codex skills, locations, and when to use them.
 - root `CLAUDE.md`: Claude Code workflow and native review lenses.
 
+## Research And Strategy
+
+- `research/growth_strategy_2026-09-01.md`: dated 0 → 1 Premium growth analysis and experiment
+  plan. It is research/strategy context, not a canonical owner of product or workflow rules.
+
 ## Development And Release
 
 - `development.md`: local development notes, runtime behavior, and verification.
