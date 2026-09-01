@@ -8,12 +8,25 @@ from telegram import InlineKeyboardMarkup, Update
 
 from bot.db.analytics import record_product_event
 from bot.db.database import User, utc_now
-from bot.db.premium import ensure_default_coin_subscriptions, set_user_coin_subscription
+from bot.db.premium import (
+    ensure_default_coin_subscriptions,
+    set_user_coin_subscription,
+    start_user_premium_trial,
+)
 from bot.db.prices import get_price_state
 from bot.db.users import get_user_by_telegram_user_id
-from bot.domain.premium import is_coin_unlocked_for_user
-from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol
-from bot.keyboards import build_onboarding_keyboard
+from bot.domain.premium import (
+    get_user_trial,
+    has_premium_entitlement,
+    is_coin_unlocked_for_user,
+    is_user_trial_active,
+)
+from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol, is_symbol_free
+from bot.keyboards import (
+    build_onboarding_keyboard,
+    build_premium_paywall_keyboard,
+    build_trial_offer_keyboard,
+)
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
 ONBOARDING_VERSION = "v1"
@@ -30,7 +43,7 @@ def _selected_symbols(subscriptions) -> list[str]:
 
 
 def _premium_active(user: User) -> bool:
-    return is_coin_unlocked_for_user(user, "eth")
+    return has_premium_entitlement(user)
 
 
 def build_onboarding_message(user: User, subscriptions) -> tuple[str, InlineKeyboardMarkup]:
@@ -66,6 +79,18 @@ def _as_aware_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _premium_intent_count(subscriptions) -> int:
+    return sum(1 for symbol in _selected_symbols(subscriptions) if not is_symbol_free(symbol))
+
+
+def _trial_end_text(user: User) -> str:
+    trial = get_user_trial(user)
+    active_until = getattr(trial, "active_until", None)
+    if active_until is None:
+        return "Your Premium trial is active."
+    return f"Your 7-day Premium trial is active until {active_until.date().isoformat()}."
 
 
 async def build_instant_brief(
@@ -218,16 +243,31 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             selected_count = len(_selected_symbols(subscriptions))
             brief = await build_instant_brief(session, user=user, subscriptions=subscriptions)
-        await query.answer()
-        await _edit_onboarding_message(
-            query,
-            brief,
-            reply_markup=build_onboarding_keyboard(
+            premium_intent_count = _premium_intent_count(subscriptions)
+            can_offer_trial = (
+                premium_intent_count > 0
+                and not has_premium_entitlement(user)
+                and get_user_trial(user) is None
+            )
+            needs_paywall = premium_intent_count > 0 and not has_premium_entitlement(user)
+        if can_offer_trial:
+            brief = (
+                f"{brief}\n\n{premium_intent_count} selected coin"
+                f"{'s require' if premium_intent_count != 1 else ' requires'} Premium. "
+                "Start a free 7-day trial to activate them now."
+            )
+            keyboard = build_trial_offer_keyboard()
+        elif needs_paywall:
+            brief = f"{brief}\n\nYour saved Premium choices need paid Premium to activate."
+            keyboard = build_premium_paywall_keyboard()
+        else:
+            keyboard = build_onboarding_keyboard(
                 _selected_symbols(subscriptions),
                 completed=True,
                 premium_active=_premium_active(user),
-            ),
-        )
+            )
+        await query.answer()
+        await _edit_onboarding_message(query, brief, reply_markup=keyboard)
         async with DB_SESSION_LOCAL() as session:
             user = await get_user_by_telegram_user_id(
                 session, query.from_user.id, include_plan=True
@@ -240,6 +280,22 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
                 selected_coin_count=selected_count,
             )
+            if can_offer_trial:
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="trial_offered",
+                    event_key="trial:v1",
+                    selected_coin_count=selected_count,
+                )
+            elif needs_paywall:
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="paywall_viewed",
+                    event_key="onboarding:premium:v1",
+                    selected_coin_count=selected_count,
+                )
             await record_product_event(
                 session,
                 user_id=user.id,
@@ -255,6 +311,61 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
                 selected_coin_count=selected_count,
             )
             await session.commit()
+        return True
+
+    if len(parts) == 3 and parts[1:] == ["trial", "start"]:
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(
+                session, query.from_user.id, include_plan=True
+            )
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+            selected_count = len(_selected_symbols(subscriptions))
+            if _premium_intent_count(subscriptions) == 0:
+                await query.answer("Choose a Premium coin first.", show_alert=True)
+                return True
+            trial, created = await start_user_premium_trial(
+                session,
+                telegram_user_id=query.from_user.id,
+            )
+            user = await get_user_by_telegram_user_id(
+                session, query.from_user.id, include_plan=True
+            )
+            brief = await build_instant_brief(session, user=user, subscriptions=subscriptions)
+        if trial is not None and is_user_trial_active(trial):
+            text = f"{_trial_end_text(user)}\n\n{brief}"
+            keyboard = build_onboarding_keyboard(
+                _selected_symbols(subscriptions),
+                completed=True,
+                premium_active=True,
+            )
+            answer = "Trial started." if created else "Premium access is already active."
+        elif has_premium_entitlement(user):
+            text = f"Premium is already active.\n\n{brief}"
+            keyboard = build_onboarding_keyboard(
+                _selected_symbols(subscriptions),
+                completed=True,
+                premium_active=True,
+            )
+            answer = "Premium access is already active."
+        else:
+            text = "Your free trial has ended. Your Premium choices are still saved."
+            keyboard = build_premium_paywall_keyboard()
+            answer = "Your free trial has ended."
+        await query.answer(answer)
+        await _edit_onboarding_message(query, text, reply_markup=keyboard)
+        if trial is not None and is_user_trial_active(trial):
+            async with DB_SESSION_LOCAL() as session:
+                delivered_user = await get_user_by_telegram_user_id(
+                    session, query.from_user.id, include_plan=True
+                )
+                await record_product_event(
+                    session,
+                    user_id=delivered_user.id,
+                    event_name="premium_value_delivered",
+                    event_key="trial:v1",
+                    selected_coin_count=selected_count,
+                )
+                await session.commit()
         return True
 
     if len(parts) == 2 and parts[1] == "brief":

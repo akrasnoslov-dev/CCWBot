@@ -89,8 +89,8 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
 - Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
   Legacy `/price ton` is accepted as an alias for GRAM, and CoinGecko requests use
   `ids=the-open-network`. `usdt` is not supported.
-- `/watchlist` and `/myplan` use PostgreSQL-backed Premium/watchlist state when
-  `DATABASE_URL` is configured.
+- `/watchlist` and `/myplan` use PostgreSQL-backed paid Premium, one-time trial, and watchlist
+  state when `DATABASE_URL` is configured.
 - Durable growth funnel events and first-touch acquisition attribution are stored in
   `product_events` and `user_acquisition_attributions`; see
   [Product analytics](product_analytics.md) for the payload contract and aggregate diagnostics.
@@ -105,14 +105,19 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Premium choices can be saved while locked; a successful payment
   immediately activates only those previously selected coins and shows the active watchlist.
+- A first-time user who confirms a watchlist with a Premium coin can start exactly one seven-day
+  Premium trial. Trial entitlement is stored separately from paid Premium, enables the same
+  selected Premium coins and Heartbeat controls, and expires at its recorded end time. Expiry
+  preserves watchlist intent and records a single lifecycle event; a payment during trial starts
+  paid access from the payment time rather than from the trial end.
 - Market Heartbeat frequency controls regular heartbeat delivery only: Free is fixed at six hours;
-  paid Premium can select one, six, or 24 hours (default six). Event Alerts use independent
+  paid Premium and active trials can select one, six, or 24 hours (default six). Event Alerts use independent
   detection, cooldown, and LLM decisioning.
 - `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
   admin-only manual Premium controls for testing and support.
 - Automatic alert threshold remains one global admin-controlled value for all coins.
-- Saved non-BTC watchlist choices remain stored when Premium expires, but non-BTC deliveries
-  are blocked until Premium is active again.
+- Saved non-BTC watchlist choices remain stored when paid Premium or a trial expires, but non-BTC
+  deliveries are blocked until paid Premium or a new eligible entitlement is active.
 - Alert orchestration remains in `bot/alerts.py`. Deterministic event identity, analysed-window,
   and news relevance helpers live under `bot/alerting/`; they must not perform Telegram delivery,
   recipient lookup, LLM calls, or database writes.

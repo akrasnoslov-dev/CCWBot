@@ -52,6 +52,29 @@ def build_premium_activation_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def build_trial_offer_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Start free 7-day trial", callback_data="onboarding:trial:start"
+                )
+            ],
+            [InlineKeyboardButton("Current brief", callback_data="onboarding:brief")],
+            [InlineKeyboardButton("See Premium price", callback_data="plan:subscribe")],
+        ]
+    )
+
+
+def build_premium_paywall_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("See Premium price", callback_data="plan:subscribe")],
+            [InlineKeyboardButton("Current brief", callback_data="onboarding:brief")],
+        ]
+    )
+
+
 def build_price_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(display_symbol(symbol), callback_data=f"price:{symbol}")

@@ -33,4 +33,5 @@ ORDER BY started DESC, source, campaign;
 The allowed event names are `bot_started`, `onboarding_started`, `coin_interest_selected`,
 `onboarding_completed`, `instant_brief_viewed`, `watchlist_updated`, `trial_offered`,
 `trial_started`, `trial_expired`, `paywall_viewed`, `checkout_started`, `payment_succeeded`, and
-`premium_value_delivered`. Later P0 phases emit the events that their flows introduce.
+`premium_value_delivered`. Trial start and expiry are idempotent lifecycle events keyed to the
+internal user and trial row; payment conversion remains keyed to the internal payment row.

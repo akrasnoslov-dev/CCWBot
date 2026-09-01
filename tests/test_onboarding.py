@@ -1,15 +1,22 @@
 import inspect
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from telegram.error import BadRequest, NetworkError
 
 import bot.onboarding as onboarding
-from bot.db.database import Base, PriceState, ProductEvent, User, UserCoinSubscription
+from bot.db.database import (
+    Base,
+    PriceState,
+    ProductEvent,
+    User,
+    UserCoinSubscription,
+    UserPremiumTrial,
+)
 from bot.handlers import callbacks as callback_handlers
 from bot.handlers import common as common_handlers
 from bot.handlers import user as user_handlers
@@ -262,6 +269,44 @@ async def test_failed_brief_delivery_does_not_complete_onboarding(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_onboarding_offers_and_starts_one_time_trial_for_premium_intent(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+        update = SimpleNamespace(callback_query=query)
+
+        await handle_onboarding_callback(update, "onboarding:toggle:eth")
+        await handle_onboarding_callback(update, "onboarding:confirm")
+
+        assert "Start a free 7-day trial" in query.edits[-1][0]
+        assert query.edits[-1][1]["reply_markup"].inline_keyboard[0][0].callback_data == (
+            "onboarding:trial:start"
+        )
+        assert await session.scalar(
+            select(ProductEvent).where(ProductEvent.event_name == "trial_offered")
+        )
+
+        await handle_onboarding_callback(update, "onboarding:trial:start")
+        await handle_onboarding_callback(update, "onboarding:trial:start")
+
+        reloaded = await session.get(User, user.id)
+        await session.refresh(reloaded, ["premium_trial"])
+        assert reloaded.premium_trial is not None
+        assert "Premium trial is active" in query.edits[-1][0]
+        assert await session.scalar(
+            select(func.count()).select_from(ProductEvent).where(
+                ProductEvent.event_name == "trial_started"
+            )
+        ) == 1
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_unchanged_brief_refresh_is_a_successful_noop(monkeypatch):
     engine, session = await build_session()
     try:
@@ -277,6 +322,37 @@ async def test_unchanged_brief_refresh_is_a_successful_noop(monkeypatch):
             SimpleNamespace(callback_query=query), "onboarding:brief"
         ) is True
         assert query.answers == [(None, {})]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_expired_trial_callback_shows_paywall_instead_of_active_access(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        now = datetime.now(timezone.utc)
+        session.add(
+            UserPremiumTrial(
+                user_id=user.id,
+                started_at=now - timedelta(days=8),
+                active_until=now - timedelta(days=1),
+            )
+        )
+        await session.commit()
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+        update = SimpleNamespace(callback_query=query)
+
+        await handle_onboarding_callback(update, "onboarding:toggle:eth")
+        await handle_onboarding_callback(update, "onboarding:trial:start")
+
+        assert "free trial has ended" in query.edits[-1][0]
+        assert query.edits[-1][1]["reply_markup"].inline_keyboard[0][0].callback_data == (
+            "plan:subscribe"
+        )
     finally:
         await session.close()
         await engine.dispose()

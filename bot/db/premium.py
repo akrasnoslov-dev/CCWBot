@@ -13,8 +13,16 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.database import Payment, User, UserCoinSubscription, UserPremiumSubscription, utc_now
+from bot.db.database import (
+    Payment,
+    User,
+    UserCoinSubscription,
+    UserPremiumSubscription,
+    UserPremiumTrial,
+    utc_now,
+)
 from bot.db.users import get_user_by_telegram_user_id
+from bot.domain.premium import is_user_trial_active
 from bot.domain.supported_coins import (
     PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_SYMBOLS,
@@ -25,6 +33,7 @@ from bot.domain.supported_coins import (
 TELEGRAM_STARS_PROVIDER = "telegram_stars"
 PREMIUM_PAYMENT_STATUS_PAID = "paid"
 PREMIUM_PAYMENT_PERIOD_DAYS = 30
+PREMIUM_TRIAL_DAYS = 7
 _payment_activation_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -142,6 +151,99 @@ async def get_user_premium_subscription(
     return await session.scalar(
         select(UserPremiumSubscription).where(UserPremiumSubscription.user_id == user_id).limit(1)
     )
+
+
+async def get_user_premium_trial(
+    session: AsyncSession,
+    *,
+    user_id: int,
+) -> UserPremiumTrial | None:
+    return await session.scalar(
+        select(UserPremiumTrial).where(UserPremiumTrial.user_id == user_id).limit(1)
+    )
+
+
+async def start_user_premium_trial(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    now: datetime | None = None,
+) -> tuple[UserPremiumTrial | None, bool]:
+    """Start exactly one seven-day trial; paid users never consume a trial."""
+    now = now or utc_now()
+    user = await session.scalar(
+        select(User).where(User.telegram_user_id == telegram_user_id).with_for_update().limit(1)
+    )
+    if user is None:
+        raise ValueError("User not found.")
+    paid = await get_user_premium_subscription(session, user_id=user.id)
+    if paid is not None:
+        return None, False
+    existing = await get_user_premium_trial(session, user_id=user.id)
+    if existing is not None:
+        return existing, False
+    trial = UserPremiumTrial(
+        user_id=user.id,
+        started_at=now,
+        active_until=now + timedelta(days=PREMIUM_TRIAL_DAYS),
+        expired_at=None,
+    )
+    session.add(trial)
+    try:
+        await session.flush()
+        from bot.db.analytics import record_product_event
+
+        await record_product_event(
+            session,
+            user_id=user.id,
+            event_name="trial_started",
+            event_key="trial:v1",
+            occurred_at=now,
+        )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await get_user_premium_trial(session, user_id=user.id)
+        if existing is None:
+            raise
+        return existing, False
+    await session.refresh(trial)
+    return trial, True
+
+
+async def expire_due_premium_trials(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> list[UserPremiumTrial]:
+    """Persist each due trial expiry once; safe to call repeatedly."""
+    now = now or utc_now()
+    due = list(
+        (
+            await session.scalars(
+                select(UserPremiumTrial)
+                .where(UserPremiumTrial.active_until <= now)
+                .where(UserPremiumTrial.expired_at.is_(None))
+                .with_for_update()
+            )
+        ).all()
+    )
+    if not due:
+        return []
+    from bot.db.analytics import record_product_event
+
+    for trial in due:
+        trial.expired_at = now
+        trial.updated_at = now
+        await record_product_event(
+            session,
+            user_id=trial.user_id,
+            event_name="trial_expired",
+            event_key=f"trial:{trial.id}:expired",
+            occurred_at=now,
+        )
+    await session.commit()
+    return due
 
 
 async def get_payment_by_provider_id(
@@ -396,6 +498,7 @@ async def revoke_user_premium(
         raise ValueError("User not found.")
     now = now or utc_now()
     subscription = await get_user_premium_subscription(session, user_id=user.id)
+    trial = await get_user_premium_trial(session, user_id=user.id)
     if subscription is None:
         subscription = UserPremiumSubscription(
             user_id=user.id,
@@ -413,6 +516,19 @@ async def revoke_user_premium(
         subscription.cancelled_at = now
         subscription.provider = "manual"
         subscription.updated_at = now
+    if trial is not None and is_user_trial_active(trial, now):
+        trial.active_until = now
+        trial.expired_at = now
+        trial.updated_at = now
+        from bot.db.analytics import record_product_event
+
+        await record_product_event(
+            session,
+            user_id=user.id,
+            event_name="trial_expired",
+            event_key=f"trial:{trial.id}:expired",
+            occurred_at=now,
+        )
     try:
         await session.commit()
     except IntegrityError:

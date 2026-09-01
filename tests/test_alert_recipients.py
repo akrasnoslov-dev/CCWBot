@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import bot.alerts as alerts
+import bot.application.trial_lifecycle as trial_lifecycle
 
 
 class FakeSession:
@@ -94,6 +95,37 @@ async def test_event_alert_eligibility_ignores_market_heartbeat_preference(monke
     assert [recipient.user_id for recipient in first.recipients] == [1]
     assert [recipient.user_id for recipient in second.recipients] == [1]
     get_last_sent.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_event_recipient_resolution_is_isolated_from_trial_expiry_failures(monkeypatch):
+    async def fake_get_active_users_with_alert_preferences(_session):
+        return [
+            SimpleNamespace(
+                id=1,
+                telegram_chat_id=100,
+                premium_subscription=None,
+                premium_trial=None,
+                coin_subscriptions=[SimpleNamespace(symbol="btc", is_enabled=True)],
+            )
+        ]
+
+    expiry_failure = AsyncMock(side_effect=RuntimeError("expiry storage unavailable"))
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: FakeSession())
+    monkeypatch.setattr(
+        alerts,
+        "get_active_users_with_alert_preferences",
+        fake_get_active_users_with_alert_preferences,
+    )
+    monkeypatch.setattr(trial_lifecycle, "expire_due_premium_trials", expiry_failure)
+
+    resolution = await alerts.resolve_alert_recipient_outcomes(
+        "btc", alerts.EVENT_ALERT_TYPE
+    )
+
+    assert [recipient.user_id for recipient in resolution.recipients] == [1]
+    expiry_failure.assert_not_awaited()
 
 
 @pytest.mark.asyncio

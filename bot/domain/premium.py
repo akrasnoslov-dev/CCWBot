@@ -37,6 +37,27 @@ def get_user_plan(user: Any) -> Any:
     return plan
 
 
+def get_user_trial(user: Any) -> Any:
+    trial = getattr(user, "premium_trial", None)
+    if isinstance(trial, list):
+        return trial[0] if trial else None
+    return trial
+
+
+def is_user_trial_active(user_or_trial: Any, now: datetime | None = None) -> bool:
+    if user_or_trial is None:
+        return False
+    now = _as_aware_utc(now) or datetime.now(timezone.utc)
+    active_until = _as_aware_utc(getattr(user_or_trial, "active_until", None))
+    return active_until is not None and active_until > now
+
+
+def has_premium_entitlement(user: Any, now: datetime | None = None) -> bool:
+    return is_user_premium_active(get_user_plan(user), now) or is_user_trial_active(
+        get_user_trial(user), now
+    )
+
+
 def get_user_stored_frequency_seconds(user: Any) -> int | None:
     value = getattr(user, "alert_frequency_seconds", None)
     try:
@@ -49,12 +70,12 @@ def is_coin_unlocked_for_user(user: Any, symbol: str, now: datetime | None = Non
     normalized_symbol = normalize_symbol(symbol)
     if is_symbol_free(normalized_symbol):
         return True
-    return is_user_premium_active(get_user_plan(user), now)
+    return has_premium_entitlement(user, now)
 
 
 def get_effective_market_heartbeat_frequency_seconds(user: Any, now: datetime | None = None) -> int:
     """Return the user-visible Market Heartbeat interval only."""
-    if not is_user_premium_active(get_user_plan(user), now):
+    if not has_premium_entitlement(user, now):
         return FREE_ALERT_FREQUENCY_SECONDS
     stored_frequency = get_user_stored_frequency_seconds(user)
     if stored_frequency in PREMIUM_ALERT_FREQUENCY_SECONDS:
