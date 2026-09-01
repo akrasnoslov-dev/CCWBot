@@ -63,7 +63,7 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert "BTC alerts are free." in text
     assert "ETH, GRAM, SOL" in text
     assert "ETH - Premium" not in text
-    assert "Heartbeat frequency: Every 4 hours" in text
+    assert "Heartbeat frequency: Every 6 hours" in text
     assert "Event alerts may arrive separately when market events are detected." in text
     assert "Use /subscribe to upgrade." in text
     assert ("btc", True, True) in rows
@@ -79,12 +79,12 @@ def test_user_settings_free_user_shows_btc_frequency_and_upgrade_path():
 
     assert text.startswith("Alert settings")
     assert "Subscribed coins: BTC" in text
-    assert "Heartbeat frequency: Every 4 hours" in text
+    assert "Heartbeat frequency: Every 6 hours" in text
     assert "regular market heartbeat updates" in text
     assert "Event alerts may arrive separately" in text
     assert "Plan: Free" in text
     assert "Upgrade: /subscribe" in text
-    assert [symbol for symbol, _, _ in rows] == ["btc"]
+    assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "gram", "sol"]
 
 
 def test_user_settings_premium_user_shows_plan_and_management_path():
@@ -138,7 +138,7 @@ def test_watchlist_expired_user_sees_locked_but_saved_choices_are_not_deleted():
 
     assert "Your Premium expired on: 2026-05-10." in text
     assert "Your premium coin choices are saved, but locked until renewal." in text
-    assert "Heartbeat frequency: Every 4 hours for BTC" in text
+    assert "Heartbeat frequency: Every 6 hours for BTC" in text
     assert ("eth", True, False) in rows
 
 
@@ -577,7 +577,7 @@ class CallbackQuery:
 
 
 @pytest.mark.asyncio
-async def test_locked_coin_callback_does_not_send_new_message(monkeypatch):
+async def test_locked_coin_callback_persists_premium_intent_and_updates_message(monkeypatch):
     engine, session = await build_session()
     try:
         user = await create_user(session, telegram_user_id=7287293904)
@@ -598,10 +598,10 @@ async def test_locked_coin_callback_does_not_send_new_message(monkeypatch):
             )
         )
         assert handled is True
-        assert query.answers == [("Premium required. Use /subscribe.", False)]
+        assert query.answers == [("Saved as a Premium choice.", None)]
         assert query.message.replies == []
-        assert query.edits == []
-        assert eth_row.is_enabled is False
+        assert len(query.edits) == 1
+        assert eth_row.is_enabled is True
     finally:
         await session.close()
         await engine.dispose()

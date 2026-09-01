@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -61,6 +62,38 @@ async def test_get_alert_recipients_deduplicates_active_db_users(monkeypatch):
         alerts.AlertRecipient(chat_id=100, user_id=1),
         alerts.AlertRecipient(chat_id=200, user_id=3),
     ]
+
+
+@pytest.mark.asyncio
+async def test_event_alert_eligibility_ignores_market_heartbeat_preference(monkeypatch):
+    user = SimpleNamespace(
+        id=1,
+        telegram_chat_id=100,
+        alert_frequency_seconds=3600,
+        premium_subscription=None,
+        coin_subscriptions=[SimpleNamespace(symbol="btc", is_enabled=True)],
+    )
+
+    async def fake_get_active_users_with_alert_preferences(_session):
+        return [user]
+
+    get_last_sent = AsyncMock()
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: FakeSession())
+    monkeypatch.setattr(
+        alerts,
+        "get_active_users_with_alert_preferences",
+        fake_get_active_users_with_alert_preferences,
+    )
+    monkeypatch.setattr(alerts, "get_last_sent_alert_at", get_last_sent)
+
+    first = await alerts.resolve_alert_recipient_outcomes("btc", alerts.EVENT_ALERT_TYPE)
+    user.alert_frequency_seconds = 86400
+    second = await alerts.resolve_alert_recipient_outcomes("btc", alerts.EVENT_ALERT_TYPE)
+
+    assert [recipient.user_id for recipient in first.recipients] == [1]
+    assert [recipient.user_id for recipient in second.recipients] == [1]
+    get_last_sent.assert_not_awaited()
 
 
 @pytest.mark.asyncio

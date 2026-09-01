@@ -43,6 +43,15 @@ def build_onboarding_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def build_premium_activation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Current brief", callback_data="onboarding:brief")],
+            [InlineKeyboardButton("Manage watchlist", callback_data="watchlist:open")],
+        ]
+    )
+
+
 def build_price_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(display_symbol(symbol), callback_data=f"price:{symbol}")
