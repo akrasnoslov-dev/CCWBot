@@ -11,6 +11,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_market_check
+from bot.config import TELEGRAM_BOT_USERNAME
+from bot.db.analytics import create_acquisition_link, list_active_acquisition_links
+from bot.domain.attribution import (
+    build_acquisition_telegram_url,
+    validate_acquisition_link_metadata,
+)
 from bot.keyboards import (
     build_admin_alert_settings_keyboard,
     build_admin_back_keyboard,
@@ -32,6 +38,12 @@ from bot.settings import (
 from bot.storage import load_state
 
 from .common import _mark_denied, handlers_module, log_request, safe_edit_callback_message
+
+ACQUISITION_LINK_LIST_LIMIT = 100
+TELEGRAM_REPLY_TEXT_LIMIT = 3500
+ACQUISITION_LINK_PRIVATE_CHAT_MESSAGE = (
+    "Acquisition links may only be managed in a private admin chat."
+)
 
 
 def _format_admin_alert_settings(alert_settings: dict) -> str:
@@ -80,6 +92,71 @@ def _premium_revoke_usage_text() -> str:
         "/revokepremium 123456789\n"
         "/revokepremium me"
     )
+
+
+def _acquisition_link_usage_text() -> str:
+    return (
+        "Create acquisition link\n\n"
+        "Usage:\n"
+        "/acquisitionlink source=<source> [campaign=<code>] [creative=<code>] "
+        "[referrer_code=<code>]\n\n"
+        "Sources: reddit, telegramads, telegramdir, product-hunt\n\n"
+        "Examples:\n"
+        "/acquisitionlink source=reddit campaign=cryptotelegrambots\n"
+        "/acquisitionlink source=telegramads campaign=general-crypto creative=ad01\n"
+        "/acquisitionlink source=telegramdir\n"
+        "/acquisitionlink source=product-hunt"
+    )
+
+
+def _parse_acquisition_link_arguments(args: list[str]) -> dict[str, str | None]:
+    allowed = {"source", "campaign", "creative", "referrer_code"}
+    values: dict[str, str | None] = {}
+    for argument in args:
+        key, separator, value = argument.partition("=")
+        if not separator or key not in allowed or key in values or not value:
+            raise ValueError("Use named source, campaign, creative, and referrer_code values.")
+        values[key] = value
+    if "source" not in values:
+        raise ValueError("source is required.")
+    metadata = validate_acquisition_link_metadata(**values)
+    return {
+        "source": metadata.source,
+        "campaign": metadata.campaign,
+        "creative": metadata.creative,
+        "referrer_code": metadata.referrer_code,
+    }
+
+
+def _format_acquisition_link(link) -> str:
+    url = build_acquisition_telegram_url(
+        bot_username=TELEGRAM_BOT_USERNAME,
+        link_code=link.link_code,
+    )
+    fields = [f"source={link.source}"]
+    if link.campaign:
+        fields.append(f"campaign={link.campaign}")
+    if link.creative:
+        fields.append(f"creative={link.creative}")
+    return f"{' '.join(fields)}\n{url}"
+
+
+async def _reply_acquisition_link_list(message, links) -> None:
+    heading = "Active acquisition links:\n\n"
+    current = heading
+    for link in links:
+        entry = _format_acquisition_link(link)
+        separator = "" if current == heading else "\n\n"
+        if len(current) + len(separator) + len(entry) > TELEGRAM_REPLY_TEXT_LIMIT:
+            await message.reply_text(current)
+            current = "Active acquisition links (continued):\n\n" + entry
+        else:
+            current += separator + entry
+    await message.reply_text(current)
+
+
+def _is_private_chat(update: Update) -> bool:
+    return str(getattr(getattr(update, "effective_chat", None), "type", "")).lower() == "private"
 
 
 async def _set_error_logging_enabled(enabled: bool) -> str:
@@ -137,6 +214,79 @@ async def revoke_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await handlers_module().is_admin_update(update):
         _mark_denied(context)
     await handlers_module().revoke_premium_command(update, context.args)
+
+
+@log_request("/acquisitionlink")
+async def acquisition_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await handlers_module().is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can manage acquisition links.")
+        return
+    if not _is_private_chat(update):
+        _mark_denied(context)
+        await update.message.reply_text(ACQUISITION_LINK_PRIVATE_CHAT_MESSAGE)
+        return
+    root = handlers_module()
+    if not root.DB_ENABLED or not root.DB_SESSION_LOCAL:
+        await update.message.reply_text(
+            "Acquisition links require the configured PostgreSQL database."
+        )
+        return
+    try:
+        metadata = _parse_acquisition_link_arguments(context.args)
+    except ValueError:
+        await update.message.reply_text(_acquisition_link_usage_text())
+        return
+    try:
+        build_acquisition_telegram_url(
+            bot_username=TELEGRAM_BOT_USERNAME,
+            link_code="sample-code",
+        )
+    except ValueError:
+        await update.message.reply_text("Telegram bot username is not configured correctly.")
+        return
+    try:
+        async with root.DB_SESSION_LOCAL() as session:
+            link = await create_acquisition_link(session, **metadata)
+    except RuntimeError:
+        await update.message.reply_text("Could not create an acquisition link. Please try again.")
+        return
+    await update.message.reply_text(f"Acquisition link created:\n{_format_acquisition_link(link)}")
+
+
+@log_request("/acquisitionlinks")
+async def acquisition_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await handlers_module().is_admin_update(update):
+        _mark_denied(context)
+        await update.message.reply_text("Sorry, only the bot admin can manage acquisition links.")
+        return
+    if not _is_private_chat(update):
+        _mark_denied(context)
+        await update.message.reply_text(ACQUISITION_LINK_PRIVATE_CHAT_MESSAGE)
+        return
+    root = handlers_module()
+    if not root.DB_ENABLED or not root.DB_SESSION_LOCAL:
+        await update.message.reply_text(
+            "Acquisition links require the configured PostgreSQL database."
+        )
+        return
+    try:
+        build_acquisition_telegram_url(
+            bot_username=TELEGRAM_BOT_USERNAME,
+            link_code="sample-code",
+        )
+    except ValueError:
+        await update.message.reply_text("Telegram bot username is not configured correctly.")
+        return
+    async with root.DB_SESSION_LOCAL() as session:
+        links = await list_active_acquisition_links(
+            session,
+            limit=ACQUISITION_LINK_LIST_LIMIT,
+        )
+    if not links:
+        await update.message.reply_text("No active acquisition links.")
+        return
+    await _reply_acquisition_link_list(update.message, links)
 
 
 @log_request("/error_logging_on")

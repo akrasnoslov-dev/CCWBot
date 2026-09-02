@@ -22,6 +22,7 @@ from bot.watchlist import (
 )
 
 from .admin import (
+    _acquisition_link_usage_text,
     _build_admin_system_status_text,
     _build_error_logging_status_text,
     _format_admin_alert_settings,
@@ -30,6 +31,8 @@ from .admin import (
     _send_log_exports,
     _set_error_logging_enabled,
     _toggle_error_logging,
+    acquisition_link,
+    acquisition_links,
     admin,
     chat_id,
     error_logging_off,
@@ -65,6 +68,7 @@ __all__ = [
     "PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS",
     "PRICE_RATE_LIMIT_SECONDS",
     "_build_admin_system_status_text",
+    "_acquisition_link_usage_text",
     "_build_error_logging_status_text",
     "_callback_command_update",
     "_format_admin_alert_settings",
@@ -78,6 +82,8 @@ __all__ = [
     "_telegram_user_id",
     "_toggle_error_logging",
     "admin",
+    "acquisition_link",
+    "acquisition_links",
     "build_sanitized_log_exports",
     "button_router",
     "chat_id",
