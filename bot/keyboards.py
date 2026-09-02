@@ -7,6 +7,42 @@ from bot.domain.supported_coins import (
 )
 
 
+def build_onboarding_keyboard(
+    selected_symbols: tuple[str, ...] | list[str],
+    *,
+    completed: bool = False,
+    premium_active: bool = False,
+    returning_user: bool = False,
+) -> InlineKeyboardMarkup:
+    if returning_user:
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("Current brief", callback_data="onboarding:brief")],
+                [InlineKeyboardButton("Watchlist", callback_data="watchlist:open")],
+                [InlineKeyboardButton("Plan", callback_data="plan:my_plan")],
+            ]
+        )
+    selected = set(selected_symbols)
+    buttons = []
+    for symbol in SUPPORTED_SYMBOLS:
+        is_selected = symbol in selected
+        status = "✅" if is_selected else "⬜"
+        plan = "Free" if symbol == "btc" else "Premium"
+        lock = "" if symbol == "btc" or premium_active else "🔒 "
+        buttons.append(
+            InlineKeyboardButton(
+                f"{lock}{status} {display_symbol(symbol)} · {plan}",
+                callback_data=f"onboarding:toggle:{symbol}",
+            )
+        )
+    rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    if completed:
+        rows.append([InlineKeyboardButton("Refresh brief", callback_data="onboarding:brief")])
+    else:
+        rows.append([InlineKeyboardButton("Show my brief", callback_data="onboarding:confirm")])
+    return InlineKeyboardMarkup(rows)
+
+
 def build_price_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(display_symbol(symbol), callback_data=f"price:{symbol}")
@@ -34,9 +70,7 @@ def build_watchlist_keyboard(
                 callback_data=f"watchlist:set:{symbol}:{callback_value}",
             )
         )
-    keyboard = [
-        coin_buttons[index : index + 3] for index in range(0, len(coin_buttons), 3)
-    ]
+    keyboard = [coin_buttons[index : index + 3] for index in range(0, len(coin_buttons), 3)]
 
     if premium_active:
         frequency_buttons = [
@@ -134,9 +168,7 @@ def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
 
 
 def build_admin_back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Back", callback_data="admin:back")]]
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="admin:back")]])
 
 
 def build_interval_keyboard() -> InlineKeyboardMarkup:

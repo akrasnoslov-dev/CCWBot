@@ -52,6 +52,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             handled = await root.handle_watchlist_callback(update, data)
             if handled:
                 return
+        if data.startswith("onboarding:"):
+            handled = await root.handle_onboarding_callback(update, data)
+            if handled:
+                return
         await query.answer()
 
         if data.startswith("price:"):
@@ -86,7 +90,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Event decision: Groq LLM JSON analysis\n"
                 "Movement thresholds: disabled for automatic Event Alerts\n"
                 "Event Alert analysis interval: "
-                f"{alert_settings['automatic_check_interval_seconds']} seconds"
+                f"{alert_settings['automatic_check_interval_seconds']} seconds",
             )
             return
         if data == "settings:interval_menu":

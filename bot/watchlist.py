@@ -342,6 +342,21 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
     if not query.from_user:
         return True
 
+    if data == "watchlist:open":
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(
+                session,
+                query.from_user.id,
+                include_plan=True,
+            )
+            if user is None:
+                await query.answer("Watchlist is unavailable.", show_alert=True)
+                return True
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+            await query.answer()
+            await edit_watchlist_message(query, user, subscriptions)
+        return True
+
     parts = data.split(":")
     if len(parts) == 4 and parts[:2] == ["watchlist", "set"]:
         symbol = parts[2].lower()

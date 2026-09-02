@@ -6,6 +6,7 @@ from bot.error_logging import (
     enable_error_file_logging,
     is_error_file_logging_enabled,
 )
+from bot.onboarding import handle_onboarding_callback
 from bot.payments import send_subscribe_invoice
 from bot.permissions import is_admin_update, is_admin_user, sync_user_from_update
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
@@ -91,6 +92,7 @@ __all__ = [
     "grant_premium",
     "grant_premium_command",
     "handle_watchlist_callback",
+    "handle_onboarding_callback",
     "is_admin_update",
     "is_admin_user",
     "is_error_file_logging_enabled",

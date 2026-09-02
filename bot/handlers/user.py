@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 from bot.db.analytics import record_bot_started, resolve_start_attribution
 from bot.db.users import get_user_by_telegram_user_id
 from bot.domain.attribution import parse_start_attribution
+from bot.onboarding import send_start_experience
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
 from .common import handlers_module, log_request
@@ -46,6 +47,8 @@ async def _record_start_analytics(update: Update, context: ContextTypes.DEFAULT_
 @log_request("/start")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _record_start_analytics(update, context)
+    if await send_start_experience(update):
+        return
     is_admin = await handlers_module().is_admin_update(update)
     message = (
         "CCWBot\n\n"
