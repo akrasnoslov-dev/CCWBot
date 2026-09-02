@@ -154,6 +154,11 @@ class User(Base):
     alert_frequency_seconds: Mapped[int] = mapped_column(
         Integer, default=14400, comment="User's selected minimum interval between alert deliveries."
     )
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this user completed the current first-time onboarding flow.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When this user row was created."
     )
@@ -170,6 +175,10 @@ class User(Base):
         back_populates="user", uselist=False
     )
     payments: Mapped[list[Payment]] = relationship(back_populates="user")
+    acquisition_attribution: Mapped[UserAcquisitionAttribution | None] = relationship(
+        back_populates="user", uselist=False
+    )
+    product_events: Mapped[list[ProductEvent]] = relationship(back_populates="user")
 
 
 class UserSettings(Base):
@@ -281,6 +290,165 @@ class UserPremiumSubscription(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="premium_subscription")
+
+
+class UserAcquisitionAttribution(Base):
+    __tablename__ = "user_acquisition_attributions"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_acquisition_attributions_user_id"),
+        Index("ix_user_acquisition_attribution_source_campaign", "source", "campaign"),
+        {"comment": "First-touch acquisition attribution captured from validated bot deep links."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal attribution row id."
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        index=True,
+        comment="Internal user associated with this attribution.",
+    )
+    source: Mapped[str] = mapped_column(
+        String(32), comment="Allowlisted acquisition source from a validated deep link."
+    )
+    campaign: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Bounded campaign code from a validated deep link."
+    )
+    creative: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Bounded creative code from a validated deep link."
+    )
+    referrer_code: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Bounded opaque referrer code when a deep link supplies one.",
+    )
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When first-touch attribution was captured.",
+    )
+
+    user: Mapped[User] = relationship(back_populates="acquisition_attribution")
+
+
+class AcquisitionLink(Base):
+    __tablename__ = "acquisition_links"
+    __table_args__ = (
+        UniqueConstraint("link_code", name="uq_acquisition_links_link_code"),
+        Index("ix_acquisition_links_active_expires", "is_active", "expires_at"),
+        {
+            "comment": (
+                "Operator-managed opaque deep links resolved to allowlisted acquisition data."
+            )
+        },
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal acquisition link row id."
+    )
+    link_code: Mapped[str] = mapped_column(
+        String(48), index=True, comment="Opaque Telegram-safe deep-link code without user data."
+    )
+    source: Mapped[str] = mapped_column(
+        String(32), comment="Allowlisted acquisition source configured by an operator."
+    )
+    campaign: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Bounded campaign code configured by an operator."
+    )
+    creative: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Bounded creative code configured by an operator."
+    )
+    referrer_code: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Bounded opaque referrer code configured by an operator.",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, comment="Whether this acquisition link may still be attributed."
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Optional time after which this link is ignored.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When this acquisition link was configured.",
+    )
+
+
+class ProductEvent(Base):
+    __tablename__ = "product_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_name IN ('bot_started', 'onboarding_started', 'coin_interest_selected', "
+            "'onboarding_completed', 'instant_brief_viewed', 'watchlist_updated', "
+            "'trial_offered', 'trial_started', 'trial_expired', 'paywall_viewed', "
+            "'checkout_started', 'payment_succeeded', 'premium_value_delivered')",
+            name="ck_product_events_event_name",
+        ),
+        CheckConstraint(
+            "symbol IS NULL OR symbol = lower(symbol)",
+            name="ck_product_events_symbol_lower",
+        ),
+        CheckConstraint(
+            "selected_coin_count IS NULL OR selected_coin_count BETWEEN 0 AND 4",
+            name="ck_product_events_selected_coin_count",
+        ),
+        CheckConstraint(
+            "payment_id IS NULL OR event_name = 'payment_succeeded'",
+            name="ck_product_events_payment_event",
+        ),
+        UniqueConstraint(
+            "user_id", "event_name", "event_key", name="uq_product_events_user_event_key"
+        ),
+        UniqueConstraint("payment_id", name="uq_product_events_payment_id"),
+        Index("ix_product_events_user_occurred_at", "user_id", "occurred_at"),
+        Index("ix_product_events_name_occurred_at", "event_name", "occurred_at"),
+        {"comment": "Allowlisted durable product funnel events linked to internal users."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal product event row id."
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        index=True,
+        comment="Internal user who performed this product action.",
+    )
+    event_name: Mapped[str] = mapped_column(
+        String(64), index=True, comment="Allowlisted product funnel event name."
+    )
+    event_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="Opaque bounded idempotency key for retryable lifecycle events.",
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="Selected lowercase supported coin when this event concerns one coin.",
+    )
+    selected_coin_count: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Selected supported-coin count when the event changes a watchlist.",
+    )
+    payment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("payments.id"),
+        nullable=True,
+        comment="Internal payment linked to a successful conversion.",
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        index=True,
+        comment="When the product action occurred.",
+    )
+
+    user: Mapped[User] = relationship(back_populates="product_events")
+    payment: Mapped[Payment | None] = relationship()
 
 
 class UserSymbolAlertState(Base):
@@ -952,13 +1120,9 @@ class EventAiAnalysis(Base):
             "uq_event_ai_analyses_one_attached_event_analysis_per_event",
             "market_event_id",
             unique=True,
-            sqlite_where=text(
-                "market_event_id IS NOT NULL "
-                "AND analysis_type = 'event_analysis'"
-            ),
+            sqlite_where=text("market_event_id IS NOT NULL AND analysis_type = 'event_analysis'"),
             postgresql_where=text(
-                "market_event_id IS NOT NULL "
-                "AND analysis_type = 'event_analysis'"
+                "market_event_id IS NOT NULL AND analysis_type = 'event_analysis'"
             ),
         ),
         {"comment": "One reusable AI analysis for a market event and exact input payload."},
@@ -981,7 +1145,9 @@ class EventAiAnalysis(Base):
         comment="External stable id for this LLM analysis attempt.",
     )
     llm_operation_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True,
+        String(36),
+        nullable=True,
+        index=True,
         comment="Opaque backend correlation id for the logical LLM operation.",
     )
     symbol: Mapped[str | None] = mapped_column(
@@ -1100,7 +1266,9 @@ class MarketHeartbeat(Base):
         DateTime(timezone=True), index=True, comment="When this heartbeat generation ran."
     )
     llm_operation_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True,
+        String(36),
+        nullable=True,
+        index=True,
         comment="Opaque backend correlation id for the logical LLM operation.",
     )
     raw_input_json: Mapped[str | None] = mapped_column(
@@ -1160,7 +1328,9 @@ class MarketReport(Base):
         DateTime(timezone=True), index=True, comment="When this cached report should be refreshed."
     )
     llm_operation_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True,
+        String(36),
+        nullable=True,
+        index=True,
         comment="Opaque backend correlation id for the logical LLM operation.",
     )
     status: Mapped[str] = mapped_column(
@@ -1219,7 +1389,8 @@ class LlmUsageLog(Base):
         String(64), index=True, comment="Purpose of the LLM call such as event_analysis."
     )
     llm_operation_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True,
+        String(36),
+        nullable=True,
         comment=(
             "Opaque backend correlation id shared by provider attempts in one logical operation."
         ),
@@ -1270,7 +1441,8 @@ class LlmUsageLog(Base):
         String(128), nullable=True, comment="Provider retry-after header when rate limited."
     )
     provider_request_id: Mapped[str | None] = mapped_column(
-        String(128), nullable=True,
+        String(128),
+        nullable=True,
         comment="Allowlisted opaque provider request id when the response exposes one.",
     )
     error_reason: Mapped[str | None] = mapped_column(
@@ -1318,6 +1490,7 @@ def _run_upgrade(database_url: str) -> None:
     alembic_config.attributes["database_url"] = database_url
     alembic_config.attributes["configure_logger"] = False
     command.upgrade(alembic_config, "head")
+
 
 # Compatibility re-exports for existing imports from bot.db.database.
 _REEXPORTS = {

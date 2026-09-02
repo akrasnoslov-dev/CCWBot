@@ -28,7 +28,6 @@ PREMIUM_PAYMENT_PERIOD_DAYS = 30
 _payment_activation_locks: dict[int, asyncio.Lock] = {}
 
 
-
 async def ensure_default_coin_subscriptions(
     session: AsyncSession,
     *,
@@ -70,7 +69,6 @@ async def ensure_default_coin_subscriptions(
         )
         active_rows = [row for row in existing_rows if row.symbol in SUPPORTED_SYMBOLS]
     return sorted(active_rows, key=lambda row: SUPPORTED_SYMBOLS.index(row.symbol))
-
 
 
 async def set_user_coin_subscription(
@@ -118,7 +116,6 @@ async def set_user_coin_subscription(
     return row
 
 
-
 async def set_user_alert_frequency(
     session: AsyncSession,
     *,
@@ -137,18 +134,14 @@ async def set_user_alert_frequency(
     return user
 
 
-
 async def get_user_premium_subscription(
     session: AsyncSession,
     *,
     user_id: int,
 ) -> UserPremiumSubscription | None:
     return await session.scalar(
-        select(UserPremiumSubscription)
-        .where(UserPremiumSubscription.user_id == user_id)
-        .limit(1)
+        select(UserPremiumSubscription).where(UserPremiumSubscription.user_id == user_id).limit(1)
     )
-
 
 
 async def get_payment_by_provider_id(
@@ -165,14 +158,12 @@ async def get_payment_by_provider_id(
     )
 
 
-
 def _normalize_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
 
 
 async def activate_premium_from_telegram_stars_payment(
@@ -211,7 +202,6 @@ async def activate_premium_from_telegram_stars_payment(
         )
 
 
-
 async def _activate_premium_from_telegram_stars_payment_locked(
     session: AsyncSession,
     *,
@@ -241,10 +231,7 @@ async def _activate_premium_from_telegram_stars_payment_locked(
         return existing_payment, subscription, False
 
     user = await session.scalar(
-        select(User)
-        .where(User.telegram_user_id == telegram_user_id)
-        .with_for_update()
-        .limit(1)
+        select(User).where(User.telegram_user_id == telegram_user_id).with_for_update().limit(1)
     )
     if user is None:
         raise ValueError("User not found.")
@@ -314,6 +301,16 @@ async def _activate_premium_from_telegram_stars_payment_locked(
         subscription.provider_subscription_id = provider_subscription_id
         subscription.last_payment_id = str(payment.id)
         subscription.updated_at = now
+    from bot.db.analytics import record_product_event
+
+    await record_product_event(
+        session,
+        user_id=user.id,
+        event_name="payment_succeeded",
+        event_key=f"payment:{payment.id}",
+        payment_id=payment.id,
+        occurred_at=now,
+    )
     try:
         await session.commit()
     except IntegrityError:
@@ -333,7 +330,6 @@ async def _activate_premium_from_telegram_stars_payment_locked(
     await session.refresh(payment)
     await session.refresh(subscription)
     return payment, subscription, True
-
 
 
 async def grant_user_premium(
@@ -387,7 +383,6 @@ async def grant_user_premium(
         )
     await session.refresh(subscription)
     return subscription
-
 
 
 async def revoke_user_premium(

@@ -11,6 +11,7 @@ from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from bot.config import PREMIUM_MONTHLY_STARS
+from bot.db.analytics import record_product_event
 from bot.db.database import (
     TELEGRAM_STARS_PROVIDER,
     activate_premium_from_telegram_stars_payment,
@@ -171,6 +172,18 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         prices=build_premium_prices(),
         subscription_period=PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     )
+    try:
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(session, update.effective_user.id)
+            if user is not None:
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="checkout_started",
+                )
+                await session.commit()
+    except Exception as error:
+        logger.warning("Checkout analytics persistence failed: %s", type(error).__name__)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(f"Pay {PREMIUM_MONTHLY_STARS} Stars", url=invoice_link)]]
     )
