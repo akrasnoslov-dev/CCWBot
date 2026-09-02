@@ -172,15 +172,18 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         prices=build_premium_prices(),
         subscription_period=PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
     )
-    async with DB_SESSION_LOCAL() as session:
-        user = await get_user_by_telegram_user_id(session, update.effective_user.id)
-        if user is not None:
-            await record_product_event(
-                session,
-                user_id=user.id,
-                event_name="checkout_started",
-            )
-            await session.commit()
+    try:
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(session, update.effective_user.id)
+            if user is not None:
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="checkout_started",
+                )
+                await session.commit()
+    except Exception as error:
+        logger.warning("Checkout analytics persistence failed: %s", type(error).__name__)
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton(f"Pay {PREMIUM_MONTHLY_STARS} Stars", url=invoice_link)]]
     )

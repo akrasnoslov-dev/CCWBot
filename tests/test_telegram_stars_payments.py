@@ -181,6 +181,40 @@ async def test_subscribe_creates_recurring_stars_invoice_link(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_subscribe_delivers_invoice_when_checkout_analytics_fails(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+
+        async def fail_checkout_event(*args, **kwargs):
+            raise RuntimeError("analytics unavailable")
+
+        monkeypatch.setattr("bot.payments.record_product_event", fail_checkout_event)
+        bot = FakeBot()
+        message = FakeMessage()
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=1001),
+                effective_chat=SimpleNamespace(id=2001),
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
+        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
+            "https://t.me/"
+        )
+        assert _last_subscribe_call[1001] > 0
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_subscribe_creates_invoice_for_expired_premium_user(monkeypatch):
     engine, session = await build_session()
     try:
