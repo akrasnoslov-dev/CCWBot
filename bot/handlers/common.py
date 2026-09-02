@@ -45,16 +45,22 @@ def _mark_denied(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data["_ccwbot_command_denied"] = True
 
 
-async def safe_edit_callback_message(query, text: str, **kwargs) -> bool:
+async def safe_edit_callback_message(
+    query, text: str, *, suppress_errors: bool = True, **kwargs
+) -> bool:
     """Edit a transient callback screen without exposing Telegram failures."""
     try:
         await query.edit_message_text(text=text, **kwargs)
     except BadRequest as error:
         if "message is not modified" in str(error).lower():
             return True
+        if not suppress_errors:
+            raise
         logger.debug("Transient callback edit failed: %s", type(error).__name__)
         return False
     except TelegramError as error:
+        if not suppress_errors:
+            raise
         logger.debug("Transient callback edit failed: %s", type(error).__name__)
         return False
     return True

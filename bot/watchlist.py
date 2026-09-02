@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from telegram import InlineKeyboardMarkup, Message, Update
 from telegram.error import BadRequest, NetworkError, TelegramError, TimedOut
 
+from bot.db.analytics import record_product_event
 from bot.db.database import (
     ensure_default_coin_subscriptions,
     get_user_by_telegram_user_id,
@@ -14,10 +15,13 @@ from bot.db.database import (
     set_user_coin_subscription,
 )
 from bot.domain.premium import (
-    get_effective_frequency_seconds,
+    get_effective_market_heartbeat_frequency_seconds,
     get_user_plan,
+    get_user_trial,
+    has_premium_entitlement,
     is_coin_unlocked_for_user,
     is_user_premium_active,
+    is_user_trial_active,
 )
 from bot.domain.supported_coins import (
     FREE_ALERT_FREQUENCY_SECONDS,
@@ -28,7 +32,11 @@ from bot.domain.supported_coins import (
     is_symbol_free,
     premium_symbols_display,
 )
-from bot.keyboards import build_watchlist_keyboard
+from bot.keyboards import (
+    build_premium_paywall_keyboard,
+    build_trial_offer_keyboard,
+    build_watchlist_keyboard,
+)
 from bot.payments import build_subscribe_message as _build_subscribe_message
 from bot.permissions import is_admin_update
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
@@ -45,7 +53,7 @@ def _format_date(value: datetime | None) -> str:
 def _format_frequency(seconds: int) -> str:
     labels = {
         3600: "Every 1 hour",
-        FREE_ALERT_FREQUENCY_SECONDS: "Every 4 hours",
+        FREE_ALERT_FREQUENCY_SECONDS: "Every 6 hours",
         21600: "Every 6 hours",
         86400: "Every 24 hours",
     }
@@ -87,7 +95,8 @@ async def _safe_edit_message_text(
 def build_watchlist_message(user, subscriptions, now: datetime | None = None) -> tuple[str, list]:
     now = now or datetime.now(timezone.utc)
     plan = get_user_plan(user)
-    premium_active = is_user_premium_active(plan, now)
+    premium_active = has_premium_entitlement(user, now)
+    trial = get_user_trial(user)
     had_premium = plan is not None and getattr(plan, "active_until", None) is not None
     enabled_by_symbol = _subscription_by_symbol(subscriptions)
 
@@ -103,29 +112,32 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append("")
         lines.append(
             "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
         )
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
-        lines.append(f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}")
+        if is_user_premium_active(plan, now):
+            lines.append(f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}")
+        else:
+            lines.append(
+                f"Trial active until: {_format_date(getattr(trial, 'active_until', None))}"
+            )
     elif had_premium:
         expired_on = _format_date(getattr(plan, "active_until", None))
         lines.append(f"Your Premium expired on: {expired_on}.")
         lines.append("Your premium coin choices are saved, but locked until renewal.")
         lines.append("")
-        lines.append("Heartbeat frequency: Every 4 hours for BTC")
+        lines.append("Heartbeat frequency: Every 6 hours for BTC")
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to renew.")
     else:
         lines.append("BTC alerts are free.")
-        lines.append(
-            f"Premium unlocks automatic alerts for {premium_symbols_display()}."
-        )
+        lines.append(f"Premium unlocks automatic alerts for {premium_symbols_display()}.")
         lines.append("")
         lines.append(
             "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
         )
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
@@ -136,6 +148,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
 def build_plan_message(user, now: datetime | None = None) -> str:
     now = now or datetime.now(timezone.utc)
     plan = get_user_plan(user)
+    trial = get_user_trial(user)
     if is_user_premium_active(plan, now):
         return (
             "Plan: Premium\n"
@@ -143,6 +156,13 @@ def build_plan_message(user, now: datetime | None = None) -> str:
             "Recurring subscription: not tracked by CCWBot\n"
             "Recurring payments can be managed in Telegram Stars settings.\n"
             "Premium coins unlocked."
+        )
+    if is_user_trial_active(trial, now):
+        return (
+            "Plan: Premium trial\n"
+            f"Trial active until: {_format_date(getattr(trial, 'active_until', None))}\n"
+            "Premium coins unlocked.\n"
+            "Use /subscribe to keep Premium after the trial."
         )
     if plan is not None and getattr(plan, "active_until", None) is not None:
         return (
@@ -214,8 +234,8 @@ def build_watchlist_render(
         text,
         build_watchlist_keyboard(
             rows=rows,
-            premium_active=is_user_premium_active(get_user_plan(user), now),
-            current_frequency_seconds=get_effective_frequency_seconds(user, now),
+            premium_active=has_premium_entitlement(user, now),
+            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -227,9 +247,10 @@ def build_user_settings_message(
 ) -> tuple[str, list]:
     now = now or datetime.now(timezone.utc)
     plan = get_user_plan(user)
-    premium_active = is_user_premium_active(plan, now)
+    premium_active = has_premium_entitlement(user, now)
+    trial = get_user_trial(user)
     enabled_by_symbol = _subscription_by_symbol(subscriptions)
-    symbols = SUPPORTED_SYMBOLS if premium_active else ("btc",)
+    symbols = SUPPORTED_SYMBOLS
 
     rows = []
     enabled_symbols = []
@@ -245,7 +266,8 @@ def build_user_settings_message(
         "Alert settings",
         "",
         f"Subscribed coins: {subscribed_text}",
-        f"Heartbeat frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+        "Heartbeat frequency: "
+        f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}",
         (
             "How often you receive regular market heartbeat updates. Event alerts may "
             "arrive separately when significant market events are detected."
@@ -253,19 +275,33 @@ def build_user_settings_message(
         "",
     ]
     if premium_active:
-        lines.extend(
-            [
-                "Plan: Premium",
-                f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}",
-                "Manage subscription: /myplan",
-            ]
-        )
+        if is_user_premium_active(plan, now):
+            lines.extend(
+                [
+                    "Plan: Premium",
+                    f"Paid access until: {_format_date(getattr(plan, 'active_until', None))}",
+                    "Manage subscription: /myplan",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "Plan: Premium trial",
+                    f"Trial active until: {_format_date(getattr(trial, 'active_until', None))}",
+                    "Use /subscribe to keep Premium after the trial.",
+                ]
+            )
     else:
         lines.append("Plan: Free")
         active_until = getattr(plan, "active_until", None) if plan is not None else None
         if active_until is not None:
             lines.append(f"Premium expired on: {_format_date(active_until)}")
         lines.append("Upgrade: /subscribe")
+        saved_premium_symbols = [
+            display_symbol(symbol) for symbol, enabled, unlocked in rows if enabled and not unlocked
+        ]
+        if saved_premium_symbols:
+            lines.append(f"Saved Premium choices: {', '.join(saved_premium_symbols)}")
     return "\n".join(lines), rows
 
 
@@ -280,8 +316,8 @@ def build_user_settings_render(
         text,
         build_watchlist_keyboard(
             rows=rows,
-            premium_active=is_user_premium_active(get_user_plan(user), now),
-            current_frequency_seconds=get_effective_frequency_seconds(user, now),
+            premium_active=has_premium_entitlement(user, now),
+            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -325,9 +361,7 @@ async def edit_myplan_message(update: Update, query) -> None:
 
     user, _ = await _load_current_user(update)
     text = (
-        build_plan_message(user)
-        if user is not None
-        else "Plan storage is temporarily unavailable."
+        build_plan_message(user) if user is not None else "Plan storage is temporarily unavailable."
     )
     await _safe_edit_message_text(query, text=text, reply_markup=build_my_plan_keyboard())
 
@@ -340,6 +374,21 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
         await query.answer("Watchlist storage is unavailable.", show_alert=True)
         return True
     if not query.from_user:
+        return True
+
+    if data == "watchlist:open":
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(
+                session,
+                query.from_user.id,
+                include_plan=True,
+            )
+            if user is None:
+                await query.answer("Watchlist is unavailable.", show_alert=True)
+                return True
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+            await query.answer()
+            await edit_watchlist_message(query, user, subscriptions)
         return True
 
     parts = data.split(":")
@@ -359,9 +408,6 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
             if symbol not in SUPPORTED_COINS:
                 await query.answer("Unsupported symbol.", show_alert=True)
                 return True
-            if not is_coin_unlocked_for_user(user, symbol, now):
-                await query.answer("Premium required. Use /subscribe.", show_alert=False)
-                return True
             await set_user_coin_subscription(
                 session,
                 user_id=user.id,
@@ -369,8 +415,61 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 is_enabled=desired_enabled,
             )
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await query.answer("Updated.")
-            await edit_watchlist_message(query, user, subscriptions)
+            selected_count = sum(1 for row in subscriptions if row.is_enabled)
+            has_premium_intent = any(
+                row.is_enabled and not is_symbol_free(row.symbol) for row in subscriptions
+            )
+            trial = get_user_trial(user)
+            if (
+                desired_enabled
+                and not is_symbol_free(symbol)
+                and has_premium_intent
+                and not has_premium_entitlement(user, now)
+                and trial is None
+            ):
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="trial_offered",
+                    event_key="trial:v1",
+                    selected_coin_count=selected_count,
+                )
+                await session.commit()
+                await query.answer("Saved. Start your free trial to activate it.")
+                await _safe_edit_message_text(
+                    query,
+                    text=(
+                        "Your Premium choices are saved. Start a free 7-day trial to "
+                        "activate them now."
+                    ),
+                    reply_markup=build_trial_offer_keyboard(),
+                )
+            elif (
+                desired_enabled
+                and not is_symbol_free(symbol)
+                and has_premium_intent
+                and not has_premium_entitlement(user, now)
+            ):
+                await record_product_event(
+                    session,
+                    user_id=user.id,
+                    event_name="paywall_viewed",
+                    event_key="watchlist:premium:v1",
+                    selected_coin_count=selected_count,
+                )
+                await session.commit()
+                await query.answer("Saved as a Premium choice.")
+                await _safe_edit_message_text(
+                    query,
+                    text="Your saved Premium choices need paid Premium to activate.",
+                    reply_markup=build_premium_paywall_keyboard(),
+                )
+            else:
+                if not is_coin_unlocked_for_user(user, symbol, now) and desired_enabled:
+                    await query.answer("Saved as a Premium choice.")
+                else:
+                    await query.answer("Updated.")
+                await edit_watchlist_message(query, user, subscriptions)
         return True
 
     if len(parts) == 3 and parts[:2] == ["watchlist", "frequency"]:
@@ -390,7 +489,7 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
             )
             if user is None:
                 return True
-            if not is_user_premium_active(get_user_plan(user), datetime.now(timezone.utc)):
+            if not has_premium_entitlement(user, datetime.now(timezone.utc)):
                 await query.answer("Premium required. Use /subscribe.", show_alert=False)
                 return True
             await set_user_alert_frequency(
@@ -448,9 +547,7 @@ async def grant_premium_command(update: Update, args: list[str]) -> None:
     log(f"ops_event=premium_grant_processed days={days}")
     await _safe_reply_text(
         update.message,
-        "Premium granted "
-        f"to Telegram user ID {telegram_user_id} "
-        f"until {_format_date(subscription.active_until)}."
+        f"Premium granted until {_format_date(subscription.active_until)}.",
     )
 
 
@@ -480,6 +577,5 @@ async def revoke_premium_command(update: Update, args: list[str]) -> None:
     log("ops_event=premium_revoke_processed")
     await _safe_reply_text(
         update.message,
-        f"Premium revoked for Telegram user ID {telegram_user_id}. "
-        "Saved coin choices were preserved.",
+        "Premium access revoked. Saved coin choices were preserved.",
     )

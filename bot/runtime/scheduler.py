@@ -6,6 +6,7 @@ from bot.application.alert_processing import (
     schedule_seen_news_cleanup,
 )
 from bot.application.report_processing import schedule_report_cache_generation
+from bot.application.trial_lifecycle import schedule_premium_trial_expiry
 
 
 def schedule_runtime_jobs(app: Application, *, automatic_check_interval_seconds: int) -> None:
@@ -13,3 +14,4 @@ def schedule_runtime_jobs(app: Application, *, automatic_check_interval_seconds:
     schedule_market_heartbeat_generation(app)
     schedule_report_cache_generation(app)
     schedule_seen_news_cleanup(app)
+    schedule_premium_trial_expiry(app)

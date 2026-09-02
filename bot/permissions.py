@@ -24,7 +24,7 @@ async def sync_user_from_update(update: Update) -> None:
         return
     if not update.effective_user or not update.effective_chat:
         return
-    if getattr(update.effective_chat, "type", "private") != "private":
+    if getattr(update.effective_chat, "type", None) != "private":
         return
     async with DB_SESSION_LOCAL() as session:
         await get_or_create_user(

@@ -92,8 +92,8 @@ from bot.db.database import (
     upsert_user_symbol_alert_state,
 )
 from bot.domain.premium import (
-    can_deliver_now,
-    get_effective_frequency_seconds,
+    can_deliver_market_heartbeat_now,
+    get_effective_market_heartbeat_frequency_seconds,
     is_coin_unlocked_for_user,
 )
 from bot.domain.supported_coins import (
@@ -1927,7 +1927,9 @@ async def resolve_alert_recipient_outcomes(
                 base_recipient = AlertRecipient(
                     chat_id=int(user.telegram_chat_id or 0),
                     user_id=user.id,
-                    alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                    alert_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(
+                        user, now
+                    ),
                 )
                 if user.telegram_chat_id is None:
                     filtered.append(
@@ -1961,23 +1963,28 @@ async def resolve_alert_recipient_outcomes(
                         )
                     )
                     continue
-                last_sent_at = await get_last_sent_alert_at(
-                    session,
-                    user_id=user.id,
-                    symbol=normalized_symbol,
-                )
-                if not bypass_frequency and not can_deliver_now(
-                    user, normalized_symbol, now, last_sent_at
-                ):
-                    filtered.append(
-                        RecipientOutcome(
-                            recipient=base_recipient,
-                            status=OUTCOME_COOLDOWN,
-                            reason_code=REASON_COOLDOWN_ACTIVE,
-                            eligible=False,
-                        )
+                # Automatic Event Alerts use their own exact/significance cooldowns.
+                # Their recipient eligibility must not depend on a Market Heartbeat
+                # preference. Keep the legacy delivery gate for non-Event Alert
+                # callers until those product paths are explicitly retired.
+                if event_type != EVENT_ALERT_TYPE and not bypass_frequency:
+                    last_sent_at = await get_last_sent_alert_at(
+                        session,
+                        user_id=user.id,
+                        symbol=normalized_symbol,
                     )
-                    continue
+                    if not can_deliver_market_heartbeat_now(
+                        user, normalized_symbol, now, last_sent_at
+                    ):
+                        filtered.append(
+                            RecipientOutcome(
+                                recipient=base_recipient,
+                                status=OUTCOME_COOLDOWN,
+                                reason_code=REASON_COOLDOWN_ACTIVE,
+                                eligible=False,
+                            )
+                        )
+                        continue
                 chat_id = int(user.telegram_chat_id)
                 if chat_id in seen_chat_ids:
                     filtered.append(
@@ -1995,7 +2002,9 @@ async def resolve_alert_recipient_outcomes(
                     AlertRecipient(
                         chat_id=chat_id,
                         user_id=user.id,
-                        alert_frequency_seconds=get_effective_frequency_seconds(user, now),
+                        alert_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(
+                            user, now
+                        ),
                     )
                 )
         return AlertRecipientResolution(recipients=recipients, filtered=filtered)
@@ -4741,8 +4750,8 @@ async def _get_due_market_heartbeat_recipients(
                 alert_type=MARKET_HEARTBEAT_TYPE,
             )
             last_sent_at = last_sent.created_at if last_sent else None
-            frequency_seconds = get_effective_frequency_seconds(user, now)
-            due_now = can_deliver_now(user, normalized_symbol, now, last_sent_at)
+            frequency_seconds = get_effective_market_heartbeat_frequency_seconds(user, now)
+            due_now = can_deliver_market_heartbeat_now(user, normalized_symbol, now, last_sent_at)
             logger.debug(
                 "heartbeat_due_check symbol=%s frequency_seconds=%s last_heartbeat_at=%s due=%s",
                 normalized_symbol,

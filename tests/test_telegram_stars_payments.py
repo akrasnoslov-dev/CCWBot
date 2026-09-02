@@ -12,6 +12,7 @@ from bot.config import PREMIUM_MONTHLY_STARS
 from bot.db.database import (
     Base,
     Payment,
+    ProductEvent,
     User,
     activate_premium_from_telegram_stars_payment,
     ensure_default_coin_subscriptions,
@@ -19,6 +20,7 @@ from bot.db.database import (
     revoke_user_premium,
     set_user_coin_subscription,
 )
+from bot.db.premium import start_user_premium_trial
 from bot.domain.premium import is_user_premium_active
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
@@ -94,6 +96,7 @@ class SessionContext:
 class FakeMessage:
     def __init__(self, successful_payment=None):
         self.successful_payment = successful_payment
+        self.chat = SimpleNamespace(type="private")
         self.replies = []
 
     async def reply_text(self, text, **kwargs):
@@ -161,9 +164,80 @@ async def test_subscribe_creates_recurring_stars_invoice_link(monkeypatch):
         assert invoice["payload"] == build_premium_invoice_payload(1001)
         assert "provider_token" not in invoice
         assert message.replies[0][0] == build_subscribe_message()
+        assert (
+            message.replies[0][1]["reply_markup"]
+            .inline_keyboard[0][0]
+            .url.startswith("https://t.me/")
+        )
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(ProductEvent)
+                .where(ProductEvent.event_name == "checkout_started")
+            )
+            == 1
+        )
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_delivers_invoice_when_checkout_analytics_fails(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+
+        async def fail_checkout_event(*args, **kwargs):
+            raise RuntimeError("analytics unavailable")
+
+        monkeypatch.setattr("bot.payments.record_product_event", fail_checkout_event)
+        bot = FakeBot()
+        message = FakeMessage()
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=1001),
+                effective_chat=SimpleNamespace(id=2001),
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert len(bot.invoice_calls) == 1
         assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
             "https://t.me/"
         )
+        assert _last_subscribe_call[1001] > 0
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_rejects_group_chat_before_creating_an_invoice(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        message = FakeMessage()
+        message.chat = SimpleNamespace(type="group")
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=1001),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert bot.invoice_calls == []
+        assert message.replies == [("Please open CCWBot in a private chat to subscribe.", {})]
     finally:
         await session.close()
         await engine.dispose()
@@ -233,8 +307,10 @@ async def test_subscribe_creates_invoice_for_active_premium_user(monkeypatch):
             in message.replies[0][0]
         )
         assert "Paying again adds another month" in message.replies[0][0]
-        assert message.replies[0][1]["reply_markup"].inline_keyboard[0][0].url.startswith(
-            "https://t.me/"
+        assert (
+            message.replies[0][1]["reply_markup"]
+            .inline_keyboard[0][0]
+            .url.startswith("https://t.me/")
         )
     finally:
         await session.close()
@@ -398,9 +474,11 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
 
         reloaded = await session.get(User, user.id)
         await session.refresh(reloaded, ["premium_subscription", "coin_subscriptions"])
-        assert message.replies == [
-            ("Premium activated ✅\nUse /watchlist to choose your coins.", {})
-        ]
+        activation_text, activation_kwargs = message.replies[0]
+        assert activation_text.startswith("Premium activated ✅")
+        assert "Subscribed coins: BTC, ETH" in activation_text
+        assert "Plan: Premium" in activation_text
+        assert activation_kwargs["reply_markup"].inline_keyboard[0][0].text == "Current brief"
         assert is_user_premium_active(reloaded.premium_subscription, now)
         plan_message = build_plan_message(reloaded, now)
         assert "Plan: Premium" in plan_message
@@ -421,50 +499,134 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
 
 
 @pytest.mark.asyncio
+async def test_successful_payment_confirms_activation_when_enrichment_fails(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+
+        async def fail_enrichment(*args, **kwargs):
+            raise RuntimeError("watchlist unavailable")
+
+        monkeypatch.setattr("bot.db.premium.ensure_default_coin_subscriptions", fail_enrichment)
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=PREMIUM_MONTHLY_STARS,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-enrichment-failure",
+                provider_payment_charge_id="provider-charge-enrichment-failure",
+            )
+        )
+        message.chat = SimpleNamespace(type="private")
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(),
+        )
+
+        assert message.replies[0][0] == "Premium activated ✅"
+        assert await session.scalar(select(func.count()).select_from(Payment)) == 1
+        reloaded = await session.get(User, user.id)
+        await session.refresh(reloaded, ["premium_subscription"])
+        assert is_user_premium_active(reloaded.premium_subscription)
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_successful_payment_in_group_never_renders_personalised_watchlist(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=PREMIUM_MONTHLY_STARS,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-group",
+                provider_payment_charge_id="provider-charge-group",
+            )
+        )
+        message.chat = SimpleNamespace(type="group")
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(),
+        )
+
+        assert message.replies == [
+            ("Premium payment recorded. Open CCWBot in a private chat.", {})
+        ]
+        assert await session.scalar(select(func.count()).select_from(Payment)) == 1
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_successful_payment_extends_from_max_active_until_and_is_idempotent():
     engine, session = await build_session()
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
     try:
         user = await create_user(session)
 
-        first_payment, first_subscription, created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-1",
-                telegram_payment_charge_id="tg-charge-1",
-                provider_payment_charge_id="provider-charge-1",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now,
-            )
+        (
+            first_payment,
+            first_subscription,
+            created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-1",
+            telegram_payment_charge_id="tg-charge-1",
+            provider_payment_charge_id="provider-charge-1",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now,
         )
-        duplicate_payment, duplicate_subscription, duplicate_created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-1",
-                telegram_payment_charge_id="tg-charge-1",
-                provider_payment_charge_id="provider-charge-1",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now + timedelta(days=1),
-            )
+        (
+            duplicate_payment,
+            duplicate_subscription,
+            duplicate_created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-1",
+            telegram_payment_charge_id="tg-charge-1",
+            provider_payment_charge_id="provider-charge-1",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
         )
-        second_payment, second_subscription, second_created = (
-            await activate_premium_from_telegram_stars_payment(
-                session,
-                telegram_user_id=user.telegram_user_id,
-                provider_payment_id="tg-charge-2",
-                telegram_payment_charge_id="tg-charge-2",
-                provider_payment_charge_id="provider-charge-2",
-                amount=199,
-                currency="XTR",
-                payload=build_premium_invoice_payload(user.telegram_user_id),
-                now=now + timedelta(days=1),
-            )
+        (
+            second_payment,
+            second_subscription,
+            second_created,
+        ) = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-2",
+            telegram_payment_charge_id="tg-charge-2",
+            provider_payment_charge_id="provider-charge-2",
+            amount=199,
+            currency="XTR",
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
         )
 
         assert created is True
@@ -475,6 +637,45 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
         assert first_subscription.active_until == now.replace(tzinfo=None) + timedelta(days=60)
         assert second_subscription.last_payment_id == str(second_payment.id)
         assert await session.scalar(select(func.count()).select_from(Payment)) == 2
+        payment_events = await session.scalar(
+            select(func.count())
+            .select_from(ProductEvent)
+            .where(ProductEvent.event_name == "payment_succeeded")
+        )
+        assert payment_events == 2
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_payment_during_trial_creates_paid_period_from_payment_time():
+    engine, session = await build_session()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        user = await create_user(session)
+        trial, created_trial = await start_user_premium_trial(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            now=now,
+        )
+
+        _, subscription, created_payment = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-during-trial",
+            telegram_payment_charge_id="tg-charge-during-trial",
+            provider_payment_charge_id="provider-charge-during-trial",
+            amount=PREMIUM_MONTHLY_STARS,
+            currency=STARS_CURRENCY,
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
+        )
+
+        assert created_trial is True
+        assert created_payment is True
+        assert subscription.active_until == (now + timedelta(days=31)).replace(tzinfo=None)
+        assert trial.active_until == (now + timedelta(days=7)).replace(tzinfo=None)
     finally:
         await session.close()
         await engine.dispose()
