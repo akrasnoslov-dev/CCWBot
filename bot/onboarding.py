@@ -128,6 +128,16 @@ async def _load_private_callback_user(query):
         return user, subscriptions
 
 
+async def _edit_onboarding_message(query, text: str, **kwargs) -> bool:
+    """Use the shared no-op edit handling but surface real delivery failures."""
+    # Import locally because bot.handlers imports this module during callback registration.
+    from bot.handlers.common import safe_edit_callback_message
+
+    return await safe_edit_callback_message(
+        query, text, suppress_errors=False, **kwargs
+    )
+
+
 async def send_start_experience(update: Update) -> bool:
     """Send either first-time selection or a concise returning-user dashboard."""
     if not update.message:
@@ -197,7 +207,7 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
             await session.commit()
         text, keyboard = build_onboarding_message(user, subscriptions)
         await query.answer("Selection saved.")
-        await query.edit_message_text(text=text, reply_markup=keyboard)
+        await _edit_onboarding_message(query, text, reply_markup=keyboard)
         return True
 
     if len(parts) == 2 and parts[1] == "confirm":
@@ -207,6 +217,21 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
             )
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             selected_count = len(_selected_symbols(subscriptions))
+            brief = await build_instant_brief(session, user=user, subscriptions=subscriptions)
+        await query.answer()
+        await _edit_onboarding_message(
+            query,
+            brief,
+            reply_markup=build_onboarding_keyboard(
+                _selected_symbols(subscriptions),
+                completed=True,
+                premium_active=_premium_active(user),
+            ),
+        )
+        async with DB_SESSION_LOCAL() as session:
+            user = await get_user_by_telegram_user_id(
+                session, query.from_user.id, include_plan=True
+            )
             user.onboarding_completed_at = utc_now()
             await record_product_event(
                 session,
@@ -222,7 +247,6 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
                 selected_coin_count=selected_count,
             )
-            brief = await build_instant_brief(session, user=user, subscriptions=subscriptions)
             await record_product_event(
                 session,
                 user_id=user.id,
@@ -231,15 +255,6 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
                 selected_coin_count=selected_count,
             )
             await session.commit()
-        await query.answer()
-        await query.edit_message_text(
-            text=brief,
-            reply_markup=build_onboarding_keyboard(
-                _selected_symbols(subscriptions),
-                completed=True,
-                premium_active=_premium_active(user),
-            ),
-        )
         return True
 
     if len(parts) == 2 and parts[1] == "brief":
@@ -250,8 +265,9 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             brief = await build_instant_brief(session, user=user, subscriptions=subscriptions)
         await query.answer()
-        await query.edit_message_text(
-            text=brief,
+        await _edit_onboarding_message(
+            query,
+            brief,
             reply_markup=build_onboarding_keyboard(
                 _selected_symbols(subscriptions),
                 completed=True,

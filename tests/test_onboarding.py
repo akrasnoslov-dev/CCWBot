@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from telegram.error import BadRequest, NetworkError
 
 import bot.onboarding as onboarding
 from bot.db.database import Base, PriceState, ProductEvent, User, UserCoinSubscription
@@ -74,11 +75,14 @@ class FakeQuery:
         self.answers = []
         self.edits = []
         self.data = ""
+        self.edit_error = None
 
     async def answer(self, text=None, **kwargs):
         self.answers.append((text, kwargs))
 
     async def edit_message_text(self, text, **kwargs):
+        if self.edit_error is not None:
+            raise self.edit_error
         self.edits.append((text, kwargs))
 
 
@@ -218,6 +222,61 @@ async def test_onboarding_multiselect_persists_premium_intent_and_completes(monk
         assert "coin_interest_selected" in event_names
         assert "onboarding_completed" in event_names
         assert "instant_brief_viewed" in event_names
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_brief_delivery_does_not_complete_onboarding(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+        query.edit_error = NetworkError("temporary Telegram failure")
+
+        with pytest.raises(NetworkError):
+            await handle_onboarding_callback(
+                SimpleNamespace(callback_query=query), "onboarding:confirm"
+            )
+
+        await session.refresh(user)
+        assert user.onboarding_completed_at is None
+        event_names = list((await session.scalars(select(ProductEvent.event_name))).all())
+        assert "onboarding_completed" not in event_names
+        assert "instant_brief_viewed" not in event_names
+
+        message = FakeMessage()
+        assert await send_start_experience(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+        assert "Choose the coins" in message.replies[0][0]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_unchanged_brief_refresh_is_a_successful_noop(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        user.onboarding_completed_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        await session.commit()
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+        query.edit_error = BadRequest("Message is not modified")
+
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:brief"
+        ) is True
+        assert query.answers == [(None, {})]
     finally:
         await session.close()
         await engine.dispose()
