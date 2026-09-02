@@ -258,7 +258,6 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         logger.warning("ops_event=premium_payment_rejected reason=invalid_amount_or_currency")
         return
 
-    activation_text = None
     async with DB_SESSION_LOCAL() as session:
         try:
             _, _, created = await activate_premium_from_telegram_stars_payment(
@@ -284,18 +283,27 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
                 "Payment received, but your user record was not found. Please contact the admin.",
             )
             return
-        user = await get_user_by_telegram_user_id(
-            session,
-            telegram_user.id,
-            include_plan=True,
-        )
-        if private_chat and user is not None:
-            from bot.db.premium import ensure_default_coin_subscriptions
-            from bot.watchlist import build_user_settings_message
 
-            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            watchlist_text, _ = build_user_settings_message(user, subscriptions)
-            activation_text = f"Premium activated ✅\n\n{watchlist_text}"
+    activation_text = None
+    if private_chat:
+        try:
+            async with DB_SESSION_LOCAL() as session:
+                user = await get_user_by_telegram_user_id(
+                    session,
+                    telegram_user.id,
+                    include_plan=True,
+                )
+                if user is not None:
+                    from bot.db.premium import ensure_default_coin_subscriptions
+                    from bot.watchlist import build_user_settings_message
+
+                    subscriptions = await ensure_default_coin_subscriptions(
+                        session, user_id=user.id
+                    )
+                    watchlist_text, _ = build_user_settings_message(user, subscriptions)
+                    activation_text = f"Premium activated ✅\n\n{watchlist_text}"
+        except Exception as error:
+            logger.warning("Post-payment enrichment failed: %s", type(error).__name__)
 
     if created:
         log(

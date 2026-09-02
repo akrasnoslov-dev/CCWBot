@@ -498,6 +498,48 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
 
 
 @pytest.mark.asyncio
+async def test_successful_payment_confirms_activation_when_enrichment_fails(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+
+        async def fail_enrichment(*args, **kwargs):
+            raise RuntimeError("watchlist unavailable")
+
+        monkeypatch.setattr("bot.db.premium.ensure_default_coin_subscriptions", fail_enrichment)
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=PREMIUM_MONTHLY_STARS,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-enrichment-failure",
+                provider_payment_charge_id="provider-charge-enrichment-failure",
+            )
+        )
+        message.chat = SimpleNamespace(type="private")
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(),
+        )
+
+        assert message.replies[0][0] == "Premium activated ✅"
+        assert await session.scalar(select(func.count()).select_from(Payment)) == 1
+        reloaded = await session.get(User, user.id)
+        await session.refresh(reloaded, ["premium_subscription"])
+        assert is_user_premium_active(reloaded.premium_subscription)
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_successful_payment_in_group_never_renders_personalised_watchlist(monkeypatch):
     engine, session = await build_session()
     try:

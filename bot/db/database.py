@@ -154,7 +154,7 @@ class User(Base):
     alert_frequency_seconds: Mapped[int] = mapped_column(
         Integer,
         default=21600,
-        comment="User's selected minimum interval between alert deliveries.",
+        comment="User's selected Market Heartbeat delivery interval in seconds.",
     )
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
