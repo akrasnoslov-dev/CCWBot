@@ -17,7 +17,7 @@ from bot.db.database import (
     activate_premium_from_telegram_stars_payment,
     get_user_by_telegram_user_id,
 )
-from bot.domain.premium import is_user_premium_active
+from bot.domain.premium import get_user_trial, is_user_premium_active, is_user_trial_active
 from bot.domain.supported_coins import premium_symbols_display
 from bot.keyboards import build_premium_activation_keyboard
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
@@ -56,6 +56,7 @@ def build_subscribe_message(
     price_stars: int = PREMIUM_MONTHLY_STARS,
     *,
     active_until: datetime | None = None,
+    trial_active_until: datetime | None = None,
 ) -> str:
     lines = [
         "CCWBot Premium",
@@ -73,13 +74,20 @@ def build_subscribe_message(
                 "Paying again adds another month to paid access.",
             ]
         )
+    elif trial_active_until is not None:
+        lines.extend(
+            [
+                f"Your free trial is active until {_format_date(trial_active_until)}.",
+                "Payment starts paid Premium immediately and keeps your selected coins active.",
+            ]
+        )
     lines.extend(
         [
             "BTC alerts remain free.",
             "Manual /price remains free for all supported coins.",
             f"Premium unlocks automatic alerts for {premium_symbols_display()}.",
             "",
-            "After payment, use /watchlist to choose your coins.",
+            "After payment, your saved coin choices activate immediately.",
         ]
     )
     return "\n".join(lines)
@@ -167,6 +175,7 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     active_until = None
+    trial_active_until = None
     async with DB_SESSION_LOCAL() as session:
         user = await get_user_by_telegram_user_id(
             session,
@@ -175,6 +184,8 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
         )
         if user is not None and is_user_premium_active(user.premium_subscription):
             active_until = user.premium_subscription.active_until
+        elif user is not None and is_user_trial_active(get_user_trial(user)):
+            trial_active_until = get_user_trial(user).active_until
 
     payload = build_premium_invoice_payload(update.effective_user.id)
     invoice_link = await context.bot.create_invoice_link(
@@ -202,7 +213,10 @@ async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_T
     )
     await _safe_reply_text(
         update.message,
-        build_subscribe_message(active_until=active_until),
+        build_subscribe_message(
+            active_until=active_until,
+            trial_active_until=trial_active_until,
+        ),
         reply_markup=keyboard,
     )
 

@@ -176,6 +176,9 @@ class User(Base):
     premium_subscription: Mapped[UserPremiumSubscription | None] = relationship(
         back_populates="user", uselist=False
     )
+    premium_trial: Mapped[UserPremiumTrial | None] = relationship(
+        back_populates="user", uselist=False
+    )
     payments: Mapped[list[Payment]] = relationship(back_populates="user")
     acquisition_attribution: Mapped[UserAcquisitionAttribution | None] = relationship(
         back_populates="user", uselist=False
@@ -292,6 +295,46 @@ class UserPremiumSubscription(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="premium_subscription")
+
+
+class UserPremiumTrial(Base):
+    __tablename__ = "user_premium_trials"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_premium_trials_user_id"),
+        Index("ix_user_premium_trials_active_until", "active_until"),
+        {"comment": "One-time Premium trial history and expiry state for each user."},
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal Premium trial row id."
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, comment="User who used this one-time Premium trial."
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, comment="When the seven-day Premium trial started."
+    )
+    active_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="Exclusive end time for this Premium trial.",
+    )
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When trial expiry was processed exactly once.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When this trial row was created."
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        comment="When this trial row was last updated.",
+    )
+
+    user: Mapped[User] = relationship(back_populates="premium_trial")
 
 
 class UserAcquisitionAttribution(Base):

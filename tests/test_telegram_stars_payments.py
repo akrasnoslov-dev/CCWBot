@@ -20,6 +20,7 @@ from bot.db.database import (
     revoke_user_premium,
     set_user_coin_subscription,
 )
+from bot.db.premium import start_user_premium_trial
 from bot.domain.premium import is_user_premium_active
 from bot.payments import (
     PREMIUM_SUBSCRIPTION_PERIOD_SECONDS,
@@ -642,6 +643,39 @@ async def test_successful_payment_extends_from_max_active_until_and_is_idempoten
             .where(ProductEvent.event_name == "payment_succeeded")
         )
         assert payment_events == 2
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_payment_during_trial_creates_paid_period_from_payment_time():
+    engine, session = await build_session()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        user = await create_user(session)
+        trial, created_trial = await start_user_premium_trial(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            now=now,
+        )
+
+        _, subscription, created_payment = await activate_premium_from_telegram_stars_payment(
+            session,
+            telegram_user_id=user.telegram_user_id,
+            provider_payment_id="tg-charge-during-trial",
+            telegram_payment_charge_id="tg-charge-during-trial",
+            provider_payment_charge_id="provider-charge-during-trial",
+            amount=PREMIUM_MONTHLY_STARS,
+            currency=STARS_CURRENCY,
+            payload=build_premium_invoice_payload(user.telegram_user_id),
+            now=now + timedelta(days=1),
+        )
+
+        assert created_trial is True
+        assert created_payment is True
+        assert subscription.active_until == (now + timedelta(days=31)).replace(tzinfo=None)
+        assert trial.active_until == (now + timedelta(days=7)).replace(tzinfo=None)
     finally:
         await session.close()
         await engine.dispose()

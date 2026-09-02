@@ -176,7 +176,7 @@ def test_subscribe_message_mentions_stars_payment_flow():
     assert "199 Stars / month" in text
     assert "BTC alerts remain free." in text
     assert "Manual /price remains free for all supported coins." in text
-    assert "After payment, use /watchlist to choose your coins." in text
+    assert "After payment, your saved coin choices activate immediately." in text
 
 
 def test_price_keyboard_uses_active_symbols_only():
@@ -451,7 +451,7 @@ async def test_grant_premium_me_uses_current_admin_telegram_user_id(monkeypatch)
     await grant_premium_command(update, ["me", "30"])
 
     assert replies == [
-        "Premium granted to Telegram user ID 278890596 until 2026-06-10."
+        "Premium granted until 2026-06-10."
     ]
 
 
@@ -479,7 +479,7 @@ async def test_revoke_premium_me_uses_current_admin_telegram_user_id(monkeypatch
     await revoke_premium_command(update, ["me"])
 
     assert replies == [
-        "Premium revoked for Telegram user ID 278890596. Saved coin choices were preserved."
+        "Premium access revoked. Saved coin choices were preserved."
     ]
 
 
@@ -598,9 +598,11 @@ async def test_locked_coin_callback_persists_premium_intent_and_updates_message(
             )
         )
         assert handled is True
-        assert query.answers == [("Saved as a Premium choice.", None)]
+        assert query.answers == [("Saved. Start your free trial to activate it.", None)]
         assert query.message.replies == []
         assert len(query.edits) == 1
+        assert "free 7-day trial" in query.edits[0][0]
+        assert query.edits[0][1].inline_keyboard[0][0].callback_data == "onboarding:trial:start"
         assert eth_row.is_enabled is True
     finally:
         await session.close()

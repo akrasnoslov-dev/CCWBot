@@ -34,7 +34,6 @@ def _telegram_user_id_in(
     return any(_same_telegram_user_id(telegram_user_id, admin_id) for admin_id in admin_user_ids)
 
 
-
 async def get_or_create_user(
     session: AsyncSession,
     *,
@@ -50,11 +49,7 @@ async def get_or_create_user(
         select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     )
     allowed_admin_user_ids = admin_user_ids or (() if admin_user_id is None else (admin_user_id,))
-    role = (
-        "admin"
-        if _telegram_user_id_in(telegram_user_id, allowed_admin_user_ids)
-        else "user"
-    )
+    role = "admin" if _telegram_user_id_in(telegram_user_id, allowed_admin_user_ids) else "user"
     created = user is None
     if user is None:
         user = User(
@@ -101,13 +96,11 @@ async def get_or_create_user(
     return user
 
 
-
 async def get_user_role(session: AsyncSession, telegram_user_id: int) -> str | None:
     user = await session.scalar(
         select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     )
     return user.role if user else None
-
 
 
 async def get_user_by_telegram_user_id(
@@ -118,9 +111,11 @@ async def get_user_by_telegram_user_id(
 ) -> User | None:
     statement = select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
     if include_plan:
-        statement = statement.options(selectinload(User.premium_subscription))
+        statement = statement.options(
+            selectinload(User.premium_subscription),
+            selectinload(User.premium_trial),
+        )
     return await session.scalar(statement)
-
 
 
 async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
@@ -135,7 +130,6 @@ async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
     return list(result.all())
 
 
-
 async def get_active_users_with_alert_preferences(session: AsyncSession) -> list[User]:
     """Return active users with watchlist and Premium data loaded."""
     result = await session.scalars(
@@ -143,6 +137,7 @@ async def get_active_users_with_alert_preferences(session: AsyncSession) -> list
         .options(
             selectinload(User.coin_subscriptions),
             selectinload(User.premium_subscription),
+            selectinload(User.premium_trial),
         )
         .where(User.telegram_chat_id.isnot(None))
         .where(User.is_active.is_(True))
@@ -150,7 +145,6 @@ async def get_active_users_with_alert_preferences(session: AsyncSession) -> list
         .order_by(User.id.asc())
     )
     return list(result.all())
-
 
 
 async def get_user_by_telegram_chat_id(session: AsyncSession, telegram_chat_id: int) -> User | None:
@@ -163,14 +157,12 @@ async def get_user_by_telegram_chat_id(session: AsyncSession, telegram_chat_id: 
     )
 
 
-
 async def is_telegram_chat_delivery_enabled(session: AsyncSession, telegram_chat_id: int) -> bool:
     """Return whether a known chat can receive automatic bot messages."""
     user = await get_user_by_telegram_chat_id(session, telegram_chat_id)
     if user is None:
         return True
     return bool(user.is_active and not user.bot_blocked)
-
 
 
 async def mark_user_bot_blocked(
@@ -204,7 +196,6 @@ async def mark_user_bot_blocked(
         await session.commit()
         await session.refresh(user)
     return user, changed
-
 
 
 async def backfill_blocked_users_from_alerts(session: AsyncSession) -> tuple[int, int]:

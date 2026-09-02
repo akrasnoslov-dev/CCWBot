@@ -33,6 +33,11 @@ def test_runtime_scheduler_delegates_all_startup_jobs(monkeypatch):
         "schedule_seen_news_cleanup",
         lambda app_arg: calls.append(("seen_news", app_arg)),
     )
+    monkeypatch.setattr(
+        scheduler,
+        "schedule_premium_trial_expiry",
+        lambda app_arg: calls.append(("trial_expiry", app_arg)),
+    )
 
     scheduler.schedule_runtime_jobs(app, automatic_check_interval_seconds=300)
 
@@ -41,4 +46,5 @@ def test_runtime_scheduler_delegates_all_startup_jobs(monkeypatch):
         ("heartbeat", app),
         ("reports", app),
         ("seen_news", app),
+        ("trial_expiry", app),
     ]

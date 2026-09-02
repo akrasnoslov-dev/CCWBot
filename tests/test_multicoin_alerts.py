@@ -14,10 +14,13 @@ from bot.db.database import (
     Base,
     User,
     UserCoinSubscription,
+    UserPremiumTrial,
+    activate_premium_from_telegram_stars_payment,
     ensure_default_coin_subscriptions,
     get_or_create_market_event,
     grant_user_premium,
     reserve_alert_delivery,
+    revoke_user_premium,
     save_alert,
     set_user_coin_subscription,
     update_alert_delivery_status,
@@ -267,6 +270,103 @@ async def test_get_alert_recipients_sent_status_blocks_frequency(monkeypatch):
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
 
         assert await alerts.get_alert_recipients("eth", "price_movement", now=now) == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_trial_unlocks_premium_delivery_then_expiry_preserves_intent(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1002, 2002)
+            await set_user_coin_subscription(
+                session,
+                user_id=user.id,
+                symbol="eth",
+                is_enabled=True,
+            )
+            session.add(
+                UserPremiumTrial(
+                    user_id=user.id,
+                    started_at=now,
+                    active_until=now + timedelta(days=7),
+                )
+            )
+            await session.commit()
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        assert await alerts.get_alert_recipients("eth", "price_movement", now=now) == [
+            alerts.AlertRecipient(chat_id=2002, user_id=user.id)
+        ]
+        assert await alerts.get_alert_recipients(
+            "eth", "price_movement", now=now + timedelta(days=7)
+        ) == []
+        async with SessionLocal() as session:
+            await activate_premium_from_telegram_stars_payment(
+                session,
+                telegram_user_id=user.telegram_user_id,
+                provider_payment_id="trial-to-paid",
+                telegram_payment_charge_id="trial-to-paid",
+                provider_payment_charge_id="trial-to-paid-provider",
+                amount=199,
+                currency="XTR",
+                payload="trial-to-paid",
+                now=now + timedelta(days=7),
+            )
+        assert await alerts.get_alert_recipients(
+            "eth", "price_movement", now=now + timedelta(days=7)
+        ) == [alerts.AlertRecipient(chat_id=2002, user_id=user.id)]
+        async with SessionLocal() as session:
+            intent = await session.scalar(
+                select(UserCoinSubscription).where(
+                    UserCoinSubscription.user_id == user.id,
+                    UserCoinSubscription.symbol == "eth",
+                )
+            )
+        assert intent.is_enabled is True
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_revoke_ends_trial_and_paid_premium_delivery_immediately(monkeypatch):
+    engine, SessionLocal = await build_session_factory()
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    try:
+        async with SessionLocal() as session:
+            user = await create_user(session, 1003, 2003)
+            await set_user_coin_subscription(
+                session, user_id=user.id, symbol="eth", is_enabled=True
+            )
+            session.add(
+                UserPremiumTrial(
+                    user_id=user.id,
+                    started_at=now,
+                    active_until=now + timedelta(days=7),
+                )
+            )
+            await grant_user_premium(
+                session,
+                telegram_user_id=user.telegram_user_id,
+                days=10,
+                now=now + timedelta(days=1),
+            )
+            await revoke_user_premium(
+                session,
+                telegram_user_id=user.telegram_user_id,
+                now=now + timedelta(days=2),
+            )
+
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
+
+        assert await alerts.get_alert_recipients(
+            "eth", "price_movement", now=now + timedelta(days=2, seconds=1)
+        ) == []
     finally:
         await engine.dispose()
 
