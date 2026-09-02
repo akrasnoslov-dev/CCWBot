@@ -296,6 +296,8 @@ async def test_admin_commands_hidden_from_normal_menu(monkeypatch):
     assert "error_logging_on" not in admin_commands
     assert "error_logging_off" not in admin_commands
     assert "error_logging_status" not in admin_commands
+    assert "acquisitionlink" not in admin_commands
+    assert "acquisitionlinks" not in admin_commands
     assert "setcooldown" not in admin_commands
     assert "setthreshold" not in admin_commands
 

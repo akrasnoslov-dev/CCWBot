@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,11 @@ from bot.db.database import (
     UserAcquisitionAttribution,
     utc_now,
 )
-from bot.domain.attribution import AttributionLinkToken
+from bot.domain.attribution import (
+    AttributionLinkToken,
+    generate_acquisition_link_code,
+    validate_acquisition_link_metadata,
+)
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, normalize_symbol
 
 PRODUCT_EVENT_NAMES = frozenset(
@@ -52,6 +56,15 @@ _EVENT_FIELDS = {
     "payment_succeeded": frozenset({"event_key", "payment_id"}),
     "premium_value_delivered": frozenset({"event_key", "selected_coin_count"}),
 }
+ACQUISITION_LINK_CREATION_ATTEMPTS = 5
+
+
+def _is_acquisition_link_code_collision(error: IntegrityError) -> bool:
+    message = str(error.orig).lower()
+    return (
+        "uq_acquisition_links_link_code" in message
+        or "acquisition_links.link_code" in message
+    )
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,66 @@ class AcquisitionAttribution:
     campaign: str | None
     creative: str | None
     referrer_code: str | None
+
+
+async def create_acquisition_link(
+    session: AsyncSession,
+    *,
+    source: object,
+    campaign: object = None,
+    creative: object = None,
+    referrer_code: object = None,
+) -> AcquisitionLink:
+    """Create one collision-safe, validated operator acquisition link."""
+
+    metadata = validate_acquisition_link_metadata(
+        source=source,
+        campaign=campaign,
+        creative=creative,
+        referrer_code=referrer_code,
+    )
+    for _ in range(ACQUISITION_LINK_CREATION_ATTEMPTS):
+        row = AcquisitionLink(
+            link_code=generate_acquisition_link_code(),
+            source=metadata.source,
+            campaign=metadata.campaign,
+            creative=metadata.creative,
+            referrer_code=metadata.referrer_code,
+            is_active=True,
+        )
+        try:
+            async with session.begin_nested():
+                session.add(row)
+                await session.flush()
+        except IntegrityError as error:
+            if _is_acquisition_link_code_collision(error):
+                continue
+            raise
+        await session.commit()
+        await session.refresh(row)
+        return row
+    raise RuntimeError("Unable to allocate an acquisition link code.")
+
+
+async def list_active_acquisition_links(
+    session: AsyncSession,
+    *,
+    limit: int = 20,
+    now: datetime | None = None,
+) -> list[AcquisitionLink]:
+    """List a bounded set of links which may currently attribute a start."""
+
+    if not 1 <= limit <= 100:
+        raise ValueError("Acquisition link list limit must be between 1 and 100.")
+    active_at = now or utc_now()
+    rows = await session.scalars(
+        select(AcquisitionLink)
+        .where(AcquisitionLink.is_active.is_(True))
+        .where(or_(AcquisitionLink.expires_at.is_(None), AcquisitionLink.expires_at > active_at))
+        .order_by(AcquisitionLink.created_at.desc(), AcquisitionLink.id.desc())
+        .limit(limit)
+    )
+    return list(rows)
 
 
 async def resolve_start_attribution(

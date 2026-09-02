@@ -90,6 +90,8 @@ def combine_telegram_admin_user_ids(
 ENVIRONMENT = _get_environment()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Public bot username, without the @ prefix, used to build operator-facing deep links.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip()
 # Fallback chat ID for automatic BTC alerts when database storage is off.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 

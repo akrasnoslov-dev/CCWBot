@@ -119,6 +119,8 @@ def test_legacy_alert_commands_are_not_registered():
     assert "error_logging_on" in commands
     assert "error_logging_off" in commands
     assert "error_logging_status" in commands
+    assert "acquisitionlink" in commands
+    assert "acquisitionlinks" in commands
     assert "setcooldown" not in commands
     assert "setthreshold" not in commands
 
