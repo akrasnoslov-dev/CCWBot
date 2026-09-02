@@ -11,6 +11,49 @@ operator-managed, active acquisition-link record containing the allowlisted sour
 creative, and optional referrer code. Invalid, inactive, and expired links are ignored. The first
 valid attribution is immutable.
 
+## Create and inspect acquisition links
+
+Use the following commands only from a private chat as a configured bot admin. The bot must have
+PostgreSQL enabled and `TELEGRAM_BOT_USERNAME` must be its public production username (without
+`@`). Production must set `TELEGRAM_BOT_USERNAME=YFCCWbot`. The commands are intentionally not
+included in Telegram command menus.
+
+Create a link with named, lowercase code values. The allowed sources are `reddit`, `telegramdir`,
+`telegramads`, and `product-hunt`; optional `campaign`, `creative`, and `referrer_code` values
+must be lowercase letters, digits, and hyphens, start with a letter, and be at most 32 characters.
+
+```text
+/acquisitionlink source=reddit campaign=cryptotelegrambots
+/acquisitionlink source=reddit campaign=telegrambots
+/acquisitionlink source=reddit campaign=cryptomarkets
+/acquisitionlink source=telegramdir
+/acquisitionlink source=product-hunt
+/acquisitionlink source=telegramads campaign=general-crypto creative=ad01
+```
+
+The bot creates a new opaque code and replies with a shareable URL such as:
+
+```text
+https://t.me/<production_bot_username>?start=a1_<opaque-code>
+```
+
+To add optional metadata, include it as named fields:
+
+```text
+/acquisitionlink source=reddit campaign=cryptotelegrambots creative=launch-post referrer_code=mod-a
+```
+
+Telegram Ads examples:
+
+```text
+/acquisitionlink source=telegramads campaign=general-crypto creative=ad01
+/acquisitionlink source=telegramads campaign=btc-eth creative=ad01
+/acquisitionlink source=telegramads campaign=solana creative=ad01
+```
+
+Run `/acquisitionlinks` to list up to 100 currently attributable links with source, campaign,
+creative, and their generated Telegram URLs. It does not display referrer codes or user data.
+
 ## Funnel query
 
 Run this only through the approved read-only investigation workflow:

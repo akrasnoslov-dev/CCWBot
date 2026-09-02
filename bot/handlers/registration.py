@@ -17,6 +17,8 @@ from telegram.ext import (
 from bot.payments import pre_checkout_handler, successful_payment_handler
 
 from .admin import (
+    acquisition_link,
+    acquisition_links,
     admin,
     chat_id,
     error_logging_off,
@@ -54,6 +56,8 @@ COMMAND_HANDLERS = (
     ("error_logging_on", error_logging_on),
     ("error_logging_off", error_logging_off),
     ("error_logging_status", error_logging_status),
+    ("acquisitionlink", acquisition_link),
+    ("acquisitionlinks", acquisition_links),
 )
 
 
