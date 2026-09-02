@@ -52,7 +52,8 @@ def is_coin_unlocked_for_user(user: Any, symbol: str, now: datetime | None = Non
     return is_user_premium_active(get_user_plan(user), now)
 
 
-def get_effective_frequency_seconds(user: Any, now: datetime | None = None) -> int:
+def get_effective_market_heartbeat_frequency_seconds(user: Any, now: datetime | None = None) -> int:
+    """Return the user-visible Market Heartbeat interval only."""
     if not is_user_premium_active(get_user_plan(user), now):
         return FREE_ALERT_FREQUENCY_SECONDS
     stored_frequency = get_user_stored_frequency_seconds(user)
@@ -61,7 +62,7 @@ def get_effective_frequency_seconds(user: Any, now: datetime | None = None) -> i
     return DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS
 
 
-def can_deliver_now(
+def can_deliver_market_heartbeat_now(
     user: Any,
     symbol: str,
     now: datetime,
@@ -76,4 +77,10 @@ def can_deliver_now(
     if last_sent_at is None:
         return True
     elapsed_seconds = (now - last_sent_at).total_seconds()
-    return elapsed_seconds >= get_effective_frequency_seconds(user, now)
+    return elapsed_seconds >= get_effective_market_heartbeat_frequency_seconds(user, now)
+
+
+# Compatibility names for integrations that have not yet adopted the explicit
+# Heartbeat terminology. Event Alert recipient selection must not use them.
+get_effective_frequency_seconds = get_effective_market_heartbeat_frequency_seconds
+can_deliver_now = can_deliver_market_heartbeat_now

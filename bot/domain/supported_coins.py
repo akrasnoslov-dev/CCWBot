@@ -41,7 +41,8 @@ SYMBOL_ALIASES = {
     for symbol, metadata in ALL_SUPPORTED_COINS.items()
     for alias in tuple(metadata.get("aliases", ()))
 }
-FREE_ALERT_FREQUENCY_SECONDS = 14400
+# Market Heartbeats are a separate product mechanism from Event Alerts.
+FREE_ALERT_FREQUENCY_SECONDS = 21600
 PREMIUM_ALERT_FREQUENCY_SECONDS = (3600, 21600, 86400)
 DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS = 21600
 

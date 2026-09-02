@@ -19,6 +19,7 @@ from bot.db.database import (
 )
 from bot.domain.premium import is_user_premium_active
 from bot.domain.supported_coins import premium_symbols_display
+from bot.keyboards import build_premium_activation_keyboard
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 
 logger = logging.getLogger(__name__)
@@ -140,8 +141,20 @@ def _is_subscribe_rate_limited(telegram_user_id: int) -> bool:
     return False
 
 
+def _is_private_update(update: Update) -> bool:
+    chat = getattr(update, "effective_chat", None)
+    chat_type = getattr(chat, "type", None)
+    if chat_type is None:
+        chat_type = getattr(getattr(update, "message", None), "chat", None)
+        chat_type = getattr(chat_type, "type", None)
+    return chat_type == "private"
+
+
 async def send_subscribe_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_user:
+        return
+    if not _is_private_update(update):
+        await _safe_reply_text(update.message, "Please open CCWBot in a private chat to subscribe.")
         return
     if _is_subscribe_rate_limited(update.effective_user.id):
         await _safe_reply_text(
@@ -229,6 +242,7 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
     telegram_user = update.effective_user
     if not message or not payment or not telegram_user:
         return
+    private_chat = _is_private_update(update)
     if not (DB_ENABLED and DB_SESSION_LOCAL):
         await _safe_reply_text(message, "Premium payment was received, but storage is unavailable.")
         logger.warning("ops_event=premium_payment_rejected reason=database_unavailable")
@@ -270,6 +284,27 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+    activation_text = None
+    if private_chat:
+        try:
+            async with DB_SESSION_LOCAL() as session:
+                user = await get_user_by_telegram_user_id(
+                    session,
+                    telegram_user.id,
+                    include_plan=True,
+                )
+                if user is not None:
+                    from bot.db.premium import ensure_default_coin_subscriptions
+                    from bot.watchlist import build_user_settings_message
+
+                    subscriptions = await ensure_default_coin_subscriptions(
+                        session, user_id=user.id
+                    )
+                    watchlist_text, _ = build_user_settings_message(user, subscriptions)
+                    activation_text = f"Premium activated ✅\n\n{watchlist_text}"
+        except Exception as error:
+            logger.warning("Post-payment enrichment failed: %s", type(error).__name__)
+
     if created:
         log(
             "ops_event=premium_payment_processed "
@@ -277,4 +312,11 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         )
     else:
         log("ops_event=premium_payment_processed provider=telegram_stars status=duplicate")
-    await _safe_reply_text(message, "Premium activated ✅\nUse /watchlist to choose your coins.")
+    if not private_chat:
+        await _safe_reply_text(message, "Premium payment recorded. Open CCWBot in a private chat.")
+        return
+    await _safe_reply_text(
+        message,
+        activation_text or "Premium activated ✅",
+        reply_markup=build_premium_activation_keyboard(),
+    )

@@ -14,7 +14,7 @@ from bot.db.database import (
     set_user_coin_subscription,
 )
 from bot.domain.premium import (
-    get_effective_frequency_seconds,
+    get_effective_market_heartbeat_frequency_seconds,
     get_user_plan,
     is_coin_unlocked_for_user,
     is_user_premium_active,
@@ -45,7 +45,7 @@ def _format_date(value: datetime | None) -> str:
 def _format_frequency(seconds: int) -> str:
     labels = {
         3600: "Every 1 hour",
-        FREE_ALERT_FREQUENCY_SECONDS: "Every 4 hours",
+        FREE_ALERT_FREQUENCY_SECONDS: "Every 6 hours",
         21600: "Every 6 hours",
         86400: "Every 24 hours",
     }
@@ -103,7 +103,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append("")
         lines.append(
             "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
         )
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
@@ -113,7 +113,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append(f"Your Premium expired on: {expired_on}.")
         lines.append("Your premium coin choices are saved, but locked until renewal.")
         lines.append("")
-        lines.append("Heartbeat frequency: Every 4 hours for BTC")
+        lines.append("Heartbeat frequency: Every 6 hours for BTC")
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to renew.")
@@ -125,7 +125,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append("")
         lines.append(
             "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_frequency_seconds(user, now))}"
+            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
         )
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
@@ -215,7 +215,7 @@ def build_watchlist_render(
         build_watchlist_keyboard(
             rows=rows,
             premium_active=is_user_premium_active(get_user_plan(user), now),
-            current_frequency_seconds=get_effective_frequency_seconds(user, now),
+            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -229,7 +229,7 @@ def build_user_settings_message(
     plan = get_user_plan(user)
     premium_active = is_user_premium_active(plan, now)
     enabled_by_symbol = _subscription_by_symbol(subscriptions)
-    symbols = SUPPORTED_SYMBOLS if premium_active else ("btc",)
+    symbols = SUPPORTED_SYMBOLS
 
     rows = []
     enabled_symbols = []
@@ -245,7 +245,8 @@ def build_user_settings_message(
         "Alert settings",
         "",
         f"Subscribed coins: {subscribed_text}",
-        f"Heartbeat frequency: {_format_frequency(get_effective_frequency_seconds(user, now))}",
+        "Heartbeat frequency: "
+        f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}",
         (
             "How often you receive regular market heartbeat updates. Event alerts may "
             "arrive separately when significant market events are detected."
@@ -266,6 +267,13 @@ def build_user_settings_message(
         if active_until is not None:
             lines.append(f"Premium expired on: {_format_date(active_until)}")
         lines.append("Upgrade: /subscribe")
+        saved_premium_symbols = [
+            display_symbol(symbol)
+            for symbol, enabled, unlocked in rows
+            if enabled and not unlocked
+        ]
+        if saved_premium_symbols:
+            lines.append(f"Saved Premium choices: {', '.join(saved_premium_symbols)}")
     return "\n".join(lines), rows
 
 
@@ -281,7 +289,7 @@ def build_user_settings_render(
         build_watchlist_keyboard(
             rows=rows,
             premium_active=is_user_premium_active(get_user_plan(user), now),
-            current_frequency_seconds=get_effective_frequency_seconds(user, now),
+            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -374,9 +382,6 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
             if symbol not in SUPPORTED_COINS:
                 await query.answer("Unsupported symbol.", show_alert=True)
                 return True
-            if not is_coin_unlocked_for_user(user, symbol, now):
-                await query.answer("Premium required. Use /subscribe.", show_alert=False)
-                return True
             await set_user_coin_subscription(
                 session,
                 user_id=user.id,
@@ -384,7 +389,10 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 is_enabled=desired_enabled,
             )
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await query.answer("Updated.")
+            if not is_coin_unlocked_for_user(user, symbol, now) and desired_enabled:
+                await query.answer("Saved as a Premium choice.")
+            else:
+                await query.answer("Updated.")
             await edit_watchlist_message(query, user, subscriptions)
         return True
 

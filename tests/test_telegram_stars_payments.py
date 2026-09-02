@@ -95,6 +95,7 @@ class SessionContext:
 class FakeMessage:
     def __init__(self, successful_payment=None):
         self.successful_payment = successful_payment
+        self.chat = SimpleNamespace(type="private")
         self.replies = []
 
     async def reply_text(self, text, **kwargs):
@@ -209,6 +210,33 @@ async def test_subscribe_delivers_invoice_when_checkout_analytics_fails(monkeypa
             "https://t.me/"
         )
         assert _last_subscribe_call[1001] > 0
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_rejects_group_chat_before_creating_an_invoice(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        bot = FakeBot()
+        message = FakeMessage()
+        message.chat = SimpleNamespace(type="group")
+
+        await send_subscribe_invoice(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=1001),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(bot=bot),
+        )
+
+        assert bot.invoice_calls == []
+        assert message.replies == [("Please open CCWBot in a private chat to subscribe.", {})]
     finally:
         await session.close()
         await engine.dispose()
@@ -445,9 +473,11 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
 
         reloaded = await session.get(User, user.id)
         await session.refresh(reloaded, ["premium_subscription", "coin_subscriptions"])
-        assert message.replies == [
-            ("Premium activated ✅\nUse /watchlist to choose your coins.", {})
-        ]
+        activation_text, activation_kwargs = message.replies[0]
+        assert activation_text.startswith("Premium activated ✅")
+        assert "Subscribed coins: BTC, ETH" in activation_text
+        assert "Plan: Premium" in activation_text
+        assert activation_kwargs["reply_markup"].inline_keyboard[0][0].text == "Current brief"
         assert is_user_premium_active(reloaded.premium_subscription, now)
         plan_message = build_plan_message(reloaded, now)
         assert "Plan: Premium" in plan_message
@@ -462,6 +492,84 @@ async def test_successful_payment_activates_premium_and_unlocks_without_auto_ena
         assert stored_payment.is_first_recurring is True
         assert stored_payment.subscription_expiration_date == datetime(2026, 6, 10)
         assert stored_payment.provider_subscription_id is None
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_successful_payment_confirms_activation_when_enrichment_fails(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+
+        async def fail_enrichment(*args, **kwargs):
+            raise RuntimeError("watchlist unavailable")
+
+        monkeypatch.setattr("bot.db.premium.ensure_default_coin_subscriptions", fail_enrichment)
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=PREMIUM_MONTHLY_STARS,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-enrichment-failure",
+                provider_payment_charge_id="provider-charge-enrichment-failure",
+            )
+        )
+        message.chat = SimpleNamespace(type="private")
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(),
+        )
+
+        assert message.replies[0][0] == "Premium activated ✅"
+        assert await session.scalar(select(func.count()).select_from(Payment)) == 1
+        reloaded = await session.get(User, user.id)
+        await session.refresh(reloaded, ["premium_subscription"])
+        assert is_user_premium_active(reloaded.premium_subscription)
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_successful_payment_in_group_never_renders_personalised_watchlist(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.payments.DB_ENABLED", True)
+        monkeypatch.setattr("bot.payments.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage(
+            successful_payment=SimpleNamespace(
+                currency="XTR",
+                total_amount=PREMIUM_MONTHLY_STARS,
+                invoice_payload=build_premium_invoice_payload(user.telegram_user_id),
+                telegram_payment_charge_id="tg-charge-group",
+                provider_payment_charge_id="provider-charge-group",
+            )
+        )
+        message.chat = SimpleNamespace(type="group")
+
+        await successful_payment_handler(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+                effective_chat=message.chat,
+            ),
+            SimpleNamespace(),
+        )
+
+        assert message.replies == [
+            ("Premium payment recorded. Open CCWBot in a private chat.", {})
+        ]
+        assert await session.scalar(select(func.count()).select_from(Payment)) == 1
     finally:
         await session.close()
         await engine.dispose()

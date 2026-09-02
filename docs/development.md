@@ -103,11 +103,11 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
   for users with active paid access, and a new payment extends access from the current paid
   access date.
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
-  `/price` checks remain free. Non-BTC coins are not auto-enabled after payment; users choose
-  them in `/watchlist`.
-- User heartbeat frequency controls regular Market Heartbeat delivery only. Event Alerts can
-  arrive separately when market events are detected, subject to backend cooldowns and LLM
-  decisioning.
+  `/price` checks remain free. Premium choices can be saved while locked; a successful payment
+  immediately activates only those previously selected coins and shows the active watchlist.
+- Market Heartbeat frequency controls regular heartbeat delivery only: Free is fixed at six hours;
+  paid Premium can select one, six, or 24 hours (default six). Event Alerts use independent
+  detection, cooldown, and LLM decisioning.
 - `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
   admin-only manual Premium controls for testing and support.
 - Automatic alert threshold remains one global admin-controlled value for all coins.
