@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from ops_agent.collectors import logs as log_collector
 from ops_agent.collectors.logs import LOG_PATTERNS, collect_logs, parse_log_timestamp
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport, ReferenceMapper
@@ -93,10 +92,13 @@ def test_collect_logs_exports_only_allowlisted_structured_match_fields(tmp_path)
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     operation_id = "123e4567-e89b-42d3-a456-426614174000"
+    context_fingerprint = "a" * 64
     (logs_dir / "ccwbot-operational.log").write_text(
         "2026-06-01 00:30:00Z ERROR bot.llm: "
         f"ops_event=llm_provider_switch provider=groq model=openai/gpt-oss-120b "
         f"call_type=event_analysis symbol=BTC reason=rate_limit operation_id={operation_id} "
+        f"decision_stage=llm decision_reason=llm_no_alert status=not_scheduled "
+        f"context_fingerprint={context_fingerprint} "
         "chat_id=123 prompt=private_text authorization=Bearer_secret\n",
         encoding="utf-8",
     )
@@ -118,8 +120,12 @@ def test_collect_logs_exports_only_allowlisted_structured_match_fields(tmp_path)
     assert record["operation_ref"].startswith("operation_ref:h_")
     assert record["provider"] == "groq"
     assert record["model"] == "openai/gpt-oss-120b"
+    assert record["decision_stage"] == "llm"
+    assert record["decision_reason"] == "llm_no_alert"
+    assert record["context_ref"].startswith("context_ref:h_")
     encoded = str(counts)
     assert operation_id not in encoded
+    assert context_fingerprint not in encoded
     assert "private_text" not in encoded
     assert "chat_id" not in encoded
     assert "Bearer_secret" not in encoded
@@ -154,20 +160,19 @@ def test_collect_logs_never_exports_credential_shaped_model_values(tmp_path):
     assert credential not in str(counts)
 
 
-def test_collect_logs_keeps_newest_records_and_reports_record_cap_truncation(tmp_path, monkeypatch):
+def test_collect_logs_has_no_fixed_500_record_cap_and_exports_dimension_counts(tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     (logs_dir / "ccwbot-operational.log").write_text(
         "\n".join(
-            [
-                "2026-06-01 00:00:00Z ERROR ops_event=event_old",
-                "2026-06-01 00:01:00Z ERROR ops_event=event_mid",
-                "2026-06-01 00:02:00Z ERROR ops_event=event_new",
-            ]
+            f"2026-06-01 00:00:00.{index:06d}Z INFO bot.alerts: "
+            "ops_event=event_alert_decision symbol=ETH decision_stage=llm "
+            "decision_reason=llm_no_alert status=not_scheduled reason=llm_no_alert "
+            f"context_fingerprint={'a' * 64}"
+            for index in range(501)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(log_collector, "STRUCTURED_RECORD_CAP", 2)
     config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
     period = Period(
         datetime(2026, 6, 1, tzinfo=timezone.utc),
@@ -182,21 +187,36 @@ def test_collect_logs_keeps_newest_records_and_reports_record_cap_truncation(tmp
         redaction_report=RedactionReport(),
     )
 
-    assert [record["event"] for record in counts["period_matched_records"]] == [
-        "event_mid",
-        "event_new",
-    ]
+    assert len(counts["period_matched_records"]) == 501
     assert counts["structured_record_export"]["period_matched"] == {
-        "matched_records": 3,
-        "exported_records": 2,
-        "omitted_records": 1,
+        "matched_records": 501,
+        "exported_records": 501,
+        "omitted_records": 0,
     }
-    assert "structured log match records were truncated" in index["warnings"][-1]
-    assert statuses[-1] == {
-        "name": "logs.structured_evidence",
-        "status": "partial",
-        "error": "structured_record_export_truncated",
-    }
+    assert counts["period_matched_dimension_counts"] == [
+        {
+            "scope": "period_matched",
+            "event": "event_alert_decision",
+            "symbol": "ETH",
+            "call_type": "unknown",
+            "decision_stage": "llm",
+            "decision_reason": "llm_no_alert",
+            "status": "not_scheduled",
+            "reason": "llm_no_alert",
+            "count": 501,
+        }
+    ]
+    assert counts["structured_record_export"]["selection_strategy"] == (
+        "newest_records_bounded_by_export_bytes"
+    )
+    assert index["warnings"] == []
+    assert statuses == [
+        {
+            "name": "logs.ccwbot-operational.log",
+            "status": "ok",
+            "error": None,
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -250,6 +270,7 @@ def test_collect_logs_enforces_structured_record_byte_caps_with_newest_evidence(
         per_file_limit, total_limit
     )
     assert counts["structured_record_export"]["period_matched"]["omitted_records"] >= 1
+    assert sum(row["count"] for row in counts["period_matched_dimension_counts"]) == 3
 
 
 def test_collect_logs_rejects_unbounded_event_and_suppression_reason_values(tmp_path):

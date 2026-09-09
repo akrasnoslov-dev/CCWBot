@@ -156,7 +156,9 @@ Final report writing remains Codex's responsibility using `docs/ops-agent-report
 Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped
 period-matched structured match records from unscoped tail-context records and include
 skipped/unparseable counts. Records use a strict safe-field allowlist; bundles never include raw
-or redacted log lines. Period-matched evidence is stronger for the requested report period.
+or redacted log lines. Detailed records have byte caps but no fixed 500-record ceiling; dimension
+counts cover every safe matched record within the collected log tail even when details are
+truncated. Period-matched evidence is stronger for the requested report period.
 
 Detector `unknown` means evidence is missing or inconclusive, not healthy. Market events without deliveries are classified into expected no-delivery, LLM failure/rate-limit, `should_alert=true` delivery gaps, and unknown buckets where the available schema cannot prove the reason.
 
@@ -259,16 +261,16 @@ Generated files include:
 * `evidence/db/event_analysis_decision_timeline.json`
 * `evidence/db/alert_content_fingerprints.json`
 * `evidence/db/alert_similarity_groups.json`
-* `evidence/db/llm_operation_reconciliation.json`
+* `evidence/db/llm_operation_reconciliation.json` plus uncapped reconciliation and correlation
+  coverage aggregates in `evidence/db/aggregate_metrics.json`
 * `evidence/db/backend_suppression_effectiveness.json`
 * `evidence/db/event_identity_quality.json`
 
 Content and analysis hashes are bundle-local HMAC references. They can group repeated
 content inside one bundle, but cannot be compared across separate bundles. Similarity membership
 records add bundle-local recipient, alert, event, analysis, and outcome references so a report can
-classify repeated deliveries without source identifiers. Cooldown
-effectiveness is inferred from analysis, event, and delivery rows because suppression
-decisions are not stored as durable rows.
+classify repeated deliveries without source identifiers. Cooldown effectiveness prefers durable
+`alert_delivery_outcomes.decision_reason` values and falls back to inference for historical rows.
 
 ### Report freshness semantics
 

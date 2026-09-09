@@ -38,27 +38,28 @@ ops-agent `llm_failure_category_summary` query preserves these two categories se
 keeps actual provider rate limits distinct from active-backoff and circuit-breaker skips, and
 groups sanitized provider/model attempt pressure without exporting provider error messages.
 
-`llm_usage_logs` is provider-attempt telemetry. Each new logical LLM operation now receives one
+`llm_usage_logs` is provider-attempt telemetry. Each new logical LLM operation receives one
 opaque backend UUID in `llm_operation_id`; every provider attempt, fallback, pre-call backoff
 skip, and circuit-breaker skip for that operation keeps the same value. The final
 `event_ai_analyses`, `market_heartbeats`, and `market_reports` row stores the same nullable value,
-so ops can join attempts to the terminal feature outcome without timing inference. Historical rows
-remain `NULL`; a telemetry write can still fail open, which is an evidence gap rather than proof
-of no attempt. The identifier contains no user identity, Telegram ID, prompt, output, or secret.
+so ops can join attempts to the terminal feature outcome without timing inference. News
+Intelligence stores one sanitized terminal row in `llm_operation_outcomes`; its cached
+`news_items.llm_provider/llm_model` fields identify the provider and model that actually answered.
+Historical rows remain `NULL`; a telemetry write can still fail open, which is an evidence gap
+rather than proof of no attempt. The identifier contains no user identity, Telegram ID, prompt,
+output, or secret.
 
-This is observability-only: provider ordering, retry/backoff/circuit behavior, prompts, and LLM
-call placement/count are unchanged. `news_intelligence` attempts receive an operation ID in
-usage telemetry, but its cached `news_items` row has no durable join field yet.
+The News Intelligence cache hash includes the compact input and configured requested model, while
+served-provider attribution stays in the cached row. This preserves exact cache invalidation on a
+configured model change and permits fallback results to be reused without pretending Groq served
+them. Pre-migration input hashes remain reusable when their configured model matches. Its hourly
+call budget counts logical `llm_operation_outcomes` across all providers and temporarily takes the
+higher legacy `news_items` count during migration rollout.
 
 Only explicit response-header allowlist fields are persisted. `provider_request_id` is retained
 when `x-request-id` or `request-id` is available; raw headers and bodies are never stored. Groq
 request/token counters, resets, retry metadata, and request IDs still cannot distinguish quota,
 burst, concurrency, or account-policy enforcement unless Groq supplies an explicit safe signal.
-
-News Intelligence's cached `news_items.llm_model` remains a configured cache identity, not a
-served-provider attribution field. Changing it to a fallback responder's model would break the
-existing cache key and increase LLM calls; exact News fallback attribution therefore remains in
-`llm_usage_logs` pending a separate cache-identity versus served-attribution design.
 
 `provider_json_validate_failed` is fallback-eligible on purpose. It means the model produced no
 usable content, which is the same condition as a client-side `AIInvalidJsonError` — and that has
@@ -186,8 +187,8 @@ exclude from the chain. The line carries provider names, model identifiers, budg
 only — never credentials. An API key appears only as the `(no_api_key)` presence marker; the key
 value itself is never read into a log line.
 
-Changing a model identifier also invalidates the news-intelligence analysis cache, which is keyed
-on `(news item, llm_model)`. Expect one bounded re-analysis burst after a model swap, capped by
+Changing the configured model identifier also invalidates the model-aware News Intelligence input
+hash. Expect one bounded re-analysis burst after a model swap, capped by
 `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_RUN` and `NEWS_INTELLIGENCE_MAX_LLM_CALLS_PER_HOUR`.
 
 A provider with no API key is excluded from the chain (logged once), so leaving the fallback keys
@@ -197,11 +198,12 @@ runtime LLM entry point remains `bot/services/ai_agent_groq.py`, now a thin faca
 that keeps all public names/signatures (`AIGroqRateLimitError` is an alias of the provider-agnostic
 `AIProviderRateLimitError`).
 
-The persisted analysis/report provider and model reflect the provider that actually answered.
+The persisted analysis/report/news provider and model reflect the provider that actually answered.
 Reports produced after provider-chain exhaustion use the explicit
 `deterministic:deterministic-market-report-v1` attribution:
-`event_ai_analyses.provider/model` and `market_reports.provider/model` follow the fallback, not a
-hardcoded `groq`. Admin diagnostics (`bot/observability/system_status.py`) and the ops-agent
+`event_ai_analyses.provider/model`, `market_reports.provider/model`, and
+`news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin diagnostics
+(`bot/observability/system_status.py`) and the ops-agent
 `llm_usage_summary` collector are provider-agnostic.
 
 Per-provider usage counts (24h) — group by `provider`:

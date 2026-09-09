@@ -103,15 +103,19 @@ user-facing copy regression was found.
 ## Forensic Correlation Evidence
 
 `evidence/db/llm_operation_reconciliation.json` groups provider attempts by the opaque logical
-operation reference and joins them to a final Event Analysis, Market Heartbeat, or market-report
-row when both sides retain the correlation field. Historical `NULL` values and failed telemetry
-writes are inconclusive, not successful operations.
+operation reference and joins them to a final Event Analysis, Market Heartbeat, market-report, or
+generic News Intelligence outcome row when both sides retain the correlation field. Uncapped
+summary and coverage queries report total correlated operations, reconciliation gaps, and source
+rows missing operation IDs; the detailed file remains a bounded sample. Historical `NULL` values
+and failed telemetry writes are inconclusive, not successful operations.
 
 `evidence/logs/pattern_counts.json` retains aggregate counters and adds strict allowlisted match
 records. They contain only timestamp/scope, pattern/category, safe event/call/provider/model/
-symbol/status/reason fields, and a bundle-local operation reference when logged. They never
-contain raw or redacted log lines, user text, IDs, prompt/output, exception bodies, headers, or
-credentials.
+symbol/status/reason/decision fields, plus bundle-local operation and context references when
+logged. Detailed records are bounded by configured byte limits rather than a fixed record count;
+uncapped dimension counters retain all matched safe categories within the collected log tail. They
+never contain raw or redacted log lines, user text, IDs, prompt/output, exception bodies, headers,
+or credentials.
 
 Similarity groups include HMAC-derived membership references for recipient, delivery, event,
 analysis, and outcome status. They are stable only inside the current bundle and allow a report to

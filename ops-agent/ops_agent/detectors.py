@@ -172,6 +172,12 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
     llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
+    llm_reconciliation_rows = _query_rows(
+        evidence, aggregate, "llm_operation_reconciliation_summary"
+    )
+    llm_correlation_coverage_rows = _query_rows(
+        evidence, aggregate, "llm_operation_correlation_coverage"
+    )
     event_analysis_logical_rows = _query_rows(
         evidence, aggregate, "event_analysis_logical_outcome_summary"
     )
@@ -244,10 +250,24 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     actual_provider_rate_limits = llm_category_counts.get("provider_rate_limit", 0)
     active_backoff_skips = llm_category_counts.get("active_backoff", 0)
     circuit_breaker_skips = llm_category_counts.get("circuit_breaker", 0)
+    reconciliation_state_counts: dict[str, int] = {}
+    for row in llm_reconciliation_rows:
+        state = str(row.get("reconciliation_state") or "unknown")
+        reconciliation_state_counts[state] = reconciliation_state_counts.get(state, 0) + _int(
+            row.get("logical_operations")
+        )
+    correlated_logical_operations = reconciliation_state_counts.get("correlated", 0)
+    reconciliation_gap_operations = sum(
+        count
+        for state, count in reconciliation_state_counts.items()
+        if state != "correlated"
+    )
+    missing_operation_id_rows = sum(
+        _int(row.get("missing_operation_id_rows")) for row in llm_correlation_coverage_rows
+    )
 
-    # A terminal Event Analysis row is a durable logical outcome. It deliberately remains
-    # independent from provider-attempt rows because there is no correlation id proving which
-    # failed attempt, if any, was recovered by a particular fallback success.
+    # A terminal Event Analysis row is the durable logical outcome; the reconciliation
+    # aggregates separately prove whether its operation id joins to provider attempts.
     event_analysis_logical_outcomes: dict[str, int] = {}
     for row in event_analysis_logical_rows:
         outcome = str(row.get("logical_outcome") or "logical_failed")
@@ -343,11 +363,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     weak_identity_rows = [
         row
         for row in _list_payload_items(identity_payload, "rows")
-        if _int(row.get("same_content_split_key_groups"))
-        or _int(row.get("suspicious_key_count"))
-        or (
-            _int(row.get("market_events")) >= 5
-            and float(row.get("event_key_churn_ratio") or 0) >= 0.8
+        if (
+            _int(row.get("same_content_split_key_groups")) > 0
+            or _int(row.get("suspicious_key_count")) > 0
         )
     ]
     split_key_groups = _list_payload_items(identity_payload, "same_content_split_key_groups")
@@ -602,7 +620,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                     for row in cooldown_gap_groups
                 ),
                 "sample_groups": cooldown_gap_groups[:5],
-                "confidence_note": "suppression is inferred; no durable suppression rows exist",
+                "confidence_note": (
+                    "allowed repeats use durable decision reasons when present; older rows "
+                    "without them remain inference"
+                ),
             },
         ),
         db_result(
@@ -641,6 +662,8 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             [
                 (aggregate, "llm_failure_category_summary"),
                 (aggregate, "event_analysis_logical_outcome_summary"),
+                (aggregate, "llm_operation_reconciliation_summary"),
+                (aggregate, "llm_operation_correlation_coverage"),
             ],
             "triggered"
             if (
@@ -651,6 +674,8 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 or terminal_event_analysis_rate_limited
                 or terminal_event_analysis_backoff_blocked
                 or terminal_event_analysis_circuit_blocked
+                or reconciliation_gap_operations
+                or missing_operation_id_rows
             )
             else "clear",
             (
@@ -660,7 +685,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 f"{terminal_event_analysis_failures} terminal Event Analysis failures, "
                 f"{terminal_event_analysis_rate_limited} terminal rate-limited, "
                 f"{terminal_event_analysis_backoff_blocked} terminal backoff-blocked, "
-                f"{terminal_event_analysis_circuit_blocked} terminal circuit-blocked"
+                f"{terminal_event_analysis_circuit_blocked} terminal circuit-blocked; "
+                f"{correlated_logical_operations} correlated logical operations, "
+                f"{reconciliation_gap_operations} reconciliation gaps"
             ),
             ["evidence/db/aggregate_metrics.json", "evidence/db/recent_llm_failures.json"],
             {
@@ -675,10 +702,11 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 "terminal_event_analysis_rate_limited": terminal_event_analysis_rate_limited,
                 "terminal_event_analysis_backoff_blocked": terminal_event_analysis_backoff_blocked,
                 "terminal_event_analysis_circuit_blocked": terminal_event_analysis_circuit_blocked,
-                "correlation_limit": (
-                    "Provider attempts and terminal logical outcomes are reported separately; "
-                    "the stored evidence has no per-operation correlation id."
-                ),
+                "correlated_logical_operations": correlated_logical_operations,
+                "reconciliation_gap_operations": reconciliation_gap_operations,
+                "reconciliation_state_counts": reconciliation_state_counts,
+                "missing_operation_id_rows": missing_operation_id_rows,
+                "correlation_coverage": llm_correlation_coverage_rows,
             },
         ),
         db_result(

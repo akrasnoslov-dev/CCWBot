@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.db.database import (
     Base,
+    LlmOperationOutcome,
     NewsItem,
     SeenNews,
     make_news_key,
@@ -14,8 +16,10 @@ from bot.db.database import (
     upsert_news_item,
 )
 from bot.news import select_intelligence_news_for_symbol
+from bot.services.ai_agent_groq import LLMJsonResult
 from bot.services.news_intelligence_service import (
     NewsIntelligenceService,
+    build_llm_payload,
     build_post_llm_dedup_group_id,
     build_pre_llm_dedup_group_id,
     derive_impact_level,
@@ -38,9 +42,18 @@ async def build_session():
 
 
 class FakeNewsLlm:
-    def __init__(self, responses=None, error: Exception | None = None):
+    def __init__(
+        self,
+        responses=None,
+        error: Exception | None = None,
+        *,
+        provider: str = "groq",
+        model: str = "test-model",
+    ):
         self.responses = list(responses or [])
         self.error = error
+        self.provider = provider
+        self.model = model
         self.calls = 0
 
     async def __call__(self, messages, model, timeout):
@@ -48,7 +61,12 @@ class FakeNewsLlm:
         if self.error:
             raise self.error
         response = self.responses.pop(0) if self.responses else _valid_response()
-        return json.dumps(response), response
+        return LLMJsonResult(
+            json.dumps(response),
+            response,
+            provider=self.provider,
+            model=self.model,
+        )
 
 
 def _raw_item(title="Bitcoin ETF inflows rise", link="https://example.com/btc-etf"):
@@ -377,6 +395,46 @@ async def test_existing_analysis_is_reused_without_repeated_llm_call():
 
 
 @pytest.mark.asyncio
+async def test_pre_migration_news_cache_identity_remains_reusable():
+    engine, session = await build_session()
+    raw_item = _raw_item()
+    normalized = normalize_news_item(raw_item)
+    assert normalized is not None
+    legacy_payload = build_llm_payload(normalized)
+    legacy_hash = hashlib.sha256(
+        json.dumps(
+            legacy_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    fake_llm = FakeNewsLlm([_valid_response()])
+    try:
+        await _store_news_item(
+            session,
+            title=normalized.title,
+            news_key=normalized.news_key,
+            url=normalized.url,
+            llm_input_hash=legacy_hash,
+            llm_model="legacy-model",
+        )
+        service = NewsIntelligenceService(
+            session,
+            llm_client=fake_llm,
+            model="legacy-model",
+        )
+
+        await service.analyze_items([raw_item])
+
+        assert fake_llm.calls == 0
+        assert await session.scalar(select(func.count()).select_from(NewsItem)) == 1
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_llm_non_zero_scores_are_persisted_from_flexible_values():
     engine, session = await build_session()
     fake_llm = FakeNewsLlm(
@@ -398,6 +456,52 @@ async def test_llm_non_zero_scores_are_persisted_from_flexible_values():
         assert row.relevance_score == 70
         assert row.is_noise is False
         assert row.is_alert_worthy is False
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_news_llm_persists_terminal_fallback_attribution_and_operation_outcome():
+    engine, session = await build_session()
+    fake_llm = FakeNewsLlm(
+        [_valid_response()],
+        provider="cerebras",
+        model="fallback-model",
+    )
+    try:
+        service = NewsIntelligenceService(session, llm_client=fake_llm)
+        await service.analyze_items([_raw_item()])
+        news_row = await session.scalar(select(NewsItem))
+        outcome = await session.scalar(select(LlmOperationOutcome))
+
+        assert news_row.llm_provider == "cerebras"
+        assert news_row.llm_model == "fallback-model"
+        assert outcome.call_type == "news_intelligence"
+        assert outcome.status == "success"
+        assert outcome.provider == "cerebras"
+        assert outcome.model == "fallback-model"
+        assert len(outcome.llm_operation_id) == 36
+
+        next_llm = FakeNewsLlm([_valid_response()])
+        next_service = NewsIntelligenceService(
+            session,
+            llm_client=next_llm,
+            max_llm_calls_per_hour=1,
+        )
+        await next_service.analyze_items(
+            [
+                _raw_item(
+                    title="Major exchange security breach",
+                    link="https://example.com/exchange-breach",
+                )
+            ]
+        )
+        budget_row = await session.scalar(
+            select(NewsItem).where(NewsItem.url == "https://example.com/exchange-breach")
+        )
+        assert next_llm.calls == 0
+        assert budget_row.llm_status == "skipped_budget"
     finally:
         await session.close()
         await engine.dispose()
@@ -539,11 +643,17 @@ async def test_llm_failure_does_not_crash_pipeline():
         service = NewsIntelligenceService(session, llm_client=fake_llm)
         result = await service.analyze_items([_raw_item()])
         row = await session.scalar(select(NewsItem))
+        outcome = await session.scalar(select(LlmOperationOutcome))
 
         assert result[0]["title"] == "Bitcoin ETF inflows rise"
         assert fake_llm.calls == 1
         assert row.llm_status == "failed"
         assert "provider failed" in row.llm_error
+        assert outcome.call_type == "news_intelligence"
+        assert outcome.status == "failed"
+        assert outcome.error_reason == "other_error"
+        assert outcome.provider is None
+        assert outcome.model is None
     finally:
         await session.close()
         await engine.dispose()

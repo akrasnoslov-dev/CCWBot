@@ -7,11 +7,11 @@ or schema/model declarations.
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.database import NewsItem, SeenNews, make_news_key, utc_now
+from bot.db.database import LlmOperationOutcome, NewsItem, SeenNews, make_news_key, utc_now
 
 
 async def was_news_seen(session: AsyncSession, news_key: str) -> bool:
@@ -124,16 +124,25 @@ async def get_cached_news_item_analysis(
     *,
     news_key: str,
     llm_input_hash: str,
-    llm_model: str,
+    legacy_llm_input_hash: str | None = None,
+    legacy_llm_model: str | None = None,
 ) -> NewsItem | None:
-    """Return a reusable structured news analysis for the exact compact LLM input."""
-    if not news_key or not llm_input_hash or not llm_model:
+    """Return a reusable structured news analysis for the exact model-aware input hash."""
+    if not news_key or not llm_input_hash:
         return None
+    input_identity = NewsItem.llm_input_hash == llm_input_hash
+    if legacy_llm_input_hash and legacy_llm_model:
+        input_identity = or_(
+            input_identity,
+            and_(
+                NewsItem.llm_input_hash == legacy_llm_input_hash,
+                NewsItem.llm_model == legacy_llm_model,
+            ),
+        )
     return await session.scalar(
         select(NewsItem)
         .where(NewsItem.news_key == news_key)
-        .where(NewsItem.llm_input_hash == llm_input_hash)
-        .where(NewsItem.llm_model == llm_model)
+        .where(input_identity)
         .where(NewsItem.llm_status.in_(["success", "skipped_noise", "skipped_duplicate"]))
         .limit(1)
     )
@@ -144,19 +153,27 @@ async def count_recent_news_intelligence_llm_calls(
     session: AsyncSession,
     *,
     since: datetime,
-    provider: str = "groq",
 ) -> int:
-    """Count recent news intelligence LLM attempts for budget enforcement."""
-    return int(
+    """Count recent logical calls across all providers with migration compatibility."""
+    outcome_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(LlmOperationOutcome)
+            .where(LlmOperationOutcome.call_type == "news_intelligence")
+            .where(LlmOperationOutcome.created_at >= since)
+        )
+        or 0
+    )
+    legacy_news_count = int(
         await session.scalar(
             select(func.count())
             .select_from(NewsItem)
-            .where(NewsItem.llm_provider == provider)
             .where(NewsItem.llm_status.in_(["success", "failed"]))
             .where(NewsItem.updated_at >= since)
         )
         or 0
     )
+    return max(outcome_count, legacy_news_count)
 
 
 

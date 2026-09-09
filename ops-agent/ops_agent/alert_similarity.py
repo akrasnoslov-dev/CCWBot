@@ -334,6 +334,7 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "alert_type": row.get("alert_type"),
         "trigger_source": row.get("trigger_source"),
         "status": row.get("status"),
+        "decision_reason": row.get("decision_reason"),
         "should_alert": row.get("should_alert"),
         "analysis_status": row.get("analysis_status"),
         "event_key": event_key,
@@ -762,7 +763,10 @@ def _suppression_effectiveness(
                 "first_seen_at": None,
                 "last_seen_at": None,
                 "confidence": "medium",
-                "note": "suppression inferred from DB; no durable suppression row exists",
+                "note": (
+                    "allowed repeats use durable delivery decision reasons when available; "
+                    "older rows fall back to sanitized market-context inference"
+                ),
                 "_delivered_rows": [],
             },
         )
@@ -871,6 +875,16 @@ def _rows_inside_cooldown(
 def _delivery_escalation_allowed(
     previous: dict[str, Any], current: dict[str, Any]
 ) -> tuple[bool, str | None]:
+    durable_reason = {
+        "allowed_market_context_changed": "market_context_changed",
+        "allowed_urgency_escalation": "urgency_increased",
+        "allowed_stronger_movement": "material_movement_increased",
+        "allowed_direction_reversal": "direction_reversed",
+        "allowed_market_structure_change": "structure_changed",
+        "allowed_cumulative_strengthening": "cumulative_strengthened",
+    }.get(str(current.get("decision_reason") or ""))
+    if durable_reason:
+        return True, durable_reason
     if _urgency_rank(current.get("urgency")) > _urgency_rank(previous.get("urgency")):
         return True, "urgency_increased"
     previous_movement = _float(previous.get("analysed_window_change_percent"))

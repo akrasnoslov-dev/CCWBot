@@ -347,6 +347,8 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "news_intelligence_budget_summary" in query_names
     assert "llm_failure_category_summary" in query_names
     assert "event_analysis_logical_outcome_summary" in query_names
+    assert "llm_operation_reconciliation_summary" in query_names
+    assert "llm_operation_correlation_coverage" in query_names
     no_delivery = next(
         query for query in QUERIES if query.name == "market_events_without_delivery_classification"
     )
@@ -354,6 +356,19 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "expected_no_eligible_recipients" in no_delivery.sql
     assert "expected_product_gating_possible" in no_delivery.sql
     assert "news_freshness_summary" in query_names
+
+
+def test_premium_queries_use_runtime_expiry_semantics():
+    summary = next(query for query in QUERIES if query.name == "premium_summary")
+    anomalies = next(
+        query for query in QUERIES if query.name == "premium_payment_inconsistencies"
+    )
+
+    assert "active_until > :until" in summary.sql
+    assert "active_until <= :until" in summary.sql
+    assert "active_status_missing_expiry" in anomalies.sql
+    assert "ups.status = 'active' AND ups.active_until IS NULL" in anomalies.sql
+    assert "expired_active_subscription" not in anomalies.sql
 
 
 def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explained():
@@ -480,6 +495,8 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "::jsonb" not in same_news.sql
     assert "message" not in same_news.sql.lower()
     assert "reason_code_unknown_count" in outcomes.sql
+    assert "symbol" in outcomes.sql
+    assert "GROUP BY coalesce(symbol, 'UNKNOWN')" in outcomes.sql
     assert "decision_stage" in outcomes.sql
     assert "decision_reason" in outcomes.sql
     assert "news_only_rejected_count" in outcomes.sql
@@ -487,6 +504,12 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "semantic_cooldown_suppressed_count" in outcomes.sql
     assert "similar_context_reused_count" in outcomes.sql
     assert "allowed_market_context_changed_count" in outcomes.sql
+    for allowed_reason in (
+        "allowed_direction_reversal",
+        "allowed_market_structure_change",
+        "allowed_cumulative_strengthening",
+    ):
+        assert allowed_reason in outcomes.sql
     assert "telegram_bot_blocked_count" in outcomes.sql
     assert "llm_invalid_response_count" in outcomes.sql
     assert "pre_llm_similar_context_reused_count" in outcomes.sql
@@ -538,6 +561,25 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
         assert category in category_query.sql
     assert "SELECT provider, model, call_type, failure_category" in category_query.sql
     assert "GROUP BY provider, model, call_type, failure_category" in category_query.sql
+
+
+def test_llm_reconciliation_covers_news_and_uses_uncapped_aggregates():
+    detailed = next(
+        query for query in QUERIES if query.name == "llm_operation_reconciliation"
+    )
+    summary = next(
+        query for query in QUERIES if query.name == "llm_operation_reconciliation_summary"
+    )
+    coverage = next(
+        query for query in QUERIES if query.name == "llm_operation_correlation_coverage"
+    )
+
+    for query in (detailed, summary, coverage):
+        assert "news_intelligence" in query.sql
+        assert "llm_operation_outcomes" in query.sql
+    assert "LIMIT :limit" in detailed.sql
+    assert "LIMIT :limit" not in summary.sql
+    assert "LIMIT :limit" not in coverage.sql
 
 
 def test_llm_failure_category_query_keeps_provider_and_client_reasons_distinct():
@@ -834,6 +876,34 @@ def test_alert_repetition_detectors_trigger_with_evidence():
     assert results["weak_event_identity"].status == "triggered"
     assert results["cooldown_effectiveness_gap"].status == "triggered"
     assert results["llm_repeated_alert_true_for_similar_situations"].status == "triggered"
+
+
+def test_weak_identity_detector_allows_legitimate_eth_family_diversity():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/event_identity_quality.json": {
+            "rows": [
+                {
+                    "symbol": "ETH",
+                    "market_events": 5,
+                    "event_key_churn_ratio": 1.0,
+                    "suspicious_key_count": 0,
+                    "same_content_split_key_groups": 0,
+                }
+            ],
+            "same_content_split_key_groups": [],
+        }
+    }
+
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["weak_event_identity"]
+
+    assert detector.status == "clear"
 
 
 def test_failed_delivery_detector_triggers():
@@ -1717,6 +1787,26 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
                         }
                     ]
                 },
+                "llm_operation_reconciliation_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "reconciliation_state": "correlated",
+                            "logical_operations": 2,
+                        }
+                    ]
+                },
+                "llm_operation_correlation_coverage": {
+                    "rows": [
+                        {
+                            "source": "provider_attempt",
+                            "call_type": "event_analysis",
+                            "rows": 5,
+                            "correlated_rows": 5,
+                            "missing_operation_id_rows": 0,
+                        }
+                    ]
+                },
             }
         },
         "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
@@ -1733,6 +1823,8 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
     assert detector.metrics["terminal_event_analysis_failures"] == 0
     assert detector.metrics["terminal_event_analysis_rate_limited"] == 0
     assert detector.metrics["event_analysis_logical_outcomes"] == {"logical_success": 2}
+    assert detector.metrics["correlated_logical_operations"] == 2
+    assert detector.metrics["reconciliation_gap_operations"] == 0
     assert detector.metrics["failure_categories_by_call_type"] == {
         "event_analysis": {
             "active_backoff": 1,
@@ -1770,6 +1862,26 @@ def test_llm_terminal_event_analysis_failure_is_visible_separately_from_provider
                             "model": "primary",
                             "logical_outcome": "logical_failed",
                             "analyses": 1,
+                        }
+                    ]
+                },
+                "llm_operation_reconciliation_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "reconciliation_state": "correlated",
+                            "logical_operations": 1,
+                        }
+                    ]
+                },
+                "llm_operation_correlation_coverage": {
+                    "rows": [
+                        {
+                            "source": "event_analysis",
+                            "call_type": "event_analysis",
+                            "rows": 1,
+                            "correlated_rows": 1,
+                            "missing_operation_id_rows": 0,
                         }
                     ]
                 },
@@ -1817,7 +1929,7 @@ def test_payment_premium_detector_aggregates_inconsistency_types():
                 "premium_payment_inconsistencies": {
                     "rows": [
                         {"anomaly": "paid_without_premium"},
-                        {"anomaly": "expired_active_subscription"},
+                        {"anomaly": "active_status_missing_expiry"},
                         {"anomaly": "active_premium_without_trail"},
                     ]
                 }
@@ -1833,7 +1945,7 @@ def test_payment_premium_detector_aggregates_inconsistency_types():
     assert detector.status == "triggered"
     assert detector.severity == "high"
     assert detector.metrics["anomalies_by_type"]["paid_without_premium"] == 1
-    assert detector.metrics["anomalies_by_type"]["expired_active_subscription"] == 1
+    assert detector.metrics["anomalies_by_type"]["active_status_missing_expiry"] == 1
 
 
 def test_market_event_analysis_invariant_surfaces_multiple_analysis_ids():

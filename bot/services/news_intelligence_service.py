@@ -28,13 +28,19 @@ from bot.db.database import (
     count_recent_news_intelligence_llm_calls,
     get_cached_news_item_analysis,
     make_news_key,
+    save_llm_operation_outcome,
     upsert_news_item,
     utc_now,
 )
 from bot.domain.supported_coins import ALL_SUPPORTED_COINS
 from bot.news_titles import clean_news_title
-from bot.services.ai_agent_groq import AISchemaValidationError, ask_news_intelligence_raw
+from bot.services.ai_agent_groq import (
+    AISchemaValidationError,
+    ask_news_intelligence_raw,
+    classify_ai_error_reason,
+)
 from bot.services.llm import config as llm_config
+from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +132,9 @@ class NewsIntelligenceService:
     ) -> None:
         self.session = session
         self.llm_client = llm_client or _default_llm_client
-        # Resolved per service instance rather than at import, so the configured Groq model
-        # reported by the startup configuration log is the one used here. Note the persisted
-        # llm_provider/llm_model still name Groq even when a fallback provider answered —
-        # pre-existing, tracked separately.
+        # Resolved per service instance rather than at import so startup telemetry and
+        # requests use the same configured model. Router-returned terminal attribution is
+        # persisted after fallback.
         self.model = model or llm_config.model_for("groq", "news_intelligence")
         self.max_items_per_run = max_items_per_run
         self.max_llm_calls_per_run = max_llm_calls_per_run
@@ -189,14 +194,18 @@ class NewsIntelligenceService:
         hourly_calls: int,
     ) -> NewsItem:
         llm_payload = build_llm_payload(item)
-        llm_input_hash = _hash_json(llm_payload)
+        legacy_llm_input_hash = _hash_json(llm_payload)
+        llm_input_hash = _hash_json(
+            {"payload": llm_payload, "requested_model": self.model}
+        )
         dedup_group_id = build_pre_llm_dedup_group_id(item)
 
         cached = await get_cached_news_item_analysis(
             self.session,
             news_key=item.news_key,
             llm_input_hash=llm_input_hash,
-            llm_model=self.model,
+            legacy_llm_input_hash=legacy_llm_input_hash,
+            legacy_llm_model=self.model,
         )
         if cached is not None:
             return cached
@@ -239,12 +248,19 @@ class NewsIntelligenceService:
 
         messages = build_llm_messages(llm_payload)
         raw_response: str | None = None
+        operation_id = new_llm_operation_id()
+        terminal_provider: str | None = None
+        terminal_model: str | None = None
         try:
-            raw_response, parsed = await self.llm_client(
-                messages,
-                self.model,
-                self.timeout_seconds,
-            )
+            with llm_operation_scope(operation_id):
+                result = await self.llm_client(
+                    messages,
+                    self.model,
+                    self.timeout_seconds,
+                )
+            raw_response, parsed = result
+            terminal_provider = getattr(result, "provider", None)
+            terminal_model = getattr(result, "model", None)
             self._run_llm_calls += 1
             validated = validate_llm_output(parsed)
             post_dedup_group_id = build_post_llm_dedup_group_id(
@@ -254,7 +270,7 @@ class NewsIntelligenceService:
                 primary_symbol=validated["primary_symbol"],
                 category=validated["category"],
             )
-            return await self._persist(
+            row = await self._persist(
                 item,
                 llm_input_hash=llm_input_hash,
                 dedup_group_id=post_dedup_group_id,
@@ -268,19 +284,41 @@ class NewsIntelligenceService:
                 relevance_score=validated["relevance_score"],
                 is_noise=validated["is_noise"],
                 is_alert_worthy=validated["is_alert_worthy"],
+                llm_provider=terminal_provider,
+                llm_model=terminal_model,
                 llm_status="success",
             )
+            await self._record_operation_outcome(
+                operation_id=operation_id,
+                status="success",
+                provider=terminal_provider,
+                model=terminal_model,
+            )
+            return row
         except Exception as error:
             self._run_llm_calls += 1
-            return await self._persist(
+            terminal_provider = getattr(error, "provider", None)
+            terminal_model = getattr(error, "model", None)
+            error_reason = classify_ai_error_reason(error)
+            row = await self._persist(
                 item,
                 llm_input_hash=llm_input_hash,
                 dedup_group_id=dedup_group_id,
                 llm_raw_response=raw_response,
                 is_alert_worthy=False,
+                llm_provider=terminal_provider,
+                llm_model=terminal_model,
                 llm_status="failed",
                 llm_error=_safe_error(error),
             )
+            await self._record_operation_outcome(
+                operation_id=operation_id,
+                status="failed",
+                error_reason=error_reason,
+                provider=terminal_provider,
+                model=terminal_model,
+            )
+            return row
 
     async def _dedup_group_exists(self, dedup_group_id: str, news_key: str) -> bool:
         existing = await self.session.scalar(
@@ -298,6 +336,31 @@ class NewsIntelligenceService:
             self._run_llm_calls < self.max_llm_calls_per_run
             and hourly_calls + self._run_llm_calls < self.max_llm_calls_per_hour
         )
+
+    async def _record_operation_outcome(
+        self,
+        *,
+        operation_id: str,
+        status: str,
+        provider: str | None,
+        model: str | None,
+        error_reason: str | None = None,
+    ) -> None:
+        try:
+            await save_llm_operation_outcome(
+                self.session,
+                llm_operation_id=operation_id,
+                call_type="news_intelligence",
+                status=status,
+                error_reason=error_reason,
+                provider=provider,
+                model=model,
+            )
+        except Exception as error:  # pragma: no cover - defensive observability isolation
+            await self.session.rollback()
+            logger.debug(
+                "News intelligence operation outcome logging failed: %s", type(error).__name__
+            )
 
     async def _persist(
         self,
@@ -318,6 +381,8 @@ class NewsIntelligenceService:
         is_alert_worthy: bool = False,
         llm_status: str,
         llm_error: str | None = None,
+        llm_provider: str | None = "groq",
+        llm_model: str | None = None,
     ) -> NewsItem:
         return await upsert_news_item(
             self.session,
@@ -340,8 +405,8 @@ class NewsIntelligenceService:
             is_duplicate=is_duplicate,
             is_noise=is_noise,
             is_alert_worthy=is_alert_worthy,
-            llm_provider="groq",
-            llm_model=self.model,
+            llm_provider=llm_provider,
+            llm_model=llm_model or self.model,
             llm_input_hash=llm_input_hash,
             llm_status=llm_status,
             llm_error=llm_error,
