@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +47,8 @@ LOG_PATTERNS = {
 OPS_EVENT_RE = re.compile(r"\bops_event=([a-z0-9_]+)")
 SUPPRESSION_REASON_RE = re.compile(r"\bsuppression_reason=([a-z0-9_]+)")
 _SAFE_FIELD_RE = re.compile(
-    r"\b(?P<key>call_type|symbol|provider|model|status|reason|operation_id)="
+    r"\b(?P<key>call_type|symbol|provider|model|status|reason|operation_id|"
+    r"decision_stage|decision_reason|skipped_llm|suppression_reason|context_fingerprint)="
     r"(?P<value>[^\s]+)"
 )
 _UUID_RE = re.compile(
@@ -57,20 +58,12 @@ _UUID_RE = re.compile(
 )
 _SAFE_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SAFE_MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
+_CONTEXT_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 _SAFE_SYMBOLS = frozenset({"BTC", "ETH", "GRAM", "SOL"})
-STRUCTURED_RECORD_CAP = 500
 LOG_TIMESTAMP_RE = re.compile(
     r"^(?P<stamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}"
     r"(?:,\d{1,6}|\.\d{1,6})?(?:Z|[+-]\d{2}:?\d{2})?)"
 )
-
-
-def _tail_bytes(path: Path, limit: int) -> str:
-    with path.open("rb") as file:
-        file.seek(0, 2)
-        size = file.tell()
-        file.seek(max(size - limit, 0))
-        return file.read().decode("utf-8", errors="replace")
 
 
 def parse_log_timestamp(line: str) -> datetime | None:
@@ -122,7 +115,16 @@ def _structured_match_record(
         if _SAFE_TOKEN_RE.fullmatch(event) and not looks_like_secret_value(event)
         else None,
     }
-    for key in ("call_type", "provider", "status", "reason"):
+    for key in (
+        "call_type",
+        "provider",
+        "status",
+        "reason",
+        "decision_stage",
+        "decision_reason",
+        "skipped_llm",
+        "suppression_reason",
+    ):
         value = fields.get(key, "")
         if _SAFE_TOKEN_RE.fullmatch(value) and not looks_like_secret_value(value):
             record[key] = value
@@ -135,6 +137,9 @@ def _structured_match_record(
     operation_id = fields.get("operation_id", "")
     if _UUID_RE.fullmatch(operation_id):
         record["operation_ref"] = mapper.ref("operation", operation_id)
+    context_fingerprint = fields.get("context_fingerprint", "")
+    if _CONTEXT_FINGERPRINT_RE.fullmatch(context_fingerprint):
+        record["context_ref"] = mapper.ref("context", context_fingerprint)
     return record
 
 
@@ -147,7 +152,7 @@ class _StructuredRecord:
 
 
 class _StructuredRecordBuffer:
-    """Keep only newest safe records while enforcing configured export budgets."""
+    """Keep newest safe records by byte budget and retain uncapped aggregate counts."""
 
     def __init__(self, *, per_file_limit: int, total_limit: int) -> None:
         self._per_file_limit = max(per_file_limit, 0)
@@ -159,11 +164,24 @@ class _StructuredRecordBuffer:
         self._total_bytes = 0
         self._next_id = 0
         self._matched: dict[tuple[str, str], int] = defaultdict(int)
+        self._dimension_counts: Counter[tuple[str, ...]] = Counter()
 
     def add(self, *, scope: str, source: str, record: dict[str, Any]) -> None:
         self._matched[(source, scope)] += 1
         if not record["patterns"] and record["event"] is None:
             return
+        self._dimension_counts[
+            (
+                scope,
+                str(record.get("event") or "unknown"),
+                str(record.get("symbol") or "UNKNOWN"),
+                str(record.get("call_type") or "unknown"),
+                str(record.get("decision_stage") or "unknown"),
+                str(record.get("decision_reason") or "unknown"),
+                str(record.get("status") or "unknown"),
+                str(record.get("reason") or record.get("suppression_reason") or "unknown"),
+            )
+        ] += 1
         encoded_bytes = len(
             json.dumps(
                 record, ensure_ascii=True, separators=(",", ":"), sort_keys=True
@@ -184,8 +202,6 @@ class _StructuredRecordBuffer:
         self._file_ids[source][record_id] = None
         self._file_bytes[source] += encoded_bytes
         self._total_bytes += encoded_bytes
-        while len(self._scope_ids[scope]) > STRUCTURED_RECORD_CAP:
-            self._remove(next(iter(self._scope_ids[scope])))
         while self._file_bytes[source] > self._per_file_limit:
             self._remove(next(iter(self._file_ids[source])))
         while self._total_bytes > self._total_limit:
@@ -222,6 +238,26 @@ class _StructuredRecordBuffer:
             "exported_records": exported,
             "omitted_records": matched - exported,
         }
+
+    def dimension_counts(self, scope: str) -> list[dict[str, Any]]:
+        fields = (
+            "scope",
+            "event",
+            "symbol",
+            "call_type",
+            "decision_stage",
+            "decision_reason",
+            "status",
+            "reason",
+        )
+        rows = []
+        for dimensions, count in sorted(self._dimension_counts.items()):
+            if dimensions[0] != scope:
+                continue
+            row = dict(zip(fields, dimensions, strict=True))
+            row["count"] = count
+            rows.append(row)
+        return rows
 
     @property
     def exported_bytes(self) -> int:
@@ -275,8 +311,7 @@ def collect_logs(
     for path in log_files:
         try:
             source = path.name
-            text = _tail_bytes(path, config.limits.max_log_tail_bytes)
-            lines = text.splitlines()
+            source_size_bytes = path.stat().st_size
             ops_events: dict[str, int] = {}
             period_suppression_reasons: dict[str, int] = {}
             tail_suppression_reasons: dict[str, int] = {}
@@ -284,65 +319,69 @@ def collect_logs(
             period_matched_lines = 0
             outside_period_lines = 0
             unparseable_timestamp_lines = 0
-            for line in lines:
-                parsed_at = parse_log_timestamp(line)
-                matches = _line_patterns(line)
-                if parsed_at is not None:
-                    parseable_timestamps += 1
-                    if period.start <= parsed_at < period.end:
-                        period_matched_lines += 1
+            bytes_read = 0
+            with path.open("rb") as lines:
+                for raw_line in lines:
+                    bytes_read += len(raw_line)
+                    line = raw_line.decode("utf-8", errors="replace")
+                    parsed_at = parse_log_timestamp(line)
+                    matches = _line_patterns(line)
+                    if parsed_at is not None:
+                        parseable_timestamps += 1
+                        if period.start <= parsed_at < period.end:
+                            period_matched_lines += 1
+                            for name in matches:
+                                period_counts[name] += 1
+                            suppression_match = SUPPRESSION_REASON_RE.search(line)
+                            if suppression_match:
+                                reason = suppression_match.group(1)
+                                if _SAFE_TOKEN_RE.fullmatch(reason):
+                                    period_suppression_reasons[reason] = (
+                                        period_suppression_reasons.get(reason, 0) + 1
+                                    )
+                                    period_suppression_reason_counts[reason] = (
+                                        period_suppression_reason_counts.get(reason, 0) + 1
+                                    )
+                            if matches:
+                                record_buffer.add(
+                                    scope="period_matched",
+                                    source=source,
+                                    record=_structured_match_record(
+                                        line, parsed_at=parsed_at, patterns=matches, mapper=mapper
+                                    ),
+                                )
+                        else:
+                            outside_period_lines += 1
+                    else:
+                        unparseable_timestamp_lines += 1
                         for name in matches:
-                            period_counts[name] += 1
+                            tail_context_counts[name] += 1
                         suppression_match = SUPPRESSION_REASON_RE.search(line)
                         if suppression_match:
                             reason = suppression_match.group(1)
                             if _SAFE_TOKEN_RE.fullmatch(reason):
-                                period_suppression_reasons[reason] = (
-                                    period_suppression_reasons.get(reason, 0) + 1
+                                tail_suppression_reasons[reason] = (
+                                    tail_suppression_reasons.get(reason, 0) + 1
                                 )
-                                period_suppression_reason_counts[reason] = (
-                                    period_suppression_reason_counts.get(reason, 0) + 1
+                                tail_suppression_reason_counts[reason] = (
+                                    tail_suppression_reason_counts.get(reason, 0) + 1
                                 )
                         if matches:
                             record_buffer.add(
-                                scope="period_matched",
+                                scope="tail_context",
                                 source=source,
                                 record=_structured_match_record(
-                                    line, parsed_at=parsed_at, patterns=matches, mapper=mapper
+                                    line, parsed_at=None, patterns=matches, mapper=mapper
                                 ),
                             )
-                    else:
-                        outside_period_lines += 1
-                else:
-                    unparseable_timestamp_lines += 1
-                    for name in matches:
-                        tail_context_counts[name] += 1
-                    suppression_match = SUPPRESSION_REASON_RE.search(line)
-                    if suppression_match:
-                        reason = suppression_match.group(1)
-                        if _SAFE_TOKEN_RE.fullmatch(reason):
-                            tail_suppression_reasons[reason] = (
-                                tail_suppression_reasons.get(reason, 0) + 1
-                            )
-                            tail_suppression_reason_counts[reason] = (
-                                tail_suppression_reason_counts.get(reason, 0) + 1
-                            )
-                    if matches:
-                        record_buffer.add(
-                            scope="tail_context",
-                            source=source,
-                            record=_structured_match_record(
-                                line, parsed_at=None, patterns=matches, mapper=mapper
-                            ),
-                        )
-                match = OPS_EVENT_RE.search(line)
-                if (
-                    match
-                    and _SAFE_TOKEN_RE.fullmatch(match.group(1))
-                    and not looks_like_secret_value(match.group(1))
-                ):
-                    event = match.group(1)
-                    ops_events[event] = ops_events.get(event, 0) + 1
+                    match = OPS_EVENT_RE.search(line)
+                    if (
+                        match
+                        and _SAFE_TOKEN_RE.fullmatch(match.group(1))
+                        and not looks_like_secret_value(match.group(1))
+                    ):
+                        event = match.group(1)
+                        ops_events[event] = ops_events.get(event, 0) + 1
 
             if parseable_timestamps == 0:
                 index["warnings"].append(
@@ -350,7 +389,9 @@ def collect_logs(
                 )
             file_index = {
                 "name": source,
-                "bytes_read": len(text.encode("utf-8")),
+                "source_size_bytes_at_open": source_size_bytes,
+                "bytes_read": bytes_read,
+                "complete_file_scanned": bytes_read >= source_size_bytes,
                 "timestamp_parse": {
                     "parseable_lines": parseable_timestamps,
                     "period_matched_lines": period_matched_lines,
@@ -379,7 +420,19 @@ def collect_logs(
             }
             index["files"].append(file_index)
             file_index_by_source[source] = file_index
-            statuses.append({"name": f"logs.{path.name}", "status": "ok", "error": None})
+            if file_index["complete_file_scanned"]:
+                statuses.append(
+                    {"name": f"logs.{path.name}", "status": "ok", "error": None}
+                )
+            else:
+                index["warnings"].append(f"{path.name}: source changed during collection")
+                statuses.append(
+                    {
+                        "name": f"logs.{path.name}",
+                        "status": "partial",
+                        "error": "source_changed_during_collection",
+                    }
+                )
         except Exception as error:
             message = _safe_collector_error(error)
             index["warnings"].append(f"{path.name}: {message}")
@@ -425,8 +478,10 @@ def collect_logs(
         },
         "period_matched_records": record_buffer.records("period_matched"),
         "tail_context_records": record_buffer.records("tail_context"),
+        "period_matched_dimension_counts": record_buffer.dimension_counts("period_matched"),
+        "tail_context_dimension_counts": record_buffer.dimension_counts("tail_context"),
         "structured_record_export": {
-            "record_cap_per_scope": STRUCTURED_RECORD_CAP,
+            "selection_strategy": "newest_records_bounded_by_export_bytes",
             "max_bytes_per_file": config.limits.max_log_export_bytes_per_file,
             "max_bytes_total": config.limits.max_log_export_bytes_total,
             "exported_bytes": record_buffer.exported_bytes,
@@ -437,5 +492,6 @@ def collect_logs(
             "period_matched_pattern_counts are timestamped lines within the requested period",
             "tail_context_pattern_counts are unscoped lines without parseable timestamps",
             "match records are strict allowlisted fields, never raw or redacted log lines",
+            "dimension counts cover every matched record even when detailed records hit byte caps",
         ],
     }, excerpts, statuses

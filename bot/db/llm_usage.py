@@ -7,7 +7,34 @@ or schema/model declarations.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.database import LlmUsageLog
+from bot.db.database import LlmOperationOutcome, LlmUsageLog
+
+
+async def save_llm_operation_outcome(
+    session: AsyncSession,
+    *,
+    llm_operation_id: str,
+    call_type: str,
+    status: str,
+    symbol: str | None = None,
+    error_reason: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> LlmOperationOutcome:
+    """Persist one sanitized terminal outcome for a logical LLM operation."""
+    row = LlmOperationOutcome(
+        llm_operation_id=llm_operation_id,
+        call_type=call_type,
+        symbol=symbol.upper() if symbol else None,
+        status=status,
+        error_reason=error_reason,
+        provider=provider,
+        model=model,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
 
 
 async def save_llm_usage_log(

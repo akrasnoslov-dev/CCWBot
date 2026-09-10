@@ -149,7 +149,8 @@ def test_ops_agent_runbook_documents_safe_production_report_tree():
     assert "write only final Markdown reports" in readme
     assert "Post-deploy verification after Event Alert delivery-gap changes" in readme
     assert (
-        "sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update"
+        "sudo /usr/local/bin/ccwbot-ops-agent-collect --since <deploy-start-UTC> "
+        "--until now --no-state-update"
         in readme
     )
     assert "rebuild the `ops-agent` Docker image" in readme

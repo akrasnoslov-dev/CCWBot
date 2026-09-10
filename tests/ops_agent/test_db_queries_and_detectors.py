@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from ops_agent.alert_similarity import build_alert_evidence_payloads
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
@@ -72,9 +76,99 @@ async def test_all_ops_agent_queries_explain_against_migrated_postgres_schema():
                 await connection.execute(text(f"EXPLAIN {query.sql}"), params)
             await connection.execute(text(f"EXPLAIN {ALERT_EVIDENCE_SQL}"), params)
             await _assert_malformed_numeric_context_is_safe(connection, params)
+            await _assert_reconciliation_joins_across_period_boundaries(connection, params)
             await connection.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0029_backfills_terminal_news_rows_without_counting_skipped_rows():
+    database_url = os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set OPS_AGENT_POSTGRES_TEST_DATABASE_URL to a migrated local PostgreSQL DB")
+
+    schema = f"migration_backfill_{uuid4().hex}"
+    engine = create_async_engine(database_url, future=True)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f"CREATE SCHEMA {schema}"))
+            await connection.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await connection.execute(
+                text(
+                    "CREATE TABLE news_items ("
+                    "id integer PRIMARY KEY, llm_status varchar(64) NOT NULL, "
+                    "llm_provider varchar(64), llm_model varchar(255), "
+                    "updated_at timestamptz NOT NULL)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO news_items "
+                    "(id, llm_status, llm_provider, llm_model, updated_at) VALUES "
+                    "(1, 'success', 'groq', 'news-primary', '2026-09-09T10:00:00Z'), "
+                    "(2, 'failed', 'cerebras', 'news-fallback', '2026-09-09T11:00:00Z'), "
+                    "(3, 'skipped_budget', 'groq', 'news-primary', '2026-09-09T12:00:00Z')"
+                )
+            )
+            await connection.run_sync(_upgrade_0029_in_current_schema)
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT llm_operation_id, call_type, status, provider, model, "
+                        "created_at FROM llm_operation_outcomes ORDER BY llm_operation_id"
+                    )
+                )
+            ).mappings().all()
+            assert [dict(row) for row in rows] == [
+                {
+                    "llm_operation_id": "legacy-news-1",
+                    "call_type": "news_intelligence_legacy_budget",
+                    "status": "success",
+                    "provider": "groq",
+                    "model": "news-primary",
+                    "created_at": datetime(2026, 9, 9, 10, tzinfo=timezone.utc),
+                },
+                {
+                    "llm_operation_id": "legacy-news-2",
+                    "call_type": "news_intelligence_legacy_budget",
+                    "status": "failed",
+                    "provider": "cerebras",
+                    "model": "news-fallback",
+                    "created_at": datetime(2026, 9, 9, 11, tzinfo=timezone.utc),
+                },
+            ]
+            await connection.execute(
+                text(
+                    "INSERT INTO llm_operation_outcomes "
+                    "(llm_operation_id, call_type, status, created_at) VALUES "
+                    "('10000000-0000-4000-8000-000000000003', 'news_intelligence', "
+                    "'success', '2026-09-09T12:00:00Z')"
+                )
+            )
+            budget_count = await connection.scalar(
+                text(
+                    "SELECT count(*) FROM llm_operation_outcomes WHERE call_type IN "
+                    "('news_intelligence', 'news_intelligence_legacy_budget') "
+                    "AND created_at >= '2026-09-09T09:00:00Z'"
+                )
+            )
+            assert budget_count == 3
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        await engine.dispose()
+
+
+def _upgrade_0029_in_current_schema(connection) -> None:
+    migration_path = PROJECT_ROOT / "alembic" / "versions" / "0029_llm_operation_outcomes.py"
+    module_spec = importlib.util.spec_from_file_location("migration_0029", migration_path)
+    assert module_spec and module_spec.loader
+    migration = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(migration)
+    context = MigrationContext.configure(connection)
+    with Operations.context(context):
+        migration.upgrade()
 
 
 def _query_params() -> dict[str, object]:
@@ -86,6 +180,56 @@ def _query_params() -> dict[str, object]:
         "anomaly_limit": 20,
         "duplicate_bucket_minutes": 15,
         "alert_evidence_limit": 100,
+    }
+
+
+async def _assert_reconciliation_joins_across_period_boundaries(
+    connection, params: dict[str, object]
+) -> None:
+    await connection.execute(
+        text(
+            """
+            INSERT INTO llm_usage_logs (
+                provider, model, call_type, llm_operation_id, status, created_at
+            ) VALUES
+                ('test_provider', 'test_model', 'news_intelligence',
+                 '10000000-0000-4000-8000-000000000001', 'success',
+                 CAST(:since AS timestamptz) - interval '1 minute'),
+                ('test_provider', 'test_model', 'news_intelligence',
+                 '10000000-0000-4000-8000-000000000002', 'success',
+                 CAST(:until AS timestamptz) - interval '1 minute')
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO llm_operation_outcomes (
+                llm_operation_id, call_type, status, provider, model, created_at
+            ) VALUES
+                ('10000000-0000-4000-8000-000000000001', 'news_intelligence',
+                 'success', 'test_provider', 'test_model',
+                 CAST(:since AS timestamptz) + interval '1 minute'),
+                ('10000000-0000-4000-8000-000000000002', 'news_intelligence',
+                 'success', 'test_provider', 'test_model',
+                 CAST(:until AS timestamptz) + interval '1 minute')
+            """
+        ),
+        params,
+    )
+    query = next(
+        item for item in QUERIES if item.name == "llm_operation_reconciliation"
+    )
+    rows = (await connection.execute(text(query.sql), params)).mappings().all()
+    states = {
+        row["llm_operation_id"]: row["reconciliation_state"]
+        for row in rows
+        if row["llm_operation_id"].startswith("10000000-")
+    }
+    assert states == {
+        "10000000-0000-4000-8000-000000000001": "correlated",
+        "10000000-0000-4000-8000-000000000002": "correlated",
     }
 
 
@@ -347,6 +491,8 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "news_intelligence_budget_summary" in query_names
     assert "llm_failure_category_summary" in query_names
     assert "event_analysis_logical_outcome_summary" in query_names
+    assert "llm_operation_reconciliation_summary" in query_names
+    assert "llm_operation_correlation_coverage" in query_names
     no_delivery = next(
         query for query in QUERIES if query.name == "market_events_without_delivery_classification"
     )
@@ -354,6 +500,19 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "expected_no_eligible_recipients" in no_delivery.sql
     assert "expected_product_gating_possible" in no_delivery.sql
     assert "news_freshness_summary" in query_names
+
+
+def test_premium_queries_use_runtime_expiry_semantics():
+    summary = next(query for query in QUERIES if query.name == "premium_summary")
+    anomalies = next(
+        query for query in QUERIES if query.name == "premium_payment_inconsistencies"
+    )
+
+    assert "active_until > :until" in summary.sql
+    assert "active_until <= :until" in summary.sql
+    assert "active_status_missing_expiry" in anomalies.sql
+    assert "ups.status = 'active' AND ups.active_until IS NULL" in anomalies.sql
+    assert "expired_active_subscription" not in anomalies.sql
 
 
 def test_no_delivery_classification_counts_all_cooldown_reason_codes_as_explained():
@@ -480,6 +639,8 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "::jsonb" not in same_news.sql
     assert "message" not in same_news.sql.lower()
     assert "reason_code_unknown_count" in outcomes.sql
+    assert "symbol" in outcomes.sql
+    assert "GROUP BY coalesce(symbol, 'UNKNOWN')" in outcomes.sql
     assert "decision_stage" in outcomes.sql
     assert "decision_reason" in outcomes.sql
     assert "news_only_rejected_count" in outcomes.sql
@@ -487,6 +648,12 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "semantic_cooldown_suppressed_count" in outcomes.sql
     assert "similar_context_reused_count" in outcomes.sql
     assert "allowed_market_context_changed_count" in outcomes.sql
+    for allowed_reason in (
+        "allowed_direction_reversal",
+        "allowed_market_structure_change",
+        "allowed_cumulative_strengthening",
+    ):
+        assert allowed_reason in outcomes.sql
     assert "telegram_bot_blocked_count" in outcomes.sql
     assert "llm_invalid_response_count" in outcomes.sql
     assert "pre_llm_similar_context_reused_count" in outcomes.sql
@@ -538,6 +705,25 @@ def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():
         assert category in category_query.sql
     assert "SELECT provider, model, call_type, failure_category" in category_query.sql
     assert "GROUP BY provider, model, call_type, failure_category" in category_query.sql
+
+
+def test_llm_reconciliation_covers_news_and_uses_uncapped_aggregates():
+    detailed = next(
+        query for query in QUERIES if query.name == "llm_operation_reconciliation"
+    )
+    summary = next(
+        query for query in QUERIES if query.name == "llm_operation_reconciliation_summary"
+    )
+    coverage = next(
+        query for query in QUERIES if query.name == "llm_operation_correlation_coverage"
+    )
+
+    for query in (detailed, summary, coverage):
+        assert "news_intelligence" in query.sql
+        assert "llm_operation_outcomes" in query.sql
+    assert "LIMIT :limit" in detailed.sql
+    assert "LIMIT :limit" not in summary.sql
+    assert "LIMIT :limit" not in coverage.sql
 
 
 def test_llm_failure_category_query_keeps_provider_and_client_reasons_distinct():
@@ -834,6 +1020,34 @@ def test_alert_repetition_detectors_trigger_with_evidence():
     assert results["weak_event_identity"].status == "triggered"
     assert results["cooldown_effectiveness_gap"].status == "triggered"
     assert results["llm_repeated_alert_true_for_similar_situations"].status == "triggered"
+
+
+def test_weak_identity_detector_allows_legitimate_eth_family_diversity():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/event_identity_quality.json": {
+            "rows": [
+                {
+                    "symbol": "ETH",
+                    "market_events": 5,
+                    "event_key_churn_ratio": 1.0,
+                    "suspicious_key_count": 0,
+                    "same_content_split_key_groups": 0,
+                }
+            ],
+            "same_content_split_key_groups": [],
+        }
+    }
+
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["weak_event_identity"]
+
+    assert detector.status == "clear"
 
 
 def test_failed_delivery_detector_triggers():
@@ -1717,6 +1931,26 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
                         }
                     ]
                 },
+                "llm_operation_reconciliation_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "reconciliation_state": "correlated",
+                            "logical_operations": 2,
+                        }
+                    ]
+                },
+                "llm_operation_correlation_coverage": {
+                    "rows": [
+                        {
+                            "source": "provider_attempt",
+                            "call_type": "event_analysis",
+                            "rows": 5,
+                            "correlated_rows": 5,
+                            "missing_operation_id_rows": 0,
+                        }
+                    ]
+                },
             }
         },
         "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
@@ -1733,6 +1967,8 @@ def test_llm_failure_detector_uses_safe_category_aggregates():
     assert detector.metrics["terminal_event_analysis_failures"] == 0
     assert detector.metrics["terminal_event_analysis_rate_limited"] == 0
     assert detector.metrics["event_analysis_logical_outcomes"] == {"logical_success": 2}
+    assert detector.metrics["correlated_logical_operations"] == 2
+    assert detector.metrics["reconciliation_gap_operations"] == 0
     assert detector.metrics["failure_categories_by_call_type"] == {
         "event_analysis": {
             "active_backoff": 1,
@@ -1770,6 +2006,26 @@ def test_llm_terminal_event_analysis_failure_is_visible_separately_from_provider
                             "model": "primary",
                             "logical_outcome": "logical_failed",
                             "analyses": 1,
+                        }
+                    ]
+                },
+                "llm_operation_reconciliation_summary": {
+                    "rows": [
+                        {
+                            "call_type": "event_analysis",
+                            "reconciliation_state": "correlated",
+                            "logical_operations": 1,
+                        }
+                    ]
+                },
+                "llm_operation_correlation_coverage": {
+                    "rows": [
+                        {
+                            "source": "event_analysis",
+                            "call_type": "event_analysis",
+                            "rows": 1,
+                            "correlated_rows": 1,
+                            "missing_operation_id_rows": 0,
                         }
                     ]
                 },
@@ -1817,7 +2073,7 @@ def test_payment_premium_detector_aggregates_inconsistency_types():
                 "premium_payment_inconsistencies": {
                     "rows": [
                         {"anomaly": "paid_without_premium"},
-                        {"anomaly": "expired_active_subscription"},
+                        {"anomaly": "active_status_missing_expiry"},
                         {"anomaly": "active_premium_without_trail"},
                     ]
                 }
@@ -1833,7 +2089,7 @@ def test_payment_premium_detector_aggregates_inconsistency_types():
     assert detector.status == "triggered"
     assert detector.severity == "high"
     assert detector.metrics["anomalies_by_type"]["paid_without_premium"] == 1
-    assert detector.metrics["anomalies_by_type"]["expired_active_subscription"] == 1
+    assert detector.metrics["anomalies_by_type"]["active_status_missing_expiry"] == 1
 
 
 def test_market_event_analysis_invariant_surfaces_multiple_analysis_ids():

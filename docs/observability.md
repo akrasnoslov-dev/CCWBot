@@ -397,6 +397,10 @@ selected real related-news title/source/link supports a more specific family, su
 `btc_protocol_security_risk` or `btc_price_level_range`. The raw key and semantic family are
 emitted in event-analysis logs and persisted in alert numeric context where available.
 
+Event-key diversity by itself is not an identity failure: one symbol can legitimately produce
+several distinct semantic families. The ops detector triggers only for suspicious/unresolved keys
+or evidence that materially similar content split across multiple backend keys.
+
 ## Duplicate/Suppressed Analysis
 
 ```sql
@@ -475,6 +479,12 @@ Debug cooldown checks include sanitized escalation fields such as `urgency_incre
 previous/current selected-news counts. `new_news_driver` is diagnostics only and is not sufficient
 to allow a same-family repeat inside cooldown; allowed repeat reasons must be market-context based.
 These fields are for logs/outcomes only and must not be copied into Telegram messages.
+
+Candidate-to-decision tracing uses sanitized structured events. `event_alert_candidate_crossing`
+and `event_alert_llm_operation` include the same context fingerprint, and
+`event_alert_decision` records the terminal stage/reason/status with that fingerprint. The log
+collector converts fingerprints and operation UUIDs to bundle-local references; it never exports
+the raw values, user IDs, chat IDs, prompts, or outputs.
 
 Market-only event instance keys are built from symbol, canonical semantic key, rounded UTC time
 bucket, urgency, and a coarse movement bucket. News-linked event instance keys use stable selected

@@ -102,6 +102,10 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
   recurring payments in Telegram Stars settings. `/subscribe` can still create another invoice
   for users with active paid access, and a new payment extends access from the current paid
   access date.
+- Paid Premium eligibility is exclusively `active_until > now`. The stored `status='active'`
+  records the last explicit lifecycle transition and may remain after natural expiry; that state
+  is not an inconsistency. An active row with no `active_until` is anomalous because eligibility
+  cannot be determined.
 - Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
   `/price` checks remain free. Premium choices can be saved while locked; a successful payment
   immediately activates only those previously selected coins and shows the active watchlist.

@@ -199,17 +199,22 @@ status table and rerun after the named collector is fixed.
 Both deployment steps that ops-agent changes require — the explicit image rebuild and the manual
 host-wrapper reinstall — are documented above under **Deploying Ops-Agent Changes**.
 
-For post-deploy Event Alert verification, rebuild the `ops-agent` Docker image with the deploy and
-collect a short no-state bundle:
+For post-deploy Event Alert verification, record the UTC deploy start, run the backup and migration
+before starting the new bot image, explicitly rebuild the `ops-agent` overlay image, and wait for at
+least one fresh News Intelligence operation to finish. Then collect a deploy-scoped no-state bundle:
 
 ```bash
-sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <deploy-start-UTC> --until now --no-state-update
 ```
 
 Review only the sanitized report context and detector summary. Confirm `/health` is OK,
 `market_events_without_alert_deliveries` is clear or has only explicit expected skip reasons, no
-new critical/high unexplained Event Alert detector is triggered, and basic Telegram functionality
-works in a private smoke check without recording user ids or private text.
+new critical/high unexplained Event Alert detector is triggered, Collector Status is complete, and
+LLM reconciliation/coverage evidence is present with correlated operations greater than zero,
+missing operation IDs equal to zero, and reconciliation gaps equal to zero. Confirm basic Telegram
+functionality in a private smoke check without recording user ids or private text. If rollback is
+required, roll back the application while leaving the additive outcome table in place; do not
+downgrade migration 0029 while code may still write to it.
 
 ## Production Deploy
 
