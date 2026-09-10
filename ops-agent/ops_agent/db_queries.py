@@ -47,6 +47,24 @@ RELATED_NEWS_CANDIDATES_COUNT_SQL = (
     "THEN jsonb_array_length(raw_input_json::jsonb->'candidate_news') END"
     ") END)"
 )
+LLM_RECONCILIATION_CALL_TYPES_SQL = (
+    "('event_analysis', 'market_heartbeat', 'daily_report', 'weekly_report', "
+    "'news_intelligence')"
+)
+LLM_OPERATION_CANDIDATES_SQL = (
+    "SELECT llm_operation_id, call_type FROM llm_usage_logs "
+    "WHERE created_at >= :since AND created_at < :until AND llm_operation_id IS NOT NULL "
+    f"AND call_type IN {LLM_RECONCILIATION_CALL_TYPES_SQL} "
+    "UNION SELECT llm_operation_id, 'event_analysis' FROM event_ai_analyses "
+    "WHERE created_at >= :since AND created_at < :until AND llm_operation_id IS NOT NULL "
+    "UNION SELECT llm_operation_id, 'market_heartbeat' FROM market_heartbeats "
+    "WHERE generated_at >= :since AND generated_at < :until AND llm_operation_id IS NOT NULL "
+    "UNION SELECT llm_operation_id, report_type || '_report' FROM market_reports "
+    "WHERE generated_at >= :since AND generated_at < :until AND llm_operation_id IS NOT NULL "
+    "UNION SELECT llm_operation_id, call_type FROM llm_operation_outcomes "
+    "WHERE created_at >= :since AND created_at < :until AND llm_operation_id IS NOT NULL "
+    f"AND call_type IN {LLM_RECONCILIATION_CALL_TYPES_SQL}"
+)
 
 
 QUERIES: tuple[DbQuery, ...] = (
@@ -142,8 +160,8 @@ QUERIES: tuple[DbQuery, ...] = (
         "premium_summary",
         "evidence/db/aggregate_metrics.json",
         "SELECT status, count(*) AS subscriptions, "
-        "count(*) FILTER (WHERE active_until >= :until) AS active_count, "
-        "count(*) FILTER (WHERE active_until < :until) AS expired_count, "
+        "count(*) FILTER (WHERE active_until > :until) AS active_count, "
+        "count(*) FILTER (WHERE active_until <= :until) AS expired_count, "
         "count(*) FILTER (WHERE active_until >= :since AND active_until < :until) AS expiring_in_period "
         "FROM user_premium_subscriptions GROUP BY status ORDER BY status",
     ),
@@ -178,12 +196,12 @@ QUERIES: tuple[DbQuery, ...] = (
         "WHERE p.status = 'paid' AND p.created_at >= :since AND p.created_at < :until "
         "AND (ups.id IS NULL OR ups.active_until IS NULL OR ups.active_until < p.created_at + interval '29 days') "
         "AND ups.cancelled_at IS NULL), "
-        "expired_active_subscriptions AS ("
-        "SELECT 'expired_active_subscription' AS anomaly, ups.user_id, ups.provider, "
+        "active_status_missing_expiry AS ("
+        "SELECT 'active_status_missing_expiry' AS anomaly, ups.user_id, ups.provider, "
         "ups.last_payment_id AS provider_payment_id, NULL::integer AS payment_id, "
-        "'status active but active_until is expired' AS details "
+        "'status active but active_until is missing' AS details "
         "FROM user_premium_subscriptions ups "
-        "WHERE ups.status = 'active' AND (ups.active_until IS NULL OR ups.active_until <= :until)), "
+        "WHERE ups.status = 'active' AND ups.active_until IS NULL), "
         "premium_access_status_mismatch AS ("
         "SELECT 'premium_access_status_mismatch' AS anomaly, ups.user_id, ups.provider, "
         "ups.last_payment_id AS provider_payment_id, NULL::integer AS payment_id, "
@@ -212,7 +230,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND p.telegram_payment_charge_id IS NOT NULL "
         "AND p.provider_payment_id != p.telegram_payment_charge_id) "
         "SELECT * FROM duplicate_provider_payment_ids UNION ALL SELECT * FROM duplicate_charge_ids "
-        "UNION ALL SELECT * FROM paid_without_premium UNION ALL SELECT * FROM expired_active_subscriptions "
+        "UNION ALL SELECT * FROM paid_without_premium UNION ALL SELECT * FROM active_status_missing_expiry "
         "UNION ALL SELECT * FROM premium_access_status_mismatch "
         "UNION ALL SELECT * FROM active_premium_without_trail "
         "UNION ALL SELECT * FROM payment_payload_user_mismatch UNION ALL SELECT * FROM charge_id_mismatch "
@@ -640,7 +658,8 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "alert_delivery_outcome_summary",
         "evidence/db/aggregate_metrics.json",
-        "SELECT coalesce(status, 'unknown') AS status, coalesce(reason_code, 'unknown') AS reason_code, "
+        "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, "
+        "coalesce(status, 'unknown') AS status, coalesce(reason_code, 'unknown') AS reason_code, "
         "coalesce(decision_stage, 'unknown') AS decision_stage, "
         "coalesce(decision_reason, 'unknown') AS decision_reason, "
         "count(*) AS outcomes, count(*) FILTER (WHERE reason_code IS NULL OR reason_code = '') "
@@ -669,7 +688,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "AS semantic_cooldown_suppressed_count, "
         "count(*) FILTER (WHERE decision_reason = 'similar_context_reused') "
         "AS similar_context_reused_count, "
-        "count(*) FILTER (WHERE decision_reason = 'allowed_market_context_changed') "
+        "count(*) FILTER (WHERE decision_reason IN ("
+        "'allowed_market_context_changed', 'allowed_urgency_escalation', "
+        "'allowed_stronger_movement', 'allowed_direction_reversal', "
+        "'allowed_market_structure_change', 'allowed_cumulative_strengthening')) "
         "AS allowed_market_context_changed_count, "
         "count(*) FILTER (WHERE decision_stage = 'pre_llm' "
         "AND decision_reason = 'similar_context_reused') "
@@ -677,9 +699,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE status = 'delivered' AND decision_reason IS NOT NULL) "
         "AS delivered_with_decision_reason_count "
         "FROM alert_delivery_outcomes WHERE created_at >= :since AND created_at < :until "
-        "GROUP BY coalesce(status, 'unknown'), coalesce(reason_code, 'unknown'), "
+        "GROUP BY coalesce(symbol, 'UNKNOWN'), coalesce(status, 'unknown'), "
+        "coalesce(reason_code, 'unknown'), "
         "coalesce(decision_stage, 'unknown'), coalesce(decision_reason, 'unknown') "
-        "ORDER BY outcomes DESC, status, reason_code, decision_stage, decision_reason LIMIT :limit",
+        "ORDER BY outcomes DESC, symbol, status, reason_code, decision_stage, decision_reason LIMIT :limit",
     ),
     DbQuery(
         "event_alert_possible_action_quality",
@@ -895,22 +918,32 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "llm_operation_reconciliation",
         "evidence/db/llm_operation_reconciliation.json",
-        "WITH usage_rows AS ("
-        "SELECT llm_operation_id, call_type, jsonb_agg(jsonb_build_object("
+        "WITH candidate_operations AS ("
+        f"{LLM_OPERATION_CANDIDATES_SQL}"
+        "), usage_rows AS ("
+        "SELECT u.llm_operation_id, u.call_type, jsonb_agg(jsonb_build_object("
         "'provider', provider, 'model', model, 'status', status, "
-        "'error_reason', coalesce(error_reason, 'none')) ORDER BY created_at, id) AS attempts, "
-        "count(*) AS provider_attempts, max(created_at) AS observed_at FROM llm_usage_logs "
-        "WHERE created_at >= :since AND created_at < :until AND llm_operation_id IS NOT NULL "
-        "AND call_type IN ('event_analysis', 'market_heartbeat', 'daily_report', 'weekly_report') "
-        "GROUP BY llm_operation_id, call_type"
+        "'error_reason', coalesce(error_reason, 'none')) ORDER BY u.created_at, u.id) AS attempts, "
+        "count(*) AS provider_attempts, max(u.created_at) AS observed_at FROM llm_usage_logs u "
+        "JOIN candidate_operations c ON c.llm_operation_id = u.llm_operation_id "
+        "AND c.call_type = u.call_type GROUP BY u.llm_operation_id, u.call_type"
         "), feature_source_rows AS ("
-        "SELECT llm_operation_id, 'event_analysis' AS feature_kind, status AS feature_status, "
-        "'event_analysis:' || id::text AS durable_row_ref_source, created_at AS observed_at "
-        "FROM event_ai_analyses WHERE llm_operation_id IS NOT NULL AND created_at >= :since AND created_at < :until "
-        "UNION ALL SELECT llm_operation_id, 'market_heartbeat', status, 'market_heartbeat:' || id::text, generated_at "
-        "FROM market_heartbeats WHERE llm_operation_id IS NOT NULL AND generated_at >= :since AND generated_at < :until "
-        "UNION ALL SELECT llm_operation_id, report_type || '_report', status, 'market_report:' || id::text, generated_at "
-        "FROM market_reports WHERE llm_operation_id IS NOT NULL AND generated_at >= :since AND generated_at < :until"
+        "SELECT e.llm_operation_id, 'event_analysis' AS feature_kind, e.status AS feature_status, "
+        "'event_analysis:' || e.id::text AS durable_row_ref_source, e.created_at AS observed_at "
+        "FROM event_ai_analyses e JOIN candidate_operations c ON c.llm_operation_id = e.llm_operation_id "
+        "AND c.call_type = 'event_analysis' "
+        "UNION ALL SELECT h.llm_operation_id, 'market_heartbeat', h.status, "
+        "'market_heartbeat:' || h.id::text, h.generated_at FROM market_heartbeats h "
+        "JOIN candidate_operations c ON c.llm_operation_id = h.llm_operation_id "
+        "AND c.call_type = 'market_heartbeat' "
+        "UNION ALL SELECT r.llm_operation_id, r.report_type || '_report', r.status, "
+        "'market_report:' || r.id::text, r.generated_at FROM market_reports r "
+        "JOIN candidate_operations c ON c.llm_operation_id = r.llm_operation_id "
+        "AND c.call_type = r.report_type || '_report' "
+        "UNION ALL SELECT o.llm_operation_id, o.call_type, o.status, "
+        "'llm_operation_outcome:' || o.id::text, o.created_at FROM llm_operation_outcomes o "
+        "JOIN candidate_operations c ON c.llm_operation_id = o.llm_operation_id "
+        "AND c.call_type = o.call_type"
         "), feature_rows AS ("
         "SELECT llm_operation_id, feature_kind, max(feature_status) AS feature_status, "
         "max(durable_row_ref_source) AS durable_row_ref_source, max(observed_at) AS observed_at "
@@ -925,6 +958,70 @@ QUERIES: tuple[DbQuery, ...] = (
         "f.durable_row_ref_source FROM usage_rows u FULL OUTER JOIN feature_rows f "
         "ON f.llm_operation_id = u.llm_operation_id AND f.feature_kind = u.call_type "
         "ORDER BY greatest(coalesce(u.observed_at, :since), coalesce(f.observed_at, :since)) DESC LIMIT :limit",
+    ),
+    DbQuery(
+        "llm_operation_reconciliation_summary",
+        "evidence/db/aggregate_metrics.json",
+        "WITH candidate_operations AS ("
+        f"{LLM_OPERATION_CANDIDATES_SQL}"
+        "), usage_rows AS ("
+        "SELECT u.llm_operation_id, u.call_type, count(*) AS provider_attempts "
+        "FROM llm_usage_logs u JOIN candidate_operations c "
+        "ON c.llm_operation_id = u.llm_operation_id AND c.call_type = u.call_type "
+        "GROUP BY u.llm_operation_id, u.call_type"
+        "), feature_source_rows AS ("
+        "SELECT e.llm_operation_id, 'event_analysis' AS feature_kind, e.status AS feature_status "
+        "FROM event_ai_analyses e JOIN candidate_operations c ON c.llm_operation_id = e.llm_operation_id "
+        "AND c.call_type = 'event_analysis' "
+        "UNION ALL SELECT h.llm_operation_id, 'market_heartbeat', h.status "
+        "FROM market_heartbeats h JOIN candidate_operations c "
+        "ON c.llm_operation_id = h.llm_operation_id AND c.call_type = 'market_heartbeat' "
+        "UNION ALL SELECT r.llm_operation_id, r.report_type || '_report', r.status "
+        "FROM market_reports r JOIN candidate_operations c ON c.llm_operation_id = r.llm_operation_id "
+        "AND c.call_type = r.report_type || '_report' "
+        "UNION ALL SELECT o.llm_operation_id, o.call_type, o.status "
+        "FROM llm_operation_outcomes o JOIN candidate_operations c "
+        "ON c.llm_operation_id = o.llm_operation_id AND c.call_type = o.call_type"
+        "), feature_rows AS ("
+        "SELECT llm_operation_id, feature_kind, max(feature_status) AS feature_status "
+        "FROM feature_source_rows GROUP BY llm_operation_id, feature_kind"
+        "), reconciled AS ("
+        "SELECT coalesce(u.call_type, f.feature_kind) AS call_type, "
+        "coalesce(u.provider_attempts, 0) AS provider_attempts, f.feature_status, "
+        "CASE WHEN u.llm_operation_id IS NULL THEN 'feature_only_missing_usage_telemetry' "
+        "WHEN f.llm_operation_id IS NULL THEN 'attempt_only_missing_durable_feature' "
+        "ELSE 'correlated' END AS reconciliation_state "
+        "FROM usage_rows u FULL OUTER JOIN feature_rows f "
+        "ON f.llm_operation_id = u.llm_operation_id AND f.feature_kind = u.call_type"
+        ") SELECT call_type, reconciliation_state, count(*) AS logical_operations, "
+        "sum(provider_attempts) AS provider_attempts, "
+        "count(*) FILTER (WHERE feature_status IN ('success', 'completed', 'no_alert')) "
+        "AS successful_terminal_outcomes, "
+        "count(*) FILTER (WHERE feature_status IS NOT NULL "
+        "AND feature_status NOT IN ('success', 'completed', 'no_alert')) AS failed_terminal_outcomes "
+        "FROM reconciled GROUP BY call_type, reconciliation_state "
+        "ORDER BY logical_operations DESC, call_type, reconciliation_state",
+    ),
+    DbQuery(
+        "llm_operation_correlation_coverage",
+        "evidence/db/aggregate_metrics.json",
+        "WITH source_rows AS ("
+        "SELECT 'provider_attempt' AS source, call_type, llm_operation_id FROM llm_usage_logs "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND call_type IN ('event_analysis', 'market_heartbeat', 'daily_report', "
+        "'weekly_report', 'news_intelligence') "
+        "UNION ALL SELECT 'event_analysis', 'event_analysis', llm_operation_id "
+        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
+        "UNION ALL SELECT 'market_heartbeat', 'market_heartbeat', llm_operation_id "
+        "FROM market_heartbeats WHERE generated_at >= :since AND generated_at < :until "
+        "UNION ALL SELECT 'market_report', report_type || '_report', llm_operation_id "
+        "FROM market_reports WHERE generated_at >= :since AND generated_at < :until "
+        "UNION ALL SELECT 'logical_outcome', call_type, llm_operation_id "
+        "FROM llm_operation_outcomes WHERE created_at >= :since AND created_at < :until"
+        ") SELECT source, call_type, count(*) AS rows, "
+        "count(*) FILTER (WHERE llm_operation_id IS NOT NULL) AS correlated_rows, "
+        "count(*) FILTER (WHERE llm_operation_id IS NULL) AS missing_operation_id_rows "
+        "FROM source_rows GROUP BY source, call_type ORDER BY source, call_type",
     ),
     DbQuery(
         "llm_failure_category_summary",

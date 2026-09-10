@@ -1498,6 +1498,59 @@ class LlmUsageLog(Base):
     )
 
 
+class LlmOperationOutcome(Base):
+    __tablename__ = "llm_operation_outcomes"
+    __table_args__ = (
+        UniqueConstraint(
+            "llm_operation_id", name="uq_llm_operation_outcomes_operation_id"
+        ),
+        Index(
+            "ix_llm_operation_outcomes_call_type_created_at",
+            "call_type",
+            "created_at",
+        ),
+        Index("ix_llm_operation_outcomes_created_at", "created_at"),
+        {
+            "comment": (
+                "Sanitized final outcomes for logical LLM operations without a dedicated "
+                "feature table."
+            )
+        },
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, comment="Internal logical LLM outcome row id."
+    )
+    llm_operation_id: Mapped[str] = mapped_column(
+        String(36),
+        nullable=False,
+        comment="Opaque backend correlation id shared by the operation's provider attempts.",
+    )
+    call_type: Mapped[str] = mapped_column(
+        String(64), comment="Logical LLM feature type such as news_intelligence."
+    )
+    symbol: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Optional uppercase market symbol for the operation."
+    )
+    status: Mapped[str] = mapped_column(
+        String(64), comment="Sanitized terminal logical status such as success or failed."
+    )
+    error_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Sanitized terminal failure category, if any."
+    )
+    provider: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Provider that produced the terminal outcome."
+    )
+    model: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Model that produced the terminal outcome."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        comment="When the logical LLM operation finished.",
+    )
+
+
 async def init_db(database_url: str, *, run_migrations: bool = False):
     """Create SQLAlchemy async engine/session factory.
 
@@ -1631,6 +1684,7 @@ _REEXPORTS = {
     ),
     "llm_usage": (
         "save_llm_usage_log",
+        "save_llm_operation_outcome",
         "update_llm_usage_log_status",
     ),
 }

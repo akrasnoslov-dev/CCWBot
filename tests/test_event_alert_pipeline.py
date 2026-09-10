@@ -366,16 +366,17 @@ def test_semantic_event_family_normalizes_equivalent_downtrend_keys(symbol, raw_
     assert result.canonical_event_key == f"{symbol}_price_downtrend"
 
 
-def test_semantic_event_family_uses_context_for_ambiguous_movement_key():
+@pytest.mark.parametrize("symbol", ["eth", "gram"])
+def test_semantic_event_family_uses_context_for_ambiguous_movement_key(symbol):
     result = canonicalize_event_key(
-        "gram",
-        "gram_price_movement",
-        title="GRAM price weakened again",
-        message_body="GRAM moved lower while market pressure remains elevated.",
+        symbol,
+        f"{symbol}_price_movement",
+        title=f"{symbol.upper()} price weakened again",
+        message_body=f"{symbol.upper()} moved lower while market pressure remains elevated.",
     )
 
     assert result.semantic_family == "price_downtrend"
-    assert result.canonical_event_key == "gram_price_downtrend"
+    assert result.canonical_event_key == f"{symbol}_price_downtrend"
 
 
 @pytest.mark.parametrize("raw_event_key", ["news_catalyst", "volatility", "price_movement"])
@@ -686,6 +687,46 @@ def test_event_alert_payload_uses_analysed_window_change_not_24h():
     assert "24h change" not in html_message
     assert "Price change" not in html_message
     assert_no_event_placeholders(message)
+
+
+@pytest.mark.parametrize("symbol", ["ETH", "SOL", "GRAM"])
+def test_market_only_non_btc_alert_renders_cleanly_without_related_news(symbol):
+    decision = alerts.EventAnalysisDecision(
+        symbol=symbol,
+        should_alert=True,
+        event_key=f"{symbol.lower()}_price_downtrend",
+        title=f"{symbol} downside pressure increased",
+        message_body=f"{symbol} moved lower as short-term momentum weakened.",
+        related_news_ids=[],
+        possible_action="Consider reviewing exposure if the move confirms.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": 123.45,
+                "analysed_window_minutes": 180,
+                "chg_window": -2.4,
+            }
+        },
+        related_news=[],
+    )
+
+    for rendered in (payload["plain_text"], payload["html_text"] or ""):
+        assert f"{symbol} downside pressure increased" in rendered
+        assert "3h market move: -2.40%" in rendered
+        assert "Possible action:" in rendered
+        assert "Related context:" not in rendered
+        assert "Related news:" not in rendered
+        assert "Data:" not in rendered
+        assert "Debug:" not in rendered
+        assert "n/a" not in rendered.lower()
+        assert "unknown" not in rendered.lower()
+    assert payload["plain_text"].count("Not financial advice.") == 1
 
 
 @pytest.mark.parametrize(
@@ -2623,7 +2664,7 @@ async def test_llm_should_alert_false_creates_no_delivery(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
+async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch, caplog):
     engine, session_local = await build_session_factory()
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
@@ -2655,6 +2696,12 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
             "market_data": {},
         }
 
+        caplog.set_level("INFO", logger="bot.alerts")
+        alerts._log_event_alert_candidate_crossing(
+            "sol",
+            payload,
+            alert_threshold_percent=2.0,
+        )
         decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
         assert decision is not None
@@ -2679,6 +2726,13 @@ async def test_no_alert_schema_decision_persists_as_no_alert(monkeypatch):
             assert outcome.decision_stage == "llm"
             assert outcome.decision_reason == "llm_no_alert"
             assert outcome.context_fingerprint
+        context_fingerprint = alerts._event_context_fingerprint(payload)
+        assert "ops_event=event_alert_candidate_crossing" in caplog.text
+        assert "ops_event=event_alert_llm_operation" in caplog.text
+        assert "ops_event=event_alert_decision" in caplog.text
+        assert caplog.text.count(f"context_fingerprint={context_fingerprint}") >= 3
+        assert "user_id=" not in caplog.text
+        assert "chat_id=" not in caplog.text
     finally:
         await engine.dispose()
 
@@ -3537,7 +3591,7 @@ async def test_semantic_event_alert_cooldown_suppresses_different_keys_in_same_f
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("symbol", ["btc", "eth"])
+@pytest.mark.parametrize("symbol", ["btc", "eth", "gram"])
 async def test_semantic_cooldown_suppresses_equivalent_cross_family_price_context(
     monkeypatch,
     symbol,
@@ -3689,8 +3743,9 @@ async def test_semantic_cooldown_allows_cross_family_market_escalation(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("symbol", ["eth", "gram"])
 async def test_semantic_cooldown_persists_cumulative_strengthening_allow_reason(
-    monkeypatch,
+    monkeypatch, symbol
 ):
     engine, session_local = await build_session_factory()
     now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
@@ -3701,8 +3756,8 @@ async def test_semantic_cooldown_persists_cumulative_strengthening_allow_reason(
                 session,
                 user_id=user.id,
                 chat_id=user.telegram_chat_id,
-                symbol="eth",
-                event_key="eth_price_uptrend",
+                symbol=symbol,
+                event_key=f"{symbol}_price_uptrend",
                 urgency="normal",
                 analysed_window_minutes=180,
                 analysed_window_change_percent=1.0,
@@ -3717,10 +3772,10 @@ async def test_semantic_cooldown_persists_cumulative_strengthening_allow_reason(
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
         result = await alerts._filter_event_recipients_for_cooldown(
             [alerts.AlertRecipient(chat_id=2001, user_id=user.id)],
-            symbol="eth",
+            symbol=symbol,
             urgency="normal",
             cooldown_seconds=0,
-            canonical_event_key="eth_price_uptrend",
+            canonical_event_key=f"{symbol}_price_uptrend",
             semantic_family="price_uptrend",
             current_movement_percent=1.1,
             current_analysed_window_minutes=180,

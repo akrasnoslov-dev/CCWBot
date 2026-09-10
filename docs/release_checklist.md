@@ -32,7 +32,8 @@ docker compose run --rm migrate
 ```
 
 CI also applies Alembic head to a temporary PostgreSQL service. That confirms basic migration
-application, but it does not replace a fresh production backup before real migrations.
+application and runs the ops-agent query-contract test against it, but it does not replace a fresh
+production backup before real migrations.
 
 Alembic revision ids must be 32 characters or shorter because
 `alembic_version.version_num` is `VARCHAR(32)`. Prefer compact numeric/descriptive ids, for example

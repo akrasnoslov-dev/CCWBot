@@ -444,6 +444,55 @@ def test_suppression_effectiveness_marks_material_movement_escalation_separately
     assert groups[0]["allowed_escalation_reasons"] == {"material_movement_increased": 1}
 
 
+def test_suppression_effectiveness_uses_persisted_gram_allow_reason():
+    rows = [
+        _row(
+            symbol="GRAM",
+            event_key="gram_price_uptrend",
+            analysis_event_key="gram_price_uptrend",
+            first_delivery_at="2026-06-01T10:01:00Z",
+            last_delivery_at="2026-06-01T10:01:00Z",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=1.0,
+                semantic_family="price_uptrend",
+            ),
+        ),
+        _row(
+            symbol="GRAM",
+            market_event_id=11,
+            event_ai_analysis_id=101,
+            event_key="gram_price_uptrend",
+            analysis_event_key="gram_price_uptrend",
+            event_instance_key="instance-b",
+            input_hash="input-b",
+            analysis_created_at="2026-06-01T11:00:00Z",
+            first_delivery_at="2026-06-01T11:01:00Z",
+            last_delivery_at="2026-06-01T11:01:00Z",
+            decision_reason="allowed_cumulative_strengthening",
+            alert_numeric_context=_numeric_context_json(
+                notification_severity="normal",
+                analysed_window_change_percent=1.1,
+                semantic_family="price_uptrend",
+            ),
+        ),
+    ]
+
+    payloads = build_alert_evidence_payloads(
+        rows,
+        period=_period(),
+        row_cap=10,
+        semantic_cooldown_seconds=14400,
+    )
+    groups = payloads["evidence/db/backend_suppression_effectiveness.json"][
+        "suppression_groups"
+    ]
+
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
+    assert groups[0]["delivered_inside_cooldown_allowed_escalations"] == 1
+    assert groups[0]["allowed_escalation_reasons"] == {"cumulative_strengthened": 1}
+
+
 def test_suppression_effectiveness_does_not_allow_new_news_driver_alone():
     rows = [
         _row(

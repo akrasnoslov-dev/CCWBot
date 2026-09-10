@@ -403,7 +403,8 @@ def _log_event_alert_candidate_crossing(
         logger.info(
             "ops_event=event_alert_candidate_crossing symbol=%s "
             "analysed_window_change_percent=%s change_24h_percent=%s threshold_percent=%s "
-            "crossed_threshold=%s analysed_window_minutes=%s skipped_llm=%s",
+            "crossed_threshold=%s analysed_window_minutes=%s skipped_llm=%s "
+            "context_fingerprint=%s",
             normalize_symbol(symbol).upper(),
             analysed_window_change,
             change_24h,
@@ -411,6 +412,7 @@ def _log_event_alert_candidate_crossing(
             str(crossed).lower(),
             _analysed_window_minutes_from_payload(input_payload),
             skipped_llm or "none",
+            _event_context_fingerprint(input_payload),
         )
     except Exception as error:  # pragma: no cover - defensive
         # This runs on the alert path immediately before the LLM call. It records evidence and
@@ -3278,6 +3280,13 @@ async def _create_event_analysis_decision(
     analysis_model = GROQ_EVENT_ANALYSIS_MODEL
     llm_operation_id = new_llm_operation_id()
     expected_symbol = str(input_payload["symbol"])
+    logger.info(
+        "ops_event=event_alert_llm_operation symbol=%s status=started "
+        "operation_id=%s context_fingerprint=%s",
+        normalize_symbol(expected_symbol).upper(),
+        llm_operation_id,
+        _event_context_fingerprint(input_payload),
+    )
     candidate_news_ids = {
         str(item["news_id"])
         for item in input_payload.get("news", input_payload.get("candidate_news", []))
@@ -4318,6 +4327,16 @@ async def _record_alert_delivery_outcome(
     context_fingerprint: str | None = None,
     detail: str | None = None,
 ) -> None:
+    logger.info(
+        "ops_event=event_alert_decision symbol=%s decision_stage=%s "
+        "decision_reason=%s status=%s reason=%s context_fingerprint=%s",
+        normalize_symbol(symbol).upper(),
+        decision_stage or "unknown",
+        decision_reason or "unknown",
+        status or "unknown",
+        reason_code or "unknown",
+        context_fingerprint or "none",
+    )
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     async with DB_SESSION_LOCAL() as session:

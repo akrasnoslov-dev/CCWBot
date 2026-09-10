@@ -32,6 +32,21 @@ def test_is_user_premium_active_uses_active_until():
     assert not is_user_premium_active(SimpleNamespace(active_until=None), now)
 
 
+def test_expired_active_lifecycle_status_does_not_grant_premium_access():
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    subscription = SimpleNamespace(
+        status="active",
+        active_until=now - timedelta(seconds=1),
+    )
+    user = SimpleNamespace(
+        premium_subscription=subscription,
+        alert_frequency_seconds=3600,
+    )
+
+    assert not is_user_premium_active(subscription, now)
+    assert not is_coin_unlocked_for_user(user, "eth", now)
+
+
 def test_coin_unlock_rules():
     now = datetime(2026, 5, 11, tzinfo=timezone.utc)
     free_user = make_user()
