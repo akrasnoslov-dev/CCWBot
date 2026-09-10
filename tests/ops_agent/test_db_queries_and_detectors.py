@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from ops_agent.alert_similarity import build_alert_evidence_payloads
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
@@ -76,6 +80,95 @@ async def test_all_ops_agent_queries_explain_against_migrated_postgres_schema():
             await connection.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0029_backfills_terminal_news_rows_without_counting_skipped_rows():
+    database_url = os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set OPS_AGENT_POSTGRES_TEST_DATABASE_URL to a migrated local PostgreSQL DB")
+
+    schema = f"migration_backfill_{uuid4().hex}"
+    engine = create_async_engine(database_url, future=True)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f"CREATE SCHEMA {schema}"))
+            await connection.execute(text(f"SET LOCAL search_path TO {schema}"))
+            await connection.execute(
+                text(
+                    "CREATE TABLE news_items ("
+                    "id integer PRIMARY KEY, llm_status varchar(64) NOT NULL, "
+                    "llm_provider varchar(64), llm_model varchar(255), "
+                    "updated_at timestamptz NOT NULL)"
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO news_items "
+                    "(id, llm_status, llm_provider, llm_model, updated_at) VALUES "
+                    "(1, 'success', 'groq', 'news-primary', '2026-09-09T10:00:00Z'), "
+                    "(2, 'failed', 'cerebras', 'news-fallback', '2026-09-09T11:00:00Z'), "
+                    "(3, 'skipped_budget', 'groq', 'news-primary', '2026-09-09T12:00:00Z')"
+                )
+            )
+            await connection.run_sync(_upgrade_0029_in_current_schema)
+            rows = (
+                await connection.execute(
+                    text(
+                        "SELECT llm_operation_id, call_type, status, provider, model, "
+                        "created_at FROM llm_operation_outcomes ORDER BY llm_operation_id"
+                    )
+                )
+            ).mappings().all()
+            assert [dict(row) for row in rows] == [
+                {
+                    "llm_operation_id": "legacy-news-1",
+                    "call_type": "news_intelligence_legacy_budget",
+                    "status": "success",
+                    "provider": "groq",
+                    "model": "news-primary",
+                    "created_at": datetime(2026, 9, 9, 10, tzinfo=timezone.utc),
+                },
+                {
+                    "llm_operation_id": "legacy-news-2",
+                    "call_type": "news_intelligence_legacy_budget",
+                    "status": "failed",
+                    "provider": "cerebras",
+                    "model": "news-fallback",
+                    "created_at": datetime(2026, 9, 9, 11, tzinfo=timezone.utc),
+                },
+            ]
+            await connection.execute(
+                text(
+                    "INSERT INTO llm_operation_outcomes "
+                    "(llm_operation_id, call_type, status, created_at) VALUES "
+                    "('10000000-0000-4000-8000-000000000003', 'news_intelligence', "
+                    "'success', '2026-09-09T12:00:00Z')"
+                )
+            )
+            budget_count = await connection.scalar(
+                text(
+                    "SELECT count(*) FROM llm_operation_outcomes WHERE call_type IN "
+                    "('news_intelligence', 'news_intelligence_legacy_budget') "
+                    "AND created_at >= '2026-09-09T09:00:00Z'"
+                )
+            )
+            assert budget_count == 3
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        await engine.dispose()
+
+
+def _upgrade_0029_in_current_schema(connection) -> None:
+    migration_path = PROJECT_ROOT / "alembic" / "versions" / "0029_llm_operation_outcomes.py"
+    module_spec = importlib.util.spec_from_file_location("migration_0029", migration_path)
+    assert module_spec and module_spec.loader
+    migration = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(migration)
+    context = MigrationContext.configure(connection)
+    with Operations.context(context):
+        migration.upgrade()
 
 
 def _query_params() -> dict[str, object]:

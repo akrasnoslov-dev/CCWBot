@@ -297,8 +297,8 @@ class NewsIntelligenceService:
             return row
         except Exception as error:
             self._run_llm_calls += 1
-            terminal_provider = getattr(error, "provider", None)
-            terminal_model = getattr(error, "model", None)
+            terminal_provider = getattr(error, "provider", None) or terminal_provider
+            terminal_model = getattr(error, "model", None) or terminal_model
             error_reason = classify_ai_error_reason(error)
             row = await self._persist(
                 item,

@@ -74,8 +74,9 @@ class FakeNewsLlm:
 
 
 class CorrelatedFallbackNewsLlm:
-    def __init__(self, session):
+    def __init__(self, session, *, response=None):
         self.session = session
+        self.response = response or _valid_response()
         self.calls = 0
 
     async def __call__(self, messages, model, timeout):
@@ -90,10 +91,9 @@ class CorrelatedFallbackNewsLlm:
             llm_operation_id=operation_id,
             status="success",
         )
-        response = _valid_response()
         return LLMJsonResult(
-            json.dumps(response),
-            response,
+            json.dumps(self.response),
+            self.response,
             provider="cerebras",
             model="fallback-model",
         )
@@ -530,6 +530,37 @@ async def test_news_llm_persists_terminal_fallback_attribution_and_operation_out
         )
         assert next_llm.calls == 0
         assert budget_row.llm_status == "skipped_budget"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_news_llm_validation_failure_keeps_terminal_fallback_attribution(monkeypatch):
+    engine, session = await build_session()
+    fake_llm = CorrelatedFallbackNewsLlm(session)
+    try:
+        def validation_failure(_parsed):
+            raise ValueError("invalid News Intelligence result")
+
+        monkeypatch.setattr(
+            "bot.services.news_intelligence_service.validate_llm_output",
+            validation_failure,
+        )
+        service = NewsIntelligenceService(session, llm_client=fake_llm)
+
+        await service.analyze_items([_raw_item()])
+
+        news_row = await session.scalar(select(NewsItem))
+        outcome = await session.scalar(select(LlmOperationOutcome))
+        usage = await session.scalar(select(LlmUsageLog))
+        assert news_row.llm_status == "failed"
+        assert news_row.llm_provider == "cerebras"
+        assert news_row.llm_model == "fallback-model"
+        assert outcome.status == "failed"
+        assert outcome.provider == "cerebras"
+        assert outcome.model == "fallback-model"
+        assert usage.llm_operation_id == outcome.llm_operation_id
     finally:
         await session.close()
         await engine.dispose()
