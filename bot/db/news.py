@@ -154,26 +154,20 @@ async def count_recent_news_intelligence_llm_calls(
     *,
     since: datetime,
 ) -> int:
-    """Count recent logical calls across all providers with migration compatibility."""
-    outcome_count = int(
+    """Count current calls plus the migration-time legacy budget snapshot."""
+    return int(
         await session.scalar(
             select(func.count())
             .select_from(LlmOperationOutcome)
-            .where(LlmOperationOutcome.call_type == "news_intelligence")
+            .where(
+                LlmOperationOutcome.call_type.in_(
+                    ["news_intelligence", "news_intelligence_legacy_budget"]
+                )
+            )
             .where(LlmOperationOutcome.created_at >= since)
         )
         or 0
     )
-    legacy_news_count = int(
-        await session.scalar(
-            select(func.count())
-            .select_from(NewsItem)
-            .where(NewsItem.llm_status.in_(["success", "failed"]))
-            .where(NewsItem.updated_at >= since)
-        )
-        or 0
-    )
-    return max(outcome_count, legacy_news_count)
 
 
 

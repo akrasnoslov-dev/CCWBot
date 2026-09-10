@@ -61,19 +61,22 @@ news section.
 ### Evidence truncation and tracing
 
 The old fixed 500-record structured-log cap could discard the majority of a busy interval. It is
-removed. Detailed records retain newest-first byte bounds, while uncapped safe dimension counts
-preserve totals within the collected tail and truncation remains explicit.
+removed. Every retained log file is streamed completely. Detailed records retain newest-first byte
+bounds, while uncapped safe dimension counts preserve totals across retained files and truncation
+remains explicit.
 
 Event Alert logs now connect candidate crossing, LLM operation start, and terminal decision through
 a sanitized context fingerprint. Bundles export only bundle-local HMAC references.
 
 ## Post-deploy Verification
 
-After merge, migration, bot deploy, and explicit ops-agent image rebuild, collect a fresh bundle
-without advancing state. Confirm:
+After merge, backup, migration, bot deploy, and explicit ops-agent image rebuild, wait for at least
+one new News Intelligence operation, then collect from the recorded UTC deploy start through now
+without advancing state. Confirm Collector Status is complete and:
 
 - Premium/payment consistency is clear unless a genuine missing-expiry row exists.
-- LLM correlation coverage has zero missing IDs and reconciliation has zero gaps for new rows.
+- LLM correlation and coverage evidence is present, correlated operations are greater than zero,
+  and missing IDs and reconciliation gaps are both zero for new rows.
 - ETH/GRAM identity and cooldown detectors do not trigger without suspicious split evidence.
 - structured log metadata reports byte-bounded selection and complete dimension totals.
 - no user-facing Event Alert quality regression is reported.

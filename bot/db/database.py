@@ -1509,6 +1509,7 @@ class LlmOperationOutcome(Base):
             "call_type",
             "created_at",
         ),
+        Index("ix_llm_operation_outcomes_created_at", "created_at"),
         {
             "comment": (
                 "Sanitized final outcomes for logical LLM operations without a dedicated "

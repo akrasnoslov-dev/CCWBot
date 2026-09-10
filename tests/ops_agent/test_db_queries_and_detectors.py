@@ -72,6 +72,7 @@ async def test_all_ops_agent_queries_explain_against_migrated_postgres_schema():
                 await connection.execute(text(f"EXPLAIN {query.sql}"), params)
             await connection.execute(text(f"EXPLAIN {ALERT_EVIDENCE_SQL}"), params)
             await _assert_malformed_numeric_context_is_safe(connection, params)
+            await _assert_reconciliation_joins_across_period_boundaries(connection, params)
             await connection.rollback()
     finally:
         await engine.dispose()
@@ -86,6 +87,56 @@ def _query_params() -> dict[str, object]:
         "anomaly_limit": 20,
         "duplicate_bucket_minutes": 15,
         "alert_evidence_limit": 100,
+    }
+
+
+async def _assert_reconciliation_joins_across_period_boundaries(
+    connection, params: dict[str, object]
+) -> None:
+    await connection.execute(
+        text(
+            """
+            INSERT INTO llm_usage_logs (
+                provider, model, call_type, llm_operation_id, status, created_at
+            ) VALUES
+                ('test_provider', 'test_model', 'news_intelligence',
+                 '10000000-0000-4000-8000-000000000001', 'success',
+                 CAST(:since AS timestamptz) - interval '1 minute'),
+                ('test_provider', 'test_model', 'news_intelligence',
+                 '10000000-0000-4000-8000-000000000002', 'success',
+                 CAST(:until AS timestamptz) - interval '1 minute')
+            """
+        ),
+        params,
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO llm_operation_outcomes (
+                llm_operation_id, call_type, status, provider, model, created_at
+            ) VALUES
+                ('10000000-0000-4000-8000-000000000001', 'news_intelligence',
+                 'success', 'test_provider', 'test_model',
+                 CAST(:since AS timestamptz) + interval '1 minute'),
+                ('10000000-0000-4000-8000-000000000002', 'news_intelligence',
+                 'success', 'test_provider', 'test_model',
+                 CAST(:until AS timestamptz) + interval '1 minute')
+            """
+        ),
+        params,
+    )
+    query = next(
+        item for item in QUERIES if item.name == "llm_operation_reconciliation"
+    )
+    rows = (await connection.execute(text(query.sql), params)).mappings().all()
+    states = {
+        row["llm_operation_id"]: row["reconciliation_state"]
+        for row in rows
+        if row["llm_operation_id"].startswith("10000000-")
+    }
+    assert states == {
+        "10000000-0000-4000-8000-000000000001": "correlated",
+        "10000000-0000-4000-8000-000000000002": "correlated",
     }
 
 

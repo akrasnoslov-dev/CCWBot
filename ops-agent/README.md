@@ -94,16 +94,21 @@ Normal production collection:
 sudo /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
-Post-deploy verification after Event Alert delivery-gap changes:
+Post-deploy verification after Event Alert delivery-gap changes uses the recorded UTC deploy
+start, not a rolling period. Wait for at least one fresh News Intelligence operation to finish,
+then collect without advancing state:
 
 ```bash
-sudo /usr/local/bin/ccwbot-ops-agent-collect --period 2h --until now --no-state-update
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since <deploy-start-UTC> --until now --no-state-update
 ```
 
 Use the generated sanitized bundle and report context to confirm `/health` is OK, container state is
 healthy or explicitly marked unavailable, `market_events_without_alert_deliveries` is clear or only
 contains explicit expected skip reasons, and there are no new critical/high unexplained Event Alert
-detector findings. Perform a basic Telegram smoke check with a private test chat, but do not record
+detector findings. Require complete Collector Status plus present LLM reconciliation and coverage
+evidence: correlated operations must be greater than zero, missing operation IDs must be zero, and
+reconciliation gaps must be zero. Perform a basic Telegram smoke check with a private test chat,
+but do not record
 Telegram user ids, private message text, payment ids, raw logs, raw DB rows, or raw bundle JSON in
 the report. After ops-agent changes, rebuild the `ops-agent` Docker image during production deploy
 before relying on this verification.
@@ -153,11 +158,12 @@ The command prints one JSON object with the generated bundle path. Codex should 
 
 Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. The generated `decision_report_context.md` is Markdown-only decision context; use it to start the final report, then verify important claims against detectors and evidence. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
-Log evidence is period-aware when CCWBot timestamps are parseable. Bundles separate timestamped
+Log evidence scans every retained CCWBot log file completely and is period-aware when timestamps
+are parseable. Bundles separate timestamped
 period-matched structured match records from unscoped tail-context records and include
 skipped/unparseable counts. Records use a strict safe-field allowlist; bundles never include raw
 or redacted log lines. Detailed records have byte caps but no fixed 500-record ceiling; dimension
-counts cover every safe matched record within the collected log tail even when details are
+counts cover every safe matched record within retained log files even when details are
 truncated. Period-matched evidence is stronger for the requested report period.
 
 Detector `unknown` means evidence is missing or inconclusive, not healthy. Market events without deliveries are classified into expected no-delivery, LLM failure/rate-limit, `should_alert=true` delivery gaps, and unknown buckets where the available schema cannot prove the reason.

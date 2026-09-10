@@ -48,7 +48,7 @@ def test_collect_logs_separates_period_matched_and_tail_context(tmp_path):
         output_dir=tmp_path,
         logs_dir=logs_dir,
         legacy_state_path=tmp_path / "state.json",
-        limits=OpsAgentLimits(max_log_tail_bytes=20_000),
+        limits=OpsAgentLimits(),
     )
 
     index, pattern_counts, excerpts, statuses = collect_logs(
@@ -245,7 +245,6 @@ def test_collect_logs_enforces_structured_record_byte_caps_with_newest_evidence(
         logs_dir,
         tmp_path / "state.json",
         limits=OpsAgentLimits(
-            max_log_tail_bytes=20_000,
             max_log_export_bytes_per_file=per_file_limit,
             max_log_export_bytes_total=total_limit,
         ),
@@ -271,6 +270,38 @@ def test_collect_logs_enforces_structured_record_byte_caps_with_newest_evidence(
     )
     assert counts["structured_record_export"]["period_matched"]["omitted_records"] >= 1
     assert sum(row["count"] for row in counts["period_matched_dimension_counts"]) == 3
+
+
+def test_collect_logs_scans_events_before_former_five_megabyte_tail(tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    log_path = logs_dir / "ccwbot-operational.log"
+    log_path.write_text(
+        "2026-06-01 00:00:00Z ERROR ops_event=event_before_large_suffix\n"
+        + ("x" * (5 * 1024 * 1024 + 1)),
+        encoding="utf-8",
+    )
+    config = OpsAgentConfig(None, None, tmp_path, logs_dir, tmp_path / "state.json")
+    period = Period(
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 2, tzinfo=timezone.utc),
+        "test",
+    )
+
+    index, counts, _, statuses = collect_logs(
+        config=config,
+        period=period,
+        mapper=ReferenceMapper(salt=b"6" * 32),
+        redaction_report=RedactionReport(),
+    )
+
+    assert counts["period_matched_pattern_counts"]["error"] == 1
+    assert counts["period_matched_records"][0]["event"] == "event_before_large_suffix"
+    assert index["files"][0]["complete_file_scanned"] is True
+    assert index["files"][0]["bytes_read"] == log_path.stat().st_size
+    assert statuses == [
+        {"name": "logs.ccwbot-operational.log", "status": "ok", "error": None}
+    ]
 
 
 def test_collect_logs_rejects_unbounded_event_and_suppression_reason_values(tmp_path):

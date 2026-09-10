@@ -13,7 +13,6 @@ class OpsAgentLimits:
     db_row_cap: int = 500
     anomaly_row_cap: int = 200
     recent_sample_row_cap: int = 100
-    max_log_tail_bytes: int = 5 * 1024 * 1024
     max_log_export_bytes_per_file: int = 2 * 1024 * 1024
     max_log_export_bytes_total: int = 8 * 1024 * 1024
     raw_llm_sample_cap: int = 5
@@ -70,7 +69,6 @@ def load_config(output_dir: str | None = None) -> OpsAgentConfig:
         db_row_cap=_int_env("OPS_AGENT_DB_ROW_CAP", 500),
         anomaly_row_cap=_int_env("OPS_AGENT_ANOMALY_ROW_CAP", 200),
         recent_sample_row_cap=_int_env("OPS_AGENT_RECENT_SAMPLE_ROW_CAP", 100),
-        max_log_tail_bytes=_int_env("OPS_AGENT_MAX_LOG_TAIL_BYTES", 5 * 1024 * 1024),
         max_log_export_bytes_per_file=_int_env(
             "OPS_AGENT_MAX_LOG_EXPORT_BYTES_PER_FILE", 2 * 1024 * 1024
         ),

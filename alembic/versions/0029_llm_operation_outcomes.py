@@ -85,9 +85,38 @@ def upgrade() -> None:
         "llm_operation_outcomes",
         ["call_type", "created_at"],
     )
+    op.create_index(
+        "ix_llm_operation_outcomes_created_at",
+        "llm_operation_outcomes",
+        ["created_at"],
+    )
+    news_columns = {
+        column["name"] for column in sa.inspect(op.get_bind()).get_columns("news_items")
+    }
+    required_news_columns = {
+        "id",
+        "llm_status",
+        "llm_provider",
+        "llm_model",
+        "updated_at",
+    }
+    if required_news_columns <= news_columns:
+        op.execute(
+            sa.text(
+                "INSERT INTO llm_operation_outcomes "
+                "(llm_operation_id, call_type, status, provider, model, created_at) "
+                "SELECT 'legacy-news-' || CAST(id AS VARCHAR(20)), "
+                "'news_intelligence_legacy_budget', llm_status, llm_provider, llm_model, "
+                "updated_at FROM news_items WHERE llm_status IN ('success', 'failed')"
+            )
+        )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_llm_operation_outcomes_created_at",
+        table_name="llm_operation_outcomes",
+    )
     op.drop_index(
         "ix_llm_operation_outcomes_call_type_created_at",
         table_name="llm_operation_outcomes",

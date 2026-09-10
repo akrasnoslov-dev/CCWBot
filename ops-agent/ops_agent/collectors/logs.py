@@ -66,14 +66,6 @@ LOG_TIMESTAMP_RE = re.compile(
 )
 
 
-def _tail_bytes(path: Path, limit: int) -> str:
-    with path.open("rb") as file:
-        file.seek(0, 2)
-        size = file.tell()
-        file.seek(max(size - limit, 0))
-        return file.read().decode("utf-8", errors="replace")
-
-
 def parse_log_timestamp(line: str) -> datetime | None:
     match = LOG_TIMESTAMP_RE.match(line)
     if not match:
@@ -319,8 +311,7 @@ def collect_logs(
     for path in log_files:
         try:
             source = path.name
-            text = _tail_bytes(path, config.limits.max_log_tail_bytes)
-            lines = text.splitlines()
+            source_size_bytes = path.stat().st_size
             ops_events: dict[str, int] = {}
             period_suppression_reasons: dict[str, int] = {}
             tail_suppression_reasons: dict[str, int] = {}
@@ -328,65 +319,69 @@ def collect_logs(
             period_matched_lines = 0
             outside_period_lines = 0
             unparseable_timestamp_lines = 0
-            for line in lines:
-                parsed_at = parse_log_timestamp(line)
-                matches = _line_patterns(line)
-                if parsed_at is not None:
-                    parseable_timestamps += 1
-                    if period.start <= parsed_at < period.end:
-                        period_matched_lines += 1
+            bytes_read = 0
+            with path.open("rb") as lines:
+                for raw_line in lines:
+                    bytes_read += len(raw_line)
+                    line = raw_line.decode("utf-8", errors="replace")
+                    parsed_at = parse_log_timestamp(line)
+                    matches = _line_patterns(line)
+                    if parsed_at is not None:
+                        parseable_timestamps += 1
+                        if period.start <= parsed_at < period.end:
+                            period_matched_lines += 1
+                            for name in matches:
+                                period_counts[name] += 1
+                            suppression_match = SUPPRESSION_REASON_RE.search(line)
+                            if suppression_match:
+                                reason = suppression_match.group(1)
+                                if _SAFE_TOKEN_RE.fullmatch(reason):
+                                    period_suppression_reasons[reason] = (
+                                        period_suppression_reasons.get(reason, 0) + 1
+                                    )
+                                    period_suppression_reason_counts[reason] = (
+                                        period_suppression_reason_counts.get(reason, 0) + 1
+                                    )
+                            if matches:
+                                record_buffer.add(
+                                    scope="period_matched",
+                                    source=source,
+                                    record=_structured_match_record(
+                                        line, parsed_at=parsed_at, patterns=matches, mapper=mapper
+                                    ),
+                                )
+                        else:
+                            outside_period_lines += 1
+                    else:
+                        unparseable_timestamp_lines += 1
                         for name in matches:
-                            period_counts[name] += 1
+                            tail_context_counts[name] += 1
                         suppression_match = SUPPRESSION_REASON_RE.search(line)
                         if suppression_match:
                             reason = suppression_match.group(1)
                             if _SAFE_TOKEN_RE.fullmatch(reason):
-                                period_suppression_reasons[reason] = (
-                                    period_suppression_reasons.get(reason, 0) + 1
+                                tail_suppression_reasons[reason] = (
+                                    tail_suppression_reasons.get(reason, 0) + 1
                                 )
-                                period_suppression_reason_counts[reason] = (
-                                    period_suppression_reason_counts.get(reason, 0) + 1
+                                tail_suppression_reason_counts[reason] = (
+                                    tail_suppression_reason_counts.get(reason, 0) + 1
                                 )
                         if matches:
                             record_buffer.add(
-                                scope="period_matched",
+                                scope="tail_context",
                                 source=source,
                                 record=_structured_match_record(
-                                    line, parsed_at=parsed_at, patterns=matches, mapper=mapper
+                                    line, parsed_at=None, patterns=matches, mapper=mapper
                                 ),
                             )
-                    else:
-                        outside_period_lines += 1
-                else:
-                    unparseable_timestamp_lines += 1
-                    for name in matches:
-                        tail_context_counts[name] += 1
-                    suppression_match = SUPPRESSION_REASON_RE.search(line)
-                    if suppression_match:
-                        reason = suppression_match.group(1)
-                        if _SAFE_TOKEN_RE.fullmatch(reason):
-                            tail_suppression_reasons[reason] = (
-                                tail_suppression_reasons.get(reason, 0) + 1
-                            )
-                            tail_suppression_reason_counts[reason] = (
-                                tail_suppression_reason_counts.get(reason, 0) + 1
-                            )
-                    if matches:
-                        record_buffer.add(
-                            scope="tail_context",
-                            source=source,
-                            record=_structured_match_record(
-                                line, parsed_at=None, patterns=matches, mapper=mapper
-                            ),
-                        )
-                match = OPS_EVENT_RE.search(line)
-                if (
-                    match
-                    and _SAFE_TOKEN_RE.fullmatch(match.group(1))
-                    and not looks_like_secret_value(match.group(1))
-                ):
-                    event = match.group(1)
-                    ops_events[event] = ops_events.get(event, 0) + 1
+                    match = OPS_EVENT_RE.search(line)
+                    if (
+                        match
+                        and _SAFE_TOKEN_RE.fullmatch(match.group(1))
+                        and not looks_like_secret_value(match.group(1))
+                    ):
+                        event = match.group(1)
+                        ops_events[event] = ops_events.get(event, 0) + 1
 
             if parseable_timestamps == 0:
                 index["warnings"].append(
@@ -394,7 +389,9 @@ def collect_logs(
                 )
             file_index = {
                 "name": source,
-                "bytes_read": len(text.encode("utf-8")),
+                "source_size_bytes_at_open": source_size_bytes,
+                "bytes_read": bytes_read,
+                "complete_file_scanned": bytes_read >= source_size_bytes,
                 "timestamp_parse": {
                     "parseable_lines": parseable_timestamps,
                     "period_matched_lines": period_matched_lines,
@@ -423,7 +420,19 @@ def collect_logs(
             }
             index["files"].append(file_index)
             file_index_by_source[source] = file_index
-            statuses.append({"name": f"logs.{path.name}", "status": "ok", "error": None})
+            if file_index["complete_file_scanned"]:
+                statuses.append(
+                    {"name": f"logs.{path.name}", "status": "ok", "error": None}
+                )
+            else:
+                index["warnings"].append(f"{path.name}: source changed during collection")
+                statuses.append(
+                    {
+                        "name": f"logs.{path.name}",
+                        "status": "partial",
+                        "error": "source_changed_during_collection",
+                    }
+                )
         except Exception as error:
             message = _safe_collector_error(error)
             index["warnings"].append(f"{path.name}: {message}")

@@ -53,8 +53,9 @@ The News Intelligence cache hash includes the compact input and configured reque
 served-provider attribution stays in the cached row. This preserves exact cache invalidation on a
 configured model change and permits fallback results to be reused without pretending Groq served
 them. Pre-migration input hashes remain reusable when their configured model matches. Its hourly
-call budget counts logical `llm_operation_outcomes` across all providers and temporarily takes the
-higher legacy `news_items` count during migration rollout.
+call budget counts logical `llm_operation_outcomes` across all providers. Migration 0029 creates a
+non-overlapping legacy budget snapshot for prior successful/failed News rows, so new retries and
+reanalyzes remain additive without a permanent time scan over `news_items`.
 
 Only explicit response-header allowlist fields are persisted. `provider_request_id` is retained
 when `x-request-id` or `request-id` is available; raw headers and bodies are never stored. Groq

@@ -9,14 +9,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bot.db.database import (
     Base,
     LlmOperationOutcome,
+    LlmUsageLog,
     NewsItem,
     SeenNews,
     make_news_key,
     mark_news_items_seen,
     upsert_news_item,
 )
+from bot.db.llm_usage import save_llm_usage_log
+from bot.db.news import count_recent_news_intelligence_llm_calls
 from bot.news import select_intelligence_news_for_symbol
 from bot.services.ai_agent_groq import LLMJsonResult
+from bot.services.llm.operation import current_llm_operation_id
 from bot.services.news_intelligence_service import (
     NewsIntelligenceService,
     build_llm_payload,
@@ -66,6 +70,32 @@ class FakeNewsLlm:
             response,
             provider=self.provider,
             model=self.model,
+        )
+
+
+class CorrelatedFallbackNewsLlm:
+    def __init__(self, session):
+        self.session = session
+        self.calls = 0
+
+    async def __call__(self, messages, model, timeout):
+        self.calls += 1
+        operation_id = current_llm_operation_id()
+        assert operation_id is not None
+        await save_llm_usage_log(
+            self.session,
+            provider="cerebras",
+            model="fallback-model",
+            call_type="news_intelligence",
+            llm_operation_id=operation_id,
+            status="success",
+        )
+        response = _valid_response()
+        return LLMJsonResult(
+            json.dumps(response),
+            response,
+            provider="cerebras",
+            model="fallback-model",
         )
 
 
@@ -464,16 +494,13 @@ async def test_llm_non_zero_scores_are_persisted_from_flexible_values():
 @pytest.mark.asyncio
 async def test_news_llm_persists_terminal_fallback_attribution_and_operation_outcome():
     engine, session = await build_session()
-    fake_llm = FakeNewsLlm(
-        [_valid_response()],
-        provider="cerebras",
-        model="fallback-model",
-    )
+    fake_llm = CorrelatedFallbackNewsLlm(session)
     try:
         service = NewsIntelligenceService(session, llm_client=fake_llm)
         await service.analyze_items([_raw_item()])
         news_row = await session.scalar(select(NewsItem))
         outcome = await session.scalar(select(LlmOperationOutcome))
+        usage = await session.scalar(select(LlmUsageLog))
 
         assert news_row.llm_provider == "cerebras"
         assert news_row.llm_model == "fallback-model"
@@ -482,6 +509,7 @@ async def test_news_llm_persists_terminal_fallback_attribution_and_operation_out
         assert outcome.provider == "cerebras"
         assert outcome.model == "fallback-model"
         assert len(outcome.llm_operation_id) == 36
+        assert usage.llm_operation_id == outcome.llm_operation_id
 
         next_llm = FakeNewsLlm([_valid_response()])
         next_service = NewsIntelligenceService(
@@ -502,6 +530,39 @@ async def test_news_llm_persists_terminal_fallback_attribution_and_operation_out
         )
         assert next_llm.calls == 0
         assert budget_row.llm_status == "skipped_budget"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_news_budget_counts_legacy_snapshot_and_new_operations_without_overlap():
+    engine, session = await build_session()
+    now = datetime.now(timezone.utc)
+    session.add_all(
+        [
+            LlmOperationOutcome(
+                llm_operation_id="legacy-news-1",
+                call_type="news_intelligence_legacy_budget",
+                status="success",
+                created_at=now,
+            ),
+            LlmOperationOutcome(
+                llm_operation_id="20000000-0000-4000-8000-000000000001",
+                call_type="news_intelligence",
+                status="success",
+                created_at=now,
+            ),
+        ]
+    )
+    await session.commit()
+    try:
+        assert (
+            await count_recent_news_intelligence_llm_calls(
+                session, since=now - timedelta(minutes=1)
+            )
+            == 2
+        )
     finally:
         await session.close()
         await engine.dispose()
