@@ -19,7 +19,7 @@ from ops_agent.detectors import (
     event_analysis_call_totals,
     run_detectors,
 )
-from ops_agent.redaction import RedactionReport, ReferenceMapper, redact_error_message
+from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.report_markdown import render_decision_report_context
 from ops_agent.retention import apply_retention
 from ops_agent.state import (
@@ -33,6 +33,95 @@ from ops_agent.state import (
 
 def _print_json(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True, default=str))
+
+
+def _failed_evidence(period: Any, error: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "period": period.as_dict(),
+        "status": "failed",
+        "error": error,
+    }
+
+
+def _add_failure(
+    writer: BundleWriter,
+    *,
+    name: str,
+    error: Exception,
+) -> str:
+    # Orchestration failures can contain response bodies or credentials. Unlike errors
+    # from individual collectors, do not preserve exception text in bundle metadata.
+    if isinstance(error, PermissionError):
+        message = "permission_denied"
+    elif isinstance(error, TimeoutError):
+        message = "timeout"
+    elif isinstance(error, OSError):
+        message = "io_error"
+    else:
+        message = "collector_error"
+    writer.add_status(name, "partial", message)
+    return message
+
+
+def _collection_status(writer: BundleWriter) -> str:
+    return (
+        "partial"
+        if any(status.status != "ok" for status in writer.collector_status)
+        else "complete"
+    )
+
+
+def _collection_result(
+    *,
+    writer: BundleWriter,
+    period: Any,
+    status: str,
+    error: str | None = None,
+    state_update_status: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": status,
+        "bundle_path": str(writer.path),
+        "codex_instructions_path": str(writer.path / "CODEX_INSTRUCTIONS.md"),
+        "manifest_path": str(writer.path / "manifest.json"),
+        "period_start": period.as_dict()["start"],
+        "period_end": period.as_dict()["end"],
+    }
+    if error:
+        payload["error"] = error
+    if state_update_status:
+        payload["state_update_status"] = state_update_status
+    return payload
+
+
+def _write_decision_context(
+    *,
+    writer: BundleWriter,
+    period: Any,
+    evidence: dict[str, Any],
+    detector_results: list[Any],
+    collection_status: str,
+) -> None:
+    try:
+        writer.write_text(
+            "decision_report_context.md",
+            render_decision_report_context(
+                period=period,
+                evidence=evidence,
+                detector_results=detector_results,
+                collection_status=collection_status,
+                collector_status=[status.as_dict() for status in writer.collector_status],
+                bundle_id=writer.bundle_id,
+            ),
+        )
+    except Exception as error:
+        message = _add_failure(writer, name="decision_context", error=error)
+        writer.write_text(
+            "decision_report_context.md",
+            "# Decision Report Context\n\nStatus: partial\n\n"
+            f"Decision context generation failed: `{message}`.\n",
+        )
 
 
 async def _collect(args: argparse.Namespace) -> int:
@@ -53,146 +142,262 @@ async def _collect(args: argparse.Namespace) -> int:
     writer = BundleWriter(config, period)
     evidence: dict[str, Any] = {}
     protected_identity_map = False
-    writer.initialize()
-
     try:
-        db_payloads, db_statuses = await collect_db(
-            config=config,
+        writer.initialize()
+
+        try:
+            db_payloads, db_statuses = await collect_db(
+                config=config,
+                period=period,
+                mapper=mapper,
+                redaction_report=redaction_report,
+                include_raw_llm_samples=args.include_raw_llm_samples,
+            )
+            for path, payload in db_payloads.items():
+                writer.write_json(path, payload)
+                evidence[path] = payload
+            for status in db_statuses:
+                writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
+        except Exception as error:
+            message = _add_failure(
+                writer, name="db", error=error
+            )
+            for path in (
+                "evidence/db/aggregate_metrics.json",
+                "evidence/db/alert_quality.json",
+                "evidence/db/anomalies.json",
+            ):
+                payload = _failed_evidence(period, message)
+                writer.write_json(path, payload)
+                evidence[path] = payload
+
+        try:
+            health_payload, health_status = await collect_health(
+                config=config,
+                period=period,
+                mapper=mapper,
+                redaction_report=redaction_report,
+            )
+            writer.write_json("evidence/health/health.json", health_payload)
+            evidence["evidence/health/health.json"] = health_payload
+            writer.add_status(
+                str(health_status["name"]), str(health_status["status"]), health_status.get("error")
+            )
+        except Exception as error:
+            message = _add_failure(
+                writer, name="health", error=error
+            )
+            payload = _failed_evidence(period, message)
+            writer.write_json("evidence/health/health.json", payload)
+            evidence["evidence/health/health.json"] = payload
+
+        try:
+            log_index, pattern_counts, excerpts, log_statuses = collect_logs(
+                config=config,
+                period=period,
+                mapper=mapper,
+                redaction_report=redaction_report,
+            )
+            writer.write_json("evidence/logs/log_index.json", log_index)
+            writer.write_json("evidence/logs/pattern_counts.json", pattern_counts)
+            evidence["evidence/logs/log_index.json"] = log_index
+            evidence["evidence/logs/pattern_counts.json"] = pattern_counts
+            for path, payload in excerpts.items():
+                writer.write_text(path, payload["text"])
+            for status in log_statuses:
+                writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
+        except Exception as error:
+            message = _add_failure(
+                writer, name="logs", error=error
+            )
+            log_index = {**_failed_evidence(period, message), "files": [], "warnings": [message]}
+            pattern_counts = {
+                **_failed_evidence(period, message),
+                "candidate_crossing_evidence": {"status": "failed", "error": message},
+            }
+            for path, payload in {
+                "evidence/logs/log_index.json": log_index,
+                "evidence/logs/pattern_counts.json": pattern_counts,
+            }.items():
+                writer.write_json(path, payload)
+                evidence[path] = payload
+
+        try:
+            docker_payload, docker_status = collect_docker(config=config, period=period)
+            writer.write_json("evidence/docker/container_state.json", docker_payload)
+            evidence["evidence/docker/container_state.json"] = docker_payload
+            writer.add_status(
+                str(docker_status["name"]), str(docker_status["status"]), docker_status.get("error")
+            )
+        except Exception as error:
+            message = _add_failure(
+                writer, name="docker", error=error
+            )
+            payload = {**_failed_evidence(period, message), "services": [], "warnings": [message]}
+            writer.write_json("evidence/docker/container_state.json", payload)
+            evidence["evidence/docker/container_state.json"] = payload
+
+        try:
+            local_state = collect_local_state(
+                config=config,
+                mapper=mapper,
+                redaction_report=redaction_report,
+            )
+            writer.write_json(
+                "evidence/local_state/ops_agent_state_snapshot.json",
+                local_state["ops_agent_state_snapshot"],
+            )
+            evidence["evidence/local_state/ops_agent_state_snapshot.json"] = local_state[
+                "ops_agent_state_snapshot"
+            ]
+            writer.write_json(
+                "evidence/local_state/legacy_state_snapshot.json",
+                local_state["legacy_state_snapshot"],
+            )
+            evidence["evidence/local_state/legacy_state_snapshot.json"] = local_state[
+                "legacy_state_snapshot"
+            ]
+            writer.add_status("local_state", "ok", None)
+        except Exception as error:
+            message = _add_failure(
+                writer,
+                name="local_state",
+                error=error,
+            )
+            payload = _failed_evidence(period, message)
+            for path in (
+                "evidence/local_state/ops_agent_state_snapshot.json",
+                "evidence/local_state/legacy_state_snapshot.json",
+            ):
+                writer.write_json(path, payload)
+                evidence[path] = payload
+
+        if args.include_protected_identity_map:
+            try:
+                writer.write_protected_json(
+                    "private/identity_map.protected.json", mapper.identity_map
+                )
+                protected_identity_map = True
+            except Exception as error:
+                _add_failure(
+                    writer,
+                    name="identity_map",
+                    error=error,
+                )
+
+        try:
+            results = run_detectors(evidence, period)
+            detector_results = detector_payload(period, results)
+            writer.write_json("detectors/detector_results.json", detector_results)
+            evidence["detectors/detector_results.json"] = detector_results
+            writer.write_text("detectors/detector_summary.md", detector_summary(results))
+        except Exception as error:
+            message = _add_failure(
+                writer,
+                name="detectors",
+                error=error,
+            )
+            results = []
+            detector_results = {**_failed_evidence(period, message), "results": []}
+            writer.write_json("detectors/detector_results.json", detector_results)
+            evidence["detectors/detector_results.json"] = detector_results
+            writer.write_text(
+                "detectors/detector_summary.md", "# Detector Summary\n\nStatus: failed\n"
+            )
+
+        detector_status_counts: dict[str, int] = {}
+        for result in results:
+            detector_status_counts[result.status] = detector_status_counts.get(result.status, 0) + 1
+        log_evidence_summary = _summarize_log_evidence(log_index)
+
+        try:
+            apply_retention(config)
+        except Exception as error:
+            _add_failure(
+                writer,
+                name="retention",
+                error=error,
+            )
+
+        _write_decision_context(
+            writer=writer,
             period=period,
-            mapper=mapper,
-            redaction_report=redaction_report,
-            include_raw_llm_samples=args.include_raw_llm_samples,
+            evidence=evidence,
+            detector_results=results,
+            collection_status=_collection_status(writer),
         )
-        for path, payload in db_payloads.items():
-            writer.write_json(path, payload)
-            evidence[path] = payload
-        for status in db_statuses:
-            writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
-    except Exception as error:
-        writer.add_status("db", "partial", redact_error_message(error, mapper, redaction_report))
-
-    health_payload, health_status = await collect_health(
-        config=config,
-        period=period,
-        mapper=mapper,
-        redaction_report=redaction_report,
-    )
-    writer.write_json("evidence/health/health.json", health_payload)
-    evidence["evidence/health/health.json"] = health_payload
-    writer.add_status(
-        str(health_status["name"]), str(health_status["status"]), health_status.get("error")
-    )
-
-    log_index, pattern_counts, excerpts, log_statuses = collect_logs(
-        config=config,
-        period=period,
-        mapper=mapper,
-        redaction_report=redaction_report,
-    )
-    writer.write_json("evidence/logs/log_index.json", log_index)
-    writer.write_json("evidence/logs/pattern_counts.json", pattern_counts)
-    evidence["evidence/logs/log_index.json"] = log_index
-    evidence["evidence/logs/pattern_counts.json"] = pattern_counts
-    for path, payload in excerpts.items():
-        writer.write_text(path, payload["text"])
-    for status in log_statuses:
-        writer.add_status(str(status["name"]), str(status["status"]), status.get("error"))
-
-    docker_payload, docker_status = collect_docker(config=config, period=period)
-    writer.write_json("evidence/docker/container_state.json", docker_payload)
-    evidence["evidence/docker/container_state.json"] = docker_payload
-    writer.add_status(
-        str(docker_status["name"]), str(docker_status["status"]), docker_status.get("error")
-    )
-
-    local_state = collect_local_state(
-        config=config,
-        mapper=mapper,
-        redaction_report=redaction_report,
-    )
-    writer.write_json(
-        "evidence/local_state/ops_agent_state_snapshot.json",
-        local_state["ops_agent_state_snapshot"],
-    )
-    # Registered as evidence, not only written to the bundle: detectors read the `evidence`
-    # dict, and the cross-cycle event-analysis streak is derived from prior runs recorded in
-    # this snapshot. Every other collector registers both; local_state did not.
-    evidence["evidence/local_state/ops_agent_state_snapshot.json"] = local_state[
-        "ops_agent_state_snapshot"
-    ]
-    writer.write_json(
-        "evidence/local_state/legacy_state_snapshot.json",
-        local_state["legacy_state_snapshot"],
-    )
-    evidence["evidence/local_state/legacy_state_snapshot.json"] = local_state[
-        "legacy_state_snapshot"
-    ]
-    writer.add_status("local_state", "ok", None)
-
-    if args.include_protected_identity_map:
-        writer.write_protected_json("private/identity_map.protected.json", mapper.identity_map)
-        protected_identity_map = True
-
-    results = run_detectors(evidence, period)
-    detector_results = detector_payload(period, results)
-    writer.write_json("detectors/detector_results.json", detector_results)
-    evidence["detectors/detector_results.json"] = detector_results
-    writer.write_text("detectors/detector_summary.md", detector_summary(results))
-    detector_status_counts: dict[str, int] = {}
-    for result in results:
-        detector_status_counts[result.status] = detector_status_counts.get(result.status, 0) + 1
-    log_evidence_summary = _summarize_log_evidence(log_index)
-
-    partial = any(status.status != "ok" for status in writer.collector_status)
-    collection_status = "partial" if partial else "complete"
-    writer.write_text(
-        "decision_report_context.md",
-        render_decision_report_context(
+        collection_status = writer.finalize(
+            collection_status=_collection_status(writer),
+            redaction_report=redaction_report,
+            detector_count=len(results),
+            protected_identity_map=protected_identity_map,
+            detector_status_counts=detector_status_counts,
+            log_evidence_summary=log_evidence_summary,
+            publish_manifest=False,
+        )
+        _write_decision_context(
+            writer=writer,
             period=period,
             evidence=evidence,
             detector_results=results,
             collection_status=collection_status,
-            collector_status=[status.as_dict() for status in writer.collector_status],
-            bundle_id=writer.bundle_id,
-        ),
-    )
-    collection_status = writer.finalize(
-        collection_status=collection_status,
-        redaction_report=redaction_report,
-        detector_count=len(results),
-        protected_identity_map=protected_identity_map,
-        detector_status_counts=detector_status_counts,
-        log_evidence_summary=log_evidence_summary,
-    )
-
-    if not args.no_state_update:
-        save_state(
-            config.state_path,
-            record_collection(
-                state,
-                bundle_id=writer.bundle_id,
-                status=collection_status,
-                period=period,
-                failed_collectors=[
-                    status.name
-                    for status in writer.collector_status
-                    if status.status != "ok"
-                ],
-                event_analysis=_event_analysis_signal(evidence),
-            ),
         )
-    apply_retention(config)
+        if collection_status != "failed" and _collection_status(writer) == "partial":
+            collection_status = "partial"
+        writer.write_summary(
+            collection_status=collection_status,
+            detector_count=len(results),
+            detector_status_counts=detector_status_counts,
+            log_evidence_summary=log_evidence_summary,
+        )
+
+        writer.write_manifest(collection_status, protected_identity_map=protected_identity_map)
+    except Exception:
+        _print_json(
+            _collection_result(
+                writer=writer,
+                period=period,
+                status="failed",
+                error="collection_finalization_failed",
+            )
+        )
+        return 2
+
+    state_update_status = None
+    if not args.no_state_update:
+        try:
+            # A bundle is committed by its atomic manifest publication. State is optional
+            # bookkeeping (--no-state-update is supported), so never certify a state entry
+            # before that publication can succeed.
+            save_state(
+                config.state_path,
+                record_collection(
+                    state,
+                    bundle_id=writer.bundle_id,
+                    status=collection_status,
+                    period=period,
+                    failed_collectors=[
+                        status.name
+                        for status in writer.collector_status
+                        if status.status != "ok"
+                    ],
+                    event_analysis=_event_analysis_signal(evidence),
+                ),
+            )
+        except Exception:
+            # The published manifest remains the authoritative bundle status. Do not
+            # rewrite it after publication; surface the bookkeeping failure separately.
+            state_update_status = "failed"
+
     _print_json(
-        {
-            "status": collection_status,
-            "bundle_path": str(writer.path),
-            "codex_instructions_path": str(writer.path / "CODEX_INSTRUCTIONS.md"),
-            "manifest_path": str(writer.path / "manifest.json"),
-            "period_start": period.as_dict()["start"],
-            "period_end": period.as_dict()["end"],
-        }
+        _collection_result(
+            writer=writer,
+            period=period,
+            status=collection_status,
+            state_update_status=state_update_status,
+        )
     )
-    return 0
+    return 0 if collection_status == "complete" else 1 if collection_status == "partial" else 2
 
 
 def _event_analysis_signal(evidence: dict[str, Any]) -> dict[str, int]:

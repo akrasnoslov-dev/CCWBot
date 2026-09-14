@@ -25,6 +25,9 @@ NON_DROPPABLE_BUNDLE_FILES = {
     "evidence/db/alert_quality.json",
     "evidence/db/anomalies.json",
     "evidence/health/health.json",
+    "evidence/docker/container_state.json",
+    "evidence/logs/log_index.json",
+    "evidence/logs/pattern_counts.json",
     "redaction_report.json",
     "limits.json",
 }
@@ -62,6 +65,18 @@ def write_json(path: Path, payload: Any) -> None:
     with path.open("w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2, sort_keys=True, default=str)
         file.write("\n")
+
+
+def write_json_atomic(path: Path, payload: Any) -> None:
+    """Publish the manifest only after its complete JSON payload is on disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        write_json(temporary, payload)
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def write_text(path: Path, payload: str) -> None:
@@ -131,6 +146,7 @@ class BundleWriter:
         protected_identity_map: bool,
         detector_status_counts: dict[str, int] | None = None,
         log_evidence_summary: dict[str, Any] | None = None,
+        publish_manifest: bool = True,
     ) -> str:
         self.write_json("redaction_report.json", redaction_report.as_dict())
         self.write_json(
@@ -148,6 +164,49 @@ class BundleWriter:
         )
         detector_status_counts = detector_status_counts or {}
         log_evidence_summary = log_evidence_summary or {}
+        self.write_summary(
+            collection_status=collection_status,
+            detector_count=detector_count,
+            detector_status_counts=detector_status_counts,
+            log_evidence_summary=log_evidence_summary,
+        )
+        final_status = self._collection_status_after_size_enforcement(collection_status)
+        missing = self._missing_required_files_before_manifest()
+        if missing:
+            self.add_status(
+                "bundle.finalization",
+                "failed",
+                "missing_required_bundle_files",
+            )
+            self.warnings.append(
+                "bundle_finalization_missing_required_files: " + ", ".join(missing)
+            )
+            final_status = "failed"
+        elif final_status == "complete" and any(
+            status.status != "ok" for status in self.collector_status
+        ):
+            # The caller normally derives this, but a finalizer must never certify a
+            # collector-failed bundle as complete just because of an incorrect input.
+            final_status = "partial"
+        if final_status != collection_status:
+            self.write_summary(
+                collection_status=final_status,
+                detector_count=detector_count,
+                detector_status_counts=detector_status_counts,
+                log_evidence_summary=log_evidence_summary,
+            )
+        if publish_manifest:
+            self.write_manifest(final_status, protected_identity_map=protected_identity_map)
+        return final_status
+
+    def write_summary(
+        self,
+        *,
+        collection_status: str,
+        detector_count: int,
+        detector_status_counts: dict[str, int],
+        log_evidence_summary: dict[str, Any],
+    ) -> None:
         self.write_text(
             "bundle_summary.md",
             "\n".join(
@@ -180,9 +239,13 @@ class BundleWriter:
                 ]
             ),
         )
-        final_status = self._collection_status_after_size_enforcement(collection_status)
-        self.write_manifest(final_status, protected_identity_map=protected_identity_map)
-        return final_status
+
+    def _missing_required_files_before_manifest(self) -> list[str]:
+        return sorted(
+            relative
+            for relative in NON_DROPPABLE_BUNDLE_FILES - {"manifest.json"}
+            if not (self.path / relative).is_file()
+        )
 
     def _bundle_size_bytes(self) -> int:
         return sum(child.stat().st_size for child in self.path.rglob("*") if child.is_file())
@@ -294,4 +357,4 @@ class BundleWriter:
             "protected_identity_map": protected_identity_map,
             "warnings": self.warnings,
         }
-        write_json(self.path / "manifest.json", payload)
+        write_json_atomic(self.path / "manifest.json", payload)
