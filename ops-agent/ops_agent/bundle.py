@@ -32,6 +32,10 @@ NON_DROPPABLE_BUNDLE_FILES = {
     "limits.json",
 }
 
+class BundleSizeLimitError(RuntimeError):
+    """Raised when mandatory evidence alone cannot fit the configured hard cap."""
+
+
 CODEX_INSTRUCTIONS = """# Codex Instructions For This Ops-Agent Bundle
 
 Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-prompt.md`.
@@ -90,8 +94,17 @@ def write_protected_json(path: Path, payload: Any) -> None:
         path.parent.chmod(0o700)
     except OSError:
         pass
-    write_json(path, payload)
-    os.chmod(path, 0o600)
+    try:
+        write_json(path, payload)
+        os.chmod(path, 0o600)
+    except Exception:
+        # Never allow raw identity mappings to remain in a bundle after permission
+        # hardening fails. The caller fails closed if this cleanup cannot complete.
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def sha256_file(path: Path) -> str:
@@ -170,7 +183,10 @@ class BundleWriter:
             detector_status_counts=detector_status_counts,
             log_evidence_summary=log_evidence_summary,
         )
-        final_status = self._collection_status_after_size_enforcement(collection_status)
+        final_status = self._collection_status_after_size_enforcement(
+            collection_status,
+            protected_identity_map=protected_identity_map,
+        )
         missing = self._missing_required_files_before_manifest()
         if missing:
             self.add_status(
@@ -194,6 +210,10 @@ class BundleWriter:
                 detector_count=detector_count,
                 detector_status_counts=detector_status_counts,
                 log_evidence_summary=log_evidence_summary,
+            )
+            final_status = self._collection_status_after_size_enforcement(
+                final_status,
+                protected_identity_map=protected_identity_map,
             )
         if publish_manifest:
             self.write_manifest(final_status, protected_identity_map=protected_identity_map)
@@ -290,48 +310,96 @@ class BundleWriter:
             )
         return candidates
 
-    def _collection_status_after_size_enforcement(self, collection_status: str) -> str:
-        bundle_size = self._bundle_size_bytes()
+    def _collection_status_after_size_enforcement(
+        self,
+        collection_status: str,
+        *,
+        protected_identity_map: bool | None = None,
+    ) -> str:
         limit = self.config.limits.bundle_hard_cap_bytes
-        if bundle_size <= limit:
+        if self._bundle_size_with_pending_manifest(
+            collection_status, protected_identity_map
+        ) <= limit:
             return collection_status
         dropped: list[str] = []
-        for candidate in self._drop_candidates_for_size_pressure():
+        candidates = iter(self._drop_candidates_for_size_pressure())
+        self._record_size_limit_status("bundle hard cap exceeded")
+        while True:
+            bundle_size = self._bundle_size_with_pending_manifest(
+                "partial", protected_identity_map
+            )
+            if bundle_size <= limit:
+                if dropped:
+                    warning = "bundle_size_pressure_dropped_files: " + ", ".join(dropped)
+                    if warning not in self.warnings:
+                        self._set_size_warning(warning)
+                        # The warning is stored in the manifest, so account for its
+                        # bytes before declaring the hard-cap check complete.
+                        continue
+                return "partial"
+            try:
+                candidate = next(candidates)
+            except StopIteration:
+                self._set_size_warning(
+                    "bundle_size_exceeded: "
+                    f"bundle is {bundle_size} bytes, over hard cap {limit} bytes"
+                )
+                final_size = self._bundle_size_with_pending_manifest(
+                    "partial", protected_identity_map
+                )
+                raise BundleSizeLimitError(
+                    f"mandatory bundle evidence is {final_size} bytes, over hard cap {limit}"
+                ) from None
             if not candidate.is_file():
                 continue
             relative = candidate.relative_to(self.path).as_posix()
             candidate.unlink()
             dropped.append(relative)
-            bundle_size = self._bundle_size_bytes()
-            if bundle_size <= limit:
-                break
-        if dropped:
-            self.warnings.append(
-                "bundle_size_pressure_dropped_files: " + ", ".join(dropped)
-            )
-            self.collector_status.append(
-                CollectorStatus(
-                    "bundle.size_limit",
-                    "partial",
-                    "bundle exceeded hard cap; dropped lower-priority evidence files",
-                )
-            )
-            if bundle_size <= limit:
-                return "partial"
-        self.warnings.append(
-            "bundle_size_exceeded: "
-            f"bundle is {bundle_size} bytes, over hard cap {limit} bytes"
-        )
-        self.collector_status.append(
-            CollectorStatus(
-                "bundle.size_limit",
-                "partial",
-                f"bundle size {bundle_size} exceeds hard cap {limit}",
-            )
-        )
-        return "partial"
+
+    def _bundle_size_with_pending_manifest(
+        self, collection_status: str, protected_identity_map: bool | None
+    ) -> int:
+        size = self._bundle_size_bytes()
+        if protected_identity_map is not None:
+            size += len(
+                json.dumps(
+                    self._manifest_payload(
+                        collection_status,
+                        protected_identity_map=protected_identity_map,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                    default=str,
+                ).encode("utf-8")
+            ) + 1
+        return size
+
+    def _set_size_warning(self, warning: str) -> None:
+        self.warnings[:] = [
+            item
+            for item in self.warnings
+            if not item.startswith("bundle_size_pressure_")
+            and not item.startswith("bundle_size_exceeded:")
+        ]
+        self.warnings.append(warning)
+
+    def _record_size_limit_status(self, error: str) -> None:
+        if any(status.name == "bundle.size_limit" for status in self.collector_status):
+            return
+        self.collector_status.append(CollectorStatus("bundle.size_limit", "partial", error))
 
     def write_manifest(self, collection_status: str, *, protected_identity_map: bool) -> None:
+        write_json_atomic(
+            self.path / "manifest.json",
+            self._manifest_payload(
+                collection_status,
+                protected_identity_map=protected_identity_map,
+            ),
+        )
+
+    def _manifest_payload(
+        self, collection_status: str, *, protected_identity_map: bool
+    ) -> dict[str, Any]:
         files = []
         for child in sorted(item for item in self.path.rglob("*") if item.is_file()):
             relative = child.relative_to(self.path).as_posix()
@@ -345,7 +413,7 @@ class BundleWriter:
                     "protected": relative.startswith("private/"),
                 }
             )
-        payload = {
+        return {
             "schema_version": 1,
             "bundle_id": self.bundle_id,
             "collection_status": collection_status,
@@ -357,4 +425,3 @@ class BundleWriter:
             "protected_identity_map": protected_identity_map,
             "warnings": self.warnings,
         }
-        write_json_atomic(self.path / "manifest.json", payload)

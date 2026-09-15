@@ -79,6 +79,7 @@ def _collection_result(
     status: str,
     error: str | None = None,
     state_update_status: str | None = None,
+    retention_status: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "status": status,
@@ -92,6 +93,8 @@ def _collection_result(
         payload["error"] = error
     if state_update_status:
         payload["state_update_status"] = state_update_status
+    if retention_status:
+        payload["retention_status"] = retention_status
     return payload
 
 
@@ -279,6 +282,9 @@ async def _collect(args: argparse.Namespace) -> int:
                 )
                 protected_identity_map = True
             except Exception as error:
+                protected_path = writer.path / "private" / "identity_map.protected.json"
+                if protected_path.exists():
+                    raise
                 _add_failure(
                     writer,
                     name="identity_map",
@@ -310,46 +316,29 @@ async def _collect(args: argparse.Namespace) -> int:
             detector_status_counts[result.status] = detector_status_counts.get(result.status, 0) + 1
         log_evidence_summary = _summarize_log_evidence(log_index)
 
-        try:
-            apply_retention(config)
-        except Exception as error:
-            _add_failure(
-                writer,
-                name="retention",
-                error=error,
+        collection_status = _collection_status(writer)
+        for _ in range(3):
+            _write_decision_context(
+                writer=writer,
+                period=period,
+                evidence=evidence,
+                detector_results=results,
+                collection_status=collection_status,
             )
-
-        _write_decision_context(
-            writer=writer,
-            period=period,
-            evidence=evidence,
-            detector_results=results,
-            collection_status=_collection_status(writer),
-        )
-        collection_status = writer.finalize(
-            collection_status=_collection_status(writer),
-            redaction_report=redaction_report,
-            detector_count=len(results),
-            protected_identity_map=protected_identity_map,
-            detector_status_counts=detector_status_counts,
-            log_evidence_summary=log_evidence_summary,
-            publish_manifest=False,
-        )
-        _write_decision_context(
-            writer=writer,
-            period=period,
-            evidence=evidence,
-            detector_results=results,
-            collection_status=collection_status,
-        )
-        if collection_status != "failed" and _collection_status(writer) == "partial":
-            collection_status = "partial"
-        writer.write_summary(
-            collection_status=collection_status,
-            detector_count=len(results),
-            detector_status_counts=detector_status_counts,
-            log_evidence_summary=log_evidence_summary,
-        )
+            finalized_status = writer.finalize(
+                collection_status=collection_status,
+                redaction_report=redaction_report,
+                detector_count=len(results),
+                protected_identity_map=protected_identity_map,
+                detector_status_counts=detector_status_counts,
+                log_evidence_summary=log_evidence_summary,
+                publish_manifest=False,
+            )
+            if finalized_status == collection_status:
+                break
+            collection_status = finalized_status
+        else:
+            raise RuntimeError("bundle finalization status did not stabilize")
 
         writer.write_manifest(collection_status, protected_identity_map=protected_identity_map)
     except Exception:
@@ -389,12 +378,20 @@ async def _collect(args: argparse.Namespace) -> int:
             # rewrite it after publication; surface the bookkeeping failure separately.
             state_update_status = "failed"
 
+    retention_status = None
+    try:
+        # Do not delete older evidence until the new bundle is durably published.
+        apply_retention(config)
+    except Exception:
+        retention_status = "failed"
+
     _print_json(
         _collection_result(
             writer=writer,
             period=period,
             status=collection_status,
             state_update_status=state_update_status,
+            retention_status=retention_status,
         )
     )
     return 0 if collection_status == "complete" else 1 if collection_status == "partial" else 2
@@ -541,8 +538,12 @@ def _mark_report_success(args: argparse.Namespace) -> int:
     if manifest is None:
         _print_json({"status": "failed", "error": "bundle manifest does not exist"})
         return 1
-    if manifest.get("collection_status") != "complete" and not args.accept_partial:
+    collection_status = manifest.get("collection_status")
+    if collection_status == "partial" and not args.accept_partial:
         _print_json({"status": "failed", "error": "bundle is partial; pass --accept-partial"})
+        return 1
+    if collection_status not in {"complete", "partial"}:
+        _print_json({"status": "failed", "error": "bundle is not certifiable"})
         return 1
     period_payload = manifest.get("period") or {}
     try:

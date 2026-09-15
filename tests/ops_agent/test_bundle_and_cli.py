@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from ops_agent.bundle import BundleWriter
+from ops_agent.bundle import BundleSizeLimitError, BundleWriter
 from ops_agent.cli import _mark_report_success, _validate_bundle, build_parser
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport
@@ -406,13 +406,13 @@ def test_collect_db_failure_writes_required_placeholders_and_runs_later_collecto
         assert evidence["error"] == "collector_error"
 
 
-def test_collect_state_reflects_final_size_downgrade(tmp_path, monkeypatch, capsys):
-    _stub_collectors(
-        monkeypatch,
-        tmp_path,
-        [],
-        limits=OpsAgentLimits(bundle_hard_cap_bytes=1),
-    )
+def test_collect_state_reflects_partial_collector_result(tmp_path, monkeypatch, capsys):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def failed_logs(**_kwargs):
+        raise RuntimeError("log reader failed")
+
+    monkeypatch.setattr(cli, "collect_logs", failed_logs)
 
     result = asyncio.run(cli._collect(_collect_args(tmp_path, no_state_update=False)))
 
@@ -423,11 +423,8 @@ def test_collect_state_reflects_final_size_downgrade(tmp_path, monkeypatch, caps
     assert result == 1
     assert payload["status"] == "partial"
     assert manifest["collection_status"] == "partial"
-    assert "Status: partial" in Path(payload["manifest_path"]).with_name(
-        "decision_report_context.md"
-    ).read_text(encoding="utf-8")
     assert state["last_collection"]["status"] == "partial"
-    assert "bundle.size_limit" in state["last_collection"]["failed_collectors"]
+    assert "logs" in state["last_collection"]["failed_collectors"]
 
 
 def test_collect_orchestration_error_does_not_export_exception_content(
@@ -495,6 +492,41 @@ def test_final_manifest_failure_does_not_record_a_successful_state(
     assert state_writes == []
 
 
+def test_final_manifest_failure_does_not_apply_retention(tmp_path, monkeypatch, capsys):
+    _stub_collectors(monkeypatch, tmp_path, [])
+    retention_calls: list[object] = []
+
+    def failed_manifest(*_args, **_kwargs):
+        raise OSError("finalization storage failure")
+
+    monkeypatch.setattr(cli.BundleWriter, "write_manifest", failed_manifest)
+    monkeypatch.setattr(cli, "apply_retention", lambda config: retention_calls.append(config))
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert retention_calls == []
+
+
+def test_collect_unachievable_hard_cap_cannot_publish_manifest(tmp_path, monkeypatch, capsys):
+    _stub_collectors(
+        monkeypatch,
+        tmp_path,
+        [],
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=1),
+    )
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
+
+
 def test_state_write_failure_after_manifest_does_not_change_bundle_status(
     tmp_path, monkeypatch, capsys
 ):
@@ -516,7 +548,7 @@ def test_state_write_failure_after_manifest_does_not_change_bundle_status(
     assert manifest["collection_status"] == "complete"
 
 
-def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
+def test_finalization_rejects_unachievable_hard_cap(tmp_path):
     config = OpsAgentConfig(
         database_url=None,
         health_url=None,
@@ -534,6 +566,52 @@ def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
     writer.initialize()
     _write_mandatory_evidence(writer)
 
+    with pytest.raises(BundleSizeLimitError):
+        writer.finalize(
+            collection_status="complete",
+            redaction_report=RedactionReport(),
+            detector_count=0,
+            protected_identity_map=False,
+        )
+
+    assert not (writer.path / "manifest.json").exists()
+
+
+def test_finalization_counts_manifest_bytes_against_hard_cap(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=50_000),
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    _write_mandatory_evidence(writer)
+    writer.write_text("evidence/db/raw_llm_samples.redacted.json", "x" * 10_000)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+    (writer.path / "manifest.json").unlink()
+    cap = writer._bundle_size_with_pending_manifest("complete", False) - 1
+    writer.config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=cap),
+    )
+
     status = writer.finalize(
         collection_status="complete",
         redaction_report=RedactionReport(),
@@ -541,13 +619,9 @@ def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
         protected_identity_map=False,
     )
 
-    manifest = json.loads((writer.path / "manifest.json").read_text(encoding="utf-8"))
     assert status == "partial"
-    assert manifest["collection_status"] == "partial"
-    assert "Status: `partial`" in (writer.path / "bundle_summary.md").read_text(
-        encoding="utf-8"
-    )
-    assert any("bundle_size_exceeded" in warning for warning in manifest["warnings"])
+    assert not (writer.path / "evidence/db/raw_llm_samples.redacted.json").exists()
+    assert writer._bundle_size_bytes() <= cap
 
 
 def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
@@ -621,6 +695,28 @@ def test_protected_identity_map_uses_owner_only_permissions(tmp_path):
     assert inventory["private/identity_map.protected.json"]["protected"] is True
     if os.name != "nt":
         assert protected_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_collect_aborts_if_protected_identity_map_cannot_be_removed(
+    tmp_path, monkeypatch, capsys
+):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def leave_private_map(self, relative_path, payload):
+        self.write_json(relative_path, payload)
+        raise OSError("permission hardening failed")
+
+    monkeypatch.setattr(cli.BundleWriter, "write_protected_json", leave_private_map)
+    args = _collect_args(tmp_path)
+    args.include_protected_identity_map = True
+
+    result = asyncio.run(cli._collect(args))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
 
 
 def test_validate_bundle_detects_hash_mismatch(tmp_path):
@@ -768,6 +864,33 @@ def test_mark_report_success_rejects_tampered_bundle(tmp_path):
                 "bundle": str(writer.path),
                 "report": str(report),
                 "accept_partial": False,
+                "output_dir": str(tmp_path),
+            },
+        )()
+    )
+
+    assert result == 1
+    assert "last_successful_report" not in load_state(tmp_path / "state" / "state.json")
+
+
+def test_mark_report_success_rejects_failed_bundle_even_with_partial_acceptance(tmp_path):
+    writer = _write_valid_bundle(tmp_path)
+    report = tmp_path / "reports" / "report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("# Report\n", encoding="utf-8")
+    manifest_path = writer.path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["collection_status"] = "failed"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _mark_report_success(
+        type(
+            "Args",
+            (),
+            {
+                "bundle": str(writer.path),
+                "report": str(report),
+                "accept_partial": True,
                 "output_dir": str(tmp_path),
             },
         )()
