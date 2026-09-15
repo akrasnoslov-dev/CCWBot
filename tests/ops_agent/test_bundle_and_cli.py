@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from ops_agent.bundle import BundleWriter
+from ops_agent.bundle import BundleSizeLimitError, BundleWriter
 from ops_agent.cli import _mark_report_success, _validate_bundle, build_parser
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import Period
 from ops_agent.state import load_state, parse_timestamp, resolve_period
+
+from ops_agent import cli
 
 
 def _write_mandatory_evidence(writer: BundleWriter) -> None:
@@ -22,9 +26,99 @@ def _write_mandatory_evidence(writer: BundleWriter) -> None:
     writer.write_json("evidence/db/alert_quality.json", {"schema_version": 1, "issues": []})
     writer.write_json("evidence/db/anomalies.json", {"schema_version": 1, "queries": {}})
     writer.write_json("evidence/health/health.json", {"schema_version": 1, "status": "ok"})
+    writer.write_json("evidence/docker/container_state.json", {"schema_version": 1, "services": []})
+    writer.write_json("evidence/logs/log_index.json", {"schema_version": 1, "files": []})
+    writer.write_json(
+        "evidence/logs/pattern_counts.json",
+        {"schema_version": 1, "candidate_crossing_evidence": {"status": "unknown"}},
+    )
     writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
     writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
     writer.write_text("decision_report_context.md", "# Decision Context\n")
+
+
+def _collect_args(tmp_path: Path, *, no_state_update: bool = True) -> argparse.Namespace:
+    return argparse.Namespace(
+        output_dir=str(tmp_path),
+        period=None,
+        since="2026-06-01T00:00:00Z",
+        until="2026-06-01T01:00:00Z",
+        no_state_update=no_state_update,
+        include_raw_llm_samples=False,
+        include_protected_identity_map=False,
+    )
+
+
+def _stub_collectors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    calls: list[str],
+    *,
+    limits: OpsAgentLimits | None = None,
+) -> None:
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=limits or OpsAgentLimits(),
+    )
+
+    async def fake_db(**_kwargs):
+        calls.append("db")
+        return (
+            {
+                "evidence/db/aggregate_metrics.json": {"schema_version": 1, "queries": {}},
+                "evidence/db/alert_quality.json": {"schema_version": 1, "issues": []},
+                "evidence/db/anomalies.json": {"schema_version": 1, "queries": {}},
+            },
+            [{"name": "db.aggregate", "status": "ok", "error": None}],
+        )
+
+    async def fake_health(**_kwargs):
+        calls.append("health")
+        return (
+            {"schema_version": 1, "status": "ok"},
+            {"name": "health", "status": "ok", "error": None},
+        )
+
+    def fake_logs(**_kwargs):
+        calls.append("logs")
+        return (
+            {"schema_version": 1, "files": []},
+            {"schema_version": 1, "pattern_counts": {}},
+            {},
+            [{"name": "logs", "status": "ok", "error": None}],
+        )
+
+    def fake_docker(**_kwargs):
+        calls.append("docker")
+        return (
+            {"schema_version": 1, "status": "ok", "services": []},
+            {"name": "docker", "status": "ok", "error": None},
+        )
+
+    def fake_local_state(**_kwargs):
+        calls.append("local_state")
+        return {"ops_agent_state_snapshot": {}, "legacy_state_snapshot": {}}
+
+    monkeypatch.setattr(cli, "load_config", lambda _output_dir: config)
+    monkeypatch.setattr(cli, "collect_db", fake_db)
+    monkeypatch.setattr(cli, "collect_health", fake_health)
+    monkeypatch.setattr(cli, "collect_logs", fake_logs)
+    monkeypatch.setattr(cli, "collect_docker", fake_docker)
+    monkeypatch.setattr(cli, "collect_local_state", fake_local_state)
+    monkeypatch.setattr(cli, "run_detectors", lambda _evidence, _period: [])
+    monkeypatch.setattr(
+        cli, "detector_payload", lambda _period, _results: {"schema_version": 1, "results": []}
+    )
+    monkeypatch.setattr(cli, "detector_summary", lambda _results: "# Detector Summary\n")
+    monkeypatch.setattr(
+        cli,
+        "render_decision_report_context",
+        lambda **kwargs: f"# Context\nStatus: {kwargs['collection_status']}\n",
+    )
 
 
 def test_cli_parses_collect_auto():
@@ -194,10 +288,267 @@ def test_bundle_manifest_contains_required_files(tmp_path):
     assert "CODEX_INSTRUCTIONS.md" in inventory_paths
     assert "bundle_summary.md" in inventory_paths
     assert "decision_report_context.md" in inventory_paths
+    assert "evidence/docker/container_state.json" in inventory_paths
+    assert "evidence/logs/log_index.json" in inventory_paths
+    assert "evidence/logs/pattern_counts.json" in inventory_paths
     assert manifest["collection_status"] == "complete"
 
 
-def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
+def test_finalization_marks_bundle_failed_when_required_evidence_is_absent(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    writer.write_json("detectors/detector_results.json", {"schema_version": 1, "results": []})
+    writer.write_text("detectors/detector_summary.md", "# Detector Summary\n")
+
+    status = writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+
+    manifest = json.loads((writer.path / "manifest.json").read_text(encoding="utf-8"))
+    assert status == "failed"
+    assert manifest["collection_status"] == "failed"
+    assert {item["name"] for item in manifest["collector_status"]} >= {"bundle.finalization"}
+
+
+def test_collect_log_failure_finalizes_partial_bundle_and_runs_later_collectors(
+    tmp_path, monkeypatch, capsys
+):
+    calls: list[str] = []
+    _stub_collectors(monkeypatch, tmp_path, calls)
+
+    def failed_logs(**_kwargs):
+        calls.append("logs")
+        raise RuntimeError("log reader failed")
+
+    monkeypatch.setattr(cli, "collect_logs", failed_logs)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest_path = Path(payload["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    required_files = {
+        "manifest.json",
+        "bundle_summary.md",
+        "decision_report_context.md",
+        "detectors/detector_summary.md",
+        "detectors/detector_results.json",
+        "redaction_report.json",
+        "limits.json",
+        "evidence/docker/container_state.json",
+        "evidence/logs/log_index.json",
+        "evidence/logs/pattern_counts.json",
+    }
+
+    assert result == 1
+    assert payload["status"] == "partial"
+    assert calls == ["db", "health", "logs", "docker", "local_state"]
+    assert manifest["collection_status"] == "partial"
+    assert {item["name"] for item in manifest["collector_status"]} >= {"logs", "docker"}
+    assert (manifest_path.parent / "evidence/logs/pattern_counts.json").is_file()
+    assert "Status: `partial`" in (manifest_path.parent / "bundle_summary.md").read_text(
+        encoding="utf-8"
+    )
+    assert required_files <= {
+        path.relative_to(manifest_path.parent).as_posix()
+        for path in manifest_path.parent.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_collect_db_failure_writes_required_placeholders_and_runs_later_collectors(
+    tmp_path, monkeypatch, capsys
+):
+    calls: list[str] = []
+    _stub_collectors(monkeypatch, tmp_path, calls)
+
+    async def failed_db(**_kwargs):
+        calls.append("db")
+        raise RuntimeError("db response content must not be retained")
+
+    monkeypatch.setattr(cli, "collect_db", failed_db)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest_path = Path(payload["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert result == 1
+    assert calls == ["db", "health", "logs", "docker", "local_state"]
+    assert next(item for item in manifest["collector_status"] if item["name"] == "db") == {
+        "name": "db",
+        "status": "partial",
+        "error": "collector_error",
+    }
+    for path in (
+        "evidence/db/aggregate_metrics.json",
+        "evidence/db/alert_quality.json",
+        "evidence/db/anomalies.json",
+    ):
+        evidence = json.loads((manifest_path.parent / path).read_text(encoding="utf-8"))
+        assert evidence["status"] == "failed"
+        assert evidence["error"] == "collector_error"
+
+
+def test_collect_state_reflects_partial_collector_result(tmp_path, monkeypatch, capsys):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def failed_logs(**_kwargs):
+        raise RuntimeError("log reader failed")
+
+    monkeypatch.setattr(cli, "collect_logs", failed_logs)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path, no_state_update=False)))
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest = json.loads(Path(payload["manifest_path"]).read_text(encoding="utf-8"))
+    state = load_state(tmp_path / "state" / "state.json")
+
+    assert result == 1
+    assert payload["status"] == "partial"
+    assert manifest["collection_status"] == "partial"
+    assert state["last_collection"]["status"] == "partial"
+    assert "logs" in state["last_collection"]["failed_collectors"]
+
+
+def test_collect_orchestration_error_does_not_export_exception_content(
+    tmp_path, monkeypatch, capsys
+):
+    _stub_collectors(monkeypatch, tmp_path, [])
+    secret = "Authorization: Bearer short-private-token"
+
+    def failed_logs(**_kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(cli, "collect_logs", failed_logs)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    manifest_text = Path(payload["manifest_path"]).read_text(encoding="utf-8")
+
+    assert result == 1
+    assert secret not in output
+    assert secret not in manifest_text
+    assert "collector_error" in manifest_text
+
+
+def test_collect_finalization_failure_cannot_return_success(tmp_path, monkeypatch, capsys):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def failed_manifest(*_args, **_kwargs):
+        raise OSError("finalization storage failure")
+
+    monkeypatch.setattr(cli.BundleWriter, "write_manifest", failed_manifest)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
+
+
+def test_final_manifest_failure_does_not_record_a_successful_state(
+    tmp_path, monkeypatch, capsys
+):
+    _stub_collectors(monkeypatch, tmp_path, [])
+    state_writes: list[object] = []
+
+    def tracked_state(*args, **_kwargs):
+        state_writes.append(args)
+
+    def failed_manifest(*_args, **_kwargs):
+        raise OSError("finalization storage failure")
+
+    monkeypatch.setattr(cli, "save_state", tracked_state)
+    monkeypatch.setattr(cli.BundleWriter, "write_manifest", failed_manifest)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path, no_state_update=False)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
+    assert state_writes == []
+
+
+def test_final_manifest_failure_does_not_apply_retention(tmp_path, monkeypatch, capsys):
+    _stub_collectors(monkeypatch, tmp_path, [])
+    retention_calls: list[object] = []
+
+    def failed_manifest(*_args, **_kwargs):
+        raise OSError("finalization storage failure")
+
+    monkeypatch.setattr(cli.BundleWriter, "write_manifest", failed_manifest)
+    monkeypatch.setattr(cli, "apply_retention", lambda config: retention_calls.append(config))
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert retention_calls == []
+
+
+def test_collect_unachievable_hard_cap_cannot_publish_manifest(tmp_path, monkeypatch, capsys):
+    _stub_collectors(
+        monkeypatch,
+        tmp_path,
+        [],
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=1),
+    )
+    result = asyncio.run(cli._collect(_collect_args(tmp_path)))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
+
+
+def test_state_write_failure_after_manifest_does_not_change_bundle_status(
+    tmp_path, monkeypatch, capsys
+):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def failed_state(*_args, **_kwargs):
+        raise OSError("state storage failure")
+
+    monkeypatch.setattr(cli, "save_state", failed_state)
+
+    result = asyncio.run(cli._collect(_collect_args(tmp_path, no_state_update=False)))
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest = json.loads(Path(payload["manifest_path"]).read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert payload["status"] == "complete"
+    assert payload["state_update_status"] == "failed"
+    assert manifest["collection_status"] == "complete"
+
+
+def test_finalization_rejects_unachievable_hard_cap(tmp_path):
     config = OpsAgentConfig(
         database_url=None,
         health_url=None,
@@ -213,6 +564,53 @@ def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
     )
     writer = BundleWriter(config, period)
     writer.initialize()
+    _write_mandatory_evidence(writer)
+
+    with pytest.raises(BundleSizeLimitError):
+        writer.finalize(
+            collection_status="complete",
+            redaction_report=RedactionReport(),
+            detector_count=0,
+            protected_identity_map=False,
+        )
+
+    assert not (writer.path / "manifest.json").exists()
+
+
+def test_finalization_counts_manifest_bytes_against_hard_cap(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=50_000),
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    _write_mandatory_evidence(writer)
+    writer.write_text("evidence/db/raw_llm_samples.redacted.json", "x" * 10_000)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+    (writer.path / "manifest.json").unlink()
+    cap = writer._bundle_size_with_pending_manifest("complete", False) - 1
+    writer.config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+        limits=OpsAgentLimits(bundle_hard_cap_bytes=cap),
+    )
 
     status = writer.finalize(
         collection_status="complete",
@@ -221,10 +619,9 @@ def test_bundle_manifest_marks_partial_when_size_cap_is_exceeded(tmp_path):
         protected_identity_map=False,
     )
 
-    manifest = json.loads((writer.path / "manifest.json").read_text(encoding="utf-8"))
     assert status == "partial"
-    assert manifest["collection_status"] == "partial"
-    assert any("bundle_size_exceeded" in warning for warning in manifest["warnings"])
+    assert not (writer.path / "evidence/db/raw_llm_samples.redacted.json").exists()
+    assert writer._bundle_size_bytes() <= cap
 
 
 def test_bundle_size_pressure_drops_lower_priority_files_first(tmp_path):
@@ -298,6 +695,28 @@ def test_protected_identity_map_uses_owner_only_permissions(tmp_path):
     assert inventory["private/identity_map.protected.json"]["protected"] is True
     if os.name != "nt":
         assert protected_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_collect_aborts_if_protected_identity_map_cannot_be_removed(
+    tmp_path, monkeypatch, capsys
+):
+    _stub_collectors(monkeypatch, tmp_path, [])
+
+    def leave_private_map(self, relative_path, payload):
+        self.write_json(relative_path, payload)
+        raise OSError("permission hardening failed")
+
+    monkeypatch.setattr(cli.BundleWriter, "write_protected_json", leave_private_map)
+    args = _collect_args(tmp_path)
+    args.include_protected_identity_map = True
+
+    result = asyncio.run(cli._collect(args))
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert result == 2
+    assert payload["status"] == "failed"
+    assert not Path(payload["manifest_path"]).exists()
 
 
 def test_validate_bundle_detects_hash_mismatch(tmp_path):
@@ -445,6 +864,33 @@ def test_mark_report_success_rejects_tampered_bundle(tmp_path):
                 "bundle": str(writer.path),
                 "report": str(report),
                 "accept_partial": False,
+                "output_dir": str(tmp_path),
+            },
+        )()
+    )
+
+    assert result == 1
+    assert "last_successful_report" not in load_state(tmp_path / "state" / "state.json")
+
+
+def test_mark_report_success_rejects_failed_bundle_even_with_partial_acceptance(tmp_path):
+    writer = _write_valid_bundle(tmp_path)
+    report = tmp_path / "reports" / "report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("# Report\n", encoding="utf-8")
+    manifest_path = writer.path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["collection_status"] = "failed"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _mark_report_success(
+        type(
+            "Args",
+            (),
+            {
+                "bundle": str(writer.path),
+                "report": str(report),
+                "accept_partial": True,
                 "output_dir": str(tmp_path),
             },
         )()
