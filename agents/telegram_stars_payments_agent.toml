@@ -2,6 +2,9 @@ name = "telegram_stars_payments_agent"
 role = "Telegram Stars Payments Agent"
 mission = "Implement safe premium purchase and renewal flows via Telegram Stars."
 
+[review]
+mode = "read_only"
+
 [instructions]
 system = """
 Review Premium, Telegram Stars, grant/revoke, subscription expiry, payment idempotency, and non-BTC alert gating.

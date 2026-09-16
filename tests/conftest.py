@@ -12,6 +12,8 @@ os.environ.setdefault("PREMIUM_MONTHLY_STARS", "199")
 # resolution, which every real outbound connection performs.
 _ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "::"}
 _real_getaddrinfo = socket.getaddrinfo
+_real_socket = socket.socket
+_real_create_connection = socket.create_connection
 
 
 def _is_loopback(host) -> bool:
@@ -33,6 +35,49 @@ def _guarded_getaddrinfo(host, *args, **kwargs):
 
 
 socket.getaddrinfo = _guarded_getaddrinfo
+
+
+def _is_loopback_address(address) -> bool:
+    if isinstance(address, str):
+        # Unix-domain sockets are local and are needed by some development tools.
+        return True
+    if not isinstance(address, tuple) or not address:
+        return False
+    return _is_loopback(address[0])
+
+
+class _GuardedSocket(_real_socket):
+    def connect(self, address):
+        if not _is_loopback_address(address):
+            _raise_external_network_block(address)
+        return super().connect(address)
+
+    def connect_ex(self, address):
+        if not _is_loopback_address(address):
+            _raise_external_network_block(address)
+        return super().connect_ex(address)
+
+    def sendto(self, data, address):
+        if not _is_loopback_address(address):
+            _raise_external_network_block(address)
+        return super().sendto(data, address)
+
+
+def _raise_external_network_block(address) -> None:
+    raise RuntimeError(
+        f"Blocked real network access to {address!r} during tests. External calls "
+        "(LLM providers, CoinGecko, Telegram, RSS) must be mocked, not made for real."
+    )
+
+
+def _guarded_create_connection(address, *args, **kwargs):
+    if not _is_loopback_address(address):
+        _raise_external_network_block(address)
+    return _real_create_connection(address, *args, **kwargs)
+
+
+socket.socket = _GuardedSocket
+socket.create_connection = _guarded_create_connection
 
 
 # --- LLM circuit-breaker isolation -------------------------------------------------------------

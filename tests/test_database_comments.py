@@ -4,9 +4,20 @@ from importlib import util
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 
 from bot.db.database import Base, init_db
+
+
+def _alembic_head() -> str:
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "alembic"))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1
+    return heads[0]
 
 
 def _load_comments_migration():
@@ -69,7 +80,7 @@ async def test_database_comments_migration_applies_to_head(tmp_path):
     session = session_local()
     try:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert revision == "0029_llm_operation_outcomes"
+        assert revision == _alembic_head()
     finally:
         await session.close()
         await engine.dispose()

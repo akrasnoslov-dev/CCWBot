@@ -12,7 +12,7 @@ Command access and registration, menus/help content, user-facing copy (alerts, r
 
 ## Product rules you enforce
 
-- Automatic alerts are BTC-only unless the task explicitly expands them.
+- Keep BTC automatic alerts free. Non-BTC automatic alerts require active Premium and enabled watchlist choices; do not change that entitlement or scope unless explicitly requested.
 - Manual `/price` supports the configured coins and remains free.
 - `/reports`, `/dailyreport`, `/weeklyreport` are available to all users.
 - `/settings` is admin-only; `/status` (if present) is admin-only.

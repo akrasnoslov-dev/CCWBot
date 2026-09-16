@@ -30,6 +30,14 @@ class FakeClient:
         return self.responses.pop(0)
 
 
+class NoopAsyncClient:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
 def clear_price_caches() -> None:
     price_service._PRICE_CACHE.clear()
     price_service._BTC_MARKET_CACHE = None
@@ -38,6 +46,13 @@ def clear_price_caches() -> None:
 @pytest.fixture(autouse=True)
 def clean_price_caches():
     clear_price_caches()
+
+
+@pytest.fixture(autouse=True)
+def isolate_http_client_construction(monkeypatch):
+    # The tests below mock _get_with_retry, so they must not inherit proxy configuration while
+    # merely constructing an HTTP client.
+    monkeypatch.setattr(price_service.httpx, "AsyncClient", NoopAsyncClient)
     yield
     clear_price_caches()
 

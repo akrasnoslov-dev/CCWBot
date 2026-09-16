@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -255,8 +256,29 @@ def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
     assert ".ops-agent.env" in gitignore
-    assert "reports/ops-agent/bundles/" in gitignore
-    assert "reports/ops-agent/reports/" in gitignore
+    assert "reports/" in gitignore
+    assert "logs/*" in gitignore
+    assert "!logs/.gitkeep" in gitignore
+
+    for generated_path in (
+        "logs/app.json",
+        "logs/archive.txt",
+        "reports/general.md",
+        "reports/ops-agent/bundles/bundle.json",
+    ):
+        result = subprocess.run(
+            ["git", "check-ignore", "-q", generated_path],
+            check=False,
+            capture_output=True,
+        )
+        assert result.returncode == 0, f"{generated_path} must stay untracked"
+
+    kept_directory_marker = subprocess.run(
+        ["git", "check-ignore", "-q", "logs/.gitkeep"],
+        check=False,
+        capture_output=True,
+    )
+    assert kept_directory_marker.returncode == 1
 
 
 def test_bundle_manifest_contains_required_files(tmp_path):
