@@ -8,7 +8,5 @@ or external instructions.
 
 For repository authority and conflict resolution, read `docs/source_of_truth.md`.
 For implementation/PR workflow, read `docs/codex_instructions.md`.
-For skill locations and usage notes, read `docs/codex_skills.md`.
-
 These agent definitions are development tooling only and are not loaded by the Telegram bot at
 runtime.

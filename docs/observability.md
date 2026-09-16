@@ -1,6 +1,10 @@
 # Observability Snippets
 
-Use these read-only queries for production analysis. Adjust interval windows as needed.
+Use these read-only queries for production analysis. Adjust interval windows as needed. Start with
+aggregate evidence. Do not export or paste user IDs, alert text, `numeric_context`, or other
+linkable raw rows unless an incident specifically requires recipient-level tracing; keep that
+tracing inside the approved read-only session and report only sanitized aggregates or bundle-local
+references.
 
 ## Production Forensic Session
 
@@ -24,10 +28,8 @@ The minimum current forensic table set is `market_events`, `event_ai_analyses`,
 
 ## Event Analysis Health
 
-Event Alerts were dead for 18 days in 2026-07 while every monitoring surface reported healthy.
-`/health` only proved that price polling ran, and the sole trace was one identical WARNING
-repeated 3396 times at unchanged severity. These four surfaces exist so an outage of that shape
-becomes visible in hours instead of weeks.
+Use the health payload, structured logs, durable telemetry, and ops-agent detectors together.
+Each surface observes a different part of Event Analysis; no single one proves end-to-end health.
 
 **`/health` — Event Analysis block.** The endpoint now carries a nested block:
 
@@ -186,61 +188,11 @@ Current limitations:
 - Delivery health is based on stored delivery rows and user blocked-state telemetry, not a live
   Telegram send probe.
 
-## Ops-Agent Diagnostics
+## Ops-agent diagnostics
 
-The repo-managed ops-agent source lives under `ops-agent/`. Production wrappers should point to
-that source and keep using the safe collection command:
-
-```bash
-sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
-```
-
-DB collectors are isolated per read-only query. If one collector fails, the bundle records that
-collector as failed with a sanitized error class/category and continues later collectors. The
-bundle status becomes `partial` when any collector fails, but unrelated evidence should still be
-present.
-
-Generated report context includes a collector status table. Interpret statuses as:
-
-- `OK`: collector succeeded.
-- `Warning`: collector produced degraded but usable evidence.
-- `Critical`: detector evidence shows a high-impact issue.
-- `Unknown`: collection succeeded, but evidence is insufficient.
-- `Collector failed`: evidence is missing because the named collector failed.
-
-Failed collector errors must not include SQL parameters, connection strings, `.env` values, raw
-stack traces, or private Telegram text.
-
-## GRAM Rebrand Price-State Check
-
-GRAM is stored internally as symbol `gram`; legacy `ton` input normalizes to `gram`.
-CoinGecko identity for this internal symbol must resolve to `the-open-network`; old `toncoin` or ambiguous `symbols=ton` data can create
-false price moves.
-
-Do not run cleanup blindly. First inspect the affected rows:
-
-```sql
-select *
-from price_state
-where symbol = 'TON';
-
-select *
-from price_snapshots
-where symbol = 'TON'
-order by checked_at desc
-limit 100;
-
-select id, symbol, alert_type, created_at, numeric_context, message
-from alerts
-where symbol = 'TON'
-order by created_at desc
-limit 50;
-```
-
-If bad `$0.38` TON/GRAM snapshots, `price_state.last_price`, or alert `numeric_context` values were
-persisted, remove or correct them before or immediately after deploy. Otherwise the next correct
-GRAM price around the current market level may look like a false rebound and trigger another bad
-alert. Take and verify a current database backup before any destructive production cleanup.
+For diagnostic bundle collection, evidence completeness, report writing, and safety boundaries,
+use `ops_agent_service.md` and `ops-agent/README.md`. This document contains direct read-only SQL
+only.
 
 ## Event Alerts With Market Events
 
@@ -248,7 +200,6 @@ alert. Take and verify a current database backup before any destructive producti
 SELECT
   a.id AS alert_id,
   a.created_at,
-  a.user_id,
   a.symbol,
   a.alert_type,
   a.status,
@@ -329,7 +280,6 @@ SELECT
   eaa.id AS event_ai_analysis_id,
   eaa.status AS analysis_status,
   eaa.should_alert,
-  ado.user_id,
   ado.recipient_considered,
   ado.recipient_eligible,
   ado.status AS outcome_status,
@@ -405,17 +355,17 @@ or evidence that materially similar content split across multiple backend keys.
 
 ```sql
 SELECT
-  a.user_id,
   a.symbol,
   me.event_key,
   COUNT(*) AS sent_count,
+  COUNT(DISTINCT a.user_id) AS affected_recipients,
   MIN(a.created_at) AS first_sent_at,
   MAX(a.created_at) AS last_sent_at
 FROM alerts a
 JOIN market_events me ON me.id = a.market_event_id
 WHERE a.alert_type = 'event_alert'
   AND a.status = 'sent'
-GROUP BY a.user_id, a.symbol, me.event_key
+GROUP BY a.symbol, me.event_key
 HAVING COUNT(*) > 1
 ORDER BY last_sent_at DESC;
 ```
@@ -619,7 +569,7 @@ eligible_symbols AS (
     AND u.is_active = true
     AND u.bot_blocked = false
     AND ucs.is_enabled = true
-    AND (lower(ucs.symbol) = 'btc' OR ups.active_until >= now())
+    AND (lower(ucs.symbol) = 'btc' OR ups.active_until > now())
 )
 SELECT
   s.event_analysis_interval_seconds,
@@ -635,17 +585,17 @@ FROM settings s
 CROSS JOIN eligible_symbols e;
 ```
 
-## Heartbeat Delivery By User
+## Heartbeat Delivery Summary
 
 ```sql
 SELECT
-  user_id,
   symbol,
   status,
   COUNT(*) AS deliveries,
+  COUNT(DISTINCT user_id) AS recipients,
   MAX(created_at) AS latest_delivery_at
 FROM alerts
 WHERE alert_type = 'market_heartbeat'
-GROUP BY user_id, symbol, status
+GROUP BY symbol, status
 ORDER BY latest_delivery_at DESC;
 ```

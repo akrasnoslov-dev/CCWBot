@@ -390,47 +390,8 @@ GROUP BY call_type, model, status, error_reason
 ORDER BY calls DESC, latest_at DESC;
 ```
 
-Avoidable LLM-call checks:
-
-- Admin System status summarizes final feature outcomes. Admin LLM diagnostics separately shows
-  mutually exclusive provider-attempt categories whose displayed counts reconcile to the total.
-
-- `event_analysis` should only run once per symbol check, before recipient delivery and outside
-  recipient loops.
-- A resolved market event may have at most one attached `event_ai_analyses` row with
-  `analysis_type = 'event_analysis'`; many alert delivery rows should reference that same analysis
-  id.
-- Backend semantic canonicalization runs after validation and before delivery. It may replace broad
-  LLM keys such as `news_catalyst`, `price_movement`, or `volatility` with deterministic semantic
-  families using the raw key, alert copy, and selected real related-news context; this does not add
-  another LLM call.
-- Event Analysis is market-event-first. The prompt treats `market.chg_window` and short-term
-  snapshots as the primary basis, `market.chg24h` as broader context, and news as supporting
-  context only. News alone must return no alert, and a backend guard rejects clear news-only
-  `should_alert=true` decisions before market event creation or delivery.
-- Before Event Analysis calls the LLM provider chain, the runtime checks a sanitized
-  similar-context fingerprint
-  against recent durable outcomes. Clear repeats of no-alert, news-only rejection, semantic
-  cooldown suppression, similar-context reuse, or delivered decisions are recorded as
-  `decision_stage = 'pre_llm'` and `decision_reason = 'similar_context_reused'` without creating a
-  market event or calling the LLM.
-- The Event Analysis input can include a compact sanitized `previous_event_alert` object with
-  prior title, canonical key, semantic family, analysed-window move, related-news hash, possible
-  action, and timestamp. It excludes Telegram IDs, raw messages, raw prompts, secrets, and private
-  identity data.
-- If a repeated check creates a fresh successful LLM attempt for an already-known market event, the
-  fresh attempt must remain unattached and delivery must reuse the existing attached analysis id and
-  sanitized text.
-- Event analysis is skipped when no eligible recipients exist for the symbol.
-- Active Groq backoff skips are persisted as `event_ai_analyses.status =
-  'skipped_due_to_rate_limit'` and `alert_delivery_outcomes.reason_code =
-  'llm_rate_limited'`.
-- LLM allow/no-alert decisions are also persisted in `alert_delivery_outcomes` with sanitized
-  `decision_stage`, `decision_reason`, `previous_alert_id`, and `context_fingerprint` fields.
-- `context_fingerprint` for Event Alert outcomes is a stable similarity hash for operator reuse
-  and reporting. Exact raw input hashes remain on `event_ai_analyses.input_hash`.
-- Market Heartbeat generation remains separate from Event Alerts; heartbeat cadence should not
-  suppress Event Alerts.
+Event Alert call placement, reuse, and delivery invariants are owned by `alert_logic.md`.
+Use `observability.md` for read-only diagnostics of those invariants.
 
 ## Ops-Agent LLM Usage Evidence
 

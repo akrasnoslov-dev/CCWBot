@@ -12,14 +12,7 @@ Production runs from `main` on the Hetzner VPS at `/opt/CCWBot`. Local developme
 - Never overwrite production `.env`.
 - PostgreSQL and the bot health endpoint are bound to localhost by Compose.
 
-## Local Checks
-
-```bash
-docker compose config >/dev/null
-python -m pytest tests/ -v -ra --durations=20
-```
-
-Do not publish expanded Compose output from a real `.env`.
+For local setup and verification, use `docs/development.md`.
 
 ## PostgreSQL Backups
 
@@ -59,13 +52,17 @@ Verify a backup file is readable:
 gzip -t /opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz
 ```
 
-Test restore into a temporary/local PostgreSQL database, never production:
+Test a restore only on an isolated local PostgreSQL instance, never a shared or production
+cluster. Run this as one fail-fast shell block; it creates a unique disposable database and removes
+it only after the restore check succeeds:
 
 ```bash
-createdb ccwbot_restore_test
-gzip -dc /opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz | psql ccwbot_restore_test
-psql ccwbot_restore_test -c "select count(*) from users;"
-dropdb ccwbot_restore_test
+set -euo pipefail
+restore_db="ccwbot_restore_test_$(date +%Y%m%dT%H%M%S)"
+createdb "$restore_db"
+gzip -dc /opt/backups/ccwbot-postgres-YYYYMMDDTHHMMSSZ.sql.gz | psql --set ON_ERROR_STOP=1 "$restore_db"
+psql "$restore_db" -c "select count(*) from users;"
+dropdb "$restore_db"
 ```
 
 Before production migrations, verify a recent backup exists or create a fresh one. If the VPS is
@@ -222,14 +219,21 @@ Deploy tracked-file changes only through Git:
 
 ```bash
 cd /opt/CCWBot
+git status --short
+git fetch origin
+git branch --show-current
 git checkout main
-git pull
+git pull --ff-only
 sudo scripts/backup_postgres.sh
 docker compose run --rm migrate  # only when migrations are needed
 docker compose up -d --build
 docker compose ps
 docker compose logs -f
 ```
+
+Stop before `git checkout main` if `git status --short` prints anything, the current branch is not
+the expected deployment branch, or fetching/pulling reports a conflict. Resolve that state outside
+the deploy runbook; do not overwrite tracked or environment-local changes on the VPS.
 
 After every deploy:
 
@@ -238,22 +242,10 @@ After every deploy:
 3. Check `/health` from the VPS.
 4. Verify basic Telegram functionality.
 
-When a release changes shipped LLM model defaults, inspect the existing production `.env`
-before restarting. A pinned value overrides the new code default. Edit only the affected model
-variables in place; never copy `.env.example` over production `.env`. For the 2026-08 gpt-oss
-migration, the intended values are:
-
-```dotenv
-GROQ_MODEL=openai/gpt-oss-20b
-GROQ_EVENT_ANALYSIS_MODEL=openai/gpt-oss-120b
-GROQ_MARKET_HEARTBEAT_MODEL=openai/gpt-oss-20b
-GROQ_REPORT_MODEL=openai/gpt-oss-20b
-GROQ_NEWS_INTELLIGENCE_MODEL=openai/gpt-oss-20b
-```
-
-After restart, inspect the sanitized `ops_event=llm_config` startup lines. Confirm every call type
-uses the intended model, `effort=low`, and the expected effective completion budget; confirm no old
-Llama model, `llm_config_invalid`, or `llm_config_budget_risk` remains.
+When a release changes LLM model defaults, inspect the existing production `.env` before
+restarting. A pinned value overrides the code default. Edit only the affected variables in place;
+never copy `.env.example` over production `.env`. Use `llm_usage.md` for current model and
+telemetry guidance, then inspect the sanitized `ops_event=llm_config` startup lines after restart.
 
 Normal bot restarts do not run migrations. For migrations, test locally first, confirm CI migration
 validation passed, verify a current backup, run `docker compose run --rm migrate` explicitly, then
