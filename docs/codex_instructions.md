@@ -9,6 +9,40 @@ only and must not contain independent standing workflow or project rules.
 Do not copy durable CCWBot rules into ChatGPT/Codex/Claude project instructions, chat memory,
 PR comments, or generated task prompts. A task prompt may define only the requested delta.
 
+## Evidence-first verification
+
+This gate is mandatory for diagnosis, implementation planning, repository-status claims, and
+production conclusions. Accuracy and primary evidence take priority over speed or a convenient
+answer.
+
+Before stating a material claim about current implementation, behavior, root cause, configuration,
+production state, GitHub state, or available functionality:
+
+1. Inspect the relevant current primary evidence instead of relying on memory, inference, naming,
+   stale documentation, or prior conversation context:
+   - current `dev` code for implementation behavior;
+   - canonical repository documentation for intended behavior;
+   - production logs/database/ops evidence for actual production behavior;
+   - current GitHub PR/CI/branch state for repository status;
+   - current provider/vendor documentation or production telemetry for external capabilities,
+     models, limits, or API behavior that may change over time.
+2. For bugs, incidents, reports, or suspicious behavior, trace the complete relevant execution path.
+   Do not stop at one symptom or intermediate stage and present it as the cause.
+3. Before proposing that functionality is missing or needs to be added, verify repository-wide that
+   it is not already implemented, and verify how the existing path behaves.
+4. Classify every material diagnostic conclusion as one of:
+   - `CONFIRMED` - directly demonstrated by primary evidence;
+   - `LIKELY` - supported by evidence but not fully proven;
+   - `UNKNOWN` - evidence is insufficient.
+5. If code and canonical documentation disagree, report the implementation/design drift explicitly.
+   Runtime code is evidence of what exists; canonical docs own what is intended.
+6. If evidence sources conflict, do not reconcile them by assumption. Identify the contradiction and
+   inspect the source needed to resolve it.
+7. If primary evidence is available but has not yet been checked, check it before answering or
+   proposing a fix. If it cannot be accessed, state exactly what remains unverified.
+8. Never propose a behavioral fix until the existing behavior and failure path have been verified.
+   A hypothesis may guide investigation, but it must not be presented as an established defect.
+
 Before non-trivial work:
 
 1. Read `AGENTS.md`, this file, `docs/project_context.md`, and `agents/routing.toml`.
