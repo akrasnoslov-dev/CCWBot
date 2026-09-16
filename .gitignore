@@ -20,12 +20,6 @@ state.json
 backups/
 pgdata/
 postgres-data/
-logs/*.log
-logs/*.log.*
-reports/ops-agent/bundles/
-reports/ops-agent/reports/
-reports/ops-agent/state/
-reports/ops-agent/logs/
-reports/ops-agent/**/*.log
-reports/ops-agent/**/private/
-reports/ops-agent/**/identity_map.protected.json
+logs/*
+!logs/.gitkeep
+reports/

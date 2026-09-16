@@ -3,8 +3,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 ALEMBIC_VERSION_LIMIT = 32
-MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+ROOT = Path(__file__).resolve().parents[1]
+MIGRATIONS_DIR = ROOT / "alembic" / "versions"
 LONG_REVISION_MESSAGE = (
     "Alembic revision ids must fit alembic_version.version_num VARCHAR(32); "
     "long ids can break migration execution."
@@ -70,3 +74,15 @@ def test_alembic_revision_ids_fit_version_table_and_chain_is_valid() -> None:
             f"{path.name}: down_revision references missing Alembic revision ids "
             f"{missing}. {LONG_REVISION_MESSAGE}"
         )
+
+
+def test_alembic_history_has_one_reachable_head() -> None:
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "alembic"))
+    script = ScriptDirectory.from_config(config)
+
+    heads = script.get_heads()
+    assert len(heads) == 1, f"Expected one Alembic head, found {heads}"
+    revisions = list(script.walk_revisions(base="base", head=heads[0]))
+    assert revisions[-1].down_revision is None, "Alembic history has no root revision"
+    assert len({revision.revision for revision in revisions}) == len(revisions)

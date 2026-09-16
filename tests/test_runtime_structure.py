@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from bot.handlers import registration
 from bot.runtime import scheduler
 from bot.runtime.telegram_app import register_handlers
 from main import register_handlers as legacy_register_handlers
@@ -48,3 +49,47 @@ def test_runtime_scheduler_delegates_all_startup_jobs(monkeypatch):
         ("seen_news", app),
         ("trial_expiry", app),
     ]
+
+
+def test_handler_registration_keeps_the_complete_command_and_event_map(monkeypatch):
+    registered_handlers = []
+    registered_errors = []
+    app = SimpleNamespace(
+        add_handler=registered_handlers.append,
+        add_error_handler=registered_errors.append,
+    )
+
+    monkeypatch.setattr(
+        registration,
+        "CommandHandler",
+        lambda command, callback: ("command", command, callback),
+    )
+    monkeypatch.setattr(
+        registration,
+        "PreCheckoutQueryHandler",
+        lambda callback: ("pre_checkout", callback),
+    )
+    monkeypatch.setattr(
+        registration,
+        "MessageHandler",
+        lambda filters, callback: ("message", filters, callback),
+    )
+    monkeypatch.setattr(
+        registration,
+        "CallbackQueryHandler",
+        lambda callback: ("callback", callback),
+    )
+
+    registration.register_bot_handlers(app)
+
+    commands = [handler[1] for handler in registered_handlers if handler[0] == "command"]
+    assert commands == [
+        "start", "price", "plan", "watchlist", "myplan", "subscribe", "userid", "chatid",
+        "settings", "admin", "reports", "dailyreport", "weeklyreport", "setinterval",
+        "grantpremium", "revokepremium", "error_logging_on", "error_logging_off",
+        "error_logging_status", "acquisitionlink", "acquisitionlinks",
+    ]
+    assert [handler[0] for handler in registered_handlers[-4:]] == [
+        "pre_checkout", "message", "message", "callback"
+    ]
+    assert registered_errors == [registration.handle_application_error]

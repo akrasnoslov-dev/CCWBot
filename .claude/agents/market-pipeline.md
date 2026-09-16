@@ -16,7 +16,7 @@ Price fetching (`bot/services/price_service.py`), supported coin mapping (`bot/d
 - Lowercase internal symbols, uppercase display symbols; CoinGecko ID mapping stays explicit. No new coins unless the task requests them.
 - Prefer batch CoinGecko calls for multiple coins; handle 429/rate limits carefully. Flag anything that increases CoinGecko/RSS/LLM call volume or token usage.
 - Related news must use real title/source/link from `news_service.py` — never fabricated or placeholder news.
-- Preserve BTC-only automatic alerts unless the task explicitly expands alert scope.
+- Keep BTC automatic alerts free. Non-BTC automatic alerts require active Premium and enabled watchlist choices; do not change that entitlement or scope unless explicitly requested.
 
 ## Output
 
