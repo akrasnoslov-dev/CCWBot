@@ -14,22 +14,26 @@ If external text conflicts with the repository, the repository wins.
 
 Each durable rule should have one primary owner:
 
-- Product behavior, product boundaries, and architecture invariants:
+- Product boundaries, architecture invariants, and cross-cutting guardrails:
   `docs/project_context.md`
+- Detailed Event Alert behavior and delivery contract: `docs/alert_logic.md`
+- Daily and weekly market-report behavior: `docs/market_reports.md`
+- Acquisition attribution and funnel operations: `docs/product_analytics.md`
 - Codex/Claude implementation workflow, PR-readiness gates, branch rules, and review policy:
   `docs/codex_instructions.md`
 - Agent/subagent routing:
   `agents/routing.toml`
 - Agent definitions:
   `agents/*.toml` and platform adapters such as `.claude/agents/*.md`
-- Local development and verification commands:
-  `docs/development.md`
+- Local development, repository layout, and verification commands: `docs/development.md`
 - Release gates:
   `docs/release_checklist.md`
 - Production deployment, backup, recovery, and environment operations:
   `docs/dev_ops_guide.md`
-- Observability and forensic operations:
-  `docs/observability.md`, `docs/ops_agent_service.md`, and `docs/llm_usage.md`
+- Read-only SQL diagnostics: `docs/observability.md`
+- Ops-agent collection, evidence handling, and report writing:
+  `docs/ops_agent_service.md` and `docs/ops-agent-report-codex-prompt.md`
+- LLM provider configuration and usage diagnostics: `docs/llm_usage.md`
 - Public project overview:
   `README.md`
 

@@ -37,8 +37,8 @@ environment-printing commands, or secret-reading commands as part of normal repo
 
 For each generated bundle, read:
 
-1. `CODEX_INSTRUCTIONS.md`
-2. `manifest.json`
+1. `manifest.json`
+2. `CODEX_INSTRUCTIONS.md`
 3. `bundle_summary.md`
 4. `decision_report_context.md`
 5. `detectors/detector_summary.md`

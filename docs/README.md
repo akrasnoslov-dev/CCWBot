@@ -1,8 +1,8 @@
 # Documentation
 
-`source_of_truth.md` defines repository documentation authority and canonical ownership. Durable
-CCWBot project/workflow rules must live in their canonical repository owner, not in external
-prompts, chat/project instructions, PR comments, or copied source files.
+Start with [source_of_truth.md](source_of_truth.md). It defines document ownership and resolves
+conflicts. Durable CCWBot rules belong in their canonical owner, not in prompts, chat, PR comments,
+or copied files.
 
 All project and process documentation belongs in `docs/`, except:
 
@@ -17,26 +17,25 @@ Do not add new standalone project documentation at the repository root. Add it h
 subtree README.md when the documentation belongs only to that directory. Link new docs from this
 index or from `README.md` when they are useful for users.
 
-## Source of Truth
+## Core documentation
 
-- `source_of_truth.md`: authority, ownership map, conflict resolution, and the rule against
-  standing project/workflow policy outside the repository.
-
-## Project Context
-
-- `project_context.md`: product, stack, invariants, and primary context map.
-- `codex_instructions.md`: short Codex operating rules for this repository.
-- `codex_task_prompt_template.md`: short future-task prompt shape that relies on repo guardrails.
-- `codex_agent_workflow.md`: task-review agent routing and review workflow.
-- `codex_skills.md`: user-level and project-copied Codex skills, locations, and when to use them.
-- root `CLAUDE.md`: Claude Code workflow and native review lenses.
+| Topic | Canonical document |
+|---|---|
+| Documentation ownership | `source_of_truth.md` |
+| Product boundaries and system context | `project_context.md` |
+| Event Alerts | `alert_logic.md` |
+| Daily and weekly reports | `market_reports.md` |
+| Acquisition attribution | `product_analytics.md` |
+| Codex implementation and PR workflow | `codex_instructions.md` |
+| Task-prompt shape | `codex_task_prompt_template.md` |
+| Claude workflow | root `CLAUDE.md` |
 
 ## Research And Strategy
 
 - `research/growth_strategy_2026-09-01.md`: dated 0 → 1 Premium growth analysis and experiment
   plan. It is research/strategy context, not a canonical owner of product or workflow rules.
 
-## Development And Release
+## Development and release
 
 - `development.md`: local development notes, runtime behavior, and verification.
 - `market_reports.md`: daily and weekly report data sources and report-specific guardrails.
@@ -49,3 +48,6 @@ index or from `README.md` when they are useful for users.
 - `llm_usage.md`: LLM usage and rate-limit reporting snippets.
 - `ops_agent_service.md`: current ops-agent service contract and report flow.
 - `ops-agent-report-codex-prompt.md`: reusable Codex prompt for ops-agent bundle analysis.
+
+Historical incident/remediation records are kept in Git history rather than as standing project
+documentation.

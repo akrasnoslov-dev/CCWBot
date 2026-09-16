@@ -56,6 +56,9 @@ Current product behavior:
 
 Repository authority and ownership are defined in `docs/source_of_truth.md`.
 
-This file is the canonical owner for product behavior, product boundaries, and architecture
-invariants. Workflow, release, operational, and agent-routing rules belong to their canonical
+Detailed contracts live in `alert_logic.md` (Event Alerts), `market_reports.md` (daily and weekly
+reports), and `product_analytics.md` (attribution and funnel operations).
+
+This file is the canonical owner for cross-cutting product boundaries and architecture invariants.
+Workflow, release, operational, agent-routing, and feature-specific rules belong to their canonical
 owners and should be linked rather than repeated here.

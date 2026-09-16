@@ -17,8 +17,6 @@ For releases, use `docs/release_checklist.md`.
 For production deployment/backup/recovery, use `docs/dev_ops_guide.md`.
 For observability and forensic work, use the canonical observability docs listed in
 `docs/source_of_truth.md`.
-For Codex skill locations and usage notes, use `docs/codex_skills.md`.
-
 Task-review agents live in `agents/*.toml`; routing is authoritative in
 `agents/routing.toml`. Platform-specific adapters such as `.claude/agents/*.md` must not
 override canonical repository policy.

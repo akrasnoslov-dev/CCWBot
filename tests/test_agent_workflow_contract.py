@@ -79,6 +79,9 @@ def test_source_of_truth_declares_canonical_owners():
 
     for required_path in (
         "docs/project_context.md",
+        "docs/alert_logic.md",
+        "docs/market_reports.md",
+        "docs/product_analytics.md",
         "docs/codex_instructions.md",
         "agents/routing.toml",
         "docs/development.md",
@@ -103,16 +106,11 @@ def test_bootstrap_docs_point_to_canonical_repository_owners():
 
 def test_supporting_docs_link_to_canonical_workflow_without_owning_routing():
     development = (ROOT / "docs/development.md").read_text(encoding="utf-8")
-    agent_workflow = (ROOT / "docs/codex_agent_workflow.md").read_text(encoding="utf-8")
     agent_readme = (ROOT / "agents/README.md").read_text(encoding="utf-8")
 
-    assert "docs/source_of_truth.md" in development
-    assert "docs/codex_instructions.md" in development
-    assert "agents/routing.toml" in development
-
-    assert "agents/routing.toml" in agent_workflow
-    assert "docs/codex_instructions.md" in agent_workflow
-    assert "explanatory only" in agent_workflow
+    assert "source_of_truth.md" in development
+    assert "codex_instructions.md" in development
+    assert "routing.toml" in development
 
     assert "agents/routing.toml" in agent_readme
     assert "docs/source_of_truth.md" in agent_readme
