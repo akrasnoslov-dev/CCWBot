@@ -1,0 +1,61 @@
+from decimal import Decimal
+
+from bot.alerting.event_identity import _build_exact_event_context_fingerprint, _json_dumps
+
+
+def _payload() -> dict:
+    return {
+        "analysis_id": "runtime-id-a",
+        "timestamp_utc": "2026-09-17T10:00:00+00:00",
+        "symbol": "BTC",
+        "display_symbol": "BTC",
+        "coin_name": "Bitcoin",
+        "market": {
+            "price": Decimal("1.3500"),
+            "snapshots": [{"m": 30, "p": Decimal("1.3500")}],
+            "payload_points": 6,
+            "analysed_window_minutes": 30,
+            "chg_window": Decimal("-0.183"),
+            "chg24h": Decimal("-0.721"),
+            "chg_since_msg": None,
+        },
+        "last_msg": {"time": None, "type": None, "price": None},
+        "news": [
+            {
+                "news_id": "n1",
+                "title": "Market update",
+                "source": "Example",
+                "url": "https://example.test/a",
+            }
+        ],
+        "policy": {"language": "English"},
+    }
+
+
+def test_exact_context_ignores_runtime_metadata_and_normalizes_decimal_representation():
+    original = _payload()
+    equivalent = _payload()
+    equivalent["analysis_id"] = "runtime-id-b"
+    equivalent["timestamp_utc"] = "2026-09-17T11:00:00+00:00"
+    equivalent["market"]["price"] = Decimal("1.35")
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) == _build_exact_event_context_fingerprint(equivalent)
+
+
+def test_exact_context_invalidates_any_real_market_or_news_change():
+    original = _payload()
+    changed_market = _payload()
+    changed_market["market"]["chg_window"] = Decimal("-0.184")
+    changed_news = _payload()
+    changed_news["news"][0]["title"] = "Different market update"
+    fingerprint = _build_exact_event_context_fingerprint(original)
+    assert fingerprint != _build_exact_event_context_fingerprint(changed_market)
+    assert fingerprint != _build_exact_event_context_fingerprint(changed_news)
+
+
+def test_decimal_json_is_full_precision_json_number_not_float_or_string():
+    assert (
+        _json_dumps({"price": Decimal("1.3500"), "move": Decimal("-0.183")})
+        == '{"move":-0.183,"price":1.35}'
+    )

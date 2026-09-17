@@ -532,7 +532,7 @@ def test_no_delivery_classification_uses_effective_cooldown_without_settings_row
         query for query in QUERIES if query.name == "market_events_without_delivery_classification"
     )
 
-    assert "SELECT 1800 AS cooldown_seconds)," in query.sql
+    assert "SELECT 14400 AS cooldown_seconds)," in query.sql
     assert "FROM app_settings ORDER BY id DESC LIMIT 1" not in query.sql
 
 
@@ -616,7 +616,7 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         query for query in QUERIES if query.name == "event_alert_same_news_repeats_24h"
     )
     outcomes = next(query for query in QUERIES if query.name == "alert_delivery_outcome_summary")
-    reuse = next(query for query in QUERIES if query.name == "event_alert_similar_context_reuse")
+    reuse = next(query for query in QUERIES if query.name == "event_alert_exact_context_reuse")
     possible_action_quality = next(
         query for query in QUERIES if query.name == "event_alert_possible_action_quality"
     )
@@ -646,21 +646,14 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     assert "news_only_rejected_count" in outcomes.sql
     assert "llm_no_alert_count" in outcomes.sql
     assert "semantic_cooldown_suppressed_count" in outcomes.sql
-    assert "similar_context_reused_count" in outcomes.sql
-    assert "allowed_market_context_changed_count" in outcomes.sql
-    for allowed_reason in (
-        "allowed_direction_reversal",
-        "allowed_market_structure_change",
-        "allowed_cumulative_strengthening",
-    ):
-        assert allowed_reason in outcomes.sql
+    assert "exact_context_reused_count" in outcomes.sql
     assert "telegram_bot_blocked_count" in outcomes.sql
     assert "llm_invalid_response_count" in outcomes.sql
-    assert "pre_llm_similar_context_reused_count" in outcomes.sql
+    assert "pre_llm_exact_context_reused_count" in outcomes.sql
     assert "error_message" not in next(
         query for query in QUERIES if query.name == "market_reports_freshness"
     ).sql
-    assert "decision_reason = 'similar_context_reused'" in reuse.sql
+    assert "decision_reason = 'exact_context_reused'" in reuse.sql
     assert "event_ai_analysis_id IS NULL" in reuse.sql
     assert "context_fingerprint" in reuse.sql
     for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):

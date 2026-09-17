@@ -3,13 +3,7 @@ from datetime import datetime, timedelta, timezone
 from bot.alerting.alert_rules import (
     calculate_price_change_percent,
     is_cooldown_active,
-    should_send_alert,
 )
-
-
-def test_should_send_alert_compares_absolute_move_to_threshold():
-    assert should_send_alert(price_change_percent=2.1, threshold_percent=2.0) is True
-    assert should_send_alert(price_change_percent=1.9, threshold_percent=2.0) is False
 
 
 def test_calculate_price_change_percent_preserves_direction():

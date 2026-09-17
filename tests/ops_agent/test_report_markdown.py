@@ -58,9 +58,8 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 5,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
-                            "similar_context_reused_count": 0,
-                            "allowed_market_context_changed_count": 0,
-                            "pre_llm_similar_context_reused_count": 0,
+                            "exact_context_reused_count": 0,
+                            "pre_llm_exact_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 0,
                             "decision_reason_unknown_count": 0,
                         },
@@ -74,9 +73,8 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 0,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
-                            "similar_context_reused_count": 0,
-                            "allowed_market_context_changed_count": 0,
-                            "pre_llm_similar_context_reused_count": 0,
+                            "exact_context_reused_count": 0,
+                            "pre_llm_exact_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 0,
                             "decision_reason_unknown_count": 0,
                         },
@@ -90,36 +88,34 @@ def test_decision_report_context_renders_required_decision_sections():
                             "llm_should_alert_count": 0,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
-                            "similar_context_reused_count": 0,
-                            "allowed_market_context_changed_count": 0,
-                            "pre_llm_similar_context_reused_count": 0,
+                            "exact_context_reused_count": 0,
+                            "pre_llm_exact_context_reused_count": 0,
                             "delivered_with_decision_reason_count": 8,
                             "decision_reason_unknown_count": 0,
                         },
                         {
                             "status": "not_scheduled",
-                            "reason_code": "similar_context_reused",
+                            "reason_code": "exact_context_reused",
                             "decision_stage": "pre_llm",
-                            "decision_reason": "similar_context_reused",
+                            "decision_reason": "exact_context_reused",
                             "outcomes": 4,
                             "news_only_rejected_count": 0,
                             "llm_should_alert_count": 0,
                             "llm_no_alert_count": 0,
                             "semantic_cooldown_suppressed_count": 0,
-                            "similar_context_reused_count": 4,
-                            "allowed_market_context_changed_count": 0,
-                            "pre_llm_similar_context_reused_count": 4,
+                            "exact_context_reused_count": 4,
+                            "pre_llm_exact_context_reused_count": 4,
                             "delivered_with_decision_reason_count": 0,
                             "decision_reason_unknown_count": 0,
                         },
                     ]
                 },
-                "event_alert_similar_context_reuse": {
+                "event_alert_exact_context_reuse": {
                     "rows": [
                         {
                             "symbol": "BTC",
                             "semantic_family": "price_level_range",
-                            "similar_context_reused_count": 4,
+                            "exact_context_reused_count": 4,
                             "pre_llm_reused_count": 4,
                             "eventless_reused_count": 4,
                             "llm_skipped_count": 4,
@@ -204,13 +200,12 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "## Decision Reasons" in markdown
     assert "| `news_only_rejected` | 3 |" in markdown
     assert "| `llm_should_alert` | 5 |" in markdown
-    assert "| `similar_context_reused` | 4 |" in markdown
+    assert "| `exact_context_reused` | 4 |" in markdown
     assert "| No eligible recipients | 0 |" in markdown
     assert "| Blocked user | 0 |" in markdown
     assert "| LLM/schema failure | 0 |" in markdown
-    assert "| Pre-LLM similar-context skips | 4 |" in markdown
-    assert "| `allowed_market_context_changed` | 0 |" in markdown
-    assert "Top similar-context reuse groups: BTC/price_level_range: 4." in markdown
+    assert "| Pre-LLM Exact Context Reuse | 4 |" in markdown
+    assert "Top Exact Context Reuse groups: BTC/price_level_range: 4." in markdown
     assert "| Delivered rows with decision reason | 8 |" in markdown
     assert "| Generic possible action quality signals | 2 / 10 |" in markdown
     assert "Status: Critical" in markdown
@@ -219,8 +214,8 @@ def test_decision_report_context_renders_required_decision_sections():
         "Critical invariant regression; 1 extra successful analyses |"
     )
     repeat_row = (
-        "| Same-family repeats without escalation | 1 | Likely alert noise; "
-        "1 escalation groups were counted separately. |"
+        "| Same-semantic deliveries inside cooldown | 1 | Strict cooldown regression. | "
+        "Inspect semantic cooldown evidence. |"
     )
     delivery_gap_row = (
         "| should_alert=true without delivery explanation | 2 | Observability gap |"

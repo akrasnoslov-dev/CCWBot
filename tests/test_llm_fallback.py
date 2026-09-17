@@ -117,28 +117,6 @@ async def test_event_analysis_all_providers_rate_limited(monkeypatch):
         )
 
 
-@pytest.mark.asyncio
-async def test_price_alert_payload_uses_deterministic_fallback_when_all_rate_limited(monkeypatch):
-    monkeypatch.setattr(groq_provider.get_provider(), "_client", _rate_limited_client())
-    monkeypatch.setattr(gemini_provider.get_provider(), "_client", _rate_limited_client())
-
-    payload = await ai_agent_groq.create_ai_alert_payload(
-        previous_price=100.0,
-        current_price=102.0,
-        price_change_percent=2.0,
-        change_24h=1.0,
-        change_7d=None,
-        news_items=None,
-        alert_threshold_percent=1.0,
-        check_interval_seconds=3600,
-        symbol="BTC",
-        coin_name="Bitcoin",
-    )
-
-    assert payload.get("rate_limited") is True
-    assert "AI analysis is temporarily unavailable" in payload["plain_text"]
-
-
 def test_backward_compatible_public_api():
     # AIGroqRateLimitError stays an alias of the provider-agnostic error.
     assert ai_agent_groq.AIGroqRateLimitError is ai_agent_groq.AIProviderRateLimitError

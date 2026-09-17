@@ -17,6 +17,7 @@ ACTIVE_SYMBOL_VALUES_SQL = "VALUES " + ", ".join(
 )
 MARKET_DATA_FRESHNESS_GRACE_SECONDS = 120
 EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS = 1800
+EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS = 14400
 DAILY_REPORT_RUNTIME_INTERVAL_SECONDS = 14400
 WEEKLY_REPORT_RUNTIME_INTERVAL_SECONDS = 86400
 DAILY_REPORT_FRESHNESS_GRACE_SECONDS = 3600
@@ -72,8 +73,7 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "app_settings",
         "evidence/db/aggregate_metrics.json",
-        "SELECT btc_alert_threshold_percent, major_movement_threshold_percent, "
-        "alt_movement_threshold_percent, automatic_check_interval_seconds, "
+        "SELECT automatic_check_interval_seconds, "
         "error_file_logging_enabled, updated_at FROM app_settings ORDER BY id DESC LIMIT 1",
     ),
     DbQuery(
@@ -639,10 +639,10 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY sent_count DESC, last_sent_at DESC LIMIT :anomaly_limit",
     ),
     DbQuery(
-        "event_alert_similar_context_reuse",
+        "event_alert_exact_context_reuse",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, coalesce(semantic_family, 'unknown') AS semantic_family, "
-        "count(*) AS similar_context_reused_count, "
+        "count(*) AS exact_context_reused_count, "
         "count(*) FILTER (WHERE decision_stage = 'pre_llm') AS pre_llm_reused_count, "
         "count(*) FILTER (WHERE market_event_id IS NULL) AS eventless_reused_count, "
         "count(*) FILTER (WHERE event_ai_analysis_id IS NULL) AS llm_skipped_count, "
@@ -651,9 +651,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM alert_delivery_outcomes "
         "WHERE alert_type = 'event_alert' "
         "AND created_at >= :since AND created_at < :until "
-        "AND decision_reason = 'similar_context_reused' "
+        "AND decision_reason = 'exact_context_reused' "
         "GROUP BY symbol, coalesce(semantic_family, 'unknown') "
-        "ORDER BY similar_context_reused_count DESC, symbol, semantic_family LIMIT :limit",
+        "ORDER BY exact_context_reused_count DESC, symbol, semantic_family LIMIT :limit",
     ),
     DbQuery(
         "alert_delivery_outcome_summary",
@@ -686,16 +686,11 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE decision_reason = 'llm_no_alert') AS llm_no_alert_count, "
         "count(*) FILTER (WHERE decision_reason = 'semantic_cooldown_suppressed') "
         "AS semantic_cooldown_suppressed_count, "
-        "count(*) FILTER (WHERE decision_reason = 'similar_context_reused') "
-        "AS similar_context_reused_count, "
-        "count(*) FILTER (WHERE decision_reason IN ("
-        "'allowed_market_context_changed', 'allowed_urgency_escalation', "
-        "'allowed_stronger_movement', 'allowed_direction_reversal', "
-        "'allowed_market_structure_change', 'allowed_cumulative_strengthening')) "
-        "AS allowed_market_context_changed_count, "
+        "count(*) FILTER (WHERE decision_reason = 'exact_context_reused') "
+        "AS exact_context_reused_count, "
         "count(*) FILTER (WHERE decision_stage = 'pre_llm' "
-        "AND decision_reason = 'similar_context_reused') "
-        "AS pre_llm_similar_context_reused_count, "
+        "AND decision_reason = 'exact_context_reused') "
+        "AS pre_llm_exact_context_reused_count, "
         "count(*) FILTER (WHERE status = 'delivered' AND decision_reason IS NOT NULL) "
         "AS delivered_with_decision_reason_count "
         "FROM alert_delivery_outcomes WHERE created_at >= :since AND created_at < :until "
@@ -747,7 +742,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "LEFT JOIN user_premium_subscriptions ups ON ups.user_id = u.id "
         "GROUP BY ucs.symbol), "
         "settings AS ("
-        f"SELECT {EFFECTIVE_EVENT_ANALYSIS_INTERVAL_SECONDS} AS cooldown_seconds), "
+        f"SELECT {EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS} AS cooldown_seconds), "
         "recent_event_alerts AS ("
         "SELECT e.market_event_id, max(a.created_at) AS recent_sent_at "
         "FROM events_without_delivery e JOIN alerts a ON lower(a.symbol) = lower(e.symbol) "
