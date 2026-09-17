@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 # Local JSON file used for lightweight single-instance runtime state.
 STATE_FILE = "state.json"
@@ -24,4 +25,11 @@ def load_state() -> dict:
 def save_state(state: dict) -> None:
     """Persist bot state to state.json."""
     with open(STATE_FILE, "w", encoding="utf-8") as file:
-        json.dump(state, file, indent=2)
+        json.dump(state, file, indent=2, default=_json_state_value)
+
+
+def _json_state_value(value: object) -> str:
+    """Preserve Decimal precision in the JSON-only fallback state."""
+    if isinstance(value, Decimal):
+        return str(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")

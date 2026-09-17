@@ -239,8 +239,13 @@ def build_market_report_prompt(input_payload: dict) -> str:
         "Return valid JSON only, in English. Use exactly: report_type, title, market_pulse, "
         "dashboard, coin_cards, market_catalysts, why_it_matters, watch_next, week_timeline, "
         "themes, next_week_focus. "
-        f"report_type must be {report_type!r}. Use supplied context only; no direct financial "
-        f"advice.\n\nInput JSON:\n{_json_dumps(input_payload)}"
+        f"report_type must be {report_type!r}. dashboard must be a non-empty array of text; "
+        "market_catalysts must be an array of text. coin_cards must contain exactly one object "
+        "for each supplied active symbol, with non-empty symbol, summary, and watch text. "
+        "For weekly reports, week_timeline and themes must be non-empty arrays of text and "
+        "next_week_focus must be non-empty text. For daily reports, week_timeline and themes "
+        "may be empty arrays and next_week_focus may be empty text. Use supplied context only; "
+        f"no direct financial advice.\n\nInput JSON:\n{_json_dumps(input_payload)}"
     )
 
 

@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from bot.alerting.event_identity import _build_exact_event_context_fingerprint, _json_dumps
 
 
@@ -25,7 +27,10 @@ def _payload() -> dict:
                 "news_id": "n1",
                 "title": "Market update",
                 "source": "Example",
-                "url": "https://example.test/a",
+                "time": "2026-09-17T09:00:00+00:00",
+                "summary": "Market conditions changed.",
+                "relevance_label": "high",
+                "material": True,
             }
         ],
         "policy": {"language": "English"},
@@ -97,6 +102,28 @@ def test_exact_context_invalidates_any_real_market_or_news_change():
     fingerprint = _build_exact_event_context_fingerprint(original)
     assert fingerprint != _build_exact_event_context_fingerprint(changed_market)
     assert fingerprint != _build_exact_event_context_fingerprint(changed_news)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("news_id", "n2"),
+        ("title", "Corrected market update"),
+        ("source", "Corrected publisher"),
+        ("time", "2026-09-17T09:01:00+00:00"),
+        ("summary", "Corrected market conditions."),
+        ("relevance_label", "medium"),
+        ("material", False),
+    ],
+)
+def test_exact_context_invalidates_every_semantic_event_news_field(field, replacement):
+    original = _payload()
+    changed = _payload()
+    changed["news"][0][field] = replacement
+
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(changed)
 
 
 def test_decimal_json_is_full_precision_json_number_not_float_or_string():

@@ -536,6 +536,17 @@ def test_no_delivery_classification_uses_effective_cooldown_without_settings_row
     assert "FROM app_settings ORDER BY id DESC LIMIT 1" not in query.sql
 
 
+def test_no_delivery_classification_matches_semantic_cooldown_identity():
+    query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+
+    assert "previous_event.event_key = e.event_key" in query.sql
+    assert "current_analysis.raw_input_json::jsonb->>'semantic_family'" in query.sql
+    assert "a.numeric_context::jsonb->>'semantic_family'" in query.sql
+    assert "previous_analysis.raw_input_json::jsonb->>'semantic_family'" in query.sql
+
+
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
     query = next(query for query in QUERIES if query.name == "event_alert_llm_estimates")
 

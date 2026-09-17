@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -8,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
 import bot.settings as settings
+import bot.storage as storage
 from bot.db.database import (
     Alert,
     AlertDeliveryOutcome,
@@ -54,6 +57,29 @@ async def create_user(session, telegram_user_id, chat_id, *, is_active=True):
     await session.refresh(user)
     await ensure_default_coin_subscriptions(session, user_id=user.id)
     return user
+
+
+@pytest.mark.asyncio
+async def test_automatic_fallback_state_persists_decimal_prices(monkeypatch, tmp_path):
+    state_file = tmp_path / "state.json"
+    state = {}
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    monkeypatch.setattr(storage, "STATE_FILE", state_file)
+
+    await alerts._save_price_state(
+        symbol="gram",
+        state=state,
+        current_price=Decimal("1.350123456789012345"),
+        change_24h=Decimal("0.012345678901234567"),
+        checked_at="2026-09-17T10:00:00+00:00",
+    )
+
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {
+        "last_price": "1.350123456789012345",
+        "last_24h_change": "0.012345678901234567",
+        "last_checked_at": "2026-09-17T10:00:00+00:00",
+    }
 
 
 @pytest.mark.asyncio

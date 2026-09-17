@@ -242,10 +242,13 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         if isinstance(item, dict):
             news.append(
                 {
-                    "identity": make_news_key({"link": item.get("url"), **item}),
+                    # Keep this structurally identical to _compact_event_analysis_news().
+                    # Every field here is sent to the LLM and can change its decision.
+                    "news_id": item.get("news_id"),
                     "title": item.get("title"),
                     "source": item.get("source"),
-                    "url": item.get("url", item.get("link")),
+                    "time": item.get("time"),
+                    "summary": item.get("summary"),
                     "relevance_label": item.get("relevance_label"),
                     "material": item.get("material"),
                 }

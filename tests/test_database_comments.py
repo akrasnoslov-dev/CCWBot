@@ -45,6 +45,19 @@ def _load_market_heartbeat_migration():
     return module
 
 
+def _load_event_alert_policy_migration():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic/versions/0030_event_alert_policy_cleanup.py"
+    )
+    spec = util.spec_from_file_location("migration_0030_event_alert_policy_cleanup", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_all_tables_and_columns_have_comments():
     for table in Base.metadata.sorted_tables:
         assert table.comment, f"{table.name} is missing a table comment"
@@ -55,6 +68,7 @@ def test_all_tables_and_columns_have_comments():
 def test_database_comments_migration_matches_model_metadata():
     migration = _load_comments_migration()
     heartbeat_migration = _load_market_heartbeat_migration()
+    policy_migration = _load_event_alert_policy_migration()
 
     assert set(migration.TABLE_COMMENTS).issubset(Base.metadata.tables)
     assert set(migration.COLUMN_COMMENTS).issubset(Base.metadata.tables)
@@ -71,9 +85,18 @@ def test_database_comments_migration_matches_model_metadata():
                 assert column_comment == heartbeat_migration.PREVIOUS_ALERT_FREQUENCY_COMMENT
                 assert column.comment == heartbeat_migration.MARKET_HEARTBEAT_FREQUENCY_COMMENT
                 continue
-            # Later migrations may refine comments while widening precision or retiring policy.
-            if column_comment != column.comment:
+            if (table_name, column_name) in policy_migration.PRICE_COLUMN_COMMENTS:
+                assert column_comment == policy_migration.PREVIOUS_PRICE_COLUMN_COMMENTS[
+                    (table_name, column_name)
+                ]
+                assert column.comment == policy_migration.PRICE_COLUMN_COMMENTS[
+                    (table_name, column_name)
+                ]
                 continue
+            assert column_comment == column.comment
+
+    for (table_name, column_name), comment in policy_migration.PRICE_COLUMN_COMMENTS.items():
+        assert Base.metadata.tables[table_name].columns[column_name].comment == comment
 
 
 @pytest.mark.asyncio
