@@ -40,9 +40,10 @@ def test_other_prompts_preserve_report_and_heartbeat_contracts():
 
     assert "Market Heartbeat, not an Event Alert" in heartbeat
     assert "market_pulse" in report
+    assert "title, market_pulse, why_it_matters, and watch_next must be non-empty text" in report
     assert "week_timeline" in report
     assert "exactly one object for each supplied active symbol" in report
-    assert "symbol, summary, and watch" in report
+    assert "symbol, summary, and watch fields" in report
     assert "For weekly reports" in report
     assert "next_week_focus must be non-empty" in report
 

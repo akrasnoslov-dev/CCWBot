@@ -271,6 +271,11 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
                     900003, 'BTC', 'event_alert', 'btc_price_downtrend',
                     'ops-agent-period-boundary', 63000, 64000, -1.7,
                     :since, :since
+                ),
+                (
+                    900004, 'BTC', 'event_alert', 'btc_price_downtrend',
+                    'ops-agent-current-malformed-context', 62000, 63000, -1.8,
+                    CAST(:since AS timestamptz) + interval '1 minute', :since
                 )
             """
         ),
@@ -281,23 +286,31 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
             """
             INSERT INTO event_ai_analyses (
                 id, market_event_id, analysis_id, symbol, analysis_type, provider, model,
-                input_hash, should_alert, related_news_ids, status, plain_text, created_at
+                input_hash, should_alert, related_news_ids, status, plain_text,
+                raw_input_json, created_at
             )
             VALUES
                 (
                     900001, 900001, 'ops_agent_contract_a', 'BTC', 'event_analysis',
                     'groq', 'contract-model', 'ops-agent-contract-a', true, '["n1"]',
-                    'success', 'Sanitized text. Not financial advice.', :since
+                    'success', 'Sanitized text. Not financial advice.', '{bad json', :since
                 ),
                 (
                     900002, 900002, 'ops_agent_contract_b', 'BTC', 'event_analysis',
                     'groq', 'contract-model', 'ops-agent-contract-b', true, '["n1"]',
-                    'success', 'Sanitized text. Not financial advice.', :since
+                    'success', 'Sanitized text. Not financial advice.', '{bad json', :since
                 ),
                 (
                     900003, 900003, 'ops_agent_contract_c', 'BTC', 'event_analysis',
                     'groq', 'contract-model', 'ops-agent-contract-c', true, '["n1"]',
-                    'success', 'Sanitized text. Not financial advice.', :since
+                    'success', 'Sanitized text. Not financial advice.', '{bad json', :since
+                ),
+                (
+                    900004, 900004, 'ops_agent_contract_d', 'BTC', 'event_analysis',
+                    'groq', 'contract-model', 'ops-agent-contract-d', true, '["n1"]',
+                    'success', 'Sanitized text. Not financial advice.',
+                    '{"semantic_family":"price_downtrend"}',
+                    CAST(:since AS timestamptz) + interval '1 minute'
                 )
             """
         ),
@@ -358,11 +371,30 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
     for query_name in (
         "event_alert_same_family_repeats_24h",
         "event_alert_same_news_repeats_24h",
+        "market_events_without_delivery_classification",
     ):
         query = next(query for query in QUERIES if query.name == query_name)
         result = await connection.execute(text(query.sql), params)
         rows = result.fetchall()
         assert rows, f"{query_name} should handle malformed numeric_context and return rows"
+
+    no_delivery_query = next(
+        query for query in QUERIES if query.name == "market_events_without_delivery_classification"
+    )
+    no_delivery_rows = (
+        await connection.execute(text(no_delivery_query.sql), params)
+    ).mappings().all()
+    cooldown_sample_ids = {
+        sample["market_event_id"]
+        for row in no_delivery_rows
+        if row["classification"] == "expected_backend_cooldown_active"
+        for sample in (
+            json.loads(row["sample_events"])
+            if isinstance(row["sample_events"], str)
+            else row["sample_events"]
+        )
+    }
+    assert 900004 in cooldown_sample_ids
 
     await connection.execute(
         text(
@@ -542,9 +574,12 @@ def test_no_delivery_classification_matches_semantic_cooldown_identity():
     )
 
     assert "previous_event.event_key = e.event_key" in query.sql
-    assert "current_analysis.raw_input_json::jsonb->>'semantic_family'" in query.sql
-    assert "a.numeric_context::jsonb->>'semantic_family'" in query.sql
-    assert "previous_analysis.raw_input_json::jsonb->>'semantic_family'" in query.sql
+    assert "delivered_outcome.semantic_family" in query.sql
+    assert "ado.status = 'delivered'" in query.sql
+    assert "substring(current_analysis.raw_input_json" in query.sql
+    assert "substring(a.numeric_context" in query.sql
+    assert "substring(previous_analysis.raw_input_json" in query.sql
+    assert "::jsonb->>'semantic_family'" not in query.sql
 
 
 def test_ops_agent_event_alert_estimate_query_exposes_cadence_fields():
