@@ -51,6 +51,19 @@ def test_sanitize_alert_message_drops_backend_diagnostic_lines():
     assert message == "Market update\nReview the market context."
 
 
+@pytest.mark.parametrize(
+    ("raw_content", "expected"),
+    [
+        ('{"ok": true}', {"ok": True}),
+        ('```json\n{"ok": true}\n```', {"ok": True}),
+        ("not json", None),
+        ("[]", None),
+    ],
+)
+def test_parse_json_keeps_object_only_contract(raw_content, expected):
+    assert ai_agent_groq._parse_json(raw_content) == expected
+
+
 def test_event_analysis_raw_uses_json_mode_and_returns_provider_attribution(monkeypatch):
     captured = {}
 

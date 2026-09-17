@@ -251,6 +251,10 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 }
             )
     news.sort(key=_json_dumps)
+    last_msg = input_payload.get("last_msg")
+    last_msg = last_msg if isinstance(last_msg, dict) else {}
+    previous_event_alert = input_payload.get("previous_event_alert")
+    previous_event_alert = previous_event_alert if isinstance(previous_event_alert, dict) else {}
     return {
         "schema_version": 1,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
@@ -268,12 +272,21 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "chg_since_msg",
             )
         },
-        "last_msg": input_payload.get("last_msg")
-        if isinstance(input_payload.get("last_msg"), dict)
-        else None,
-        "previous_event_alert": input_payload.get("previous_event_alert")
-        if isinstance(input_payload.get("previous_event_alert"), dict)
-        else None,
+        # Delivery and wall-clock metadata do not alter the market-analysis question.
+        "last_msg": {
+            "type": last_msg.get("type"),
+            "price": last_msg.get("price"),
+        },
+        "previous_event_alert": {
+            "title": previous_event_alert.get("title"),
+            "canonical_event_key": previous_event_alert.get("canonical_event_key"),
+            "semantic_family": previous_event_alert.get("semantic_family"),
+            "analysed_window_move": previous_event_alert.get("analysed_window_move"),
+            "stable_related_news_ids_hash": previous_event_alert.get(
+                "stable_related_news_ids_hash"
+            ),
+            "possible_action": previous_event_alert.get("possible_action"),
+        },
         "news": news,
         "policy": input_payload.get("policy")
         if isinstance(input_payload.get("policy"), dict)

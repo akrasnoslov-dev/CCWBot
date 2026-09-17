@@ -37,10 +37,55 @@ def test_exact_context_ignores_runtime_metadata_and_normalizes_decimal_represent
     equivalent = _payload()
     equivalent["analysis_id"] = "runtime-id-b"
     equivalent["timestamp_utc"] = "2026-09-17T11:00:00+00:00"
+    equivalent["last_msg"]["time"] = "2026-09-17T11:00:00+00:00"
+    equivalent["previous_event_alert"] = {
+        "created_at": "2026-09-17T11:00:00+00:00",
+        "canonical_event_key": "btc_market_move",
+        "semantic_family": "market_move",
+    }
+    original["previous_event_alert"] = {
+        "created_at": "2026-09-17T10:00:00+00:00",
+        "canonical_event_key": "btc_market_move",
+        "semantic_family": "market_move",
+    }
     equivalent["market"]["price"] = Decimal("1.35")
     assert _build_exact_event_context_fingerprint(
         original
     ) == _build_exact_event_context_fingerprint(equivalent)
+
+
+def test_exact_context_ignores_nested_timestamps_but_not_semantic_previous_context():
+    original = _payload()
+    original["last_msg"] = {"time": "2026-09-17T10:00:00+00:00", "type": "event", "price": 1.35}
+    original["previous_event_alert"] = {
+        "created_at": "2026-09-17T10:00:00+00:00",
+        "canonical_event_key": "btc_market_move",
+        "semantic_family": "market_move",
+        "title": "BTC market move",
+    }
+    timestamp_only = _payload()
+    timestamp_only["last_msg"] = {
+        "time": "2026-09-17T11:00:00+00:00",
+        "type": "event",
+        "price": 1.35,
+    }
+    timestamp_only["previous_event_alert"] = {
+        **original["previous_event_alert"],
+        "created_at": "2026-09-17T11:00:00+00:00",
+    }
+    changed_semantics = _payload()
+    changed_semantics["last_msg"] = timestamp_only["last_msg"]
+    changed_semantics["previous_event_alert"] = {
+        **timestamp_only["previous_event_alert"],
+        "semantic_family": "market_breakout",
+    }
+
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) == _build_exact_event_context_fingerprint(timestamp_only)
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(changed_semantics)
 
 
 def test_exact_context_invalidates_any_real_market_or_news_change():

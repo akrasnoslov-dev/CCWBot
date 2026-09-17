@@ -172,9 +172,7 @@ async def test_resolve_symbols_to_check_does_not_create_default_subscriptions(mo
             session.add(user)
             await session.commit()
             await session.refresh(user)
-            session.add(
-                UserCoinSubscription(user_id=user.id, symbol="btc", is_enabled=True)
-            )
+            session.add(UserCoinSubscription(user_id=user.id, symbol="btc", is_enabled=True))
             await session.commit()
 
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
@@ -302,9 +300,10 @@ async def test_trial_unlocks_premium_delivery_then_expiry_preserves_intent(monke
         assert await alerts.get_alert_recipients("eth", "price_movement", now=now) == [
             alerts.AlertRecipient(chat_id=2002, user_id=user.id)
         ]
-        assert await alerts.get_alert_recipients(
-            "eth", "price_movement", now=now + timedelta(days=7)
-        ) == []
+        assert (
+            await alerts.get_alert_recipients("eth", "price_movement", now=now + timedelta(days=7))
+            == []
+        )
         async with SessionLocal() as session:
             await activate_premium_from_telegram_stars_payment(
                 session,
@@ -364,9 +363,12 @@ async def test_revoke_ends_trial_and_paid_premium_delivery_immediately(monkeypat
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", SessionLocal)
 
-        assert await alerts.get_alert_recipients(
-            "eth", "price_movement", now=now + timedelta(days=2, seconds=1)
-        ) == []
+        assert (
+            await alerts.get_alert_recipients(
+                "eth", "price_movement", now=now + timedelta(days=2, seconds=1)
+            )
+            == []
+        )
     finally:
         await engine.dispose()
 
@@ -494,13 +496,9 @@ async def test_one_analysis_payload_is_delivered_to_multiple_recipients(monkeypa
         ]
         async with SessionLocal() as session:
             assert await session.scalar(select(func.count()).select_from(Alert)) == 2
-            assert (
-                await session.scalar(select(func.count()).select_from(AlertDeliveryOutcome))
-                == 2
-            )
+            assert await session.scalar(select(func.count()).select_from(AlertDeliveryOutcome)) == 2
             assert {
-                row.status
-                for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
+                row.status for row in (await session.scalars(select(AlertDeliveryOutcome))).all()
             } == {"delivered"}
             assert {
                 row.reason_code
@@ -576,7 +574,8 @@ def test_schedule_automatic_price_check_coalesces_overlapping_runs():
     ]
     assert all(kwargs["interval"] == 1800 for kwargs in captured_kwargs)
     assert all(
-        kwargs["job_kwargs"] == {
+        kwargs["job_kwargs"]
+        == {
             "max_instances": 1,
             "coalesce": True,
             "misfire_grace_time": 15,
@@ -626,26 +625,38 @@ def test_symbol_stagger_offsets_match_default_thirty_minute_cycle():
         "gram": 600,
         "sol": 900,
     }
-    assert alerts._seconds_until_next_symbol_check(
-        symbol="btc",
-        interval_seconds=1800,
-        now=now,
-    ) == 0
-    assert alerts._seconds_until_next_symbol_check(
-        symbol="eth",
-        interval_seconds=1800,
-        now=now,
-    ) == 300
-    assert alerts._seconds_until_next_symbol_check(
-        symbol="gram",
-        interval_seconds=1800,
-        now=now,
-    ) == 600
-    assert alerts._seconds_until_next_symbol_check(
-        symbol="sol",
-        interval_seconds=1800,
-        now=now,
-    ) == 900
+    assert (
+        alerts._seconds_until_next_symbol_check(
+            symbol="btc",
+            interval_seconds=1800,
+            now=now,
+        )
+        == 0
+    )
+    assert (
+        alerts._seconds_until_next_symbol_check(
+            symbol="eth",
+            interval_seconds=1800,
+            now=now,
+        )
+        == 300
+    )
+    assert (
+        alerts._seconds_until_next_symbol_check(
+            symbol="gram",
+            interval_seconds=1800,
+            now=now,
+        )
+        == 600
+    )
+    assert (
+        alerts._seconds_until_next_symbol_check(
+            symbol="sol",
+            interval_seconds=1800,
+            now=now,
+        )
+        == 900
+    )
 
 
 def test_symbol_first_delays_are_deterministic_after_mid_cycle_restart():
@@ -694,15 +705,15 @@ def test_symbol_stagger_offsets_do_not_pair_symbols_on_shorter_interval():
 
 def test_state_event_analysis_interval_is_normalized_to_supported_cadence():
     assert (
-        settings.get_state_alert_settings(
-            {"automatic_check_interval_seconds": 600}
-        )["automatic_check_interval_seconds"]
+        settings.get_state_alert_settings({"automatic_check_interval_seconds": 600})[
+            "automatic_check_interval_seconds"
+        ]
         == 1800
     )
     assert (
-        settings.get_state_alert_settings(
-            {"automatic_check_interval_seconds": 3600}
-        )["automatic_check_interval_seconds"]
+        settings.get_state_alert_settings({"automatic_check_interval_seconds": 3600})[
+            "automatic_check_interval_seconds"
+        ]
         == 1800
     )
 
@@ -783,9 +794,7 @@ def test_material_news_is_relevant():
 def test_btc_soluna_revenue_article_is_weak():
     news = [
         {
-            "title": (
-                "Soluna revenue jumps 58% as hosting business offsets weaker Bitcoin mining"
-            ),
+            "title": ("Soluna revenue jumps 58% as hosting business offsets weaker Bitcoin mining"),
             "source": "Example",
             "link": "https://example.test/soluna",
         }
@@ -799,8 +808,7 @@ def test_swan_lawsuit_article_is_weak_background_for_btc():
     news = [
         {
             "title": (
-                "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers "
-                "from Prime Trust"
+                "Swan Bitcoin sued for nearly $1B over pre-bankruptcy transfers from Prime Trust"
             ),
             "source": "Cointelegraph.com News",
             "link": "https://example.test/swan-bitcoin-lawsuit",
@@ -842,14 +850,24 @@ def test_direct_btc_support_article_is_user_visible():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Event detection now precedes recipient eligibility by product contract.")
-async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
+async def test_automatic_price_check_analyzes_before_no_recipient_outcome(monkeypatch):
     save_price_state = AsyncMock()
     resolve_recipients = AsyncMock(return_value=alerts.AlertRecipientResolution(recipients=[]))
-    fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
-    create_market_event = AsyncMock(
-        side_effect=AssertionError("market event should not be created")
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_market_move",
+        title="BTC market move",
+        message_body="BTC moved during the analysed window.",
+        related_news_ids=[],
+        possible_action="Monitor market conditions.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
     )
+    fetch_news = AsyncMock(return_value=[])
+    create_decision = AsyncMock(return_value=(decision, 456))
+    create_market_event = AsyncMock(return_value=(123, "btc:event", "instance-a", False))
     deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
@@ -869,28 +887,39 @@ async def test_automatic_price_check_skips_ai_when_no_recipients(monkeypatch):
     )
     monkeypatch.setattr(alerts, "resolve_alert_recipient_outcomes", resolve_recipients)
     monkeypatch.setattr(alerts, "fetch_news_context", fetch_news)
-    monkeypatch.setattr(alerts, "_get_or_create_price_movement_market_event", create_market_event)
+    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
+    monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", save_price_state)
+    monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
     await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
+    create_decision.assert_awaited_once()
+    create_market_event.assert_awaited_once()
     resolve_recipients.assert_awaited_once()
-    fetch_news.assert_not_awaited()
-    create_market_event.assert_not_awaited()
     deliver_alert.assert_not_awaited()
     save_price_state.assert_awaited_once()
     assert save_price_state.await_args.kwargs["last_alert_at"] is None
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Event detection now precedes recipient eligibility by product contract.")
-async def test_automatic_price_check_persists_filtered_outcomes_before_ai(monkeypatch):
-    fetch_news = AsyncMock(side_effect=AssertionError("news should not be fetched"))
-    create_decision = AsyncMock(side_effect=AssertionError("LLM should not be called"))
-    create_market_event = AsyncMock(
-        side_effect=AssertionError("market event should not be created")
+async def test_automatic_price_check_persists_filtered_outcomes_after_event_analysis(monkeypatch):
+    decision = alerts.EventAnalysisDecision(
+        symbol="ETH",
+        should_alert=True,
+        event_key="eth_market_move",
+        title="ETH market move",
+        message_body="ETH moved during the analysed window.",
+        related_news_ids=[],
+        possible_action="Monitor market conditions.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
     )
+    fetch_news = AsyncMock(return_value=[])
+    create_decision = AsyncMock(return_value=(decision, 456))
+    create_market_event = AsyncMock(return_value=(123, "eth:event", "instance-a", False))
     deliver_alert = AsyncMock(side_effect=AssertionError("delivery should not be attempted"))
 
     engine, SessionLocal = await build_session_factory()
@@ -917,19 +946,20 @@ async def test_automatic_price_check_persists_filtered_outcomes_before_ai(monkey
         monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
         monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
         monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
+        monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
         await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-        fetch_news.assert_not_awaited()
-        create_decision.assert_not_awaited()
-        create_market_event.assert_not_awaited()
+        fetch_news.assert_awaited_once()
+        create_decision.assert_awaited_once()
+        create_market_event.assert_awaited_once()
         deliver_alert.assert_not_awaited()
         async with SessionLocal() as session:
             outcomes = (await session.scalars(select(AlertDeliveryOutcome))).all()
 
         assert [(row.status, row.reason_code, row.user_id) for row in outcomes] == [
             ("filtered", "watchlist_disabled", user.id),
-            ("no_eligible_recipients", "no_recipients", None),
+            ("cooldown", "cooldown_active", None),
         ]
         assert outcomes[0].recipient_considered is True
         assert outcomes[0].recipient_eligible is False
