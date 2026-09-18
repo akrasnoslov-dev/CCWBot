@@ -39,6 +39,9 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "0.042 means 0.042%, not 4.2%" in prompt
     assert "Never multiply a supplied change value by 100" in prompt
     assert "did not meet a threshold" in prompt
+    assert "not a restatement of supplied price or percentage values" in prompt
+    assert "coincident context, never as proven cause" in prompt
+    assert "conditional monitoring of supplied snapshots, trend, or selected news" in prompt
 
 
 @pytest.mark.parametrize(

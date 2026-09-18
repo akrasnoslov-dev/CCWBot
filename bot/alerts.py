@@ -38,6 +38,7 @@ from bot.alerting.event_text import (
     compact_elapsed_since,
     compact_event_alert_possible_action,
     compact_event_alert_situation,
+    event_alert_presentation_fallback,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -1572,6 +1573,13 @@ def _build_event_alert_payload(
         analysed_window_minutes=market_data.get("analysed_window_minutes"),
         analysed_window_change=analysed_window_change,
     )
+    related_section, related_link_entities, related_section_html = _format_event_related_context(
+        related_news,
+        empty_text="",
+    )
+    presentation_situation_fallback, presentation_action_fallback = (
+        event_alert_presentation_fallback(market_data, related_news)
+    )
     message_body = _sanitize_event_text(
         decision.message_body,
         "Market conditions changed.",
@@ -1583,14 +1591,15 @@ def _build_event_alert_payload(
         symbol=symbol,
         market_data=market_data,
     )
+    message_body = sanitize_financial_instruction(
+        message_body,
+        fallback=presentation_situation_fallback,
+    )
     message_body = compact_event_alert_situation(
         message_body,
         significance_reason=None,
         market_data=market_data,
-    )
-    message_body = sanitize_financial_instruction(
-        message_body,
-        fallback="Market conditions changed; review the market context and your risk plan.",
+        related_news=related_news,
     )
     possible_action = _sanitize_event_text(
         decision.possible_action,
@@ -1604,10 +1613,9 @@ def _build_event_alert_payload(
         market_data=market_data,
     )
     possible_action = soften_possible_action(possible_action, urgency=decision.urgency)
-    possible_action = compact_event_alert_possible_action(possible_action)
-    related_section, related_link_entities, related_section_html = _format_event_related_context(
-        related_news,
-        empty_text="",
+    possible_action = compact_event_alert_possible_action(
+        possible_action,
+        fallback=presentation_action_fallback,
     )
     price = market_data.get("price", market_data.get("price_now_usd"))
     change_since_message = market_data.get("chg_since_msg_percent")
@@ -1697,9 +1705,9 @@ def _event_numeric_context(
 def _heartbeat_numeric_context(
     *,
     symbol: str,
-    current_price: float,
-    change_since_last_message: float | None,
-    change_24h: float,
+    current_price: Decimal | float,
+    change_since_last_message: Decimal | float | None,
+    change_24h: Decimal | float,
     heartbeat_id: int | None,
     confidence: str | None,
 ) -> str:
@@ -1719,9 +1727,9 @@ def _heartbeat_numeric_context(
 def _build_market_heartbeat_payload(
     *,
     heartbeat,
-    current_price: float,
-    change_since_last_message: float | None,
-    change_24h: float,
+    current_price: Decimal | float,
+    change_since_last_message: Decimal | float | None,
+    change_24h: Decimal | float,
     related_news: list[dict],
 ) -> dict:
     backend_symbol = normalize_symbol(heartbeat.symbol)
@@ -4607,11 +4615,11 @@ async def _get_due_market_heartbeat_recipients(
     *,
     symbol: str,
     now: datetime,
-) -> list[tuple[AlertRecipient, float | None]]:
+) -> list[tuple[AlertRecipient, Decimal | None]]:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return []
     normalized_symbol = normalize_symbol(symbol)
-    due: list[tuple[AlertRecipient, float | None]] = []
+    due: list[tuple[AlertRecipient, Decimal | None]] = []
     seen_chat_ids: set[int] = set()
     async with DB_SESSION_LOCAL() as session:
         for user in await get_active_users_with_alert_preferences(session):
@@ -4652,7 +4660,7 @@ async def _get_due_market_heartbeat_recipients(
                 continue
             seen_chat_ids.add(chat_id)
             last_price = (
-                _numeric_context_value(last_sent.numeric_context, "current_price")
+                _decimal_numeric_context_value(last_sent.numeric_context, "current_price")
                 if last_sent
                 else None
             )
@@ -4673,8 +4681,8 @@ async def _deliver_market_heartbeat(
     app: Application,
     *,
     symbol: str,
-    current_price: float,
-    change_24h: float,
+    current_price: Decimal | float,
+    change_24h: Decimal | float,
     now: datetime,
 ) -> bool:
     if not DB_ENABLED or not DB_SESSION_LOCAL:
@@ -4708,7 +4716,7 @@ async def _deliver_market_heartbeat(
     sent_count = 0
     for recipient, last_message_price in due_recipients:
         change_since_last_message = (
-            calculate_price_change_percent(float(last_message_price), current_price)
+            calculate_price_change_percent(last_message_price, current_price)
             if last_message_price
             else None
         )
@@ -5007,6 +5015,24 @@ def _numeric_context_value(numeric_context: str | None, key: str) -> float | Non
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _decimal_numeric_context_value(numeric_context: str | None, key: str) -> Decimal | None:
+    """Read stored price evidence without converting a JSON number through binary float."""
+    if not numeric_context:
+        return None
+    try:
+        payload = json.loads(numeric_context, parse_float=Decimal)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    try:
+        parsed = Decimal(str(value)) if value is not None else None
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return parsed if parsed is not None and parsed.is_finite() else None
 
 
 async def _persist_successful_product_alert_state(

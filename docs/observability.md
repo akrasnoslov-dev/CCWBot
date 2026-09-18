@@ -472,8 +472,14 @@ significance, identity, cooldown, eligibility, or LLM call placement.
 Event Alert presentation is deterministic where it repeats market facts: the headline uses only
 the primary analysed-window move, and the metric block is the single source for price, prior
 Event Alert/message change, and analysed-window movement. Situation text that repeats those
-numbers is replaced with a concise explanation of why the move is meaningful. Possible action is
-kept short, conditional, and non-prescriptive. Related-news selection and rendering are unchanged.
+numbers is replaced with concise context derived only from supplied snapshots, 24-hour alignment
+or divergence, prior context, or selected related news. Selected news may be described as
+coincident context, never as proven cause. When no additional context exists, the copy explicitly
+says that the analysed-window move is the only confirmed signal and that no additional catalyst is
+evident from the supplied news/context. Possible action is short, conditional monitoring of the
+supplied snapshots, trend, or selected news, with no trading command or generic risk-plan wording.
+Related-news selection and rendering are unchanged. This display-only normalization does not use
+market thresholds or alter significance, identity, cooldown, eligibility, or LLM call placement.
 
 The ops-agent decision context now includes `## Event Alert Regression Checks`. Interpret it as:
 

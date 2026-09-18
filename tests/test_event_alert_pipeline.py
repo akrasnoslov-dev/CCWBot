@@ -358,14 +358,11 @@ def test_event_alert_presentation_removes_repeated_llm_market_facts():
     assert "Price: $109.79" in payload
     assert "Since last alert/message (4h ago): +5.54%" in payload
     assert "3h market move: +4.07%" in payload
-    assert (
-        "The analysed-window move is large enough to represent a meaningful market change."
-        in payload
-    )
+    assert "broader 24-hour trend" in payload
     assert "$105.49" not in payload
     assert "8.5%" not in payload
     assert "Buy now" not in payload
-    assert "only if the move confirms and fits your risk plan." in payload
+    assert "Watch the next short-term snapshots" in payload
 
 
 def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
@@ -411,6 +408,185 @@ def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
 
 
 @pytest.mark.parametrize(
+    ("market", "related_news", "expected_situation", "expected_action"),
+    (
+        (
+            {"chg_window_percent": Decimal("4.07"), "chg24h_percent": Decimal("8.5")},
+            [],
+            "broader 24-hour trend",
+            "broader-trend direction",
+        ),
+        (
+            {"chg_window_percent": Decimal("-1.2"), "chg24h_percent": Decimal("2.0")},
+            [],
+            "short-term divergence",
+            "continue diverging",
+        ),
+        (
+            {
+                "snapshots": [
+                    {"m": -180, "p": Decimal("100")},
+                    {"m": -90, "p": Decimal("102")},
+                    {"m": 0, "p": Decimal("103")},
+                ]
+            },
+            [],
+            "developed across the supplied snapshots",
+            "next few short-term snapshots",
+        ),
+        (
+            {
+                "snapshots": [
+                    {"m": -180, "p": Decimal("100")},
+                    {"m": -90, "p": Decimal("103")},
+                    {"m": 0, "p": Decimal("101")},
+                ]
+            },
+            [],
+            "reverses part of the earlier path",
+            "further reversal",
+        ),
+        (
+            {"chg_window_percent": Decimal("0.042")},
+            [],
+            "only confirmed signal",
+            "continuation or a quick reversal",
+        ),
+        (
+            {"chg_window_percent": Decimal("4.07")},
+            [{"news_id": "n1", "title": "Selected context"}],
+            "may provide context, but it does not establish causation",
+            "selected news develops",
+        ),
+    ),
+)
+def test_event_alert_presentation_fallbacks_are_concise_and_evidence_derived(
+    market, related_news, expected_situation, expected_action
+):
+    situation, action = alerts.event_alert_presentation_fallback(market, related_news)
+
+    assert expected_situation in situation
+    assert expected_action in action
+    assert "%" not in situation
+    assert "buy" not in action.lower()
+    assert "sell" not in action.lower()
+
+
+def test_event_alert_replaces_generic_or_repeated_llm_copy_with_evidence_fallback():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_market_move",
+        title="SOL up 4.07% and 8.5% in 24h",
+        message_body="SOL is $109.79, up 4.07% in three hours and 8.5% over 24 hours.",
+        related_news_ids=[],
+        possible_action="Review your risk plan and wait for confirmation.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    situation = payload.split("Situation:\n", 1)[1].split("\n\nPossible action:", 1)[0]
+    action = payload.split("Possible action:\n", 1)[1].split("\n\nNot financial advice.", 1)[0]
+    assert "$109.79" not in situation
+    assert "4.07%" not in situation
+    assert "8.5%" not in situation
+    assert "broader 24-hour trend" in situation
+    assert "next short-term snapshots" in action
+    assert "risk plan" not in action.lower()
+
+
+def test_event_alert_presentation_replaces_financial_instruction_with_evidence_fallback():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_market_move",
+        title="ignored",
+        message_body="You should buy now.",
+        related_news_ids=[],
+        possible_action="Buy now.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": {"chg_window_percent": Decimal("4.07")}},
+        related_news=[],
+    )["plain_text"]
+
+    situation = payload.split("Situation:\n", 1)[1].split("\n\nPossible action:", 1)[0]
+    action = payload.split("Possible action:\n", 1)[1].split("\n\nNot financial advice.", 1)[0]
+    assert "only confirmed signal" in situation
+    assert "risk plan" not in situation.lower()
+    assert "buy" not in situation.lower()
+    assert "next short-term snapshots" in action
+
+
+def test_event_alert_presentation_ignores_nonfinite_market_values():
+    situation, action = alerts.event_alert_presentation_fallback(
+        {"chg_window_percent": "NaN", "chg24h_percent": "Infinity"}, []
+    )
+
+    assert "only confirmed signal" in situation
+    assert "next short-term snapshots" in action
+
+
+def test_event_alert_presentation_replaces_unsupported_nonnumeric_market_claim():
+    situation = alerts.compact_event_alert_situation(
+        "Trading volume is rising, which confirms participation.",
+        significance_reason=None,
+        market_data={"chg_window_percent": Decimal("1")},
+        related_news=[],
+    )
+
+    assert "only confirmed signal" in situation
+    assert "volume" not in situation.lower()
+
+
+@pytest.mark.parametrize(
+    "claim",
+    (
+        "Institutional demand is strengthening.",
+        "Investor confidence is improving.",
+    ),
+)
+def test_event_alert_presentation_replaces_unstructured_llm_claims(claim):
+    situation = alerts.compact_event_alert_situation(
+        claim,
+        significance_reason=None,
+        market_data={"chg_window_percent": Decimal("1")},
+        related_news=[],
+    )
+
+    assert "only confirmed signal" in situation
+    assert claim not in situation
+
+
+def test_event_alert_presentation_keeps_safe_selected_news_context():
+    situation = alerts.compact_event_alert_situation(
+        "Selected current news coincides with the move and may provide context.",
+        significance_reason=None,
+        market_data={"chg_window_percent": Decimal("1")},
+        related_news=[{"news_id": "n1", "title": "Selected context"}],
+    )
+
+    assert situation == "Selected current news coincides with the move and may provide context."
+
+
+@pytest.mark.parametrize(
     ("change", "expected_direction"),
     ((Decimal("0.042"), "up"), (Decimal("-0.042"), "down")),
 )
@@ -425,7 +601,7 @@ def test_event_alert_title_preserves_subpercent_percentage_values(change, expect
     )
 
 
-def test_event_alert_situation_keeps_concise_causal_context_without_market_repetition():
+def test_event_alert_situation_replaces_unsupported_causal_context_without_market_repetition():
     decision = EventAnalysisDecision(
         symbol="SOL",
         should_alert=True,
@@ -453,7 +629,8 @@ def test_event_alert_situation_keeps_concise_causal_context_without_market_repet
         related_news=[],
     )["plain_text"]
 
-    assert "After a protocol upgrade increased network capacity." in payload
+    assert "broader 24-hour trend" in payload
+    assert "protocol upgrade" not in payload
     assert "4.1 percent" not in payload
 
 
@@ -487,10 +664,7 @@ def test_event_alert_situation_rejects_usd_and_percent_market_restatement():
         related_news=[],
     )["plain_text"]
 
-    assert (
-        "The analysed-window move is large enough to represent a meaningful market change."
-        in payload
-    )
+    assert "broader 24-hour trend" in payload
     assert "105.49 USD" not in payload
     assert "4.1 percent" not in payload
 
@@ -524,14 +698,11 @@ def test_event_alert_situation_rejects_percentage_point_market_restatement():
         related_news=[],
     )["plain_text"]
 
-    assert (
-        "The analysed-window move is large enough to represent a meaningful market change."
-        in payload
-    )
+    assert "broader 24-hour trend" in payload
     assert "4.07 percentage points" not in payload
 
 
-def test_event_alert_situation_compacts_rounded_subpercent_market_restatement():
+def test_event_alert_situation_replaces_unsupported_causal_context_for_subpercent_move():
     decision = EventAnalysisDecision(
         symbol="SOL",
         should_alert=True,
@@ -556,11 +727,12 @@ def test_event_alert_situation_compacts_rounded_subpercent_market_restatement():
         related_news=[],
     )["plain_text"]
 
-    assert "After ETF news." in payload
+    assert "only confirmed signal" in payload
+    assert "ETF news" not in payload
     assert "0.1%" not in payload
 
 
-def test_event_alert_situation_keeps_nonduplicative_causal_percentage_context():
+def test_event_alert_situation_replaces_unsupported_market_metric_context():
     decision = EventAnalysisDecision(
         symbol="SOL",
         should_alert=True,
@@ -586,7 +758,8 @@ def test_event_alert_situation_keeps_nonduplicative_causal_percentage_context():
         related_news=[],
     )["plain_text"]
 
-    assert "ETF news and a 12% funding-rate change explain the market reaction." in payload
+    assert "broader 24-hour trend" in payload
+    assert "funding-rate" not in payload
 
 
 def test_event_alert_situation_rejects_invented_market_movement_percentage():
@@ -616,10 +789,7 @@ def test_event_alert_situation_rejects_invented_market_movement_percentage():
     )["plain_text"]
 
     assert "100%" not in payload
-    assert (
-        "The analysed-window move is large enough to represent a meaningful market change."
-        in payload
-    )
+    assert "broader 24-hour trend" in payload
 
 
 @pytest.mark.parametrize(
