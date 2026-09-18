@@ -469,6 +469,12 @@ surfaces such as Market Heartbeats.
 Formatting may make a message readable, but does not use market thresholds or alter Event Alert
 significance, identity, cooldown, eligibility, or LLM call placement.
 
+Event Alert presentation is deterministic where it repeats market facts: the headline uses only
+the primary analysed-window move, and the metric block is the single source for price, prior
+Event Alert/message change, and analysed-window movement. Situation text that repeats those
+numbers is replaced with a concise explanation of why the move is meaningful. Possible action is
+kept short, conditional, and non-prescriptive. Related-news selection and rendering are unchanged.
+
 The ops-agent decision context now includes `## Event Alert Regression Checks`. Interpret it as:
 
 - `OK`: no collected duplicate attached analyses, unexplained `should_alert=true` gaps,

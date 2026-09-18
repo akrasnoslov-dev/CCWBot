@@ -36,7 +36,8 @@ from bot.alerting.event_analysis import (
 )
 from bot.alerting.event_text import (
     compact_elapsed_since,
-    ensure_useful_situation,
+    compact_event_alert_possible_action,
+    compact_event_alert_situation,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -776,11 +777,10 @@ async def _get_reusable_event_analysis_by_context(
             context_fingerprint=_event_context_fingerprint(input_payload),
         )
     for market_event, analysis in candidates:
-        plain_text = str(getattr(analysis, "plain_text", None) or "")
         event_instance_key = str(getattr(market_event, "event_instance_key", None) or "").strip()
         event_key = str(getattr(market_event, "event_key", None) or "").strip()
         decision = _stored_event_analysis_decision(analysis, event_key=event_key)
-        if not plain_text.strip() or not event_instance_key or decision is None:
+        if not event_instance_key or decision is None:
             continue
         try:
             analysis_input_payload = json.loads(
@@ -846,52 +846,31 @@ async def _get_reusable_event_analysis_by_context(
             confidence=decision.confidence,
             reason_for_no_alert=None,
         )
-        stored_html_text = str(getattr(analysis, "html_text", None) or "")
-        reconstructed_entities = None
-        if not stored_html_text.strip() and decision.related_news_ids:
-            candidates_by_stable_identity: dict[str, list[dict]] = {}
-            for item in candidate_news or []:
-                if not isinstance(item, dict):
-                    continue
-                stable_identity = make_news_key(
-                    {
-                        "source": item.get("source"),
-                        "title": item.get("title"),
-                    }
-                )
-                candidates_by_stable_identity.setdefault(stable_identity, []).append(item)
-            current_related_news = []
-            for stable_identity in translated_related_news_keys:
-                matching_items = candidates_by_stable_identity.get(stable_identity, [])
-                if len(matching_items) != 1:
-                    current_related_news = []
-                    break
-                current_related_news.append(matching_items[0])
-            if len(current_related_news) != len(translated_related_news_keys):
+        candidates_by_stable_identity: dict[str, list[dict]] = {}
+        for item in candidate_news or []:
+            if not isinstance(item, dict):
                 continue
-            reconstructed_payload = _build_event_alert_payload(
-                decision=identity_decision,
-                input_payload=input_payload,
-                related_news=current_related_news,
+            stable_identity = make_news_key(
+                {
+                    "source": item.get("source"),
+                    "title": item.get("title"),
+                }
             )
-            if reconstructed_payload["plain_text"] != plain_text:
-                continue
-            expected_urls = {
-                url
-                for item in current_related_news
-                if (url := _safe_telegram_link_url(item.get("url") or item.get("link")))
-            }
-            reconstructed_entities = reconstructed_payload.get("entities")
-            reconstructed_urls = {
-                str(getattr(entity, "url", None) or "")
-                for entity in reconstructed_entities or []
-                if getattr(entity, "url", None)
-            }
-            if len(expected_urls) != len(current_related_news) or not expected_urls.issubset(
-                reconstructed_urls
-            ):
-                continue
-            stored_html_text = str(reconstructed_payload.get("html_text") or "")
+            candidates_by_stable_identity.setdefault(stable_identity, []).append(item)
+        current_related_news = []
+        for stable_identity in translated_related_news_keys:
+            matching_items = candidates_by_stable_identity.get(stable_identity, [])
+            if len(matching_items) != 1:
+                current_related_news = []
+                break
+            current_related_news.append(matching_items[0])
+        if len(current_related_news) != len(translated_related_news_keys):
+            continue
+        reconstructed_payload = _build_event_alert_payload(
+            decision=identity_decision,
+            input_payload=input_payload,
+            related_news=current_related_news,
+        )
         semantic_family = str(analysis_input_payload.get("semantic_family") or "").strip() or None
         input_payload["raw_event_key"] = str(
             analysis_input_payload.get("raw_event_key")
@@ -906,11 +885,7 @@ async def _get_reusable_event_analysis_by_context(
             market_event_id=int(market_event.id),
             event_instance_key=event_instance_key,
             event_ai_analysis_id=int(analysis.id),
-            alert_payload={
-                "plain_text": plain_text,
-                "html_text": stored_html_text or None,
-                "entities": None if stored_html_text else reconstructed_entities,
-            },
+            alert_payload=reconstructed_payload,
             semantic_family=semantic_family,
             analysis_input_payload=analysis_input_payload,
         )
@@ -921,21 +896,9 @@ def _merge_existing_event_analysis_payload(
     alert_payload: dict,
     existing_analysis,
 ) -> dict:
-    """Use one coherent render; incomplete canonical content cannot replace fresh content."""
-    stored_plain_text = getattr(existing_analysis, "plain_text", None)
-    stored_html_text = getattr(existing_analysis, "html_text", None)
-    if not (
-        isinstance(stored_plain_text, str)
-        and stored_plain_text.strip()
-        and isinstance(stored_html_text, str)
-        and stored_html_text.strip()
-    ):
-        return dict(alert_payload)
-    return {
-        "plain_text": stored_plain_text,
-        "html_text": stored_html_text,
-        "entities": None,
-    }
+    """Keep the current deterministic rendering when an event already has an analysis."""
+    del existing_analysis
+    return dict(alert_payload)
 
 
 async def _record_exact_context_reuse(
@@ -1090,6 +1053,26 @@ def _coin_fallback_emoji(symbol: str) -> str:
 EVENT_ALERT_PLACEHOLDER_TEXT_RE = re.compile(
     r"(?i)(?<![a-z0-9])(?:n/a|null|unknown|unavailable)(?![a-z0-9])"
 )
+NON_PRICE_CAUSAL_PERCENT_RE = re.compile(
+    r"(?i)\b(?:funding[ -]?rate|open interest|trading volume|inflow|outflow|"
+    r"staking|supply|dominance)\b"
+)
+NON_PRICE_PERCENT_FILLER_WORDS = {
+    "a",
+    "an",
+    "at",
+    "by",
+    "change",
+    "changed",
+    "decreased",
+    "in",
+    "increased",
+    "is",
+    "moved",
+    "of",
+    "the",
+    "was",
+}
 
 
 def _sanitize_event_text(
@@ -1106,7 +1089,8 @@ def _sanitize_event_text(
 
 
 PERCENT_CLAIM_RE = re.compile(
-    r"(?i)(?P<percent>[+-]?\d+(?:\.\d+)?\s*%)"
+    r"(?i)(?P<percent>[+-]?\d+(?:\.\d+)?\s*"
+    r"(?:%|percent(?:age)?(?:\s+points?)?\b))"
     r"(?:\s+(?:in|over|during|within)\s+"
     r"(?:the\s+)?(?:last\s+)?(?P<window_value>\d+)\s*"
     r"(?P<window_unit>m|min|minute|minutes|h|hr|hour|hours|d|day|days))?"
@@ -1210,25 +1194,60 @@ def _percent_claim_value(claim: str) -> float | None:
 
 
 def _contains_untrusted_percent_claim(text: str, market_data: dict) -> bool:
-    unwindowed_market_claims = _structured_market_claims(market_data)
     for match in PERCENT_CLAIM_RE.finditer(text):
-        claim_value = _percent_claim_value(match.group(0))
-        if claim_value is None:
-            continue
-        window_minutes = _window_minutes_from_claim(match)
-        market_claims = (
-            _matching_window_market_claims(market_data, window_minutes)
-            if window_minutes is not None
-            else unwindowed_market_claims
-        )
-        if window_minutes is not None and not market_claims:
-            return True
-        if not any(
-            abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
-            for structured_value in market_claims
-        ):
+        if _percent_claim_is_untrusted(match, market_data):
             return True
     return False
+
+
+def _percent_claim_is_untrusted(match: re.Match[str], market_data: dict) -> bool:
+    claim_value = _percent_claim_value(match.group(0))
+    if claim_value is None:
+        return False
+    window_minutes = _window_minutes_from_claim(match)
+    market_claims = (
+        _matching_window_market_claims(market_data, window_minutes)
+        if window_minutes is not None
+        else _structured_market_claims(market_data)
+    )
+    return window_minutes is not None and not market_claims or not any(
+        abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
+        for structured_value in market_claims
+    )
+
+
+def _contains_untrusted_situation_market_claim(text: str, market_data: dict) -> bool:
+    for match in PERCENT_CLAIM_RE.finditer(text):
+        is_untrusted = _percent_claim_is_untrusted(match, market_data)
+        is_non_price_causal = _is_non_price_causal_percent_claim(text, match)
+        if is_untrusted and not is_non_price_causal:
+            return True
+    return False
+
+
+def _is_non_price_causal_percent_claim(text: str, match: re.Match[str]) -> bool:
+    delimiters = ".!?;"
+    clause_start = (
+        max(text.rfind(delimiter, 0, match.start()) for delimiter in delimiters) + 1
+    )
+    clause_end_candidates = [
+        index
+        for index in (text.find(delimiter, match.end()) for delimiter in delimiters)
+        if index >= 0
+    ]
+    clause_end = min(clause_end_candidates) if clause_end_candidates else len(text)
+    before = text[max(clause_start, match.start() - 80) : match.start()]
+    after = text[match.end() : min(clause_end, match.end() + 80)]
+    preceding = list(NON_PRICE_CAUSAL_PERCENT_RE.finditer(before))
+    if preceding and _non_price_percent_filler_only(before[preceding[-1].end() :]):
+        return True
+    following = NON_PRICE_CAUSAL_PERCENT_RE.search(after)
+    return following is not None and _non_price_percent_filler_only(after[: following.start()])
+
+
+def _non_price_percent_filler_only(value: str) -> bool:
+    words = re.findall(r"[a-z]+", value.lower())
+    return len(words) <= 3 and all(word in NON_PRICE_PERCENT_FILLER_WORDS for word in words)
 
 
 def _contains_contradictory_direction(text: str, direction_value: float | None) -> bool:
@@ -1280,10 +1299,16 @@ def _guard_event_text_against_market_data(
 ) -> str:
     if not value:
         return value
-    if _contains_untrusted_percent_claim(
-        value,
-        market_data,
-    ) or _contains_contradictory_direction(value, _primary_market_direction_value(market_data)):
+    # Situation may retain an individually identified non-price causal metric (for example,
+    # funding-rate context). Price/movement percentages remain strictly validated.
+    has_untrusted_market_claim = (
+        _contains_untrusted_situation_market_claim(value, market_data)
+        if field_name == "message_body"
+        else _contains_untrusted_percent_claim(value, market_data)
+    )
+    if has_untrusted_market_claim or _contains_contradictory_direction(
+        value, _primary_market_direction_value(market_data)
+    ):
         return _deterministic_event_text(
             field_name=field_name,
             symbol=symbol,
@@ -1477,6 +1502,7 @@ def _event_alert_market_context_lines(
     price: float | None,
     change_since_message: float | None,
     last_message_at: object = None,
+    last_message_price: float | None = None,
     current_at: object = None,
     analysed_window_minutes: int | None,
     analysed_window_change: float | None,
@@ -1484,7 +1510,11 @@ def _event_alert_market_context_lines(
     lines: list[str] = []
     if price is not None:
         lines.append(f"Price: {_format_optional_price(price)}")
-    if change_since_message is not None:
+    if (
+        change_since_message is not None
+        and last_message_at is not None
+        and last_message_price is not None
+    ):
         elapsed = compact_elapsed_since(last_message_at, current_at)
         elapsed_suffix = f" ({elapsed})" if elapsed else ""
         lines.append(
@@ -1501,6 +1531,30 @@ def _event_alert_market_context_lines(
     return lines
 
 
+def _event_alert_presentation_title(
+    *,
+    symbol: str,
+    analysed_window_minutes: int | None,
+    analysed_window_change: object,
+) -> str:
+    """Render the headline from the primary deterministic metric, not LLM prose."""
+    change = _optional_float(analysed_window_change)
+    if change is None or analysed_window_minutes is None or change == 0:
+        return f"{symbol} market event"
+    magnitude = abs(Decimal(str(analysed_window_change)))
+    rendered_magnitude = (
+        f"{magnitude:.1f}" if magnitude >= Decimal("0.1") else f"{magnitude:.6g}"
+    )
+    minutes = max(1, int(analysed_window_minutes))
+    if minutes % 60 == 0:
+        amount = minutes // 60
+        window = f"{amount} hour" if amount == 1 else f"{amount} hours"
+    else:
+        window = f"{minutes} minutes"
+    direction = "up" if change > 0 else "down"
+    return f"{symbol} {direction} ~{rendered_magnitude}% in the last {window}"
+
+
 def _build_event_alert_payload(
     *,
     decision: EventAnalysisDecision,
@@ -1513,18 +1567,11 @@ def _build_event_alert_payload(
     analysed_window_change = market_data.get("chg_window_percent")
     icon, entities = build_coin_icon_prefix(backend_symbol)
     icon_html = build_coin_icon_html(backend_symbol)
-    title = _sanitize_event_text(
-        decision.title,
-        f"{symbol} market event",
-        omit_placeholders=True,
-    )
-    title = _guard_event_text_against_market_data(
-        title,
-        field_name="title",
+    title = _event_alert_presentation_title(
         symbol=symbol,
-        market_data=market_data,
+        analysed_window_minutes=market_data.get("analysed_window_minutes"),
+        analysed_window_change=analysed_window_change,
     )
-    title = sanitize_financial_instruction(title, fallback=f"{symbol} market conditions changed")
     message_body = _sanitize_event_text(
         decision.message_body,
         "Market conditions changed.",
@@ -1536,7 +1583,11 @@ def _build_event_alert_payload(
         symbol=symbol,
         market_data=market_data,
     )
-    message_body = ensure_useful_situation(message_body, significance_reason=None)
+    message_body = compact_event_alert_situation(
+        message_body,
+        significance_reason=None,
+        market_data=market_data,
+    )
     message_body = sanitize_financial_instruction(
         message_body,
         fallback="Market conditions changed; review the market context and your risk plan.",
@@ -1553,6 +1604,7 @@ def _build_event_alert_payload(
         market_data=market_data,
     )
     possible_action = soften_possible_action(possible_action, urgency=decision.urgency)
+    possible_action = compact_event_alert_possible_action(possible_action)
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
         empty_text="",
@@ -1565,6 +1617,7 @@ def _build_event_alert_payload(
         price=price,
         change_since_message=change_since_message,
         last_message_at=(input_payload.get("last_msg") or {}).get("time"),
+        last_message_price=(input_payload.get("last_msg") or {}).get("price"),
         current_at=input_payload.get("timestamp_utc"),
         analysed_window_minutes=analysed_window_minutes,
         analysed_window_change=analysed_window_change,

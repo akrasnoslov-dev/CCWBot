@@ -1,6 +1,9 @@
+import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -312,3 +315,416 @@ def test_news_only_no_alert_does_not_treat_decimal_market_context_as_flat():
         alerts._llm_no_alert_decision_reason(decision, payload)
         == alerts.DECISION_REASON_LLM_NO_ALERT
     )
+
+
+def test_event_alert_presentation_removes_repeated_llm_market_facts():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="Solana price jumps ~4% in last 3 hours, up ~8.5% in 24 h",
+        message_body=(
+            "SOL rose from $105.49 to $109.79 in the last 3 hours (≈4.1% increase) "
+            "and is up about 8.5% over the past 24 hours, indicating strong short-term momentum."
+        ),
+        related_news_ids=[],
+        possible_action="Buy now because SOL has strong momentum and sell if the trend changes.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "timestamp_utc": "2026-09-18T12:00:00+00:00",
+            "last_msg": {
+                "time": "2026-09-18T08:00:00+00:00",
+                "price": Decimal("104.03"),
+                "type": "event_alert",
+            },
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+                "chg_since_msg_percent": Decimal("5.54"),
+            },
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "SOL up ~4.1% in the last 3 hours" in payload
+    assert "24 h" not in payload
+    assert "Price: $109.79" in payload
+    assert "Since last alert/message (4h ago): +5.54%" in payload
+    assert "3h market move: +4.07%" in payload
+    assert (
+        "The analysed-window move is large enough to represent a meaningful market change."
+        in payload
+    )
+    assert "$105.49" not in payload
+    assert "8.5%" not in payload
+    assert "Buy now" not in payload
+    assert "only if the move confirms and fits your risk plan." in payload
+
+
+def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body="Market movement is meaningful.",
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    common_market = {
+        "price": Decimal("109.79"),
+        "analysed_window_minutes": 180,
+        "chg_window_percent": Decimal("4.07"),
+        "chg_since_msg_percent": Decimal("5.54"),
+    }
+    with_context = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "timestamp_utc": "2026-09-18T12:00:00+00:00",
+            "last_msg": {"time": "2026-09-18T08:00:00+00:00", "price": Decimal("104.03")},
+            "market": common_market,
+        },
+        related_news=[],
+    )["plain_text"]
+    without_context = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "timestamp_utc": "2026-09-18T12:00:00+00:00",
+            "last_msg": {"time": None, "price": None},
+            "market": common_market,
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "Since last alert/message (4h ago): +5.54%" in with_context
+    assert "Since last alert/message" not in without_context
+
+
+@pytest.mark.parametrize(
+    ("change", "expected_direction"),
+    ((Decimal("0.042"), "up"), (Decimal("-0.042"), "down")),
+)
+def test_event_alert_title_preserves_subpercent_percentage_values(change, expected_direction):
+    assert (
+        alerts._event_alert_presentation_title(
+            symbol="SOL",
+            analysed_window_minutes=180,
+            analysed_window_change=change,
+        )
+        == f"SOL {expected_direction} ~0.042% in the last 3 hours"
+    )
+
+
+def test_event_alert_situation_keeps_concise_causal_context_without_market_repetition():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_protocol_context",
+        title="ignored",
+        message_body=(
+            "SOL gained 4.1 percent after a protocol upgrade increased network capacity."
+        ),
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "After a protocol upgrade increased network capacity." in payload
+    assert "4.1 percent" not in payload
+
+
+def test_event_alert_situation_rejects_usd_and_percent_market_restatement():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body=(
+            "SOL rose from 105.49 USD to 109.79 USD after market news, a 4.1 percent "
+            "move with 8.5 percent over 24 hours."
+        ),
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "snapshots": [{"p": Decimal("105.49")}],
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert (
+        "The analysed-window move is large enough to represent a meaningful market change."
+        in payload
+    )
+    assert "105.49 USD" not in payload
+    assert "4.1 percent" not in payload
+
+
+def test_event_alert_situation_rejects_percentage_point_market_restatement():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body=(
+            "SOL rose 4.07 percentage points in 3 hours and is up 8.5 percentage points "
+            "over 24 hours."
+        ),
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert (
+        "The analysed-window move is large enough to represent a meaningful market change."
+        in payload
+    )
+    assert "4.07 percentage points" not in payload
+
+
+def test_event_alert_situation_compacts_rounded_subpercent_market_restatement():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body="SOL rose 0.1% after ETF news.",
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("0.042"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "After ETF news." in payload
+    assert "0.1%" not in payload
+
+
+def test_event_alert_situation_keeps_nonduplicative_causal_percentage_context():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body="ETF news and a 12% funding-rate change explain the market reaction.",
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "ETF news and a 12% funding-rate change explain the market reaction." in payload
+
+
+def test_event_alert_situation_rejects_invented_market_movement_percentage():
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body="SOL rose 100% after ETF news.",
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "100%" not in payload
+    assert (
+        "The analysed-window move is large enough to represent a meaningful market change."
+        in payload
+    )
+
+
+@pytest.mark.parametrize(
+    "message_body",
+    (
+        "SOL rose 100% after ETF news and a 12% funding-rate change added context.",
+        "SOL rose 100%. Funding rate was 12%.",
+    ),
+)
+def test_event_alert_situation_rejects_invented_move_mixed_with_causal_metric(message_body):
+    decision = EventAnalysisDecision(
+        symbol="SOL",
+        should_alert=True,
+        event_key="sol_momentum",
+        title="ignored",
+        message_body=message_body,
+        related_news_ids=[],
+        possible_action="Watch for confirmation if it fits your risk plan.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("109.79"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("4.07"),
+                "chg24h_percent": Decimal("8.5"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+
+    assert "100%" not in payload
+
+
+def test_existing_market_event_keeps_current_compact_alert_rendering():
+    current_payload = {
+        "plain_text": "SOL up ~4.1% in the last 3 hours",
+        "html_text": None,
+        "entities": None,
+    }
+    existing_analysis = SimpleNamespace(
+        plain_text="legacy verbose Event Alert payload",
+        html_text="<b>legacy verbose Event Alert payload</b>",
+    )
+
+    assert (
+        alerts._merge_existing_event_analysis_payload(current_payload, existing_analysis)
+        == current_payload
+    )
+
+
+@pytest.mark.asyncio
+async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkeypatch):
+    input_payload = {
+        "symbol": "SOL",
+        "timestamp_utc": "2026-09-18T12:00:00+00:00",
+        "market": {
+            "price": 109.79,
+            "analysed_window_minutes": 180,
+            "chg_window_percent": 4.07,
+            "chg24h_percent": 8.5,
+        },
+        "news": [],
+    }
+    analysis = SimpleNamespace(
+        id=11,
+        symbol="SOL",
+        title="SOL price jumps ~4% in last 3 hours, up ~8.5% in 24 h",
+        message_body=(
+            "SOL rose from $105.49 to $109.79 in the last 3 hours (≈4.1% increase) "
+            "and is up about 8.5% over the past 24 hours."
+        ),
+        possible_action="Buy now because momentum is strong.",
+        urgency="normal",
+        confidence="high",
+        related_news_ids="[]",
+        raw_input_json=json.dumps(input_payload),
+        plain_text="legacy verbose Event Alert payload",
+        event_key="sol_momentum",
+    )
+    market_event = SimpleNamespace(
+        id=7,
+        event_instance_key="sol:instance",
+        event_key="sol_momentum",
+    )
+
+    @asynccontextmanager
+    async def fake_session():
+        yield object()
+
+    async def fake_candidates(*_args, **_kwargs):
+        return [(market_event, analysis)]
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: fake_session())
+    monkeypatch.setattr(alerts, "get_reusable_event_analysis_candidates", fake_candidates)
+
+    reusable = await alerts._get_reusable_event_analysis_by_context(input_payload)
+
+    assert reusable is not None
+    rendered = reusable.alert_payload["plain_text"]
+    assert "SOL up ~4.1% in the last 3 hours" in rendered
+    assert "legacy verbose Event Alert payload" not in rendered
+    assert "$105.49" not in rendered
