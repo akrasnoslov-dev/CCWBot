@@ -537,9 +537,9 @@ def _build_report_coin_payload(symbol: str, coin_data: dict[str, Any]) -> dict:
         "symbol": display_symbol(symbol),
         "name": coin_display_name(symbol),
         "price": _round_optional(coin_data.get("price")),
-        "change_1h": _round_optional(coin_data.get("change_1h")),
-        "change_24h": _round_optional(coin_data.get("change_24h")),
-        "change_7d": _round_optional(coin_data.get("change_7d")),
+        "change_1h_percent": _round_optional(coin_data.get("change_1h")),
+        "change_24h_percent": _round_optional(coin_data.get("change_24h")),
+        "change_7d_percent": _round_optional(coin_data.get("change_7d")),
         "volume_24h": _round_optional(coin_data.get("volume_24h")),
         "market_cap": _round_optional(coin_data.get("market_cap")),
         "rank": coin_data.get("rank"),
@@ -552,24 +552,31 @@ def _build_report_coin_payload(symbol: str, coin_data: dict[str, Any]) -> dict:
     }
 
 
+def _report_change_percent(coin: dict, window: str):
+    """Read the clarified LLM contract, retaining old cached report input readability."""
+    return coin.get(f"change_{window}_percent", coin.get(f"change_{window}"))
+
+
 def _build_weekly_context(market_data: dict[str, dict[str, Any]]) -> dict:
     scoreboard = [
         _build_weekly_coin_context(symbol, market_data.get(symbol) or {})
         for symbol in SUPPORTED_SYMBOLS
     ]
-    btc_change_7d = next(
+    btc_change_7d_percent = next(
         (
-            item.get("change_7d")
+            item.get("change_7d_percent")
             for item in scoreboard
-            if item.get("symbol") == "BTC" and item.get("change_7d") is not None
+            if item.get("symbol") == "BTC" and item.get("change_7d_percent") is not None
         ),
         None,
     )
     for item in scoreboard:
-        change_7d = item.get("change_7d")
-        item["vs_btc_7d"] = (
-            _round_optional(float(change_7d) - float(btc_change_7d))
-            if change_7d is not None and btc_change_7d is not None and item.get("symbol") != "BTC"
+        change_7d_percent = item.get("change_7d_percent")
+        item["vs_btc_7d_percent"] = (
+            _round_optional(float(change_7d_percent) - float(btc_change_7d_percent))
+            if change_7d_percent is not None
+            and btc_change_7d_percent is not None
+            and item.get("symbol") != "BTC"
             else None
         )
     timeline = _build_weekly_timeline(scoreboard)
@@ -585,7 +592,7 @@ def _build_weekly_coin_context(symbol: str, coin_data: dict[str, Any]) -> dict:
     weekly_end = _round_optional(coin_data.get("weekly_end"))
     weekly_high = _round_optional(coin_data.get("weekly_high"))
     weekly_low = _round_optional(coin_data.get("weekly_low"))
-    change_7d = _round_optional(coin_data.get("change_7d"))
+    change_7d_percent = _round_optional(coin_data.get("change_7d"))
     range_label = _format_range_position(coin_data.get("range_position"))
     return {
         "symbol": display_symbol(symbol),
@@ -593,7 +600,7 @@ def _build_weekly_coin_context(symbol: str, coin_data: dict[str, Any]) -> dict:
         "weekly_end": weekly_end,
         "weekly_high": weekly_high,
         "weekly_low": weekly_low,
-        "change_7d": change_7d,
+        "change_7d_percent": change_7d_percent,
         "range_label": range_label or "weekly range unavailable from provider",
         "timeline_note": _weekly_coin_timeline_note(symbol, coin_data),
     }
@@ -615,9 +622,9 @@ def _weekly_coin_timeline_note(symbol: str, coin_data: dict[str, Any]) -> str:
 
 def _build_weekly_breadth(scoreboard: list[dict]) -> dict:
     changes = [
-        (str(item.get("symbol")), float(item["change_7d"]))
+        (str(item.get("symbol")), float(item["change_7d_percent"]))
         for item in scoreboard
-        if item.get("change_7d") is not None
+        if item.get("change_7d_percent") is not None
     ]
     if not changes:
         return {
@@ -735,11 +742,15 @@ def _build_deterministic_report_decision(
 
 
 def _deterministic_market_pulse(coins: list[dict], *, weekly: bool) -> str:
-    key = "change_7d" if weekly else "change_24h"
+    window = "7d" if weekly else "24h"
     moves = [
-        (str(coin.get("symbol") or "").upper(), float(coin[key]))
+        (
+            str(coin.get("symbol") or "").upper(),
+            float(_report_change_percent(coin, window)),
+        )
         for coin in coins
-        if coin.get(key) is not None and str(coin.get("symbol") or "").strip()
+        if _report_change_percent(coin, window) is not None
+        and str(coin.get("symbol") or "").strip()
     ]
     if not moves:
         return "Tracked market data is available, but direction is limited."
@@ -755,9 +766,8 @@ def _deterministic_market_pulse(coins: list[dict], *, weekly: bool) -> str:
 def _deterministic_coin_summary(coin: dict, *, weekly: bool) -> str:
     symbol = str(coin.get("symbol") or "").upper()
     price = _format_price(coin.get("price"))
-    change_key = "change_7d" if weekly else "change_24h"
     change_label = "7d" if weekly else "24h"
-    change = _format_percent(coin.get(change_key))
+    change = _format_percent(_report_change_percent(coin, "7d" if weekly else "24h"))
     return f"{symbol} is near {price}, with {change_label} change at {change}."
 
 
@@ -914,10 +924,10 @@ def _format_report_news_item(item: dict, *, prefix: str | None = None) -> str:
 def _format_coin_row(coin: dict, *, weekly: bool) -> str:
     symbol = str(coin.get("symbol") or "").upper()
     price = _format_price(coin.get("price"))
-    change_24h = _format_percent(coin.get("change_24h"))
+    change_24h = _format_percent(_report_change_percent(coin, "24h"))
     if weekly:
         change_7d = _format_percent(
-            coin.get("change_7d"),
+            _report_change_percent(coin, "7d"),
             unavailable_text="unavailable from provider",
         )
         sparkline = str(coin.get("sparkline_7d") or "").strip()

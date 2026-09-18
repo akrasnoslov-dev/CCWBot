@@ -71,7 +71,7 @@ def test_analysis_candidate_is_recorded_independently_of_the_llm(caplog):
 
     payload = {
         "symbol": "btc",
-        "market": {"chg_window": -4.2, "chg24h": -6.1},
+        "market": {"chg_window_percent": -4.2, "chg24h_percent": -6.1},
         "analysed_window_minutes": 30,
     }
 
@@ -88,7 +88,10 @@ def test_analysis_candidate_is_recorded_independently_of_the_llm(caplog):
 def test_analysis_candidate_records_small_market_moves_without_a_gate(caplog):
     from bot import alerts
 
-    payload = {"symbol": "btc", "market": {"chg_window": 0.4, "chg24h": 1.0}}
+    payload = {
+        "symbol": "btc",
+        "market": {"chg_window_percent": 0.4, "chg24h_percent": 1.0},
+    }
 
     with caplog.at_level(logging.INFO, logger="bot.alerts"):
         alerts._log_event_alert_candidate_crossing("btc", payload)
@@ -111,7 +114,7 @@ def test_candidate_crossing_carries_no_recipient_or_message_data(caplog):
 
     payload = {
         "symbol": "btc",
-        "market": {"chg_window": -4.2},
+        "market": {"chg_window_percent": -4.2},
         "news": [{"news_id": "n1", "title": "secret headline"}],
         "recipients": [12345678],
     }

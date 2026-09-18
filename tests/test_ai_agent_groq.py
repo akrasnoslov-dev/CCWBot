@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -24,7 +25,10 @@ def _single_groq_provider(monkeypatch):
 
 def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     prompt = ai_agent_groq.build_event_analysis_prompt(
-        {"symbol": "GRAM", "market": {"chg_window": -0.183, "chg24h": -0.721}}
+        {
+            "symbol": "GRAM",
+            "market": {"chg_window_percent": -0.183, "chg24h_percent": -0.721},
+        }
     )
 
     assert "LLM owns market significance" in prompt
@@ -32,6 +36,36 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "urgency is null" in prompt
     assert "reason_for_no_alert is non-empty" in prompt
     assert "Do not invent backend price thresholds" in prompt
+    assert "0.042 means 0.042%, not 4.2%" in prompt
+    assert "Never multiply a supplied change value by 100" in prompt
+    assert "did not meet a threshold" in prompt
+
+
+@pytest.mark.parametrize(
+    ("window_change", "day_change"),
+    (
+        (Decimal("0.042"), Decimal("0.246")),
+        (Decimal("-0.042"), Decimal("-0.246")),
+    ),
+)
+def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
+    window_change, day_change
+):
+    prompt = ai_agent_groq.build_event_analysis_prompt(
+        {
+            "symbol": "BTC",
+            "market": {
+                "chg_window_percent": window_change,
+                "chg24h_percent": day_change,
+                "chg_since_msg_percent": Decimal("0.001"),
+            },
+        }
+    )
+
+    assert f'"chg_window_percent":{window_change}' in prompt
+    assert f'"chg24h_percent":{day_change}' in prompt
+    assert "0.042 means 0.042%, not 4.2%" in prompt
+    assert "Never multiply a supplied change value by 100" in prompt
 
 
 def test_other_prompts_preserve_report_and_heartbeat_contracts():
@@ -39,6 +73,8 @@ def test_other_prompts_preserve_report_and_heartbeat_contracts():
     report = ai_agent_groq.build_market_report_prompt({"report_type": "weekly"})
 
     assert "Market Heartbeat, not an Event Alert" in heartbeat
+    assert "0.042 means 0.042%, not 4.2%" in heartbeat
+    assert "never multiply them by 100" in heartbeat
     assert "market_pulse" in report
     assert "title, market_pulse, why_it_matters, and watch_next must be non-empty text" in report
     assert "week_timeline" in report
@@ -46,6 +82,9 @@ def test_other_prompts_preserve_report_and_heartbeat_contracts():
     assert "symbol, summary, and watch fields" in report
     assert "For weekly reports" in report
     assert "next_week_focus must be non-empty" in report
+    assert "all fields ending in _percent are already percentage values" in report
+    assert "0.042 means 0.042%, not 4.2%" in report
+    assert "never multiply them by 100" in report
 
 
 def test_sanitize_alert_message_drops_backend_diagnostic_lines():

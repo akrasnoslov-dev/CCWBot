@@ -17,9 +17,9 @@ def _payload() -> dict:
             "snapshots": [{"m": 30, "p": Decimal("1.3500")}],
             "payload_points": 6,
             "analysed_window_minutes": 30,
-            "chg_window": Decimal("-0.183"),
-            "chg24h": Decimal("-0.721"),
-            "chg_since_msg": None,
+            "chg_window_percent": Decimal("-0.183"),
+            "chg24h_percent": Decimal("-0.721"),
+            "chg_since_msg_percent": None,
         },
         "last_msg": {"time": None, "type": None, "price": None},
         "news": [
@@ -96,7 +96,7 @@ def test_exact_context_ignores_nested_timestamps_but_not_semantic_previous_conte
 def test_exact_context_invalidates_any_real_market_or_news_change():
     original = _payload()
     changed_market = _payload()
-    changed_market["market"]["chg_window"] = Decimal("-0.184")
+    changed_market["market"]["chg_window_percent"] = Decimal("-0.184")
     changed_news = _payload()
     changed_news["news"][0]["title"] = "Different market update"
     fingerprint = _build_exact_event_context_fingerprint(original)
@@ -131,3 +131,22 @@ def test_decimal_json_is_full_precision_json_number_not_float_or_string():
         _json_dumps({"price": Decimal("1.3500"), "move": Decimal("-0.183")})
         == '{"move":-0.183,"price":1.35}'
     )
+
+
+def test_exact_context_does_not_reuse_the_ambiguous_change_field_contract():
+    clarified = _payload()
+    legacy = _payload()
+    legacy["market"] = {
+        **{
+            key: value
+            for key, value in legacy["market"].items()
+            if not key.endswith("_percent")
+        },
+        "chg_window": Decimal("-0.183"),
+        "chg24h": Decimal("-0.721"),
+        "chg_since_msg": None,
+    }
+
+    assert _build_exact_event_context_fingerprint(
+        clarified
+    ) != _build_exact_event_context_fingerprint(legacy)

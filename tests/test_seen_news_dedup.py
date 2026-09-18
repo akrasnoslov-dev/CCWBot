@@ -648,7 +648,11 @@ async def test_active_alert_recipients_use_active_users_with_chat_ids():
 def test_exact_context_fingerprint_changes_for_semantic_market_input():
     payload = {
         "symbol": "btc",
-        "market": {"price": 67000.003, "chg_window": 3.0769, "chg24h": 2.5},
+        "market": {
+            "price": 67000.003,
+            "chg_window_percent": 3.0769,
+            "chg24h_percent": 2.5,
+        },
         "news": [],
     }
     changed = {

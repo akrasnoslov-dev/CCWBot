@@ -12,6 +12,11 @@ backend product-decision gates. The LLM's `should_alert` decides significance. T
 only schema validation, canonical event identity, the market-event-first news-only guard, cooldown,
 recipient eligibility, and idempotent delivery safeguards.
 
+Event Analysis market change fields are explicitly percentage values: `chg_window_percent`,
+`chg24h_percent`, and `chg_since_msg_percent`. They are not decimal fractions; for example,
+`0.042` means `0.042%`, not `4.2%`. The LLM must not multiply them by 100 or invent a market
+significance threshold when reasoning about the supplied evidence.
+
 ## Exact Context Reuse
 
 Before a provider call, CCWBot may reuse a durable result only when the canonical semantic Event

@@ -372,10 +372,8 @@ def _log_event_alert_candidate_crossing(
     """
     try:
         market_data = input_payload.get("market") or {}
-        analysed_window_change = _optional_float(market_data.get("chg_window"))
-        change_24h = _optional_float(
-            market_data.get("chg24h", market_data.get("change_24h_percent"))
-        )
+        analysed_window_change = _optional_float(market_data.get("chg_window_percent"))
+        change_24h = _optional_float(market_data.get("chg24h_percent"))
         logger.info(
             "ops_event=event_alert_analysis_candidate symbol=%s "
             "analysed_window_change_percent=%s change_24h_percent=%s "
@@ -607,19 +605,18 @@ def _event_market_decision_detail(input_payload: dict, decision: EventAnalysisDe
     return _json_dumps(
         {
             "analysed_window_change_percent": _stable_float(
-                _optional_float(market_data.get("chg_window")), 4
+                _optional_float(market_data.get("chg_window_percent")), 4
             ),
             "change_since_last_message_percent": _stable_float(
                 _optional_float(
                     market_data.get(
-                        "chg_since_msg",
-                        market_data.get("change_since_last_user_visible_message_percent"),
+                        "chg_since_msg_percent",
                     )
                 ),
                 4,
             ),
             "twenty_four_hour_change_percent": _stable_float(
-                _optional_float(market_data.get("chg24h", market_data.get("change_24h_percent"))),
+                _optional_float(market_data.get("chg24h_percent")),
                 4,
             ),
             "reason_for_no_alert": _safe_previous_text(decision.reason_for_no_alert, max_chars=180),
@@ -1133,11 +1130,9 @@ EVENT_TEXT_WINDOW_TOLERANCE_MINUTES = 1
 def _structured_market_claims(market_data: dict) -> list[float]:
     values: list[float] = []
     for key in (
-        "chg_window",
-        "chg_since_msg",
-        "change_since_last_user_visible_message_percent",
-        "chg24h",
-        "change_24h_percent",
+        "chg_window_percent",
+        "chg_since_msg_percent",
+        "chg24h_percent",
     ):
         value = _optional_float(market_data.get(key))
         if value is not None:
@@ -1178,13 +1173,11 @@ def _matching_window_market_claims(market_data: dict, window_minutes: int) -> li
         window_minutes,
         int(analysed_window_minutes) if analysed_window_minutes is not None else None,
     ):
-        analysed_window = _optional_float(market_data.get("chg_window"))
+        analysed_window = _optional_float(market_data.get("chg_window_percent"))
         if analysed_window is not None:
             values.append(analysed_window)
     if _window_compatible(window_minutes, 24 * 60):
-        change_24h = _optional_float(
-            market_data.get("chg24h", market_data.get("change_24h_percent"))
-        )
+        change_24h = _optional_float(market_data.get("chg24h_percent"))
         if change_24h is not None:
             values.append(change_24h)
     return values
@@ -1193,11 +1186,9 @@ def _matching_window_market_claims(market_data: dict, window_minutes: int) -> li
 def _primary_market_direction_value(market_data: dict) -> float | None:
     fallback: float | None = None
     for key in (
-        "chg_window",
-        "chg_since_msg",
-        "change_since_last_user_visible_message_percent",
-        "chg24h",
-        "change_24h_percent",
+        "chg_window_percent",
+        "chg_since_msg_percent",
+        "chg24h_percent",
     ):
         value = _optional_float(market_data.get(key))
         if value is not None:
@@ -1249,14 +1240,13 @@ def _contains_contradictory_direction(text: str, direction_value: float | None) 
 
 
 def _deterministic_event_text(*, field_name: str, symbol: str, market_data: dict) -> str:
-    analysed_window = _optional_float(market_data.get("chg_window"))
+    analysed_window = _optional_float(market_data.get("chg_window_percent"))
     change_since_message = _optional_float(
         market_data.get(
-            "chg_since_msg",
-            market_data.get("change_since_last_user_visible_message_percent"),
+            "chg_since_msg_percent",
         )
     )
-    change_24h = _optional_float(market_data.get("chg24h", market_data.get("change_24h_percent")))
+    change_24h = _optional_float(market_data.get("chg24h_percent"))
     main_change = (
         analysed_window
         if analysed_window is not None
@@ -1520,7 +1510,7 @@ def _build_event_alert_payload(
     symbol = display_symbol(decision.symbol)
     backend_symbol = normalize_symbol(decision.symbol)
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
-    analysed_window_change = market_data.get("chg_window")
+    analysed_window_change = market_data.get("chg_window_percent")
     icon, entities = build_coin_icon_prefix(backend_symbol)
     icon_html = build_coin_icon_html(backend_symbol)
     title = _sanitize_event_text(
@@ -1568,10 +1558,7 @@ def _build_event_alert_payload(
         empty_text="",
     )
     price = market_data.get("price", market_data.get("price_now_usd"))
-    change_since_message = market_data.get(
-        "chg_since_msg",
-        market_data.get("change_since_last_user_visible_message_percent"),
-    )
+    change_since_message = market_data.get("chg_since_msg_percent")
     analysed_window_minutes = market_data.get("analysed_window_minutes")
     market_context_lines = _event_alert_market_context_lines(
         symbol=symbol,
@@ -1636,15 +1623,10 @@ def _event_numeric_context(
             "notification_severity": decision.urgency,
             "notification_direction": None,
             "current_price": market_data.get("price", market_data.get("price_now_usd")),
-            "change_since_last_market_update_percent": market_data.get(
-                "chg_since_msg",
-                market_data.get("change_since_last_user_visible_message_percent"),
-            ),
+            "change_since_last_market_update_percent": market_data.get("chg_since_msg_percent"),
             "analysed_window_minutes": market_data.get("analysed_window_minutes"),
-            "analysed_window_change_percent": market_data.get("chg_window"),
-            "twenty_four_hour_change_percent": market_data.get(
-                "chg24h", market_data.get("change_24h_percent")
-            ),
+            "analysed_window_change_percent": market_data.get("chg_window_percent"),
+            "twenty_four_hour_change_percent": market_data.get("chg24h_percent"),
             "event_key": decision.event_key,
             "raw_event_key": _raw_event_key_from_payload(input_payload, decision),
             "semantic_family": _semantic_family_from_payload(input_payload),
@@ -2248,10 +2230,12 @@ def _build_news_driven_event_input(
     market_payload = {
         "price": source_market.get("price", _stable_float(float(current_price), 2)),
         "snapshots": source_market.get("snapshots", []),
-        "chg24h": source_market.get("chg24h", _stable_float(float(change_24h), 4)),
-        "chg_since_msg": source_market.get("chg_since_msg"),
+        "chg24h_percent": source_market.get(
+            "chg24h_percent", _stable_float(float(change_24h), 4)
+        ),
+        "chg_since_msg_percent": source_market.get("chg_since_msg_percent"),
     }
-    for key in ("payload_points", "analysed_window_minutes", "chg_window"):
+    for key in ("payload_points", "analysed_window_minutes", "chg_window_percent"):
         if key in source_market:
             market_payload[key] = source_market[key]
     return {
@@ -2284,10 +2268,10 @@ def _news_driven_numeric_context(input_payload: dict, news_item: dict) -> str:
             "trigger_source": NEWS_DRIVEN_ALERT_SOURCE,
             "semantic_family": "news_catalyst",
             "current_price": market_data.get("price"),
-            "change_since_last_market_update_percent": market_data.get("chg_since_msg"),
+            "change_since_last_market_update_percent": market_data.get("chg_since_msg_percent"),
             "analysed_window_minutes": market_data.get("analysed_window_minutes"),
-            "analysed_window_change_percent": market_data.get("chg_window"),
-            "twenty_four_hour_change_percent": market_data.get("chg24h"),
+            "analysed_window_change_percent": market_data.get("chg_window_percent"),
+            "twenty_four_hour_change_percent": market_data.get("chg24h_percent"),
             "stable_related_news_ids": [_news_driven_identity(news_item)],
             "news_key": str(news_item.get("news_key") or "").strip() or None,
             "dedup_group_id": str(news_item.get("dedup_group_id") or "").strip() or None,
@@ -2324,7 +2308,7 @@ async def _get_or_create_news_driven_market_event(
             price=current_price,
             previous_price=None,
             price_change_percent=0.0,
-            last_24h_change=market_data.get("chg24h"),
+            last_24h_change=market_data.get("chg24h_percent"),
             detected_at=datetime.now(timezone.utc),
         )
         return event.id, event.event_instance_key
@@ -2741,9 +2725,9 @@ async def _build_event_analysis_input(
             "snapshots": snapshots_payload,
             "payload_points": EVENT_ANALYSIS_PAYLOAD_POINTS,
             "analysed_window_minutes": analysed_window_minutes,
-            "chg_window": analysed_window_change,
-            "chg24h": change_24h,
-            "chg_since_msg": change_since_last_message,
+            "chg_window_percent": analysed_window_change,
+            "chg24h_percent": change_24h,
+            "chg_since_msg_percent": change_since_last_message,
         },
         "last_msg": {
             "time": last_message_at,
@@ -3125,9 +3109,8 @@ def _has_non_flat_analysed_market_context(input_payload: dict) -> bool:
     if not isinstance(market_data, dict):
         return False
     for field_name in (
-        "chg_window",
-        "chg_since_msg",
-        "change_since_last_user_visible_message_percent",
+        "chg_window_percent",
+        "chg_since_msg_percent",
     ):
         value = _optional_float(market_data.get(field_name))
         if value is not None and value != 0.0:
@@ -3534,10 +3517,7 @@ async def _get_or_create_event_alert_market_event(
         return None, None, None, False
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     current_price = Decimal(str(market_data.get("price", market_data.get("price_now_usd"))))
-    change_since_last = market_data.get(
-        "chg_since_msg",
-        market_data.get("change_since_last_user_visible_message_percent"),
-    )
+    change_since_last = market_data.get("chg_since_msg_percent")
     if change_since_last is None:
         previous_price = None
         price_change_percent = Decimal("0")
@@ -3566,7 +3546,7 @@ async def _get_or_create_event_alert_market_event(
             price=current_price,
             previous_price=previous_price,
             price_change_percent=price_change_percent,
-            last_24h_change=market_data.get("chg24h", market_data.get("change_24h_percent")),
+            last_24h_change=market_data.get("chg24h_percent"),
             detected_at=datetime.now(timezone.utc),
         )
         return (

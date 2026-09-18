@@ -30,9 +30,9 @@ def _event_input() -> dict:
             "snapshots": [{"m": 30, "p": Decimal("1.3500")}],
             "payload_points": 6,
             "analysed_window_minutes": 30,
-            "chg_window": Decimal("0.051851851851851851"),
-            "chg24h": Decimal("-0.184"),
-            "chg_since_msg": None,
+            "chg_window_percent": Decimal("0.051851851851851851"),
+            "chg24h_percent": Decimal("-0.184"),
+            "chg_since_msg_percent": None,
         },
         "last_msg": {"time": None, "type": None, "price": None},
         "news": [],
@@ -106,7 +106,9 @@ async def test_event_analysis_input_keeps_subcent_decimal_precision(monkeypatch)
         # SQLite reflects NUMERIC through a floating driver; PostgreSQL NUMERIC is exercised
         # separately by the migration/query-contract verification.
         assert payload["market"]["snapshots"][0]["p"] == pytest.approx(Decimal("1.3500"))
-        assert 0 < payload["market"]["chg_window"] < 0.1
+        assert 0 < payload["market"]["chg_window_percent"] < 0.1
+        assert payload["market"]["chg24h_percent"] == Decimal("-0.184")
+        assert "chg_window" not in payload["market"]
     finally:
         await engine.dispose()
 
@@ -125,6 +127,20 @@ def test_event_alert_source_keeps_eligibility_after_analysis_and_strict_cooldown
     assert "allowed_stronger_movement" not in source
     assert "allowed_urgency_escalation" not in source
     assert "_record_exact_context_reuse" in source
+
+
+def test_event_analysis_percentage_contract_does_not_add_a_significance_gate():
+    source = Path(alerts.__file__).read_text(encoding="utf-8")
+    automatic_check = source[source.index("async def automatic_price_check") :]
+    input_builder = source[
+        source.index("async def _build_event_analysis_input") : source.index(
+            "async def _build_market_heartbeat_input"
+        )
+    ]
+
+    assert "evaluate_event_significance" not in automatic_check
+    assert "threshold_percent" not in automatic_check
+    assert "chg_window_percent" in input_builder
 
 
 def test_news_only_guard_remains_a_non_numeric_backend_contract():
@@ -151,7 +167,7 @@ def _no_alert_result(reason_for_no_alert: str) -> dict:
     }
 
 
-def _runtime_no_alert_payload(*, chg_window: float) -> dict:
+def _runtime_no_alert_payload(*, chg_window_percent: float) -> dict:
     payload = _event_input()
     payload.update(
         {
@@ -166,12 +182,15 @@ def _runtime_no_alert_payload(*, chg_window: float) -> dict:
             ],
             "market": {
                 "price": 100.0,
-                "snapshots": [{"m": 180, "p": 100.0}, {"m": 0, "p": 100.0 + chg_window}],
+                "snapshots": [
+                    {"m": 180, "p": 100.0},
+                    {"m": 0, "p": 100.0 + chg_window_percent},
+                ],
                 "payload_points": 6,
                 "analysed_window_minutes": 180,
-                "chg_window": chg_window,
-                "chg24h": 5.45,
-                "chg_since_msg": None,
+                "chg_window_percent": chg_window_percent,
+                "chg24h_percent": 5.45,
+                "chg_since_msg_percent": None,
             },
         }
     )
@@ -207,7 +226,7 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
 
     decision, analysis_id = await alerts._create_event_analysis_decision(
-        _runtime_no_alert_payload(chg_window=0.05)
+        _runtime_no_alert_payload(chg_window_percent=0.05)
     )
 
     assert decision is not None
@@ -220,7 +239,7 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
 
 
 @pytest.mark.parametrize(
-    ("reason_for_no_alert", "chg_window", "expected_reason"),
+    ("reason_for_no_alert", "chg_window_percent", "expected_reason"),
     (
         (
             "News alone is the only notable input; the analysed market window is flat.",
@@ -240,7 +259,7 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
     ),
 )
 def test_news_only_no_alert_requires_explicit_sole_news_language_and_flat_market_context(
-    reason_for_no_alert, chg_window, expected_reason
+    reason_for_no_alert, chg_window_percent, expected_reason
 ):
     decision = EventAnalysisDecision(
         symbol="BTC",
@@ -257,18 +276,18 @@ def test_news_only_no_alert_requires_explicit_sole_news_language_and_flat_market
 
     assert (
         alerts._llm_no_alert_decision_reason(
-            decision, _runtime_no_alert_payload(chg_window=chg_window)
+            decision, _runtime_no_alert_payload(chg_window_percent=chg_window_percent)
         )
         == expected_reason
     )
 
 
 def test_news_only_no_alert_does_not_treat_decimal_market_context_as_flat():
-    payload = _runtime_no_alert_payload(chg_window=0.0)
+    payload = _runtime_no_alert_payload(chg_window_percent=0.0)
     payload["market"].update(
         {
-            "chg_window": None,
-            "chg_since_msg": Decimal("0.05"),
+            "chg_window_percent": None,
+            "chg_since_msg_percent": Decimal("0.05"),
             "snapshots": [
                 {"m": 180, "p": Decimal("100.00")},
                 {"m": 0, "p": Decimal("100.05")},
