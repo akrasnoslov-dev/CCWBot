@@ -113,7 +113,7 @@ PRICE_COLUMN_NULLABILITY = {
 PRICE_COLUMN_DEFAULTS = {key: None for key in PRICE_COLUMN_NULLABILITY}
 
 RETIRED_DOWNGRADE_NULLABILITY = {
-    key: key != ("alerts", "thresholds_used") for key in RETIRED_DOWNGRADE_COLUMNS
+    key: key == ("alerts", "thresholds_used") for key in RETIRED_DOWNGRADE_COLUMNS
 }
 NO_DEFAULT_AT_0029 = {
     ("user_settings", "price_move_alert_percent"),
