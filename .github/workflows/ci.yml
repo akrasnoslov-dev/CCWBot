@@ -48,6 +48,7 @@ jobs:
       - name: Validate Alembic migrations on PostgreSQL
         env:
           DATABASE_URL: postgresql+asyncpg://ccwbot:ccwbot_test_password@localhost:5432/ccwbot_test
+          ALEMBIC_POSTGRES_TEST_DATABASE_URL: postgresql+asyncpg://ccwbot:ccwbot_test_password@localhost:5432/ccwbot_test
         run: |
           python -m pytest tests/test_alembic_migrations.py -v
           alembic upgrade head
