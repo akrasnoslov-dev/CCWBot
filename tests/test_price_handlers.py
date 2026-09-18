@@ -1,10 +1,13 @@
 import importlib
+import json
+from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
 import bot.prices as prices
+import bot.storage as storage
 from bot.services.price_service import CoinGeckoRateLimitError
 
 price_handler = importlib.import_module("bot.handlers.price")
@@ -119,21 +122,30 @@ async def test_price_hides_value_error_details_from_users(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_price_message_persists_manual_btc_fallback_state(monkeypatch):
+async def test_send_price_message_persists_manual_btc_decimal_fallback_state(monkeypatch, tmp_path):
     target = SimpleNamespace(reply_text=AsyncMock())
     saved_state = {}
+    state_file = tmp_path / "state.json"
     monkeypatch.setattr(prices, "DB_ENABLED", False)
-    monkeypatch.setattr(prices, "get_coin_price", AsyncMock(return_value=(100000.0, 2.5, "btc")))
+    monkeypatch.setattr(
+        prices,
+        "get_coin_price",
+        AsyncMock(return_value=(Decimal("100000.123456789012345678"), Decimal("2.5"), "btc")),
+    )
     monkeypatch.setattr(prices, "load_state", lambda: saved_state)
-    save_state = Mock()
-    monkeypatch.setattr(prices, "save_state", save_state)
+    monkeypatch.setattr(storage, "STATE_FILE", state_file)
 
     await prices.send_price_message(target, "btc")
 
-    assert saved_state["last_price"] == 100000.0
-    assert saved_state["last_24h_change"] == 2.5
+    assert saved_state["last_price"] == Decimal("100000.123456789012345678")
+    assert saved_state["last_24h_change"] == Decimal("2.5")
     assert saved_state["last_alert_at"] is None
-    save_state.assert_called_once_with(saved_state)
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {
+        "last_price": "100000.123456789012345678",
+        "last_24h_change": "2.5",
+        "last_checked_at": saved_state["last_checked_at"],
+        "last_alert_at": None,
+    }
     assert "BTC price" in target.reply_text.await_args.args[0]
 
 

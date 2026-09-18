@@ -18,7 +18,6 @@ SEVERE_QUALITY_ISSUES = {
     "contains_unavailable",
     "contains_null",
 }
-EVENT_REGRESSION_MATERIAL_MOVEMENT_DELTA_PERCENT = 2.5
 
 URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 MONEY_RE = re.compile(r"[$€£]?\b\d+(?:[.,]\d+)*(?:\s?(?:usd|eur|gbp))?\b", re.IGNORECASE)
@@ -758,15 +757,10 @@ def _suppression_effectiveness(
                 "delivered_events": 0,
                 "likely_suppressed_events": 0,
                 "delivered_inside_cooldown_candidates": 0,
-                "delivered_inside_cooldown_allowed_escalations": 0,
-                "allowed_escalation_reasons": Counter(),
                 "first_seen_at": None,
                 "last_seen_at": None,
                 "confidence": "medium",
-                "note": (
-                    "allowed repeats use durable delivery decision reasons when available; "
-                    "older rows fall back to sanitized market-context inference"
-                ),
+                "note": "Any same-semantic delivery inside the strict cooldown is a regression.",
                 "_delivered_rows": [],
             },
         )
@@ -795,14 +789,8 @@ def _suppression_effectiveness(
                 row,
                 semantic_cooldown_seconds=semantic_cooldown_seconds,
             ):
-                allowed, reason = _delivery_escalation_allowed(previous, row)
-                if allowed:
-                    group["delivered_inside_cooldown_allowed_escalations"] += 1
-                    group["allowed_escalation_reasons"][str(reason)] += 1
-                else:
-                    group["delivered_inside_cooldown_candidates"] += 1
+                group["delivered_inside_cooldown_candidates"] += 1
             previous = row
-        group["allowed_escalation_reasons"] = dict(group["allowed_escalation_reasons"])
     payload["suppression_groups"] = sorted(
         groups.values(),
         key=lambda item: (
@@ -837,11 +825,6 @@ def _event_alert_regression_checks(
         for row in suppression_payload.get("suppression_groups") or []
         if _int(row.get("delivered_inside_cooldown_candidates")) > 0
     ]
-    allowed_repeat_groups = [
-        row
-        for row in suppression_payload.get("suppression_groups") or []
-        if _int(row.get("delivered_inside_cooldown_allowed_escalations")) > 0
-    ]
     critical = bool(placeholder_issues or old_label_issues)
     warning = bool(noisy_repeat_groups)
     payload.update(
@@ -850,9 +833,7 @@ def _event_alert_regression_checks(
             "placeholder_issue_counts": placeholder_issues,
             "old_label_issue_counts": old_label_issues,
             "same_family_repeat_noise_groups": len(noisy_repeat_groups),
-            "same_family_allowed_escalation_groups": len(allowed_repeat_groups),
             "sample_repeat_groups": noisy_repeat_groups[:5],
-            "sample_allowed_escalation_groups": allowed_repeat_groups[:5],
         }
     )
     return payload
@@ -871,36 +852,6 @@ def _rows_inside_cooldown(
         return False
     return minutes * 60 < semantic_cooldown_seconds
 
-
-def _delivery_escalation_allowed(
-    previous: dict[str, Any], current: dict[str, Any]
-) -> tuple[bool, str | None]:
-    durable_reason = {
-        "allowed_market_context_changed": "market_context_changed",
-        "allowed_urgency_escalation": "urgency_increased",
-        "allowed_stronger_movement": "material_movement_increased",
-        "allowed_direction_reversal": "direction_reversed",
-        "allowed_market_structure_change": "structure_changed",
-        "allowed_cumulative_strengthening": "cumulative_strengthened",
-    }.get(str(current.get("decision_reason") or ""))
-    if durable_reason:
-        return True, durable_reason
-    if _urgency_rank(current.get("urgency")) > _urgency_rank(previous.get("urgency")):
-        return True, "urgency_increased"
-    previous_movement = _float(previous.get("analysed_window_change_percent"))
-    current_movement = _float(current.get("analysed_window_change_percent"))
-    if (
-        previous_movement is not None
-        and current_movement is not None
-        and abs(current_movement)
-        >= abs(previous_movement) + EVENT_REGRESSION_MATERIAL_MOVEMENT_DELTA_PERCENT
-    ):
-        return True, "material_movement_increased"
-    return False, None
-
-
-def _urgency_rank(value: Any) -> int:
-    return {"low": 1, "normal": 2, "high": 3}.get(str(value or "").strip().lower(), 0)
 
 
 def _event_identity_quality(

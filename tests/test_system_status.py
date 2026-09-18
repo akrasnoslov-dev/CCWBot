@@ -1103,7 +1103,6 @@ async def test_legacy_persisted_cadence_is_normalized_for_status_freshness():
         async with session_local() as session:
             session.add(
                 AppSettings(
-                    btc_alert_threshold_percent=2.0,
                     automatic_check_interval_seconds=600,
                 )
             )

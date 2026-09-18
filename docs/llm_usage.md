@@ -13,6 +13,9 @@ per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEAR
 All providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
+The shipped fallback defaults are `gemini-2.5-flash` and the pinned Mistral Small 4 endpoint
+`mistral-small-2603`; deploys can still override either with `GEMINI_MODEL` or `MISTRAL_MODEL`.
+
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
 advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
 provider-side model failure. It surfaces a genuine request defect to the caller unchanged. When

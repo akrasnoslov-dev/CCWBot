@@ -556,9 +556,6 @@ def _event_alert_regression_checks(
     placeholder_counts = regression_payload.get("placeholder_issue_counts") or {}
     old_label_counts = regression_payload.get("old_label_issue_counts") or {}
     repeat_noise_groups = _int(regression_payload.get("same_family_repeat_noise_groups"))
-    allowed_repeat_groups = _int(
-        regression_payload.get("same_family_allowed_escalation_groups")
-    )
     gap_count = sum(_int(row.get("gap_count")) for row in gap_rows)
 
     status = "OK"
@@ -592,10 +589,9 @@ def _event_alert_regression_checks(
                 "Keep one successful attached analysis per market event. |"
             ),
             (
-                f"| Same-family repeats without escalation | {repeat_noise_groups} | "
-                f"{'Likely alert noise' if repeat_noise_groups else 'OK'}; "
-                f"{allowed_repeat_groups} escalation groups were counted separately. | "
-                "Inspect semantic cooldown and escalation evidence. |"
+                f"| Same-semantic deliveries inside cooldown | {repeat_noise_groups} | "
+                f"{'Strict cooldown regression' if repeat_noise_groups else 'OK'}. | "
+                "Inspect semantic cooldown evidence. |"
             ),
             (
                 f"| should_alert=true without delivery explanation | {gap_count} | "
@@ -630,7 +626,7 @@ def _event_alert_regression_checks(
 def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
     rows = _query_rows(evidence, "alert_delivery_outcome_summary")
     quality_rows = _query_rows(evidence, "event_alert_possible_action_quality")
-    reuse_rows = _query_rows(evidence, "event_alert_similar_context_reuse")
+    reuse_rows = _query_rows(evidence, "event_alert_exact_context_reuse")
     if not rows:
         return ["not available - alert delivery outcome decision fields were not collected."]
     total = sum(_int(row.get("outcomes")) for row in rows)
@@ -640,18 +636,15 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
     semantic_suppressed = sum(
         _int(row.get("semantic_cooldown_suppressed_count")) for row in rows
     )
-    similar_reused = sum(_int(row.get("similar_context_reused_count")) for row in rows)
+    similar_reused = sum(_int(row.get("exact_context_reused_count")) for row in rows)
     no_recipients = sum(_int(row.get("no_eligible_recipients_count")) for row in rows)
     already_delivered = sum(_int(row.get("already_delivered_count")) for row in rows)
     telegram_failed = sum(_int(row.get("telegram_send_failed_count")) for row in rows)
     blocked_users = sum(_int(row.get("telegram_bot_blocked_count")) for row in rows)
     llm_rate_limited = sum(_int(row.get("llm_rate_limited_count")) for row in rows)
     llm_invalid_response = sum(_int(row.get("llm_invalid_response_count")) for row in rows)
-    market_context_changed = sum(
-        _int(row.get("allowed_market_context_changed_count")) for row in rows
-    )
     pre_llm_similar_reused = sum(
-        _int(row.get("pre_llm_similar_context_reused_count")) for row in rows
+        _int(row.get("pre_llm_exact_context_reused_count")) for row in rows
     )
     delivered_with_reason = sum(
         _int(row.get("delivered_with_decision_reason_count")) for row in rows
@@ -668,15 +661,14 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| `llm_should_alert` | {llm_should_alert} | LLM allow decisions for market-event-first alerts. |",
         f"| `llm_no_alert` | {llm_no_alert} | LLM no-alert decisions for non-news-only reasons. |",
         f"| `semantic_cooldown_suppressed` | {semantic_suppressed} | Backend semantic cooldown suppressions. |",
-        f"| `similar_context_reused` | {similar_reused} | Conservative same-context decisions reused without needing a fresh Event Alert. |",
+        f"| `exact_context_reused` | {similar_reused} | Exactly unchanged Event Analysis input reused without a fresh provider call. |",
         f"| No eligible recipients | {no_recipients} | Event had no recipient allowed by current eligibility state. |",
         f"| Duplicate or already delivered | {already_delivered} | Delivery idempotency prevented a repeat send. |",
         f"| Telegram delivery failed | {telegram_failed} | Non-blocked Telegram send failures. |",
         f"| Blocked user | {blocked_users} | Telegram reported the bot was blocked by the user. |",
         f"| LLM rate limited | {llm_rate_limited} | Event Analysis skipped or failed because provider rate limiting was active. |",
         f"| LLM/schema failure | {llm_invalid_response} | Event Analysis response was invalid JSON or failed schema validation. |",
-        f"| Pre-LLM similar-context skips | {pre_llm_similar_reused} | Event Analysis LLM calls avoided by stable context fingerprint reuse. |",
-        f"| `allowed_market_context_changed` | {market_context_changed} | Delivered repeats allowed because market context changed, not because news alone changed. |",
+        f"| Pre-LLM Exact Context Reuse | {pre_llm_similar_reused} | Event Analysis calls avoided only for exact semantic input equality. |",
         f"| Delivered rows with decision reason | {delivered_with_reason} | Successful deliveries carrying operator-facing decision reason. |",
         f"| Missing/unknown decision reason | {unknown_reason} | Rows needing older-schema allowance or follow-up. |",
         f"| Generic possible action quality signals | {generic_actions} / {action_total} | Quality metric only; not a delivery gate. |",
@@ -684,14 +676,14 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
     if reuse_rows:
         top_reuse = sorted(
             reuse_rows,
-            key=lambda row: -_int(row.get("similar_context_reused_count")),
+            key=lambda row: -_int(row.get("exact_context_reused_count")),
         )[:5]
         summary = ", ".join(
             f"{row.get('symbol', 'UNKNOWN')}/{row.get('semantic_family', 'unknown')}: "
-            f"{_int(row.get('similar_context_reused_count'))}"
+            f"{_int(row.get('exact_context_reused_count'))}"
             for row in top_reuse
         )
-        lines.append(f"Top similar-context reuse groups: {summary}.")
+        lines.append(f"Top Exact Context Reuse groups: {summary}.")
     if total:
         lines.append(f"Total outcome rows in this section: {total}.")
     return lines

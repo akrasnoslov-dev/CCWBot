@@ -229,19 +229,11 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("call_path", ["news_intelligence", "legacy_alert_payload"])
+@pytest.mark.parametrize("call_path", ["news_intelligence"])
 async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
     monkeypatch, call_path
 ):
     _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
-    valid_legacy = {
-        "news_relevance": "not_relevant",
-        "risk_level": "low",
-        "risk_reason": "The move is limited.",
-        "context_sentence": "Conditions remain routine.",
-        "possible_action": "Watch the next alert window.",
-        "related_news_ids": [],
-    }
     valid_news = {
         "summary": "Routine market update.",
         "category": "market",
@@ -255,7 +247,7 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
         "alert_reason": "No immediate alert condition.",
         "dedup_hint": "routine market update",
     }
-    valid = valid_news if call_path == "news_intelligence" else valid_legacy
+    valid = valid_news
     groq = ContentProvider("groq", '{"ok": true}')
     gemini = ContentProvider("gemini", json.dumps(valid))
     _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
@@ -273,30 +265,8 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
             [{"role": "user", "content": "classify"}], schema_check=schema_check
         )
         parsed = result[1]
-    else:
-        def schema_check(parsed):
-            if ai_agent_groq._normalize_alert_structured_fields(parsed) is None:
-                raise AISchemaValidationError("legacy alert payload schema mismatch")
-
-        parsed, _usage_log_id = await ai_agent_groq._ask_json_with_usage(
-            "build a legacy alert",
-            call_type="legacy_alert_payload",
-            schema_check=schema_check,
-        )
 
     assert parsed == valid
-    assert groq.calls == 1
-    assert gemini.calls == 1
-
-
-@pytest.mark.asyncio
-async def test_legacy_schema_exhaustion_preserves_none_contract(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
-    groq = ContentProvider("groq", '{"ok": true}')
-    gemini = ContentProvider("gemini", '{"risk_level": "low"}')
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
-
-    assert await ai_agent_groq._ask_json("build a legacy alert") is None
     assert groq.calls == 1
     assert gemini.calls == 1
 

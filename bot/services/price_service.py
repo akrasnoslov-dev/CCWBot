@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 import time
+from decimal import Decimal
 
 import httpx
 
@@ -24,13 +26,13 @@ COIN_SYMBOL_TO_ID = {
 }
 
 DEFAULT_SYMBOL = "btc"
-_PRICE_CACHE: dict[str, tuple[float, float, float]] = {}
-_BTC_MARKET_CACHE: tuple[float, float, float | None, float] | None = None
+_PRICE_CACHE: dict[str, tuple[Decimal, Decimal, float]] = {}
+_BTC_MARKET_CACHE: tuple[Decimal, Decimal, Decimal | None, float] | None = None
 logger = logging.getLogger(__name__)
 _COIN_ID_TO_SYMBOL = {coin_id: symbol for symbol, coin_id in COIN_SYMBOL_TO_ID.items()}
 
 
-def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None:
+def _get_cached_price(normalized_symbol: str) -> tuple[Decimal, Decimal, str] | None:
     """Return cached symbol price when TTL is still valid.
 
     Caching reduces CoinGecko API traffic and helps avoid 429 responses.
@@ -48,8 +50,8 @@ def _get_cached_price(normalized_symbol: str) -> tuple[float, float, str] | None
 
 def _set_cached_price(
     normalized_symbol: str,
-    price: float,
-    change_24h: float,
+    price: Decimal,
+    change_24h: Decimal,
     cached_at: float | None = None,
 ) -> None:
     _PRICE_CACHE[normalized_symbol] = (
@@ -63,7 +65,7 @@ def _coingecko_bool(params: dict, key: str) -> bool:
     return str(params.get(key, "")).lower() == "true"
 
 
-def _get_stale_cached_price(normalized_symbol: str) -> tuple[float, float] | None:
+def _get_stale_cached_price(normalized_symbol: str) -> tuple[Decimal, Decimal] | None:
     cached = _PRICE_CACHE.get(normalized_symbol)
     if not cached:
         return None
@@ -90,7 +92,7 @@ def _build_stale_price_payload(params: dict) -> dict | None:
             if normalize_symbol(symbol) in COIN_SYMBOL_TO_ID
         )
 
-    payload: dict[str, dict[str, float]] = {}
+    payload: dict[str, dict[str, Decimal]] = {}
     for symbol in dict.fromkeys(requested_symbols):
         stale_price = _get_stale_cached_price(symbol)
         if stale_price is None:
@@ -116,12 +118,19 @@ async def _get_with_retry(
     max_retries: int = 3,
     base_delay: int = 5,
     allow_stale_price_fallback: bool = True,
+    parse_decimal_numbers: bool = False,
 ) -> dict | list:
     """Fetch CoinGecko data, retrying 429s and falling back to stale cache."""
     for attempt in range(max_retries + 1):
         response = await client.get(url, params=params, timeout=10)
         if response.status_code != 429:
             response.raise_for_status()
+            if parse_decimal_numbers:
+                content = getattr(response, "content", None)
+                if content is not None:
+                    return json.loads(content, parse_float=Decimal)
+                # Lightweight test doubles may expose only ``json()``.
+                return json.loads(json.dumps(response.json()), parse_float=Decimal)
             return response.json()
 
         if attempt < max_retries:
@@ -139,8 +148,7 @@ async def _get_with_retry(
     stale_payload = _build_stale_price_payload(params) if allow_stale_price_fallback else None
     if stale_payload is not None:
         logger.warning(
-            "ops_event=coingecko_rate_limit attempt=%s max_retries=%s "
-            "stale_cache_available=true",
+            "ops_event=coingecko_rate_limit attempt=%s max_retries=%s stale_cache_available=true",
             max_retries,
             max_retries,
         )
@@ -150,8 +158,8 @@ async def _get_with_retry(
 
 
 def _sync_btc_price_cache(
-    price: float,
-    change_24h: float,
+    price: Decimal,
+    change_24h: Decimal,
     cached_at: float | None = None,
 ) -> None:
     cached = _PRICE_CACHE.get("btc")
@@ -172,15 +180,27 @@ async def warm_up_price_cache() -> None:
                 row = await get_price_state(session, symbol)
                 if row is None or row.last_price is None:
                     continue
-                change_24h = row.last_24h_change if row.last_24h_change is not None else 0.0
-                _set_cached_price(symbol, float(row.last_price), float(change_24h), cached_at=0)
+                change_24h = (
+                    row.last_24h_change if row.last_24h_change is not None else Decimal("0")
+                )
+                _set_cached_price(
+                    symbol,
+                    Decimal(str(row.last_price)),
+                    Decimal(str(change_24h)),
+                    cached_at=0,
+                )
                 warmed_symbols.append(symbol)
     else:
         state = load_state()
         last_price = state.get("last_price")
         if last_price is not None:
-            change_24h = state.get("last_24h_change") or 0.0
-            _set_cached_price(DEFAULT_SYMBOL, float(last_price), float(change_24h), cached_at=0)
+            change_24h = state.get("last_24h_change") or Decimal("0")
+            _set_cached_price(
+                DEFAULT_SYMBOL,
+                Decimal(str(last_price)),
+                Decimal(str(change_24h)),
+                cached_at=0,
+            )
             warmed_symbols.append(DEFAULT_SYMBOL)
 
     if warmed_symbols:
@@ -190,7 +210,7 @@ async def warm_up_price_cache() -> None:
         )
 
 
-async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, str]:
+async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[Decimal, Decimal, str]:
     """Get current coin price and 24h change from CoinGecko.
 
     Unsupported symbols raise ValueError so callers can return a clear user message.
@@ -212,10 +232,11 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
         "ids": coin_id,
         "vs_currencies": "usd",
         "include_24hr_change": "true",
+        "precision": "full",
     }
 
     async with httpx.AsyncClient() as client:
-        data = await _get_with_retry(client, url, params)
+        data = await _get_with_retry(client, url, params, parse_decimal_numbers=True)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
@@ -235,12 +256,14 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
     price = coin_data.get("usd")
     if price is None:
         raise ValueError(f"CoinGecko response did not include USD price for '{coin_id}'.")
-    price = float(price)
+    if not isinstance(price, Decimal):
+        price = Decimal(str(price))
 
     change_24h = coin_data.get("usd_24h_change")
     if change_24h is None:
         change_24h = 0.0
-    change_24h = float(change_24h)
+    if not isinstance(change_24h, Decimal):
+        change_24h = Decimal(str(change_24h))
     _set_cached_price(normalized_symbol, price, change_24h)
 
     return price, change_24h, normalized_symbol
@@ -248,7 +271,7 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[float, float, st
 
 async def get_coin_market_data_batch(
     symbols: list[str] | tuple[str, ...] | set[str],
-) -> dict[str, dict[str, float | None]]:
+) -> dict[str, dict[str, Decimal | None]]:
     """Fetch market data for supported symbols with one CoinGecko request.
 
     Missing symbols are logged and skipped so one partial CoinGecko response
@@ -270,15 +293,16 @@ async def get_coin_market_data_batch(
         "ids": ",".join(coin_ids),
         "vs_currencies": "usd",
         "include_24hr_change": "true",
+        "precision": "full",
     }
 
     async with httpx.AsyncClient() as client:
-        data = await _get_with_retry(client, url, params)
+        data = await _get_with_retry(client, url, params, parse_decimal_numbers=True)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
 
-    result: dict[str, dict[str, float | None]] = {}
+    result: dict[str, dict[str, Decimal | None]] = {}
     for symbol, coin_id in zip(normalized_symbols, coin_ids, strict=True):
         coin_data = data.get(coin_id)
         if not isinstance(coin_data, dict):
@@ -298,8 +322,14 @@ async def get_coin_market_data_batch(
             )
             continue
         change_24h = coin_data.get("usd_24h_change")
-        price_value = float(price)
-        change_24h_value = float(change_24h) if change_24h is not None else 0.0
+        price_value = price if isinstance(price, Decimal) else Decimal(str(price))
+        change_24h_value = (
+            change_24h
+            if isinstance(change_24h, Decimal)
+            else Decimal(str(change_24h))
+            if change_24h is not None
+            else Decimal("0")
+        )
         _set_cached_price(symbol, price_value, change_24h_value)
         if symbol == "btc":
             cached_at = time.time()
@@ -382,13 +412,9 @@ async def get_report_market_data_batch(
         weekly_end = sparkline_prices[-1] if sparkline_prices else None
         result[symbol] = {
             "price": price,
-            "change_1h": _optional_float(
-                coin_data.get("price_change_percentage_1h_in_currency")
-            ),
+            "change_1h": _optional_float(coin_data.get("price_change_percentage_1h_in_currency")),
             "change_24h": change_24h,
-            "change_7d": _optional_float(
-                coin_data.get("price_change_percentage_7d_in_currency")
-            ),
+            "change_7d": _optional_float(coin_data.get("price_change_percentage_7d_in_currency")),
             "volume_24h": _optional_float(coin_data.get("total_volume")),
             "market_cap": _optional_float(coin_data.get("market_cap")),
             "rank": _optional_int(coin_data.get("market_cap_rank")),
@@ -449,13 +475,13 @@ def _range_position(
     return max(0.0, min(1.0, (price - weekly_low) / spread))
 
 
-async def get_btc_price() -> tuple[float, float]:
+async def get_btc_price() -> tuple[Decimal, Decimal]:
     """Backward-compatible helper for BTC-specific callers."""
     price, change_24h, _ = await get_coin_price("btc")
     return price, change_24h
 
 
-async def get_btc_market_data() -> tuple[float, float, float | None]:
+async def get_btc_market_data() -> tuple[Decimal, Decimal, Decimal | None]:
     """Get BTC price and 24h change.
 
     CoinGecko's simple price endpoint does not reliably return a BTC 7d
@@ -475,10 +501,11 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
         "ids": COIN_SYMBOL_TO_ID["btc"],
         "vs_currencies": "usd",
         "include_24hr_change": "true",
+        "precision": "full",
     }
 
     async with httpx.AsyncClient() as client:
-        data = await _get_with_retry(client, url, params)
+        data = await _get_with_retry(client, url, params, parse_decimal_numbers=True)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
@@ -487,9 +514,16 @@ async def get_btc_market_data() -> tuple[float, float, float | None]:
     if not isinstance(coin_data, dict):
         raise ValueError("CoinGecko response did not include expected coin data for 'bitcoin'.")
 
-    price = float(coin_data["usd"])
+    raw_price = coin_data["usd"]
+    price = raw_price if isinstance(raw_price, Decimal) else Decimal(str(raw_price))
     change_24h_raw = coin_data.get("usd_24h_change")
-    change_24h = float(change_24h_raw) if change_24h_raw is not None else 0.0
+    change_24h = (
+        change_24h_raw
+        if isinstance(change_24h_raw, Decimal)
+        else Decimal(str(change_24h_raw))
+        if change_24h_raw is not None
+        else Decimal("0")
+    )
     change_7d = None
 
     cached_at = time.time()

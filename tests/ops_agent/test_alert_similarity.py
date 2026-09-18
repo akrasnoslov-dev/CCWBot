@@ -357,7 +357,7 @@ def test_suppression_effectiveness_flags_inside_cooldown_candidates():
     assert groups[0]["confidence"] == "medium"
 
 
-def test_suppression_effectiveness_marks_allowed_escalation_separately():
+def test_suppression_effectiveness_flags_urgency_repeat_inside_strict_cooldown():
     rows = [
         _row(
             first_delivery_at="2026-06-01T10:01:00Z",
@@ -394,16 +394,10 @@ def test_suppression_effectiveness_marks_allowed_escalation_separately():
         semantic_cooldown_seconds=14400,
     )
     groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
-    regression = payloads["evidence/db/event_alert_regression_checks.json"]
-
-    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
-    assert groups[0]["delivered_inside_cooldown_allowed_escalations"] == 1
-    assert groups[0]["allowed_escalation_reasons"] == {"urgency_increased": 1}
-    assert regression["same_family_repeat_noise_groups"] == 0
-    assert regression["same_family_allowed_escalation_groups"] == 1
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 1
 
 
-def test_suppression_effectiveness_marks_material_movement_escalation_separately():
+def test_suppression_effectiveness_flags_movement_repeat_inside_strict_cooldown():
     rows = [
         _row(
             first_delivery_at="2026-06-01T10:01:00Z",
@@ -440,11 +434,10 @@ def test_suppression_effectiveness_marks_material_movement_escalation_separately
     )
     groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
 
-    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
-    assert groups[0]["allowed_escalation_reasons"] == {"material_movement_increased": 1}
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 1
 
 
-def test_suppression_effectiveness_uses_persisted_gram_allow_reason():
+def test_suppression_effectiveness_flags_legacy_allow_reason_inside_strict_cooldown():
     rows = [
         _row(
             symbol="GRAM",
@@ -488,9 +481,7 @@ def test_suppression_effectiveness_uses_persisted_gram_allow_reason():
         "suppression_groups"
     ]
 
-    assert groups[0]["delivered_inside_cooldown_candidates"] == 0
-    assert groups[0]["delivered_inside_cooldown_allowed_escalations"] == 1
-    assert groups[0]["allowed_escalation_reasons"] == {"cumulative_strengthened": 1}
+    assert groups[0]["delivered_inside_cooldown_candidates"] == 1
 
 
 def test_suppression_effectiveness_does_not_allow_new_news_driver_alone():
@@ -531,7 +522,6 @@ def test_suppression_effectiveness_does_not_allow_new_news_driver_alone():
     groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
 
     assert groups[0]["delivered_inside_cooldown_candidates"] == 1
-    assert groups[0]["allowed_escalation_reasons"] == {}
 
 
 def test_similarity_memberships_link_recipients_without_exporting_source_ids():

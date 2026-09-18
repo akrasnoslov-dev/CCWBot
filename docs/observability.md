@@ -71,8 +71,8 @@ analyses — the outage was silent by construction. Every symbol that reaches th
 emits, before the LLM is called:
 
 ```text
-ops_event=event_alert_candidate_crossing symbol=BTC analysed_window_change_percent=-4.2
-  change_24h_percent=-6.1 threshold_percent=3.0 crossed_threshold=true analysed_window_minutes=30
+ops_event=event_alert_analysis_candidate symbol=BTC analysed_window_change_percent=-4.2
+  change_24h_percent=-6.1 analysed_window_minutes=30 skipped_llm=none context_fingerprint=<hash>
 ```
 
 This is evidence only: it creates no market event, triggers no alert, and feeds no decision.
@@ -252,7 +252,6 @@ Common reason codes:
 - `no_recipients`
 - `delivery_not_scheduled`
 - `already_delivered`
-- `severity_below_threshold`
 - `llm_should_alert`
 - `llm_no_alert`
 - `news_only_rejected`
@@ -262,8 +261,8 @@ Decision fields:
 - `decision_stage`: operator-facing stage such as `pre_llm`, `llm`, `semantic_cooldown`, or
   `delivery`.
 - `decision_reason`: operator-facing reason such as `news_only_rejected`, `llm_no_alert`,
-  `llm_should_alert`, `semantic_cooldown_suppressed`, `similar_context_reused`,
-  `allowed_market_context_changed`, `delivered`, `delivery_failed`, `no_eligible_recipient`, or
+  `llm_should_alert`, `semantic_cooldown_suppressed`, `exact_context_reused`, `delivered`,
+  `delivery_failed`, `no_eligible_recipient`, or
   `unknown`.
 - `previous_alert_id`: nullable link to a previous alert considered for repeat/cooldown context.
 - `context_fingerprint`: safe hash of sanitized decision context; it is not a raw prompt or
@@ -338,8 +337,7 @@ ORDER BY market_events DESC, last_seen_at DESC;
 ```
 
 `market_events.event_key` is the backend canonical semantic key, not necessarily the raw LLM key.
-Semantic family normalization, stable event identity, and similarity cooldown checks existed
-before `alert_delivery_outcomes`; outcome rows now make those decisions queryable in the database.
+Semantic family normalization and strict semantic cooldown are queryable through outcome rows.
 For example, raw keys such as `btc_price_drop`, `btc_selloff_prediction`, and
 `market_drop_btc` normalize to `btc_price_downtrend`. Generic keys such as `news_catalyst`,
 `price_movement`, and `volatility` are not trusted as final identity when the title/body or
@@ -372,22 +370,19 @@ ORDER BY last_sent_at DESC;
 
 Suppressed semantic duplicates are persisted as `alert_delivery_outcomes.reason_code =
 'similar_event_suppressed'` and logged as `event_alert_suppressed` with
-`suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical
-semantic family key, and also checks delivered outcome semantic family where available, so minor
-raw-key wording drift does not bypass the cooldown. Same-family events can still deliver inside the
-semantic cooldown when urgency increased or the absolute analysed-window movement grew by the
-configured material movement delta. Stable related-news identity remains diagnostics/supporting
-context only; new news alone does not bypass cooldown.
+`suppression_reason=semantic_cooldown`. Cooldown is evaluated by symbol plus the canonical event
+key or semantic family, so minor raw-key wording drift does not bypass the strict four-hour rule.
+No urgency, market-movement, direction, or new-news condition bypasses it.
 Generic `possible_action` wording is reported as a quality signal only; it does not suppress
 runtime delivery.
 
-## Event Alert Similar-Context Reuse
+## Event Alert Exact Context Reuse
 
 Before calling the Event Analysis LLM, the runtime can reuse a recent durable decision with the
-same sanitized `context_fingerprint`. The fingerprint is built from stable normalized fields such
-as symbol, analysed-window length, coarse market movement identity, compact candidate-news
-identity, and previous Event Alert semantic context. It excludes raw timestamps, prompts, LLM
-outputs, Telegram ids, user ids, and secrets.
+exactly unchanged canonical semantic `context_fingerprint`. The fingerprint includes full market
+facts and snapshots, selected-news identity/content, and previous Event Alert context. It excludes
+runtime timestamps, prompts, LLM outputs, Telegram IDs, user IDs, and secrets. It uses no buckets,
+tolerances, or market-value rounding.
 
 Pre-LLM reuse writes an event-less `alert_delivery_outcomes` row:
 
@@ -405,7 +400,7 @@ SELECT
 FROM alert_delivery_outcomes
 WHERE alert_type = 'event_alert'
   AND decision_stage = 'pre_llm'
-  AND decision_reason = 'similar_context_reused'
+  AND decision_reason = 'exact_context_reused'
 ORDER BY created_at DESC
 LIMIT 50;
 ```
@@ -424,23 +419,18 @@ semantic_family=price_downtrend event_instance_key=... delivery_count=0 suppress
 suppression_reason=semantic_cooldown analysed_window_minutes=180
 ```
 
-Debug cooldown checks include sanitized escalation fields such as `urgency_increased`,
-`material_movement_increased`, `new_news_driver`, previous/current movement percentages, and
-previous/current selected-news counts. `new_news_driver` is diagnostics only and is not sufficient
-to allow a same-family repeat inside cooldown; allowed repeat reasons must be market-context based.
-These fields are for logs/outcomes only and must not be copied into Telegram messages.
+Debug cooldown checks log the canonical key/family, last sent time, and strict four-hour result.
+They do not contain escalation or market-movement bypass fields.
 
-Candidate-to-decision tracing uses sanitized structured events. `event_alert_candidate_crossing`
+Candidate-to-decision tracing uses sanitized structured events. `event_alert_analysis_candidate`
 and `event_alert_llm_operation` include the same context fingerprint, and
 `event_alert_decision` records the terminal stage/reason/status with that fingerprint. The log
 collector converts fingerprints and operation UUIDs to bundle-local references; it never exports
 the raw values, user IDs, chat IDs, prompts, or outputs.
 
-Market-only event instance keys are built from symbol, canonical semantic key, rounded UTC time
-bucket, urgency, and a coarse movement bucket. News-linked event instance keys use stable selected
-news identities instead of temporary `n1`/`n2` labels. Small payload or input-hash changes should
-not create new event identities; severity increases, materially larger movement buckets, and
-distinct news drivers may create new identities.
+Market-only event instance keys are built from symbol, canonical semantic key, time bucket, and
+LLM urgency. News-linked keys use stable selected-news identities instead of temporary `n1`/`n2`
+labels. They do not use movement buckets.
 
 Stable `suppression_reason` values include:
 
@@ -476,17 +466,26 @@ persisted delivered Event Alert message; analysis body, raw/parsed LLM output, d
 and numeric context are intentionally excluded. `24h change` remains valid for non-Event-Alert
 surfaces such as Market Heartbeats.
 
-When the analysed-window move is below the semantic material-movement threshold, backend formatting
-applies a narrow deterministic wording guard for dramatic terms such as crash, surge, collapse,
-panic, bloodbath, explosion, moon, and meltdown. This guard only affects Event Alert text; it does
-not change market-event identity, recipient eligibility, cooldown decisions, or LLM call placement.
+Formatting may make a message readable, but does not use market thresholds or alter Event Alert
+significance, identity, cooldown, eligibility, or LLM call placement.
+
+Event Alert presentation is deterministic where it repeats market facts: the headline uses only
+the primary analysed-window move, and the metric block is the single source for price, prior
+Event Alert/message change, and analysed-window movement. Situation text that repeats those
+numbers is replaced with concise context derived only from supplied snapshots, 24-hour alignment
+or divergence, prior context, or selected related news. Selected news may be described as
+coincident context, never as proven cause. When no additional context exists, the copy explicitly
+says that the analysed-window move is the only confirmed signal and that no additional catalyst is
+evident from the supplied news/context. Possible action is short, conditional monitoring of the
+supplied snapshots, trend, or selected news, with no trading command or generic risk-plan wording.
+Related-news selection and rendering are unchanged. This display-only normalization does not use
+market thresholds or alter significance, identity, cooldown, eligibility, or LLM call placement.
 
 The ops-agent decision context now includes `## Event Alert Regression Checks`. Interpret it as:
 
 - `OK`: no collected duplicate attached analyses, unexplained `should_alert=true` gaps,
   same-family repeat noise, bad placeholders, or old labels.
-- `Warning`: likely same-family repeat noise was found, while allowed escalation groups are
-  counted separately.
+- `Warning`: likely same-family repeat noise was found.
 - `Critical`: duplicate attached successful analyses, unexplained `should_alert=true` gaps,
   user-facing placeholders, or old confusing labels were found.
 
