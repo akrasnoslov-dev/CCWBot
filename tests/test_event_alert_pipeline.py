@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -133,3 +134,162 @@ def test_news_only_guard_remains_a_non_numeric_backend_contract():
 
     assert "news_only" in guard
     assert "threshold" not in guard.lower()
+
+
+def _no_alert_result(reason_for_no_alert: str) -> dict:
+    return {
+        "symbol": "BTC",
+        "should_alert": False,
+        "event_key": None,
+        "title": None,
+        "message_body": None,
+        "related_news_ids": [],
+        "possible_action": None,
+        "urgency": None,
+        "confidence": None,
+        "reason_for_no_alert": reason_for_no_alert,
+    }
+
+
+def _runtime_no_alert_payload(*, chg_window: float) -> dict:
+    payload = _event_input()
+    payload.update(
+        {
+            "analysis_id": "event_analysis_btc_no_alert_observability",
+            "symbol": "BTC",
+            "news": [
+                {
+                    "news_id": "unrelated-news",
+                    "title": "Unrelated market headline",
+                    "source": "Example News",
+                }
+            ],
+            "market": {
+                "price": 100.0,
+                "snapshots": [{"m": 180, "p": 100.0}, {"m": 0, "p": 100.0 + chg_window}],
+                "payload_points": 6,
+                "analysed_window_minutes": 180,
+                "chg_window": chg_window,
+                "chg24h": 5.45,
+                "chg_since_msg": None,
+            },
+        }
+    )
+    return payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason_for_no_alert",
+    (
+        (
+            "Market price change in the recent 180-minute window is minimal and news items "
+            "are unrelated."
+        ),
+        (
+            "Market snapshot shows a 5.45% 24h increase but no short-term change window; "
+            "news items are unrelated."
+        ),
+        "No significant market movement is evident and no material news is present.",
+    ),
+)
+async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
+    monkeypatch, reason_for_no_alert
+):
+    recorded_outcome = AsyncMock()
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_analysis_raw",
+        AsyncMock(return_value=("{}", _no_alert_result(reason_for_no_alert))),
+    )
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(
+        _runtime_no_alert_payload(chg_window=0.05)
+    )
+
+    assert decision is not None
+    assert analysis_id == 321
+    assert (
+        recorded_outcome.await_args.kwargs["decision_reason"]
+        == alerts.DECISION_REASON_LLM_NO_ALERT
+    )
+    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_NO_ALERT
+
+
+@pytest.mark.parametrize(
+    ("reason_for_no_alert", "chg_window", "expected_reason"),
+    (
+        (
+            "News alone is the only notable input; the analysed market window is flat.",
+            0.0,
+            alerts.DECISION_REASON_NEWS_ONLY_REJECTED,
+        ),
+        (
+            "News alone is the only notable input, but the analysed market window moved.",
+            0.05,
+            alerts.DECISION_REASON_LLM_NO_ALERT,
+        ),
+        (
+            "Repeated news is unrelated while market movement is minimal.",
+            0.0,
+            alerts.DECISION_REASON_LLM_NO_ALERT,
+        ),
+    ),
+)
+def test_news_only_no_alert_requires_explicit_sole_news_language_and_flat_market_context(
+    reason_for_no_alert, chg_window, expected_reason
+):
+    decision = EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=False,
+        event_key=None,
+        title=None,
+        message_body=None,
+        related_news_ids=[],
+        possible_action=None,
+        urgency=None,
+        confidence=None,
+        reason_for_no_alert=reason_for_no_alert,
+    )
+
+    assert (
+        alerts._llm_no_alert_decision_reason(
+            decision, _runtime_no_alert_payload(chg_window=chg_window)
+        )
+        == expected_reason
+    )
+
+
+def test_news_only_no_alert_does_not_treat_decimal_market_context_as_flat():
+    payload = _runtime_no_alert_payload(chg_window=0.0)
+    payload["market"].update(
+        {
+            "chg_window": None,
+            "chg_since_msg": Decimal("0.05"),
+            "snapshots": [
+                {"m": 180, "p": Decimal("100.00")},
+                {"m": 0, "p": Decimal("100.05")},
+            ],
+        }
+    )
+    decision = EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=False,
+        event_key=None,
+        title=None,
+        message_body=None,
+        related_news_ids=[],
+        possible_action=None,
+        urgency=None,
+        confidence=None,
+        reason_for_no_alert="News alone is the only notable input.",
+    )
+
+    assert alerts._has_non_flat_analysed_market_context(payload)
+    assert (
+        alerts._llm_no_alert_decision_reason(decision, payload)
+        == alerts.DECISION_REASON_LLM_NO_ALERT
+    )

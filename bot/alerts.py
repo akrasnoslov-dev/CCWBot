@@ -2992,21 +2992,33 @@ async def _save_event_analysis_attempt(
         return analysis.id if analysis else None
 
 
+_NEWS_ONLY_NO_ALERT_REASON_MARKERS = (
+    "news alone",
+    "news-only",
+    "only notable input is news",
+    "only material input is news",
+    "only relevant input is news",
+    "only input is news",
+    "news is the only",
+    "news is the primary",
+    "news is the sole",
+    "only repeated news",
+    "only similar news",
+    "only old news",
+)
+
+
 def _llm_no_alert_decision_reason(decision: EventAnalysisDecision, input_payload: dict) -> str:
     reason = str(decision.reason_for_no_alert or "").lower()
-    if any(
-        marker in reason
-        for marker in (
-            "news alone",
-            "news-only",
-            "only notable input is news",
-            "repeated news",
-            "similar news",
-            "old news",
-        )
+    # This is durable observability classification, not a significance gate.  The LLM
+    # must explicitly make news the sole/primary basis and the analysed market context
+    # must be flat; an ordinary explanation that discusses both market and news remains
+    # a normal LLM no-alert decision.
+    if (
+        input_payload.get("news")
+        and any(marker in reason for marker in _NEWS_ONLY_NO_ALERT_REASON_MARKERS)
+        and not _has_non_flat_analysed_market_context(input_payload)
     ):
-        return DECISION_REASON_NEWS_ONLY_REJECTED
-    if input_payload.get("news") and "news" in reason and "market" in reason:
         return DECISION_REASON_NEWS_ONLY_REJECTED
     return DECISION_REASON_LLM_NO_ALERT
 
@@ -3117,18 +3129,18 @@ def _has_non_flat_analysed_market_context(input_payload: dict) -> bool:
         "chg_since_msg",
         "change_since_last_user_visible_message_percent",
     ):
-        value = market_data.get(field_name)
-        if isinstance(value, (int, float)) and float(value) != 0.0:
+        value = _optional_float(market_data.get(field_name))
+        if value is not None and value != 0.0:
             return True
     snapshots = market_data.get("snapshots")
     if isinstance(snapshots, list) and len(snapshots) >= 2:
         prices = [
-            float(snapshot["p"] if "p" in snapshot else snapshot["price_usd"])
+            _optional_float(snapshot["p"] if "p" in snapshot else snapshot["price_usd"])
             for snapshot in snapshots
             if isinstance(snapshot, dict)
             and ("p" in snapshot or "price_usd" in snapshot)
-            and isinstance(snapshot.get("p", snapshot.get("price_usd")), (int, float))
         ]
+        prices = [price for price in prices if price is not None]
         if len(prices) >= 2 and prices[0] != prices[-1]:
             return True
     return False
