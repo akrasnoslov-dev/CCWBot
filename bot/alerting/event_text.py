@@ -24,10 +24,6 @@ _UNSUPPORTED_MARKET_CLAIM_RE = re.compile(
 _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
     r"(?i)\b(?:because|due to|caused by|driven by|explains?|after)\b"
 )
-_SAFE_RELATED_CONTEXT_RE = re.compile(
-    r"(?i)\b(?:selected|related|current)\s+(?:news|context)\b.*"
-    r"\b(?:coincides|may provide context|consistent with)\b"
-)
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _PERCENT_VALUE_RE = re.compile(
     r"(?i)([+-]?\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?(?:\s+points?)?\b)"
@@ -126,9 +122,9 @@ def compact_event_alert_situation(
     ):
         return fallback
     # Free-form LLM copy cannot establish unstructured facts (for example demand, sentiment,
-    # volume, or causality). Preserve only explicit, non-causal related-news wording; every other
-    # useful interpretation comes from the structured snapshot/trend fallback above.
-    if not _is_safe_llm_situation(cleaned, related_news or []):
+    # volume, or causality). Preserve only a bounded market interpretation that matches the
+    # structured snapshot/trend relationships; related news stays in its own section.
+    if not _is_safe_llm_situation(cleaned, market_data=market_data or {}):
         return fallback
     if _repeats_rendered_market_fact(cleaned, market_data or {}):
         explanation = _concise_explanation_clause(cleaned, market_data or {})
@@ -139,13 +135,99 @@ def compact_event_alert_situation(
         cleaned,
         significance_reason=significance_reason,
     )
-    if _MARKET_RESTATEMENT_RE.search(compacted) and not _EXPLANATION_RE.search(compacted):
+    if (
+        _MARKET_RESTATEMENT_RE.search(compacted)
+        and not _EXPLANATION_RE.search(compacted)
+        and not _is_safe_structured_market_interpretation(compacted, market_data or {})
+    ):
         return fallback
     return compacted
 
 
-def _is_safe_llm_situation(value: str, related_news: list[dict]) -> bool:
-    return bool(related_news) and _SAFE_RELATED_CONTEXT_RE.search(value) is not None
+def _is_safe_llm_situation(
+    value: str,
+    *,
+    market_data: dict,
+) -> bool:
+    return _is_safe_structured_market_interpretation(value, market_data)
+
+
+def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> bool:
+    """Allow concise LLM context only when its relationship exists in market input."""
+    lowered = value.lower()
+    if _PERCENT_RE.search(value) or _MONEY_VALUE_RE.search(value):
+        return False
+
+    step_changes = _snapshot_step_changes(market_data)
+    window_change = _decimal_market_value(market_data.get("chg_window_percent"))
+    change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
+    has_reversal = len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0
+    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_broader_comparison = (
+        window_change is not None
+        and change_24h is not None
+        and window_change != 0
+        and change_24h != 0
+    )
+    has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
+    has_alignment = has_broader_comparison and not has_divergence
+
+    if not any(
+        term in lowered
+        for term in (
+            "snapshot",
+            "short-term",
+            "short term",
+            "broader",
+            "24-hour",
+            "24 hour",
+            "persistent",
+            "persistence",
+            "reversal",
+            "diverg",
+            "align",
+        )
+    ):
+        return False
+    if any(term in lowered for term in ("snapshot", "persistent", "persistence")) and not (
+        step_changes and (has_persistence or has_reversal)
+    ):
+        return False
+    if "reversal" in lowered and not has_reversal:
+        return False
+    if "diverg" in lowered and not has_divergence:
+        return False
+    if "align" in lowered and not has_alignment:
+        return False
+    if (
+        any(
+            term in lowered
+            for term in ("broader", "24-hour", "24 hour", "short-term", "short term")
+        )
+        and not has_broader_comparison
+    ):
+        return False
+
+    current_direction = window_change
+    if current_direction is None and step_changes:
+        current_direction = step_changes[-1]
+    if any(term in lowered for term in ("lower", "declin", "weakness", "weaker", "down")) and not (
+        current_direction is not None and current_direction < 0
+    ):
+        return False
+    if any(
+        term in lowered for term in ("higher", "rally", "strength", "stronger", "upward")
+    ) and not (current_direction is not None and current_direction > 0):
+        return False
+    if "positive" in lowered and not (
+        change_24h is not None and change_24h > 0
+    ):
+        return False
+    if "negative" in lowered and not (
+        change_24h is not None and change_24h < 0
+    ):
+        return False
+    return True
 
 
 def _repeats_rendered_market_fact(value: str, market_data: dict) -> bool:
@@ -222,15 +304,18 @@ def event_alert_presentation_fallback(
     numerical significance rule, causal claim, or policy gate; the Event Analysis decision
     remains entirely upstream with the LLM.
     """
-    if related_news:
-        return (
-            "Selected current news coincides with the move and may provide context, "
-            "but it does not establish causation.",
-            "Watch whether the price direction persists as the selected news develops; "
-            "a fading reaction would weaken that context.",
-        )
-
     step_changes = _snapshot_step_changes(market_data)
+    window_change = _decimal_market_value(market_data.get("chg_window_percent"))
+    change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
+    has_broader_comparison = (
+        window_change is not None
+        and change_24h is not None
+        and window_change != 0
+        and change_24h != 0
+    )
+    has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
+    has_persistence = _has_persistent_snapshot_direction(step_changes)
+
     if len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0:
         return (
             "The most recent supplied snapshot reverses part of the earlier path, so the "
@@ -239,15 +324,15 @@ def event_alert_presentation_fallback(
             "in the current direction.",
         )
 
-    window_change = _decimal_market_value(market_data.get("chg_window_percent"))
-    change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
-    if (
-        window_change is not None
-        and change_24h is not None
-        and window_change != 0
-        and change_24h != 0
-        and (window_change > 0) != (change_24h > 0)
-    ):
+    if has_persistence and has_divergence:
+        return (
+            "The move persisted across the supplied short-term snapshots while the broader "
+            "24-hour direction remained opposite, indicating short-term divergence.",
+            "Watch whether the next short-term snapshots continue in the current direction "
+            "or reverse back toward the broader 24-hour direction.",
+        )
+
+    if has_divergence:
         return (
             "The short-term move runs against the broader 24-hour direction, so the current "
             "change is a short-term divergence rather than full trend alignment.",
@@ -255,10 +340,7 @@ def event_alert_presentation_fallback(
             "direction or continue diverging.",
         )
 
-    if len(step_changes) >= 2 and all(
-        change != 0 and (change > 0) == (step_changes[0] > 0)
-        for change in step_changes
-    ):
+    if has_persistence:
         return (
             "The move developed across the supplied snapshots rather than a single observation, "
             "which makes the current trajectory more persistent.",
@@ -266,13 +348,7 @@ def event_alert_presentation_fallback(
             "starts giving back the recent change.",
         )
 
-    if (
-        window_change is not None
-        and change_24h is not None
-        and window_change != 0
-        and change_24h != 0
-        and (window_change > 0) == (change_24h > 0)
-    ):
+    if has_broader_comparison:
         return (
             "The short-term move continues the same direction as the broader 24-hour trend, "
             "giving the event broader-trend context.",
@@ -281,10 +357,16 @@ def event_alert_presentation_fallback(
         )
 
     return (
-        "The analysed-window price move is the only confirmed signal in the current data; "
-        "no additional catalyst is evident from the supplied news or context.",
+        "The analysed-window price move is the only confirmed signal in the supplied market "
+        "data.",
         "Watch the next short-term snapshots for continuation or a quick reversal of the "
         "current move.",
+    )
+
+
+def _has_persistent_snapshot_direction(step_changes: list[Decimal]) -> bool:
+    return len(step_changes) >= 2 and all(
+        change != 0 and (change > 0) == (step_changes[0] > 0) for change in step_changes
     )
 
 
@@ -351,6 +433,18 @@ def compact_event_alert_possible_action(value: str, *, fallback: str | None = No
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."
     return cleaned
+
+
+def is_news_centered_event_action(value: str) -> bool:
+    """Keep monitoring copy focused on market evidence, not supporting headlines."""
+    return (
+        re.search(
+            r"(?i)\b(?:news|headline|article|story)\b|"
+            r"\b(?:selected|related|current)\s+(?:context|news|headline|article|story)\b",
+            str(value or ""),
+        )
+        is not None
+    )
 
 
 def sanitize_financial_instruction(value: str, *, fallback: str) -> str:

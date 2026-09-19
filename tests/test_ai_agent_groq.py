@@ -42,6 +42,11 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "not a restatement of supplied price or percentage values" in prompt
     assert "coincident context, never as proven cause" in prompt
     assert "conditional monitoring of supplied snapshots, trend, or selected news" in prompt
+    assert "noteworthy enough to interrupt the user" in prompt
+    assert "Keep that boolean and your qualitative reasoning internally consistent" in prompt
+    assert "routine, ordinary, modest, stable, insignificant" in prompt
+    assert "other supplied market evidence clearly makes the event noteworthy" in prompt
+    assert "News alone must never make a routine market state alertable" in prompt
 
 
 @pytest.mark.parametrize(

@@ -259,9 +259,9 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     previous_event_alert = input_payload.get("previous_event_alert")
     previous_event_alert = previous_event_alert if isinstance(previous_event_alert, dict) else {}
     return {
-        # Version the semantic input contract.  Existing analyses with the former
-        # ambiguous change-field names must not be reused under the clarified prompt.
-        "schema_version": 2,
+        # Version the semantic input contract so analyses created under the former prompt and
+        # identity rules are not reused under the clarified contract.
+        "schema_version": 3,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "display_symbol": input_payload.get("display_symbol"),
         "coin_name": input_payload.get("coin_name"),

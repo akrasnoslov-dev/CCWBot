@@ -39,6 +39,7 @@ from bot.alerting.event_text import (
     compact_event_alert_possible_action,
     compact_event_alert_situation,
     event_alert_presentation_fallback,
+    is_news_centered_event_action,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -835,10 +836,15 @@ async def _get_reusable_event_analysis_by_context(
             translated_related_news_keys.append(stable_identity)
         if decision.related_news_ids and not translated_related_news_ids:
             continue
+        raw_event_key = str(
+            analysis_input_payload.get("raw_event_key")
+            or getattr(analysis, "event_key", None)
+            or event_key
+        ).strip()
         identity_decision = EventAnalysisDecision(
             symbol=decision.symbol,
             should_alert=True,
-            event_key=decision.event_key,
+            event_key=raw_event_key or decision.event_key,
             title=decision.title,
             message_body=decision.message_body,
             related_news_ids=translated_related_news_ids,
@@ -846,6 +852,15 @@ async def _get_reusable_event_analysis_by_context(
             urgency=decision.urgency,
             confidence=decision.confidence,
             reason_for_no_alert=None,
+        )
+        # Reapply current semantic normalization on exact reuse.  The fingerprint version
+        # prevents normal reuse of older contracts, while this protects restored/imported rows
+        # whose stored market event predates the core-first identity rule.
+        identity_decision, canonical = with_canonical_event_key(
+            identity_decision,
+            related_news=_selected_event_analysis_news(
+                input_payload, translated_related_news_ids
+            ),
         )
         candidates_by_stable_identity: dict[str, list[dict]] = {}
         for item in candidate_news or []:
@@ -872,16 +887,12 @@ async def _get_reusable_event_analysis_by_context(
             input_payload=input_payload,
             related_news=current_related_news,
         )
-        semantic_family = str(analysis_input_payload.get("semantic_family") or "").strip() or None
-        input_payload["raw_event_key"] = str(
-            analysis_input_payload.get("raw_event_key")
-            or getattr(analysis, "event_key", None)
-            or event_key
-        )
-        input_payload["canonical_event_key"] = event_key
+        semantic_family = canonical.semantic_family
+        input_payload["raw_event_key"] = canonical.raw_event_key
+        input_payload["canonical_event_key"] = canonical.canonical_event_key
         input_payload["semantic_family"] = semantic_family
         return ReusableEventAnalysis(
-            decision=decision,
+            decision=identity_decision,
             current_context_decision=identity_decision,
             market_event_id=int(market_event.id),
             event_instance_key=event_instance_key,
@@ -1613,6 +1624,8 @@ def _build_event_alert_payload(
         market_data=market_data,
     )
     possible_action = soften_possible_action(possible_action, urgency=decision.urgency)
+    if is_news_centered_event_action(possible_action):
+        possible_action = presentation_action_fallback
     possible_action = compact_event_alert_possible_action(
         possible_action,
         fallback=presentation_action_fallback,
@@ -5544,11 +5557,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 event_instance_key=event_instance_key,
                 analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
                 numeric_context=_event_numeric_context(
-                    (
-                        reusable_analysis.analysis_input_payload
-                        if reusable_analysis is not None
-                        else input_payload
-                    ),
+                    input_payload,
                     decision,
                     event_instance_key=event_instance_key,
                 ),

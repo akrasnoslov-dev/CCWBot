@@ -139,27 +139,26 @@ def normalize_event_semantic_family(
     title: str | None = None,
     message_body: str | None = None,
     related_news: list[dict[str, Any]] | None = None,
+    _allow_price_direction: bool = True,
 ) -> str | None:
-    """Map raw event wording to a deterministic backend-owned semantic family."""
+    """Map core event wording to a stable family, using material news only as fallback."""
     normalized_symbol = normalize_symbol(symbol)
     parts = [
         _normalize_event_key_text(str(raw_event_key or "")),
         _normalize_event_key_text(str(title or "")),
         _normalize_event_key_text(str(message_body or "")),
     ]
-    for item in related_news or []:
-        if not isinstance(item, dict):
-            continue
-        parts.extend(
-            [
-                _normalize_event_key_text(str(item.get("title") or "")),
-                _normalize_event_key_text(str(item.get("source") or "")),
-                _normalize_event_key_text(str(item.get("url") or item.get("link") or "")),
-            ]
-        )
     text = _replace_symbol_aliases(_collapse_event_key("_".join(part for part in parts if part)))
     tokens = {token for token in text.split("_") if token and token != normalized_symbol}
     phrases = f"_{text}_"
+
+    # Event Analysis is market-event-first. A clear price direction in its own key/title/body
+    # is the identity even when the explanation mentions supporting derivatives, ETF, or
+    # regulatory context. Those terms describe context, not a replacement event family.
+    if _allow_price_direction and _contains_price_downtrend_signal(phrases, tokens):
+        return "price_downtrend"
+    if _allow_price_direction and _contains_price_uptrend_signal(phrases, tokens):
+        return "price_uptrend"
 
     if normalized_symbol == "btc" and (
         tokens.intersection(
@@ -342,10 +341,14 @@ def normalize_event_semantic_family(
         {
             "rally",
             "rallies",
+            "rise",
+            "rises",
+            "rose",
             "rebound",
             "rebounds",
             "surge",
             "surges",
+            "up",
             "breakout",
             "higher",
             "upward",
@@ -363,7 +366,30 @@ def normalize_event_semantic_family(
     if tokens.intersection({"news", "headline", "headlines", "catalyst"}):
         return "news_catalyst"
 
-    return None
+    return _semantic_family_from_material_related_news(normalized_symbol, related_news)
+
+
+def _semantic_family_from_material_related_news(
+    symbol: str,
+    related_news: list[dict[str, Any]] | None,
+) -> str | None:
+    """Use selected material news only when core event evidence was ambiguous."""
+    parts: list[str] = []
+    for item in related_news or []:
+        if not isinstance(item, dict) or item.get("material") is not True:
+            continue
+        parts.extend(
+            str(item.get(field) or "")
+            for field in ("title", "source", "url", "link")
+        )
+    if not any(part.strip() for part in parts):
+        return None
+    # This recursive call has no related news, so it classifies only the fallback evidence.
+    return normalize_event_semantic_family(
+        symbol,
+        " ".join(parts),
+        _allow_price_direction=False,
+    )
 
 
 def _semantic_event_key(symbol: str, semantic_family: str | None) -> str | None:
@@ -426,8 +452,12 @@ def _contains_price_uptrend_signal(phrases: str, tokens: set[str]) -> bool:
         {
             "rally",
             "rallies",
+            "rise",
+            "rises",
+            "rose",
             "surge",
             "surges",
+            "up",
             "higher",
             "upward",
             "upside",

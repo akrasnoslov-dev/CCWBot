@@ -146,6 +146,19 @@ def test_event_analysis_percentage_contract_does_not_add_a_significance_gate():
     assert "chg_window_percent" in input_builder
 
 
+def test_event_analysis_has_no_backend_keyword_significance_rejection():
+    source = Path(alerts.__file__).read_text(encoding="utf-8")
+    decision_source = source[
+        source.index("async def _create_event_analysis_decision") : source.index(
+            "def _selected_event_analysis_news"
+        )
+    ]
+
+    assert "modest" not in decision_source.lower()
+    assert "insignificant" not in decision_source.lower()
+    assert "stable" not in decision_source.lower()
+
+
 def test_news_only_guard_remains_a_non_numeric_backend_contract():
     source = Path(alerts.__file__).read_text(encoding="utf-8")
     guard_start = source.index("def _is_news_only_event_alert_decision")
@@ -455,8 +468,8 @@ def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
         (
             {"chg_window_percent": Decimal("4.07")},
             [{"news_id": "n1", "title": "Selected context"}],
-            "may provide context, but it does not establish causation",
-            "selected news develops",
+            "only confirmed signal",
+            "continuation or a quick reversal",
         ),
     ),
 )
@@ -575,7 +588,7 @@ def test_event_alert_presentation_replaces_unstructured_llm_claims(claim):
     assert claim not in situation
 
 
-def test_event_alert_presentation_keeps_safe_selected_news_context():
+def test_event_alert_presentation_replaces_selected_news_situation_with_market_fallback():
     situation = alerts.compact_event_alert_situation(
         "Selected current news coincides with the move and may provide context.",
         significance_reason=None,
@@ -583,7 +596,75 @@ def test_event_alert_presentation_keeps_safe_selected_news_context():
         related_news=[{"news_id": "n1", "title": "Selected context"}],
     )
 
-    assert situation == "Selected current news coincides with the move and may provide context."
+    assert "only confirmed signal" in situation
+
+
+def test_event_alert_presentation_keeps_supported_market_interpretation():
+    situation = alerts.compact_event_alert_situation(
+        (
+            "The supplied snapshots show persistent short-term weakness against the "
+            "still-positive broader direction."
+        ),
+        significance_reason=None,
+        market_data={
+            "chg_window_percent": Decimal("-0.53"),
+            "chg24h_percent": Decimal("0.19"),
+            "snapshots": [
+                {"m": -180, "p": Decimal("100")},
+                {"m": -90, "p": Decimal("99")},
+                {"m": 0, "p": Decimal("98")},
+            ],
+        },
+        related_news=[],
+    )
+
+    assert situation.startswith("The supplied snapshots show persistent")
+
+
+def test_event_alert_presentation_is_market_first_with_nonmaterial_related_news():
+    decision = EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_down_180min",
+        title="ignored",
+        message_body="Market movement is meaningful.",
+        related_news_ids=["n1"],
+        possible_action="If the selected context develops, watch whether price direction persists.",
+        urgency="normal",
+        confidence="medium",
+        reason_for_no_alert=None,
+    )
+    payload = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "chg_window_percent": Decimal("-0.53"),
+                "chg24h_percent": Decimal("0.19"),
+                "snapshots": [
+                    {"m": -180, "p": Decimal("100")},
+                    {"m": -90, "p": Decimal("99")},
+                    {"m": 0, "p": Decimal("98")},
+                ],
+            }
+        },
+        related_news=[
+            {
+                "news_id": "n1",
+                "title": "US stock perpetual futures activity",
+                "source": "Example News",
+                "material": False,
+            }
+        ],
+    )["plain_text"]
+
+    situation = payload.split("Situation:\n", 1)[1].split("\n\nRelated context:", 1)[0]
+    action = payload.split("Possible action:\n", 1)[1].split("\n\nNot financial advice.", 1)[0]
+    assert "persisted across the supplied short-term snapshots" in situation
+    assert "broader 24-hour direction remained opposite" in situation
+    assert "continue in the current direction" in action
+    assert "selected context develops" not in action
+    assert "Related context:" in payload
+    assert "US stock perpetual futures activity" in payload
 
 
 @pytest.mark.parametrize(
