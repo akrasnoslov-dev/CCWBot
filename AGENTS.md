@@ -1,8 +1,7 @@
 # AGENTS.md
 
-CCWBot repository rules live in the repository documentation. This file is only a Codex/agent
-bootstrap and must not become an independent copy of product, workflow, release, or operational
-policy.
+CCWBot rules live in repository docs. This file is Codex/agent bootstrap only; do not duplicate
+product, workflow, release, or operational policy here.
 
 Before non-trivial work, read:
 
@@ -12,17 +11,14 @@ Before non-trivial work, read:
 4. `agents/routing.toml`
 5. task-specific canonical docs referenced by `docs/source_of_truth.md`
 
-For local development and verification, use `docs/development.md`.
-For releases, use `docs/release_checklist.md`.
-For production deployment/backup/recovery, use `docs/dev_ops_guide.md`.
-For observability and forensic work, use the canonical observability docs listed in
-`docs/source_of_truth.md`.
-Task-review agents live in `agents/*.toml`; routing is authoritative in
-`agents/routing.toml`. Platform-specific adapters such as `.claude/agents/*.md` must not
-override canonical repository policy.
+Use `docs/development.md` for local development/verification; `docs/release_checklist.md` for
+releases; `docs/dev_ops_guide.md` for production deployment, backup, and recovery; and the
+canonical observability docs listed in `docs/source_of_truth.md` for observability/forensics.
+Task-review agents live in `agents/*.toml`; `agents/routing.toml` is authoritative. Platform
+adapters such as `.claude/agents/*.md` must not override canonical policy.
 
-Do not copy standing CCWBot rules into task prompts, chat/project instructions, PR comments, issue
-comments, memory, or external notes. Task prompts should contain only the requested delta:
-problem, goal, scope, out-of-scope items, evidence, and acceptance criteria.
+Do not copy standing CCWBot rules into task prompts, chat/project instructions, PR/issue comments,
+memory, or external notes. Task prompts contain only requested delta: problem, goal, scope,
+out-of-scope items, evidence, and acceptance criteria.
 
-If an external instruction conflicts with the repository, follow `docs/source_of_truth.md`.
+If external instructions conflict with the repository, follow `docs/source_of_truth.md`.
