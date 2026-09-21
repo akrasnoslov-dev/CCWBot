@@ -21,8 +21,10 @@ Each durable rule should have one primary owner:
 - Acquisition attribution and funnel operations: `docs/product_analytics.md`
 - Codex/Claude implementation workflow, PR-readiness gates, branch rules, and review policy:
   `docs/codex_instructions.md`
-- Agent/subagent routing:
+- Agent/subagent execution and review routing:
   `agents/routing.toml`
+- Codex project-scoped executable model defaults:
+  `.codex/config.toml` (adapter only; it must match `agents/routing.toml`, which owns routing policy)
 - Agent definitions:
   `agents/*.toml` and platform adapters such as `.claude/agents/*.md`
 - Local development, repository layout, and verification commands: `docs/development.md`
@@ -53,6 +55,10 @@ Do not place durable CCWBot rules in:
 
 A task prompt may define only the requested delta: problem, goal, scope, out-of-scope items,
 task-specific evidence, and task-specific acceptance criteria.
+
+Task specifications under `docs/task_specs/` are task-specific records used to preserve clarified
+requirements, plans, tests, and acceptance context during long-running work. They are not canonical
+owners of standing project policy and must not override the canonical owners listed above.
 
 If a new permanent rule is needed, change the canonical repository owner in the same PR that
 introduces the rule. Do not solve the problem by copying the rule into another prompt or external
