@@ -1,7 +1,8 @@
 # Codex Instructions
 
-This file is the canonical owner for CCWBot agent-assisted implementation workflow across ChatGPT Work,
-Codex, and Claude, including branch/PR rules, PR-readiness gates, and review policy.
+This file is the canonical owner for CCWBot agent-assisted implementation workflow, including
+branch/PR rules, PR-readiness gates, and review policy. ChatGPT Work and Codex use the OpenAI model
+routing defined below. Claude Code follows the shared workflow gates but uses its own platform model.
 
 Read `docs/source_of_truth.md` first. `AGENTS.md` and external task prompts are bootstrap/context
 only and must not contain independent standing workflow or project rules.
@@ -101,7 +102,8 @@ Use isolated Git branches plus `git worktree` for implementation workers.
 
 ### Orchestrator and workers
 
-The orchestrator owns decomposition, routing, integration, review, and final acceptance.
+The orchestrator owns decomposition, routing, integration, review, and final acceptance. For
+ChatGPT Work and Codex, use the following OpenAI routing:
 
 - Orchestrator and final acceptance model: `gpt-5.6-sol`.
 - Default implementation worker: `gpt-5.6-terra`.
