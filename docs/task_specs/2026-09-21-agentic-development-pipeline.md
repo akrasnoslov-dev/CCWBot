@@ -1,6 +1,6 @@
 # Task Spec: Agentic Development Pipeline
 
-Status: active task specification. This file records task-specific context for this change. It does not override canonical repository policy.
+Lifecycle: active during implementation; retained as historical task context after completion. This file does not override canonical repository policy.
 
 ## Goal
 
