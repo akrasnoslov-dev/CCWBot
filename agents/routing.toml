@@ -1,11 +1,20 @@
 version = 2
-description = "Codex task routing rules for CCWBot review subagents."
+description = "Codex task routing rules for CCWBot execution and review subagents."
 
 [defaults]
 runtime_bot_loads_agents = false
 non_trivial_task_requires_agent_check = true
 high_risk_skip_requires_written_reason = true
 prefer_parallel_subagents_when_available = true
+
+[execution]
+orchestrator_model = "gpt-5.6-sol"
+default_worker_model = "gpt-5.6-terra"
+low_cost_worker_model = "gpt-5.6-luna"
+worker_count_policy = "adaptive"
+isolation = "git_worktree"
+sol_worker_policy = "escalation_only"
+token_efficiency_objective = true
 
 [[rules]]
 id = "security_sensitive"
