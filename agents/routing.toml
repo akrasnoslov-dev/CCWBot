@@ -1,4 +1,4 @@
-version = 2
+version = 3
 description = "Codex task routing rules for CCWBot execution and review subagents."
 
 [defaults]
