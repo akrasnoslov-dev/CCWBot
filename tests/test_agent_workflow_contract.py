@@ -136,3 +136,39 @@ def test_external_codex_review_is_non_recursive():
 
     assert "External GitHub `@codex review` is optional, not a recursive gate" in content
     assert "do not automatically trigger it after every fix" in content
+
+
+def test_agentic_development_workflow_contract():
+    workflow = (ROOT / "docs/codex_instructions.md").read_text(encoding="utf-8")
+    source_of_truth = (ROOT / "docs/source_of_truth.md").read_text(encoding="utf-8")
+    routing = _load_toml(AGENTS_DIR / "routing.toml")
+    codex_config = _load_toml(ROOT / ".codex" / "config.toml")
+
+    for required_text in (
+        "Clarification gate",
+        "Task specification and plan",
+        "Test-first gate",
+        "Worktree isolation",
+        "Orchestrator and workers",
+        "Token-efficiency objective",
+        "docs/task_specs/",
+        "No green verification, no completion",
+    ):
+        assert required_text in workflow
+
+    execution = routing["execution"]
+    assert execution["orchestrator_model"] == "gpt-5.6-sol"
+    assert execution["default_worker_model"] == "gpt-5.6-terra"
+    assert execution["low_cost_worker_model"] == "gpt-5.6-luna"
+    assert execution["worker_count_policy"] == "adaptive"
+    assert execution["isolation"] == "git_worktree"
+    assert execution["sol_worker_policy"] == "escalation_only"
+
+    assert codex_config["model"] == "gpt-5.6-sol"
+    assert codex_config["agents"]["default_subagent_model"] == "gpt-5.6-terra"
+    assert "max_concurrent_threads_per_session" not in codex_config["agents"]
+
+    normalized_source_of_truth = " ".join(source_of_truth.split())
+    assert "docs/task_specs/" in source_of_truth
+    assert "task-specific records" in normalized_source_of_truth
+    assert "not canonical owners" in normalized_source_of_truth
