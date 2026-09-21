@@ -19,7 +19,7 @@ Each durable rule should have one primary owner:
 - Detailed Event Alert behavior and delivery contract: `docs/alert_logic.md`
 - Daily and weekly market-report behavior: `docs/market_reports.md`
 - Acquisition attribution and funnel operations: `docs/product_analytics.md`
-- Codex/Claude implementation workflow, PR-readiness gates, branch rules, and review policy:
+- Agent-assisted implementation workflow for ChatGPT Work, Codex, and Claude, including PR-readiness gates, branch rules, and review policy:
   `docs/codex_instructions.md`
 - Agent/subagent execution and review routing:
   `agents/routing.toml`
