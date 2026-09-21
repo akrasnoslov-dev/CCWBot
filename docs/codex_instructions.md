@@ -1,7 +1,7 @@
 # Codex Instructions
 
-This file is the canonical owner for CCWBot implementation workflow, branch/PR rules,
-PR-readiness gates, and review policy.
+This file is the canonical owner for CCWBot agent-assisted implementation workflow across ChatGPT Work,
+Codex, and Claude, including branch/PR rules, PR-readiness gates, and review policy.
 
 Read `docs/source_of_truth.md` first. `AGENTS.md` and external task prompts are bootstrap/context
 only and must not contain independent standing workflow or project rules.
