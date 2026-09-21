@@ -47,6 +47,16 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "routine, ordinary, modest, stable, insignificant" in prompt
     assert "other supplied market evidence clearly makes the event noteworthy" in prompt
     assert "News alone must never make a routine market state alertable" in prompt
+    assert "Time-window facts are distinct" in prompt
+    assert "price change over market.analysed_window_minutes" in prompt
+    assert "change since last_msg.time/last_msg.price" in prompt
+    assert "snapshots are the only supplied observations" in prompt
+    assert "A null metric is unavailable or unknown" in prompt
+    assert "never infer it from another metric" in prompt
+    assert "substitute chg_since_msg_percent or chg24h_percent for chg_window_percent" in prompt
+    assert "One current snapshot does not establish an analysed-window trajectory" in prompt
+    assert "intended analysis window, not proof" in prompt
+    assert "verified analysed-window move when chg_window_percent is available" in prompt
 
 
 @pytest.mark.parametrize(

@@ -261,7 +261,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     return {
         # Version the semantic input contract so analyses created under the former prompt and
         # identity rules are not reused under the clarified contract.
-        "schema_version": 3,
+        "schema_version": 4,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "display_symbol": input_payload.get("display_symbol"),
         "coin_name": input_payload.get("coin_name"),
@@ -277,8 +277,10 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "chg_since_msg_percent",
             )
         },
-        # Delivery and wall-clock metadata do not alter the market-analysis question.
+        # The prior-alert timestamp is semantic because it is supplied to the LLM as the
+        # reference point for the since-last-alert percentage.
         "last_msg": {
+            "time": last_msg.get("time"),
             "type": last_msg.get("type"),
             "price": last_msg.get("price"),
         },

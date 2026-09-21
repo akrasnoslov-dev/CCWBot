@@ -853,6 +853,34 @@ async def _get_reusable_event_analysis_by_context(
             confidence=decision.confidence,
             reason_for_no_alert=None,
         )
+        # Exact Context Reuse intentionally excludes the current observation timestamp, but an
+        # otherwise reusable response can explicitly state elapsed time since the prior alert.
+        # Revalidate that narrow time-dependent factual contract before reusing it.
+        current_candidate_news_ids = {
+            str(item.get("news_id")) for item in current_news if isinstance(item, dict)
+        }
+        try:
+            validate_event_analysis_output(
+                {
+                    "symbol": identity_decision.symbol,
+                    "should_alert": True,
+                    "event_key": identity_decision.event_key,
+                    "title": identity_decision.title,
+                    "message_body": identity_decision.message_body,
+                    "related_news_ids": identity_decision.related_news_ids,
+                    "possible_action": identity_decision.possible_action,
+                    "urgency": identity_decision.urgency,
+                    "confidence": identity_decision.confidence,
+                    "reason_for_no_alert": None,
+                },
+                expected_symbol=str(input_payload["symbol"]),
+                candidate_news_ids=current_candidate_news_ids,
+                market_data=input_payload.get("market"),
+                last_msg=input_payload.get("last_msg"),
+                timestamp_utc=input_payload.get("timestamp_utc"),
+            )
+        except EventAnalysisValidationError:
+            continue
         # Reapply current semantic normalization on exact reuse.  The fingerprint version
         # prevents normal reuse of older contracts, while this protects restored/imported rows
         # whose stored market event predates the core-first identity rule.
@@ -3281,6 +3309,9 @@ async def _create_event_analysis_decision(
                 _normalize_event_analysis_result_for_validation(provider_parsed),
                 expected_symbol=expected_symbol,
                 candidate_news_ids=candidate_news_ids,
+                market_data=input_payload.get("market"),
+                last_msg=input_payload.get("last_msg"),
+                timestamp_utc=input_payload.get("timestamp_utc"),
             )
         except EventAnalysisValidationError as error:
             raise AISchemaValidationError(str(error)) from error
@@ -3416,6 +3447,9 @@ async def _create_event_analysis_decision(
             normalized_parsed,
             expected_symbol=expected_symbol,
             candidate_news_ids=candidate_news_ids,
+            market_data=input_payload.get("market"),
+            last_msg=input_payload.get("last_msg"),
+            timestamp_utc=input_payload.get("timestamp_utc"),
         )
     except EventAnalysisValidationError as error:
         schema_error = AISchemaValidationError(str(error))

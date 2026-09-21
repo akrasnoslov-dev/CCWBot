@@ -356,6 +356,25 @@ def event_alert_presentation_fallback(
             "direction or a quick reversal.",
         )
 
+    if window_change is None:
+        if change_24h is not None:
+            return (
+                "The 24-hour market direction is the available verified context; no "
+                "analysed-window move is confirmed.",
+                "Watch the next short-term snapshots for confirmation or reversal.",
+            )
+        if _decimal_market_value(market_data.get("chg_since_msg_percent")) is not None:
+            return (
+                "A move since the previous alert is available, but no analysed-window "
+                "trajectory is confirmed.",
+                "Watch the next short-term snapshots for confirmation or reversal.",
+            )
+        return (
+            "Only the current market observation is available; no analysed-window trajectory "
+            "is confirmed.",
+            "Watch the next short-term snapshots for confirmation or reversal.",
+        )
+
     return (
         "The analysed-window price move is the only confirmed signal in the supplied market "
         "data.",

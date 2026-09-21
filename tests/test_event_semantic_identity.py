@@ -162,6 +162,7 @@ async def test_exact_context_reuse_recanonicalizes_and_rerenders_market_context(
     input_payload = {
         "symbol": "BTC",
         "market": {
+            "analysed_window_minutes": 180,
             "chg_window_percent": -0.53,
             "chg24h_percent": 0.19,
             "snapshots": [

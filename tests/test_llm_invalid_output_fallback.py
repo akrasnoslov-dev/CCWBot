@@ -13,6 +13,7 @@ import pytest
 
 import bot.reports as reports
 import bot.services.ai_agent_groq as ai_agent_groq
+from bot.alerting.event_analysis import validate_event_analysis_output
 from bot.services.llm import config
 from bot.services.llm.base_provider import BaseProvider, ProviderResult
 from bot.services.llm.errors import AIInvalidJsonError, AISchemaValidationError
@@ -76,6 +77,45 @@ def _valid_no_alert_analysis():
         "confidence": "medium",
         "reason_for_no_alert": "The analysed-window change is small and news is absent.",
     }
+
+
+def _grounding_market():
+    return {
+        "price": 100.0,
+        "snapshots": [{"m": -180, "p": 103.2}, {"m": 0, "p": 100.0}],
+        "analysed_window_minutes": 180,
+        "chg_window_percent": -3.1,
+        "chg24h_percent": -3.6,
+        "chg_since_msg_percent": -3.26,
+    }
+
+
+def _grounded_alert(title: str):
+    return {
+        "symbol": "BTC",
+        "should_alert": True,
+        "event_key": "btc_price_downtrend",
+        "title": title,
+        "message_body": "The supplied market evidence is notable.",
+        "related_news_ids": [],
+        "possible_action": "Review downside risk if the move continues.",
+        "urgency": "normal",
+        "confidence": "medium",
+        "reason_for_no_alert": None,
+    }
+
+
+def _grounding_schema_check(parsed):
+    try:
+        validate_event_analysis_output(
+            parsed,
+            expected_symbol="BTC",
+            candidate_news_ids=set(),
+            market_data=_grounding_market(),
+            last_msg={"time": "2026-09-19T12:00:00+00:00", "price": 103.37},
+        )
+    except Exception as error:
+        raise AISchemaValidationError(str(error)) from error
 
 
 def _valid_report_payload(report_type="daily"):
@@ -194,6 +234,45 @@ async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeyp
     )
 
     assert result.provider == "gemini"
+    assert groq.calls == 1
+    assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_unsupported_window_claim_falls_back_to_grounded_provider(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    groq = ContentProvider(
+        "groq", json.dumps(_grounded_alert("BTC down ~3.6% over the last 3 hours"))
+    )
+    gemini = ContentProvider(
+        "gemini", json.dumps(_grounded_alert("BTC down ~3.1% over the last 3 hours"))
+    )
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+
+    result = await ai_agent_groq.ask_event_analysis_raw(
+        {"symbol": "BTC", "news": [], "market": _grounding_market()},
+        schema_check=_grounding_schema_check,
+    )
+
+    assert result.provider == "gemini"
+    assert groq.calls == 1
+    assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_all_unsupported_window_claims_remain_terminal_invalid(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    invalid = json.dumps(_grounded_alert("BTC down ~3.6% over the last 3 hours"))
+    groq = ContentProvider("groq", invalid)
+    gemini = ContentProvider("gemini", invalid)
+    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+
+    with pytest.raises(AISchemaValidationError):
+        await ai_agent_groq.ask_event_analysis_raw(
+            {"symbol": "BTC", "news": [], "market": _grounding_market()},
+            schema_check=_grounding_schema_check,
+        )
+
     assert groq.calls == 1
     assert gemini.calls == 1
 

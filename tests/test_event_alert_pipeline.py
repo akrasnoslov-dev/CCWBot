@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import bot.alerts as alerts
 from bot.alerting.event_analysis import EventAnalysisDecision
+from bot.alerting.event_text import event_alert_presentation_fallback
 from bot.db.database import Base, EventAiAnalysis, save_price_snapshot
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS
 
@@ -254,6 +255,26 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
     assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_NO_ALERT
 
 
+@pytest.mark.asyncio
+async def test_all_factual_validation_failures_cannot_create_a_market_event(monkeypatch):
+    payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_analysis_raw",
+        AsyncMock(side_effect=alerts.AISchemaValidationError("window market claim is unavailable")),
+    )
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    create_market_event = AsyncMock()
+    monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+    assert decision is None
+    assert analysis_id is None
+    create_market_event.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("reason_for_no_alert", "chg_window_percent", "expected_reason"),
     (
@@ -420,6 +441,38 @@ def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
     assert "Since last alert/message" not in without_context
 
 
+def test_presentation_fallback_never_invents_an_analysed_window_move():
+    situation, action = event_alert_presentation_fallback(
+        {
+            "snapshots": [{"m": 0, "p": Decimal("108.20942528957224")}],
+            "analysed_window_minutes": 180,
+            "chg_window_percent": None,
+            "chg24h_percent": Decimal("-3.5813502370649672"),
+            "chg_since_msg_percent": Decimal("-3.2583878312836735"),
+        },
+        [],
+    )
+
+    assert "24-hour market direction" in situation
+    assert "no analysed-window move is confirmed" in situation
+    assert "next short-term snapshots" in action
+
+
+def test_presentation_fallback_uses_verified_since_alert_context_without_window_or_24h():
+    situation, _ = event_alert_presentation_fallback(
+        {
+            "snapshots": [{"m": 0, "p": Decimal("108.21")}],
+            "chg_window_percent": None,
+            "chg24h_percent": None,
+            "chg_since_msg_percent": Decimal("-3.258"),
+        },
+        [],
+    )
+
+    assert "since the previous alert" in situation
+    assert "no analysed-window trajectory is confirmed" in situation
+
+
 @pytest.mark.parametrize(
     ("market", "related_news", "expected_situation", "expected_action"),
     (
@@ -553,7 +606,7 @@ def test_event_alert_presentation_ignores_nonfinite_market_values():
         {"chg_window_percent": "NaN", "chg24h_percent": "Infinity"}, []
     )
 
-    assert "only confirmed signal" in situation
+    assert "no analysed-window trajectory is confirmed" in situation
     assert "next short-term snapshots" in action
 
 
