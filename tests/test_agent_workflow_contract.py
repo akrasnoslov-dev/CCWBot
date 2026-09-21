@@ -168,6 +168,7 @@ def test_agentic_development_workflow_contract():
     assert codex_config["agents"]["default_subagent_model"] == "gpt-5.6-terra"
     assert "max_concurrent_threads_per_session" not in codex_config["agents"]
 
+    normalized_source_of_truth = " ".join(source_of_truth.split())
     assert "docs/task_specs/" in source_of_truth
-    assert "task-specific records" in source_of_truth
-    assert "not canonical owners" in source_of_truth
+    assert "task-specific records" in normalized_source_of_truth
+    assert "not canonical owners" in normalized_source_of_truth
