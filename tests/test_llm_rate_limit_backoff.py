@@ -148,7 +148,11 @@ async def test_active_backoff_skips_event_analysis_without_no_alert(monkeypatch)
                 "analysis_id": "event_analysis_btc_backoff",
                 "symbol": "BTC",
                 "news": [],
-                "market": {"price": 100000.0, "chg24h": 1.0, "chg_since_msg": None},
+                "market": {
+                    "price": 100000.0,
+                    "chg24h_percent": 1.0,
+                    "chg_since_msg_percent": None,
+                },
             }
         )
 

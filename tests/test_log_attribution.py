@@ -63,7 +63,7 @@ def test_redacting_formatter_keeps_both_behaviours(monkeypatch):
         assert line.startswith(f"{timestamp} | ")
 
 
-def test_candidate_crossing_is_recorded_independently_of_the_llm(caplog):
+def test_analysis_candidate_is_recorded_independently_of_the_llm(caplog):
     # Market events are only created after a successful analysis, so a dead LLM yields zero
     # events rather than events without analyses. This line is what makes "detections
     # happening but zero market events created" measurable rather than inferred.
@@ -71,43 +71,41 @@ def test_candidate_crossing_is_recorded_independently_of_the_llm(caplog):
 
     payload = {
         "symbol": "btc",
-        "market": {"chg_window": -4.2, "chg24h": -6.1},
+        "market": {"chg_window_percent": -4.2, "chg24h_percent": -6.1},
         "analysed_window_minutes": 30,
     }
 
     with caplog.at_level(logging.INFO, logger="bot.alerts"):
-        alerts._log_event_alert_candidate_crossing(
-            "btc", payload, alert_threshold_percent=3.0
-        )
+        alerts._log_event_alert_candidate_crossing("btc", payload)
 
     message = caplog.records[0].getMessage()
-    assert "ops_event=event_alert_candidate_crossing" in message
+    assert "ops_event=event_alert_analysis_candidate" in message
     assert "symbol=BTC" in message
     assert "analysed_window_change_percent=-4.2" in message
-    assert "crossed_threshold=true" in message
+    assert "context_fingerprint=" in message
 
 
-def test_candidate_crossing_reports_below_threshold_moves_too(caplog):
+def test_analysis_candidate_records_small_market_moves_without_a_gate(caplog):
     from bot import alerts
 
-    payload = {"symbol": "btc", "market": {"chg_window": 0.4, "chg24h": 1.0}}
+    payload = {
+        "symbol": "btc",
+        "market": {"chg_window_percent": 0.4, "chg24h_percent": 1.0},
+    }
 
     with caplog.at_level(logging.INFO, logger="bot.alerts"):
-        alerts._log_event_alert_candidate_crossing(
-            "btc", payload, alert_threshold_percent=3.0
-        )
+        alerts._log_event_alert_candidate_crossing("btc", payload)
 
-    assert "crossed_threshold=false" in caplog.records[0].getMessage()
+    assert "analysed_window_change_percent=0.4" in caplog.records[0].getMessage()
 
 
 def test_candidate_crossing_survives_a_missing_market_block(caplog):
     from bot import alerts
 
     with caplog.at_level(logging.INFO, logger="bot.alerts"):
-        alerts._log_event_alert_candidate_crossing("btc", {}, alert_threshold_percent=None)
+        alerts._log_event_alert_candidate_crossing("btc", {})
 
     message = caplog.records[0].getMessage()
-    assert "crossed_threshold=false" in message
     assert "analysed_window_change_percent=None" in message
 
 
@@ -116,15 +114,13 @@ def test_candidate_crossing_carries_no_recipient_or_message_data(caplog):
 
     payload = {
         "symbol": "btc",
-        "market": {"chg_window": -4.2},
+        "market": {"chg_window_percent": -4.2},
         "news": [{"news_id": "n1", "title": "secret headline"}],
         "recipients": [12345678],
     }
 
     with caplog.at_level(logging.INFO, logger="bot.alerts"):
-        alerts._log_event_alert_candidate_crossing(
-            "btc", payload, alert_threshold_percent=3.0
-        )
+        alerts._log_event_alert_candidate_crossing("btc", payload)
 
     message = caplog.records[0].getMessage()
     assert "secret headline" not in message

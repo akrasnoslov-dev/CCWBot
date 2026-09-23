@@ -7,6 +7,7 @@ eligibility policy, or schema/model declarations.
 """
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -43,7 +44,6 @@ async def save_alert(
     trigger_reason: str | None = None,
     trigger_source: str | None = None,
     numeric_context: str | None = None,
-    thresholds_used: str | None = None,
     llm_severity: str | None = None,
     llm_reasoning_summary: str | None = None,
     fallback_mode: bool = False,
@@ -62,7 +62,6 @@ async def save_alert(
         trigger_reason=trigger_reason,
         trigger_source=trigger_source,
         numeric_context=numeric_context,
-        thresholds_used=thresholds_used,
         llm_severity=normalize_stored_severity(llm_severity),
         llm_reasoning_summary=llm_reasoning_summary,
         fallback_mode=fallback_mode,
@@ -306,7 +305,6 @@ async def reserve_alert_delivery(
     trigger_reason: str | None = None,
     trigger_source: str | None = None,
     numeric_context: str | None = None,
-    thresholds_used: str | None = None,
     llm_severity: str | None = None,
     llm_reasoning_summary: str | None = None,
     fallback_mode: bool = False,
@@ -339,7 +337,6 @@ async def reserve_alert_delivery(
         existing.trigger_reason = trigger_reason
         existing.trigger_source = trigger_source
         existing.numeric_context = numeric_context
-        existing.thresholds_used = thresholds_used
         existing.llm_severity = normalize_stored_severity(llm_severity)
         existing.llm_reasoning_summary = llm_reasoning_summary
         existing.fallback_mode = fallback_mode
@@ -359,7 +356,6 @@ async def reserve_alert_delivery(
         trigger_reason=trigger_reason,
         trigger_source=trigger_source,
         numeric_context=numeric_context,
-        thresholds_used=thresholds_used,
         llm_severity=normalize_stored_severity(llm_severity),
         llm_reasoning_summary=llm_reasoning_summary,
         fallback_mode=fallback_mode,
@@ -575,7 +571,7 @@ async def get_recent_alert_delivery_outcome_by_context_fingerprint(
     if statuses:
         filters.append(AlertDeliveryOutcome.status.in_(sorted(statuses)))
     if filters:
-        statement = statement.where(or_(*filters))
+        statement = statement.where(and_(*filters))
     return await session.scalar(
         statement.order_by(
             AlertDeliveryOutcome.created_at.desc(),
@@ -592,9 +588,9 @@ async def get_or_create_market_event(
     event_type: str,
     event_key: str,
     event_instance_key: str | None = None,
-    price: float,
+    price: Decimal,
     price_change_percent: float,
-    previous_price: float | None = None,
+    previous_price: Decimal | None = None,
     last_24h_change: float | None = None,
     last_7d_change: float | None = None,
     detected_at: datetime | None = None,
@@ -685,8 +681,7 @@ async def get_reusable_event_analysis_candidates(
     *,
     symbol: str,
     alert_type: str,
-    bucket_started_at: datetime,
-    bucket_ended_at: datetime,
+    context_fingerprint: str,
 ) -> list[tuple[MarketEvent, EventAiAnalysis]]:
     """Return canonical attached analyses that can be checked for exact event reuse."""
     result = await session.execute(
@@ -697,8 +692,7 @@ async def get_reusable_event_analysis_candidates(
         )
         .where(MarketEvent.symbol == symbol.upper())
         .where(MarketEvent.event_type == alert_type)
-        .where(MarketEvent.detected_at >= bucket_started_at)
-        .where(MarketEvent.detected_at < bucket_ended_at)
+        .where(EventAiAnalysis.context_fingerprint == context_fingerprint)
         .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
         .where(EventAiAnalysis.status.in_(SUCCESS_ANALYSIS_STATUSES))
         .where(EventAiAnalysis.should_alert.is_(True))
@@ -719,6 +713,7 @@ async def save_event_ai_analysis(
     provider: str,
     model: str,
     input_hash: str,
+    context_fingerprint: str | None = None,
     analysis_text: str | None = None,
     plain_text: str | None = None,
     html_text: str | None = None,
@@ -741,6 +736,7 @@ async def save_event_ai_analysis(
         provider=provider,
         model=model,
         input_hash=input_hash,
+        context_fingerprint=context_fingerprint,
         analysis_text=analysis_text,
         plain_text=plain_text,
         html_text=html_text,
@@ -771,6 +767,7 @@ async def save_event_llm_analysis(
     llm_operation_id: str | None = None,
     symbol: str,
     input_hash: str,
+    context_fingerprint: str | None = None,
     raw_input_json: str,
     raw_output_json: str | None,
     status: str,
@@ -827,6 +824,7 @@ async def save_event_llm_analysis(
         provider=provider,
         model=model,
         input_hash=input_hash,
+        context_fingerprint=context_fingerprint,
         raw_input_json=raw_input_json,
         raw_output_json=raw_output_json,
         parsed_result_json=parsed_result_json,

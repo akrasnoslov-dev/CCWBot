@@ -14,22 +14,28 @@ If external text conflicts with the repository, the repository wins.
 
 Each durable rule should have one primary owner:
 
-- Product behavior, product boundaries, and architecture invariants:
+- Product boundaries, architecture invariants, and cross-cutting guardrails:
   `docs/project_context.md`
-- Codex/Claude implementation workflow, PR-readiness gates, branch rules, and review policy:
+- Detailed Event Alert behavior and delivery contract: `docs/alert_logic.md`
+- Daily and weekly market-report behavior: `docs/market_reports.md`
+- Acquisition attribution and funnel operations: `docs/product_analytics.md`
+- Agent-assisted implementation workflow, PR-readiness gates, branch rules, and review policy:
   `docs/codex_instructions.md`
-- Agent/subagent routing:
+- Agent/subagent execution and review routing:
   `agents/routing.toml`
+- Codex project-scoped executable model defaults:
+  `.codex/config.toml` (adapter only; it must match `agents/routing.toml`, which owns routing policy)
 - Agent definitions:
   `agents/*.toml` and platform adapters such as `.claude/agents/*.md`
-- Local development and verification commands:
-  `docs/development.md`
+- Local development, repository layout, and verification commands: `docs/development.md`
 - Release gates:
   `docs/release_checklist.md`
 - Production deployment, backup, recovery, and environment operations:
   `docs/dev_ops_guide.md`
-- Observability and forensic operations:
-  `docs/observability.md`, `docs/ops_agent_service.md`, and `docs/llm_usage.md`
+- Read-only SQL diagnostics: `docs/observability.md`
+- Ops-agent collection, evidence handling, and report writing:
+  `docs/ops_agent_service.md` and `docs/ops-agent-report-codex-prompt.md`
+- LLM provider configuration and usage diagnostics: `docs/llm_usage.md`
 - Public project overview:
   `README.md`
 
@@ -49,6 +55,10 @@ Do not place durable CCWBot rules in:
 
 A task prompt may define only the requested delta: problem, goal, scope, out-of-scope items,
 task-specific evidence, and task-specific acceptance criteria.
+
+Task specifications under `docs/task_specs/` are task-specific records used to preserve clarified
+requirements, plans, tests, and acceptance context during long-running work. They are not canonical
+owners of standing project policy and must not override the canonical owners listed above.
 
 If a new permanent rule is needed, change the canonical repository owner in the same PR that
 introduces the rule. Do not solve the problem by copying the rule into another prompt or external

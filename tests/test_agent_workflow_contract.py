@@ -6,18 +6,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
-
-MANDATORY_RULE_IDS = {
-    "security_sensitive",
-    "database_schema",
-    "alert_report_logic",
-    "llm_prompt_output",
-    "production_debugging",
-    "multi_module_refactor",
-    "api_token_rate_limit",
-    "premium_payments",
-    "broad_repository_review",
-}
+CLAUDE_AGENTS_DIR = ROOT / ".claude" / "agents"
 
 
 def _load_toml(path: Path) -> dict:
@@ -33,6 +22,11 @@ def _agent_names() -> set[str]:
     return {path.stem for path in _agent_paths()}
 
 
+def _adapter_path(agent_name: str) -> Path:
+    adapter_name = agent_name.removesuffix("_agent").replace("_", "-")
+    return CLAUDE_AGENTS_DIR / f"{adapter_name}.md"
+
+
 def test_agent_definitions_have_required_schema():
     for path in _agent_paths():
         data = _load_toml(path)
@@ -40,6 +34,7 @@ def test_agent_definitions_have_required_schema():
         assert data["name"] == path.stem
         assert isinstance(data.get("role"), str) and data["role"].strip()
         assert isinstance(data.get("mission"), str) and data["mission"].strip()
+        assert data.get("review", {}).get("mode") == "read_only"
 
         instructions = data.get("instructions")
         assert isinstance(instructions, dict)
@@ -61,17 +56,37 @@ def test_agent_routing_references_existing_agents():
     assert defaults["runtime_bot_loads_agents"] is False
     assert defaults["non_trivial_task_requires_agent_check"] is True
     assert defaults["high_risk_skip_requires_written_reason"] is True
+    assert defaults["prefer_parallel_subagents_when_available"] is True
 
     rules = data.get("rules")
     assert isinstance(rules, list)
-    assert MANDATORY_RULE_IDS <= {rule["id"] for rule in rules}
+    assert len({rule["id"] for rule in rules}) == len(rules)
+    referenced_agents: set[str] = set()
 
     for rule in rules:
+        assert isinstance(rule.get("id"), str) and rule["id"].strip()
         assert isinstance(rule.get("description"), str) and rule["description"].strip()
         assert isinstance(rule.get("triggers"), list) and rule["triggers"]
         assert isinstance(rule.get("must_use"), list) and rule["must_use"]
         assert set(rule["must_use"]) <= agent_names
         assert set(rule.get("also_consider", [])) <= agent_names
+        assert len(rule["must_use"]) == len(set(rule["must_use"]))
+        assert len(rule.get("also_consider", [])) == len(set(rule.get("also_consider", [])))
+        assert not set(rule["must_use"]) & set(rule.get("also_consider", []))
+        referenced_agents.update(rule["must_use"])
+        referenced_agents.update(rule.get("also_consider", []))
+
+    assert agent_names <= referenced_agents
+
+
+def test_agent_definitions_have_matching_claude_adapters():
+    for path in _agent_paths():
+        adapter_path = _adapter_path(path.stem)
+        assert adapter_path.is_file(), f"{path.name} has no matching Claude adapter"
+        content = adapter_path.read_text(encoding="utf-8")
+        assert content.startswith("---\n")
+        assert f"name: {path.stem.removesuffix('_agent').replace('_', '-')}\n" in content
+        assert "read-only reviewer" in content or "never edit files" in content
 
 
 def test_source_of_truth_declares_canonical_owners():
@@ -79,6 +94,9 @@ def test_source_of_truth_declares_canonical_owners():
 
     for required_path in (
         "docs/project_context.md",
+        "docs/alert_logic.md",
+        "docs/market_reports.md",
+        "docs/product_analytics.md",
         "docs/codex_instructions.md",
         "agents/routing.toml",
         "docs/development.md",
@@ -103,16 +121,11 @@ def test_bootstrap_docs_point_to_canonical_repository_owners():
 
 def test_supporting_docs_link_to_canonical_workflow_without_owning_routing():
     development = (ROOT / "docs/development.md").read_text(encoding="utf-8")
-    agent_workflow = (ROOT / "docs/codex_agent_workflow.md").read_text(encoding="utf-8")
     agent_readme = (ROOT / "agents/README.md").read_text(encoding="utf-8")
 
-    assert "docs/source_of_truth.md" in development
-    assert "docs/codex_instructions.md" in development
-    assert "agents/routing.toml" in development
-
-    assert "agents/routing.toml" in agent_workflow
-    assert "docs/codex_instructions.md" in agent_workflow
-    assert "explanatory only" in agent_workflow
+    assert "source_of_truth.md" in development
+    assert "codex_instructions.md" in development
+    assert "routing.toml" in development
 
     assert "agents/routing.toml" in agent_readme
     assert "docs/source_of_truth.md" in agent_readme
@@ -123,3 +136,39 @@ def test_external_codex_review_is_non_recursive():
 
     assert "External GitHub `@codex review` is optional, not a recursive gate" in content
     assert "do not automatically trigger it after every fix" in content
+
+
+def test_agentic_development_workflow_contract():
+    workflow = (ROOT / "docs/codex_instructions.md").read_text(encoding="utf-8")
+    source_of_truth = (ROOT / "docs/source_of_truth.md").read_text(encoding="utf-8")
+    routing = _load_toml(AGENTS_DIR / "routing.toml")
+    codex_config = _load_toml(ROOT / ".codex" / "config.toml")
+
+    for required_text in (
+        "Clarification gate",
+        "Task specification and plan",
+        "Test-first gate",
+        "Worktree isolation",
+        "Orchestrator and workers",
+        "Token-efficiency objective",
+        "docs/task_specs/",
+        "No green verification, no completion",
+    ):
+        assert required_text in workflow
+
+    execution = routing["execution"]
+    assert execution["orchestrator_model"] == "gpt-5.6-sol"
+    assert execution["default_worker_model"] == "gpt-5.6-terra"
+    assert execution["low_cost_worker_model"] == "gpt-5.6-luna"
+    assert execution["worker_count_policy"] == "adaptive"
+    assert execution["isolation"] == "git_worktree"
+    assert execution["sol_worker_policy"] == "escalation_only"
+
+    assert codex_config["model"] == "gpt-5.6-sol"
+    assert codex_config["agents"]["default_subagent_model"] == "gpt-5.6-terra"
+    assert "max_concurrent_threads_per_session" not in codex_config["agents"]
+
+    normalized_source_of_truth = " ".join(source_of_truth.split())
+    assert "docs/task_specs/" in source_of_truth
+    assert "task-specific records" in normalized_source_of_truth
+    assert "not canonical owners" in normalized_source_of_truth

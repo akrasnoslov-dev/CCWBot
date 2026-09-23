@@ -4,9 +4,20 @@ from importlib import util
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 
 from bot.db.database import Base, init_db
+
+
+def _alembic_head() -> str:
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "alembic"))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert len(heads) == 1
+    return heads[0]
 
 
 def _load_comments_migration():
@@ -34,6 +45,19 @@ def _load_market_heartbeat_migration():
     return module
 
 
+def _load_event_alert_policy_migration():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic/versions/0030_event_alert_policy_cleanup.py"
+    )
+    spec = util.spec_from_file_location("migration_0030_event_alert_policy_cleanup", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_all_tables_and_columns_have_comments():
     for table in Base.metadata.sorted_tables:
         assert table.comment, f"{table.name} is missing a table comment"
@@ -44,6 +68,7 @@ def test_all_tables_and_columns_have_comments():
 def test_database_comments_migration_matches_model_metadata():
     migration = _load_comments_migration()
     heartbeat_migration = _load_market_heartbeat_migration()
+    policy_migration = _load_event_alert_policy_migration()
 
     assert set(migration.TABLE_COMMENTS).issubset(Base.metadata.tables)
     assert set(migration.COLUMN_COMMENTS).issubset(Base.metadata.tables)
@@ -52,12 +77,26 @@ def test_database_comments_migration_matches_model_metadata():
         table = Base.metadata.tables[table_name]
         assert migration.TABLE_COMMENTS[table_name] == table.comment
         for column_name, column_comment in migration.COLUMN_COMMENTS[table_name].items():
+            if column_name not in table.columns:
+                # Later migrations may deliberately retire obsolete Event Alert columns.
+                continue
             column = table.columns[column_name]
             if table_name == "users" and column_name == "alert_frequency_seconds":
                 assert column_comment == heartbeat_migration.PREVIOUS_ALERT_FREQUENCY_COMMENT
                 assert column.comment == heartbeat_migration.MARKET_HEARTBEAT_FREQUENCY_COMMENT
                 continue
+            if (table_name, column_name) in policy_migration.PRICE_COLUMN_COMMENTS:
+                assert column_comment == policy_migration.PREVIOUS_PRICE_COLUMN_COMMENTS[
+                    (table_name, column_name)
+                ]
+                assert column.comment == policy_migration.PRICE_COLUMN_COMMENTS[
+                    (table_name, column_name)
+                ]
+                continue
             assert column_comment == column.comment
+
+    for (table_name, column_name), comment in policy_migration.PRICE_COLUMN_COMMENTS.items():
+        assert Base.metadata.tables[table_name].columns[column_name].comment == comment
 
 
 @pytest.mark.asyncio
@@ -69,7 +108,7 @@ async def test_database_comments_migration_applies_to_head(tmp_path):
     session = session_local()
     try:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert revision == "0029_llm_operation_outcomes"
+        assert revision == _alembic_head()
     finally:
         await session.close()
         await engine.dispose()

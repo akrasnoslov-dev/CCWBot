@@ -65,7 +65,7 @@ _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
     "gemini": ("GEMINI_MODEL", "gemini-2.5-flash"),
-    "mistral": ("MISTRAL_MODEL", "mistral-small-latest"),
+    "mistral": ("MISTRAL_MODEL", "mistral-small-2603"),
 }
 
 # Every call type that reaches a provider, in a stable order for the startup configuration log.

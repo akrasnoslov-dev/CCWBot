@@ -1,11 +1,20 @@
-version = 1
-description = "Codex task routing rules for CCWBot review subagents."
+version = 3
+description = "Codex task routing rules for CCWBot execution and review subagents."
 
 [defaults]
 runtime_bot_loads_agents = false
 non_trivial_task_requires_agent_check = true
 high_risk_skip_requires_written_reason = true
 prefer_parallel_subagents_when_available = true
+
+[execution]
+orchestrator_model = "gpt-5.6-sol"
+default_worker_model = "gpt-5.6-terra"
+low_cost_worker_model = "gpt-5.6-luna"
+worker_count_policy = "adaptive"
+isolation = "git_worktree"
+sol_worker_policy = "escalation_only"
+token_efficiency_objective = true
 
 [[rules]]
 id = "security_sensitive"
@@ -27,9 +36,14 @@ must_use = ["db_migration_guardian"]
 also_consider = ["security_review_agent", "test_ci_agent"]
 triggers = [
   "Alembic migration",
-  "bot/db/database.py",
+  "bot/db/",
+  "bot/storage.py",
+  "bot/domain/premium.py",
+  "alembic/versions/",
   "async SQLAlchemy session handling",
   "payment or delivery idempotency",
+  "Premium trial persistence",
+  "analytics persistence",
   "new table or column comment",
 ]
 
@@ -40,7 +54,7 @@ must_use = ["architecture_guardian", "market_pipeline_agent", "product_policy_ag
 also_consider = ["test_ci_agent"]
 triggers = [
   "alert generation",
-  "report generation",
+  "market report generation",
   "recipient loop",
   "market event",
   "AI analysis reuse",
@@ -73,6 +87,22 @@ triggers = [
   "health endpoint",
   "runtime logs",
   "VPS update",
+]
+
+[[rules]]
+id = "ops_agent_observability"
+description = "Diagnostic collection, sanitized operational evidence, and generated report finalization."
+must_use = ["ops_observability_agent", "security_review_agent", "test_ci_agent"]
+also_consider = ["devops_release_agent", "architecture_guardian"]
+triggers = [
+  "ops-agent",
+  "diagnostic bundle",
+  "collector status",
+  "evidence collection",
+  "detector",
+  "redaction",
+  "report finalization",
+  "ccwbot_investigator",
 ]
 
 [[rules]]
@@ -114,6 +144,20 @@ triggers = [
   "revokepremium",
   "subscription expiry",
   "non-BTC alert gating",
+]
+
+[[rules]]
+id = "growth_analytics"
+description = "Acquisition attribution, product analytics, and user-profile lifecycle changes."
+must_use = ["security_review_agent", "product_policy_agent", "test_ci_agent"]
+also_consider = ["db_migration_guardian"]
+triggers = [
+  "acquisition link",
+  "source/campaign/creative",
+  "analytics event",
+  "attribution",
+  "Premium trial",
+  "user profile sync",
 ]
 
 [[rules]]

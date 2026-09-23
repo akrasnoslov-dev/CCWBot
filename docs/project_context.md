@@ -42,11 +42,17 @@ Current product behavior:
 - Non-BTC automatic alerts require active Premium and enabled watchlist choices.
 - Event Alerts are market-event-first: analysed-window market context is the primary basis,
   and news is supporting context only. Standalone news-only Event Alerts are disabled.
-- Event Alerts use conservative pre-LLM similar-context reuse inside the semantic cooldown window.
-  The reuse key is built from sanitized stable market/news context, not raw prompts, raw outputs,
-  timestamps, user ids, or arbitrary hard movement-threshold gates.
-- New news alone cannot allow a same-family repeat inside semantic cooldown; a repeat must have
-  market-context escalation such as higher urgency or materially changed analysed-window movement.
+- No deterministic numeric market threshold may create, reject, suppress, or bypass an Event
+  Alert. Numeric market values are evidence for Event Analysis, not backend product gates.
+- Event Alert significance belongs to the schema-validated LLM decision. Pre-LLM Exact Context
+  Reuse is permitted only for exactly unchanged semantic Event Analysis input; it has no buckets,
+  tolerances, or rounded market values. Runtime IDs and observation timestamps are excluded.
+- The Semantic Cooldown is a strict four hours for the same canonical event key or semantic
+  family. It has no numeric-movement, new-news, or urgency bypass.
+- Recipient eligibility is delivery-only: detection and market-event creation run even when no
+  recipient can receive that coin's alert.
+- Automatic BTC, ETH, GRAM, and SOL Event Analysis retains CoinGecko full source precision through
+  cache, snapshots, calculations, and LLM input; presentation formatting is separate.
 - Event Alert `Possible action` stays in alert copy and is observed for quality; generic wording
   is not a suppression gate.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
@@ -56,6 +62,9 @@ Current product behavior:
 
 Repository authority and ownership are defined in `docs/source_of_truth.md`.
 
-This file is the canonical owner for product behavior, product boundaries, and architecture
-invariants. Workflow, release, operational, and agent-routing rules belong to their canonical
+Detailed contracts live in `alert_logic.md` (Event Alerts), `market_reports.md` (daily and weekly
+reports), and `product_analytics.md` (attribution and funnel operations).
+
+This file is the canonical owner for cross-cutting product boundaries and architecture invariants.
+Workflow, release, operational, agent-routing, and feature-specific rules belong to their canonical
 owners and should be linked rather than repeated here.

@@ -13,15 +13,9 @@ Use this checklist for explicit `dev` -> `main` production release PRs.
 
 ## Required Verification
 
-```bash
-python -m py_compile main.py bot/config.py bot/storage.py bot/health.py bot/alerting/alert_rules.py bot/alerting/alert_severity.py bot/db/database.py bot/domain/premium.py bot/domain/supported_coins.py bot/services/price_service.py bot/services/news_service.py bot/services/ai_agent_groq.py
-ruff check .
-python -m pytest tests/ -v -ra --durations=20
-docker compose config >/dev/null
-```
-
-Use `.env.example` for Compose validation when possible. Do not paste expanded Compose output.
-`docker compose config` is not migration verification.
+Run the default verification from `docs/development.md`. Use `.env.example` for Compose validation
+when possible; do not paste expanded Compose output. `docker compose config` is not migration
+verification.
 
 For PRs that include Alembic migrations, also confirm:
 
@@ -35,11 +29,10 @@ CI also applies Alembic head to a temporary PostgreSQL service. That confirms ba
 application and runs the ops-agent query-contract test against it, but it does not replace a fresh
 production backup before real migrations.
 
-Alembic revision ids must be 32 characters or shorter because
-`alembic_version.version_num` is `VARCHAR(32)`. Prefer compact numeric/descriptive ids, for example
-`0022_unique_event_analysis`.
-
 ## PR Description Must Include
+
+Follow the PR-readiness and `Self-review / risk check` requirements in
+`docs/codex_instructions.md`. This release checklist adds release-specific confirmation:
 
 - Summary
 - Files changed

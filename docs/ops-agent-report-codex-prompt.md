@@ -4,39 +4,21 @@ You are analyzing a CCWBot ops-agent diagnostic bundle and writing the final ope
 
 ## Role
 
-`ops-agent` is only a local diagnostic data collector.
+Follow `ops_agent_service.md` for service boundaries, production access, safety rules, partial
+bundle handling, and report-success conditions. This prompt owns evidence interpretation and the
+final report format.
 
-It does not use an LLM and does not write the final operational report.
-
-Your role is to:
-
-1. read the exported diagnostic bundle;
-2. reason over the evidence;
-3. identify problems, likely causes, and improvement opportunities;
-4. write a clear English Markdown operational report;
-5. save the report under `/opt/CCWBot/reports/ops-agent/reports/`.
-
-Do not modify production systems, apply fixes, edit code, restart services, or create implementation prompts unless explicitly requested by the operator.
-
-Do not download generated bundles or reports into the repo worktree. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
-
-Ops-agent/report PRs are observability-only unless the task explicitly asks otherwise. Do not
-change runtime bot behavior, Event Alert logic, Premium/watchlist/payment behavior, deployment
-scripts, or database schema as part of a report task.
-
-On production, run only the root-owned ops-agent wrappers authorized by the operator:
-
-* `sudo /usr/local/bin/ccwbot-ops-agent-collect` with the wrapper's safe collection arguments;
-* `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success` after the report success conditions below are met.
-
-Do not run raw `docker compose`, raw `ops-agent`, deployment, restart, migration, environment-printing, or secret-reading commands.
+Your role is to read the exported bundle, distinguish confirmed findings from likely or unknown
+ones, and write a concise English Markdown report under
+`/opt/CCWBot/reports/ops-agent/reports/`. Do not apply fixes or change production systems unless
+the operator explicitly asks.
 
 ## Required reading order
 
 Start with the bundle-specific instructions and metadata:
 
-1. `CODEX_INSTRUCTIONS.md`
-2. `manifest.json`
+1. `manifest.json`
+2. `CODEX_INSTRUCTIONS.md`
 3. `bundle_summary.md`
 4. `decision_report_context.md`
 5. `detectors/detector_summary.md`
@@ -110,37 +92,6 @@ do not compare them across bundles. Treat database suppression effectiveness as 
 logged `suppression_reason_counts` are direct operational-log evidence but still not durable
 database rows.
 
-## Privacy and safety rules
-
-Do not include any of the following in the final report:
-
-* raw Telegram text;
-* raw LLM prompts;
-* raw LLM outputs;
-* secrets;
-* API keys;
-* connection strings;
-* database URLs;
-* payment ids;
-* charge ids;
-* invoice payloads;
-* chat ids;
-* Telegram ids;
-* usernames;
-* first names;
-* private log excerpts;
-* raw JSON dumps;
-* long log excerpts;
-* Codex prompts.
-
-Use redacted references only, such as:
-
-* `user_ref:u_7c91b2`
-* `chat_ref:c_45ab19`
-* `payment_ref:p_f09d33`
-
-Use these refs only when user-specific remediation is actually needed. Prefer aggregate descriptions when possible.
-
 ## Final report format
 
 Write the final report in English Markdown only. Do not create a JSON summary file.
@@ -159,7 +110,6 @@ Top issue: ...
 Affected users: ...
 Most severe finding: ...
 Recommended next fix: ...
-PR mapping: ...
 
 ## Report Metadata
 
@@ -200,12 +150,6 @@ Command/date input caveat: ...
 **Recommended action:**
 **Confidence:** high / medium / low
 
-### PR Mapping
-
-- Proposed fix: ...
-- Covered by: PR2 suppression observability / PR3 semantic identity / separate n/a Event Alert fix / new work
-- New work required: yes/no
-
 ## Likely Findings
 
 ## Unknown / Needs Investigation
@@ -240,14 +184,7 @@ The Executive Summary must answer:
 * what should be fixed first;
 * whether planned work covers the fix or new work is required.
 
-Major findings must include Severity, Evidence, User impact, Recommended action,
-and PR mapping.
-
-Use these planned-work mappings when supported by evidence:
-
-* PR2: suppression observability/reasons, alert wording clarity, docs updates.
-* PR3: semantic event family normalization, stable event identity, filtered alert history, optional Telegram topics per coin backlog.
-* Event Alert cleanup regression checks: Event Alert copy must use clear percentage labels, omit missing numeric fields instead of rendering `n/a`, `unknown`, `unavailable`, or `null`, and report duplicate analyses, same-family repeat noise, unexplained delivery gaps, placeholders, and old labels.
+Major findings must include Severity, Evidence, User impact, Recommended action, and Confidence.
 
 ## Percentages and missing data
 

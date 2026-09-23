@@ -39,10 +39,12 @@ Alembic revision ids must be 32 characters or shorter because the default
 `alembic_version.version_num` column is `VARCHAR(32)`. Prefer compact numeric/descriptive ids such
 as `0022_unique_event_analysis`; long revision ids can break migration execution.
 
-## Repository workflow authority
+## Scope boundaries
 
-Standing implementation, PR, review, and agent-routing rules are not owned by this file.
-Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing.toml`.
+This document owns local development, repository layout, and verification. For durable product
+behavior, use `project_context.md`, `alert_logic.md`, `market_reports.md`, and
+`product_analytics.md`. For implementation workflow and review policy, use
+`source_of_truth.md`, `codex_instructions.md`, and `agents/routing.toml`.
 
 ## Runtime Notes
 
@@ -63,84 +65,14 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
 - Migration `0007_unique_telegram_user_id` blocks startup if duplicate Telegram users already
   exist. Merge duplicates before applying it.
 - Local `state.json` is a fallback only and must not be committed.
-- Automatic Event Alerts use per-symbol LLM analysis every 30 minutes. Custom persisted
-  interval values are normalized back to 1800 seconds. Active symbols are staggered across
-  the cycle to avoid burst LLM calls; for the current symbols the first-delay pattern is
-  BTC 0s, ETH 300s, GRAM 600s, SOL 900s. Staggering is anchored to the wall-clock cycle, so
-  restarts preserve symbol spacing and do not pair symbols together. BTC is free; enabled
-  non-BTC watchlist alerts require active Premium.
-- Event Alert messages show the analysed-window price change. The window is derived from
-  `AUTOMATIC_CHECK_INTERVAL_SECONDS` and the compact payload point count: 30 minutes * 6
-  points = 3 hours by default. The analysed-window baseline ignores stale snapshots outside
-  one automatic check interval before the window start; if no fresh baseline exists, the
-  message leaves the analysed-window change unknown instead of reusing old market data.
-- Event Alerts are market-event-first. Normal Event Analysis must set `should_alert=true` only
-  when analysed-window market context justifies a useful alert. A backend guard also rejects
-  clear news-only Event Alert decisions even if the LLM returns `should_alert=true`. News can
-  support or explain an alert, but standalone news-only Event Alerts are disabled. `Possible
-  action` remains part of the alert and is not a suppression gate. Before the LLM call, the
-  runtime can reuse a recent same-context no-alert, news-only rejection, semantic cooldown
-  suppression, similar-context reuse, or delivered decision by matching a sanitized stable
-  similarity fingerprint. This avoids repeated Event Analysis calls for clearly repeated context
-  without using arbitrary hard movement thresholds as product gates.
-- Event Alert quality cleanup was split across PRs: PR1 made Event Alerts market-event-first and
-  added durable decision fields; PR2 added conservative pre-LLM similar-context reuse and removed
-  new-news-only semantic cooldown bypasses.
-- Manual `/price` checks support the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
-  Legacy `/price ton` is accepted as an alias for GRAM, and CoinGecko requests use
-  `ids=the-open-network`. `usdt` is not supported.
-- `/watchlist` and `/myplan` use PostgreSQL-backed paid Premium, one-time trial, and watchlist
-  state when `DATABASE_URL` is configured.
-- Durable growth funnel events and first-touch acquisition attribution are stored in
-  `product_events` and `user_acquisition_attributions`; see
-  [Product analytics](product_analytics.md) for the payload contract and aggregate diagnostics.
-- `/subscribe` creates a Telegram Stars invoice link for a recurring Premium subscription.
-  The price is `PREMIUM_MONTHLY_STARS` (default `199`), currency is `XTR`, and the period is
-  30 days / `2592000` seconds. Active Premium means paid access exists until `active_until`;
-  it does not prove the Telegram recurring subscription is still active. CCWBot does not
-  reliably track Telegram recurring subscription active/cancelled status, so users manage
-  recurring payments in Telegram Stars settings. `/subscribe` can still create another invoice
-  for users with active paid access, and a new payment extends access from the current paid
-  access date.
-- Paid Premium eligibility is exclusively `active_until > now`. The stored `status='active'`
-  records the last explicit lifecycle transition and may remain after natural expiry; that state
-  is not an inconsistency. An active row with no `active_until` is anomalous because eligibility
-  cannot be determined.
-- Premium unlocks automatic alerts for enabled non-BTC watchlist coins. BTC alerts and manual
-  `/price` checks remain free. Premium choices can be saved while locked; a successful payment
-  immediately activates only those previously selected coins and shows the active watchlist.
-- A first-time user who confirms a watchlist with a Premium coin can start exactly one seven-day
-  Premium trial. Trial entitlement is stored separately from paid Premium, enables the same
-  selected Premium coins and Heartbeat controls, and expires at its recorded end time. Expiry
-  preserves watchlist intent and records a single lifecycle event; a payment during trial starts
-  paid access from the payment time rather than from the trial end.
-- Market Heartbeat frequency controls regular heartbeat delivery only: Free is fixed at six hours;
-  paid Premium and active trials can select one, six, or 24 hours (default six). Event Alerts use independent
-  detection, cooldown, and LLM decisioning.
-- `/grantpremium <telegram_user_id> <days>` and `/revokepremium <telegram_user_id>` are
-  admin-only manual Premium controls for testing and support.
-- Automatic alert threshold remains one global admin-controlled value for all coins.
-- Saved non-BTC watchlist choices remain stored when paid Premium or a trial expires, but non-BTC
-  deliveries are blocked until paid Premium or a new eligible entitlement is active.
 - Alert orchestration remains in `bot/alerts.py`. Deterministic event identity, analysed-window,
   and news relevance helpers live under `bot/alerting/`; they must not perform Telegram delivery,
   recipient lookup, LLM calls, or database writes.
-- Event Alert generation must preserve `1 market event = 1 AI analysis = many deliveries`.
-  The LLM event-analysis attempt is created outside recipient loops, a resolved market event reuses
-  any existing successful attached `event_analysis`, and `_deliver_market_event_alert` only reserves,
-  sends, and stores per-recipient delivery rows. Delivery code must not call Groq or create
-  `event_ai_analyses` rows.
 - Admin System status is compact, feature-level, read-only observability. Detailed provider and
   call-type attempts live in the separate admin LLM diagnostics screen. Both use telemetry such as
   `price_state`, `event_ai_analyses`, `llm_usage_logs`, `news_items`, and `alerts`, plus existing
   in-memory Groq backoff state. It must not perform live CoinGecko, Groq, RSS, or Telegram probes.
   Use `OK`, `WARN`, `FAIL`, and `UNKNOWN` only when the underlying telemetry supports that state.
-- Event Alert identity is backend-owned after LLM validation. Broad LLM keys such as
-  `news_catalyst`, `price_movement`, and `volatility` are normalized with deterministic rules using
-  the raw key, alert title/body, and selected real related-news title/source/link context. Repeated
-  same-family alerts stay inside the semantic cooldown unless urgency increases or analysed-window
-  movement grows by the configured material delta. Selected stable news identity is diagnostics and
-  supporting context only; new news alone does not bypass semantic cooldown.
 - Migration `0022_unique_event_analysis` enforces one attached `event_analysis` row per
   `market_event_id`. During upgrade it preserves evidence by setting `market_event_id=NULL` on
   failed/no-alert attached attempts and on non-canonical duplicate successful attempts, preferring
@@ -150,21 +82,10 @@ Use `docs/source_of_truth.md`, `docs/codex_instructions.md`, and `agents/routing
   fields to `alert_delivery_outcomes`: `decision_stage`, `decision_reason`, `previous_alert_id`,
   and `context_fingerprint`.
 
-## Gradual Large-File Refactors
-
-Large files should be refactored gradually only when they are already being touched for a concrete
-reason. Do not mix structural cleanup with product behavior changes. Preserve public interfaces,
-add regression tests before moving behavior, and keep alert, Premium, payment, and watchlist logic
-unchanged unless the task explicitly asks for that behavior change.
-
-High-risk files such as `bot/alerts.py`, `bot/services/ai_agent_groq.py`, and
-`bot/db/database.py` should be split by cohesive responsibility over multiple focused PRs, not by
-line count alone.
-
 ## Ops-Agent Development
 
-`ops-agent/` is the repo-managed diagnostics collector used by the production wrapper
-`/usr/local/bin/ccwbot-ops-agent-collect`. Keep wrapper compatibility for:
+`ops-agent/` is the repo-managed diagnostics collector. Its operational contract is in
+`ops_agent_service.md`; the production wrapper is:
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect --since <UTC> --until now
@@ -216,11 +137,3 @@ If a developer manually widened the local `alembic_version.version_num` column a
 long revision locally, treat that as local-dev-only repair work: inspect `alembic_version`, confirm
 the matching migration effects are present, then update the local stamp to the short revision id or
 rerun the migration from a clean local backup. Do not mutate production Alembic state manually.
-- Telegram Stars payments arrive on the bot's Stars balance. Withdrawal to TON wallet is handled
-  outside CCWBot by the bot owner through Telegram/Fragment. CCWBot does not request or store
-  wallet addresses, does not connect wallets, and does not automate payouts. Withdrawal
-  availability, limits, exchange rate, fees, and regional restrictions are controlled by
-  Telegram/Fragment and may change.
-- Explicit subscription cancellation/refund events are not automated. Entitlement
-  remains based on `user_premium_subscriptions.active_until > now` and naturally expires when
-  renewals stop.
