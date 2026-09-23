@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -26,6 +27,8 @@ from bot.db.database import (
     Base,
     LlmUsageLog,
     MarketHeartbeat,
+    PriceSnapshot,
+    PriceState,
     User,
     UserPremiumSubscription,
     ensure_default_coin_subscriptions,
@@ -595,6 +598,183 @@ async def test_heartbeat_is_sent_when_frequency_due(monkeypatch):
         assert row.alert_type == MARKET_HEARTBEAT_TYPE
         assert row.market_heartbeat_id is not None
         assert row.status == "sent"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_delivery_keeps_decimal_prices_with_prior_delivery_context(monkeypatch):
+    """The real automatic path passes Decimal prices into a DB-backed heartbeat delivery."""
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    now = datetime.now(timezone.utc)
+    previous_price = Decimal("123456789.123456789123456789")
+    current_price = Decimal("123456790.123456789123456789")
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session)
+            await create_heartbeat(session, generated_at=now)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="previous heartbeat",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(days=2),
+                    # Persist as the production canonical JSON numeric literal, not a string.
+                    numeric_context=alerts._json_dumps({"current_price": previous_price}),
+                )
+            )
+            await session.commit()
+
+        assert await alerts._deliver_market_heartbeat(
+            app,
+            symbol="btc",
+            current_price=current_price,
+            change_24h=Decimal("1.50"),
+            now=now,
+        )
+        app.bot.send_message.assert_awaited_once()
+        async with session_local() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Alert)
+                        .where(Alert.user_id == user.id)
+                        .order_by(Alert.id)
+                    )
+                ).all()
+            )
+        delivered = rows[-1]
+        context = json.loads(delivered.numeric_context, parse_float=Decimal)
+        assert context["current_price"] == current_price
+        assert context["change_since_last_market_update_percent"] == Decimal("100") / previous_price
+        assert "Since last BTC message: +0.00%" in app.bot.send_message.await_args.kwargs["text"]
+    finally:
+        await engine.dispose()
+
+
+def test_heartbeat_decimal_context_reader_rejects_nonfinite_prior_price():
+    assert (
+        alerts._decimal_numeric_context_value('{"current_price":"NaN"}', "current_price")
+        is None
+    )
+    assert (
+        alerts._decimal_numeric_context_value('{"current_price":Infinity}', "current_price")
+        is None
+    )
+    assert alerts._decimal_numeric_context_value("[]", "current_price") is None
+
+
+@pytest.mark.asyncio
+async def test_automatic_llm_no_alert_cycle_delivers_decimal_heartbeat_and_completes(
+    monkeypatch, caplog
+):
+    """A no-alert automatic check must reach its completion log after heartbeat delivery."""
+    engine, session_local = await build_session_factory()
+    app = fake_app()
+    now = datetime.now(timezone.utc)
+    decision = alerts.EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=False,
+        event_key=None,
+        title=None,
+        message_body=None,
+        related_news_ids=[],
+        possible_action=None,
+        urgency=None,
+        confidence="medium",
+        reason_for_no_alert="The supplied market evidence does not justify an alert.",
+    )
+    try:
+        monkeypatch.setattr(alerts, "DB_ENABLED", True)
+        monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            user = await create_user(session)
+            await create_heartbeat(session, generated_at=now)
+            session.add(
+                Alert(
+                    symbol="BTC",
+                    alert_type=MARKET_HEARTBEAT_TYPE,
+                    message="previous heartbeat",
+                    sent_to_chat_id=user.telegram_chat_id,
+                    user_id=user.id,
+                    status="sent",
+                    created_at=now - timedelta(days=2),
+                    numeric_context=json.dumps({"current_price": "100000.00"}),
+                )
+            )
+            await session.commit()
+        monkeypatch.setattr(alerts, "resolve_symbols_to_check", AsyncMock(return_value=["btc"]))
+        monkeypatch.setattr(
+            alerts,
+            "get_coin_market_data_batch",
+            AsyncMock(
+                return_value={
+                    "btc": {
+                        "price": Decimal("100500.00"),
+                        "change_24h": Decimal("1.50"),
+                        "change_7d": None,
+                    }
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "get_db_alert_settings",
+            AsyncMock(return_value={"automatic_check_interval_seconds": 300}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_select_related_news_context",
+            AsyncMock(return_value=([], None, False)),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_load_news_driven_alert_candidates",
+            AsyncMock(return_value={}),
+        )
+        monkeypatch.setattr(
+            alerts,
+            "_create_event_analysis_decision",
+            AsyncMock(return_value=(decision, None)),
+        )
+
+        with caplog.at_level(logging.INFO):
+            await alerts.automatic_price_check(SimpleNamespace(application=app))
+
+        app.bot.send_message.assert_awaited_once()
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("ops_event=automatic_check_completed" in message for message in messages)
+        assert not any("ops_event=automatic_check_failed" in message for message in messages)
+        async with session_local() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(Alert).where(Alert.user_id == user.id).order_by(Alert.id)
+                    )
+                ).all()
+            )
+            price_state = await session.scalar(select(PriceState).where(PriceState.symbol == "BTC"))
+            price_snapshots = list(
+                (
+                    await session.scalars(
+                        select(PriceSnapshot).where(PriceSnapshot.symbol == "BTC")
+                    )
+                ).all()
+            )
+        assert Decimal(str(json.loads(rows[-1].numeric_context)["current_price"])) == Decimal(
+            "100500.00"
+        )
+        assert price_state is not None
+        assert Decimal(str(price_state.last_price)) == Decimal("100500.00")
+        assert price_state.last_checked_at is not None
+        assert len(price_snapshots) == 1
+        assert Decimal(str(price_snapshots[0].price)) == Decimal("100500.00")
     finally:
         await engine.dispose()
 

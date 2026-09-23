@@ -13,7 +13,8 @@ richer context without changing alert behavior.
 The report payload includes:
 
 - current USD price;
-- 1h, 24h, and 7d percentage changes when CoinGecko provides them;
+- `change_1h_percent`, `change_24h_percent`, and `change_7d_percent` when CoinGecko provides
+  them; these are already percentage values, not decimal fractions (`0.042` means `0.042%`);
 - 24h volume, market cap, and market-cap rank;
 - 7d sparkline context;
 - weekly start, weekly end, weekly high, weekly low, and range position calculated
@@ -74,8 +75,8 @@ from backend-selected market/news data.
 
 Weekly report input also includes `weekly_context`:
 
-- `scoreboard`: one row per supported symbol with 7d change, weekly start/end,
-  range context, and relative 7d performance versus BTC when BTC data exists;
+- `scoreboard`: one row per supported symbol with `change_7d_percent`, weekly start/end,
+  range context, and `vs_btc_7d_percent` when BTC data exists;
 - `breadth`: a backend summary of how many tracked assets were positive over
   seven days, plus leaders and laggards;
 - `timeline`: backend evidence from 7d sparkline path notes only.

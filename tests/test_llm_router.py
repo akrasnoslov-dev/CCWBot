@@ -28,8 +28,18 @@ class FakeProvider(BaseProvider):
         self.last_reasoning_effort = None
         self.operation_ids = []
 
-    async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
-                              response_format, timeout=15, reasoning_effort=None):
+    async def chat_completion(
+        self,
+        *,
+        call_type,
+        symbol,
+        model,
+        messages,
+        max_tokens,
+        response_format,
+        timeout=15,
+        reasoning_effort=None,
+    ):
         self.calls += 1
         self.operation_ids.append(current_llm_operation_id())
         self.last_reasoning_effort = reasoning_effort
@@ -142,9 +152,7 @@ async def test_all_providers_rate_limited_raises_rate_limit(monkeypatch):
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", AIProviderRateLimitError("429", provider="groq")),
-            "gemini": FakeProvider(
-                "gemini", AIProviderRateLimitError("429", provider="gemini")
-            ),
+            "gemini": FakeProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
         }
     )
 
@@ -260,8 +268,10 @@ def test_provider_priority_defaults_when_unset(monkeypatch):
 def test_model_for_resolves_per_provider(monkeypatch):
     monkeypatch.delenv("GROQ_MARKET_HEARTBEAT_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("MISTRAL_MODEL", raising=False)
     assert config.model_for("groq", "market_heartbeat") == "openai/gpt-oss-20b"
     assert config.model_for("gemini", "daily_report") == "gemini-2.5-flash"
+    assert config.model_for("mistral", "event_analysis") == "mistral-small-2603"
     monkeypatch.setenv("GEMINI_MODEL", "custom-gemini")
     assert config.model_for("gemini", "event_analysis") == "custom-gemini"
 
@@ -296,9 +306,7 @@ async def test_mixed_timeout_and_rate_limit_remains_a_terminal_failure(monkeypat
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", asyncio.TimeoutError()),
-            "gemini": FakeProvider(
-                "gemini", AIProviderRateLimitError("429", provider="gemini")
-            ),
+            "gemini": FakeProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
         }
     )
 
@@ -324,9 +332,7 @@ async def test_mixed_prebackoff_and_live_rate_limit_raises_rate_limit(monkeypatc
                     provider="groq", model="m", limited_until=datetime.now(timezone.utc)
                 ),
             ),
-            "gemini": FakeProvider(
-                "gemini", AIProviderRateLimitError("429", provider="gemini")
-            ),
+            "gemini": FakeProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
         }
     )
 
@@ -457,9 +463,7 @@ async def test_invalid_output_then_rate_limit_exhaustion_raises_invalid_error(mo
             "groq": FakeProvider(
                 "groq", lambda name, model: _content_result(name, model, "not json")
             ),
-            "gemini": FakeProvider(
-                "gemini", AIProviderRateLimitError("429", provider="gemini")
-            ),
+            "gemini": FakeProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
         }
     )
 

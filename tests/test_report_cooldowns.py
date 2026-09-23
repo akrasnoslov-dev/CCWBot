@@ -583,9 +583,9 @@ async def test_report_input_includes_active_symbols(monkeypatch):
         "symbol": "BTC",
         "name": "Bitcoin",
         "price": 1.0,
-        "change_1h": None,
-        "change_24h": 0.1,
-        "change_7d": None,
+        "change_1h_percent": None,
+        "change_24h_percent": 0.1,
+        "change_7d_percent": None,
         "volume_24h": None,
         "market_cap": None,
         "rank": None,
@@ -637,8 +637,8 @@ async def test_weekly_report_input_includes_breadth_and_timeline(monkeypatch):
     assert weekly_context["breadth"]["summary"].startswith("1/3 tracked assets are positive")
     assert weekly_context["scoreboard"][0]["symbol"] == "BTC"
     assert weekly_context["scoreboard"][0]["weekly_start"] == 76000.0
-    assert weekly_context["scoreboard"][0]["vs_btc_7d"] is None
-    assert weekly_context["scoreboard"][2]["vs_btc_7d"] == 4.6
+    assert weekly_context["scoreboard"][0]["vs_btc_7d_percent"] is None
+    assert weekly_context["scoreboard"][2]["vs_btc_7d_percent"] == 4.6
     assert not any("Crypto market liquidity improves" in row for row in weekly_context["timeline"])
 
 

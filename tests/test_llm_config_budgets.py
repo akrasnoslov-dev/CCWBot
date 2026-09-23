@@ -91,8 +91,9 @@ def test_current_budget_name_wins_over_legacy_name(monkeypatch):
 
 def test_report_call_types_share_one_budget_variable(monkeypatch):
     monkeypatch.setenv("LLM_REPORT_MAX_TOKENS", "999")
-    budgets = {llm_config.max_tokens_for(c) for c in ("daily_report", "weekly_report",
-                                                     "market_report")}
+    budgets = {
+        llm_config.max_tokens_for(c) for c in ("daily_report", "weekly_report", "market_report")
+    }
     assert budgets == {999}
 
 
@@ -236,11 +237,14 @@ def test_invalid_per_call_type_effort_does_not_inherit_the_global_value(monkeypa
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
         assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") == "low"
-        assert llm_config.effective_max_tokens_for(
-            call_type="event_analysis",
-            provider="groq",
-            model="gpt-oss-120b",
-        ) == llm_config.max_tokens_for("event_analysis") + 1024
+        assert (
+            llm_config.effective_max_tokens_for(
+                call_type="event_analysis",
+                provider="groq",
+                model="gpt-oss-120b",
+            )
+            == llm_config.max_tokens_for("event_analysis") + 1024
+        )
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
 
@@ -255,8 +259,14 @@ def test_reasoning_model_markers_are_configurable(monkeypatch):
 
 def test_global_reasoning_effort_reaches_only_reasoning_models_in_default_chain(monkeypatch):
     monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
-    for name in ("GROQ_EVENT_ANALYSIS_MODEL", "GROQ_MARKET_HEARTBEAT_MODEL", "GROQ_REPORT_MODEL",
-                 "GROQ_NEWS_INTELLIGENCE_MODEL", "GEMINI_MODEL", "MISTRAL_MODEL"):
+    for name in (
+        "GROQ_EVENT_ANALYSIS_MODEL",
+        "GROQ_MARKET_HEARTBEAT_MODEL",
+        "GROQ_REPORT_MODEL",
+        "GROQ_NEWS_INTELLIGENCE_MODEL",
+        "GEMINI_MODEL",
+        "MISTRAL_MODEL",
+    ):
         monkeypatch.delenv(name, raising=False)
 
     for call_type in llm_config.KNOWN_CALL_TYPES:
@@ -273,10 +283,21 @@ class _RecordingProvider(BaseProvider):
         self.name = name
         self.seen = []
 
-    async def chat_completion(self, *, call_type, symbol, model, messages, max_tokens,
-                              response_format, timeout=15, reasoning_effort=None):
-        self.seen.append({"model": model, "max_tokens": max_tokens,
-                          "reasoning_effort": reasoning_effort})
+    async def chat_completion(
+        self,
+        *,
+        call_type,
+        symbol,
+        model,
+        messages,
+        max_tokens,
+        response_format,
+        timeout=15,
+        reasoning_effort=None,
+    ):
+        self.seen.append(
+            {"model": model, "max_tokens": max_tokens, "reasoning_effort": reasoning_effort}
+        )
         return ProviderResult(provider=self.name, model=model, raw_content="{}", input_chars=1)
 
 
@@ -464,11 +485,10 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     [
         ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
         ("gemini", "GEMINI_MODEL", "gemini-2.5-flash"),
-        ("mistral", "MISTRAL_MODEL", "mistral-small-latest"),
+        ("mistral", "MISTRAL_MODEL", "mistral-small-2603"),
     ],
 )
-def test_empty_model_value_falls_back_and_warns(monkeypatch, caplog, provider, env_name,
-                                                expected):
+def test_empty_model_value_falls_back_and_warns(monkeypatch, caplog, provider, env_name, expected):
     # A present-but-empty model would otherwise be sent as model="" — a 400 the router treats
     # as deterministic, which aborts the chain instead of falling through to the next provider.
     monkeypatch.setenv(env_name, "")
@@ -608,28 +628,32 @@ def test_thinking_budget_preserves_call_type_answer_ceiling(
     call_type, base_budget, effective_budget
 ):
     assert llm_config.max_tokens_for(call_type) == base_budget
-    assert llm_config.effective_max_tokens_for(
-        call_type=call_type,
-        provider="groq",
-        model="openai/gpt-oss-20b",
-    ) == effective_budget
+    assert (
+        llm_config.effective_max_tokens_for(
+            call_type=call_type,
+            provider="groq",
+            model="openai/gpt-oss-20b",
+        )
+        == effective_budget
+    )
 
 
 @pytest.mark.parametrize(
     ("effort", "effective_budget"),
     [("low", 1824), ("medium", 8992), ("high", 25376)],
 )
-def test_gemini_budget_tracks_configured_reasoning_effort(
-    monkeypatch, effort, effective_budget
-):
+def test_gemini_budget_tracks_configured_reasoning_effort(monkeypatch, effort, effective_budget):
     monkeypatch.setenv("LLM_REPORT_REASONING_EFFORT", effort)
 
-    assert llm_config.effective_max_tokens_for(
-        call_type="daily_report",
-        provider="gemini",
-        model="gemini-2.5-flash",
-        requested_max_tokens=800,
-    ) == effective_budget
+    assert (
+        llm_config.effective_max_tokens_for(
+            call_type="daily_report",
+            provider="gemini",
+            model="gemini-2.5-flash",
+            requested_max_tokens=800,
+        )
+        == effective_budget
+    )
 
 
 def test_builtin_reasoning_markers_survive_legacy_extension_value(monkeypatch):

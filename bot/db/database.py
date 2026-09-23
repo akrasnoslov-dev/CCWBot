@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from datetime import datetime, timezone
+from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -20,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -193,9 +195,6 @@ class UserSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal settings row id.")
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"), index=True, comment="User these legacy settings belong to."
-    )
-    price_move_alert_percent: Mapped[float] = mapped_column(
-        Float, comment="Legacy per-user price movement threshold percent."
     )
     automatic_check_interval_seconds: Mapped[int] = mapped_column(
         Integer, comment="Legacy per-user automatic price check interval in seconds."
@@ -643,39 +642,6 @@ class AppSettings(Base):
     __table_args__ = {"comment": "Global bot settings controlled by admins."}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Internal settings row id.")
-    btc_alert_threshold_percent: Mapped[float] = mapped_column(
-        Float, comment="Global BTC movement percent that triggers automatic alerts."
-    )
-    major_movement_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=1.0,
-        comment="Admin-controlled movement percent threshold for BTC and ETH alerts.",
-    )
-    alt_movement_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=2.0,
-        comment="Admin-controlled movement percent threshold for non-BTC and non-ETH alerts.",
-    )
-    major_24h_medium_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=3.0,
-        comment="Admin-controlled 24 hour medium trend threshold for BTC and ETH alerts.",
-    )
-    major_24h_high_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=5.0,
-        comment="Admin-controlled 24 hour high trend threshold for BTC and ETH alerts.",
-    )
-    alt_24h_medium_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=5.0,
-        comment="Admin-controlled 24 hour medium trend threshold for altcoin alerts.",
-    )
-    alt_24h_high_threshold_percent: Mapped[float] = mapped_column(
-        Float,
-        default=8.0,
-        comment="Admin-controlled 24 hour high trend threshold for altcoin alerts.",
-    )
     automatic_check_interval_seconds: Mapped[int] = mapped_column(
         Integer, comment="Global automatic market check interval in seconds."
     )
@@ -710,8 +676,8 @@ class PriceState(Base):
     symbol: Mapped[str] = mapped_column(
         String(32), index=True, comment="Uppercase coin symbol for this market state."
     )
-    last_price: Mapped[float] = mapped_column(
-        Float, comment="Most recent market price stored for movement detection."
+    last_price: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), comment="Full-precision most recent market price used for detection."
     )
     last_24h_change: Mapped[float] = mapped_column(
         Float, comment="Most recent 24 hour percentage change from market data."
@@ -743,8 +709,8 @@ class PriceSnapshot(Base):
     symbol: Mapped[str] = mapped_column(
         String(32), index=True, comment="Uppercase coin symbol for this market snapshot."
     )
-    price: Mapped[float] = mapped_column(
-        Float, comment="Market price captured at this snapshot time."
+    price: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), comment="Full-precision market price captured at this snapshot time."
     )
     change_24h: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="24 hour percentage change captured with this snapshot."
@@ -972,9 +938,6 @@ class Alert(Base):
     numeric_context: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="JSON numeric market context used for this alert decision."
     )
-    thresholds_used: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="JSON alert thresholds used for this alert decision."
-    )
     llm_severity: Mapped[str | None] = mapped_column(
         String(32), nullable=True, comment="Severity selected or accepted for this alert."
     )
@@ -1128,9 +1091,13 @@ class MarketEvent(Base):
         index=True,
         comment="Stable idempotency key for this concrete market event occurrence.",
     )
-    price: Mapped[float] = mapped_column(Float, comment="Current price captured for the event.")
-    previous_price: Mapped[float | None] = mapped_column(
-        Float, nullable=True, comment="Previous stored price used to calculate movement."
+    price: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), comment="Full-precision current price captured for the event."
+    )
+    previous_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(38, 18),
+        nullable=True,
+        comment="Full-precision prior price used to calculate movement.",
     )
     price_change_percent: Mapped[float] = mapped_column(
         Float, comment="Percentage move from previous price to current price."
@@ -1215,6 +1182,12 @@ class EventAiAnalysis(Base):
     )
     input_hash: Mapped[str] = mapped_column(
         String(128), index=True, comment="Hash of the exact AI input used for idempotency."
+    )
+    context_fingerprint: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="Hash of the exact semantic Event Analysis input used for pre-LLM reuse.",
     )
     raw_input_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Raw JSON input payload sent to the LLM."
@@ -1501,9 +1474,7 @@ class LlmUsageLog(Base):
 class LlmOperationOutcome(Base):
     __tablename__ = "llm_operation_outcomes"
     __table_args__ = (
-        UniqueConstraint(
-            "llm_operation_id", name="uq_llm_operation_outcomes_operation_id"
-        ),
+        UniqueConstraint("llm_operation_id", name="uq_llm_operation_outcomes_operation_id"),
         Index(
             "ix_llm_operation_outcomes_call_type_created_at",
             "call_type",

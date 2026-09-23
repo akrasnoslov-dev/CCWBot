@@ -1,5 +1,6 @@
 import asyncio
 import time
+from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
@@ -129,8 +130,9 @@ async def test_get_coin_price_accepts_gram_alias(monkeypatch):
         "ids": "the-open-network",
         "vs_currencies": "usd",
         "include_24hr_change": "true",
+        "precision": "full",
     }
-    assert result == (1.75, 3.2, "gram")
+    assert result == (Decimal("1.75"), Decimal("3.2"), "gram")
 
 
 @pytest.mark.asyncio
@@ -160,7 +162,7 @@ async def test_get_coin_price_429_triggers_retry(monkeypatch):
 
     result = await price_service.get_coin_price("btc")
 
-    assert result == (52000.0, 2.5, "btc")
+    assert result == (Decimal("52000.0"), Decimal("2.5"), "btc")
     assert fake_client_context.client.calls == 2
     price_service.asyncio.sleep.assert_awaited_once_with(5)
 
@@ -181,8 +183,8 @@ async def test_get_coin_market_data_batch_builds_supported_ids(monkeypatch):
     assert requested_params["ids"] == "bitcoin,ethereum"
     assert "tether" not in requested_params["ids"]
     assert result == {
-        "btc": {"price": 60000.0, "change_24h": 1.2, "change_7d": None},
-        "eth": {"price": 3000.0, "change_24h": -0.5, "change_7d": None},
+        "btc": {"price": Decimal("60000.0"), "change_24h": Decimal("1.2"), "change_7d": None},
+        "eth": {"price": Decimal("3000.0"), "change_24h": Decimal("-0.5"), "change_7d": None},
     }
 
 
@@ -198,7 +200,9 @@ async def test_get_coin_market_data_batch_uses_current_gram_coingecko_id(monkeyp
     requested_params = get_with_retry.await_args.args[2]
     assert requested_params["ids"] == "the-open-network"
     assert "toncoin" not in requested_params["ids"]
-    assert result == {"gram": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+    assert result == {
+        "gram": {"price": Decimal("1.72"), "change_24h": Decimal("-0.4"), "change_7d": None}
+    }
 
 
 @pytest.mark.asyncio
@@ -212,7 +216,9 @@ async def test_get_coin_market_data_batch_accepts_gram_alias(monkeypatch):
 
     requested_params = get_with_retry.await_args.args[2]
     assert requested_params["ids"] == "the-open-network"
-    assert result == {"gram": {"price": 1.72, "change_24h": -0.4, "change_7d": None}}
+    assert result == {
+        "gram": {"price": Decimal("1.72"), "change_24h": Decimal("-0.4"), "change_7d": None}
+    }
 
 
 @pytest.mark.asyncio
@@ -222,7 +228,9 @@ async def test_get_coin_market_data_batch_skips_missing_symbol(monkeypatch):
 
     result = await price_service.get_coin_market_data_batch(["btc", "eth"])
 
-    assert result == {"btc": {"price": 60000.0, "change_24h": 0.0, "change_7d": None}}
+    assert result == {
+        "btc": {"price": Decimal("60000.0"), "change_24h": Decimal("0"), "change_7d": None}
+    }
 
 
 @pytest.mark.asyncio
