@@ -23,3 +23,4 @@ postgres-data/
 logs/*
 !logs/.gitkeep
 reports/
+graphify-out/
