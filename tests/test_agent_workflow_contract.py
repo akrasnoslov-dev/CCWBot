@@ -207,5 +207,5 @@ def test_graphify_neo4j_export_keeps_passwords_out_of_chat_and_argv():
 
     assert "NEO4J_PASSWORD" in neo4j
     assert "Do not ask the user to paste a password into chat" in neo4j
-    assert "--password PASSWORD" not in neo4j
+    assert "--password" not in neo4j
     assert "--push bolt://localhost:7687 --user neo4j" in neo4j
