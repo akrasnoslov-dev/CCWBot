@@ -13,9 +13,11 @@ For this repository, use only an already-provisioned local Graphify installation
 automatically install, upgrade, or fetch Graphify packages. If it is unavailable, report that
 provisioning is required and use ordinary repository navigation instead.
 
-Do not send CCWBot repository content to Gemini or any external semantic-extraction provider.
-Use existing local graphs and deterministic local extraction only. Do not configure global Codex
-hooks or custom Git merge drivers for Graphify; generated graph output remains ignored.
+Do not send CCWBot repository content to Gemini or any external semantic-extraction provider
+unless the current user request explicitly approves that run. Without that approval, use existing
+local graphs and deterministic local extraction only. Approval never authorizes package downloads.
+Do not configure global Codex hooks or custom Git merge drivers for Graphify; generated graph
+output remains ignored.
 
 ## Usage
 
@@ -151,13 +153,15 @@ Skip this step entirely if `detect` returned zero `video` files. When the corpus
 
 **Before starting:** note whether `--mode deep` was given. You must pass `DEEP_MODE=true` to every subagent in Step B2 if it was. Track this from the original invocation - do not lose it.
 
-CCWBot runs only deterministic structural extraction. Always skip semantic extraction, including for
-docs, papers, and images: do not inspect provider credentials or dispatch semantic subagents. Run
-Part A, write the empty semantic artifact from Part B's fast path, then continue to Part C.
+By default, CCWBot runs only deterministic structural extraction. Only run Part B when the current
+user request explicitly approves external semantic extraction. Without that approval, do not inspect
+provider credentials or dispatch semantic subagents: run Part A, write the empty semantic artifact
+from Part B's fast path, then continue to Part C.
 
 #### Part A - Structural extraction for code files
 
-For any code files detected, run AST extraction in parallel with Part B subagents:
+For any code files detected, run AST extraction. When Part B is explicitly approved, it may run in
+parallel with the semantic subagents:
 
 ```bash
 $(cat graphify-out/.graphify_python) -c "
@@ -183,9 +187,9 @@ else:
 
 #### Part B - Semantic extraction (parallel subagents)
 
-**CCWBot safety requirement:** skip this part for every corpus. Write the empty semantic artifact
-from the fast path below, then continue directly to Part C. The generic instructions below do not
-apply to this repository.
+**CCWBot safety requirement:** run this part only when the current user request explicitly approves
+external semantic extraction. Otherwise write the empty semantic artifact from the fast path below,
+then continue directly to Part C. The generic instructions below apply only after that approval.
 
 **Fast path:** If detection found zero docs, papers, and images (code-only corpus), skip Part B entirely and go straight to Part C. AST handles code - there is nothing for semantic subagents to do. **First write an empty semantic file** so Part C's merge has its input (it reads `.graphify_semantic.json` unconditionally; without this a code-only run hits `FileNotFoundError`):
 
