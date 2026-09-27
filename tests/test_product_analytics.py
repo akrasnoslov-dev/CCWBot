@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -21,6 +22,27 @@ from bot.db.database import (
     UserAcquisitionAttribution,
 )
 from bot.domain.attribution import AttributionLinkToken, parse_start_attribution
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_direct_telegram_ads_measurement_docs_use_new_user_time_window_contract():
+    content = (ROOT / "docs/product_analytics.md").read_text(encoding="utf-8")
+    direct_ads_section = content.split("## Direct Telegram Ads measurement", maxsplit=1)[1].split(
+        "## Onboarding value-delivery semantics", maxsplit=1
+    )[0]
+
+    assert "t.me/YFCCWbot" in direct_ads_section
+    assert "?start=a1_<code>" in direct_ads_section
+    assert "observed new-user cohort during the Telegram Ads window" in direct_ads_section
+    assert "users.created_at >= :experiment_start" in direct_ads_section
+    assert "users.created_at < :experiment_end" in direct_ads_section
+    assert "e.occurred_at >= c.created_at" in direct_ads_section
+    assert "e.occurred_at < :experiment_end" in direct_ads_section
+    assert "a.source = 'telegramads'" not in direct_ads_section
+    assert "bot_started" not in direct_ads_section
+    assert "active progression to the brief" in content
+    assert "successful first-value delivery" in content
 
 
 async def build_session():
