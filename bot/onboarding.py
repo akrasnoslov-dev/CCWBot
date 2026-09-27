@@ -23,13 +23,14 @@ from bot.domain.premium import (
 )
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol, is_symbol_free
 from bot.keyboards import (
+    build_first_run_brief_keyboard,
     build_onboarding_keyboard,
     build_premium_paywall_keyboard,
     build_trial_offer_keyboard,
 )
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
-ONBOARDING_VERSION = "v1"
+ONBOARDING_VERSION = "v2"
 INSTANT_BRIEF_MAX_AGE = timedelta(hours=6)
 
 
@@ -50,9 +51,9 @@ def build_onboarding_message(user: User, subscriptions) -> tuple[str, InlineKeyb
     selected_symbols = _selected_symbols(subscriptions)
     selected = ", ".join(display_symbol(symbol) for symbol in selected_symbols) or "None yet"
     text = (
-        "CCWBot keeps your crypto watchlist simple.\n\n"
-        "Choose the coins you want monitored. BTC monitoring is free; ETH, SOL, and GRAM "
-        "are Premium capabilities. You can select them now to save your intent.\n\n"
+        "Customize the coins you want monitored.\n\n"
+        "BTC monitoring is already active and free. ETH, SOL, and GRAM are Premium capabilities; "
+        "select them to save your intent.\n\n"
         f"Selected: {selected}"
     )
     return text, build_onboarding_keyboard(selected_symbols, premium_active=_premium_active(user))
@@ -164,7 +165,7 @@ async def _edit_onboarding_message(query, text: str, **kwargs) -> bool:
 
 
 async def send_start_experience(update: Update) -> bool:
-    """Send either first-time selection or a concise returning-user dashboard."""
+    """Send a first-run BTC brief or a concise returning-user dashboard."""
     if not update.message:
         return False
     chat_type = getattr(getattr(update.message, "chat", None), "type", None)
@@ -183,6 +184,7 @@ async def send_start_experience(update: Update) -> bool:
         subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
         if user.onboarding_completed_at is not None:
             text, keyboard = build_returning_user_message()
+            first_run = False
         else:
             await record_product_event(
                 session,
@@ -191,8 +193,39 @@ async def send_start_experience(update: Update) -> bool:
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
             )
             await session.commit()
-            text, keyboard = build_onboarding_message(user, subscriptions)
+            text = await build_instant_brief(session, user=user, subscriptions=subscriptions)
+            keyboard = build_first_run_brief_keyboard()
+            selected_count = len(_selected_symbols(subscriptions))
+            first_run = True
     await update.message.reply_text(text, reply_markup=keyboard)
+    if first_run:
+        async with DB_SESSION_LOCAL() as session:
+            delivered_user = await get_user_by_telegram_user_id(
+                session, update.effective_user.id, include_plan=True
+            )
+            delivered_user.onboarding_completed_at = utc_now()
+            await record_product_event(
+                session,
+                user_id=delivered_user.id,
+                event_name="onboarding_completed",
+                event_key=f"onboarding:{ONBOARDING_VERSION}",
+                selected_coin_count=selected_count,
+            )
+            await record_product_event(
+                session,
+                user_id=delivered_user.id,
+                event_name="watchlist_updated",
+                event_key=f"onboarding:{ONBOARDING_VERSION}",
+                selected_coin_count=selected_count,
+            )
+            await record_product_event(
+                session,
+                user_id=delivered_user.id,
+                event_name="instant_brief_viewed",
+                event_key=f"onboarding:{ONBOARDING_VERSION}",
+                selected_coin_count=selected_count,
+            )
+            await session.commit()
     return True
 
 
@@ -209,6 +242,12 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
         return True
 
     parts = data.split(":")
+    if len(parts) == 2 and parts[1] == "customize":
+        text, keyboard = build_onboarding_message(user, subscriptions)
+        await query.answer()
+        await _edit_onboarding_message(query, text, reply_markup=keyboard)
+        return True
+
     if len(parts) == 3 and parts[1] == "toggle" and parts[2] in SUPPORTED_SYMBOLS:
         symbol = parts[2]
         current = symbol in _selected_symbols(subscriptions)

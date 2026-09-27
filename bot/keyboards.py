@@ -43,6 +43,12 @@ def build_onboarding_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def build_first_run_brief_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Customize coins", callback_data="onboarding:customize")]]
+    )
+
+
 def build_premium_activation_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [

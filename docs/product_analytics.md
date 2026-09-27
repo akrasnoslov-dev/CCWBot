@@ -73,6 +73,74 @@ GROUP BY 1, 2
 ORDER BY started DESC, source, campaign;
 ```
 
+## Onboarding value-delivery semantics
+
+For a new private-chat user, `/start` records `onboarding_started` before attempting Telegram
+delivery of the deterministic cached BTC brief. `onboarding_completed` and
+`instant_brief_viewed` are recorded only after that brief has been delivered successfully; they
+therefore represent first value delivery rather than merely rendering an onboarding screen.
+Optional coin selection follows through the `Customize coins` action. Premium intent, trial, and
+paywall events retain their existing meanings.
+
+Use this query for a named acquisition cohort and compare `onboarding_completion_pct` against the
+first Telegram Ads baseline of 25.0% (2 of 8 users):
+
+```sql
+WITH cohort AS (
+  SELECT DISTINCT e.user_id
+  FROM product_events AS e
+  JOIN user_acquisition_attributions AS a ON a.user_id = e.user_id
+  WHERE a.source = 'telegramads'
+    AND a.campaign = :campaign
+    AND a.creative = :creative
+    AND e.event_name = 'bot_started'
+    AND e.occurred_at >= :cohort_started_at
+    AND e.occurred_at < :cohort_ended_at
+)
+SELECT
+  COUNT(*) AS bot_started,
+  COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM product_events e
+      WHERE e.user_id = c.user_id AND e.event_name = 'onboarding_completed'
+    )
+  ) AS onboarding_completed,
+  ROUND(
+    100.0 * COUNT(*) FILTER (
+      WHERE EXISTS (
+        SELECT 1 FROM product_events e
+        WHERE e.user_id = c.user_id AND e.event_name = 'onboarding_completed'
+      )
+    ) / NULLIF(COUNT(*), 0),
+    1
+  ) AS onboarding_completion_pct,
+  COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM product_events e
+      WHERE e.user_id = c.user_id AND e.event_name = 'instant_brief_viewed'
+    )
+  ) AS instant_brief_viewed,
+  COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM product_events e
+      WHERE e.user_id = c.user_id AND e.event_name = 'trial_offered'
+    )
+  ) AS trial_offered,
+  COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM product_events e
+      WHERE e.user_id = c.user_id AND e.event_name = 'trial_started'
+    )
+  ) AS trial_started,
+  COUNT(*) FILTER (
+    WHERE EXISTS (
+      SELECT 1 FROM product_events e
+      WHERE e.user_id = c.user_id AND e.event_name = 'checkout_started'
+    )
+  ) AS checkout_started
+FROM cohort c;
+```
+
 The allowed event names are `bot_started`, `onboarding_started`, `coin_interest_selected`,
 `onboarding_completed`, `instant_brief_viewed`, `watchlist_updated`, `trial_offered`,
 `trial_started`, `trial_expired`, `paywall_viewed`, `checkout_started`, `payment_succeeded`, and
