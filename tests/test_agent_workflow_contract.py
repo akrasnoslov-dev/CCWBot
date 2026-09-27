@@ -172,3 +172,17 @@ def test_agentic_development_workflow_contract():
     assert "docs/task_specs/" in source_of_truth
     assert "task-specific records" in normalized_source_of_truth
     assert "not canonical owners" in normalized_source_of_truth
+
+
+def test_graphify_tooling_is_opt_in_and_has_no_global_git_or_codex_side_effects():
+    workflow = (ROOT / "docs" / "codex_instructions.md").read_text(encoding="utf-8")
+    skill = (ROOT / ".codex" / "skills" / "graphify" / "SKILL.md").read_text(encoding="utf-8")
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert not (ROOT / ".codex" / "hooks.json").exists()
+    assert "merge=graphify" not in attributes
+    assert "Do not automatically install or upgrade Graphify" in workflow
+    assert "Do not send repository content to external semantic-extraction providers" in workflow
+    normalized_skill = " ".join(skill.split())
+    assert "Do not automatically install, upgrade, or fetch Graphify packages" in normalized_skill
+    assert "Do not send CCWBot repository content to Gemini" in normalized_skill

@@ -25,6 +25,9 @@ the complete payload meets repository gates.
 - Update canonical analytics documentation and add a documentation/query-contract check if one is
   meaningful. Resolve the valid PR #245 thread after the change.
 - Review PR #244's Graphify developer-tooling payload against required routing gates.
+- Correct the valid Graphify release findings: remove its ineffective global hook and unportable
+  merge-driver declaration, and make package installation and external semantic extraction
+  explicitly opt-in.
 - No runtime analytics behavior, schema migration, event expansion, payment, attribution, alert,
   entitlement, or deployment change.
 
