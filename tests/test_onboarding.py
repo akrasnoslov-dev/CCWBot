@@ -367,6 +367,10 @@ async def test_onboarding_offers_and_starts_one_time_trial_for_premium_intent(mo
         assert await session.scalar(
             select(ProductEvent).where(ProductEvent.event_name == "trial_offered")
         )
+        watchlist_event = await session.scalar(
+            select(ProductEvent).where(ProductEvent.event_name == "watchlist_updated")
+        )
+        assert watchlist_event.selected_coin_count == 2
 
         await handle_onboarding_callback(update, "onboarding:trial:start")
         await handle_onboarding_callback(update, "onboarding:trial:start")

@@ -214,13 +214,6 @@ async def send_start_experience(update: Update) -> bool:
             await record_product_event(
                 session,
                 user_id=delivered_user.id,
-                event_name="watchlist_updated",
-                event_key=f"onboarding:{ONBOARDING_VERSION}",
-                selected_coin_count=selected_count,
-            )
-            await record_product_event(
-                session,
-                user_id=delivered_user.id,
                 event_name="instant_brief_viewed",
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
                 selected_coin_count=selected_count,
