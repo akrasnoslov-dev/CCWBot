@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from telegram import InlineKeyboardMarkup, Update
 
@@ -84,6 +85,11 @@ def _as_aware_utc(value: datetime | None) -> datetime | None:
 
 def _premium_intent_count(subscriptions) -> int:
     return sum(1 for symbol in _selected_symbols(subscriptions) if not is_symbol_free(symbol))
+
+
+def _first_run_btc_subscription():
+    """Represent the v2 first value independently of legacy saved watchlist intent."""
+    return (SimpleNamespace(symbol="btc", is_enabled=True),)
 
 
 def _trial_end_text(user: User) -> str:
@@ -181,7 +187,7 @@ async def send_start_experience(update: Update) -> bool:
         )
         if user is None:
             return False
-        subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+        await ensure_default_coin_subscriptions(session, user_id=user.id)
         if user.onboarding_completed_at is not None:
             text, keyboard = build_returning_user_message()
             first_run = False
@@ -193,9 +199,12 @@ async def send_start_experience(update: Update) -> bool:
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
             )
             await session.commit()
-            text = await build_instant_brief(session, user=user, subscriptions=subscriptions)
+            first_run_subscriptions = _first_run_btc_subscription()
+            text = await build_instant_brief(
+                session, user=user, subscriptions=first_run_subscriptions
+            )
             keyboard = build_first_run_brief_keyboard()
-            selected_count = len(_selected_symbols(subscriptions))
+            selected_count = len(_selected_symbols(first_run_subscriptions))
             first_run = True
     await update.message.reply_text(text, reply_markup=keyboard)
     if first_run:
