@@ -190,6 +190,10 @@ Safe defaults:
 - Codex skills are developer tooling only. Local user skills live under
   `C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills
   live under `.agents/skills/` when present and may be pinned by `skills-lock.json`.
+- Do not automatically install or upgrade Graphify or other developer-tool packages. Pin and
+  explicitly approve a dependency change before fetching it. Do not send repository content to external semantic-extraction providers without explicit user approval for that specific run.
+- Do not add global Codex hooks or custom Git merge drivers for developer tooling unless the
+  repository provisions them reproducibly and a contract test verifies their behavior.
 - For production forensic SQL, connect only through the SSH tunnel with `ccwbot_investigator`.
   Verify the session is read-only before evidence queries. If a required table returns
   `permission denied`, stop and report the missing grant; never switch to the application/admin

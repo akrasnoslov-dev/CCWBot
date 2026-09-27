@@ -43,13 +43,9 @@ To add optional metadata, include it as named fields:
 /acquisitionlink source=reddit campaign=cryptotelegrambots creative=launch-post referrer_code=mod-a
 ```
 
-Telegram Ads examples:
-
-```text
-/acquisitionlink source=telegramads campaign=general-crypto creative=ad01
-/acquisitionlink source=telegramads campaign=btc-eth creative=ad01
-/acquisitionlink source=telegramads campaign=solana creative=ad01
-```
+Use `telegramads` acquisition links only on distribution surfaces that preserve their full
+`?start=a1_<code>` parameter. They are not usable for direct Telegram Ads; see the measurement
+section below.
 
 Run `/acquisitionlinks` to list up to 100 currently attributable links with source, campaign,
 creative, and their generated Telegram URLs. It does not display referrer codes or user data.
@@ -73,6 +69,64 @@ GROUP BY 1, 2
 ORDER BY started DESC, source, campaign;
 ```
 
+## Direct Telegram Ads measurement
+
+Direct Telegram Ads for the bot currently accepts `t.me/YFCCWbot`; its UI rejects the
+`?start=a1_<code>` parameter. These users therefore do not receive `source=telegramads`,
+`campaign`, or `creative` attribution in CCWBot. Continue using acquisition links for channels
+that preserve the parameter, but do not use an attribution query to measure direct Telegram Ads.
+
+For direct Telegram Ads, this is an **observed new-user cohort during the Telegram Ads window**,
+not an exactly attributed cohort: organic users created during the same window can be included.
+Run the query only through the approved read-only investigation workflow. It uses half-open UTC
+boundaries and counts downstream events only after the user's cohort entry and before the
+experiment end. Trial, checkout, and payment columns are explicitly within-experiment-window
+measures; they are not mature conversion rates for users who enter close to the end.
+
+```sql
+WITH cohort AS (
+  SELECT users.id AS user_id, users.created_at
+  FROM users
+  WHERE users.created_at >= :experiment_start
+    AND users.created_at < :experiment_end
+), cohort_events AS (
+  SELECT c.user_id, e.event_name
+  FROM cohort AS c
+  LEFT JOIN product_events AS e
+    ON e.user_id = c.user_id
+   AND e.occurred_at >= c.created_at
+   AND e.occurred_at < :experiment_end
+)
+SELECT
+  COUNT(DISTINCT user_id) AS new_users,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'onboarding_completed'
+  ) AS onboarding_completed,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'instant_brief_viewed'
+  ) AS instant_brief_viewed,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'coin_interest_selected'
+  ) AS coin_interest_selected,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'trial_offered'
+  ) AS trial_offered,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'trial_started'
+  ) AS trial_started_within_window,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'checkout_started'
+  ) AS checkout_started_within_window,
+  COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'payment_succeeded'
+  ) AS payment_succeeded_within_window
+FROM cohort_events;
+```
+
+For mature trial or payment conversion, keep the same `users.created_at` cohort but replace the
+experiment-end event bound with a fixed, predeclared follow-up horizon after each user's
+`created_at`; do not present an experiment-end-truncated result as mature conversion.
+
 ## Onboarding value-delivery semantics
 
 For a new private-chat user, `/start` records `onboarding_started` before attempting Telegram
@@ -82,64 +136,15 @@ therefore represent first value delivery rather than merely rendering an onboard
 Optional coin selection follows through the `Customize coins` action. Premium intent, trial, and
 paywall events retain their existing meanings.
 
-Use this query for a named acquisition cohort and compare `onboarding_completion_pct` against the
-first Telegram Ads baseline of 25.0% (2 of 8 users):
+The old 25.0% (2 of 8) baseline represented active progression to the brief: a user pressed the
+old flow's confirmation CTA. In v2, `/start` automatically delivers the brief, so
+`onboarding_completed / new_users` now measures successful first-value delivery rather than the
+same engagement conversion. Do not compare those two percentages as one conversion metric.
 
-```sql
-WITH cohort AS (
-  SELECT DISTINCT e.user_id
-  FROM product_events AS e
-  JOIN user_acquisition_attributions AS a ON a.user_id = e.user_id
-  WHERE a.source = 'telegramads'
-    AND a.campaign = :campaign
-    AND a.creative = :creative
-    AND e.event_name = 'bot_started'
-    AND e.occurred_at >= :cohort_started_at
-    AND e.occurred_at < :cohort_ended_at
-)
-SELECT
-  COUNT(*) AS bot_started,
-  COUNT(*) FILTER (
-    WHERE EXISTS (
-      SELECT 1 FROM product_events e
-      WHERE e.user_id = c.user_id AND e.event_name = 'onboarding_completed'
-    )
-  ) AS onboarding_completed,
-  ROUND(
-    100.0 * COUNT(*) FILTER (
-      WHERE EXISTS (
-        SELECT 1 FROM product_events e
-        WHERE e.user_id = c.user_id AND e.event_name = 'onboarding_completed'
-      )
-    ) / NULLIF(COUNT(*), 0),
-    1
-  ) AS onboarding_completion_pct,
-  COUNT(*) FILTER (
-    WHERE EXISTS (
-      SELECT 1 FROM product_events e
-      WHERE e.user_id = c.user_id AND e.event_name = 'instant_brief_viewed'
-    )
-  ) AS instant_brief_viewed,
-  COUNT(*) FILTER (
-    WHERE EXISTS (
-      SELECT 1 FROM product_events e
-      WHERE e.user_id = c.user_id AND e.event_name = 'trial_offered'
-    )
-  ) AS trial_offered,
-  COUNT(*) FILTER (
-    WHERE EXISTS (
-      SELECT 1 FROM product_events e
-      WHERE e.user_id = c.user_id AND e.event_name = 'trial_started'
-    )
-  ) AS trial_started,
-  COUNT(*) FILTER (
-    WHERE EXISTS (
-      SELECT 1 FROM product_events e
-      WHERE e.user_id = c.user_id AND e.event_name = 'checkout_started'
-    )
-  ) AS checkout_started
-FROM cohort c;
-```
+Judge the experiment's meaningful engagement with existing downstream events: unique users with
+`coin_interest_selected`, `trial_offered`, `trial_started`, `checkout_started`, and
+`payment_succeeded`, each divided by `new_users` from the observed window cohort. The direct-Ads
+query above reports those counts; calculate and compare rates using the same UTC window definition.
 
 The allowed event names are `bot_started`, `onboarding_started`, `coin_interest_selected`,
 `onboarding_completed`, `instant_brief_viewed`, `watchlist_updated`, `trial_offered`,
