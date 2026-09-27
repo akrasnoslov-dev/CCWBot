@@ -186,3 +186,6 @@ def test_graphify_tooling_is_opt_in_and_has_no_global_git_or_codex_side_effects(
     normalized_skill = " ".join(skill.split())
     assert "Do not automatically install, upgrade, or fetch Graphify packages" in normalized_skill
     assert "Do not send CCWBot repository content to Gemini" in normalized_skill
+    assert "uv tool run --from graphifyy" not in skill
+    assert "pip install 'graphifyy[gemini]'" not in skill
+    assert 'backend="gemini"' not in skill
