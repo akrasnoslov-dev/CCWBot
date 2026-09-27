@@ -67,8 +67,11 @@ class FakeMessage:
         self.chat = SimpleNamespace(type="private")
         self.chat_id = 123456
         self.replies = []
+        self.reply_error = None
 
     async def reply_text(self, text, **kwargs):
+        if self.reply_error is not None:
+            raise self.reply_error
         self.replies.append((text, kwargs))
 
     async def delete(self):
@@ -94,7 +97,7 @@ class FakeQuery:
 
 
 @pytest.mark.asyncio
-async def test_new_user_start_opens_inline_onboarding(monkeypatch):
+async def test_new_user_start_delivers_btc_brief_then_records_value_events(monkeypatch):
     engine, session = await build_session()
     try:
         user = await create_user(session)
@@ -109,12 +112,24 @@ async def test_new_user_start_opens_inline_onboarding(monkeypatch):
 
         assert handled is True
         text, kwargs = message.replies[0]
-        assert "Choose the coins" in text
+        assert "Your market brief" in text
+        assert "BTC:" in text
         buttons = [button.text for row in kwargs["reply_markup"].inline_keyboard for button in row]
-        assert any("BTC · Free" in button for button in buttons)
-        assert any("🔒" in button and "ETH · Premium" in button for button in buttons)
-        assert await session.scalar(
-            select(ProductEvent).where(ProductEvent.event_name == "onboarding_started")
+        assert buttons == ["Customize coins"]
+        subscriptions = list(
+            (
+                await session.scalars(
+                    select(UserCoinSubscription).where(UserCoinSubscription.user_id == user.id)
+                )
+            ).all()
+        )
+        btc_subscriptions = [
+            (row.symbol, row.is_enabled) for row in subscriptions if row.symbol == "btc"
+        ]
+        assert btc_subscriptions == [("btc", True)]
+        event_names = list((await session.scalars(select(ProductEvent.event_name))).all())
+        assert {"onboarding_started", "onboarding_completed", "instant_brief_viewed"} <= set(
+            event_names
         )
     finally:
         await session.close()
@@ -171,7 +186,7 @@ async def test_start_handler_routes_a_private_new_user_to_onboarding(monkeypatch
         await user_handlers.start(update, SimpleNamespace(args=[], user_data={}))
 
         assert root.sync_user_from_update.await_count == 1
-        assert "Choose the coins" in message.replies[0][0]
+        assert "Your market brief" in message.replies[0][0]
     finally:
         await session.close()
         await engine.dispose()
@@ -235,7 +250,71 @@ async def test_onboarding_multiselect_persists_premium_intent_and_completes(monk
 
 
 @pytest.mark.asyncio
-async def test_failed_brief_delivery_does_not_complete_onboarding(monkeypatch):
+async def test_customize_coins_opens_optional_selector_after_first_brief(monkeypatch):
+    engine, session = await build_session()
+    try:
+        await create_user(session)
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:customize"
+        ) is True
+
+        assert "Customize the coins" in query.edits[-1][0]
+        buttons = [
+            button.text
+            for row in query.edits[-1][1]["reply_markup"].inline_keyboard
+            for button in row
+        ]
+        assert any("BTC · Free" in button for button in buttons)
+        assert any("ETH · Premium" in button for button in buttons)
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_first_brief_delivery_does_not_complete_onboarding(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage()
+        message.reply_error = NetworkError("temporary Telegram failure")
+
+        with pytest.raises(NetworkError):
+            await send_start_experience(
+                SimpleNamespace(
+                    message=message,
+                    effective_user=SimpleNamespace(id=user.telegram_user_id),
+                )
+            )
+
+        await session.refresh(user)
+        assert user.onboarding_completed_at is None
+        event_names = list((await session.scalars(select(ProductEvent.event_name))).all())
+        assert "onboarding_completed" not in event_names
+        assert "instant_brief_viewed" not in event_names
+        assert "onboarding_started" in event_names
+
+        message = FakeMessage()
+        assert await send_start_experience(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+        assert "Your market brief" in message.replies[0][0]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_customized_brief_edit_does_not_complete_unfinished_onboarding(monkeypatch):
     engine, session = await build_session()
     try:
         user = await create_user(session)
@@ -254,15 +333,6 @@ async def test_failed_brief_delivery_does_not_complete_onboarding(monkeypatch):
         event_names = list((await session.scalars(select(ProductEvent.event_name))).all())
         assert "onboarding_completed" not in event_names
         assert "instant_brief_viewed" not in event_names
-
-        message = FakeMessage()
-        assert await send_start_experience(
-            SimpleNamespace(
-                message=message,
-                effective_user=SimpleNamespace(id=user.telegram_user_id),
-            )
-        )
-        assert "Choose the coins" in message.replies[0][0]
     finally:
         await session.close()
         await engine.dispose()
@@ -277,6 +347,15 @@ async def test_onboarding_offers_and_starts_one_time_trial_for_premium_intent(mo
         monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
         query = FakeQuery()
         update = SimpleNamespace(callback_query=query)
+        first_run_message = FakeMessage()
+
+        await send_start_experience(
+            SimpleNamespace(
+                message=first_run_message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+        await handle_onboarding_callback(update, "onboarding:customize")
 
         await handle_onboarding_callback(update, "onboarding:toggle:eth")
         await handle_onboarding_callback(update, "onboarding:confirm")
@@ -288,6 +367,10 @@ async def test_onboarding_offers_and_starts_one_time_trial_for_premium_intent(mo
         assert await session.scalar(
             select(ProductEvent).where(ProductEvent.event_name == "trial_offered")
         )
+        watchlist_event = await session.scalar(
+            select(ProductEvent).where(ProductEvent.event_name == "watchlist_updated")
+        )
+        assert watchlist_event.selected_coin_count == 2
 
         await handle_onboarding_callback(update, "onboarding:trial:start")
         await handle_onboarding_callback(update, "onboarding:trial:start")
