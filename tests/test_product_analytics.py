@@ -34,6 +34,8 @@ def test_direct_telegram_ads_measurement_docs_use_new_user_time_window_contract(
 
     assert "t.me/YFCCWbot" in direct_ads_section
     assert "?start=a1_<code>" in direct_ads_section
+    assert "UI rejects" in direct_ads_section
+    assert "do not use an attribution query to measure direct Telegram Ads" in direct_ads_section
     assert "observed new-user cohort during the Telegram Ads window" in direct_ads_section
     assert "users.created_at >= :experiment_start" in direct_ads_section
     assert "users.created_at < :experiment_end" in direct_ads_section
@@ -43,6 +45,7 @@ def test_direct_telegram_ads_measurement_docs_use_new_user_time_window_contract(
     assert "bot_started" not in direct_ads_section
     assert "active progression to the brief" in content
     assert "successful first-value delivery" in content
+    assert "Do not compare those two percentages as one conversion metric" in content
 
 
 async def build_session():
