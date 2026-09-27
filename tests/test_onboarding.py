@@ -17,6 +17,7 @@ from bot.db.database import (
     UserCoinSubscription,
     UserPremiumTrial,
 )
+from bot.domain.supported_coins import SUPPORTED_SYMBOLS
 from bot.handlers import callbacks as callback_handlers
 from bot.handlers import common as common_handlers
 from bot.handlers import user as user_handlers
@@ -49,6 +50,20 @@ async def create_user(session) -> User:
     await session.commit()
     await session.refresh(user)
     return user
+
+
+async def set_legacy_subscriptions(session, user: User, enabled_symbols: set[str]) -> None:
+    session.add_all(
+        [
+            UserCoinSubscription(
+                user_id=user.id,
+                symbol=symbol,
+                is_enabled=symbol in enabled_symbols,
+            )
+            for symbol in SUPPORTED_SYMBOLS
+        ]
+    )
+    await session.commit()
 
 
 class SessionContext:
@@ -131,6 +146,86 @@ async def test_new_user_start_delivers_btc_brief_then_records_value_events(monke
         assert {"onboarding_started", "onboarding_completed", "instant_brief_viewed"} <= set(
             event_names
         )
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_unfinished_v1_premium_intent_gets_btc_only_v2_brief_and_customize_keeps_intent(
+    monkeypatch,
+):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await set_legacy_subscriptions(session, user, {"btc", "eth", "sol", "gram"})
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage()
+
+        assert await send_start_experience(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+
+        brief = message.replies[0][0]
+        assert "BTC:" in brief
+        assert all(f"{symbol}:" not in brief for symbol in ("ETH", "SOL", "GRAM"))
+        value_events = list(
+            (
+                await session.scalars(
+                    select(ProductEvent).where(
+                        ProductEvent.event_name.in_(
+                            ("onboarding_completed", "instant_brief_viewed")
+                        )
+                    )
+                )
+            ).all()
+        )
+        assert [event.selected_coin_count for event in value_events] == [1, 1]
+
+        query = FakeQuery()
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:customize"
+        )
+        assert "Selected: BTC, ETH, GRAM, SOL" in query.edits[-1][0]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_unfinished_v1_user_with_btc_disabled_still_gets_btc_only_v2_brief(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await set_legacy_subscriptions(session, user, {"eth"})
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage()
+
+        assert await send_start_experience(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+
+        brief = message.replies[0][0]
+        assert "BTC:" in brief
+        assert "ETH:" not in brief
+        subscription_rows = list(
+            (
+                await session.scalars(
+                    select(UserCoinSubscription).where(UserCoinSubscription.user_id == user.id)
+                )
+            ).all()
+        )
+        assert {
+            row.symbol: row.is_enabled for row in subscription_rows
+        } == {"btc": False, "eth": True, "sol": False, "gram": False}
     finally:
         await session.close()
         await engine.dispose()
