@@ -64,7 +64,7 @@ _GROQ_MODEL_ENV_BY_CALL_TYPE = {
 _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
-    "gemini": ("GEMINI_MODEL", "gemini-2.5-flash"),
+    "gemini": ("GEMINI_MODEL", "gemini-3.8-flash"),
     "mistral": ("MISTRAL_MODEL", "mistral-small-2603"),
 }
 
@@ -122,18 +122,28 @@ REASONING_EFFORT_CHOICES = ("low", "medium", "high")
 # model is a 400, which the router treats as deterministic and does not fall back on — the
 # exact failure shape this work exists to remove. So the parameter is gated on the resolved
 # model identifier, matched against these substrings, and never on the provider name.
-_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5")
+_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5", "gemini-3.")
 
 # Models whose internal reasoning/thinking is billed against the *completion* budget, so a
-# budget sized for a plain chat model leaves nothing for the answer. Gemini 2.5's current
-# OpenAI-compatible endpoint accepts ``reasoning_effort`` and maps ``low`` to 1,024 thinking
-# tokens, so it is in both capability sets.
-_THINKING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5", "magistral", "deepseek-r", "-o1", "-o3")
+# budget sized for a plain chat model leaves nothing for the answer. Gemini 2.5 and Gemini 3
+# accept ``reasoning_effort`` through Google's OpenAI-compatible endpoint. Gemini 2.5 maps
+# effort to fixed thinking budgets while Gemini 3 uses dynamic thinking levels, so both stay in
+# the reasoning and thinking capability sets.
+_THINKING_MODEL_MARKERS = (
+    "gpt-oss",
+    "gemini-2.5",
+    "gemini-3.",
+    "magistral",
+    "deepseek-r",
+    "-o1",
+    "-o3",
+)
 
 # Reserve this much completion capacity for a thinking model's internal reasoning in addition
-# to the call type's configured answer budget. Gemini 2.5 maps low reasoning effort to a
-# 1,024-token thinking budget; using the same explicit headroom for known thinking models keeps
-# the configured schema-answer ceiling intact instead of letting reasoning consume it.
+# to the call type's configured answer budget. Gemini 2.5 maps these efforts to fixed budgets;
+# Gemini 3 uses dynamic thinking levels, so these values are our bounded safety headroom rather
+# than a provider-guaranteed Gemini 3 thinking budget. The goal is to avoid giving a reasoning
+# model only the small schema-answer budget used by plain models.
 _REASONING_HEADROOM_TOKENS_BY_EFFORT = {
     "low": 1024,
     "medium": 8192,

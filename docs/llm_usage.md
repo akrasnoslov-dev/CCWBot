@@ -13,7 +13,7 @@ per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEAR
 All providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
-The shipped fallback defaults are `gemini-2.5-flash` and the pinned Mistral Small 4 endpoint
+The shipped fallback defaults are `gemini-3.8-flash` and the pinned Mistral Small 4 endpoint
 `mistral-small-2603`; deploys can still override either with `GEMINI_MODEL` or `MISTRAL_MODEL`.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
@@ -147,17 +147,33 @@ The gate for sending the parameter is the resolved **model identifier**, not the
 provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
 a non-reasoning model is a 400 that the router treats as deterministic and does not fall back on.
 A model counts as reasoning-capable when its identifier contains one of
-`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5`). In a chain that mixes plain and
-reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible attempts.
+`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5,gemini-3.`). In a chain that mixes
+plain and reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible
+attempts.
 
 Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually accepts the
-`reasoning_effort` request field. Gemini 2.5's OpenAI-compatible endpoint supports it and maps
-`low` to a 1024-token thinking budget. Other thinking models stay outside the effort gate until
-their endpoint contract is verified; known names still receive token headroom.
+`reasoning_effort` request field. Gemini 2.5 and Gemini 3 support it through Google's
+OpenAI-compatible endpoint. Gemini 2.5 maps effort to fixed thinking budgets; Gemini 3 maps effort
+to thinking levels and uses dynamic thought-token allocation. The existing headroom remains a
+bounded client-side safety allowance rather than a provider-guaranteed Gemini 3 thinking budget. Other
+thinking models stay outside the effort gate until their endpoint contract is verified.
 
-Groq GPT-OSS supports JSON Object Mode and `reasoning_effort`, but Groq explicitly documents that
-GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests; it is
-for other Groq reasoning-model families.
+Gemini 3.x requests intentionally omit explicit sampling parameters such as `temperature`.
+Google's Gemini 3.8 migration guidance deprecates `temperature`, `top_p`, and `top_k` for this
+model family. The shared OpenAI-compatible provider keeps the existing `temperature=0.0` behavior
+for Groq, Mistral, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
+`gemini-3.*` model identifiers.
+
+Groq GPT-OSS supports strict JSON Schema Structured Outputs and `reasoning_effort`. Event
+Analysis on `openai/gpt-oss-120b` and Market Heartbeat on `openai/gpt-oss-20b` use
+`response_format.type=json_schema` with `strict=true`; the existing application validators still
+run afterwards for semantic, grounding, and non-empty checks. Gemini/Mistral fallbacks and an
+operator-supplied Groq model outside the verified strict-schema allowlist keep JSON Object Mode, so
+a provider-specific optimization cannot make the fallback request incompatible. `GROQ_JSON_MODE=false`
+disables both response-format modes while preserving application parsing and fallback behavior.
+
+Groq GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests;
+it is for other Groq reasoning-model families.
 
 The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-oss-20b` for the
 other structured call types. They replace the Llama 3 defaults scheduled to shut down on
@@ -181,7 +197,7 @@ On startup the runtime logs the fully resolved configuration, one INFO line per 
 
 ```text
 ops_event=llm_config call_type=event_analysis max_tokens=300
-  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-2.5-flash/effort=low/max=1324(no_api_key)
+  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-3.8-flash/effort=low/max=1324(no_api_key)
 ```
 
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
@@ -209,6 +225,12 @@ Reports produced after provider-chain exhaustion use the explicit
 `news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin diagnostics
 (`bot/observability/system_status.py`) and the ops-agent
 `llm_usage_summary` collector are provider-agnostic.
+
+When a logical provider chain exhausts, the router emits one
+`ops_event=llm_chain_exhausted` WARNING containing only `provider:error_reason` categories and
+circuit-breaker skip names. It never includes provider bodies, prompts, model output, credentials,
+or user data. Detailed sanitized provider messages and allowlisted rate-limit headers remain in
+`llm_usage_logs` for read-only investigation.
 
 Per-provider usage counts (24h) — group by `provider`:
 

@@ -133,6 +133,7 @@ class LLMRouter:
         messages: list[dict],
         max_tokens: int,
         response_format: dict | None,
+        response_format_overrides: dict[str, dict | None] | None = None,
         timeout: int = 15,
         symbol: str | None = None,
         model_overrides: dict | None = None,
@@ -146,6 +147,7 @@ class LLMRouter:
                     messages=messages,
                     max_tokens=max_tokens,
                     response_format=response_format,
+                    response_format_overrides=response_format_overrides,
                     timeout=timeout,
                     symbol=symbol,
                     model_overrides=model_overrides,
@@ -167,6 +169,7 @@ class LLMRouter:
         messages: list[dict],
         max_tokens: int,
         response_format: dict | None,
+        response_format_overrides: dict[str, dict | None] | None = None,
         timeout: int = 15,
         symbol: str | None = None,
         model_overrides: dict | None = None,
@@ -198,6 +201,7 @@ class LLMRouter:
         invalid_output_error: Exception | None = None
         breaker_skipped: list[str] = []
         attempted_names: list[str] = []
+        failure_categories: list[str] = []
         input_chars = message_input_chars(messages)
 
         for index, (name, provider) in enumerate(providers):
@@ -242,6 +246,9 @@ class LLMRouter:
             # reasoning and non-reasoning models sends the parameter only to the attempts that
             # accept it, and omits it entirely everywhere else.
             reasoning_effort = config.reasoning_effort_for(model, call_type)
+            attempt_response_format = response_format
+            if response_format_overrides is not None and name in response_format_overrides:
+                attempt_response_format = response_format_overrides[name]
             attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
@@ -250,7 +257,7 @@ class LLMRouter:
                     model=model,
                     messages=messages,
                     max_tokens=attempt_max_tokens,
-                    response_format=response_format,
+                    response_format=attempt_response_format,
                     timeout=timeout,
                     reasoning_effort=reasoning_effort,
                 )
@@ -263,6 +270,7 @@ class LLMRouter:
                 if first_backoff_error is None:
                     first_backoff_error = error
                 last_error = error
+                failure_categories.append(f"{name}:rate_limit_backoff_active")
                 continue
             except AIProviderRateLimitError as error:
                 attempted += 1
@@ -272,6 +280,7 @@ class LLMRouter:
                     rate_limited_name = name
                 if error.limited_until is not None:
                     rate_limit_untils.append(error.limited_until)
+                failure_categories.append(f"{name}:rate_limit")
                 logger.warning(
                     "ops_event=llm_provider_switch provider=%s call_type=%s "
                     "reason=rate_limit operation_id=%s",
@@ -294,6 +303,7 @@ class LLMRouter:
                             rate_limited_name = name
                     else:
                         saw_other_fallback = True
+                    failure_categories.append(f"{name}:{reason}")
                     logger.warning(
                         "ops_event=llm_provider_switch provider=%s call_type=%s "
                         "reason=%s operation_id=%s",
@@ -323,6 +333,9 @@ class LLMRouter:
                     attempted += 1
                     invalid_output_error = error
                     last_error = error
+                    failure_categories.append(
+                        f"{name}:{classify_ai_error_reason(error)}"
+                    )
                     logger.warning(
                         "ops_event=llm_provider_switch provider=%s call_type=%s "
                         "reason=invalid_output operation_id=%s",
@@ -344,7 +357,19 @@ class LLMRouter:
                 )
             return validated
 
-        # Chain exhausted. Choose the exception that matches existing caller handling.
+        # Chain exhausted. Emit categories only: no provider body, prompt, output, or secret.
+        # Per-attempt sanitized details remain available in llm_usage_logs.
+        if failure_categories or breaker_skipped:
+            logger.warning(
+                "ops_event=llm_chain_exhausted call_type=%s failures=%s "
+                "breaker_skipped=%s operation_id=%s",
+                call_type,
+                ",".join(failure_categories) or "none",
+                ",".join(breaker_skipped) or "none",
+                current_llm_operation_id(),
+            )
+
+        # Choose the exception that matches existing caller handling.
         if invalid_output_error is not None:
             # Re-raise the last invalid-output error so callers keep their existing
             # AIInvalidJsonError / AISchemaValidationError terminal handling

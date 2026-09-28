@@ -135,6 +135,100 @@ def _groq_json_mode_enabled() -> bool:
     return os.getenv("GROQ_JSON_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
+_GROQ_STRICT_SCHEMA_MODELS = frozenset(
+    {
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+    }
+)
+
+_EVENT_ANALYSIS_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "symbol": {"type": "string"},
+        "should_alert": {"type": "boolean"},
+        "event_key": {"type": ["string", "null"]},
+        "title": {"type": ["string", "null"]},
+        "message_body": {"type": ["string", "null"]},
+        "related_news_ids": {
+            "type": ["array", "null"],
+            "items": {"type": "string"},
+        },
+        "possible_action": {"type": ["string", "null"]},
+        "urgency": {
+            "type": ["string", "null"],
+            "enum": ["low", "normal", "high", None],
+        },
+        "confidence": {
+            "type": ["string", "null"],
+            "enum": ["low", "medium", "high", None],
+        },
+        "reason_for_no_alert": {"type": ["string", "null"]},
+    },
+    "required": [
+        "symbol",
+        "should_alert",
+        "event_key",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "urgency",
+        "confidence",
+        "reason_for_no_alert",
+    ],
+    "additionalProperties": False,
+}
+
+_MARKET_HEARTBEAT_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "symbol": {"type": "string"},
+        "title": {"type": "string"},
+        "message_body": {"type": "string"},
+        "related_news_ids": {"type": "array", "items": {"type": "string"}},
+        "possible_action": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+    },
+    "required": [
+        "symbol",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "confidence",
+    ],
+    "additionalProperties": False,
+}
+
+
+def _structured_response_formats(
+    *, call_type: str, schema_name: str, schema: dict
+) -> tuple[dict | None, dict[str, dict | None] | None]:
+    """Return the shared JSON mode plus a strict Groq override when supported."""
+    if not _groq_json_mode_enabled():
+        return None, None
+
+    json_object = {"type": "json_object"}
+    groq_model = llm_config.model_for("groq", call_type)
+    if groq_model not in _GROQ_STRICT_SCHEMA_MODELS:
+        return json_object, None
+
+    return (
+        json_object,
+        {
+            "groq": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
+                },
+            }
+        },
+    )
+
+
 def _parse_json(raw_content: str | None) -> dict | None:
     """Parse a JSON-object response without relaxing schema validation."""
     cleaned = re.sub(r"^```(?:json)?\s*", "", str(raw_content or "").strip())
@@ -208,6 +302,11 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
 async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
     symbol = str(input_payload.get("symbol") or "").strip() or None
     max_tokens = llm_config.max_tokens_for("event_analysis")
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type="event_analysis",
+        schema_name="event_analysis",
+        schema=_EVENT_ANALYSIS_JSON_SCHEMA,
+    )
     return await get_router().chat_completion(
         call_type="event_analysis",
         messages=[
@@ -215,7 +314,8 @@ async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> t
             {"role": "user", "content": build_event_analysis_prompt(input_payload)},
         ],
         max_tokens=max_tokens,
-        response_format={"type": "json_object"} if _groq_json_mode_enabled() else None,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
         symbol=symbol,
         validate_response=_json_response_validator(
             call_type="event_analysis",
@@ -246,6 +346,11 @@ def build_market_heartbeat_prompt(input_payload: dict) -> str:
 async def ask_market_heartbeat_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
     symbol = str(input_payload.get("symbol") or "").strip() or None
     max_tokens = llm_config.max_tokens_for("market_heartbeat")
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type="market_heartbeat",
+        schema_name="market_heartbeat",
+        schema=_MARKET_HEARTBEAT_JSON_SCHEMA,
+    )
     return await get_router().chat_completion(
         call_type="market_heartbeat",
         messages=[
@@ -253,7 +358,8 @@ async def ask_market_heartbeat_raw(input_payload: dict, *, schema_check=None) ->
             {"role": "user", "content": build_market_heartbeat_prompt(input_payload)},
         ],
         max_tokens=max_tokens,
-        response_format={"type": "json_object"} if _groq_json_mode_enabled() else None,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
         symbol=symbol,
         validate_response=_json_response_validator(
             call_type="market_heartbeat",

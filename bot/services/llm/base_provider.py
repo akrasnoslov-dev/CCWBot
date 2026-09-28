@@ -114,6 +114,10 @@ class OpenAICompatibleProvider(BaseProvider):
     def reset_client(self) -> None:
         self._client = None
 
+    def _sampling_parameters(self, *, model: str) -> dict[str, float]:
+        """Sampling parameters supported by this provider/model pair."""
+        return {"temperature": 0.0}
+
     async def chat_completion(
         self,
         *,
@@ -165,12 +169,12 @@ class OpenAICompatibleProvider(BaseProvider):
         request_kwargs = {
             "model": model,
             "messages": messages,
-            "temperature": 0.0,
             # ``max_tokens`` rather than ``max_completion_tokens``: all providers in the
             # chain accept it, and Groq treats it as an alias of the newer name, so reasoning
             # models still receive the correct budget. See the PR discussion in docs/llm_usage.md.
             "max_tokens": max_tokens,
         }
+        request_kwargs.update(self._sampling_parameters(model=model))
         if response_format is not None:
             request_kwargs["response_format"] = response_format
         if reasoning_effort is not None:
