@@ -21,7 +21,8 @@ brief for every unfinished user.
 1. Add failing workflow and onboarding regression contracts for the secret channel and legacy
    subscription states.
 2. Render the v2 first brief from an ephemeral BTC-only selection while leaving persisted rows
-   untouched; use the same BTC-only selection count for its delivery events.
+   untouched; use the same BTC-only selection count for its delivery events. Derive monitoring
+   status from persisted rows so a legacy disabled BTC subscription is not promised as active.
 3. Replace the Graphify Neo4j example with an environment-based password handoff and explicit
    chat/transcript prohibition.
 4. Run focused, full, Compose, CI, and required security/product/payment/test reviews; resolve

@@ -216,6 +216,7 @@ async def test_unfinished_v1_user_with_btc_disabled_still_gets_btc_only_v2_brief
         brief = message.replies[0][0]
         assert "BTC:" in brief
         assert "ETH:" not in brief
+        assert "Active monitoring: None." in brief
         subscription_rows = list(
             (
                 await session.scalars(
