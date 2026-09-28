@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from telegram import InlineKeyboardMarkup, Update
 
@@ -86,6 +87,11 @@ def _premium_intent_count(subscriptions) -> int:
     return sum(1 for symbol in _selected_symbols(subscriptions) if not is_symbol_free(symbol))
 
 
+def _first_run_btc_subscription():
+    """Represent the v2 first value independently of legacy saved watchlist intent."""
+    return (SimpleNamespace(symbol="btc", is_enabled=True),)
+
+
 def _trial_end_text(user: User) -> str:
     trial = get_user_trial(user)
     active_until = getattr(trial, "active_until", None)
@@ -99,10 +105,14 @@ async def build_instant_brief(
     *,
     user: User,
     subscriptions,
+    monitoring_subscriptions=None,
     now: datetime | None = None,
 ) -> str:
     """Render a brief from persisted PriceState only; never call LLMs or providers."""
     selected_symbols = _selected_symbols(subscriptions)
+    persisted_monitoring_symbols = _selected_symbols(
+        subscriptions if monitoring_subscriptions is None else monitoring_subscriptions
+    )
     brief_now = _as_aware_utc(now) or utc_now()
     lines = ["Your market brief", ""]
     for symbol in selected_symbols:
@@ -121,7 +131,7 @@ async def build_instant_brief(
 
     active = [
         display_symbol(symbol)
-        for symbol in selected_symbols
+        for symbol in persisted_monitoring_symbols
         if is_coin_unlocked_for_user(user, symbol)
     ]
     locked = [
@@ -193,9 +203,15 @@ async def send_start_experience(update: Update) -> bool:
                 event_key=f"onboarding:{ONBOARDING_VERSION}",
             )
             await session.commit()
-            text = await build_instant_brief(session, user=user, subscriptions=subscriptions)
+            first_run_subscriptions = _first_run_btc_subscription()
+            text = await build_instant_brief(
+                session,
+                user=user,
+                subscriptions=first_run_subscriptions,
+                monitoring_subscriptions=subscriptions,
+            )
             keyboard = build_first_run_brief_keyboard()
-            selected_count = len(_selected_symbols(subscriptions))
+            selected_count = len(_selected_symbols(first_run_subscriptions))
             first_run = True
     await update.message.reply_text(text, reply_markup=keyboard)
     if first_run:

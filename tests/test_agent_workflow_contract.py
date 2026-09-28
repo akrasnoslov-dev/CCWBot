@@ -195,3 +195,17 @@ def test_graphify_tooling_is_opt_in_and_has_no_global_git_or_codex_side_effects(
     ) in normalized_skill
     assert "uv tool run --from graphifyy" not in skill
     assert "pip install 'graphifyy[gemini]'" not in skill
+
+
+def test_graphify_neo4j_export_keeps_passwords_out_of_chat_and_argv():
+    exports = (
+        ROOT / ".codex" / "skills" / "graphify" / "references" / "exports.md"
+    ).read_text(encoding="utf-8")
+    neo4j = exports.split("### Step 7 - Neo4j export", 1)[1].split(
+        "### Step 7a - FalkorDB export", 1
+    )[0]
+
+    assert "NEO4J_PASSWORD" in neo4j
+    assert "Do not ask the user to paste a password into chat" in neo4j
+    assert "--password" not in neo4j
+    assert "--push bolt://localhost:7687 --user neo4j" in neo4j
