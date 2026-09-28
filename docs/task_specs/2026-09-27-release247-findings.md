@@ -22,7 +22,8 @@ brief for every unfinished user.
    subscription states.
 2. Render the v2 first brief from an ephemeral BTC-only selection while leaving persisted rows
    untouched; use the same BTC-only selection count for its delivery events. Derive monitoring
-   status from persisted rows so a legacy disabled BTC subscription is not promised as active.
+   status from persisted rows so a legacy disabled BTC subscription is not promised as active,
+   while an active entitled Premium selection remains accurately represented as monitored.
 3. Replace the Graphify Neo4j example with an environment-based password handoff and explicit
    chat/transcript prohibition.
 4. Run focused, full, Compose, CI, and required security/product/payment/test reviews; resolve
