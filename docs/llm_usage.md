@@ -155,9 +155,16 @@ Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually acc
 `low` to a 1024-token thinking budget. Other thinking models stay outside the effort gate until
 their endpoint contract is verified; known names still receive token headroom.
 
-Groq GPT-OSS supports JSON Object Mode and `reasoning_effort`, but Groq explicitly documents that
-GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests; it is
-for other Groq reasoning-model families.
+Groq GPT-OSS supports strict JSON Schema Structured Outputs and `reasoning_effort`. Event
+Analysis on `openai/gpt-oss-120b` and Market Heartbeat on `openai/gpt-oss-20b` use
+`response_format.type=json_schema` with `strict=true`; the existing application validators still
+run afterwards for semantic, grounding, and non-empty checks. Gemini/Mistral fallbacks and an
+operator-supplied Groq model outside the verified strict-schema allowlist keep JSON Object Mode, so
+a provider-specific optimization cannot make the fallback request incompatible. `GROQ_JSON_MODE=false`
+disables both response-format modes while preserving application parsing and fallback behavior.
+
+Groq GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests;
+it is for other Groq reasoning-model families.
 
 The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-oss-20b` for the
 other structured call types. They replace the Llama 3 defaults scheduled to shut down on
@@ -209,6 +216,12 @@ Reports produced after provider-chain exhaustion use the explicit
 `news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin diagnostics
 (`bot/observability/system_status.py`) and the ops-agent
 `llm_usage_summary` collector are provider-agnostic.
+
+When a logical provider chain exhausts, the router emits one
+`ops_event=llm_chain_exhausted` WARNING containing only `provider:error_reason` categories and
+circuit-breaker skip names. It never includes provider bodies, prompts, model output, credentials,
+or user data. Detailed sanitized provider messages and allowlisted rate-limit headers remain in
+`llm_usage_logs` for read-only investigation.
 
 Per-provider usage counts (24h) — group by `provider`:
 
