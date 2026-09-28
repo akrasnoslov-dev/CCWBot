@@ -335,7 +335,7 @@ def test_model_for_resolves_per_provider(monkeypatch):
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.delenv("MISTRAL_MODEL", raising=False)
     assert config.model_for("groq", "market_heartbeat") == "openai/gpt-oss-20b"
-    assert config.model_for("gemini", "daily_report") == "gemini-2.5-flash"
+    assert config.model_for("gemini", "daily_report") == "gemini-3.8-flash"
     assert config.model_for("mistral", "event_analysis") == "mistral-small-2603"
     monkeypatch.setenv("GEMINI_MODEL", "custom-gemini")
     assert config.model_for("gemini", "event_analysis") == "custom-gemini"
