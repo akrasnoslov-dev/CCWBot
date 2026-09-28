@@ -13,7 +13,7 @@ per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEAR
 All providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
-The shipped fallback defaults are `gemini-2.5-flash` and the pinned Mistral Small 4 endpoint
+The shipped fallback defaults are `gemini-3.8-flash` and the pinned Mistral Small 4 endpoint
 `mistral-small-2603`; deploys can still override either with `GEMINI_MODEL` or `MISTRAL_MODEL`.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
@@ -147,13 +147,22 @@ The gate for sending the parameter is the resolved **model identifier**, not the
 provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
 a non-reasoning model is a 400 that the router treats as deterministic and does not fall back on.
 A model counts as reasoning-capable when its identifier contains one of
-`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5`). In a chain that mixes plain and
-reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible attempts.
+`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5,gemini-3.`). In a chain that mixes
+plain and reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible
+attempts.
 
 Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually accepts the
-`reasoning_effort` request field. Gemini 2.5's OpenAI-compatible endpoint supports it and maps
-`low` to a 1024-token thinking budget. Other thinking models stay outside the effort gate until
-their endpoint contract is verified; known names still receive token headroom.
+`reasoning_effort` request field. Gemini 2.5 and Gemini 3 support it through Google's
+OpenAI-compatible endpoint. Gemini 2.5 maps effort to fixed thinking budgets; Gemini 3 maps effort
+to thinking levels and uses dynamic thought-token allocation. The existing headroom remains a
+bounded client-side safety allowance rather than a provider-guaranteed Gemini 3 thinking budget. Other
+thinking models stay outside the effort gate until their endpoint contract is verified.
+
+Gemini 3.x requests intentionally omit explicit sampling parameters such as `temperature`.
+Google's Gemini 3.8 migration guidance deprecates `temperature`, `top_p`, and `top_k` for this
+model family. The shared OpenAI-compatible provider keeps the existing `temperature=0.0` behavior
+for Groq, Mistral, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
+`gemini-3.*` model identifiers.
 
 Groq GPT-OSS supports strict JSON Schema Structured Outputs and `reasoning_effort`. Event
 Analysis on `openai/gpt-oss-120b` and Market Heartbeat on `openai/gpt-oss-20b` use
@@ -188,7 +197,7 @@ On startup the runtime logs the fully resolved configuration, one INFO line per 
 
 ```text
 ops_event=llm_config call_type=event_analysis max_tokens=300
-  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-2.5-flash/effort=low/max=1324(no_api_key)
+  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-3.8-flash/effort=low/max=1324(no_api_key)
 ```
 
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
