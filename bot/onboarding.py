@@ -105,10 +105,16 @@ async def build_instant_brief(
     *,
     user: User,
     subscriptions,
+    monitoring_subscriptions=None,
     now: datetime | None = None,
 ) -> str:
     """Render a brief from persisted PriceState only; never call LLMs or providers."""
     selected_symbols = _selected_symbols(subscriptions)
+    persisted_monitoring_symbols = set(
+        _selected_symbols(
+            subscriptions if monitoring_subscriptions is None else monitoring_subscriptions
+        )
+    )
     brief_now = _as_aware_utc(now) or utc_now()
     lines = ["Your market brief", ""]
     for symbol in selected_symbols:
@@ -128,7 +134,7 @@ async def build_instant_brief(
     active = [
         display_symbol(symbol)
         for symbol in selected_symbols
-        if is_coin_unlocked_for_user(user, symbol)
+        if symbol in persisted_monitoring_symbols and is_coin_unlocked_for_user(user, symbol)
     ]
     locked = [
         display_symbol(symbol)
@@ -187,7 +193,7 @@ async def send_start_experience(update: Update) -> bool:
         )
         if user is None:
             return False
-        await ensure_default_coin_subscriptions(session, user_id=user.id)
+        subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
         if user.onboarding_completed_at is not None:
             text, keyboard = build_returning_user_message()
             first_run = False
@@ -201,7 +207,10 @@ async def send_start_experience(update: Update) -> bool:
             await session.commit()
             first_run_subscriptions = _first_run_btc_subscription()
             text = await build_instant_brief(
-                session, user=user, subscriptions=first_run_subscriptions
+                session,
+                user=user,
+                subscriptions=first_run_subscriptions,
+                monitoring_subscriptions=subscriptions,
             )
             keyboard = build_first_run_brief_keyboard()
             selected_count = len(_selected_symbols(first_run_subscriptions))
