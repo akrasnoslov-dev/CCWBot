@@ -816,8 +816,8 @@ async def test_rate_limit_backoff_during_a_probe_does_not_spend_it(monkeypatch):
 
 def test_json_validation_is_still_detected_through_the_router_wrapper():
     # Once json_validate_failed became fallback-eligible the error reaches callers wrapped in
-    # AllProvidersFailedError. Callers that ask "was this a JSON-mode failure?" must still get
-    # a yes, or the documented GROQ_JSON_MODE_RETRY_PLAIN path silently becomes unreachable.
+    # AllProvidersFailedError. Classification must still inspect the wrapped provider error so
+    # diagnostics preserve the provider-side JSON validation category.
     from bot.services.llm.telemetry import is_json_validation_error, usage_status_for_error
 
     inner = _error(400, "json_validate_failed", code="json_validate_failed")
