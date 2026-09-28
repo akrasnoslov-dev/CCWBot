@@ -126,7 +126,7 @@ def test_parse_json_keeps_object_only_contract(raw_content, expected):
     assert ai_agent_groq._parse_json(raw_content) == expected
 
 
-def test_event_analysis_raw_uses_json_mode_and_returns_provider_attribution(monkeypatch):
+def test_event_analysis_raw_uses_strict_groq_schema_and_returns_provider_attribution(monkeypatch):
     captured = {}
 
     class FakeCompletions:
@@ -155,5 +155,113 @@ def test_event_analysis_raw_uses_json_mode_and_returns_provider_attribution(monk
 
     assert result[1]["should_alert"] is False
     assert result.provider == "groq"
-    assert captured["response_format"] == {"type": "json_object"}
+    response_format = captured["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "event_analysis"
+    assert response_format["json_schema"]["strict"] is True
+    schema = response_format["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {
+        "symbol",
+        "should_alert",
+        "event_key",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "urgency",
+        "confidence",
+        "reason_for_no_alert",
+    }
+    assert schema["properties"]["related_news_ids"]["type"] == ["array", "null"]
+    assert schema["properties"]["urgency"]["enum"] == [
+        "low",
+        "normal",
+        "high",
+        None,
+    ]
+    assert schema["properties"]["confidence"]["enum"] == [
+        "low",
+        "medium",
+        "high",
+        None,
+    ]
     assert captured["max_tokens"] >= 300
+
+
+def test_market_heartbeat_raw_uses_strict_groq_schema(monkeypatch):
+    captured = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"symbol":"BTC","title":"BTC heartbeat",'
+                                '"message_body":"Conditions remain orderly.",'
+                                '"related_news_ids":[],"possible_action":"Watch the range.",'
+                                '"confidence":"low"}'
+                            )
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=10, completion_tokens=7, total_tokens=17),
+                headers={},
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    _set_groq_client(monkeypatch, fake_client)
+
+    result = asyncio.run(ai_agent_groq.ask_market_heartbeat_raw({"symbol": "BTC"}))
+
+    assert result.provider == "groq"
+    response_format = captured["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "market_heartbeat"
+    assert response_format["json_schema"]["strict"] is True
+    schema = response_format["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {
+        "symbol",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "confidence",
+    }
+
+
+def test_event_analysis_unknown_groq_model_keeps_json_object_mode(monkeypatch):
+    captured = {}
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "custom/unsupported-model")
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"symbol":"BTC","should_alert":false,"event_key":null,'
+                                '"title":null,"message_body":null,"related_news_ids":[],'
+                                '"possible_action":null,"urgency":null,"confidence":null,'
+                                '"reason_for_no_alert":"No material market event."}'
+                            )
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=12, completion_tokens=8, total_tokens=20),
+                headers={},
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    _set_groq_client(monkeypatch, fake_client)
+
+    result = asyncio.run(ai_agent_groq.ask_event_analysis_raw({"symbol": "BTC"}))
+
+    assert result.provider == "groq"
+    assert captured["response_format"] == {"type": "json_object"}

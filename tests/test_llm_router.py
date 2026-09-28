@@ -26,6 +26,7 @@ class FakeProvider(BaseProvider):
         self._behavior = behavior
         self.calls = 0
         self.last_reasoning_effort = None
+        self.last_response_format = None
         self.operation_ids = []
 
     async def chat_completion(
@@ -43,6 +44,7 @@ class FakeProvider(BaseProvider):
         self.calls += 1
         self.operation_ids.append(current_llm_operation_id())
         self.last_reasoning_effort = reasoning_effort
+        self.last_response_format = response_format
         behavior = self._behavior
         if isinstance(behavior, BaseException):
             raise behavior
@@ -115,6 +117,69 @@ async def test_fallback_to_next_provider(monkeypatch, failure):
     assert result.provider == "gemini"
     assert groq.calls == 1
     assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_specific_response_format_does_not_leak_to_fallback(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    groq = FakeProvider("groq", RuntimeError("connection failed"))
+    gemini = FakeProvider("gemini", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
+    strict_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "event_analysis",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"symbol": {"type": "string"}},
+                "required": ["symbol"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+    result = await router.chat_completion(
+        call_type="event_analysis",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        response_format={"type": "json_object"},
+        response_format_overrides={"groq": strict_format},
+    )
+
+    assert result.provider == "gemini"
+    assert groq.last_response_format == strict_format
+    assert gemini.last_response_format == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_chain_exhaustion_log_contains_only_safe_failure_categories(monkeypatch, caplog):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    groq = FakeProvider(
+        "groq",
+        AIProviderRateLimitError(
+            "429 provider body must-not-appear",
+            provider="groq",
+            model="m",
+        ),
+    )
+    gemini = FakeProvider("gemini", asyncio.TimeoutError("must-not-appear"))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
+
+    with caplog.at_level(logging.WARNING, logger="bot.services.llm.router"):
+        with pytest.raises(AllProvidersFailedError):
+            await _call(router)
+
+    exhausted = [
+        record.getMessage()
+        for record in caplog.records
+        if "ops_event=llm_chain_exhausted" in record.getMessage()
+    ]
+    assert len(exhausted) == 1
+    assert "groq:rate_limit" in exhausted[0]
+    assert "gemini:timeout" in exhausted[0]
+    assert "provider body must-not-appear" not in exhausted[0]
+    assert "must-not-appear" not in exhausted[0]
 
 
 @pytest.mark.asyncio
