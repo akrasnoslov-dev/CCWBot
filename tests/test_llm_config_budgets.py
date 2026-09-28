@@ -199,6 +199,32 @@ def test_reasoning_effort_defaults_to_low_for_reasoning_models():
         assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", call_type) == "low"
 
 
+@pytest.mark.parametrize(
+    ("call_type", "expected_max_tokens"),
+    [
+        ("event_analysis", 1324),
+        ("market_heartbeat", 1374),
+        ("daily_report", 1824),
+    ],
+)
+def test_gemini_38_structured_call_types_use_low_effort_with_headroom(
+    monkeypatch, call_type, expected_max_tokens
+):
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    model = llm_config.model_for("gemini", call_type)
+
+    assert model == "gemini-3.8-flash"
+    assert llm_config.reasoning_effort_for(model, call_type) == "low"
+    assert (
+        llm_config.effective_max_tokens_for(
+            call_type=call_type,
+            provider="gemini",
+            model=model,
+        )
+        == expected_max_tokens
+    )
+
+
 def test_reasoning_effort_per_call_type_wins_over_global(monkeypatch):
     monkeypatch.setenv("LLM_REASONING_EFFORT", "high")
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "low")
@@ -216,6 +242,7 @@ def test_reasoning_effort_only_reaches_reasoning_models(monkeypatch):
     assert llm_config.reasoning_effort_for("gpt-oss-20b", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for("llama-3.3-70b-versatile", "event_analysis") is None
     assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "medium"
+    assert llm_config.reasoning_effort_for("gemini-3.8-flash", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for(None, "event_analysis") is None
 
 
@@ -440,13 +467,58 @@ async def test_request_payload_includes_reasoning_effort_when_set(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_name", "model", "expected_temperature"),
+    [
+        ("gemini", "gemini-3.8-flash", None),
+        ("gemini", "gemini-2.5-flash", 0.0),
+        ("groq", "openai/gpt-oss-20b", 0.0),
+        ("mistral", "mistral-small-2603", 0.0),
+    ],
+)
+async def test_provider_sampling_parameters_are_model_compatible(
+    monkeypatch, provider_name, model, expected_temperature
+):
+    from bot.services.llm.gemini_provider import GeminiProvider
+    from bot.services.llm.groq_provider import GroqProvider
+    from bot.services.llm.mistral_provider import MistralProvider
+
+    provider_cls = {
+        "gemini": GeminiProvider,
+        "groq": GroqProvider,
+        "mistral": MistralProvider,
+    }[provider_name]
+    provider = provider_cls()
+    client = _CapturingClient()
+    monkeypatch.setattr(provider, "get_client", lambda: client)
+
+    await provider.chat_completion(
+        call_type="event_analysis",
+        symbol="BTC",
+        model=model,
+        messages=[{"role": "user", "content": "Return JSON."}],
+        max_tokens=1324,
+        response_format={"type": "json_object"},
+        reasoning_effort=None,
+    )
+
+    kwargs = client.completions.kwargs
+    if expected_temperature is None:
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+        assert "top_k" not in kwargs
+    else:
+        assert kwargs["temperature"] == expected_temperature
+
+
+@pytest.mark.asyncio
 async def test_gemini_adapter_uses_verified_openai_compatible_reasoning_contract(monkeypatch):
     from bot.services.llm.gemini_provider import GeminiProvider
 
     provider = GeminiProvider()
     client = _CapturingClient()
     monkeypatch.setattr(provider, "get_client", lambda: client)
-    model = "gemini-2.5-flash"
+    model = "gemini-3.8-flash"
     max_tokens = llm_config.effective_max_tokens_for(
         call_type="daily_report",
         provider="gemini",
@@ -484,7 +556,7 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     ("provider", "env_name", "expected"),
     [
         ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
-        ("gemini", "GEMINI_MODEL", "gemini-2.5-flash"),
+        ("gemini", "GEMINI_MODEL", "gemini-3.8-flash"),
         ("mistral", "MISTRAL_MODEL", "mistral-small-2603"),
     ],
 )
