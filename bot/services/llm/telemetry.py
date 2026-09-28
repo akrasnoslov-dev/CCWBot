@@ -214,9 +214,9 @@ def _error_haystack(error: Exception) -> str:
 
     Also folds in one level of wrapping (``last_error`` / ``__cause__``). Once a failure is
     fallback-eligible the router surfaces it wrapped in ``AllProvidersFailedError``, and
-    callers that ask "was this a JSON-mode validation failure?" would otherwise see only the
-    wrapper's generic message — which silently disabled the ``GROQ_JSON_MODE_RETRY_PLAIN``
-    path. One level is enough and keeps this bounded.
+    classification helpers inspecting wrapped provider failures would otherwise see only the
+    wrapper's generic message and lose the provider-side failure category. One level is enough
+    and keeps this bounded.
     """
     parts = _error_fields(error)
     for attribute in ("last_error", "__cause__"):
