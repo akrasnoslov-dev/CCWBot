@@ -233,6 +233,41 @@ async def test_unfinished_v1_user_with_btc_disabled_still_gets_btc_only_v2_brief
 
 
 @pytest.mark.asyncio
+async def test_unfinished_v1_active_premium_intent_stays_visible_as_monitored(monkeypatch):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await set_legacy_subscriptions(session, user, {"eth"})
+        now = datetime.now(timezone.utc)
+        session.add(
+            UserPremiumTrial(
+                user_id=user.id,
+                started_at=now - timedelta(days=1),
+                active_until=now + timedelta(days=6),
+            )
+        )
+        await session.commit()
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        message = FakeMessage()
+
+        assert await send_start_experience(
+            SimpleNamespace(
+                message=message,
+                effective_user=SimpleNamespace(id=user.telegram_user_id),
+            )
+        )
+
+        brief = message.replies[0][0]
+        assert "BTC:" in brief
+        assert "ETH:" not in brief
+        assert "Active monitoring: ETH." in brief
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_existing_user_start_returns_to_dashboard_without_restarting_onboarding(monkeypatch):
     engine, session = await build_session()
     try:

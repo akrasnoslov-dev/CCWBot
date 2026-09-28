@@ -110,10 +110,8 @@ async def build_instant_brief(
 ) -> str:
     """Render a brief from persisted PriceState only; never call LLMs or providers."""
     selected_symbols = _selected_symbols(subscriptions)
-    persisted_monitoring_symbols = set(
-        _selected_symbols(
-            subscriptions if monitoring_subscriptions is None else monitoring_subscriptions
-        )
+    persisted_monitoring_symbols = _selected_symbols(
+        subscriptions if monitoring_subscriptions is None else monitoring_subscriptions
     )
     brief_now = _as_aware_utc(now) or utc_now()
     lines = ["Your market brief", ""]
@@ -133,8 +131,8 @@ async def build_instant_brief(
 
     active = [
         display_symbol(symbol)
-        for symbol in selected_symbols
-        if symbol in persisted_monitoring_symbols and is_coin_unlocked_for_user(user, symbol)
+        for symbol in persisted_monitoring_symbols
+        if is_coin_unlocked_for_user(user, symbol)
     ]
     locked = [
         display_symbol(symbol)
