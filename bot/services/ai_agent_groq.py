@@ -150,7 +150,10 @@ _EVENT_ANALYSIS_JSON_SCHEMA = {
         "event_key": {"type": ["string", "null"]},
         "title": {"type": ["string", "null"]},
         "message_body": {"type": ["string", "null"]},
-        "related_news_ids": {"type": "array", "items": {"type": "string"}},
+        "related_news_ids": {
+            "type": ["array", "null"],
+            "items": {"type": "string"},
+        },
         "possible_action": {"type": ["string", "null"]},
         "urgency": {
             "type": ["string", "null"],

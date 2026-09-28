@@ -173,6 +173,19 @@ def test_event_analysis_raw_uses_strict_groq_schema_and_returns_provider_attribu
         "confidence",
         "reason_for_no_alert",
     }
+    assert schema["properties"]["related_news_ids"]["type"] == ["array", "null"]
+    assert schema["properties"]["urgency"]["enum"] == [
+        "low",
+        "normal",
+        "high",
+        None,
+    ]
+    assert schema["properties"]["confidence"]["enum"] == [
+        "low",
+        "medium",
+        "high",
+        None,
+    ]
     assert captured["max_tokens"] >= 300
 
 
