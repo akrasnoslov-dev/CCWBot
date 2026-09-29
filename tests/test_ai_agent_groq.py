@@ -234,7 +234,6 @@ def test_market_heartbeat_raw_uses_strict_groq_schema(monkeypatch):
     }
 
 
-
 def test_market_report_raw_uses_strict_groq_schema(monkeypatch):
     captured = {}
 
