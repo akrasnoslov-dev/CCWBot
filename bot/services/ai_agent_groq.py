@@ -202,6 +202,50 @@ _MARKET_HEARTBEAT_JSON_SCHEMA = {
 }
 
 
+_MARKET_REPORT_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "report_type": {"type": "string"},
+        "title": {"type": "string"},
+        "market_pulse": {"type": "string"},
+        "dashboard": {"type": "array", "items": {"type": "string"}},
+        "coin_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "watch": {"type": "string"},
+                },
+                "required": ["symbol", "summary", "watch"],
+                "additionalProperties": False,
+            },
+        },
+        "market_catalysts": {"type": "array", "items": {"type": "string"}},
+        "why_it_matters": {"type": "string"},
+        "watch_next": {"type": "string"},
+        "week_timeline": {"type": "array", "items": {"type": "string"}},
+        "themes": {"type": "array", "items": {"type": "string"}},
+        "next_week_focus": {"type": "string"},
+    },
+    "required": [
+        "report_type",
+        "title",
+        "market_pulse",
+        "dashboard",
+        "coin_cards",
+        "market_catalysts",
+        "why_it_matters",
+        "watch_next",
+        "week_timeline",
+        "themes",
+        "next_week_focus",
+    ],
+    "additionalProperties": False,
+}
+
+
 def _structured_response_formats(
     *, call_type: str, schema_name: str, schema: dict
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
@@ -394,6 +438,11 @@ async def ask_market_report_raw(input_payload: dict, *, schema_check=None) -> tu
     report_type = str(input_payload.get("report_type") or "").strip().lower()
     call_type = f"{report_type}_report" if report_type in {"daily", "weekly"} else "market_report"
     max_tokens = llm_config.max_tokens_for(call_type)
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type=call_type,
+        schema_name="market_report",
+        schema=_MARKET_REPORT_JSON_SCHEMA,
+    )
     return await get_router().chat_completion(
         call_type=call_type,
         messages=[
@@ -401,7 +450,8 @@ async def ask_market_report_raw(input_payload: dict, *, schema_check=None) -> tu
             {"role": "user", "content": build_market_report_prompt(input_payload)},
         ],
         max_tokens=max_tokens,
-        response_format={"type": "json_object"} if _groq_json_mode_enabled() else None,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
         timeout=20,
         symbol=None,
         validate_response=_json_response_validator(
