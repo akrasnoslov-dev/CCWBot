@@ -20,10 +20,9 @@ authoritative. If an override is needed, verify the resolved `ops_event=llm_conf
 and remove the override again when it is no longer intentional. Avoid moving `-latest` aliases as
 the default production configuration because they can silently change model behavior.
 
-CCWBot is designed to keep core development/runtime LLM usage on zero-cost/free tiers where
-practical. Do not make a paid LLM subscription or billing-enabled provider tier a runtime
-requirement without explicit owner approval. Capacity problems should first be addressed through
-supported free-tier models, call efficiency, caching/reuse, and graceful degradation.
+The project-wide zero-cost/free-tier service policy is owned by `docs/project_context.md`.
+For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
+efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
 advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
