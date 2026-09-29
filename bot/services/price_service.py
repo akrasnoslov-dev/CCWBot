@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from decimal import Decimal
 
@@ -30,6 +31,14 @@ _PRICE_CACHE: dict[str, tuple[Decimal, Decimal, float]] = {}
 _BTC_MARKET_CACHE: tuple[Decimal, Decimal, Decimal | None, float] | None = None
 logger = logging.getLogger(__name__)
 _COIN_ID_TO_SYMBOL = {coin_id: symbol for symbol, coin_id in COIN_SYMBOL_TO_ID.items()}
+
+
+def _coingecko_headers() -> dict[str, str]:
+    """Return CoinGecko Demo API authentication headers when configured."""
+    api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    if not api_key:
+        return {}
+    return {"x-cg-demo-api-key": api_key}
 
 
 def _get_cached_price(normalized_symbol: str) -> tuple[Decimal, Decimal, str] | None:
@@ -122,7 +131,12 @@ async def _get_with_retry(
 ) -> dict | list:
     """Fetch CoinGecko data, retrying 429s and falling back to stale cache."""
     for attempt in range(max_retries + 1):
-        response = await client.get(url, params=params, timeout=10)
+        response = await client.get(
+            url,
+            params=params,
+            headers=_coingecko_headers(),
+            timeout=10,
+        )
         if response.status_code != 429:
             response.raise_for_status()
             if parse_decimal_numbers:
