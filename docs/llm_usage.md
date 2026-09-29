@@ -14,7 +14,15 @@ All providers are reached through the OpenAI-compatible chat-completions API (Ge
 OpenAI-compatible endpoint), so no extra client dependency is required.
 
 The shipped fallback defaults are `gemini-3.8-flash` and the pinned Mistral Small 4 endpoint
-`mistral-small-2603`; deploys can still override either with `GEMINI_MODEL` or `MISTRAL_MODEL`.
+`mistral-small-2603`. Model environment variables are intentional overrides, not normal required
+configuration: leave them unset in ordinary deployments so the pinned code defaults stay
+authoritative. If an override is needed, verify the resolved `ops_event=llm_config` startup line
+and remove the override again when it is no longer intentional. Avoid moving `-latest` aliases as
+the default production configuration because they can silently change model behavior.
+
+The project-wide zero-cost/free-tier service policy is owned by `docs/project_context.md`.
+For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
+efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
 The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
 advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
@@ -165,9 +173,12 @@ for Groq, Mistral, and pre-Gemini-3 models; the Gemini adapter removes it only f
 `gemini-3.*` model identifiers.
 
 Groq GPT-OSS supports strict JSON Schema Structured Outputs and `reasoning_effort`. Event
-Analysis on `openai/gpt-oss-120b` and Market Heartbeat on `openai/gpt-oss-20b` use
-`response_format.type=json_schema` with `strict=true`; the existing application validators still
-run afterwards for semantic, grounding, and non-empty checks. Gemini/Mistral fallbacks and an
+Analysis on `openai/gpt-oss-120b`, Market Heartbeat on `openai/gpt-oss-20b`, and Market Reports
+on the configured verified GPT-OSS Groq model use `response_format.type=json_schema` with
+`strict=true`. For reports, the provider schema requires every top-level field and every
+`coin_cards` object field, preventing the missing-field payload that caused the 2026-09-29
+Daily Report fallback incident. Existing application validators still run afterwards for semantic,
+grounding, active-symbol, safety, and non-empty checks. Gemini/Mistral fallbacks and an
 operator-supplied Groq model outside the verified strict-schema allowlist keep JSON Object Mode, so
 a provider-specific optimization cannot make the fallback request incompatible. `GROQ_JSON_MODE=false`
 disables both response-format modes while preserving application parsing and fallback behavior.

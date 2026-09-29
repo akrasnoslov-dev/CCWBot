@@ -259,18 +259,16 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     previous_event_alert = input_payload.get("previous_event_alert")
     previous_event_alert = previous_event_alert if isinstance(previous_event_alert, dict) else {}
     return {
-        # Version the semantic input contract so analyses created under the former prompt and
-        # identity rules are not reused under the clarified contract.
-        "schema_version": 4,
+        # Version the semantic input contract so analyses created under a former prompt and
+        # identity rules are not reused under the compact model-view contract. Static policy is
+        # now carried by that versioned prompt, while runtime/redundant fields stay out of reuse.
+        "schema_version": 6,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
-        "display_symbol": input_payload.get("display_symbol"),
-        "coin_name": input_payload.get("coin_name"),
         "market": {
             key: market.get(key)
             for key in (
                 "price",
                 "snapshots",
-                "payload_points",
                 "analysed_window_minutes",
                 "chg_window_percent",
                 "chg24h_percent",
@@ -281,7 +279,6 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         # reference point for the since-last-alert percentage.
         "last_msg": {
             "time": last_msg.get("time"),
-            "type": last_msg.get("type"),
             "price": last_msg.get("price"),
         },
         "previous_event_alert": {
@@ -295,9 +292,6 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             "possible_action": previous_event_alert.get("possible_action"),
         },
         "news": news,
-        "policy": input_payload.get("policy")
-        if isinstance(input_payload.get("policy"), dict)
-        else None,
     }
 
 
