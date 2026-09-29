@@ -24,6 +24,7 @@ Do not place LLM/Groq calls inside recipient loops.
 Permanent guardrails:
 
 - Do not change Event Alert business logic unless explicitly requested.
+- Keep core development and runtime integrations free-tier / zero-cost where practical. Do not introduce a paid LLM/API subscription, billing-enabled provider tier, or other recurring external-service cost as a requirement without explicit owner approval. Prefer free-tier capacity, provider/model efficiency, caching, and graceful degradation first.
 - Do not change Premium, watchlist, subscription, payment, or grant/revoke behavior unless
   explicitly requested.
 - Do not expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs,

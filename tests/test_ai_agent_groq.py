@@ -234,6 +234,106 @@ def test_market_heartbeat_raw_uses_strict_groq_schema(monkeypatch):
     }
 
 
+def test_market_report_raw_uses_strict_groq_schema(monkeypatch):
+    captured = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"report_type":"daily","title":"Daily Market Report",'
+                                '"market_pulse":"Mixed market.","dashboard":["BTC is steady."],'
+                                '"coin_cards":[{"symbol":"BTC","summary":"BTC is steady.",'
+                                '"watch":"Watch the range."}],"market_catalysts":[],'
+                                '"why_it_matters":"Confirmation matters.",'
+                                '"watch_next":"Watch the range.","week_timeline":[],'
+                                '"themes":[],"next_week_focus":""}'
+                            )
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=20, completion_tokens=12, total_tokens=32),
+                headers={},
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    _set_groq_client(monkeypatch, fake_client)
+
+    result = asyncio.run(
+        ai_agent_groq.ask_market_report_raw(
+            {"report_type": "daily", "active_symbols": ["BTC"]}
+        )
+    )
+
+    assert result.provider == "groq"
+    response_format = captured["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "market_report"
+    assert response_format["json_schema"]["strict"] is True
+    schema = response_format["json_schema"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {
+        "report_type",
+        "title",
+        "market_pulse",
+        "dashboard",
+        "coin_cards",
+        "market_catalysts",
+        "why_it_matters",
+        "watch_next",
+        "week_timeline",
+        "themes",
+        "next_week_focus",
+    }
+    coin_card_schema = schema["properties"]["coin_cards"]["items"]
+    assert coin_card_schema["additionalProperties"] is False
+    assert set(coin_card_schema["required"]) == {"symbol", "summary", "watch"}
+
+
+def test_market_report_unknown_groq_model_keeps_json_object_mode(monkeypatch):
+    captured = {}
+    monkeypatch.setenv("GROQ_REPORT_MODEL", "custom/unsupported-model")
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"report_type":"daily","title":"Daily Market Report",'
+                                '"market_pulse":"Mixed market.","dashboard":["BTC is steady."],'
+                                '"coin_cards":[{"symbol":"BTC","summary":"BTC is steady.",'
+                                '"watch":"Watch the range."}],"market_catalysts":[],'
+                                '"why_it_matters":"Confirmation matters.",'
+                                '"watch_next":"Watch the range.","week_timeline":[],'
+                                '"themes":[],"next_week_focus":""}'
+                            )
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=20, completion_tokens=12, total_tokens=32),
+                headers={},
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    _set_groq_client(monkeypatch, fake_client)
+
+    result = asyncio.run(
+        ai_agent_groq.ask_market_report_raw(
+            {"report_type": "daily", "active_symbols": ["BTC"]}
+        )
+    )
+
+    assert result.provider == "groq"
+    assert captured["response_format"] == {"type": "json_object"}
+
+
 def test_event_analysis_unknown_groq_model_keeps_json_object_mode(monkeypatch):
     captured = {}
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "custom/unsupported-model")
