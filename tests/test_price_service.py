@@ -25,9 +25,11 @@ class FakeClient:
     def __init__(self, responses: list[FakeResponse]):
         self.responses = responses
         self.calls = 0
+        self.request_headers: list[dict[str, str]] = []
 
-    async def get(self, url, params, timeout):
+    async def get(self, url, params, headers, timeout):
         self.calls += 1
+        self.request_headers.append(headers)
         return self.responses.pop(0)
 
 
@@ -114,6 +116,26 @@ def test_coin_mapping_uses_active_symbols_only():
         "gram": "the-open-network",
         "sol": "solana",
     }
+
+
+def test_coingecko_headers_are_empty_without_demo_key(monkeypatch):
+    monkeypatch.delenv("COINGECKO_API_KEY", raising=False)
+
+    assert price_service._coingecko_headers() == {}
+
+
+@pytest.mark.asyncio
+async def test_get_with_retry_sends_demo_api_key(monkeypatch):
+    monkeypatch.setenv("COINGECKO_API_KEY", "demo-test-key")
+    client = FakeClient([FakeResponse(200, {"bitcoin": {"usd": 50000.0}})])
+
+    await price_service._get_with_retry(
+        client,
+        "https://api.coingecko.com/api/v3/simple/price",
+        {"ids": "bitcoin", "vs_currencies": "usd"},
+    )
+
+    assert client.request_headers == [{"x-cg-demo-api-key": "demo-test-key"}]
 
 
 @pytest.mark.asyncio
