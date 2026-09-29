@@ -34,6 +34,14 @@ The report LLM returns structured JSON only. The bot does not trust an
 LLM-composed `telegram_message` for reports. Telegram text is assembled in code
 from validated fields and selected source-backed news items.
 
+
+When the resolved Groq report model is in the verified strict-schema allowlist, the provider request
+uses strict JSON Schema requiring every report top-level field and the `symbol`, `summary`, and
+`watch` fields on every coin card. Gemini, Mistral, and unsupported/custom Groq report models keep
+JSON Object Mode. Provider-side shape enforcement does not replace application validation:
+report type, active-symbol completeness, non-empty content, safety wording, and other semantic
+checks still run in the backend.
+
 Automatic Event Alerts continue to use their existing market data path and are
 not affected by report-specific data enrichment.
 
