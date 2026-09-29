@@ -22,10 +22,10 @@ significance threshold when reasoning about the supplied evidence.
 Before a provider call, CCWBot may reuse a durable result only when the canonical semantic Event
 Analysis input is exactly unchanged. The fingerprint includes normalized coin identity, full-price
 market facts, snapshot sequence, analysed-window fields, previous Event Alert context, selected
-news identity/content, and policy context. It excludes operation IDs, tracing IDs, recipients,
-database IDs, and observation timestamps. Decimal representation is normalized (`1.3500` equals
-`1.35`), but a real value change (`-0.183` to `-0.184`) is different. There are no movement
-buckets, tolerances, or similarity comparisons.
+news identity/content, and the versioned static prompt policy. It excludes operation IDs, tracing
+IDs, recipients, database IDs, redundant display metadata, and observation timestamps. Decimal
+representation is normalized (`1.3500` equals `1.35`), but a real value change (`-0.183` to
+`-0.184`) is different. There are no movement buckets, tolerances, or similarity comparisons.
 
 ## Flow
 
