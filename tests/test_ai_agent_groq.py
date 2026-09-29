@@ -31,32 +31,25 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
         }
     )
 
-    assert "LLM owns market significance" in prompt
-    assert "news alone must not set should_alert=true" in prompt
-    assert "urgency is null" in prompt
-    assert "reason_for_no_alert is non-empty" in prompt
-    assert "Do not invent backend price thresholds" in prompt
-    assert "0.042 means 0.042%, not 4.2%" in prompt
-    assert "Never multiply a supplied change value by 100" in prompt
-    assert "did not meet a threshold" in prompt
-    assert "not a restatement of supplied price or percentage values" in prompt
-    assert "coincident context, never as proven cause" in prompt
-    assert "conditional monitoring of supplied snapshots, trend, or selected news" in prompt
-    assert "noteworthy enough to interrupt the user" in prompt
-    assert "Keep that boolean and your qualitative reasoning internally consistent" in prompt
-    assert "routine, ordinary, modest, stable, insignificant" in prompt
-    assert "other supplied market evidence clearly makes the event noteworthy" in prompt
-    assert "News alone must never make a routine market state alertable" in prompt
-    assert "Time-window facts are distinct" in prompt
-    assert "price change over market.analysed_window_minutes" in prompt
-    assert "change since last_msg.time/last_msg.price" in prompt
-    assert "snapshots are the only supplied observations" in prompt
-    assert "A null metric is unavailable or unknown" in prompt
-    assert "never infer it from another metric" in prompt
-    assert "substitute chg_since_msg_percent or chg24h_percent for chg_window_percent" in prompt
-    assert "One current snapshot does not establish an analysed-window trajectory" in prompt
-    assert "intended analysis window, not proof" in prompt
-    assert "verified analysed-window move when chg_window_percent is available" in prompt
+    assert "Market first; news never alone true" in prompt
+    assert "LLM judges qualitatively" in prompt
+    assert "no backend/invented threshold" in prompt
+    assert "threshold was missed only if supplied" in prompt
+    assert "reason_for_no_alert non-empty" in prompt
+    assert "0.042=0.042%, not 4.2%" in prompt
+    assert "no x100" in prompt
+    assert "body interprets, no raw numbers" in prompt
+    assert "news coincident, not cause" in prompt
+    assert "possible_action=conditional monitoring" in prompt
+    assert "Supplied evidence only" in prompt
+    assert "Routine/ordinary/modest/stable/insignificant" in prompt
+    assert "unless market facts are noteworthy" in prompt
+    assert "cw=change over w" in prompt
+    assert "cl=since lm.t/p" in prompt
+    assert "null unknown" in prompt
+    assert "never derive cw from cl/c24" in prompt
+    assert "one snapshot or w does not" in prompt
+    assert "concise title on verified cw, not c24" in prompt
 
 
 @pytest.mark.parametrize(
@@ -80,10 +73,10 @@ def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
         }
     )
 
-    assert f'"chg_window_percent":{window_change}' in prompt
-    assert f'"chg24h_percent":{day_change}' in prompt
-    assert "0.042 means 0.042%, not 4.2%" in prompt
-    assert "Never multiply a supplied change value by 100" in prompt
+    assert f'"cw":{window_change}' in prompt
+    assert f'"c24":{day_change}' in prompt
+    assert "0.042=0.042%, not 4.2%" in prompt
+    assert "no x100" in prompt
 
 
 def test_other_prompts_preserve_report_and_heartbeat_contracts():

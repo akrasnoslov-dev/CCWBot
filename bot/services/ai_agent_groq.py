@@ -250,53 +250,81 @@ def sanitize_alert_message(message: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
-def build_event_analysis_prompt(input_payload: dict) -> str:
-    return (
-        "Return valid JSON only. Write English.\n"
-        "Use exactly: symbol, should_alert, event_key, title, message_body, related_news_ids, "
-        "possible_action, urgency, confidence, reason_for_no_alert.\n"
-        "urgency: low, normal, high. confidence: low, medium, high.\n"
-        "Analyze one symbol. Event Alerts are market-event-first: market facts and snapshots are "
-        "primary; news supports interpretation but news alone must not set should_alert=true.\n"
-        "LLM owns market significance. Do not invent backend price thresholds. "
-        "Time-window facts are distinct: market.chg_window_percent is the price change over "
-        "market.analysed_window_minutes; market.chg24h_percent is the 24-hour price change; "
-        "market.chg_since_msg_percent is the change since last_msg.time/last_msg.price, not "
-        "the analysed-window change unless those timestamps coincide. snapshots are the only "
-        "supplied observations for an analysed-window trajectory. A null metric is unavailable "
-        "or unknown: never infer it from another metric, substitute chg_since_msg_percent or "
-        "chg24h_percent for chg_window_percent, or claim an analysed-window move when "
-        "chg_window_percent is null. One current snapshot does not establish an analysed-window "
-        "trajectory. analysed_window_minutes describes the intended analysis window, not proof "
-        "that a change for that window is available. All Event Analysis change fields "
-        "(chg_window_percent, chg24h_percent, chg_since_msg_percent) are already percentage "
-        "values / percentage points, never decimal fractions: 0.042 means 0.042%, not 4.2%. "
-        "Never multiply a supplied change value by 100. Use qualitative significance reasoning "
-        "from the supplied market evidence; never say a move did not meet a threshold unless an "
-        "explicit threshold is present in the input.\n"
-        "should_alert=true means you judge this supplied market event noteworthy enough to "
-        "interrupt the user with an Event Alert. Keep that boolean and your qualitative "
-        "reasoning internally consistent: if you describe the state as routine, ordinary, "
-        "modest, stable, insignificant, or otherwise not meaningfully noteworthy, normally "
-        "return should_alert=false. You may return true despite a modest individual metric only "
-        "when other supplied market evidence clearly makes the event noteworthy; state that "
-        "market-evidence reason. News alone must never make a routine market state alertable.\n"
-        "When should_alert=true use a stable non-random event_key. When false, event_key/title/"
-        "message_body/possible_action are empty or null, related_news_ids is [], urgency is null, "
-        "and reason_for_no_alert is non-empty.\n"
-        "For should_alert=true, make title concise and centered on the verified analysed-window "
-        "move when chg_window_percent is available; otherwise use only verified available "
-        "context. Do not repeat 24h change in the title when that move is available. "
-        "message_body must be a "
-        "short, useful interpretation, not a restatement of supplied price or percentage values. "
-        "Use only supplied evidence: describe news as coincident context, never as proven cause. "
-        "possible_action must be concise, conditional monitoring of supplied snapshots, trend, or "
-        "selected news; do not give trading commands or generic risk-plan advice.\n"
-        "Use news.news_id only for related_news_ids. Be cautious; no guaranteed outcomes or "
-        "hard trading commands.\n"
-        "In snapshots, m is minutes before timestamp_utc and p is USD price.\n\nInput JSON:\n"
-        f"{_json_dumps(input_payload)}"
+_EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
+    (
+        "JSON English retail; useful, nonrepeat alerts. Keys: symbol, should_alert, event_key, "
+        "title, message_body, related_news_ids, possible_action, urgency, confidence, "
+        "reason_for_no_alert. urgency=low|normal|high; confidence=low|medium|high.",
+        "Market first; news never alone true. LLM judges qualitatively: no backend/invented "
+        "threshold; say a threshold was missed only if supplied. Routine/ordinary/modest/stable/"
+        "insignificant normally false unless market facts are noteworthy.",
+        "Data: sym; at=observation time; m={p:USD,s:snapshots,w:min,cw:window %,c24:24h %,"
+        "cl:since alert %}; lm={t:time,p:price}; n={i,src,t,tm,x,r,mat}; prev={t,k,f,cw,nh,a}. "
+        "Snapshot m=minutes before observation,p=USD.",
+        "cw=change over w; c24=24h; cl=since lm.t/p. All %: 0.042=0.042%, not 4.2%; no x100. "
+        "null unknown: never derive cw from cl/c24 or claim trajectory without cw. Only s shows "
+        "trajectory; one snapshot or w does not.",
+        "true: stable event_key; concise title on verified cw, not c24; body interprets, no raw "
+        "numbers. Supplied evidence only; news coincident, not cause. possible_action=conditional "
+        "monitoring, never trade/generic risk advice; related_news_ids only n.i. false: event_key/"
+        "title/message_body/possible_action null or empty, related_news_ids=[], urgency=null, "
+        "reason_for_no_alert non-empty. No guaranteed outcomes/hard trading commands.",
     )
+)
+
+
+def _event_analysis_prompt_payload(input_payload: dict) -> dict:
+    """Return the lossless semantic model view without runtime or repeated static fields."""
+    market = input_payload.get("market")
+    market = market if isinstance(market, dict) else {}
+    last_message = input_payload.get("last_msg")
+    last_message = last_message if isinstance(last_message, dict) else {}
+    previous_alert = input_payload.get("previous_event_alert")
+    previous_alert = previous_alert if isinstance(previous_alert, dict) else {}
+    news_items = input_payload.get("news")
+    news_items = news_items if isinstance(news_items, list) else []
+
+    payload = {
+        "sym": input_payload.get("symbol"),
+        "at": input_payload.get("timestamp_utc"),
+        "m": {
+            "p": market.get("price"),
+            "s": market.get("snapshots"),
+            "w": market.get("analysed_window_minutes"),
+            "cw": market.get("chg_window_percent"),
+            "c24": market.get("chg24h_percent"),
+            "cl": market.get("chg_since_msg_percent"),
+        },
+        "lm": {"t": last_message.get("time"), "p": last_message.get("price")},
+        "n": [
+            {
+                "i": item.get("news_id"),
+                "src": item.get("source"),
+                "t": item.get("title"),
+                "tm": item.get("time"),
+                "x": item.get("summary"),
+                "r": item.get("relevance_label"),
+                "mat": item.get("material"),
+            }
+            for item in news_items
+            if isinstance(item, dict)
+        ],
+    }
+    if previous_alert:
+        payload["prev"] = {
+            "t": previous_alert.get("title"),
+            "k": previous_alert.get("canonical_event_key"),
+            "f": previous_alert.get("semantic_family"),
+            "cw": previous_alert.get("analysed_window_move"),
+            "nh": previous_alert.get("stable_related_news_ids_hash"),
+            "a": previous_alert.get("possible_action"),
+        }
+    return payload
+
+
+def build_event_analysis_prompt(input_payload: dict) -> str:
+    payload = _json_dumps(_event_analysis_prompt_payload(input_payload))
+    return f"{_EVENT_ANALYSIS_INSTRUCTIONS}\nInput JSON:\n{payload}"
 
 
 async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
