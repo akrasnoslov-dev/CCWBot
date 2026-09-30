@@ -167,6 +167,7 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
         "i": "btc-etf-flow", "src": "Example Wire",
         "t": "Bitcoin ETF flows reverse after volatile session",
         "x": "Sanitized representative summary of reported fund-flow context and market reaction.",
+        "r": "market_context",
         "mat": True,
     }
     assert compact["prev"] == {
@@ -191,7 +192,7 @@ def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fie
     assert "coin_name" not in context
     assert "payload_points" not in context["market"]
     assert "time" not in context["news"][0]
-    assert "relevance_label" not in context["news"][0]
+    assert context["news"][0]["relevance_label"] == "market_context"
     assert "stable_related_news_ids_hash" not in context["previous_event_alert"]
     assert "possible_action" not in context["previous_event_alert"]
     assert "policy" not in context
