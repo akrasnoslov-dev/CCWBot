@@ -182,6 +182,15 @@ def test_event_analysis_prompt_measurement_targets_production_message_budget():
     assert measurements[-1]["total_message_chars"] <= 1850
 
 
+def test_compact_percent_precision_does_not_erase_tiny_nonzero_move():
+    payload = _fixture()
+    payload["market"]["chg_window_percent"] = Decimal("0.0000004")
+
+    compact = ai_agent_groq._event_analysis_prompt_payload(payload)
+
+    assert compact["m"]["cw"] == Decimal("0.0000004")
+
+
 def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts():
     payload = _fixture(news=True, previous=True)
     compact = ai_agent_groq._event_analysis_prompt_payload(payload)
@@ -194,9 +203,9 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
         [15, Decimal("112100.543210987654")],
         [0, Decimal("112345.678901234567")],
     ]
-    assert compact["m"]["cw"] == Decimal("0.398172635491")
-    assert compact["m"]["c24"] == Decimal("-0.184276519")
-    assert compact["m"]["cl"] == Decimal("0.201234567")
+    assert compact["m"]["cw"] == Decimal("0.398173")
+    assert compact["m"]["c24"] == Decimal("-0.184277")
+    assert compact["m"]["cl"] == Decimal("0.201235")
     assert "lm" not in compact
     assert compact["n"][0] == {
         "i": "btc-etf-flow",
