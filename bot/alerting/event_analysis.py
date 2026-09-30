@@ -98,7 +98,7 @@ class EventAnalysisValidationError(ValueError):
 
 def _has_trajectory_marker(text: str) -> bool:
     return bool(
-        _has_trajectory_marker(text) or _ACROSS_SNAPSHOTS_RE.search(text)
+        _TRAJECTORY_MARKER_RE.search(text) or _ACROSS_SNAPSHOTS_RE.search(text)
     )
 
 
