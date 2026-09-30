@@ -1,10 +1,13 @@
 """Pure Event Alert identity, precision, and scheduling helpers."""
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
+from html import unescape
 from uuid import uuid4
 
 from bot.alerting.alert_rules import calculate_price_change_percent
@@ -232,15 +235,56 @@ def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
 
 
-EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS = 180
+EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS = 120
 
 
 def _event_analysis_news_summary(value: object) -> str:
-    """Return the bounded news summary exposed to Event Analysis and its fingerprint."""
-    text = " ".join(str(value or "").split()).strip()
+    """Return compact useful news text, dropping RSS markup/noise before the LLM."""
+    raw = unescape(str(value or ""))
+    had_markup = "<" in raw
+    text = re.sub(r"<[^>]*>", " ", raw)
+    if "<" in text:
+        text = text.split("<", 1)[0]
+    text = re.sub(r"https?://\S+", " ", text)
+    text = " ".join(text.split()).strip()
+    if had_markup and len(text) < 20:
+        return ""
     if len(text) <= EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS:
         return text
     return text[: EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS - 1].rstrip(" ,;:") + "."
+
+
+def _event_analysis_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(text)
+            except (TypeError, ValueError):
+                return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _event_analysis_news_age_hours(input_payload: dict, item: dict) -> int | None:
+    """Return a compact freshness fact instead of sending two timestamp strings."""
+    observed_at = _event_analysis_datetime(input_payload.get("timestamp_utc"))
+    published_at = _event_analysis_datetime(
+        item.get("time")
+        or item.get("published_at_utc")
+        or item.get("published_at")
+        or item.get("published")
+    )
+    if observed_at is None or published_at is None:
+        return None
+    return max(0, int((observed_at - published_at).total_seconds() // 3600))
 
 
 def _canonical_event_analysis_context(input_payload: dict) -> dict:
@@ -251,16 +295,20 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     news = []
     for item in news_items if isinstance(news_items, list) else []:
         if isinstance(item, dict):
-            news.append(
-                {
-                    "news_id": item.get("news_id"),
-                    "title": item.get("title"),
-                    "source": item.get("source"),
-                    "summary": _event_analysis_news_summary(item.get("summary")),
-                    "relevance_label": item.get("relevance_label"),
-                    "material": item.get("material"),
-                }
-            )
+            compact_news = {
+                "news_id": item.get("news_id"),
+                "title": item.get("title"),
+                "source": item.get("source"),
+                "relevance_label": item.get("relevance_label"),
+                "material": item.get("material"),
+            }
+            summary = _event_analysis_news_summary(item.get("summary"))
+            if summary:
+                compact_news["summary"] = summary
+            age_hours = _event_analysis_news_age_hours(input_payload, item)
+            if age_hours is not None:
+                compact_news["age_hours"] = age_hours
+            news.append(compact_news)
     news.sort(key=_json_dumps)
     last_msg = input_payload.get("last_msg")
     last_msg = last_msg if isinstance(last_msg, dict) else {}
@@ -269,7 +317,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
     )
     context = {
-        "schema_version": 7,
+        "schema_version": 8,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
@@ -290,7 +338,6 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     }
     if previous_event_alert:
         context["previous_event_alert"] = {
-            "title": previous_event_alert.get("title"),
             "canonical_event_key": previous_event_alert.get("canonical_event_key"),
             "semantic_family": previous_event_alert.get("semantic_family"),
             "analysed_window_move": previous_event_alert.get("analysed_window_move"),
