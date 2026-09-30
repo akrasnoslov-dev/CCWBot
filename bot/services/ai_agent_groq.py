@@ -301,7 +301,7 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "Routine/modest/stable=>false unless other market facts are noteworthy.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
-        "Data sym;m={s,w,cw,c24,cl};n={i,src,t,x,mat};prev={t,k,f,cw}. "
+        "Data sym;m={s,w,cw,c24,cl};n={i,src,t,x,r,mat};prev={t,k,f,cw}. "
         "s={m:min before observation,p:USD}. cw=window%;c24=24h%;cl=since prior alert%. "
         "0.042=0.042%, not 4.2%; no x100. null/missing=unknown.",
         "Facts only:never derive cw from c24/cl;never invent prior/sub-window moves,% or "
@@ -339,6 +339,7 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
                 "src": item.get("source"),
                 "t": item.get("title"),
                 "x": _event_analysis_news_summary(item.get("summary")),
+                "r": item.get("relevance_label"),
                 "mat": item.get("material"),
             }
             for item in news_items
