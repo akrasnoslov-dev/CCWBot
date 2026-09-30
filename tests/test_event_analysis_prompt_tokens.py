@@ -157,7 +157,7 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
 
     assert compact["sym"] == "BTC"
     assert "at" not in compact
-    assert compact["m"]["p"] == Decimal("112345.678901234567")
+    assert "p" not in compact["m"]
     assert compact["m"]["s"] == payload["market"]["snapshots"]
     assert compact["m"]["cw"] == Decimal("0.398172635491")
     assert compact["m"]["c24"] == Decimal("-0.184276519")

@@ -298,7 +298,9 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
         "JSON English retail. Market decides; news alone never alerts. LLM owns significance; "
         "no invented thresholds. Routine/modest/stable=>false unless other market facts are noteworthy.",
-        "Data: sym; m={p,s,w,cw,c24,cl}; n={i,src,t,x,mat}; prev={t,k,f,cw}. "
+        "Keys: symbol,should_alert,event_key,title,message_body,related_news_ids,"
+        "possible_action,urgency,confidence,reason_for_no_alert.",
+        "Data: sym; m={s,w,cw,c24,cl}; n={i,src,t,x,mat}; prev={t,k,f,cw}. "
         "s: m=minutes before observation,p=USD. cw=window %, c24=24h %, cl=since prior alert %; "
         "0.042=0.042%. null/missing=unknown.",
         "Facts only: never derive cw from c24/cl; never invent prior/sub-window moves, %, or "
@@ -323,7 +325,6 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
     payload = {
         "sym": input_payload.get("symbol"),
         "m": {
-            "p": market.get("price"),
             "s": market.get("snapshots"),
             "w": market.get("analysed_window_minutes"),
             "cw": market.get("chg_window_percent"),
