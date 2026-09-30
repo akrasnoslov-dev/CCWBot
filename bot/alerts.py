@@ -572,7 +572,7 @@ def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> li
         compacted.append(
             {
                 **item,
-                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+                "summary": _event_identity._event_analysis_news_summary(item.get("summary")),
             }
         )
     return compacted
