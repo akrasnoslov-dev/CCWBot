@@ -13,8 +13,8 @@ Post-deploy production evidence from 2026-09-29 16:56 UTC shows:
 - Successful Groq calls average about 994 prompt tokens.
 - Real input messages are commonly about 2.0k-3.3k characters; the previous UTF-8 chars/4 fixture estimate materially understated provider-reported prompt usage.
 - A replay of 162 persisted production Event Analysis inputs against the first PR implementation measured about 1,764 mean message characters, p95 about 2,415, and max 2,582, so the original synthetic <=1,500 average guard was not representative enough.
-- After the final production-shaped compaction revision, the same 162-input replay measures about 1,389 mean characters, p95 about 1,752, and max 1,762.
-- Across the 147 matching production Groq calls, the observed relationship was approximately `prompt_tokens = 0.336 * input_chars + 207`. Applying that empirical relationship to the revised replay projects about 674 average prompt tokens and about 885 total tokens using the observed ~211 average completion tokens. This is a projection only; provider telemetry after deployment remains the acceptance check.
+- After the final production-shaped compaction revision, the same 162-input replay measures about 1,376 mean characters, p95 about 1,739, and max 1,749.
+- Across the 147 matching production Groq calls, the observed relationship was approximately `prompt_tokens = 0.336 * input_chars + 207`. Applying that empirical relationship to the revised replay projects about 669 average prompt tokens and about 881 total tokens using the observed ~211 average completion tokens. This is a projection only; provider telemetry after deployment remains the acceptance check.
 
 Known false positive:
 - A grounded statement such as "declined 0.312% across the 180-minute window" can currently be rejected as an unsupported trajectory because generic wording such as "across" is treated as a trajectory marker.
