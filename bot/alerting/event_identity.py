@@ -257,6 +257,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                     "title": item.get("title"),
                     "source": item.get("source"),
                     "summary": _event_analysis_news_summary(item.get("summary")),
+                    "relevance_label": item.get("relevance_label"),
                     "material": item.get("material"),
                 }
             )
