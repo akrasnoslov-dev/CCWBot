@@ -232,8 +232,19 @@ def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
 
 
+EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS = 180
+
+
+def _event_analysis_news_summary(value: object) -> str:
+    """Return the bounded news summary exposed to Event Analysis and its fingerprint."""
+    text = " ".join(str(value or "").split()).strip()
+    if len(text) <= EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS:
+        return text
+    return text[: EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS - 1].rstrip(" ,;:") + "."
+
+
 def _canonical_event_analysis_context(input_payload: dict) -> dict:
-    """All semantic LLM input, excluding only runtime IDs and wall-clock metadata."""
+    """Semantic model input used for exact pre-LLM reuse."""
     market = input_payload.get("market", input_payload.get("market_data", {}))
     market = market if isinstance(market, dict) else {}
     news_items = input_payload.get("news", input_payload.get("candidate_news", []))
@@ -242,27 +253,20 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         if isinstance(item, dict):
             news.append(
                 {
-                    # Keep this structurally identical to _compact_event_analysis_news().
-                    # Every field here is sent to the LLM and can change its decision.
                     "news_id": item.get("news_id"),
                     "title": item.get("title"),
                     "source": item.get("source"),
-                    "time": item.get("time"),
-                    "summary": item.get("summary"),
-                    "relevance_label": item.get("relevance_label"),
+                    "summary": _event_analysis_news_summary(item.get("summary")),
                     "material": item.get("material"),
                 }
             )
     news.sort(key=_json_dumps)
-    last_msg = input_payload.get("last_msg")
-    last_msg = last_msg if isinstance(last_msg, dict) else {}
     previous_event_alert = input_payload.get("previous_event_alert")
-    previous_event_alert = previous_event_alert if isinstance(previous_event_alert, dict) else {}
-    return {
-        # Version the semantic input contract so analyses created under a former prompt and
-        # identity rules are not reused under the compact model-view contract. Static policy is
-        # now carried by that versioned prompt, while runtime/redundant fields stay out of reuse.
-        "schema_version": 6,
+    previous_event_alert = (
+        previous_event_alert if isinstance(previous_event_alert, dict) else {}
+    )
+    context = {
+        "schema_version": 7,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
@@ -275,25 +279,16 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "chg_since_msg_percent",
             )
         },
-        # The prior-alert timestamp is semantic because it is supplied to the LLM as the
-        # reference point for the since-last-alert percentage.
-        "last_msg": {
-            "time": last_msg.get("time"),
-            "price": last_msg.get("price"),
-        },
-        "previous_event_alert": {
+        "news": news,
+    }
+    if previous_event_alert:
+        context["previous_event_alert"] = {
             "title": previous_event_alert.get("title"),
             "canonical_event_key": previous_event_alert.get("canonical_event_key"),
             "semantic_family": previous_event_alert.get("semantic_family"),
             "analysed_window_move": previous_event_alert.get("analysed_window_move"),
-            "stable_related_news_ids_hash": previous_event_alert.get(
-                "stable_related_news_ids_hash"
-            ),
-            "possible_action": previous_event_alert.get("possible_action"),
-        },
-        "news": news,
-    }
-
+        }
+    return context
 
 def _build_exact_event_context_fingerprint(input_payload: dict) -> str:
     return sha256(

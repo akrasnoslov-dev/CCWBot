@@ -57,35 +57,38 @@ def test_exact_context_ignores_runtime_metadata_and_normalizes_decimal_represent
     ) == _build_exact_event_context_fingerprint(equivalent)
 
 
-def test_exact_context_includes_last_message_time_for_elapsed_claim_grounding():
+def test_exact_context_ignores_last_message_details_not_sent_to_model():
     original = _payload()
-    original["last_msg"] = {"time": "2026-09-17T10:00:00+00:00", "type": "event", "price": 1.35}
+    original["last_msg"] = {
+        "time": "2026-09-17T10:00:00+00:00",
+        "type": "event",
+        "price": 1.35,
+    }
     original["previous_event_alert"] = {
         "created_at": "2026-09-17T10:00:00+00:00",
         "canonical_event_key": "btc_market_move",
         "semantic_family": "market_move",
         "title": "BTC market move",
     }
-    timestamp_only = _payload()
-    timestamp_only["last_msg"] = {
+    last_message_only = _payload()
+    last_message_only["last_msg"] = {
         "time": "2026-09-17T11:00:00+00:00",
         "type": "event",
-        "price": 1.35,
+        "price": 1.40,
     }
-    timestamp_only["previous_event_alert"] = {
+    last_message_only["previous_event_alert"] = {
         **original["previous_event_alert"],
         "created_at": "2026-09-17T11:00:00+00:00",
     }
     changed_semantics = _payload()
-    changed_semantics["last_msg"] = timestamp_only["last_msg"]
     changed_semantics["previous_event_alert"] = {
-        **timestamp_only["previous_event_alert"],
+        **original["previous_event_alert"],
         "semantic_family": "market_breakout",
     }
 
     assert _build_exact_event_context_fingerprint(
         original
-    ) != _build_exact_event_context_fingerprint(timestamp_only)
+    ) == _build_exact_event_context_fingerprint(last_message_only)
     assert _build_exact_event_context_fingerprint(
         original
     ) != _build_exact_event_context_fingerprint(changed_semantics)
@@ -118,9 +121,7 @@ def test_exact_context_invalidates_any_real_market_or_news_change():
         ("news_id", "n2"),
         ("title", "Corrected market update"),
         ("source", "Corrected publisher"),
-        ("time", "2026-09-17T09:01:00+00:00"),
         ("summary", "Corrected market conditions."),
-        ("relevance_label", "medium"),
         ("material", False),
     ],
 )
@@ -132,6 +133,23 @@ def test_exact_context_invalidates_every_semantic_event_news_field(field, replac
     assert _build_exact_event_context_fingerprint(
         original
     ) != _build_exact_event_context_fingerprint(changed)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("time", "2026-09-17T09:01:00+00:00"),
+        ("relevance_label", "medium"),
+    ],
+)
+def test_exact_context_ignores_news_metadata_not_sent_to_model(field, replacement):
+    original = _payload()
+    changed = _payload()
+    changed["news"][0][field] = replacement
+
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) == _build_exact_event_context_fingerprint(changed)
 
 
 def test_decimal_json_is_full_precision_json_number_not_float_or_string():

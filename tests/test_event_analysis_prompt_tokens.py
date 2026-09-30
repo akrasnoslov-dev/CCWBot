@@ -156,24 +156,22 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
     compact = ai_agent_groq._event_analysis_prompt_payload(payload)
 
     assert compact["sym"] == "BTC"
-    assert compact["at"] == "2026-09-29T10:00:00+00:00"
+    assert "at" not in compact
     assert compact["m"]["p"] == Decimal("112345.678901234567")
     assert compact["m"]["s"] == payload["market"]["snapshots"]
     assert compact["m"]["cw"] == Decimal("0.398172635491")
     assert compact["m"]["c24"] == Decimal("-0.184276519")
     assert compact["m"]["cl"] == Decimal("0.201234567")
-    assert compact["lm"] == {"t": "2026-09-29T06:00:00+00:00", "p": Decimal("112120.123456789012")}
+    assert "lm" not in compact
     assert compact["n"][0] == {
         "i": "btc-etf-flow", "src": "Example Wire",
         "t": "Bitcoin ETF flows reverse after volatile session",
-        "tm": "2026-09-29T09:15:00+00:00",
         "x": "Sanitized representative summary of reported fund-flow context and market reaction.",
-        "r": "market_context", "mat": True,
+        "mat": True,
     }
     assert compact["prev"] == {
         "t": "Bitcoin volatility expands", "k": "btc_volatility_expansion", "f": "volatility",
-        "cw": Decimal("0.4219"), "nh": "0e6a2b5c84ddf40f9a38b163beeb0a20",
-        "a": "Monitor whether the supplied range holds.",
+        "cw": Decimal("0.4219"),
     }
     assert "analysis_id" not in compact
     assert "policy" not in compact
@@ -182,15 +180,15 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
 def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fields():
     context = _canonical_event_analysis_context(_fixture(news=True, previous=True))
 
-    assert context["schema_version"] == 6
+    assert context["schema_version"] == 7
     assert context["symbol"] == "btc"
     assert context["market"]["price"] == Decimal("112345.678901234567")
-    assert context["last_msg"] == {
-        "time": "2026-09-29T06:00:00+00:00",
-        "price": Decimal("112120.123456789012"),
-    }
+    assert "last_msg" not in context
     assert "display_symbol" not in context
     assert "coin_name" not in context
     assert "payload_points" not in context["market"]
-    assert "type" not in context["last_msg"]
+    assert "time" not in context["news"][0]
+    assert "relevance_label" not in context["news"][0]
+    assert "stable_related_news_ids_hash" not in context["previous_event_alert"]
+    assert "possible_action" not in context["previous_event_alert"]
     assert "policy" not in context

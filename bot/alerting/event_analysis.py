@@ -53,7 +53,7 @@ _SINCE_PREVIOUS_ALERT_RE = re.compile(
     r"\bsince\s+(?:the\s+)?(?:previous|last)\s+(?:alert|message)\b", re.IGNORECASE
 )
 _TRAJECTORY_MARKER_RE = re.compile(
-    r"\b(?:consistent(?:ly)?|persistent(?:ly)?|persisted|throughout|across)\b",
+    r"\b(?:consistent(?:ly)?|persistent(?:ly)?|persisted|throughout)\b",
     re.IGNORECASE,
 )
 _MOVEMENT_DIRECTION_RE = re.compile(
