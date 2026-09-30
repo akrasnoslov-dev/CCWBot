@@ -34,18 +34,18 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "Market decides;news alone cannot alert" in prompt
     assert "No invented thresholds" in prompt
     assert "Routine/modest/stable=>false" in prompt
-    assert "unless other supplied facts are noteworthy" in prompt
+    assert "unless other supplied facts warrant alert" in prompt
     assert "reason set" in prompt
     assert ".042=.042%" in prompt
-    assert "Facts only:no derived cw" in prompt
+    assert "Facts:no derived cw" in prompt
     assert "no invented prior/sub-window moves" in prompt
     assert "consistent/persistent/throughout requires s" in prompt
-    assert "News coincident not causal" in prompt
+    assert "news not causal" in prompt
     assert "action monitor-only/no trade" in prompt
-    assert "cw=% over w min" in prompt
-    assert "cl=since prior alert%" in prompt
+    assert "cw=% over w" in prompt
+    assert "cl=since alert%" in prompt
     assert "null=unknown" in prompt
-    assert "title uses cw if known" in prompt
+    assert "title uses cw" in prompt
     assert "urgency=low|normal|high" in prompt
     assert "confidence=low|medium|high" in prompt
     assert "reason_for_no_alert=null" in prompt
