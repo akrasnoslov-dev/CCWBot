@@ -46,6 +46,9 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "cl=since prior alert%" in prompt
     assert "null=unknown" in prompt
     assert "title uses cw if known" in prompt
+    assert "urgency=low|normal|high" in prompt
+    assert "confidence=low|medium|high" in prompt
+    assert "reason_for_no_alert=null" in prompt
 
 
 @pytest.mark.parametrize(
