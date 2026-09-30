@@ -31,10 +31,10 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
         }
     )
 
-    assert "Market facts decide significance; news alone cannot alert" in prompt
-    assert "No fixed/invented thresholds" in prompt
+    assert "Market decides significance;news alone cannot alert" in prompt
+    assert "No invented thresholds" in prompt
     assert "Routine/modest/stable=>false" in prompt
-    assert "unless other supplied market facts are noteworthy" in prompt
+    assert "unless other supplied facts are noteworthy" in prompt
     assert "reason set" in prompt
     assert ".042=.042%" in prompt
     assert "Facts only:no derived cw" in prompt
