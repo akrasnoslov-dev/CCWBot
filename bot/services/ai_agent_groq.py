@@ -300,19 +300,18 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English retail. Market decides;news alone cannot alert. "
-        "No invented thresholds. Routine/modest/stable=>false unless other supplied "
-        "facts are noteworthy.",
+        "JSON English. Market decides;news alone cannot alert. No invented thresholds. "
+        "Routine/modest/stable=>false unless other supplied facts warrant alert.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
-        "Input:sym;m={s,w,cw,c24,cl};s=[[offset_min,USD],...],0=now,negative=older;"
-        "cw=% over w min;c24=24h%;cl=since prior alert%;n={i,src,t,x,r,mat,h},"
-        "h=hours old;prev={k,f,cw}. % already %, .042=.042%;null=unknown.",
-        "Facts only:no derived cw;no invented prior/sub-window moves,%,or trajectory. "
-        "consistent/persistent/throughout requires s. News coincident not causal.",
-        "symbol=sym. false=>event_key/title/message_body/possible_action/urgency/confidence=null;"
-        "related_news_ids=[];reason set. true=>stable event_key;reason_for_no_alert=null;"
-        "urgency=low|normal|high;confidence=low|medium|high;title uses cw if known;"
+        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...],0=now,<0=older;"
+        "cw=% over w;c24=24h%;cl=since alert%;n={i,src,t,x,r,mat,h},h=hours old;"
+        "prev={k,f,cw}. .042=.042%;null=unknown.",
+        "Facts:no derived cw or invented prior/sub-window moves,%,trajectory. "
+        "consistent/persistent/throughout requires s;news not causal.",
+        "symbol=sym. false=>event_key/title/message_body/possible_action/urgency=null;"
+        "related_news_ids=[];reason set. true=>stable event_key;urgency=low|normal|high;"
+        "confidence=low|medium|high;reason_for_no_alert=null;title uses cw;"
         "body concise/no extra numbers;action monitor-only/no trade;news IDs only n.i.",
     )
 )
