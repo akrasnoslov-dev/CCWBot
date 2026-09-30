@@ -297,20 +297,20 @@ def sanitize_alert_message(message: str) -> str:
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
         "JSON English retail. Market decides; news alone never alerts. LLM owns significance; "
-        "no invented thresholds. Routine/modest/stable=>false unless other market facts "
-        "are noteworthy.",
-        "Keys: symbol,should_alert,event_key,title,message_body,related_news_ids,"
+        "no invented thresholds. Never claim a threshold unless supplied. Routine/modest/stable=>false "
+        "unless other market facts are noteworthy.",
+        "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
-        "Data: sym; m={s,w,cw,c24,cl}; n={i,src,t,x,mat}; prev={t,k,f,cw}. "
-        "s: m=minutes before observation,p=USD. cw=window %, c24=24h %, cl=since prior alert %; "
-        "0.042=0.042%. null/missing=unknown.",
-        "Facts only: never derive cw from c24/cl; never invent prior/sub-window moves, %, or "
+        "Data sym;m={s,w,cw,c24,cl};n={i,src,t,x,mat};prev={t,k,f,cw}. "
+        "s={m:min before observation,p:USD}. cw=window%;c24=24h%;cl=since prior alert%. "
+        "0.042=0.042%, not 4.2%; no x100. null/missing=unknown.",
+        "Facts only:never derive cw from c24/cl;never invent prior/sub-window moves,% or "
         "trajectory. Say consistent/persistent/throughout only if s supports it.",
-        "Exact schema; symbol=sym. false=>event_key/title/message_body/possible_action=null, "
-        "related_news_ids=[], urgency=null, reason_for_no_alert set. true=>stable event_key; "
-        "urgency=low|normal|high; confidence=low|medium|high; title uses cw when present; "
-        "body interprets without extra numbers; news coincident not causal; "
-        "action=conditional monitoring, no trade commands; news IDs only n.i.",
+        "Exact schema;symbol=sym. false=>event_key/title/message_body/possible_action=null;"
+        "related_news_ids=[];urgency=null;reason_for_no_alert set. true=>stable event_key;"
+        "urgency=low|normal|high;confidence=low|medium|high;title uses cw when present;"
+        "body interprets without extra numbers;news coincident not causal;"
+        "action=conditional monitoring,no trade commands;news IDs only n.i.",
     )
 )
 

@@ -31,25 +31,25 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
         }
     )
 
-    assert "Market first; news never alone true" in prompt
-    assert "LLM judges qualitatively" in prompt
-    assert "no backend/invented threshold" in prompt
-    assert "threshold was missed only if supplied" in prompt
-    assert "reason_for_no_alert non-empty" in prompt
+    assert "Market decides; news alone never alerts" in prompt
+    assert "LLM owns significance" in prompt
+    assert "no invented thresholds" in prompt
+    assert "Never claim a threshold unless supplied" in prompt
+    assert "reason_for_no_alert set" in prompt
     assert "0.042=0.042%, not 4.2%" in prompt
     assert "no x100" in prompt
-    assert "body interprets, no raw numbers" in prompt
-    assert "news coincident, not cause" in prompt
-    assert "possible_action=conditional monitoring" in prompt
-    assert "Supplied evidence only" in prompt
-    assert "Routine/ordinary/modest/stable/insignificant" in prompt
-    assert "unless market facts are noteworthy" in prompt
-    assert "cw=change over w" in prompt
-    assert "cl=since lm.t/p" in prompt
-    assert "null unknown" in prompt
-    assert "never derive cw from cl/c24" in prompt
-    assert "one snapshot or w does not" in prompt
-    assert "concise title on verified cw, not c24" in prompt
+    assert "body interprets without extra numbers" in prompt
+    assert "news coincident not causal" in prompt
+    assert "action=conditional monitoring" in prompt
+    assert "Facts only" in prompt
+    assert "Routine/modest/stable=>false" in prompt
+    assert "unless other market facts are noteworthy" in prompt
+    assert "cw=window%" in prompt
+    assert "cl=since prior alert%" in prompt
+    assert "null/missing=unknown" in prompt
+    assert "never derive cw from c24/cl" in prompt
+    assert "consistent/persistent/throughout only if s supports it" in prompt
+    assert "title uses cw when present" in prompt
 
 
 @pytest.mark.parametrize(
