@@ -306,7 +306,7 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "0.042=0.042%, not 4.2%; no x100. null/missing=unknown.",
         "Facts only:never derive cw from c24/cl;never invent prior/sub-window moves,% or "
         "trajectory. Say consistent/persistent/throughout only if s supports it.",
-        "Exact schema;symbol=sym. false=>event_key/title/message_body/possible_action=null;"
+        "symbol=sym. false=>event_key/title/message_body/possible_action=null;"
         "related_news_ids=[];urgency=null;reason_for_no_alert set. true=>stable event_key;"
         "urgency=low|normal|high;confidence=low|medium|high;title uses cw when present;"
         "body interprets without extra numbers;news coincident not causal;"
