@@ -57,7 +57,7 @@ def test_exact_context_ignores_runtime_metadata_and_normalizes_decimal_represent
     ) == _build_exact_event_context_fingerprint(equivalent)
 
 
-def test_exact_context_ignores_last_message_details_not_sent_to_model():
+def test_exact_context_includes_last_message_time_for_grounding_reuse():
     original = _payload()
     original["last_msg"] = {
         "time": "2026-09-17T10:00:00+00:00",
@@ -70,25 +70,26 @@ def test_exact_context_ignores_last_message_details_not_sent_to_model():
         "semantic_family": "market_move",
         "title": "BTC market move",
     }
-    last_message_only = _payload()
-    last_message_only["last_msg"] = {
+    changed_last_message = _payload()
+    changed_last_message["last_msg"] = {
         "time": "2026-09-17T11:00:00+00:00",
         "type": "event",
-        "price": 1.40,
+        "price": 1.35,
     }
-    last_message_only["previous_event_alert"] = {
+    changed_last_message["previous_event_alert"] = {
         **original["previous_event_alert"],
         "created_at": "2026-09-17T11:00:00+00:00",
     }
     changed_semantics = _payload()
+    changed_semantics["last_msg"] = changed_last_message["last_msg"]
     changed_semantics["previous_event_alert"] = {
-        **original["previous_event_alert"],
+        **changed_last_message["previous_event_alert"],
         "semantic_family": "market_breakout",
     }
 
     assert _build_exact_event_context_fingerprint(
         original
-    ) == _build_exact_event_context_fingerprint(last_message_only)
+    ) != _build_exact_event_context_fingerprint(changed_last_message)
     assert _build_exact_event_context_fingerprint(
         original
     ) != _build_exact_event_context_fingerprint(changed_semantics)

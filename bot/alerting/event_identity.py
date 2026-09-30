@@ -244,7 +244,7 @@ def _event_analysis_news_summary(value: object) -> str:
 
 
 def _canonical_event_analysis_context(input_payload: dict) -> dict:
-    """Semantic model input used for exact pre-LLM reuse."""
+    """Semantic model and grounding context used for exact pre-LLM reuse."""
     market = input_payload.get("market", input_payload.get("market_data", {}))
     market = market if isinstance(market, dict) else {}
     news_items = input_payload.get("news", input_payload.get("candidate_news", []))
@@ -261,6 +261,8 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 }
             )
     news.sort(key=_json_dumps)
+    last_msg = input_payload.get("last_msg")
+    last_msg = last_msg if isinstance(last_msg, dict) else {}
     previous_event_alert = input_payload.get("previous_event_alert")
     previous_event_alert = (
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
@@ -279,6 +281,10 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "chg_since_msg_percent",
             )
         },
+        "last_msg": {
+            "time": last_msg.get("time"),
+            "price": last_msg.get("price"),
+        },
         "news": news,
     }
     if previous_event_alert:
@@ -289,6 +295,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             "analysed_window_move": previous_event_alert.get("analysed_window_move"),
         }
     return context
+
 
 def _build_exact_event_context_fingerprint(input_payload: dict) -> str:
     return sha256(

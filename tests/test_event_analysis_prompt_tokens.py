@@ -183,7 +183,10 @@ def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fie
     assert context["schema_version"] == 7
     assert context["symbol"] == "btc"
     assert context["market"]["price"] == Decimal("112345.678901234567")
-    assert "last_msg" not in context
+    assert context["last_msg"] == {
+        "time": "2026-09-29T06:00:00+00:00",
+        "price": Decimal("112120.123456789012"),
+    }
     assert "display_symbol" not in context
     assert "coin_name" not in context
     assert "payload_points" not in context["market"]

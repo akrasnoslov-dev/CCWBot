@@ -312,7 +312,7 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
 )
 
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
-    """Return the lossless semantic model view without runtime or repeated static fields."""
+    """Return the compact semantic model view without runtime or repeated static fields."""
     market = input_payload.get("market")
     market = market if isinstance(market, dict) else {}
     previous_alert = input_payload.get("previous_event_alert")
