@@ -235,7 +235,7 @@ def _event_input_hash(input_payload: dict) -> str:
     return sha256(_json_dumps(input_payload).encode("utf-8")).hexdigest()
 
 
-EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS = 120
+EVENT_ANALYSIS_NEWS_SUMMARY_MAX_CHARS = 100
 
 
 def _event_analysis_news_summary(value: object) -> str:
