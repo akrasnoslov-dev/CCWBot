@@ -95,14 +95,19 @@ def test_exact_context_includes_last_message_time_for_grounding_reuse():
     ) != _build_exact_event_context_fingerprint(changed_semantics)
 
 
-def test_exact_context_includes_analysis_timestamp_for_elapsed_claim_grounding():
+def test_exact_context_tracks_news_age_bucket_not_raw_analysis_timestamp():
     original = _payload()
-    changed_timestamp = _payload()
-    changed_timestamp["timestamp_utc"] = "2026-09-17T11:00:00+00:00"
+    same_age_bucket = _payload()
+    same_age_bucket["timestamp_utc"] = "2026-09-17T10:30:00+00:00"
+    changed_age_bucket = _payload()
+    changed_age_bucket["timestamp_utc"] = "2026-09-17T11:00:00+00:00"
 
     assert _build_exact_event_context_fingerprint(
         original
-    ) == _build_exact_event_context_fingerprint(changed_timestamp)
+    ) == _build_exact_event_context_fingerprint(same_age_bucket)
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(changed_age_bucket)
 
 
 def test_exact_context_invalidates_any_real_market_or_news_change():
@@ -137,14 +142,34 @@ def test_exact_context_invalidates_every_semantic_event_news_field(field, replac
     ) != _build_exact_event_context_fingerprint(changed)
 
 
-@pytest.mark.parametrize(
-    ("field", "replacement"),
-    [("time", "2026-09-17T09:01:00+00:00")],
-)
-def test_exact_context_ignores_news_metadata_not_sent_to_model(field, replacement):
+def test_exact_context_normalizes_news_time_to_hours_old():
     original = _payload()
+    same_age_bucket = _payload()
+    same_age_bucket["news"][0]["time"] = "2026-09-17T08:50:00+00:00"
+    changed_age_bucket = _payload()
+    changed_age_bucket["news"][0]["time"] = "2026-09-17T08:00:00+00:00"
+
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) == _build_exact_event_context_fingerprint(same_age_bucket)
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(changed_age_bucket)
+
+
+def test_exact_context_ignores_previous_title_not_sent_to_model():
+    original = _payload()
+    original["previous_event_alert"] = {
+        "title": "Original wording",
+        "canonical_event_key": "btc_market_move",
+        "semantic_family": "market_move",
+        "analysed_window_move": Decimal("-0.183"),
+    }
     changed = _payload()
-    changed["news"][0][field] = replacement
+    changed["previous_event_alert"] = {
+        **original["previous_event_alert"],
+        "title": "Reworded title",
+    }
 
     assert _build_exact_event_context_fingerprint(
         original
