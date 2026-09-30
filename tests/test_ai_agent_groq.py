@@ -31,25 +31,21 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
         }
     )
 
-    assert "Market decides; news alone never alerts" in prompt
-    assert "LLM owns significance" in prompt
-    assert "no invented thresholds" in prompt
-    assert "Never claim a threshold unless supplied" in prompt
-    assert "reason_for_no_alert set" in prompt
-    assert "0.042=0.042%, not 4.2%" in prompt
-    assert "no x100" in prompt
-    assert "body interprets without extra numbers" in prompt
-    assert "news coincident not causal" in prompt
-    assert "action=conditional monitoring" in prompt
-    assert "Facts only" in prompt
+    assert "Market facts decide significance; news alone cannot alert" in prompt
+    assert "No fixed/invented thresholds" in prompt
     assert "Routine/modest/stable=>false" in prompt
-    assert "unless other market facts are noteworthy" in prompt
-    assert "cw=window%" in prompt
+    assert "unless other supplied market facts are noteworthy" in prompt
+    assert "reason set" in prompt
+    assert ".042=.042%" in prompt
+    assert "Facts only:no derived cw" in prompt
+    assert "no invented prior/sub-window moves" in prompt
+    assert "consistent/persistent/throughout requires s" in prompt
+    assert "News coincident not causal" in prompt
+    assert "action monitor-only/no trade" in prompt
+    assert "cw=w%" in prompt
     assert "cl=since prior alert%" in prompt
-    assert "null/missing=unknown" in prompt
-    assert "never derive cw from c24/cl" in prompt
-    assert "consistent/persistent/throughout only if s supports it" in prompt
-    assert "title uses cw when present" in prompt
+    assert "null=unknown" in prompt
+    assert "title uses cw if known" in prompt
 
 
 @pytest.mark.parametrize(
@@ -75,8 +71,7 @@ def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
 
     assert f'"cw":{window_change}' in prompt
     assert f'"c24":{day_change}' in prompt
-    assert "0.042=0.042%, not 4.2%" in prompt
-    assert "no x100" in prompt
+    assert ".042=.042%" in prompt
 
 
 def test_other_prompts_preserve_report_and_heartbeat_contracts():
