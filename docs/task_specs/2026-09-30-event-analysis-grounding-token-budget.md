@@ -12,6 +12,9 @@ Post-deploy production evidence from 2026-09-29 16:56 UTC shows:
 - GRAM accounts for 6 of 10 schema errors.
 - Successful Groq calls average about 994 prompt tokens.
 - Real input messages are commonly about 2.0k-3.3k characters; the previous UTF-8 chars/4 fixture estimate materially understated provider-reported prompt usage.
+- A replay of 162 persisted production Event Analysis inputs against the first PR implementation measured about 1,764 mean message characters, p95 about 2,415, and max 2,582, so the original synthetic <=1,500 average guard was not representative enough.
+- After the production-shaped compaction revision, the same 162-input replay measures about 1,413 mean characters, p95 about 1,774, and max 1,786.
+- Across the 147 matching production Groq calls, the observed relationship was approximately `prompt_tokens = 0.336 * input_chars + 207`. Applying that empirical relationship to the revised replay projects about 682 average prompt tokens and about 893 total tokens using the observed ~211 average completion tokens. This is a projection only; provider telemetry after deployment remains the acceptance check.
 
 Known false positive:
 - A grounded statement such as "declined 0.312% across the 180-minute window" can currently be rejected as an unsupported trajectory because generic wording such as "across" is treated as a trajectory marker.
@@ -34,6 +37,8 @@ Known true positives that must remain rejected:
 - No database/schema migration.
 - No paid service or new token-counting dependency.
 - Production token verification remains provider telemetry after deploy; deterministic tests must be labelled as message-size/proxy checks only.
+- Keep news freshness semantic but compact: model-visible news carries whole hours old rather than two timestamp strings, and Exact Context Reuse fingerprints the same age bucket.
+- Strip RSS/HTML markup from Event Analysis news summaries before truncation; omit markup-only remnants rather than spending prompt budget on image tags/URLs.
 
 ## Out of scope
 
@@ -57,9 +62,10 @@ Known true positives that must remain rejected:
 3. Invented sub-window metrics still fail.
 4. Wrong direction, wrong period, unavailable values, and mismatched percentages still fail.
 5. Compact prompt retains the facts required for significance, grounding, news attribution, previous-event context, and exact-context reuse.
-6. Representative deterministic message-size tests target roughly <=1.45k-1.50k average message characters, while clearly not claiming equivalence to provider prompt tokens.
-7. Focused and repository-required verification is green.
-8. PR targets `dev`; do not merge.
+6. Representative deterministic message-size tests target <=1.45k average message characters, including a production-shaped six-snapshot/three-news case, while clearly not claiming equivalence to provider prompt tokens.
+7. The persisted 162-input production replay stays near or below that average budget; actual provider-token targets are verified only after deployment.
+8. Focused and repository-required verification is green.
+9. PR targets `dev`; do not merge.
 
 ## Risks
 
@@ -73,6 +79,8 @@ Test-first:
 - add a passing regression for aggregate "across the window" wording;
 - retain/add failing regressions for unsupported persistent trajectory, invented sub-window metric, wrong direction, and wrong percentage;
 - replace misleading provider-token-style fixture assertions with deterministic message-character budget assertions plus a clearly labelled proxy;
+- include a production-shaped six-snapshot/three-news regression and replay persisted production payloads outside the committed test suite before merge;
+- preserve all snapshot values while encoding them as compact pairs, remove redundant previous-alert title text, clean/truncate news summaries, retain coarse news age, and bound model-visible percentage precision to six decimals without erasing tiny non-zero values;
 - run focused tests, then the repository verification suite.
 
 ## Proposed decomposition
