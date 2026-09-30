@@ -36,8 +36,8 @@ def _fixture(*, news: bool = False, previous: bool = False) -> dict:
         "market": {
             "price": Decimal("112345.678901234567"),
             "snapshots": [
-                {"m": 30, "p": Decimal("111900.123456789012")},
-                {"m": 15, "p": Decimal("112100.543210987654")},
+                {"m": -30, "p": Decimal("111900.123456789012")},
+                {"m": -15, "p": Decimal("112100.543210987654")},
                 {"m": 0, "p": Decimal("112345.678901234567")},
             ],
             "payload_points": 6,
@@ -95,11 +95,11 @@ def _fixture(*, news: bool = False, previous: bool = False) -> dict:
 def _production_shape_fixture() -> dict:
     payload = _fixture(news=True, previous=True)
     payload["market"]["snapshots"] = [
-        {"m": 150, "p": Decimal("111500.123456789012")},
-        {"m": 120, "p": Decimal("111700.223456789012")},
-        {"m": 90, "p": Decimal("111850.323456789012")},
-        {"m": 60, "p": Decimal("112000.423456789012")},
-        {"m": 30, "p": Decimal("112150.523456789012")},
+        {"m": -150, "p": Decimal("111500.123456789012")},
+        {"m": -120, "p": Decimal("111700.223456789012")},
+        {"m": -90, "p": Decimal("111850.323456789012")},
+        {"m": -60, "p": Decimal("112000.423456789012")},
+        {"m": -30, "p": Decimal("112150.523456789012")},
         {"m": 0, "p": Decimal("112345.678901234567")},
     ]
     payload["news"].append(
@@ -199,8 +199,8 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
     assert "at" not in compact
     assert "p" not in compact["m"]
     assert compact["m"]["s"] == [
-        [30, Decimal("111900.123456789012")],
-        [15, Decimal("112100.543210987654")],
+        [-30, Decimal("111900.123456789012")],
+        [-15, Decimal("112100.543210987654")],
         [0, Decimal("112345.678901234567")],
     ]
     assert compact["m"]["cw"] == Decimal("0.398173")
