@@ -310,10 +310,10 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "h=hours old;prev={k,f,cw}. % already %, .042=.042%;null=unknown.",
         "Facts only:no derived cw;no invented prior/sub-window moves,%,or trajectory. "
         "consistent/persistent/throughout requires s. News coincident not causal.",
-        "symbol=sym. false=>event_key/title/message_body/possible_action/urgency=null;"
-        "related_news_ids=[];reason set. true=>stable event_key;title uses cw if known;"
-        "body concise/no extra numbers;"
-        "action monitor-only/no trade;news IDs only n.i.",
+        "symbol=sym. false=>event_key/title/message_body/possible_action/urgency/confidence=null;"
+        "related_news_ids=[];reason set. true=>stable event_key;reason_for_no_alert=null;"
+        "urgency=low|normal|high;confidence=low|medium|high;title uses cw if known;"
+        "body concise/no extra numbers;action monitor-only/no trade;news IDs only n.i.",
     )
 )
 
