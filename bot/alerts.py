@@ -572,7 +572,7 @@ def _compact_candidate_news(candidate_news: list[dict], *, limit: int = 3) -> li
         compacted.append(
             {
                 **item,
-                "summary": _event_identity._event_analysis_news_summary(item.get("summary")),
+                "summary": _truncate_text(str(item.get("summary") or ""), 300),
             }
         )
     return compacted
@@ -587,7 +587,7 @@ def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) 
                 "source": str(item.get("source") or "").strip(),
                 "title": str(item.get("title") or "").strip(),
                 "time": str(item.get("published_at") or "").strip(),
-                "summary": _truncate_text(str(item.get("summary") or ""), 300),
+                "summary": _event_identity._event_analysis_news_summary(item.get("summary")),
                 "relevance_label": str(item.get("relevance_label") or "").strip(),
                 "material": bool(is_material_news_item(item)),
             }
