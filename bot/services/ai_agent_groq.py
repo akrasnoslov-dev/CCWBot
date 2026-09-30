@@ -305,9 +305,9 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "market facts are noteworthy.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
-        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...];cw=w%;c24=24h%;"
-        "cl=since prior alert%;n={i,src,t,x,r,mat,h};prev={k,f,cw}. "
-        "% already %, .042=.042%;null=unknown.",
+        "Input:sym;m={s,w,cw,c24,cl};s=[[offset_min,USD],...],0=now,negative=older;"
+        "cw=% over w min;c24=24h%;cl=since prior alert%;n={i,src,t,x,r,mat,h},"
+        "h=whole hours old;prev={k,f,cw}. % already %, .042=.042%;null=unknown.",
         "Facts only:no derived cw;no invented prior/sub-window moves,%,thresholds,or trajectory. "
         "consistent/persistent/throughout requires s. News coincident not causal.",
         "false=>event_key/title/message_body/possible_action/urgency=null;related_news_ids=[];"
@@ -315,6 +315,17 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "action monitor-only/no trade;news IDs only n.i.",
     )
 )
+
+
+def _event_analysis_percent(value: object) -> object:
+    """Bound model-visible percent precision without erasing a non-zero sign."""
+    if value is None:
+        return None
+    try:
+        rounded = round(value, 6)
+    except (TypeError, ValueError):
+        return value
+    return value if rounded == 0 and value != 0 else rounded
 
 
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
@@ -358,9 +369,9 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
         "m": {
             "s": compact_snapshots,
             "w": market.get("analysed_window_minutes"),
-            "cw": market.get("chg_window_percent"),
-            "c24": market.get("chg24h_percent"),
-            "cl": market.get("chg_since_msg_percent"),
+            "cw": _event_analysis_percent(market.get("chg_window_percent")),
+            "c24": _event_analysis_percent(market.get("chg24h_percent")),
+            "cl": _event_analysis_percent(market.get("chg_since_msg_percent")),
         },
         "n": compact_news,
     }
@@ -368,7 +379,7 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
         payload["prev"] = {
             "k": previous_alert.get("canonical_event_key"),
             "f": previous_alert.get("semantic_family"),
-            "cw": previous_alert.get("analysed_window_move"),
+            "cw": _event_analysis_percent(previous_alert.get("analysed_window_move")),
         }
     return payload
 
