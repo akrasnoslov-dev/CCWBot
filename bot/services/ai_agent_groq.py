@@ -300,7 +300,7 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English retail. Market decides significance;news alone cannot alert. "
+        "JSON English retail. Market decides;news alone cannot alert. "
         "No invented thresholds. Routine/modest/stable=>false unless other supplied "
         "facts are noteworthy.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
