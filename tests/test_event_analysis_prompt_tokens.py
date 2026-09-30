@@ -191,8 +191,10 @@ def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fie
     assert "display_symbol" not in context
     assert "coin_name" not in context
     assert "payload_points" not in context["market"]
-    assert "time" not in context["news"][0]
-    assert context["news"][0]["relevance_label"] == "market_context"
+    news_by_id = {item["news_id"]: item for item in context["news"]}
+    assert all("time" not in item for item in context["news"])
+    assert news_by_id["btc-etf-flow"]["relevance_label"] == "market_context"
+    assert news_by_id["btc-options"]["relevance_label"] == "supporting"
     assert "stable_related_news_ids_hash" not in context["previous_event_alert"]
     assert "possible_action" not in context["previous_event_alert"]
     assert "policy" not in context
