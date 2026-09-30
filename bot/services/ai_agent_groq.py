@@ -297,8 +297,8 @@ def sanitize_alert_message(message: str) -> str:
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
         "JSON English retail. Market decides; news alone never alerts. LLM owns significance; "
-        "no invented thresholds. Never claim a threshold unless supplied. Routine/modest/stable=>false "
-        "unless other market facts are noteworthy.",
+        "no invented thresholds. Never claim a threshold unless supplied. "
+        "Routine/modest/stable=>false unless other market facts are noteworthy.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
         "Data sym;m={s,w,cw,c24,cl};n={i,src,t,x,mat};prev={t,k,f,cw}. "
@@ -313,6 +313,7 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "action=conditional monitoring,no trade commands;news IDs only n.i.",
     )
 )
+
 
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
     """Return the compact semantic model view without runtime or repeated static fields."""
