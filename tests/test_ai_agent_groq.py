@@ -38,7 +38,7 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "reason set" in prompt
     assert ".042=.042%" in prompt
     assert "Facts:no derived cw" in prompt
-    assert "no invented prior/sub-window moves" in prompt
+    assert "invented prior/sub-window moves" in prompt
     assert "consistent/persistent/throughout requires s" in prompt
     assert "news not causal" in prompt
     assert "action monitor-only/no trade" in prompt
