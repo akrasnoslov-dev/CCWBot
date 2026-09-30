@@ -296,18 +296,18 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English retail; one symbol. Market facts decide; news alone never alerts. "
-        "LLM owns significance qualitatively; no invented thresholds.",
+        "JSON English retail. Market decides; news alone never alerts. LLM owns significance; "
+        "no invented thresholds. Routine/modest/stable=>false unless other market facts are noteworthy.",
         "Data: sym; m={p,s,w,cw,c24,cl}; n={i,src,t,x,mat}; prev={t,k,f,cw}. "
-        "s: m=minutes before observation,p=USD. cw=window %, c24=24h %, cl=since prior alert %. "
-        "0.042 means 0.042%. Missing/null means unknown.",
-        "Use only supplied facts. Never invent/derive prior or sub-window moves, percentages, or "
-        "trajectory. Claim consistent/persistent/throughout trajectory only when s supports it.",
-        "Output exact schema; symbol=sym. false: event_key/title/message_body/possible_action=null, "
-        "related_news_ids=[], urgency=null, reason_for_no_alert set. true: stable event_key; "
-        "urgency=low|normal|high; confidence=low|medium|high; title grounded in cw when present; "
-        "body interprets supplied facts without extra numbers; news coincident not causal; "
-        "possible_action=conditional monitoring; related_news_ids only n.i.",
+        "s: m=minutes before observation,p=USD. cw=window %, c24=24h %, cl=since prior alert %; "
+        "0.042=0.042%. null/missing=unknown.",
+        "Facts only: never derive cw from c24/cl; never invent prior/sub-window moves, %, or "
+        "trajectory. Say consistent/persistent/throughout only if s supports it.",
+        "Exact schema; symbol=sym. false=>event_key/title/message_body/possible_action=null, "
+        "related_news_ids=[], urgency=null, reason_for_no_alert set. true=>stable event_key; "
+        "urgency=low|normal|high; confidence=low|medium|high; title uses cw when present; "
+        "body interprets without extra numbers; news coincident not causal; "
+        "action=conditional monitoring, no trade commands; news IDs only n.i.",
     )
 )
 
