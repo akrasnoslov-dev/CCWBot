@@ -123,6 +123,7 @@ def test_exact_context_invalidates_any_real_market_or_news_change():
         ("title", "Corrected market update"),
         ("source", "Corrected publisher"),
         ("summary", "Corrected market conditions."),
+        ("relevance_label", "medium"),
         ("material", False),
     ],
 )
@@ -138,10 +139,7 @@ def test_exact_context_invalidates_every_semantic_event_news_field(field, replac
 
 @pytest.mark.parametrize(
     ("field", "replacement"),
-    [
-        ("time", "2026-09-17T09:01:00+00:00"),
-        ("relevance_label", "medium"),
-    ],
+    [("time", "2026-09-17T09:01:00+00:00")],
 )
 def test_exact_context_ignores_news_metadata_not_sent_to_model(field, replacement):
     original = _payload()
