@@ -300,15 +300,15 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English retail. Market facts decide significance; news alone cannot alert. "
-        "No fixed/invented thresholds. Routine/modest/stable=>false unless other supplied "
-        "market facts are noteworthy.",
+        "JSON English retail. Market decides significance;news alone cannot alert. "
+        "No invented thresholds. Routine/modest/stable=>false unless other supplied "
+        "facts are noteworthy.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
         "Input:sym;m={s,w,cw,c24,cl};s=[[offset_min,USD],...],0=now,negative=older;"
         "cw=% over w min;c24=24h%;cl=since prior alert%;n={i,src,t,x,r,mat,h},"
-        "h=whole hours old;prev={k,f,cw}. % already %, .042=.042%;null=unknown.",
-        "Facts only:no derived cw;no invented prior/sub-window moves,%,thresholds,or trajectory. "
+        "h=hours old;prev={k,f,cw}. % already %, .042=.042%;null=unknown.",
+        "Facts only:no derived cw;no invented prior/sub-window moves,%,or trajectory. "
         "consistent/persistent/throughout requires s. News coincident not causal.",
         "symbol=sym. false=>event_key/title/message_body/possible_action/urgency=null;"
         "related_news_ids=[];reason set. true=>stable event_key;title uses cw if known;"
