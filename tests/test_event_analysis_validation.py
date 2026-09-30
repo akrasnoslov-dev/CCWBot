@@ -304,6 +304,24 @@ def test_positive_analysis_rejects_zig_zag_snapshots_as_consistent_decline():
         )
 
 
+def test_positive_analysis_rejects_zig_zag_across_snapshots_claim():
+    with pytest.raises(EventAnalysisValidationError, match="trajectory"):
+        validate_factual_alert(
+            alert_analysis_result(
+                title="SOL market event",
+                message_body="SOL moved lower across the supplied snapshots.",
+            ),
+            factual_market_input(
+                snapshots=[
+                    {"m": -180, "p": 100},
+                    {"m": -90, "p": 101},
+                    {"m": 0, "p": 100},
+                ],
+                chg_window_percent=-0.1,
+            ),
+        )
+
+
 def test_positive_analysis_accepts_grounded_aggregate_move_across_window():
     decision = validate_factual_alert(
         alert_analysis_result(
