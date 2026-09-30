@@ -11,7 +11,11 @@ import re
 
 from dotenv import load_dotenv
 
-from bot.alerting.event_identity import _json_dumps
+from bot.alerting.event_identity import (
+    _event_analysis_news_age_hours,
+    _event_analysis_news_summary,
+    _json_dumps,
+)
 from bot.services.llm import config as llm_config
 from bot.services.llm import get_router
 from bot.services.llm.env import get_int_env
@@ -296,72 +300,86 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English retail; useful, nonrepeat alerts. Keys: symbol, should_alert, event_key, "
-        "title, message_body, related_news_ids, possible_action, urgency, confidence, "
-        "reason_for_no_alert. urgency=low|normal|high; confidence=low|medium|high.",
-        "Market first; news never alone true. LLM judges qualitatively: no backend/invented "
-        "threshold; say a threshold was missed only if supplied. Routine/ordinary/modest/stable/"
-        "insignificant normally false unless market facts are noteworthy.",
-        "Data: sym; at=observation time; m={p:USD,s:snapshots,w:min,cw:window %,c24:24h %,"
-        "cl:since alert %}; lm={t:time,p:price}; n={i,src,t,tm,x,r,mat}; prev={t,k,f,cw,nh,a}. "
-        "Snapshot m=minutes before observation,p=USD.",
-        "cw=change over w; c24=24h; cl=since lm.t/p. All %: 0.042=0.042%, not 4.2%; no x100. "
-        "null unknown: never derive cw from cl/c24 or claim trajectory without cw. Only s shows "
-        "trajectory; one snapshot or w does not.",
-        "true: stable event_key; concise title on verified cw, not c24; body interprets, no raw "
-        "numbers. Supplied evidence only; news coincident, not cause. possible_action=conditional "
-        "monitoring, never trade/generic risk advice; related_news_ids only n.i. false: event_key/"
-        "title/message_body/possible_action null or empty, related_news_ids=[], urgency=null, "
-        "reason_for_no_alert non-empty. No guaranteed outcomes/hard trading commands.",
+        "JSON English. Market decides;news alone cannot alert. No invented thresholds. "
+        "Routine/modest/stable=>false unless other supplied facts warrant alert.",
+        "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
+        "possible_action,urgency,confidence,reason_for_no_alert.",
+        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...],0=now,<0=older;"
+        "cw=% over w;c24=24h%;cl=since alert%;n={i,src,t,x,r,mat,h},h=hours old;"
+        "prev={k,f,cw}. .042=.042%;null=unknown.",
+        "Facts:no derived cw or invented prior/sub-window moves,%,trajectory. "
+        "consistent/persistent/throughout requires s;news not causal.",
+        "symbol=sym. false=>event_key/title/message_body/possible_action/urgency=null;"
+        "related_news_ids=[];reason set. true=>stable event_key;urgency=low|normal|high;"
+        "confidence=low|medium|high;reason_for_no_alert=null;title uses cw;"
+        "body concise/no extra numbers;action monitor-only/no trade;news IDs only n.i.",
     )
 )
 
 
+def _event_analysis_percent(value: object) -> object:
+    """Bound model-visible percent precision without erasing a non-zero sign."""
+    if value is None:
+        return None
+    try:
+        rounded = round(value, 6)
+    except (TypeError, ValueError):
+        return value
+    return value if rounded == 0 and value != 0 else rounded
+
+
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
-    """Return the lossless semantic model view without runtime or repeated static fields."""
+    """Return the compact semantic model view without runtime or repeated static fields."""
     market = input_payload.get("market")
     market = market if isinstance(market, dict) else {}
-    last_message = input_payload.get("last_msg")
-    last_message = last_message if isinstance(last_message, dict) else {}
     previous_alert = input_payload.get("previous_event_alert")
     previous_alert = previous_alert if isinstance(previous_alert, dict) else {}
     news_items = input_payload.get("news")
     news_items = news_items if isinstance(news_items, list) else []
+    snapshots = market.get("snapshots")
+    compact_snapshots = (
+        [
+            [item.get("m"), item.get("p")] if isinstance(item, dict) else item
+            for item in snapshots
+        ]
+        if isinstance(snapshots, list)
+        else snapshots
+    )
+    compact_news = []
+    for item in news_items:
+        if not isinstance(item, dict):
+            continue
+        compact_item = {
+            "i": item.get("news_id"),
+            "src": item.get("source"),
+            "t": item.get("title"),
+            "r": item.get("relevance_label"),
+            "mat": item.get("material"),
+        }
+        summary = _event_analysis_news_summary(item.get("summary"))
+        if summary:
+            compact_item["x"] = summary
+        age_hours = _event_analysis_news_age_hours(input_payload, item)
+        if age_hours is not None:
+            compact_item["h"] = age_hours
+        compact_news.append(compact_item)
 
     payload = {
         "sym": input_payload.get("symbol"),
-        "at": input_payload.get("timestamp_utc"),
         "m": {
-            "p": market.get("price"),
-            "s": market.get("snapshots"),
+            "s": compact_snapshots,
             "w": market.get("analysed_window_minutes"),
-            "cw": market.get("chg_window_percent"),
-            "c24": market.get("chg24h_percent"),
-            "cl": market.get("chg_since_msg_percent"),
+            "cw": _event_analysis_percent(market.get("chg_window_percent")),
+            "c24": _event_analysis_percent(market.get("chg24h_percent")),
+            "cl": _event_analysis_percent(market.get("chg_since_msg_percent")),
         },
-        "lm": {"t": last_message.get("time"), "p": last_message.get("price")},
-        "n": [
-            {
-                "i": item.get("news_id"),
-                "src": item.get("source"),
-                "t": item.get("title"),
-                "tm": item.get("time"),
-                "x": item.get("summary"),
-                "r": item.get("relevance_label"),
-                "mat": item.get("material"),
-            }
-            for item in news_items
-            if isinstance(item, dict)
-        ],
+        "n": compact_news,
     }
     if previous_alert:
         payload["prev"] = {
-            "t": previous_alert.get("title"),
             "k": previous_alert.get("canonical_event_key"),
             "f": previous_alert.get("semantic_family"),
-            "cw": previous_alert.get("analysed_window_move"),
-            "nh": previous_alert.get("stable_related_news_ids_hash"),
-            "a": previous_alert.get("possible_action"),
+            "cw": _event_analysis_percent(previous_alert.get("analysed_window_move")),
         }
     return payload
 
