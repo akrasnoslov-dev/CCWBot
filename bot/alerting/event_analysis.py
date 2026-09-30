@@ -53,7 +53,11 @@ _SINCE_PREVIOUS_ALERT_RE = re.compile(
     r"\bsince\s+(?:the\s+)?(?:previous|last)\s+(?:alert|message)\b", re.IGNORECASE
 )
 _TRAJECTORY_MARKER_RE = re.compile(
-    r"\b(?:consistent(?:ly)?|persistent(?:ly)?|persisted|throughout|across)\b",
+    r"\b(?:consistent(?:ly)?|persistent(?:ly)?|persisted|throughout)\b",
+    re.IGNORECASE,
+)
+_ACROSS_SNAPSHOTS_RE = re.compile(
+    r"\bacross\b[^.!?;,\n]{0,80}\b(?:snapshots?|observations?)\b",
     re.IGNORECASE,
 )
 _MOVEMENT_DIRECTION_RE = re.compile(
@@ -90,6 +94,12 @@ _NUMBER_WORDS = {
 
 class EventAnalysisValidationError(ValueError):
     """Raised when LLM event-analysis JSON cannot be trusted."""
+
+
+def _has_trajectory_marker(text: str) -> bool:
+    return bool(
+        _TRAJECTORY_MARKER_RE.search(text) or _ACROSS_SNAPSHOTS_RE.search(text)
+    )
 
 
 @dataclass(frozen=True)
@@ -729,12 +739,12 @@ def _validate_positive_market_claims(
     )
     if (
         snapshot_count < 2
-        and _TRAJECTORY_MARKER_RE.search(text)
+        and _has_trajectory_marker(text)
         and _MOVEMENT_DIRECTION_RE.search(text)
     ):
         raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
     if (
-        _TRAJECTORY_MARKER_RE.search(text)
+        _has_trajectory_marker(text)
         and _MOVEMENT_DIRECTION_RE.search(text)
         and not (_supported_snapshot_trajectory(text, market_data))
     ):
@@ -894,7 +904,7 @@ def _validate_action_market_claims(
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
     if (
-        _TRAJECTORY_MARKER_RE.search(historical_action)
+        _has_trajectory_marker(historical_action)
         and _MOVEMENT_DIRECTION_RE.search(historical_action)
         and not _supported_snapshot_trajectory(possible_action, market_data)
     ):

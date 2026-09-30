@@ -36,8 +36,8 @@ def _fixture(*, news: bool = False, previous: bool = False) -> dict:
         "market": {
             "price": Decimal("112345.678901234567"),
             "snapshots": [
-                {"m": 30, "p": Decimal("111900.123456789012")},
-                {"m": 15, "p": Decimal("112100.543210987654")},
+                {"m": -30, "p": Decimal("111900.123456789012")},
+                {"m": -15, "p": Decimal("112100.543210987654")},
                 {"m": 0, "p": Decimal("112345.678901234567")},
             ],
             "payload_points": 6,
@@ -92,6 +92,33 @@ def _fixture(*, news: bool = False, previous: bool = False) -> dict:
     return payload
 
 
+def _production_shape_fixture() -> dict:
+    payload = _fixture(news=True, previous=True)
+    payload["market"]["snapshots"] = [
+        {"m": -150, "p": Decimal("111500.123456789012")},
+        {"m": -120, "p": Decimal("111700.223456789012")},
+        {"m": -90, "p": Decimal("111850.323456789012")},
+        {"m": -60, "p": Decimal("112000.423456789012")},
+        {"m": -30, "p": Decimal("112150.523456789012")},
+        {"m": 0, "p": Decimal("112345.678901234567")},
+    ]
+    payload["news"].append(
+        {
+            "news_id": "btc-policy",
+            "source": "Example News",
+            "title": "Policy discussion adds broad crypto context into the session",
+            "time": "2026-09-29T07:05:00+00:00",
+            "summary": (
+                '<p style="float:right"><img alt="Policy discussion adds broad crypto context" '
+                'src="https://example.invalid/image.png"></p>'
+            ),
+            "relevance_label": "market_wide",
+            "material": False,
+        }
+    )
+    return payload
+
+
 def _estimate_tokens(text: str) -> int:
     """Deterministic, clearly labeled fallback: one token per four UTF-8 characters."""
     return ceil(len(text.encode("utf-8")) / 4)
@@ -106,11 +133,16 @@ def _measurement(payload: dict, *, before: bool) -> dict:
         serialized_payload = ai_agent_groq._json_dumps(
             ai_agent_groq._event_analysis_prompt_payload(payload)
         )
+    message = static + serialized_payload
     return {
-        "method": "deterministic UTF-8 characters / 4 estimate (model tokenizer unavailable)",
-        "static_prompt_tokens_estimate": _estimate_tokens(static),
-        "serialized_payload_tokens_estimate": _estimate_tokens(serialized_payload),
-        "total_input_tokens_estimate": _estimate_tokens(static + serialized_payload),
+        "method": (
+            "deterministic message characters plus a UTF-8/4 proxy; "
+            "provider prompt tokens require post-deploy telemetry"
+        ),
+        "static_message_chars": len(static),
+        "serialized_payload_chars": len(serialized_payload),
+        "total_message_chars": len(message),
+        "token_proxy_utf8_div4": _estimate_tokens(message),
     }
 
 
@@ -126,20 +158,37 @@ def test_event_analysis_prompt_measurement_reduces_each_sanitized_fixture(case, 
     before = _measurement(payload, before=True)
     after = _measurement(payload, before=False)
 
-    assert after["static_prompt_tokens_estimate"] < before["static_prompt_tokens_estimate"], case
-    assert after["serialized_payload_tokens_estimate"] < before[
-        "serialized_payload_tokens_estimate"
-    ], case
-    assert after["total_input_tokens_estimate"] < before["total_input_tokens_estimate"], case
+    assert after["static_message_chars"] < before["static_message_chars"], case
+    assert after["serialized_payload_chars"] < before["serialized_payload_chars"], case
+    assert after["total_message_chars"] < before["total_message_chars"], case
 
 
-def test_event_analysis_prompt_measurement_targets_average_input_budget():
-    measurements = [_measurement(payload, before=False) for payload in (
-        _fixture(), _fixture(news=True), _fixture(previous=True)
-    )]
-    average = sum(item["total_input_tokens_estimate"] for item in measurements) / len(measurements)
+def test_event_analysis_prompt_measurement_targets_production_message_budget():
+    payloads = (
+        _fixture(),
+        _fixture(news=True),
+        _fixture(previous=True),
+        _production_shape_fixture(),
+    )
+    measurements = [_measurement(payload, before=False) for payload in payloads]
+    average_chars = sum(item["total_message_chars"] for item in measurements) / len(
+        measurements
+    )
 
-    assert average <= 525
+    # Production replay showed the real pre-change payload mix was materially larger than the
+    # original synthetic fixtures. Keep this as a deterministic message-size guard only;
+    # provider prompt-token usage must still be measured after deployment.
+    assert average_chars <= 1450
+    assert measurements[-1]["total_message_chars"] <= 1850
+
+
+def test_compact_percent_precision_does_not_erase_tiny_nonzero_move():
+    payload = _fixture()
+    payload["market"]["chg_window_percent"] = Decimal("0.0000004")
+
+    compact = ai_agent_groq._event_analysis_prompt_payload(payload)
+
+    assert compact["m"]["cw"] == Decimal("0.0000004")
 
 
 def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts():
@@ -147,24 +196,31 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
     compact = ai_agent_groq._event_analysis_prompt_payload(payload)
 
     assert compact["sym"] == "BTC"
-    assert compact["at"] == "2026-09-29T10:00:00+00:00"
-    assert compact["m"]["p"] == Decimal("112345.678901234567")
-    assert compact["m"]["s"] == payload["market"]["snapshots"]
-    assert compact["m"]["cw"] == Decimal("0.398172635491")
-    assert compact["m"]["c24"] == Decimal("-0.184276519")
-    assert compact["m"]["cl"] == Decimal("0.201234567")
-    assert compact["lm"] == {"t": "2026-09-29T06:00:00+00:00", "p": Decimal("112120.123456789012")}
+    assert "at" not in compact
+    assert "p" not in compact["m"]
+    assert compact["m"]["s"] == [
+        [-30, Decimal("111900.123456789012")],
+        [-15, Decimal("112100.543210987654")],
+        [0, Decimal("112345.678901234567")],
+    ]
+    assert compact["m"]["cw"] == Decimal("0.398173")
+    assert compact["m"]["c24"] == Decimal("-0.184277")
+    assert compact["m"]["cl"] == Decimal("0.201235")
+    assert "lm" not in compact
     assert compact["n"][0] == {
-        "i": "btc-etf-flow", "src": "Example Wire",
+        "i": "btc-etf-flow",
+        "src": "Example Wire",
         "t": "Bitcoin ETF flows reverse after volatile session",
-        "tm": "2026-09-29T09:15:00+00:00",
         "x": "Sanitized representative summary of reported fund-flow context and market reaction.",
-        "r": "market_context", "mat": True,
+        "r": "market_context",
+        "mat": True,
+        "h": 0,
     }
+    assert compact["n"][1]["h"] == 1
     assert compact["prev"] == {
-        "t": "Bitcoin volatility expands", "k": "btc_volatility_expansion", "f": "volatility",
-        "cw": Decimal("0.4219"), "nh": "0e6a2b5c84ddf40f9a38b163beeb0a20",
-        "a": "Monitor whether the supplied range holds.",
+        "k": "btc_volatility_expansion",
+        "f": "volatility",
+        "cw": Decimal("0.4219"),
     }
     assert "analysis_id" not in compact
     assert "policy" not in compact
@@ -173,7 +229,7 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
 def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fields():
     context = _canonical_event_analysis_context(_fixture(news=True, previous=True))
 
-    assert context["schema_version"] == 6
+    assert context["schema_version"] == 8
     assert context["symbol"] == "btc"
     assert context["market"]["price"] == Decimal("112345.678901234567")
     assert context["last_msg"] == {
@@ -183,5 +239,36 @@ def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fie
     assert "display_symbol" not in context
     assert "coin_name" not in context
     assert "payload_points" not in context["market"]
-    assert "type" not in context["last_msg"]
+    news_by_id = {item["news_id"]: item for item in context["news"]}
+    assert all("time" not in item for item in context["news"])
+    assert news_by_id["btc-etf-flow"]["relevance_label"] == "market_context"
+    assert news_by_id["btc-etf-flow"]["age_hours"] == 0
+    assert news_by_id["btc-options"]["relevance_label"] == "supporting"
+    assert news_by_id["btc-options"]["age_hours"] == 1
+    assert "title" not in context["previous_event_alert"]
+    assert "stable_related_news_ids_hash" not in context["previous_event_alert"]
+    assert "possible_action" not in context["previous_event_alert"]
     assert "policy" not in context
+
+
+def test_compact_news_drops_truncated_rss_markup_but_keeps_freshness():
+    payload = _fixture(previous=True)
+    payload["news"] = [
+        {
+            "news_id": "n1",
+            "source": "Example Feed",
+            "title": "Market update",
+            "time": "2026-09-29T07:05:00+00:00",
+            "summary": (
+                '<p style="float:right"><img alt="Market update" '
+                'src="https://example.invalid/truncated'
+            ),
+            "relevance_label": "market_wide",
+            "material": False,
+        }
+    ]
+
+    compact = ai_agent_groq._event_analysis_prompt_payload(payload)
+
+    assert compact["n"][0]["h"] == 2
+    assert "x" not in compact["n"][0]

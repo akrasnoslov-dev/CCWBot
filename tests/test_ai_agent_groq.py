@@ -31,25 +31,24 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
         }
     )
 
-    assert "Market first; news never alone true" in prompt
-    assert "LLM judges qualitatively" in prompt
-    assert "no backend/invented threshold" in prompt
-    assert "threshold was missed only if supplied" in prompt
-    assert "reason_for_no_alert non-empty" in prompt
-    assert "0.042=0.042%, not 4.2%" in prompt
-    assert "no x100" in prompt
-    assert "body interprets, no raw numbers" in prompt
-    assert "news coincident, not cause" in prompt
-    assert "possible_action=conditional monitoring" in prompt
-    assert "Supplied evidence only" in prompt
-    assert "Routine/ordinary/modest/stable/insignificant" in prompt
-    assert "unless market facts are noteworthy" in prompt
-    assert "cw=change over w" in prompt
-    assert "cl=since lm.t/p" in prompt
-    assert "null unknown" in prompt
-    assert "never derive cw from cl/c24" in prompt
-    assert "one snapshot or w does not" in prompt
-    assert "concise title on verified cw, not c24" in prompt
+    assert "Market decides;news alone cannot alert" in prompt
+    assert "No invented thresholds" in prompt
+    assert "Routine/modest/stable=>false" in prompt
+    assert "unless other supplied facts warrant alert" in prompt
+    assert "reason set" in prompt
+    assert ".042=.042%" in prompt
+    assert "Facts:no derived cw" in prompt
+    assert "invented prior/sub-window moves" in prompt
+    assert "consistent/persistent/throughout requires s" in prompt
+    assert "news not causal" in prompt
+    assert "action monitor-only/no trade" in prompt
+    assert "cw=% over w" in prompt
+    assert "cl=since alert%" in prompt
+    assert "null=unknown" in prompt
+    assert "title uses cw" in prompt
+    assert "urgency=low|normal|high" in prompt
+    assert "confidence=low|medium|high" in prompt
+    assert "reason_for_no_alert=null" in prompt
 
 
 @pytest.mark.parametrize(
@@ -75,8 +74,7 @@ def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
 
     assert f'"cw":{window_change}' in prompt
     assert f'"c24":{day_change}' in prompt
-    assert "0.042=0.042%, not 4.2%" in prompt
-    assert "no x100" in prompt
+    assert ".042=.042%" in prompt
 
 
 def test_other_prompts_preserve_report_and_heartbeat_contracts():
