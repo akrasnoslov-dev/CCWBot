@@ -106,11 +106,16 @@ def _measurement(payload: dict, *, before: bool) -> dict:
         serialized_payload = ai_agent_groq._json_dumps(
             ai_agent_groq._event_analysis_prompt_payload(payload)
         )
+    message = static + serialized_payload
     return {
-        "method": "deterministic UTF-8 characters / 4 estimate (model tokenizer unavailable)",
-        "static_prompt_tokens_estimate": _estimate_tokens(static),
-        "serialized_payload_tokens_estimate": _estimate_tokens(serialized_payload),
-        "total_input_tokens_estimate": _estimate_tokens(static + serialized_payload),
+        "method": (
+            "deterministic message characters plus a UTF-8/4 proxy; "
+            "provider prompt tokens require post-deploy telemetry"
+        ),
+        "static_message_chars": len(static),
+        "serialized_payload_chars": len(serialized_payload),
+        "total_message_chars": len(message),
+        "token_proxy_utf8_div4": _estimate_tokens(message),
     }
 
 
@@ -126,20 +131,24 @@ def test_event_analysis_prompt_measurement_reduces_each_sanitized_fixture(case, 
     before = _measurement(payload, before=True)
     after = _measurement(payload, before=False)
 
-    assert after["static_prompt_tokens_estimate"] < before["static_prompt_tokens_estimate"], case
-    assert after["serialized_payload_tokens_estimate"] < before[
-        "serialized_payload_tokens_estimate"
-    ], case
-    assert after["total_input_tokens_estimate"] < before["total_input_tokens_estimate"], case
+    assert after["static_message_chars"] < before["static_message_chars"], case
+    assert after["serialized_payload_chars"] < before["serialized_payload_chars"], case
+    assert after["total_message_chars"] < before["total_message_chars"], case
 
 
-def test_event_analysis_prompt_measurement_targets_average_input_budget():
-    measurements = [_measurement(payload, before=False) for payload in (
-        _fixture(), _fixture(news=True), _fixture(previous=True)
-    )]
-    average = sum(item["total_input_tokens_estimate"] for item in measurements) / len(measurements)
+def test_event_analysis_prompt_measurement_targets_production_message_budget():
+    measurements = [
+        _measurement(payload, before=False)
+        for payload in (_fixture(), _fixture(news=True), _fixture(previous=True))
+    ]
+    average_chars = sum(item["total_message_chars"] for item in measurements) / len(
+        measurements
+    )
 
-    assert average <= 525
+    # Production telemetry showed roughly 994 average Groq prompt tokens at ~2.0k-3.3k
+    # message characters. This is a deterministic message-size guard only; actual provider
+    # prompt-token usage must be measured after deployment.
+    assert average_chars <= 1500
 
 
 def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts():

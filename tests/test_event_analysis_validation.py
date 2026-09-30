@@ -304,6 +304,62 @@ def test_positive_analysis_rejects_zig_zag_snapshots_as_consistent_decline():
         )
 
 
+def test_positive_analysis_accepts_grounded_aggregate_move_across_window():
+    decision = validate_factual_alert(
+        alert_analysis_result(
+            title="SOL declined 0.312% across the 180-minute window",
+            message_body="The supplied aggregate window move is noteworthy.",
+        ),
+        factual_market_input(
+            snapshots=[
+                {"m": -180, "p": 100},
+                {"m": -90, "p": 101},
+                {"m": 0, "p": 99.688},
+            ],
+            chg_window_percent=-0.312,
+        ),
+    )
+
+    assert decision.should_alert is True
+
+
+def test_positive_analysis_rejects_invented_subwindow_metric():
+    with pytest.raises(EventAnalysisValidationError, match="duration"):
+        validate_factual_alert(
+            alert_analysis_result(
+                title="SOL market event",
+                message_body="SOL gained 1.34% in the most recent 3-minute window.",
+            ),
+            factual_market_input(
+                snapshots=[
+                    {"m": -180, "p": 100},
+                    {"m": -90, "p": 99},
+                    {"m": 0, "p": 98.5},
+                ],
+                chg_window_percent=-1.5,
+            ),
+        )
+
+
+def test_positive_analysis_rejects_market_percentage_not_in_input():
+    with pytest.raises(EventAnalysisValidationError, match="percentage"):
+        validate_factual_alert(
+            alert_analysis_result(
+                title="SOL market event",
+                message_body="SOL moved 7.7% without a supplied period.",
+            ),
+            factual_market_input(
+                snapshots=[
+                    {"m": -180, "p": 100},
+                    {"m": 0, "p": 99},
+                ],
+                chg_window_percent=-1.0,
+                chg24h_percent=-2.0,
+                chg_since_msg_percent=-3.0,
+            ),
+        )
+
+
 def test_positive_analysis_rejects_unsupported_time_window_claim_in_possible_action():
     with pytest.raises(EventAnalysisValidationError, match="window"):
         validate_factual_alert(
