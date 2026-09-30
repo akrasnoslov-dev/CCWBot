@@ -42,7 +42,7 @@ def test_event_analysis_prompt_makes_llm_the_market_significance_decider():
     assert "consistent/persistent/throughout requires s" in prompt
     assert "News coincident not causal" in prompt
     assert "action monitor-only/no trade" in prompt
-    assert "cw=w%" in prompt
+    assert "cw=% over w min" in prompt
     assert "cl=since prior alert%" in prompt
     assert "null=unknown" in prompt
     assert "title uses cw if known" in prompt
