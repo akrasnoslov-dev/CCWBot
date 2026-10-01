@@ -92,6 +92,16 @@ def _first_run_btc_subscription():
     return (SimpleNamespace(symbol="btc", is_enabled=True),)
 
 
+def _first_run_activation_copy(user: User) -> str:
+    if has_premium_entitlement(user):
+        return "BTC is free. Add ETH, SOL or GRAM to expand your Premium monitoring."
+    if get_user_trial(user) is None:
+        return (
+            "BTC is free. Add ETH, SOL or GRAM to unlock your free 7-day Premium trial."
+        )
+    return "BTC is free. Add ETH, SOL or GRAM to expand monitoring with Premium."
+
+
 def _trial_end_text(user: User) -> str:
     trial = get_user_trial(user)
     active_until = getattr(trial, "active_until", None)
@@ -210,6 +220,7 @@ async def send_start_experience(update: Update) -> bool:
                 subscriptions=first_run_subscriptions,
                 monitoring_subscriptions=subscriptions,
             )
+            text = f"{text}\n\n{_first_run_activation_copy(user)}"
             keyboard = build_first_run_brief_keyboard()
             selected_count = len(_selected_symbols(first_run_subscriptions))
             first_run = True
@@ -252,6 +263,14 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
 
     parts = data.split(":")
     if len(parts) == 2 and parts[1] == "customize":
+        async with DB_SESSION_LOCAL() as session:
+            await record_product_event(
+                session,
+                user_id=user.id,
+                event_name="onboarding_customize_opened",
+                event_key=f"onboarding:{ONBOARDING_VERSION}",
+            )
+            await session.commit()
         text, keyboard = build_onboarding_message(user, subscriptions)
         await query.answer()
         await _edit_onboarding_message(query, text, reply_markup=keyboard)

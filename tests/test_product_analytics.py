@@ -45,6 +45,7 @@ def test_direct_telegram_ads_measurement_docs_use_new_user_time_window_contract(
     assert "bot_started" not in direct_ads_section
     assert "active progression to the brief" in content
     assert "successful first-value delivery" in content
+    assert "onboarding_customize_opened" in direct_ads_section
     assert "Do not compare those two percentages as one conversion metric" in content
 
 
