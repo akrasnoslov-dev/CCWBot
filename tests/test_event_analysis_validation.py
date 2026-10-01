@@ -94,6 +94,40 @@ def test_no_alert_accepts_empty_related_news_ids():
     assert decision.confidence is None
 
 
+def test_no_alert_normalizes_nonempty_related_news_ids():
+    decision = validate_event_analysis_output(
+        event_analysis_result(related_news_ids=["n1"]),
+        expected_symbol="sol",
+        candidate_news_ids={"n1"},
+    )
+
+    assert decision.should_alert is False
+    assert decision.related_news_ids == []
+
+
+def test_no_alert_normalizes_unknown_related_news_ids():
+    decision = validate_event_analysis_output(
+        event_analysis_result(related_news_ids=["n999"]),
+        expected_symbol="sol",
+        candidate_news_ids={"n1"},
+    )
+
+    assert decision.should_alert is False
+    assert decision.related_news_ids == []
+
+
+def test_no_alert_rejects_non_array_related_news_ids():
+    with pytest.raises(
+        EventAnalysisValidationError,
+        match="related_news_ids must be null or an array for no-alert result",
+    ):
+        validate_event_analysis_output(
+            event_analysis_result(related_news_ids="n1"),
+            expected_symbol="sol",
+            candidate_news_ids={"n1"},
+        )
+
+
 def test_no_alert_accepts_confidence_value():
     decision = validate_event_analysis_output(
         event_analysis_result(related_news_ids=[], confidence="low"),
