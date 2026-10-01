@@ -27,6 +27,7 @@ PRODUCT_EVENT_NAMES = frozenset(
     {
         "bot_started",
         "onboarding_started",
+        "onboarding_customize_opened",
         "coin_interest_selected",
         "onboarding_completed",
         "instant_brief_viewed",
@@ -44,6 +45,7 @@ PRODUCT_EVENT_NAMES = frozenset(
 _EVENT_FIELDS = {
     "bot_started": frozenset(),
     "onboarding_started": frozenset({"event_key"}),
+    "onboarding_customize_opened": frozenset({"event_key"}),
     "coin_interest_selected": frozenset({"event_key", "symbol", "selected_coin_count"}),
     "onboarding_completed": frozenset({"event_key", "selected_coin_count"}),
     "instant_brief_viewed": frozenset({"event_key", "selected_coin_count"}),
