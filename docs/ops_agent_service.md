@@ -95,7 +95,7 @@ user-facing copy regression was found.
 - Use redacted refs only when user-specific remediation is necessary.
 - Treat detector `unknown` as missing or inconclusive evidence, not healthy status.
 - Treat missing collector evidence as incomplete, not as proof that the system is healthy.
-- Do not download generated bundles or reports into the repo worktree. If temporary local
+- Do not download generated bundles or reports into the repository checkout. If temporary local
   copies are unavoidable, place them under `.cache/tmp` and clean them up.
 
 ## Forensic Correlation Evidence

@@ -87,18 +87,19 @@ Define validation before production implementation.
 **No green verification, no completion.** Never describe a task as done while an applicable required
 check is failing, was skipped without an explicit reason, or has not been run.
 
-### Worktree isolation
+### Single-checkout branch workflow
 
-Use isolated Git branches plus `git worktree` for implementation workers.
+Use one local repository checkout for normal development. Do not create Git worktrees by default.
 
-- Create an integration/task branch from current `dev`.
-- Give each parallel worker its own branch and worktree based on the task/integration state it needs.
-- Do not let multiple workers edit the same worktree.
-- Scope workers to independent files or boundaries where practical.
-- Merge accepted worker branches into the integration branch one at a time, resolving conflicts and
-  rerunning affected tests after each integration.
-- A single-worker task may use one isolated task worktree; do not create parallel workers when they
-  do not improve throughput or quality.
+- Keep the normal local CCWBot checkout as the only working folder.
+- Start task branches from current `dev` and switch branches in that same checkout.
+- Use one implementation writer at a time in the shared checkout. Read-only analysis and review
+  agents may run in parallel when useful.
+- Before switching branches or integrating changes, confirm the working tree is clean or preserve
+  intentional user changes without overwriting them.
+- Merge accepted task branches through the normal PR flow, resolving conflicts and rerunning
+  affected tests after integration.
+- Create a `git worktree` only when the owner explicitly requests one for a specific task.
 
 ### Orchestrator and workers
 
@@ -110,8 +111,8 @@ ChatGPT Work and Codex, use the following OpenAI routing:
 - Use `gpt-5.6-luna` for simple, mechanical, low-risk, well-specified subtasks.
 - Use Sol as an implementation worker only as an escalation when task complexity, risk, or a failed
   lower-tier attempt justifies the extra cost.
-- Worker count is adaptive. The orchestrator decides how many workers are useful for the task and
-  available platform capacity; do not impose a fixed project-level worker count.
+- Worker count is adaptive for analysis and review, but implementation defaults to one writer at a
+  time in the single checkout. Additional implementation writers require explicit owner approval.
 - Give each worker only the task specification, relevant canonical rules, assigned scope, acceptance
   criteria, and evidence needed for its subtask.
 - The orchestrator must review worker diffs and test evidence before integration; worker completion
@@ -143,7 +144,7 @@ Before non-trivial work:
 3. Read and apply every relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent).
 4. If no installed skill applies, state that explicitly in the final response and PR body.
 5. Use required review agents when routing says they apply.
-6. Check current branch and worktree status.
+6. Check the current branch, working-tree status, and sync state.
 7. Do not overwrite uncommitted user work.
 
 Mandatory implementation and PR-readiness workflow for every non-trivial task:
