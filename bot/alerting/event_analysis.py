@@ -1135,10 +1135,10 @@ def _validate_alert_related_news_ids(
 def _validate_no_alert_related_news_ids(value: Any) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, list) and not value:
+    if isinstance(value, list):
         return []
     raise EventAnalysisValidationError(
-        "related_news_ids must be null or empty for no-alert result"
+        "related_news_ids must be null or an array for no-alert result"
     )
 
 
