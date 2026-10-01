@@ -24,6 +24,7 @@ LONG_REVISION_MESSAGE = (
     "long ids can break migration execution."
 )
 EVENT_ALERT_POLICY_REVISION = "0030_event_alert_policy_cleanup"
+CURRENT_HEAD_REVISION = "0031_onboarding_customize_event"
 PREVIOUS_EVENT_ALERT_POLICY_REVISION = "0029_llm_operation_outcomes"
 POSTGRES_MIGRATION_TEST_DATABASE_URL = "ALEMBIC_POSTGRES_TEST_DATABASE_URL"
 
@@ -348,7 +349,7 @@ def test_0030_postgresql_downgrade_round_trip_restores_contract() -> None:
     assert ("event_ai_analyses", "context_fingerprint") not in downgraded_columns
 
     command.upgrade(config, "head")
-    assert asyncio.run(_postgres_revision(database_url)) == EVENT_ALERT_POLICY_REVISION
+    assert asyncio.run(_postgres_revision(database_url)) == CURRENT_HEAD_REVISION
     reupgraded_columns = asyncio.run(_postgres_column_contract(database_url, inspected_keys))
     assert _type_comment_contract(reupgraded_columns, set(HEAD_PRICE_COLUMNS)) == HEAD_PRICE_COLUMNS
     assert (
