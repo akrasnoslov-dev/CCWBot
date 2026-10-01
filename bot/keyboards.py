@@ -45,7 +45,7 @@ def build_onboarding_keyboard(
 
 def build_first_run_brief_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Customize coins", callback_data="onboarding:customize")]]
+        [[InlineKeyboardButton("Add ETH, SOL & GRAM →", callback_data="onboarding:customize")]]
     )
 
 

@@ -129,8 +129,10 @@ async def test_new_user_start_delivers_btc_brief_then_records_value_events(monke
         text, kwargs = message.replies[0]
         assert "Your market brief" in text
         assert "BTC:" in text
+        assert "BTC is free." in text
+        assert "free 7-day Premium trial" in text
         buttons = [button.text for row in kwargs["reply_markup"].inline_keyboard for button in row]
-        assert buttons == ["Customize coins"]
+        assert buttons == ["Add ETH, SOL & GRAM →"]
         subscriptions = list(
             (
                 await session.scalars(
@@ -262,6 +264,8 @@ async def test_unfinished_v1_active_premium_intent_stays_visible_as_monitored(mo
         assert "BTC:" in brief
         assert "ETH:" not in brief
         assert "Active monitoring: ETH." in brief
+        assert "expand your Premium monitoring" in brief
+        assert "free 7-day Premium trial" not in brief
     finally:
         await session.close()
         await engine.dispose()
@@ -401,6 +405,30 @@ async def test_customize_coins_opens_optional_selector_after_first_brief(monkeyp
         ]
         assert any("BTC · Free" in button for button in buttons)
         assert any("ETH · Premium" in button for button in buttons)
+        customize_events = list(
+            (
+                await session.scalars(
+                    select(ProductEvent).where(
+                        ProductEvent.event_name == "onboarding_customize_opened"
+                    )
+                )
+            ).all()
+        )
+        assert len(customize_events) == 1
+
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:customize"
+        ) is True
+        customize_events = list(
+            (
+                await session.scalars(
+                    select(ProductEvent).where(
+                        ProductEvent.event_name == "onboarding_customize_opened"
+                    )
+                )
+            ).all()
+        )
+        assert len(customize_events) == 1
     finally:
         await session.close()
         await engine.dispose()

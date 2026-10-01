@@ -426,8 +426,9 @@ class ProductEvent(Base):
     __tablename__ = "product_events"
     __table_args__ = (
         CheckConstraint(
-            "event_name IN ('bot_started', 'onboarding_started', 'coin_interest_selected', "
-            "'onboarding_completed', 'instant_brief_viewed', 'watchlist_updated', "
+            "event_name IN ('bot_started', 'onboarding_started', 'onboarding_customize_opened', "
+            "'coin_interest_selected', 'onboarding_completed', 'instant_brief_viewed', "
+            "'watchlist_updated', "
             "'trial_offered', 'trial_started', 'trial_expired', 'paywall_viewed', "
             "'checkout_started', 'payment_succeeded', 'premium_value_delivered')",
             name="ck_product_events_event_name",

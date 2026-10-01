@@ -106,6 +106,9 @@ SELECT
     WHERE event_name = 'instant_brief_viewed'
   ) AS instant_brief_viewed,
   COUNT(DISTINCT user_id) FILTER (
+    WHERE event_name = 'onboarding_customize_opened'
+  ) AS onboarding_customize_opened,
+  COUNT(DISTINCT user_id) FILTER (
     WHERE event_name = 'coin_interest_selected'
   ) AS coin_interest_selected,
   COUNT(DISTINCT user_id) FILTER (
@@ -133,21 +136,24 @@ For a new private-chat user, `/start` records `onboarding_started` before attemp
 delivery of the deterministic cached BTC brief. `onboarding_completed` and
 `instant_brief_viewed` are recorded only after that brief has been delivered successfully; they
 therefore represent first value delivery rather than merely rendering an onboarding screen.
-Optional coin selection follows through the `Customize coins` action. Premium intent, trial, and
-paywall events retain their existing meanings.
+Optional coin selection follows through the `Add ETH, SOL & GRAM →` action.
+`onboarding_customize_opened` records that activation click once per onboarding version, before
+the selector is rendered. Premium intent, trial, and paywall events retain their existing meanings.
 
 The old 25.0% (2 of 8) baseline represented active progression to the brief: a user pressed the
 old flow's confirmation CTA. In v2, `/start` automatically delivers the brief, so
 `onboarding_completed / new_users` now measures successful first-value delivery rather than the
 same engagement conversion. Do not compare those two percentages as one conversion metric.
 
-Judge the experiment's meaningful engagement with existing downstream events: unique users with
-`coin_interest_selected`, `trial_offered`, `trial_started`, `checkout_started`, and
-`payment_succeeded`, each divided by `new_users` from the observed window cohort. The direct-Ads
-query above reports those counts; calculate and compare rates using the same UTC window definition.
+Judge the experiment's meaningful engagement with downstream events: unique users with
+`onboarding_customize_opened`, `coin_interest_selected`, `trial_offered`, `trial_started`,
+`checkout_started`, and `payment_succeeded`, each divided by `new_users` from the observed
+window cohort. The direct-Ads query above reports those counts; calculate and compare rates using
+the same UTC window definition.
 
-The allowed event names are `bot_started`, `onboarding_started`, `coin_interest_selected`,
-`onboarding_completed`, `instant_brief_viewed`, `watchlist_updated`, `trial_offered`,
+The allowed event names are `bot_started`, `onboarding_started`,
+`onboarding_customize_opened`, `coin_interest_selected`, `onboarding_completed`,
+`instant_brief_viewed`, `watchlist_updated`, `trial_offered`,
 `trial_started`, `trial_expired`, `paywall_viewed`, `checkout_started`, `payment_succeeded`, and
 `premium_value_delivered`. Trial start and expiry are idempotent lifecycle events keyed to the
 internal user and trial row; payment conversion remains keyed to the internal payment row.
