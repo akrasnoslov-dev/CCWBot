@@ -49,8 +49,8 @@ RELATED_NEWS_CANDIDATES_COUNT_SQL = (
     ") END)"
 )
 LLM_RECONCILIATION_CALL_TYPES_SQL = (
-    "('event_analysis', 'market_heartbeat', 'daily_report', 'weekly_report', "
-    "'news_intelligence')"
+    "('event_analysis', 'event_alert_render', 'market_heartbeat', 'daily_report', "
+    "'weekly_report', 'news_intelligence')"
 )
 LLM_OPERATION_CANDIDATES_SQL = (
     "SELECT llm_operation_id, call_type FROM llm_usage_logs "
@@ -1021,8 +1021,8 @@ QUERIES: tuple[DbQuery, ...] = (
         "WITH source_rows AS ("
         "SELECT 'provider_attempt' AS source, call_type, llm_operation_id FROM llm_usage_logs "
         "WHERE created_at >= :since AND created_at < :until "
-        "AND call_type IN ('event_analysis', 'market_heartbeat', 'daily_report', "
-        "'weekly_report', 'news_intelligence') "
+        "AND call_type IN ('event_analysis', 'event_alert_render', 'market_heartbeat', "
+        "'daily_report', 'weekly_report', 'news_intelligence') "
         "UNION ALL SELECT 'event_analysis', 'event_analysis', llm_operation_id "
         "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
         "UNION ALL SELECT 'market_heartbeat', 'market_heartbeat', llm_operation_id "

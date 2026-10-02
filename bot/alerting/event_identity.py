@@ -317,7 +317,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
     )
     context = {
-        "schema_version": 8,
+        "schema_version": 9,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
@@ -328,6 +328,8 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "chg_window_percent",
                 "chg24h_percent",
                 "chg_since_msg_percent",
+                "relative_window_percentile_30d",
+                "relative_24h_percentile_30d",
             )
         },
         "last_msg": {

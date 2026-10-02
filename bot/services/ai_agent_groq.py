@@ -146,6 +146,31 @@ _GROQ_STRICT_SCHEMA_MODELS = frozenset(
     }
 )
 
+_EVENT_SIGNIFICANCE_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "symbol": {"type": "string"},
+        "should_alert": {"type": "boolean"},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "reason_code": {
+            "type": "string",
+            "enum": [
+                "unusual_move",
+                "fast_move",
+                "reversal",
+                "trend_acceleration",
+                "market_news_alignment",
+                "routine_move",
+                "news_only",
+                "unclear",
+            ],
+        },
+    },
+    "required": ["symbol", "should_alert", "confidence", "reason_code"],
+    "additionalProperties": False,
+}
+
+
 _EVENT_ANALYSIS_JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -328,6 +353,89 @@ def _event_analysis_percent(value: object) -> object:
     return value if rounded == 0 and value != 0 else rounded
 
 
+_EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
+    (
+        "JSON English. Is this market move noteworthy enough to interrupt the user?",
+        "Market decides;news supports but never alerts alone. Judge size/speed, unusualness for "
+        "this asset, and short-vs-24h alignment/reversal. Unusually large/fast relative moves "
+        "favor alert; routine moves favor no alert.",
+        "pw,p24=percentile of absolute move vs same asset's recent 30d history; context, not "
+        "thresholds. Do not apply a fixed cutoff. null=unknown.",
+        "Input:sym;m={w,cw,c24,pw,p24};cw=% over w;c24=24h%;"
+        "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
+        "Output exactly symbol,should_alert,confidence,reason_code;confidence=low|medium|high;"
+        "reason_code=unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment|"
+        "routine_move|news_only|unclear.",
+    )
+)
+
+
+def _event_significance_prompt_payload(input_payload: dict) -> dict:
+    """Return the small always-on model view used only for significance."""
+    market = input_payload.get("market")
+    market = market if isinstance(market, dict) else {}
+    news_items = input_payload.get("news")
+    news_items = news_items if isinstance(news_items, list) else []
+
+    compact_news = []
+    for item in news_items[:2]:
+        if not isinstance(item, dict):
+            continue
+        compact_item = {
+            "t": item.get("title"),
+            "r": item.get("relevance_label"),
+            "mat": item.get("material"),
+        }
+        age_hours = _event_analysis_news_age_hours(input_payload, item)
+        if age_hours is not None:
+            compact_item["h"] = age_hours
+        compact_news.append(compact_item)
+
+    return {
+        "sym": input_payload.get("symbol"),
+        "m": {
+            "w": market.get("analysed_window_minutes"),
+            "cw": _event_analysis_percent(market.get("chg_window_percent")),
+            "c24": _event_analysis_percent(market.get("chg24h_percent")),
+            "pw": _event_analysis_percent(market.get("relative_window_percentile_30d")),
+            "p24": _event_analysis_percent(market.get("relative_24h_percentile_30d")),
+        },
+        "n": compact_news,
+    }
+
+
+def build_event_significance_prompt(input_payload: dict) -> str:
+    payload = _json_dumps(_event_significance_prompt_payload(input_payload))
+    return f"{_EVENT_SIGNIFICANCE_INSTRUCTIONS}\nInput JSON:\n{payload}"
+
+
+async def ask_event_significance_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
+    symbol = str(input_payload.get("symbol") or "").strip() or None
+    max_tokens = llm_config.max_tokens_for("event_analysis")
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type="event_analysis",
+        schema_name="event_significance",
+        schema=_EVENT_SIGNIFICANCE_JSON_SCHEMA,
+    )
+    return await get_router().chat_completion(
+        call_type="event_analysis",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": build_event_significance_prompt(input_payload)},
+        ],
+        max_tokens=max_tokens,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
+        symbol=symbol,
+        validate_response=_json_response_validator(
+            call_type="event_analysis",
+            symbol=symbol,
+            max_tokens=max_tokens,
+            schema_check=schema_check,
+        ),
+    )
+
+
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
     """Return the compact semantic model view without runtime or repeated static fields."""
     market = input_payload.get("market")
@@ -387,6 +495,67 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
 def build_event_analysis_prompt(input_payload: dict) -> str:
     payload = _json_dumps(_event_analysis_prompt_payload(input_payload))
     return f"{_EVENT_ANALYSIS_INSTRUCTIONS}\nInput JSON:\n{payload}"
+
+
+_EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
+    (
+        "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
+        "do not re-decide whether to alert. should_alert must be true.",
+        "Return exactly symbol,should_alert,event_key,title,message_body,related_news_ids,"
+        "possible_action,urgency,confidence,reason_for_no_alert. reason_for_no_alert=null.",
+        "Market first; news is supporting context only and never a claimed cause. Use supplied "
+        "facts only. title centers on verified cw when available; body is concise and adds no "
+        "invented market numbers; action is monitor-only, never a trade instruction.",
+        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...],0=now,<0=older;"
+        "cw=% over w;c24=24h%;cl=since alert%;n={i,src,t,x,r,mat,h};sig={c,r}. "
+        ".042=.042%,not 4.2%;news IDs only n.i.",
+    )
+)
+
+
+def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
+    payload = _event_analysis_prompt_payload(input_payload)
+    significance = input_payload.get("significance_decision")
+    significance = significance if isinstance(significance, dict) else {}
+    payload["sig"] = {
+        "c": significance.get("confidence"),
+        "r": significance.get("reason_code"),
+    }
+    return payload
+
+
+def build_event_alert_render_prompt(input_payload: dict) -> str:
+    payload = _json_dumps(_event_alert_render_prompt_payload(input_payload))
+    return f"{_EVENT_ALERT_RENDER_INSTRUCTIONS}\nInput JSON:\n{payload}"
+
+
+async def ask_event_alert_render_raw(
+    input_payload: dict, *, schema_check=None
+) -> tuple[str, dict]:
+    symbol = str(input_payload.get("symbol") or "").strip() or None
+    max_tokens = llm_config.max_tokens_for("event_alert_render")
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type="event_alert_render",
+        schema_name="event_alert_render",
+        schema=_EVENT_ANALYSIS_JSON_SCHEMA,
+    )
+    return await get_router().chat_completion(
+        call_type="event_alert_render",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": build_event_alert_render_prompt(input_payload)},
+        ],
+        max_tokens=max_tokens,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
+        symbol=symbol,
+        validate_response=_json_response_validator(
+            call_type="event_alert_render",
+            symbol=symbol,
+            max_tokens=max_tokens,
+            schema_check=schema_check,
+        ),
+    )
 
 
 async def ask_event_analysis_raw(input_payload: dict, *, schema_check=None) -> tuple[str, dict]:
