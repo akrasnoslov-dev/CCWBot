@@ -154,7 +154,7 @@ class BundleWriter:
 
     def initialize(self) -> None:
         staging_root = self.staging_path.parent
-        staging_root.mkdir(parents=True, exist_ok=True)
+        staging_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
             staging_root.chmod(0o700)
         except OSError:
@@ -173,12 +173,11 @@ class BundleWriter:
         self.published_path.parent.mkdir(parents=True, exist_ok=True)
         if self.published_path.exists():
             raise FileExistsError(f"published bundle already exists: {self.bundle_id}")
+        # The staging parent remains owner-only, so prepare the bundle's published
+        # traversal permissions before rename and avoid a post-publication chmod race.
+        self.staging_path.chmod(0o755)
         self.staging_path.replace(self.published_path)
         self.path = self.published_path
-        try:
-            self.published_path.chmod(0o755)
-        except OSError:
-            pass
         return self.published_path
 
     def finalize(
