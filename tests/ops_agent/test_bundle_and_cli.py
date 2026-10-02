@@ -215,7 +215,9 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "--since-container-start" in script
     assert "--status" in script
     assert "latest" in script
-    assert "/opt/CCWBot/reports/ops-agent/receipts" in script
+    assert 'ROOT=/opt/CCWBot' in script
+    assert 'OPS_ROOT="$ROOT/reports/ops-agent"' in script
+    assert 'RECEIPTS_DIR="$OPS_ROOT/receipts"' in script
     assert "write_receipt" in script
     assert "container_start_exceeds_collection_cap" in script
     assert "collector_stderr" not in script
