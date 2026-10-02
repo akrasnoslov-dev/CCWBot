@@ -171,6 +171,28 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
 }
 
 
+_EVENT_ALERT_RENDER_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "event_key": {"type": "string"},
+        "title": {"type": "string"},
+        "message_body": {"type": "string"},
+        "related_news_ids": {"type": "array", "items": {"type": "string"}},
+        "possible_action": {"type": "string"},
+        "urgency": {"type": "string", "enum": ["low", "normal", "high"]},
+    },
+    "required": [
+        "event_key",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "urgency",
+    ],
+    "additionalProperties": False,
+}
+
+
 _EVENT_ANALYSIS_JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -500,9 +522,8 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
 _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
         "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
-        "do not re-decide whether to alert. should_alert must be true.",
-        "Return exactly symbol,should_alert,event_key,title,message_body,related_news_ids,"
-        "possible_action,urgency,confidence,reason_for_no_alert. reason_for_no_alert=null.",
+        "do not re-decide whether to alert.",
+        "Return exactly event_key,title,message_body,related_news_ids,possible_action,urgency.",
         "Market first; news is supporting context only and never a claimed cause. Use supplied "
         "facts only. title centers on verified cw when available; body is concise and adds no "
         "invented market numbers; action is monitor-only, never a trade instruction.",
@@ -537,7 +558,7 @@ async def ask_event_alert_render_raw(
     response_format, response_format_overrides = _structured_response_formats(
         call_type="event_alert_render",
         schema_name="event_alert_render",
-        schema=_EVENT_ANALYSIS_JSON_SCHEMA,
+        schema=_EVENT_ALERT_RENDER_JSON_SCHEMA,
     )
     return await get_router().chat_completion(
         call_type="event_alert_render",

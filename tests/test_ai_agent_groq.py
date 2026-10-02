@@ -77,6 +77,36 @@ def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
     assert ".042=.042%" in prompt
 
 
+def test_event_alert_render_schema_only_contains_model_generated_fields():
+    schema = ai_agent_groq._EVENT_ALERT_RENDER_JSON_SCHEMA
+    assert set(schema["required"]) == {
+        "event_key",
+        "title",
+        "message_body",
+        "related_news_ids",
+        "possible_action",
+        "urgency",
+    }
+    assert set(schema["properties"]) == set(schema["required"])
+    prompt = ai_agent_groq.build_event_alert_render_prompt(
+        {
+            "symbol": "BTC",
+            "market": {"chg_window_percent": -1.2, "chg24h_percent": 0.4},
+            "significance_decision": {
+                "should_alert": True,
+                "confidence": "high",
+                "reason_code": "unusual_move",
+            },
+        }
+    )
+    assert (
+        "Return exactly event_key,title,message_body,related_news_ids,possible_action,urgency."
+        in prompt
+    )
+    assert "reason_for_no_alert=null" not in prompt
+    assert "should_alert must be true" not in prompt
+
+
 def test_other_prompts_preserve_report_and_heartbeat_contracts():
     heartbeat = ai_agent_groq.build_market_heartbeat_prompt({"symbol": "SOL"})
     report = ai_agent_groq.build_market_report_prompt({"report_type": "weekly"})

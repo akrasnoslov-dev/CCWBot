@@ -3628,11 +3628,13 @@ async def _create_event_analysis_decision(
     render_model = GROQ_EVENT_ANALYSIS_MODEL
 
     def _render_schema_check(provider_parsed: dict) -> None:
-        if provider_parsed.get("should_alert") is not True:
-            raise AISchemaValidationError("render must keep should_alert=true")
         try:
-            rendered = validate_event_analysis_output(
-                _normalize_event_analysis_result_for_validation(provider_parsed),
+            validate_event_analysis_output(
+                _event_alert_render_result_for_validation(
+                    provider_parsed,
+                    expected_symbol=expected_symbol,
+                    confidence=significance.confidence,
+                ),
                 expected_symbol=expected_symbol,
                 candidate_news_ids=candidate_news_ids,
                 market_data=input_payload.get("market"),
@@ -3641,8 +3643,6 @@ async def _create_event_analysis_decision(
             )
         except EventAnalysisValidationError as error:
             raise AISchemaValidationError(str(error)) from error
-        if rendered.confidence != significance.confidence:
-            raise AISchemaValidationError("render confidence must match significance decision")
 
     logger.info(
         "ops_event=event_alert_render_llm_operation symbol=%s status=started operation_id=%s",
@@ -3713,10 +3713,12 @@ async def _create_event_analysis_decision(
             _log_event_analysis_failure(expected_symbol, reason)
         return None, None
 
-    normalized_render = _normalize_event_analysis_result_for_validation(render_parsed)
+    normalized_render = _event_alert_render_result_for_validation(
+        render_parsed,
+        expected_symbol=expected_symbol,
+        confidence=significance.confidence,
+    )
     try:
-        if normalized_render.get("should_alert") is not True:
-            raise EventAnalysisValidationError("render must keep should_alert=true")
         decision = validate_event_analysis_output(
             normalized_render,
             expected_symbol=expected_symbol,
@@ -3725,10 +3727,6 @@ async def _create_event_analysis_decision(
             last_msg=input_payload.get("last_msg"),
             timestamp_utc=input_payload.get("timestamp_utc"),
         )
-        if decision.confidence != significance.confidence:
-            raise EventAnalysisValidationError(
-                "render confidence must match significance decision"
-            )
     except EventAnalysisValidationError as error:
         schema_error = AISchemaValidationError(str(error))
         await mark_llm_usage_log_status(
@@ -3875,6 +3873,28 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
         if isinstance(item, dict)
     }
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
+
+
+def _event_alert_render_result_for_validation(
+    result: object,
+    *,
+    expected_symbol: str,
+    confidence: str,
+) -> object:
+    if not isinstance(result, dict):
+        return result
+    return {
+        "symbol": normalize_symbol(expected_symbol).upper(),
+        "should_alert": True,
+        "event_key": result.get("event_key"),
+        "title": result.get("title"),
+        "message_body": result.get("message_body"),
+        "related_news_ids": result.get("related_news_ids"),
+        "possible_action": result.get("possible_action"),
+        "urgency": result.get("urgency"),
+        "confidence": confidence,
+        "reason_for_no_alert": None,
+    }
 
 
 def _normalize_event_analysis_result_for_validation(result: object) -> object:
