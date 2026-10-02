@@ -225,7 +225,7 @@ collector_exit=$?
 cat "$collector_stdout_file"
 
 collector_bundle_path=$(
-  sed -n 's/.*"published_bundle_path": "\([^"]*\)".*/\1/p' "$collector_stdout_file" \
+  sed -n 's/.*"published_bundle_path":[[:space:]]*"\([^"]*\)".*/\1/p' "$collector_stdout_file" \
     | tail -n 1
 )
 published_bundle_path=""
