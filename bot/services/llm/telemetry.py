@@ -54,6 +54,7 @@ def _rate_limit_fallback_backoff_seconds() -> int:
 # Only these call types consult the pre-call backoff registry before attempting a request.
 RATE_LIMIT_BACKOFF_CALL_TYPES = {
     "event_analysis",
+    "event_alert_render",
     "market_heartbeat",
     "daily_report",
     "weekly_report",

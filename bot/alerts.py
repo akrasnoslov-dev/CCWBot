@@ -3574,9 +3574,8 @@ async def _create_event_analysis_decision(
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
         return None, None
 
-    event_analysis_health.record_success()
-
-    if not significance.should_alert:
+    if not significance.should_alert or significance.reason_code == "news_only":
+        event_analysis_health.record_success()
         decision = _no_alert_decision_from_significance(significance)
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
@@ -3588,10 +3587,7 @@ async def _create_event_analysis_decision(
             model=decision_model,
             llm_operation_id=decision_operation_id,
         )
-        news_only = (
-            significance.reason_code == "news_only"
-            and not _has_non_flat_analysed_market_context(input_payload)
-        )
+        news_only = significance.reason_code == "news_only"
         decision_reason = (
             DECISION_REASON_NEWS_ONLY_REJECTED
             if news_only
@@ -3691,7 +3687,7 @@ async def _create_event_analysis_decision(
         )
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=getattr(error, "raw_content", render_raw_output),
+            raw_output_json=decision_raw_output,
             status=status,
             parsed_result=decision_parsed,
             error_message=str(error),
@@ -3751,7 +3747,7 @@ async def _create_event_analysis_decision(
         )
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=render_raw_output,
+            raw_output_json=decision_raw_output,
             status="schema_error",
             parsed_result=decision_parsed,
             error_message=str(error),
@@ -3783,14 +3779,15 @@ async def _create_event_analysis_decision(
         provider=render_provider,
         model=render_model,
     )
+    event_analysis_health.record_success()
 
     if _is_news_only_event_alert_decision(decision, input_payload):
         rejected_decision = _as_news_only_rejected_decision(decision)
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=render_raw_output,
+            raw_output_json=decision_raw_output,
             status="no_alert",
-            parsed_result=normalized_render,
+            parsed_result=decision_parsed,
             decision=rejected_decision,
             provider=decision_provider,
             model=decision_model,
@@ -3834,9 +3831,9 @@ async def _create_event_analysis_decision(
 
     analysis_id = await _save_event_analysis_attempt(
         input_payload=input_payload,
-        raw_output_json=render_raw_output,
+        raw_output_json=decision_raw_output,
         status="success",
-        parsed_result=normalized_render,
+        parsed_result=decision_parsed,
         decision=decision,
         provider=decision_provider,
         model=decision_model,
@@ -3858,7 +3855,10 @@ async def _create_event_analysis_decision(
         decision_reason=DECISION_REASON_LLM_SHOULD_ALERT,
         previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
         context_fingerprint=context_fingerprint,
-        detail=f"market_event_first_llm_allowed:{significance.reason_code}",
+        detail=(
+            f"market_event_first_llm_allowed:{significance.reason_code};"
+            f"render_operation_id={render_operation_id}"
+        ),
     )
     return decision, analysis_id
 

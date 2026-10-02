@@ -56,6 +56,10 @@ def clear_rate_limit_backoffs(monkeypatch):
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
 
 
+def test_event_alert_render_consults_provider_model_backoff():
+    assert "event_alert_render" in telemetry.RATE_LIMIT_BACKOFF_CALL_TYPES
+
+
 def test_active_backoff_snapshot_preserves_triggering_call_types(caplog):
     error = RuntimeError("429 rate limit")
     operation_id = new_llm_operation_id()

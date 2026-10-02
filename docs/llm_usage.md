@@ -235,13 +235,15 @@ runtime LLM entry point remains `bot/services/ai_agent_groq.py`, now a thin faca
 that keeps all public names/signatures (`AIGroqRateLimitError` is an alias of the provider-agnostic
 `AIProviderRateLimitError`).
 
-The persisted analysis/report/news provider and model reflect the provider that actually answered.
-Reports produced after provider-chain exhaustion use the explicit
-`deterministic:deterministic-market-report-v1` attribution:
-`event_ai_analyses.provider/model`, `market_reports.provider/model`, and
-`news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin diagnostics
-(`bot/observability/system_status.py`) and the ops-agent
-`llm_usage_summary` collector are provider-agnostic.
+Persisted provider/model attribution follows the logical feature row that owns it. For two-stage
+Event Alerts, `event_ai_analyses.provider/model/llm_operation_id` and its raw/parsed response belong
+to the `event_analysis` significance stage; the separate `event_alert_render` provider/model/status
+are recorded in `llm_operation_outcomes`, and the allowed delivery outcome links the render
+operation id for forensic correlation. Reports produced after provider-chain exhaustion use the
+explicit `deterministic:deterministic-market-report-v1` attribution. `market_reports.provider/model`
+and `news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin
+diagnostics (`bot/observability/system_status.py`) and the ops-agent `llm_usage_summary` collector
+are provider-agnostic.
 
 When a logical provider chain exhausts, the router emits one
 `ops_event=llm_chain_exhausted` WARNING containing only `provider:error_reason` categories and
