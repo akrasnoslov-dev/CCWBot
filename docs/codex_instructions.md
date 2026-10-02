@@ -136,6 +136,28 @@ Minimize token use while preserving correctness and evidence quality.
   expected benefit.
 - Avoid recursive or duplicate reviews and reruns when evidence has not changed.
 
+
+### Default ChatGPT bridge mode for CCWBot
+
+When the user-level `codex-chatgpt-bridge` skill is available and bridge-assisted work is appropriate,
+use these CCWBot defaults:
+
+- Operating mode: `CHATGPT_ARCHITECT`.
+- Permission level: `L3_WORKSPACE_WRITE` for the approved narrow CCWBot workspace only.
+- The owner pre-approves ChatGPT source reads, source writes, and project-local self-verification
+  needed for the assigned task inside that workspace.
+- Keep Codex as the orchestrator/integrator and independent verifier. Codex retains ownership of
+  git operations, authoritative verification, and final completion claims.
+- L3 does not authorize reading secrets or credential stores, installing dependencies, broad or
+  unrelated deletes, git commit/push/history mutation, access outside the approved workspace, or
+  irreversible/external actions.
+- L4/L5 actions still require explicit owner approval for the exact privileged or irreversible action.
+- If the bridge is unavailable or unhealthy, fall back to the normal local Codex workflow. Do not
+  broaden roots or permissions to recover connectivity.
+- Treat L3 as a policy grant, not a sandbox. Bridge shell execution can carry the local user's
+  authority, so the workspace must remain narrow and secret-free and diffs must be independently
+  reviewed before git or release actions.
+
 Before non-trivial work:
 
 1. Read `AGENTS.md`, this file, `docs/project_context.md`, and `agents/routing.toml`.
