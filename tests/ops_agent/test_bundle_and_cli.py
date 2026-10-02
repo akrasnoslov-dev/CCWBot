@@ -575,7 +575,11 @@ def test_collect_finalization_failure_cannot_return_success(tmp_path, monkeypatc
     assert payload["status"] == "failed"
     assert payload["published_bundle_path"] is None
     assert not Path(payload["manifest_path"]).exists()
-    published_dirs = list((tmp_path / "bundles").glob("*")) if (tmp_path / "bundles").exists() else []
+    published_dirs = (
+        list((tmp_path / "bundles").glob("*"))
+        if (tmp_path / "bundles").exists()
+        else []
+    )
     assert published_dirs == []
 
 
