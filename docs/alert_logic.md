@@ -7,10 +7,12 @@ automatic cadence; market data and selected news are supplied to one schema-vali
 Analysis per coin. News supports interpretation and standalone news-only alerts are disabled.
 
 No deterministic numeric market threshold may create, reject, suppress, or bypass an Event Alert.
-Prices, snapshots, analysed-window change, and 24-hour change are evidence for the LLM, not
-backend product-decision gates. The LLM's `should_alert` decides significance. The backend keeps
-only schema validation, canonical event identity, the market-event-first news-only guard, cooldown,
-recipient eligibility, and idempotent delivery safeguards.
+Prices, snapshots, analysed-window change, 24-hour change, and 30-day same-symbol relative-move
+percentiles are evidence for the LLM, not backend product-decision gates. Percentiles are context
+only; no percentile cutoff decides significance. If sufficient history is unavailable, relative
+context is null. The LLM's `should_alert` decides significance. The backend keeps deterministic
+evidence preparation, schema validation, canonical event identity, the market-event-first
+news-only guard, cooldown, recipient eligibility, and idempotent delivery safeguards.
 
 Event Analysis market change fields are explicitly percentage values: `chg_window_percent`,
 `chg24h_percent`, and `chg_since_msg_percent`. They are not decimal fractions; for example,
@@ -30,14 +32,18 @@ representation is normalized (`1.3500` equals `1.35`), but a real value change (
 ## Flow
 
 ```text
-market data -> Exact Context Reuse -> Event Analysis LLM -> should_alert=false stop
--> news-only guard -> market event -> strict four-hour Semantic Cooldown
--> recipient eligibility -> idempotent delivery
+market data -> relative-move evidence -> Exact Context Reuse -> compact significance LLM
+-> should_alert=false stop
+-> should_alert=true -> alert-render LLM -> factual/news-only validation -> market event
+-> strict four-hour Semantic Cooldown -> recipient eligibility -> idempotent delivery
 ```
 
-One coin market event has one Event Analysis and can have many deliveries. Provider calls never
-run in a recipient loop. Detection and market-event creation are global; BTC is free and non-BTC
-delivery requires the existing Premium/watchlist entitlement.
+The significance call runs every analysis cycle and returns only the decision, confidence, and a
+constrained reason code. The render call runs only after `should_alert=true`; it renders the existing
+grounded Event Alert contract and must not re-decide significance. One coin market event has one
+durable Event Analysis and can have many deliveries. Provider calls never run in a recipient loop.
+Detection and market-event creation are global; BTC is free and non-BTC delivery requires the
+existing Premium/watchlist entitlement.
 
 ## Cooldown and precision
 

@@ -29,6 +29,7 @@ KNOWN_PROVIDERS = frozenset(DEFAULT_PROVIDER_PRIORITY)
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
 _CALL_TYPE_PRIORITY_ENV = {
     "event_analysis": "LLM_EVENT_PROVIDERS",
+    "event_alert_render": "LLM_EVENT_PROVIDERS",
     "market_heartbeat": "LLM_HEARTBEAT_PROVIDERS",
     "daily_report": "LLM_REPORT_PROVIDERS",
     "weekly_report": "LLM_REPORT_PROVIDERS",
@@ -55,6 +56,7 @@ _PROVIDER_BASE_URL = {
 # point at a model the provider has decommissioned.
 _GROQ_MODEL_ENV_BY_CALL_TYPE = {
     "event_analysis": ("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
+    "event_alert_render": ("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
     "market_heartbeat": ("GROQ_MARKET_HEARTBEAT_MODEL", "openai/gpt-oss-20b"),
     "daily_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
     "weekly_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
@@ -73,6 +75,7 @@ _FALLBACK_MODEL_ENV = {
 # every call type that can actually spend tokens, not only the ones with a dedicated env var.
 KNOWN_CALL_TYPES = (
     "event_analysis",
+    "event_alert_render",
     "market_heartbeat",
     "daily_report",
     "weekly_report",
@@ -87,6 +90,7 @@ KNOWN_CALL_TYPES = (
 # share one variable, mirroring how they share GROQ_REPORT_MODEL and LLM_REPORT_PROVIDERS.
 _CALL_TYPE_MAX_TOKENS_ENV = {
     "event_analysis": ("LLM_EVENT_ANALYSIS_MAX_TOKENS", 300),
+    "event_alert_render": ("LLM_EVENT_ANALYSIS_MAX_TOKENS", 300),
     "market_heartbeat": ("LLM_MARKET_HEARTBEAT_MAX_TOKENS", 350),
     "daily_report": ("LLM_REPORT_MAX_TOKENS", 800),
     "weekly_report": ("LLM_REPORT_MAX_TOKENS", 800),
@@ -104,11 +108,13 @@ _MAX_TOKENS_CEILING = 32768
 # Historical per-call-type names kept working so an existing .env keeps its configured value.
 _LEGACY_MAX_TOKENS_ENV = {
     "event_analysis": "GROQ_EVENT_ANALYSIS_MAX_TOKENS",
+    "event_alert_render": "GROQ_EVENT_ANALYSIS_MAX_TOKENS",
 }
 
 # Optional reasoning effort, per call type with a global default.
 _CALL_TYPE_REASONING_EFFORT_ENV = {
     "event_analysis": "LLM_EVENT_ANALYSIS_REASONING_EFFORT",
+    "event_alert_render": "LLM_EVENT_ANALYSIS_REASONING_EFFORT",
     "market_heartbeat": "LLM_MARKET_HEARTBEAT_REASONING_EFFORT",
     "daily_report": "LLM_REPORT_REASONING_EFFORT",
     "weekly_report": "LLM_REPORT_REASONING_EFFORT",

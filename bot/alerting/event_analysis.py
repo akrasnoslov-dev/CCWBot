@@ -18,6 +18,18 @@ EVENT_ANALYSIS_SUCCESS_STATUSES = {"success", "no_alert"}
 EVENT_ANALYSIS_FAILURE_STATUSES = {"invalid_json", "llm_error", "schema_error"}
 ALLOWED_URGENCY = {"low", "normal", "high"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
+EVENT_SIGNIFICANCE_FIELDS = {"symbol", "should_alert", "confidence", "reason_code"}
+EVENT_SIGNIFICANCE_REASON_CODES = {
+    "unusual_move",
+    "fast_move",
+    "reversal",
+    "trend_acceleration",
+    "market_news_alignment",
+    "routine_move",
+    "news_only",
+    "unclear",
+}
+RELATIVE_MOVE_MIN_SAMPLES = 100
 EVENT_RESULT_FIELDS = {
     "symbol",
     "should_alert",
@@ -114,6 +126,42 @@ class EventAnalysisDecision:
     urgency: str | None
     confidence: str | None
     reason_for_no_alert: str | None
+
+
+@dataclass(frozen=True)
+class EventSignificanceDecision:
+    symbol: str
+    should_alert: bool
+    confidence: str
+    reason_code: str
+
+
+def empirical_absolute_move_percentile(
+    current_move: object,
+    historical_moves: object,
+    *,
+    min_samples: int = RELATIVE_MOVE_MIN_SAMPLES,
+) -> float | None:
+    """Return the empirical percentile of an absolute move without deciding significance."""
+    current = _decimal_market_value(current_move)
+    if current is None:
+        return None
+
+    values: list[Decimal] = []
+    try:
+        iterator = iter(historical_moves)
+    except TypeError:
+        return None
+    for raw_value in iterator:
+        parsed = _decimal_market_value(raw_value)
+        if parsed is not None:
+            values.append(abs(parsed))
+    if len(values) < max(1, int(min_samples)):
+        return None
+
+    magnitude = abs(current)
+    rank = sum(1 for value in values if value <= magnitude)
+    return round(100.0 * rank / len(values), 1)
 
 
 _DATE_SUFFIX_RE = re.compile(r"(?:_?\d{4}[_-]\d{2}[_-]\d{2}|_?\d{8})$")
@@ -607,6 +655,48 @@ def _fallback_event_key(
             return _collapse_event_key(f"{symbol}_{'_'.join(words)}")[:120]
     digest = sha256(f"{symbol}|{title or ''}|{message_body or ''}".encode()).hexdigest()
     return f"{symbol}_event_{digest[:16]}"
+
+
+def validate_event_significance_output(
+    result: dict[str, Any],
+    *,
+    expected_symbol: str,
+) -> EventSignificanceDecision:
+    """Validate the compact significance-only Event Analysis result."""
+    extra_fields = set(result) - EVENT_SIGNIFICANCE_FIELDS
+    missing_fields = EVENT_SIGNIFICANCE_FIELDS - set(result)
+    if extra_fields:
+        result = {
+            key: value
+            for key, value in result.items()
+            if key in EVENT_SIGNIFICANCE_FIELDS
+        }
+    if missing_fields:
+        raise EventAnalysisValidationError(
+            f"missing significance fields: {sorted(missing_fields)}"
+        )
+
+    symbol = str(result["symbol"]).strip().upper()
+    normalized_symbol = normalize_symbol(symbol)
+    if normalized_symbol != normalize_symbol(expected_symbol):
+        raise EventAnalysisValidationError("symbol mismatch")
+
+    should_alert = result["should_alert"]
+    if not isinstance(should_alert, bool):
+        raise EventAnalysisValidationError("should_alert must be boolean")
+    confidence = _required_choice(
+        result["confidence"], ALLOWED_CONFIDENCE, "confidence"
+    )
+    reason_code = str(result["reason_code"] or "").strip().lower()
+    if reason_code not in EVENT_SIGNIFICANCE_REASON_CODES:
+        raise EventAnalysisValidationError("invalid reason_code")
+
+    return EventSignificanceDecision(
+        symbol=normalized_symbol.upper(),
+        should_alert=should_alert,
+        confidence=confidence,
+        reason_code=reason_code,
+    )
 
 
 def validate_event_analysis_output(

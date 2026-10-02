@@ -7,7 +7,7 @@ def test_event_alert_runtime_has_no_numeric_significance_gate_or_similarity_buck
     alerts = (ROOT / "bot" / "alerts.py").read_text(encoding="utf-8")
     identity = (ROOT / "bot" / "alerting" / "event_identity.py").read_text(encoding="utf-8")
     assert "evaluate_event_significance" not in alerts
-    assert "event_significance" not in alerts
+    assert "numeric_significance_gate" not in alerts
     assert "movement_bucket" not in identity
     assert "MATERIAL_MOVEMENT" not in identity
 

@@ -26,6 +26,7 @@ from bot.db.database import (
 
 EVENT_ANALYSIS_TYPE = "event_analysis"
 SUCCESS_ANALYSIS_STATUSES = ("success", "completed")
+HISTORICAL_EVENT_ANALYSIS_STATUSES = ("success", "no_alert")
 
 
 async def save_alert(
@@ -674,6 +675,27 @@ async def get_latest_success_event_ai_analysis(
         .order_by(EventAiAnalysis.id.asc())
         .limit(1)
     )
+
+
+async def get_recent_event_analysis_raw_inputs(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    since: datetime,
+    until: datetime,
+) -> list[str]:
+    """Return prior successful/no-alert Event Analysis inputs for relative-move context."""
+    rows = await session.scalars(
+        select(EventAiAnalysis.raw_input_json)
+        .where(EventAiAnalysis.symbol == symbol.upper())
+        .where(EventAiAnalysis.analysis_type == EVENT_ANALYSIS_TYPE)
+        .where(EventAiAnalysis.status.in_(HISTORICAL_EVENT_ANALYSIS_STATUSES))
+        .where(EventAiAnalysis.created_at >= since)
+        .where(EventAiAnalysis.created_at < until)
+        .where(EventAiAnalysis.raw_input_json.is_not(None))
+        .order_by(EventAiAnalysis.created_at.asc(), EventAiAnalysis.id.asc())
+    )
+    return [str(value) for value in rows.all() if value]
 
 
 async def get_reusable_event_analysis_candidates(

@@ -131,9 +131,15 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
+| `event_alert_render` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
+
+`event_analysis` is the compact always-on significance decision. `event_alert_render` runs only
+after a positive significance decision and renders the grounded user-facing alert fields; it has
+its own logical operation id and sanitized terminal outcome for reconciliation. Both share the
+Event Analysis provider/model, completion budget, and reasoning-effort configuration.
 
 Defaults in brackets are the base budgets retained from the prior configuration.
 `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
@@ -229,13 +235,15 @@ runtime LLM entry point remains `bot/services/ai_agent_groq.py`, now a thin faca
 that keeps all public names/signatures (`AIGroqRateLimitError` is an alias of the provider-agnostic
 `AIProviderRateLimitError`).
 
-The persisted analysis/report/news provider and model reflect the provider that actually answered.
-Reports produced after provider-chain exhaustion use the explicit
-`deterministic:deterministic-market-report-v1` attribution:
-`event_ai_analyses.provider/model`, `market_reports.provider/model`, and
-`news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin diagnostics
-(`bot/observability/system_status.py`) and the ops-agent
-`llm_usage_summary` collector are provider-agnostic.
+Persisted provider/model attribution follows the logical feature row that owns it. For two-stage
+Event Alerts, `event_ai_analyses.provider/model/llm_operation_id` and its raw/parsed response belong
+to the `event_analysis` significance stage; the separate `event_alert_render` provider/model/status
+are recorded in `llm_operation_outcomes`, and the allowed delivery outcome links the render
+operation id for forensic correlation. Reports produced after provider-chain exhaustion use the
+explicit `deterministic:deterministic-market-report-v1` attribution. `market_reports.provider/model`
+and `news_items.llm_provider/llm_model` follow the fallback, not a hardcoded `groq`. Admin
+diagnostics (`bot/observability/system_status.py`) and the ops-agent `llm_usage_summary` collector
+are provider-agnostic.
 
 When a logical provider chain exhausts, the router emits one
 `ops_event=llm_chain_exhausted` WARNING containing only `provider:error_reason` categories and
