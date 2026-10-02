@@ -19,6 +19,56 @@ from ops_agent.state import load_state, parse_timestamp, resolve_period
 from ops_agent import cli
 
 
+def _write_test_collect_wrapper(
+    tmp_path: Path,
+    *,
+    started_at: str = "2026-10-01T00:00:00Z",
+    collector_exit: int = 0,
+    bundle_id: str = "testbundle",
+) -> tuple[Path, Path, Path]:
+    if os.name == "nt":
+        pytest.skip("shell wrapper contract requires POSIX sh")
+
+    root = tmp_path / "root"
+    capture = tmp_path / "docker-args.txt"
+    fake_docker = tmp_path / "fake-docker"
+    fake_docker.write_text(
+        f"""#!/bin/sh
+printf '%s\\n' "$*" >> '{capture}'
+case "$*" in
+  *StartedAt*ccwbot*)
+    printf '%s\\n' '{started_at}'
+    exit 0
+    ;;
+  *"ps --all --format json"*)
+    printf '{{"Name":"ccwbot"}}\\n'
+    exit 0
+    ;;
+  *"ps --all --quiet"*)
+    exit 0
+    ;;
+  *"ops-agent collect"*)
+    printf '%s\\n' 'RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED' >&2
+    printf '{{"status":"partial","published_bundle_path":"/app/reports/ops-agent/bundles/{bundle_id}"}}\\n'
+    exit {collector_exit}
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+
+    source = Path("ops-agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
+    source = source.replace("DOCKER=/usr/bin/docker", f"DOCKER={fake_docker}")
+    source = source.replace("ROOT=/opt/CCWBot", f"ROOT={root}")
+    wrapper = tmp_path / "ccwbot-ops-agent-collect"
+    wrapper.write_text(source, encoding="utf-8")
+    wrapper.chmod(0o755)
+    root.mkdir(parents=True, exist_ok=True)
+    return wrapper, root, capture
+
+
 def _write_mandatory_evidence(writer: BundleWriter) -> None:
     writer.write_json(
         "evidence/db/aggregate_metrics.json",
@@ -222,6 +272,114 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "container_start_exceeds_collection_cap" in script
     assert "collector_stderr" not in script
     assert " compose config" not in script
+
+
+def test_collect_wrapper_persists_partial_receipt_and_recovers_latest(tmp_path):
+    wrapper, root, _capture = _write_test_collect_wrapper(
+        tmp_path,
+        collector_exit=1,
+    )
+    published = root / "reports" / "ops-agent" / "bundles" / "testbundle"
+    published.mkdir(parents=True)
+    (published / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since",
+            "2026-10-01T00:00:00Z",
+            "--until",
+            "2026-10-02T00:00:00Z",
+            "--no-state-update",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED" in result.stderr
+    latest_path = root / "reports" / "ops-agent" / "receipts" / "latest.json"
+    receipt = json.loads(latest_path.read_text(encoding="utf-8"))
+    assert receipt["terminal_state"] == "partial"
+    assert receipt["exit_code"] == 1
+    assert receipt["collector_exit_code"] == 1
+    assert receipt["published_bundle_path"] == str(published)
+    assert "RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED" not in latest_path.read_text(
+        encoding="utf-8"
+    )
+
+    status = subprocess.run(
+        ["sh", str(wrapper), "--status", "latest"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert status.returncode == 0
+    assert json.loads(status.stdout) == receipt
+
+
+def test_collect_wrapper_since_container_start_passes_normalized_fixed_start(tmp_path):
+    wrapper, root, capture = _write_test_collect_wrapper(
+        tmp_path,
+        started_at="2026-10-01T00:00:00.123456789Z",
+        collector_exit=0,
+    )
+    published = root / "reports" / "ops-agent" / "bundles" / "testbundle"
+    published.mkdir(parents=True)
+    (published / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since-container-start",
+            "--until",
+            "2026-10-02T00:00:00Z",
+            "--no-state-update",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    calls = capture.read_text(encoding="utf-8")
+    assert "inspect --format {{.State.StartedAt}} ccwbot" in calls
+    assert "--since 2026-10-01T00:00:00Z" in calls
+    assert "--until 2026-10-02T00:00:00Z" in calls
+
+
+def test_collect_wrapper_since_container_start_fails_before_collection_over_720h(tmp_path):
+    wrapper, root, capture = _write_test_collect_wrapper(
+        tmp_path,
+        started_at="2026-08-01T00:00:00Z",
+    )
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since-container-start",
+            "--until",
+            "2026-10-02T00:00:00Z",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    receipt = json.loads(
+        (root / "reports" / "ops-agent" / "receipts" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["terminal_state"] == "failed"
+    assert receipt["reason"] == "container_start_exceeds_collection_cap"
+    assert receipt["collector_exit_code"] is None
+    assert "ops-agent collect" not in capture.read_text(encoding="utf-8")
 
 
 def test_production_mark_success_wrapper_restricts_paths_and_arguments():
