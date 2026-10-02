@@ -224,8 +224,10 @@ fi
 collector_exit=$?
 cat "$collector_stdout_file"
 
-last_line=$(tail -n 1 "$collector_stdout_file" 2>/dev/null || true)
-collector_bundle_path=$(printf '%s\n' "$last_line" | sed -n 's/.*"published_bundle_path": "\([^"]*\)".*/\1/p')
+collector_bundle_path=$(
+  sed -n 's/.*"published_bundle_path": "\([^"]*\)".*/\1/p' "$collector_stdout_file" \
+    | tail -n 1
+)
 published_bundle_path=""
 case "$collector_bundle_path" in
   /app/reports/ops-agent/bundles/*)
