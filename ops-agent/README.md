@@ -30,7 +30,7 @@ sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
 sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-mark-report-success
 ```
 
-The collect wrapper allows only `ops-agent collect` with `--period auto|Nh`, `--since <UTC ISO timestamp>`, `--until <UTC ISO timestamp|now>`, and `--no-state-update`. UTC timestamps must use `YYYY-MM-DDTHH:MM:SSZ`, for example `2026-06-06T00:00:00Z`; ambiguous dates such as `06/06/2026` are rejected. The wrapper rejects unsupported flags such as raw LLM samples, protected identity maps, custom output directories, shell fragments, deployment commands, restarts, migrations, environment printing, and secret-reading commands.
+The collect wrapper allows only `ops-agent collect` with `--period auto|Nh`, `--since <UTC ISO timestamp>`, wrapper-only `--since-container-start`, `--until <UTC ISO timestamp|now>`, and `--no-state-update`. UTC timestamps must use `YYYY-MM-DDTHH:MM:SSZ`, for example `2026-06-06T00:00:00Z`; ambiguous dates such as `06/06/2026` are rejected. `--since-container-start` reads only the fixed `ccwbot` container `StartedAt` through the root wrapper, normalizes it to UTC, and keeps the existing 720-hour maximum window. It fails before collection when that window is too long. The wrapper also exposes `--status latest` to return the latest sanitized durable collection receipt. The wrapper rejects unsupported flags such as raw LLM samples, protected identity maps, custom output directories, shell fragments, deployment commands, restarts, migrations, environment printing, and secret-reading commands.
 
 The mark-success wrapper allows only `ops-agent mark-report-success` with one bundle path under `/opt/CCWBot/reports/ops-agent/bundles/` or `/app/reports/ops-agent/bundles/`, one Markdown report path under `/opt/CCWBot/reports/ops-agent/reports/` or `/app/reports/ops-agent/reports/`, and optional `--accept-partial`.
 
@@ -61,6 +61,7 @@ sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-coll
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-mark-report-success
 sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
 sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles
+sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/receipts
 sudo install -d -m 770 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/reports
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/reports/ops-agent
 sudo -u ccwbot_ops test -r /opt/CCWBot/reports/ops-agent/bundles
@@ -92,6 +93,29 @@ Normal production collection:
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect
+```
+
+Collection writes privately under `/opt/CCWBot/reports/ops-agent/.in-progress/<bundle-id>`.
+Only after a complete `manifest.json` has been written does the collector atomically rename the
+directory into `/opt/CCWBot/reports/ops-agent/bundles/<bundle-id>`. Treat only those published,
+manifest-bearing directories as bundles. Never analyze or certify a path under `.in-progress`.
+
+For a report covering the current bot container lifetime:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since-container-start --no-state-update
+```
+
+If the container has been running for more than 720 hours, this fails safely before collection.
+Do not extend or silently clamp the window.
+
+Every collection attempt persists a sanitized terminal receipt under
+`/opt/CCWBot/reports/ops-agent/receipts/`. Receipts contain only invocation metadata, terminal
+state, exit codes, a sanitized reason, and the published bundle path when one exists. Raw stderr is
+never stored. Recover the latest result with:
+
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest
 ```
 
 Post-deploy verification after Event Alert delivery-gap changes uses the recorded UTC deploy
@@ -145,7 +169,7 @@ OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@loca
 The test runs Alembic to head, `EXPLAIN`s every ops-agent DB query, and verifies malformed
 `alerts.numeric_context` text does not break same-family or same-news collectors.
 
-The command prints one JSON object with the generated bundle path. Codex should read the bundle in this order:
+The command prints one JSON object. On a successful or partial published collection it includes the published bundle path. If task/SSH tooling loses stdout or the exit code, use `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` and trust the receipt's `published_bundle_path`; do not infer a bundle from an unfinished staging directory. Codex should read the published bundle in this order:
 
 1. `CODEX_INSTRUCTIONS.md`
 2. `manifest.json`
@@ -196,8 +220,8 @@ OPS_AGENT_HEALTH_URL=http://host.docker.internal:8080/health
 
 ## Report Workflow
 
-1. Run collection with the safe production command.
-2. Read the printed JSON and open the bundle path.
+1. Run collection with the safe production command. Use `--since-container-start` when the required report window begins at the current `ccwbot` container start.
+2. Read the printed JSON and open only its published bundle path. If stdout/exit status was lost, recover it with `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest`.
 3. Read `decision_report_context.md`, then have Codex write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
 4. Run the safe mark-success wrapper only after the written report exists. The command validates the bundle before advancing state, rejects paths outside ops-agent report/bundle directories, and refuses tampered bundles.
 
