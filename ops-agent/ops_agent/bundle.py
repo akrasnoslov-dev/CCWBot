@@ -128,7 +128,9 @@ class BundleWriter:
         self.config = config
         self.period = period
         self.bundle_id = f"{utc_stamp()}_{secrets.token_hex(4)}"
-        self.path = config.bundles_dir / self.bundle_id
+        self.staging_path = config.output_dir / ".in-progress" / self.bundle_id
+        self.published_path = config.bundles_dir / self.bundle_id
+        self.path = self.staging_path
         self.collector_status: list[CollectorStatus] = []
         self.warnings: list[str] = []
 
@@ -146,9 +148,38 @@ class BundleWriter:
         if status != "ok" and error:
             self.warnings.append(f"{name}: {error}")
 
+    @property
+    def is_published(self) -> bool:
+        return self.path == self.published_path and self.published_path.is_dir()
+
     def initialize(self) -> None:
-        self.path.mkdir(parents=True, exist_ok=False)
+        staging_root = self.staging_path.parent
+        staging_root.mkdir(parents=True, exist_ok=True)
+        try:
+            staging_root.chmod(0o700)
+        except OSError:
+            pass
+        self.staging_path.mkdir(mode=0o700, exist_ok=False)
+        self.path = self.staging_path
         self.write_text("CODEX_INSTRUCTIONS.md", CODEX_INSTRUCTIONS)
+
+    def publish(self) -> Path:
+        if self.is_published:
+            return self.published_path
+        if self.path != self.staging_path:
+            raise RuntimeError("bundle is not in the expected staging path")
+        if not (self.staging_path / "manifest.json").is_file():
+            raise RuntimeError("bundle manifest must exist before publication")
+        self.published_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.published_path.exists():
+            raise FileExistsError(f"published bundle already exists: {self.bundle_id}")
+        self.staging_path.replace(self.published_path)
+        self.path = self.published_path
+        try:
+            self.published_path.chmod(0o755)
+        except OSError:
+            pass
+        return self.published_path
 
     def finalize(
         self,
@@ -217,6 +248,7 @@ class BundleWriter:
             )
         if publish_manifest:
             self.write_manifest(final_status, protected_identity_map=protected_identity_map)
+            self.publish()
         return final_status
 
     def write_summary(
