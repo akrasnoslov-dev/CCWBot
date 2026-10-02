@@ -319,6 +319,9 @@ def test_bundle_writer_stages_privately_until_manifest_is_published(tmp_path):
     assert writer.path == staging_path
     assert staging_path.is_dir()
     assert not published_path.exists()
+    if os.name != "nt":
+        assert staging_path.parent.stat().st_mode & 0o777 == 0o700
+        assert staging_path.stat().st_mode & 0o777 == 0o700
 
     _write_mandatory_evidence(writer)
     writer.finalize(
@@ -332,6 +335,8 @@ def test_bundle_writer_stages_privately_until_manifest_is_published(tmp_path):
     assert published_path.is_dir()
     assert (published_path / "manifest.json").is_file()
     assert not staging_path.exists()
+    if os.name != "nt":
+        assert published_path.stat().st_mode & 0o777 == 0o755
 
 
 def test_validate_bundle_rejects_in_progress_path(tmp_path):
