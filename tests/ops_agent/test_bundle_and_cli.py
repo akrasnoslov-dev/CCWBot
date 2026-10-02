@@ -199,15 +199,26 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "ps --all --format json" in script
     assert "OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json" in script
     assert '$docker_status_file:/tmp/ops-agent-docker-status.json:ro' in script
-    # docker inspect is allowed for exactly one sanitized read-only purpose: container
-    # name + RestartCount, mounted read-only into the collector. No other inspect use.
-    assert script.count('"$DOCKER" inspect') == 1
+    # docker inspect remains constrained to two sanitized read-only purposes:
+    # fixed-container StartedAt and container name + RestartCount.
+    assert script.count('"$DOCKER" inspect') == 2
+    assert (
+        '"$DOCKER" inspect --format '
+        "'{{.State.StartedAt}}' ccwbot"
+    ) in script
     assert (
         '"$DOCKER" inspect --format '
         "'{\"Name\": {{json .Name}}, \"RestartCount\": {{json .RestartCount}}}'"
     ) in script
     assert "OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json" in script
     assert '$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro' in script
+    assert "--since-container-start" in script
+    assert "--status" in script
+    assert "latest" in script
+    assert "/opt/CCWBot/reports/ops-agent/receipts" in script
+    assert "write_receipt" in script
+    assert "container_start_exceeds_collection_cap" in script
+    assert "collector_stderr" not in script
     assert " compose config" not in script
 
 
@@ -250,6 +261,11 @@ def test_ops_agent_runbook_documents_safe_production_report_tree():
     )
     assert "rebuild the `ops-agent` Docker image" in readme
     assert "market_events_without_alert_deliveries" in readme
+    assert "sudo /usr/local/bin/ccwbot-ops-agent-collect --since-container-start" in readme
+    assert "sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest" in readme
+    assert "/opt/CCWBot/reports/ops-agent/receipts" in readme
+    assert ".in-progress" in readme
+    assert "720" in readme
 
 
 def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
@@ -279,6 +295,72 @@ def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
         capture_output=True,
     )
     assert kept_directory_marker.returncode == 1
+
+
+def test_bundle_writer_stages_privately_until_manifest_is_published(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+
+    writer.initialize()
+
+    staging_path = tmp_path / ".in-progress" / writer.bundle_id
+    published_path = tmp_path / "bundles" / writer.bundle_id
+    assert writer.path == staging_path
+    assert staging_path.is_dir()
+    assert not published_path.exists()
+
+    _write_mandatory_evidence(writer)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+
+    assert writer.path == published_path
+    assert published_path.is_dir()
+    assert (published_path / "manifest.json").is_file()
+    assert not staging_path.exists()
+
+
+def test_validate_bundle_rejects_in_progress_path(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    _write_mandatory_evidence(writer)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+        publish_manifest=False,
+    )
+    writer.write_manifest("complete", protected_identity_map=False)
+
+    assert ".in-progress" in writer.path.parts
+    assert _validate_bundle(type("Args", (), {"bundle": str(writer.path)})()) == 1
 
 
 def test_bundle_manifest_contains_required_files(tmp_path):
@@ -486,7 +568,10 @@ def test_collect_finalization_failure_cannot_return_success(tmp_path, monkeypatc
 
     assert result == 2
     assert payload["status"] == "failed"
+    assert payload["published_bundle_path"] is None
     assert not Path(payload["manifest_path"]).exists()
+    published_dirs = list((tmp_path / "bundles").glob("*")) if (tmp_path / "bundles").exists() else []
+    assert published_dirs == []
 
 
 def test_final_manifest_failure_does_not_record_a_successful_state(
