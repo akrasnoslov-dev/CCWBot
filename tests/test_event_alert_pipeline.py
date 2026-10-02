@@ -118,6 +118,73 @@ async def test_event_analysis_input_keeps_subcent_decimal_precision(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_event_analysis_input_adds_relative_move_context_without_alert_gate(monkeypatch):
+    now = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
+
+    @asynccontextmanager
+    async def fake_session():
+        yield object()
+
+    historical = []
+    for value in range(1, 101):
+        historical.append(
+            json.dumps(
+                {
+                    "market": {
+                        "analysed_window_minutes": 180,
+                        "chg_window_percent": value / 10,
+                        "chg24h_percent": value / 20,
+                    }
+                }
+            )
+        )
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", lambda: fake_session())
+    monkeypatch.setattr(
+        alerts,
+        "get_reference_price_snapshot",
+        AsyncMock(return_value=SimpleNamespace(price=100, checked_at=now - timedelta(hours=3))),
+    )
+    monkeypatch.setattr(
+        alerts,
+        "get_price_snapshots_since",
+        AsyncMock(
+            return_value=[
+                SimpleNamespace(price=104, checked_at=now),
+            ]
+        ),
+    )
+    monkeypatch.setattr(alerts, "get_latest_sent_alert_for_symbol", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        alerts,
+        "get_recent_event_analysis_raw_inputs",
+        AsyncMock(return_value=historical),
+    )
+    monkeypatch.setattr(
+        alerts, "_get_previous_event_alert_for_input", AsyncMock(return_value=(None, None))
+    )
+
+    payload = await alerts._build_event_analysis_input(
+        analysis_id="event_analysis_sol_relative_context",
+        symbol="SOL",
+        current_price=Decimal("104"),
+        change_24h=Decimal("4"),
+        now=now,
+        state={"last_price": Decimal("100")},
+        candidate_news=[],
+        event_analysis_interval_seconds=1800,
+    )
+
+    market = payload["market"]
+    assert market["analysed_window_minutes"] == 180
+    assert market["chg_window_percent"] == pytest.approx(4.0)
+    assert market["relative_window_percentile_30d"] == pytest.approx(40.0)
+    assert market["relative_24h_percentile_30d"] == pytest.approx(80.0)
+    assert "should_alert" not in market
+
+
+@pytest.mark.asyncio
 async def test_global_market_detection_covers_every_active_coin():
     assert await alerts.resolve_symbols_to_check() == list(SUPPORTED_SYMBOLS)
 
@@ -215,29 +282,28 @@ def _runtime_no_alert_payload(*, chg_window_percent: float) -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "reason_for_no_alert",
-    (
-        (
-            "Market price change in the recent 180-minute window is minimal and news items "
-            "are unrelated."
-        ),
-        (
-            "Market snapshot shows a 5.45% 24h increase but no short-term change window; "
-            "news items are unrelated."
-        ),
-        "No significant market movement is evident and no material news is present.",
-    ),
-)
-async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
-    monkeypatch, reason_for_no_alert
+@pytest.mark.parametrize("reason_code", ("routine_move", "unclear", "reversal"))
+async def test_runtime_market_no_alert_reasons_record_llm_no_alert(
+    monkeypatch, reason_code
 ):
     recorded_outcome = AsyncMock()
     monkeypatch.setattr(
         alerts,
-        "ask_event_analysis_raw",
-        AsyncMock(return_value=("{}", _no_alert_result(reason_for_no_alert))),
+        "ask_event_significance_raw",
+        AsyncMock(
+            return_value=(
+                "{}",
+                {
+                    "symbol": "BTC",
+                    "should_alert": False,
+                    "confidence": "medium",
+                    "reason_code": reason_code,
+                },
+            )
+        ),
     )
+    render = AsyncMock()
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
@@ -247,7 +313,9 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
     )
 
     assert decision is not None
+    assert decision.reason_for_no_alert == reason_code
     assert analysis_id == 321
+    render.assert_not_awaited()
     assert (
         recorded_outcome.await_args.kwargs["decision_reason"]
         == alerts.DECISION_REASON_LLM_NO_ALERT
@@ -256,15 +324,129 @@ async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
 
 
 @pytest.mark.asyncio
+async def test_event_significance_false_never_calls_render(monkeypatch):
+    render = AsyncMock()
+    recorded_outcome = AsyncMock()
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_significance_raw",
+        AsyncMock(
+            return_value=(
+                "{}",
+                {
+                    "symbol": "BTC",
+                    "should_alert": False,
+                    "confidence": "high",
+                    "reason_code": "routine_move",
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+
+    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
+    payload["market"]["relative_window_percentile_30d"] = 100.0
+    payload["market"]["relative_24h_percentile_30d"] = 100.0
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+    assert analysis_id == 321
+    assert decision is not None
+    assert decision.should_alert is False
+    assert decision.reason_for_no_alert == "routine_move"
+    render.assert_not_awaited()
+    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_NO_ALERT
+
+
+@pytest.mark.asyncio
+async def test_event_significance_true_calls_render_once(monkeypatch):
+    render = AsyncMock(
+        return_value=(
+            "{}",
+            {
+                "symbol": "BTC",
+                "should_alert": True,
+                "event_key": "btc_price_uptrend",
+                "title": "BTC up ~4.0% in the last 3 hours",
+                "message_body": "The supplied move is unusually strong relative to recent history.",
+                "related_news_ids": [],
+                "possible_action": "Monitor whether the move persists in the next snapshots.",
+                "urgency": "normal",
+                "confidence": "high",
+                "reason_for_no_alert": None,
+            },
+        )
+    )
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_significance_raw",
+        AsyncMock(
+            return_value=(
+                "{}",
+                {
+                    "symbol": "BTC",
+                    "should_alert": True,
+                    "confidence": "high",
+                    "reason_code": "unusual_move",
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
+    render_outcome = AsyncMock()
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=654))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+
+    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
+    payload["market"]["relative_window_percentile_30d"] = 99.0
+    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+    assert analysis_id == 654
+    assert decision is not None
+    assert decision.should_alert is True
+    render.assert_awaited_once()
+    render_outcome.assert_awaited_once()
+    assert render_outcome.await_args.kwargs["status"] == "success"
+    assert render_outcome.await_args.kwargs["llm_operation_id"]
+    assert payload["significance_decision"] == {
+        "should_alert": True,
+        "confidence": "high",
+        "reason_code": "unusual_move",
+    }
+
+
+@pytest.mark.asyncio
 async def test_all_factual_validation_failures_cannot_create_a_market_event(monkeypatch):
     payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     monkeypatch.setattr(
         alerts,
-        "ask_event_analysis_raw",
+        "ask_event_significance_raw",
+        AsyncMock(
+            return_value=(
+                "{}",
+                {
+                    "symbol": "BTC",
+                    "should_alert": True,
+                    "confidence": "high",
+                    "reason_code": "unusual_move",
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_alert_render_raw",
         AsyncMock(side_effect=alerts.AISchemaValidationError("window market claim is unavailable")),
     )
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", AsyncMock())
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
     create_market_event = AsyncMock()
     monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
 

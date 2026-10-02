@@ -26,6 +26,7 @@ _MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._/@-]{1,120}$")
 # Mirrors bot/services/llm/config.py `_GROQ_MODEL_ENV_BY_CALL_TYPE` defaults.
 SHIPPED_DEFAULT_MODELS: dict[str, str] = {
     "event_analysis": "openai/gpt-oss-120b",
+    "event_alert_render": "openai/gpt-oss-120b",
     "market_heartbeat": "openai/gpt-oss-20b",
     "daily_report": "openai/gpt-oss-20b",
     "weekly_report": "openai/gpt-oss-20b",

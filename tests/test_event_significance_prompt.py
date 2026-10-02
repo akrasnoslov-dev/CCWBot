@@ -110,6 +110,7 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "unusual" in lowered
     assert "noteworthy" in lowered
     assert len(prompt) <= 1400
+    assert len(prompt) < len(ai_agent_groq.build_event_analysis_prompt(payload)) * 0.75
 
 
 def test_event_significance_output_is_small_and_constrained():

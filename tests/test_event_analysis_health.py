@@ -312,7 +312,11 @@ def test_terminal_event_analysis_failures_count_toward_the_failure_streak(caplog
     source = inspect.getsource(alerts._create_event_analysis_decision)
 
     assert "event analysis schema validation failed" not in source
-    assert source.count("_log_event_analysis_failure(") == 4
+    significance_backoff = source.split(
+        "except LLMRateLimitBackoffActive as error:", 1
+    )[1].split("except AISchemaValidationError as error:", 1)[0]
+    assert "_log_event_analysis_failure(" not in significance_backoff
+    assert "if not isinstance(error, LLMRateLimitBackoffActive):" in source
 
 
 def test_skipped_delivery_reasons_are_reported_separately():

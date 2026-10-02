@@ -131,9 +131,15 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
+| `event_alert_render` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
+
+`event_analysis` is the compact always-on significance decision. `event_alert_render` runs only
+after a positive significance decision and renders the grounded user-facing alert fields; it has
+its own logical operation id and sanitized terminal outcome for reconciliation. Both share the
+Event Analysis provider/model, completion budget, and reasoning-effort configuration.
 
 Defaults in brackets are the base budgets retained from the prior configuration.
 `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
