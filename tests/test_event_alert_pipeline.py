@@ -462,16 +462,12 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
         "reason_code": "unusual_move",
     }
     render_parsed = {
-        "symbol": "BTC",
-        "should_alert": True,
         "event_key": "btc_price_uptrend",
         "title": "BTC up ~4.0% in the last 3 hours",
         "message_body": "The supplied move is unusually strong relative to recent history.",
         "related_news_ids": [],
         "possible_action": "Monitor whether the move persists in the next snapshots.",
         "urgency": "normal",
-        "confidence": "high",
-        "reason_for_no_alert": None,
     }
     render = AsyncMock(
         return_value=_AttributedResult(
@@ -509,6 +505,9 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
     assert analysis_id == 654
     assert decision is not None
     assert decision.should_alert is True
+    assert decision.symbol == "BTC"
+    assert decision.confidence == "high"
+    assert decision.reason_for_no_alert is None
     render.assert_awaited_once()
     render_outcome.assert_awaited_once()
     assert render_outcome.await_args.kwargs["status"] == "success"

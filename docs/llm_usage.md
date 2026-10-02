@@ -137,9 +137,13 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
 
 `event_analysis` is the compact always-on significance decision. `event_alert_render` runs only
-after a positive significance decision and renders the grounded user-facing alert fields; it has
-its own logical operation id and sanitized terminal outcome for reconciliation. Both share the
-Event Analysis provider/model, completion budget, and reasoning-effort configuration.
+after a positive significance decision and returns only the six model-generated alert fields:
+`event_key`, `title`, `message_body`, `related_news_ids`, `possible_action`, and `urgency`. The
+backend supplies `symbol`, `should_alert=true`, significance `confidence`, and
+`reason_for_no_alert=null` before running the existing full factual/news validation. The render
+operation has its own logical operation id and sanitized terminal outcome for reconciliation. Both
+stages share the Event Analysis provider/model, completion budget, and reasoning-effort
+configuration.
 
 Defaults in brackets are the base budgets retained from the prior configuration.
 `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
