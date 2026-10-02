@@ -4,7 +4,7 @@ Use this checklist for explicit `dev` -> `main` production release PRs.
 
 ## Before Opening The PR
 
-1. Confirm the worktree is clean.
+1. Confirm the working tree is clean.
 2. Confirm `dev` is up to date with `origin/dev`.
 3. Review `origin/main...origin/dev` with name/status and stat output.
 4. Confirm no `.env`, local state, cache, log, report, DB dump, or secret file is tracked.

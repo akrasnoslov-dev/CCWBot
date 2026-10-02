@@ -1,15 +1,81 @@
 #!/bin/sh
-set -eu
+set -u
 
 DOCKER=/usr/bin/docker
+DATE=/usr/bin/date
+ROOT=/opt/CCWBot
+OPS_ROOT="$ROOT/reports/ops-agent"
+RECEIPTS_DIR="$OPS_ROOT/receipts"
+MAX_COLLECTION_SECONDS=2592000
 
 usage() {
-  echo "usage: ccwbot-ops-agent-collect [--period auto|Nh] [--since YYYY-MM-DDTHH:MM:SSZ] [--until YYYY-MM-DDTHH:MM:SSZ|now] [--no-state-update]" >&2
+  echo "usage: ccwbot-ops-agent-collect [--period auto|Nh] [--since YYYY-MM-DDTHH:MM:SSZ] [--since-container-start] [--until YYYY-MM-DDTHH:MM:SSZ|now] [--no-state-update] | --status latest" >&2
+}
+
+if [ "$#" -eq 2 ] && [ "$1" = "--status" ] && [ "$2" = "latest" ]; then
+  if [ -r "$RECEIPTS_DIR/latest.json" ]; then
+    cat "$RECEIPTS_DIR/latest.json"
+    exit 0
+  fi
+  printf '{"status":"failed","error":"no_collection_receipt"}\n'
+  exit 2
+fi
+
+umask 027
+mkdir -p "$RECEIPTS_DIR" 2>/dev/null || {
+  printf '{"status":"failed","error":"receipt_storage_unavailable"}\n'
+  exit 2
+}
+chmod 750 "$RECEIPTS_DIR" 2>/dev/null || true
+
+started_at=$("$DATE" -u '+%Y-%m-%dT%H:%M:%SZ')
+invocation_id=$("$DATE" -u '+%Y%m%dT%H%M%SZ')_$$
+receipt_file="$RECEIPTS_DIR/$invocation_id.json"
+
+write_receipt() {
+  terminal_state=$1
+  exit_code=$2
+  reason=$3
+  published_bundle_path=$4
+  collector_exit_code=${5:-}
+  finished_at=$("$DATE" -u '+%Y-%m-%dT%H:%M:%SZ')
+  if [ -n "$published_bundle_path" ]; then
+    published_json="\"$published_bundle_path\""
+  else
+    published_json=null
+  fi
+  if [ -n "$collector_exit_code" ]; then
+    collector_exit_json=$collector_exit_code
+  else
+    collector_exit_json=null
+  fi
+  if [ -n "$reason" ]; then
+    reason_json="\"$reason\""
+  else
+    reason_json=null
+  fi
+  receipt_tmp="$RECEIPTS_DIR/.$invocation_id.tmp"
+  latest_tmp="$RECEIPTS_DIR/.latest.$$"
+  printf '{"schema_version":1,"invocation_id":"%s","started_at":"%s","finished_at":"%s","terminal_state":"%s","exit_code":%s,"collector_exit_code":%s,"reason":%s,"published_bundle_path":%s}\n' \
+    "$invocation_id" "$started_at" "$finished_at" "$terminal_state" "$exit_code" \
+    "$collector_exit_json" "$reason_json" "$published_json" > "$receipt_tmp"
+  chmod 640 "$receipt_tmp" 2>/dev/null || true
+  mv "$receipt_tmp" "$receipt_file"
+  cp "$receipt_file" "$latest_tmp"
+  mv "$latest_tmp" "$RECEIPTS_DIR/latest.json"
 }
 
 reject() {
+  write_receipt "failed" 2 "invalid_arguments" "" ""
   echo "ccwbot-ops-agent-collect: $1" >&2
   usage
+  exit 2
+}
+
+fail_preflight() {
+  reason=$1
+  write_receipt "failed" 2 "$reason" "" ""
+  printf '{"status":"failed","error":"%s"}\n' "$reason"
   exit 2
 }
 
@@ -38,6 +104,7 @@ validate_period() {
 period=""
 since=""
 until=""
+since_container_start=""
 no_state_update=""
 
 while [ "$#" -gt 0 ]; do
@@ -63,6 +130,9 @@ while [ "$#" -gt 0 ]; do
       value=${1#--since=}
       is_utc_timestamp "$value" || reject "--since must use UTC ISO format YYYY-MM-DDTHH:MM:SSZ, for example 2026-06-06T00:00:00Z; slash dates are not accepted"
       since=$value
+      ;;
+    --since-container-start)
+      since_container_start=1
       ;;
     --until)
       shift
@@ -90,23 +160,44 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -z "$period" ] || [ -z "$since" ] || reject "use either --period or --since, not both"
-[ -x "$DOCKER" ] || reject "/usr/bin/docker is not executable"
+if [ -n "$since_container_start" ]; then
+  [ -z "$period" ] || reject "use --since-container-start without --period"
+  [ -z "$since" ] || reject "use either --since-container-start or --since, not both"
+fi
+[ -x "$DOCKER" ] || fail_preflight "docker_unavailable"
 
-cd /opt/CCWBot
+cd "$ROOT" || fail_preflight "repository_unavailable"
+
+if [ -n "$since_container_start" ]; then
+  container_started_raw=$(env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" inspect --format '{{.State.StartedAt}}' ccwbot 2>/dev/null) || fail_preflight "container_started_at_unavailable"
+  since=$("$DATE" -u -d "$container_started_raw" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || fail_preflight "container_started_at_invalid"
+  start_epoch=$("$DATE" -u -d "$since" '+%s' 2>/dev/null) || fail_preflight "container_started_at_invalid"
+  if [ -z "$until" ] || [ "$until" = "now" ]; then
+    until=$("$DATE" -u '+%Y-%m-%dT%H:%M:%SZ')
+  fi
+  end_epoch=$("$DATE" -u -d "$until" '+%s' 2>/dev/null) || fail_preflight "collection_end_invalid"
+  [ "$start_epoch" -lt "$end_epoch" ] || fail_preflight "container_start_invalid_period"
+  window_seconds=$((end_epoch - start_epoch))
+  [ "$window_seconds" -le "$MAX_COLLECTION_SECONDS" ] || fail_preflight "container_start_exceeds_collection_cap"
+fi
+
 docker_status_file=$(mktemp)
 docker_restarts_file=$(mktemp)
+collector_stdout_file=$(mktemp)
 cleanup() {
-  rm -f "$docker_status_file" "$docker_restarts_file"
+  rm -f "$docker_status_file" "$docker_restarts_file" "$collector_stdout_file"
 }
-trap cleanup EXIT INT TERM
+interrupted() {
+  write_receipt "failed" 130 "wrapper_interrupted" "" ""
+  exit 130
+}
+trap cleanup EXIT
+trap interrupted INT TERM
 
 if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --format json > "$docker_status_file" 2>/dev/null; then
   printf '{"status":"failed","error":"docker_status_unavailable"}\n' > "$docker_status_file"
 fi
 
-# Restart counts are not part of `compose ps --format json`; capture them read-only via
-# `docker inspect` as sanitized name+count JSONL. Any failure leaves the file empty and the
-# collector reports restart counts as unknown (incomplete evidence, never healthy).
 container_ids=$(env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --quiet 2>/dev/null || true)
 if [ -n "$container_ids" ]; then
   # shellcheck disable=SC2086
@@ -129,4 +220,49 @@ if [ -n "$no_state_update" ]; then
   set -- "$@" --no-state-update
 fi
 
-exec "$@"
+"$@" > "$collector_stdout_file"
+collector_exit=$?
+cat "$collector_stdout_file"
+
+collector_bundle_path=$(
+  sed -n 's/.*"published_bundle_path":[[:space:]]*"\([^"]*\)".*/\1/p' "$collector_stdout_file" \
+    | tail -n 1
+)
+published_bundle_path=""
+case "$collector_bundle_path" in
+  /app/reports/ops-agent/bundles/*)
+    published_bundle_path="$ROOT/reports/ops-agent/bundles/${collector_bundle_path#/app/reports/ops-agent/bundles/}"
+    ;;
+  /opt/CCWBot/reports/ops-agent/bundles/*)
+    published_bundle_path=$collector_bundle_path
+    ;;
+esac
+
+if [ -n "$published_bundle_path" ] && [ ! -f "$published_bundle_path/manifest.json" ]; then
+  published_bundle_path=""
+fi
+
+case "$collector_exit" in
+  0)
+    terminal_state=complete
+    reason=""
+    ;;
+  1)
+    terminal_state=partial
+    reason=""
+    ;;
+  *)
+    terminal_state=failed
+    reason=collector_failed
+    ;;
+esac
+
+wrapper_exit=$collector_exit
+if { [ "$collector_exit" -eq 0 ] || [ "$collector_exit" -eq 1 ]; } && [ -z "$published_bundle_path" ]; then
+  terminal_state=failed
+  reason=published_bundle_unavailable
+  wrapper_exit=2
+fi
+
+write_receipt "$terminal_state" "$wrapper_exit" "$reason" "$published_bundle_path" "$collector_exit"
+exit "$wrapper_exit"

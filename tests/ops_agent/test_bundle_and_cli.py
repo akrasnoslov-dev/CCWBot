@@ -19,6 +19,57 @@ from ops_agent.state import load_state, parse_timestamp, resolve_period
 from ops_agent import cli
 
 
+def _write_test_collect_wrapper(
+    tmp_path: Path,
+    *,
+    started_at: str = "2026-10-01T00:00:00Z",
+    collector_exit: int = 0,
+    bundle_id: str = "testbundle",
+) -> tuple[Path, Path, Path]:
+    if os.name == "nt":
+        pytest.skip("shell wrapper contract requires POSIX sh")
+
+    root = tmp_path / "root"
+    capture = tmp_path / "docker-args.txt"
+    fake_docker = tmp_path / "fake-docker"
+    fake_docker.write_text(
+        f"""#!/bin/sh
+printf '%s\\n' "$*" >> '{capture}'
+case "$*" in
+  *StartedAt*ccwbot*)
+    printf '%s\\n' '{started_at}'
+    exit 0
+    ;;
+  *"ps --all --format json"*)
+    printf '{{"Name":"ccwbot"}}\\n'
+    exit 0
+    ;;
+  *"ps --all --quiet"*)
+    exit 0
+    ;;
+  *"ops-agent collect"*)
+    printf '%s\\n' 'RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED' >&2
+    printf '%s\\n' \
+      '{{"status":"partial","published_bundle_path":"/app/reports/ops-agent/bundles/{bundle_id}"}}'
+    exit {collector_exit}
+    ;;
+esac
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+
+    source = Path("ops-agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
+    source = source.replace("DOCKER=/usr/bin/docker", f"DOCKER={fake_docker}")
+    source = source.replace("ROOT=/opt/CCWBot", f"ROOT={root}")
+    wrapper = tmp_path / "ccwbot-ops-agent-collect"
+    wrapper.write_text(source, encoding="utf-8")
+    wrapper.chmod(0o755)
+    root.mkdir(parents=True, exist_ok=True)
+    return wrapper, root, capture
+
+
 def _write_mandatory_evidence(writer: BundleWriter) -> None:
     writer.write_json(
         "evidence/db/aggregate_metrics.json",
@@ -199,16 +250,137 @@ def test_production_collect_wrapper_restricts_arguments():
     assert "ps --all --format json" in script
     assert "OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json" in script
     assert '$docker_status_file:/tmp/ops-agent-docker-status.json:ro' in script
-    # docker inspect is allowed for exactly one sanitized read-only purpose: container
-    # name + RestartCount, mounted read-only into the collector. No other inspect use.
-    assert script.count('"$DOCKER" inspect') == 1
+    # docker inspect remains constrained to two sanitized read-only purposes:
+    # fixed-container StartedAt and container name + RestartCount.
+    assert script.count('"$DOCKER" inspect') == 2
+    assert (
+        '"$DOCKER" inspect --format '
+        "'{{.State.StartedAt}}' ccwbot"
+    ) in script
     assert (
         '"$DOCKER" inspect --format '
         "'{\"Name\": {{json .Name}}, \"RestartCount\": {{json .RestartCount}}}'"
     ) in script
     assert "OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json" in script
     assert '$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro' in script
+    assert "--since-container-start" in script
+    assert "--status" in script
+    assert "latest" in script
+    assert 'ROOT=/opt/CCWBot' in script
+    assert 'OPS_ROOT="$ROOT/reports/ops-agent"' in script
+    assert 'RECEIPTS_DIR="$OPS_ROOT/receipts"' in script
+    assert "write_receipt" in script
+    assert "container_start_exceeds_collection_cap" in script
+    assert "collector_stderr" not in script
     assert " compose config" not in script
+
+
+def test_collect_wrapper_persists_partial_receipt_and_recovers_latest(tmp_path):
+    wrapper, root, _capture = _write_test_collect_wrapper(
+        tmp_path,
+        collector_exit=1,
+    )
+    published = root / "reports" / "ops-agent" / "bundles" / "testbundle"
+    published.mkdir(parents=True)
+    (published / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since",
+            "2026-10-01T00:00:00Z",
+            "--until",
+            "2026-10-02T00:00:00Z",
+            "--no-state-update",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED" in result.stderr
+    latest_path = root / "reports" / "ops-agent" / "receipts" / "latest.json"
+    receipt = json.loads(latest_path.read_text(encoding="utf-8"))
+    assert receipt["terminal_state"] == "partial"
+    assert receipt["exit_code"] == 1
+    assert receipt["collector_exit_code"] == 1
+    assert receipt["published_bundle_path"] == str(published)
+    assert "RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED" not in latest_path.read_text(
+        encoding="utf-8"
+    )
+
+    status = subprocess.run(
+        ["sh", str(wrapper), "--status", "latest"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert status.returncode == 0
+    assert json.loads(status.stdout) == receipt
+
+
+def test_collect_wrapper_since_container_start_passes_normalized_fixed_start(tmp_path):
+    wrapper, root, capture = _write_test_collect_wrapper(
+        tmp_path,
+        started_at="2026-10-01T00:00:00.123456789Z",
+        collector_exit=0,
+    )
+    published = root / "reports" / "ops-agent" / "bundles" / "testbundle"
+    published.mkdir(parents=True)
+    (published / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since-container-start",
+            "--until",
+            "2026-10-02T00:00:00Z",
+            "--no-state-update",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    calls = capture.read_text(encoding="utf-8")
+    assert "inspect --format {{.State.StartedAt}} ccwbot" in calls
+    assert "--since 2026-10-01T00:00:00Z" in calls
+    assert "--until 2026-10-02T00:00:00Z" in calls
+
+
+def test_collect_wrapper_since_container_start_fails_before_collection_over_720h(tmp_path):
+    wrapper, root, capture = _write_test_collect_wrapper(
+        tmp_path,
+        started_at="2026-08-01T00:00:00Z",
+    )
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(wrapper),
+            "--since-container-start",
+            "--until",
+            "2026-10-02T00:00:00Z",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    receipt = json.loads(
+        (root / "reports" / "ops-agent" / "receipts" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["terminal_state"] == "failed"
+    assert receipt["reason"] == "container_start_exceeds_collection_cap"
+    assert receipt["collector_exit_code"] is None
+    assert "ops-agent collect" not in capture.read_text(encoding="utf-8")
 
 
 def test_production_mark_success_wrapper_restricts_paths_and_arguments():
@@ -250,6 +422,11 @@ def test_ops_agent_runbook_documents_safe_production_report_tree():
     )
     assert "rebuild the `ops-agent` Docker image" in readme
     assert "market_events_without_alert_deliveries" in readme
+    assert "sudo /usr/local/bin/ccwbot-ops-agent-collect --since-container-start" in readme
+    assert "sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest" in readme
+    assert "/opt/CCWBot/reports/ops-agent/receipts" in readme
+    assert ".in-progress" in readme
+    assert "720" in readme
 
 
 def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
@@ -279,6 +456,77 @@ def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
         capture_output=True,
     )
     assert kept_directory_marker.returncode == 1
+
+
+def test_bundle_writer_stages_privately_until_manifest_is_published(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+
+    writer.initialize()
+
+    staging_path = tmp_path / ".in-progress" / writer.bundle_id
+    published_path = tmp_path / "bundles" / writer.bundle_id
+    assert writer.path == staging_path
+    assert staging_path.is_dir()
+    assert not published_path.exists()
+    if os.name != "nt":
+        assert staging_path.parent.stat().st_mode & 0o777 == 0o700
+        assert staging_path.stat().st_mode & 0o777 == 0o700
+
+    _write_mandatory_evidence(writer)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+    )
+
+    assert writer.path == published_path
+    assert published_path.is_dir()
+    assert (published_path / "manifest.json").is_file()
+    assert not staging_path.exists()
+    if os.name != "nt":
+        assert published_path.stat().st_mode & 0o777 == 0o755
+
+
+def test_validate_bundle_rejects_in_progress_path(tmp_path):
+    config = OpsAgentConfig(
+        database_url=None,
+        health_url=None,
+        output_dir=tmp_path,
+        logs_dir=tmp_path / "logs",
+        legacy_state_path=tmp_path / "state.json",
+    )
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        source="test",
+    )
+    writer = BundleWriter(config, period)
+    writer.initialize()
+    _write_mandatory_evidence(writer)
+    writer.finalize(
+        collection_status="complete",
+        redaction_report=RedactionReport(),
+        detector_count=0,
+        protected_identity_map=False,
+        publish_manifest=False,
+    )
+    writer.write_manifest("complete", protected_identity_map=False)
+
+    assert ".in-progress" in writer.path.parts
+    assert _validate_bundle(type("Args", (), {"bundle": str(writer.path)})()) == 1
 
 
 def test_bundle_manifest_contains_required_files(tmp_path):
@@ -486,7 +734,14 @@ def test_collect_finalization_failure_cannot_return_success(tmp_path, monkeypatc
 
     assert result == 2
     assert payload["status"] == "failed"
+    assert payload["published_bundle_path"] is None
     assert not Path(payload["manifest_path"]).exists()
+    published_dirs = (
+        list((tmp_path / "bundles").glob("*"))
+        if (tmp_path / "bundles").exists()
+        else []
+    )
+    assert published_dirs == []
 
 
 def test_final_manifest_failure_does_not_record_a_successful_state(

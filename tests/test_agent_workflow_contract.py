@@ -148,7 +148,7 @@ def test_agentic_development_workflow_contract():
         "Clarification gate",
         "Task specification and plan",
         "Test-first gate",
-        "Worktree isolation",
+        "Single-checkout branch workflow",
         "Orchestrator and workers",
         "Token-efficiency objective",
         "docs/task_specs/",
@@ -161,7 +161,8 @@ def test_agentic_development_workflow_contract():
     assert execution["default_worker_model"] == "gpt-5.6-terra"
     assert execution["low_cost_worker_model"] == "gpt-5.6-luna"
     assert execution["worker_count_policy"] == "adaptive"
-    assert execution["isolation"] == "git_worktree"
+    assert execution["implementation_writer_count"] == 1
+    assert execution["isolation"] == "single_checkout_branch"
     assert execution["sol_worker_policy"] == "escalation_only"
 
     assert codex_config["model"] == "gpt-5.6-sol"

@@ -27,15 +27,34 @@ Production collection should use the root-owned safe wrappers documented in
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect
+sudo /usr/local/bin/ccwbot-ops-agent-collect --since-container-start
+sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest
 sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>
 ```
+
+`--since-container-start` resolves only the fixed `ccwbot` container start under root and keeps
+the existing 720-hour collection cap. `--status latest` returns the latest sanitized durable
+wrapper receipt; receipts never contain raw stderr.
 
 Do not run raw `docker compose`, raw `ops-agent`, deployment commands, restarts, migrations,
 environment-printing commands, or secret-reading commands as part of normal report collection.
 
+## Bundle Publication Contract
+
+Collectors write under private `.in-progress/<bundle-id>` staging and publish into
+`bundles/<bundle-id>` with an atomic same-filesystem rename only after `manifest.json` is durable.
+A staging directory is not a bundle and must not be used for analysis, validation, or report-success.
+Only a manifest-bearing directory under `bundles/` is published production evidence.
+
+The root collection wrapper persists sanitized terminal receipts under `receipts/` with invocation
+id, timestamps, terminal state, exit codes, sanitized reason, and published bundle path when present.
+If an SSH/task environment loses collector stdout or the exit code, recover the latest result through
+`sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` instead of guessing from directory
+creation.
+
 ## Required Evidence Reading Order
 
-For each generated bundle, read:
+For each published generated bundle, read:
 
 1. `manifest.json`
 2. `CODEX_INSTRUCTIONS.md`
@@ -50,8 +69,8 @@ Then inspect referenced `evidence/**` files only as needed to verify or expand f
 
 ## Final Report Flow
 
-1. Run the safe collect wrapper.
-2. Read the printed JSON and open the bundle path.
+1. Run the safe collect wrapper; use `--since-container-start` when the requested period starts at the current `ccwbot` container start.
+2. Read the printed JSON and open only the published bundle path. If stdout or exit status was lost, recover the latest sanitized receipt with `--status latest`.
 3. Use `docs/ops-agent-report-codex-prompt.md` and `decision_report_context.md`.
 4. Write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
 5. Mark success only after the report exists and the bundle is complete, unless the operator
@@ -95,7 +114,7 @@ user-facing copy regression was found.
 - Use redacted refs only when user-specific remediation is necessary.
 - Treat detector `unknown` as missing or inconclusive evidence, not healthy status.
 - Treat missing collector evidence as incomplete, not as proof that the system is healthy.
-- Do not download generated bundles or reports into the repo worktree. If temporary local
+- Do not download generated bundles or reports into the repository checkout. If temporary local
   copies are unavoidable, place them under `.cache/tmp` and clean them up.
 
 ## Forensic Correlation Evidence

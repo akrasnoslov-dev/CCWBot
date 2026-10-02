@@ -13,9 +13,19 @@ ones, and write a concise English Markdown report under
 `/opt/CCWBot/reports/ops-agent/reports/`. Do not apply fixes or change production systems unless
 the operator explicitly asks.
 
+## Bundle preflight
+
+Analyze only a published bundle directory under `reports/ops-agent/bundles/` that contains
+`manifest.json`. A path under `.in-progress/` is unfinished staging, not a production bundle,
+even if it contains other files.
+
+If collection stdout or the exit code was lost, use the latest sanitized root-wrapper receipt
+(`sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest`) to recover the terminal state and
+published bundle path. Do not infer a valid bundle from directory creation alone.
+
 ## Required reading order
 
-Start with the bundle-specific instructions and metadata:
+Start with the published bundle-specific instructions and metadata:
 
 1. `manifest.json`
 2. `CODEX_INSTRUCTIONS.md`

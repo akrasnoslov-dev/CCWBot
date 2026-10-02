@@ -81,11 +81,18 @@ def _collection_result(
     state_update_status: str | None = None,
     retention_status: str | None = None,
 ) -> dict[str, Any]:
+    published_bundle_path = str(writer.published_path) if writer.is_published else None
     payload: dict[str, Any] = {
         "status": status,
-        "bundle_path": str(writer.path),
-        "codex_instructions_path": str(writer.path / "CODEX_INSTRUCTIONS.md"),
-        "manifest_path": str(writer.path / "manifest.json"),
+        "bundle_id": writer.bundle_id,
+        "bundle_path": published_bundle_path,
+        "published_bundle_path": published_bundle_path,
+        "codex_instructions_path": (
+            str(writer.published_path / "CODEX_INSTRUCTIONS.md")
+            if writer.is_published
+            else None
+        ),
+        "manifest_path": str(writer.published_path / "manifest.json"),
         "period_start": period.as_dict()["start"],
         "period_end": period.as_dict()["end"],
     }
@@ -341,6 +348,7 @@ async def _collect(args: argparse.Namespace) -> int:
             raise RuntimeError("bundle finalization status did not stabilize")
 
         writer.write_manifest(collection_status, protected_identity_map=protected_identity_map)
+        writer.publish()
     except Exception:
         _print_json(
             _collection_result(
@@ -490,6 +498,15 @@ def _validate_bundle_contents(bundle: Path) -> tuple[dict[str, Any] | None, list
 
 def _validate_bundle(args: argparse.Namespace) -> int:
     bundle = Path(args.bundle).resolve()
+    if bundle.parent.name != "bundles":
+        _print_json(
+            {
+                "status": "failed",
+                "missing": ["<published bundle directory>"],
+                "bad": [],
+            }
+        )
+        return 1
     if not bundle.is_dir():
         _print_json({"status": "failed", "missing": ["<bundle directory>"], "bad": []})
         return 1
