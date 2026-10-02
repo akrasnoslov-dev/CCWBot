@@ -49,7 +49,8 @@ case "$*" in
     ;;
   *"ops-agent collect"*)
     printf '%s\\n' 'RAW-COLLECTOR-STDERR-MUST-NOT-BE-PERSISTED' >&2
-    printf '{{"status":"partial","published_bundle_path":"/app/reports/ops-agent/bundles/{bundle_id}"}}\\n'
+    printf '%s\\n' \
+      '{{"status":"partial","published_bundle_path":"/app/reports/ops-agent/bundles/{bundle_id}"}}'
     exit {collector_exit}
     ;;
 esac
