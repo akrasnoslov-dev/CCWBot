@@ -80,8 +80,6 @@ def test_event_analysis_prompt_preserves_subpercent_values_as_percentages(
 def test_event_alert_render_schema_only_contains_model_generated_fields():
     schema = ai_agent_groq._EVENT_ALERT_RENDER_JSON_SCHEMA
     assert set(schema["required"]) == {
-        "event_key",
-        "title",
         "message_body",
         "related_news_ids",
         "possible_action",
@@ -100,7 +98,7 @@ def test_event_alert_render_schema_only_contains_model_generated_fields():
         }
     )
     assert (
-        "Return exactly event_key,title,message_body,related_news_ids,possible_action,urgency."
+        "Return exactly message_body,related_news_ids,possible_action,urgency."
         in prompt
     )
     assert "reason_for_no_alert=null" not in prompt

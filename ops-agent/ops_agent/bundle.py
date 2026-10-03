@@ -198,6 +198,10 @@ class BundleWriter:
                 "schema_version": 1,
                 "bundle_hard_cap_bytes": self.config.limits.bundle_hard_cap_bytes,
                 "db_row_cap": self.config.limits.db_row_cap,
+                "max_log_export_bytes_per_file": (
+                    self.config.limits.max_log_export_bytes_per_file
+                ),
+                "max_log_export_bytes_total": self.config.limits.max_log_export_bytes_total,
                 "log_source_scope": "all_retained_files_scanned_completely",
                 "raw_llm_samples_enabled_by_default": False,
                 "duplicate_market_event_bucket_minutes": (

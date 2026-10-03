@@ -219,6 +219,13 @@ def test_collect_logs_has_no_fixed_500_record_cap_and_exports_dimension_counts(t
     ]
 
 
+def test_default_single_log_source_can_use_total_structured_export_budget():
+    limits = OpsAgentLimits()
+
+    assert limits.max_log_export_bytes_per_file == limits.max_log_export_bytes_total
+    assert limits.max_log_export_bytes_total == 8 * 1024 * 1024
+
+
 @pytest.mark.parametrize(
     ("per_file_limit", "total_limit"),
     [(150, 500), (500, 150)],

@@ -397,7 +397,29 @@ async def test_event_significance_news_only_true_is_rejected_before_render(monke
 
 
 @pytest.mark.asyncio
-async def test_render_failure_does_not_clear_event_analysis_failure_streak(monkeypatch):
+@pytest.mark.parametrize(
+    ("render_error", "expected_reason"),
+    (
+        (
+            alerts.AISchemaValidationError("render failed"),
+            "schema_validation_failed",
+        ),
+        (
+            alerts.AIProviderRateLimitError("render rate limited"),
+            "rate_limit",
+        ),
+        (
+            alerts.AllProvidersFailedError(
+                "render providers exhausted",
+                mixed_failure=True,
+            ),
+            "mixed_provider_failures",
+        ),
+    ),
+)
+async def test_render_failure_uses_deterministic_presentation_fallback(
+    monkeypatch, render_error, expected_reason
+):
     successes = []
     failures = []
     monkeypatch.setattr(
@@ -418,7 +440,7 @@ async def test_render_failure_does_not_clear_event_analysis_failure_streak(monke
     monkeypatch.setattr(
         alerts,
         "ask_event_alert_render_raw",
-        AsyncMock(side_effect=alerts.AISchemaValidationError("render failed")),
+        AsyncMock(side_effect=render_error),
     )
     monkeypatch.setattr(
         alerts.event_analysis_health,
@@ -430,19 +452,87 @@ async def test_render_failure_does_not_clear_event_analysis_failure_streak(monke
         "_log_event_analysis_failure",
         lambda symbol, reason: failures.append((symbol, reason)),
     )
-    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", AsyncMock())
-    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=323))
-    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    render_outcome = AsyncMock()
+    save_analysis = AsyncMock(return_value=323)
+    delivery_outcome = AsyncMock()
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
 
-    decision, analysis_id = await alerts._create_event_analysis_decision(
-        _runtime_no_alert_payload(chg_window_percent=4.0)
+    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
+    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+
+    expected_situation, expected_action = event_alert_presentation_fallback(
+        payload["market"], []
+    )
+    assert analysis_id == 323
+    assert decision is not None
+    assert decision.should_alert is True
+    assert decision.symbol == "BTC"
+    assert decision.confidence == "high"
+    assert decision.urgency == "normal"
+    assert decision.related_news_ids == []
+    assert decision.message_body == expected_situation
+    assert decision.possible_action == expected_action
+    assert successes == [True]
+    assert failures == []
+
+    render_outcome.assert_awaited_once()
+    render_kwargs = render_outcome.await_args.kwargs
+    assert render_kwargs["status"] == "completed"
+    assert render_kwargs["error_reason"] == expected_reason
+    assert render_kwargs["provider"] == alerts.DETERMINISTIC_EVENT_ALERT_RENDER_PROVIDER
+    assert render_kwargs["model"] == alerts.DETERMINISTIC_EVENT_ALERT_RENDER_MODEL
+
+    save_analysis.assert_awaited_once()
+    assert save_analysis.await_args.kwargs["status"] == "success"
+    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_SHOULD_ALERT
+
+
+def test_event_alert_render_materialization_keeps_identity_and_facts_backend_owned():
+    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
+
+    normalized = alerts._event_alert_render_result_for_validation(
+        {
+            "event_key": "model_owned_key_should_be_ignored",
+            "title": "Model title should be ignored",
+            "message_body": "The supplied move warrants attention.",
+            "related_news_ids": [
+                "unrelated-news",
+                "unknown-news",
+                "unrelated-news",
+            ],
+            "possible_action": "Monitor the next snapshots.",
+            "urgency": "high",
+        },
+        input_payload=payload,
+        expected_symbol="BTC",
+        confidence="high",
+        candidate_news_ids={"unrelated-news"},
     )
 
-    assert decision is None
-    assert analysis_id is None
-    assert successes == []
-    assert failures
+    assert normalized["event_key"] is None
+    assert normalized["title"] == "BTC up ~4.0% in the last 3 hours"
+    assert normalized["urgency"] == "high"
+    assert normalized["related_news_ids"] == ["unrelated-news"]
+    assert normalized["message_body"] == "The supplied move warrants attention."
+    assert normalized["possible_action"] == "Monitor the next snapshots."
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    (
+        ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
+        ("window market claim does not match input", "market_claim_mismatch"),
+        ("related_news_ids contains unknown news ids", "unknown_related_news_ids"),
+        ("something new and unexpected", "validation_failed"),
+    ),
+)
+def test_event_alert_render_validation_reason_is_safe_category(message, expected):
+    error = alerts.EventAnalysisValidationError(message)
+
+    assert alerts._event_alert_render_validation_reason(error) == expected
 
 
 @pytest.mark.asyncio
@@ -462,8 +552,6 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
         "reason_code": "unusual_move",
     }
     render_parsed = {
-        "event_key": "btc_price_uptrend",
-        "title": "BTC up ~4.0% in the last 3 hours",
         "message_body": "The supplied move is unusually strong relative to recent history.",
         "related_news_ids": [],
         "possible_action": "Monitor whether the move persists in the next snapshots.",
@@ -535,7 +623,7 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_all_factual_validation_failures_cannot_create_a_market_event(monkeypatch):
+async def test_factual_render_validation_failure_uses_grounded_fallback(monkeypatch):
     payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     monkeypatch.setattr(
         alerts,
@@ -566,8 +654,12 @@ async def test_all_factual_validation_failures_cannot_create_a_market_event(monk
 
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
-    assert decision is None
-    assert analysis_id is None
+    assert analysis_id == 321
+    assert decision is not None
+    assert decision.should_alert is True
+    assert decision.related_news_ids == []
+    assert "unavailable" not in decision.message_body.lower()
+    assert "buy" not in decision.possible_action.lower()
     create_market_event.assert_not_awaited()
 
 

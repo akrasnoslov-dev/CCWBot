@@ -639,6 +639,9 @@ def test_collect_log_failure_finalizes_partial_bundle_and_runs_later_collectors(
         for path in manifest_path.parent.rglob("*")
         if path.is_file()
     }
+    limits = json.loads((manifest_path.parent / "limits.json").read_text(encoding="utf-8"))
+    assert limits["max_log_export_bytes_per_file"] == 8 * 1024 * 1024
+    assert limits["max_log_export_bytes_total"] == 8 * 1024 * 1024
 
 
 def test_collect_db_failure_writes_required_placeholders_and_runs_later_collectors(

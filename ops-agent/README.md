@@ -186,9 +186,11 @@ Log evidence scans every retained CCWBot log file completely and is period-aware
 are parseable. Bundles separate timestamped
 period-matched structured match records from unscoped tail-context records and include
 skipped/unparseable counts. Records use a strict safe-field allowlist; bundles never include raw
-or redacted log lines. Detailed records have byte caps but no fixed 500-record ceiling; dimension
-counts cover every safe matched record within retained log files even when details are
-truncated. Period-matched evidence is stronger for the requested report period.
+or redacted log lines. Detailed records have byte caps but no fixed 500-record ceiling; the shipped defaults allow one
+log source to use the full 8 MiB structured-record budget (8 MiB per source, 8 MiB total), with
+environment overrides available for both caps. Dimension counts cover every safe matched record
+within retained log files even when details are truncated. Period-matched evidence is stronger for
+the requested report period.
 
 Detector `unknown` means evidence is missing or inconclusive, not healthy. Market events without deliveries are classified into expected no-delivery, LLM failure/rate-limit, `should_alert=true` delivery gaps, and unknown buckets where the available schema cannot prove the reason.
 
