@@ -118,8 +118,10 @@ from bot.reports import generate_daily_report_cache_job, generate_weekly_report_
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
+    AIInvalidJsonError,
     AIProviderRateLimitError,
     AISchemaValidationError,
+    AllProvidersFailedError,
     LLMRateLimitBackoffActive,
     ask_event_alert_render_raw,
     ask_event_significance_raw,
@@ -288,6 +290,9 @@ REASON_LLM_NO_ALERT = "llm_no_alert"
 REASON_NEWS_ONLY_REJECTED = "news_only_rejected"
 REASON_EXACT_CONTEXT_REUSED = "exact_context_reused"
 REASON_TELEGRAM_BOT_BLOCKED = "telegram_bot_blocked"
+
+DETERMINISTIC_EVENT_ALERT_RENDER_PROVIDER = "deterministic"
+DETERMINISTIC_EVENT_ALERT_RENDER_MODEL = "deterministic-event-alert-render-v1"
 
 DECISION_STAGE_PRE_LLM = "pre_llm"
 DECISION_STAGE_LLM = "llm"
@@ -3626,14 +3631,18 @@ async def _create_event_analysis_decision(
     render_usage_log_id = None
     render_provider = "groq"
     render_model = GROQ_EVENT_ANALYSIS_MODEL
+    render_outcome_status = "success"
+    render_outcome_error_reason = None
 
     def _render_schema_check(provider_parsed: dict) -> None:
         try:
             validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
+                    input_payload=input_payload,
                     expected_symbol=expected_symbol,
                     confidence=significance.confidence,
+                    candidate_news_ids=candidate_news_ids,
                 ),
                 expected_symbol=expected_symbol,
                 candidate_news_ids=candidate_news_ids,
@@ -3642,7 +3651,13 @@ async def _create_event_analysis_decision(
                 timestamp_utc=input_payload.get("timestamp_utc"),
             )
         except EventAnalysisValidationError as error:
-            raise AISchemaValidationError(str(error)) from error
+            validation_reason = _event_alert_render_validation_reason(error)
+            logger.warning(
+                "ops_event=event_alert_render_validation_failed symbol=%s reason=%s",
+                normalize_symbol(expected_symbol).upper(),
+                validation_reason,
+            )
+            raise AISchemaValidationError(validation_reason) from error
 
     logger.info(
         "ops_event=event_alert_render_llm_operation symbol=%s status=started operation_id=%s",
@@ -3659,28 +3674,34 @@ async def _create_event_analysis_decision(
         render_usage_log_id = getattr(render_result, "usage_log_id", None)
         render_provider = getattr(render_result, "provider", None) or render_provider
         render_model = getattr(render_result, "model", None) or render_model
+    except (
+        AIInvalidJsonError,
+        AISchemaValidationError,
+        AIProviderRateLimitError,
+        LLMRateLimitBackoffActive,
+        AllProvidersFailedError,
+    ) as error:
+        reason = classify_ai_error_reason(error)
+        render_parsed = _deterministic_event_alert_render_result_for_validation(
+            input_payload,
+            expected_symbol=expected_symbol,
+            confidence=significance.confidence,
+        )
+        render_provider = DETERMINISTIC_EVENT_ALERT_RENDER_PROVIDER
+        render_model = DETERMINISTIC_EVENT_ALERT_RENDER_MODEL
+        render_outcome_status = "completed"
+        render_outcome_error_reason = reason
+        logger.warning(
+            "ops_event=event_alert_render_fallback symbol=%s reason=%s",
+            normalize_symbol(expected_symbol).upper(),
+            reason,
+        )
     except Exception as error:
         reason = classify_ai_error_reason(error)
-        if isinstance(error, (AIProviderRateLimitError, LLMRateLimitBackoffActive)):
-            status = (
-                "skipped_due_to_rate_limit"
-                if isinstance(error, LLMRateLimitBackoffActive)
-                else "rate_limit"
-            )
-            outcome_status = OUTCOME_RATE_LIMITED
-            outcome_reason_code = REASON_LLM_RATE_LIMITED
-        elif isinstance(error, AISchemaValidationError):
-            status = "schema_error"
-            outcome_status = OUTCOME_FAILED
-            outcome_reason_code = REASON_LLM_INVALID_RESPONSE
-        else:
-            status = "invalid_json" if reason == "invalid_json" else "llm_error"
-            outcome_status = OUTCOME_FAILED
-            outcome_reason_code = REASON_LLM_INVALID_RESPONSE
         await _save_event_alert_render_outcome(
             llm_operation_id=render_operation_id,
             symbol=expected_symbol,
-            status=status,
+            status="llm_error",
             error_reason=reason,
             provider=getattr(error, "provider", None) or render_provider,
             model=getattr(error, "model", None) or render_model,
@@ -3688,7 +3709,7 @@ async def _create_event_analysis_decision(
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=decision_raw_output,
-            status=status,
+            status="llm_error",
             parsed_result=decision_parsed,
             error_message=str(error),
             error_reason=reason,
@@ -3699,8 +3720,8 @@ async def _create_event_analysis_decision(
         await _record_alert_delivery_outcome(
             symbol=expected_symbol,
             alert_type=EVENT_ALERT_TYPE,
-            status=outcome_status,
-            reason_code=outcome_reason_code,
+            status=OUTCOME_FAILED,
+            reason_code=REASON_LLM_INVALID_RESPONSE,
             event_ai_analysis_id=analysis_id,
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
@@ -3709,14 +3730,15 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=f"event_alert_render_failed:{reason}",
         )
-        if not isinstance(error, LLMRateLimitBackoffActive):
-            _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_analysis_failure(expected_symbol, reason)
         return None, None
 
     normalized_render = _event_alert_render_result_for_validation(
         render_parsed,
+        input_payload=input_payload,
         expected_symbol=expected_symbol,
         confidence=significance.confidence,
+        candidate_news_ids=candidate_news_ids,
     )
     try:
         decision = validate_event_analysis_output(
@@ -3728,7 +3750,13 @@ async def _create_event_analysis_decision(
             timestamp_utc=input_payload.get("timestamp_utc"),
         )
     except EventAnalysisValidationError as error:
-        schema_error = AISchemaValidationError(str(error))
+        validation_reason = _event_alert_render_validation_reason(error)
+        logger.warning(
+            "ops_event=event_alert_render_validation_failed symbol=%s reason=%s",
+            normalize_symbol(expected_symbol).upper(),
+            validation_reason,
+        )
+        schema_error = AISchemaValidationError(validation_reason)
         await mark_llm_usage_log_status(
             render_usage_log_id,
             status="schema_error",
@@ -3773,7 +3801,8 @@ async def _create_event_analysis_decision(
     await _save_event_alert_render_outcome(
         llm_operation_id=render_operation_id,
         symbol=expected_symbol,
-        status="success",
+        status=render_outcome_status,
+        error_reason=render_outcome_error_reason,
         provider=render_provider,
         model=render_model,
     )
@@ -3875,21 +3904,104 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
 
 
-def _event_alert_render_result_for_validation(
-    result: object,
+def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -> str:
+    """Map render validation failures to stable, value-free operational categories."""
+    message = str(error).lower()
+    mappings = (
+        ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
+        ("market claim is unavailable", "market_claim_unavailable"),
+        ("market claim direction does not match input", "market_claim_direction_mismatch"),
+        ("market claim does not match input", "market_claim_mismatch"),
+        ("market percentage claim does not match input", "market_percentage_mismatch"),
+        ("invalid market percentage claim", "invalid_market_percentage"),
+        ("claimed analysed-window duration does not match input", "window_duration_mismatch"),
+        ("since-previous-alert claim lacks prior alert context", "missing_prior_alert_context"),
+        (
+            "since-previous-alert duration does not match prior alert context",
+            "prior_alert_duration_mismatch",
+        ),
+        ("related_news_ids contains unknown news ids", "unknown_related_news_ids"),
+        ("related_news_ids contains duplicates", "duplicate_related_news_ids"),
+        ("related_news_ids must be a string array", "invalid_related_news_ids"),
+        ("alert fields are required", "missing_alert_fields"),
+        ("legacy alert type returned by llm", "legacy_alert_type"),
+        ("reason_for_no_alert must be null", "invalid_no_alert_reason"),
+        ("nullable text fields must be strings or null", "invalid_text_field"),
+        ("invalid urgency", "invalid_urgency"),
+        ("invalid confidence", "invalid_confidence"),
+        ("symbol mismatch", "symbol_mismatch"),
+        ("missing fields", "missing_fields"),
+    )
+    for fragment, reason in mappings:
+        if fragment in message:
+            return reason
+    return "validation_failed"
+
+
+def _deterministic_event_alert_render_result_for_validation(
+    input_payload: dict,
     *,
     expected_symbol: str,
     confidence: str,
-) -> object:
-    if not isinstance(result, dict):
-        return result
+) -> dict:
+    """Build presentation-only fallback from already-supplied market evidence."""
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    if not isinstance(market_data, dict):
+        market_data = {}
+    situation, action = event_alert_presentation_fallback(market_data, [])
     return {
         "symbol": normalize_symbol(expected_symbol).upper(),
         "should_alert": True,
-        "event_key": result.get("event_key"),
-        "title": result.get("title"),
+        "event_key": None,
+        "title": _event_alert_presentation_title(
+            symbol=display_symbol(expected_symbol),
+            analysed_window_minutes=market_data.get("analysed_window_minutes"),
+            analysed_window_change=market_data.get("chg_window_percent"),
+        ),
+        "message_body": situation,
+        "related_news_ids": [],
+        "possible_action": action,
+        "urgency": "normal",
+        "confidence": confidence,
+        "reason_for_no_alert": None,
+    }
+
+
+def _event_alert_render_result_for_validation(
+    result: object,
+    *,
+    input_payload: dict,
+    expected_symbol: str,
+    confidence: str,
+    candidate_news_ids: set[str],
+) -> object:
+    if not isinstance(result, dict):
+        return result
+    market_data = input_payload.get("market", input_payload.get("market_data", {}))
+    if not isinstance(market_data, dict):
+        market_data = {}
+    raw_related_news_ids = result.get("related_news_ids")
+    if isinstance(raw_related_news_ids, list):
+        related_news_ids = []
+        seen_news_ids = set()
+        for value in raw_related_news_ids:
+            news_id = str(value)
+            if news_id in candidate_news_ids and news_id not in seen_news_ids:
+                related_news_ids.append(news_id)
+                seen_news_ids.add(news_id)
+    else:
+        related_news_ids = raw_related_news_ids
+    return {
+        "symbol": normalize_symbol(expected_symbol).upper(),
+        "should_alert": True,
+        "event_key": None,
+        "title": _event_alert_presentation_title(
+            symbol=display_symbol(expected_symbol),
+            analysed_window_minutes=market_data.get("analysed_window_minutes"),
+            analysed_window_change=market_data.get("chg_window_percent"),
+        ),
         "message_body": result.get("message_body"),
-        "related_news_ids": result.get("related_news_ids"),
+        "related_news_ids": related_news_ids,
         "possible_action": result.get("possible_action"),
         "urgency": result.get("urgency"),
         "confidence": confidence,

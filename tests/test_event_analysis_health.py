@@ -302,9 +302,10 @@ def test_a_news_only_rejection_clears_the_failure_streak():
     assert success_at < news_only_at
 
 
-def test_terminal_event_analysis_failures_count_toward_the_failure_streak(caplog):
-    # Schema, generic, and exhausted-provider rate-limit failures are terminal analyses;
-    # active-backoff skips are intentionally not counted.
+def test_terminal_significance_failures_count_but_render_fallback_does_not(caplog):
+    # Significance failures are terminal analyses, while an exhausted presentation-provider
+    # chain is recoverable through the deterministic render fallback. Active significance
+    # backoff and recovered render failures must not poison the Event Analysis health streak.
     import inspect
 
     from bot import alerts
@@ -316,7 +317,18 @@ def test_terminal_event_analysis_failures_count_toward_the_failure_streak(caplog
         "except LLMRateLimitBackoffActive as error:", 1
     )[1].split("except AISchemaValidationError as error:", 1)[0]
     assert "_log_event_analysis_failure(" not in significance_backoff
-    assert "if not isinstance(error, LLMRateLimitBackoffActive):" in source
+
+    render_source = source.split("render_result = await ask_event_alert_render_raw", 1)[1]
+    render_fallback = render_source.split(
+        "except (", 1
+    )[1].split("except Exception as error:", 1)[0]
+    assert "_log_event_analysis_failure(" not in render_fallback
+    assert "event_alert_render_fallback" in render_fallback
+
+    unexpected_render_failure = render_source.split(
+        "except Exception as error:", 1
+    )[1].split("normalized_render =", 1)[0]
+    assert "_log_event_analysis_failure(" in unexpected_render_failure
 
 
 def test_skipped_delivery_reasons_are_reported_separately():

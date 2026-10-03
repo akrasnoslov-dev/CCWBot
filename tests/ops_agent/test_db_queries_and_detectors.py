@@ -522,6 +522,7 @@ def test_ops_agent_queries_include_hardened_anomaly_evidence():
     assert "market_heartbeat_delivery_freshness" in query_names
     assert "news_intelligence_budget_summary" in query_names
     assert "llm_failure_category_summary" in query_names
+    assert "event_alert_render_validation_reason_summary" in query_names
     assert "event_analysis_logical_outcome_summary" in query_names
     assert "llm_operation_reconciliation_summary" in query_names
     assert "llm_operation_correlation_coverage" in query_names
@@ -706,6 +707,24 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         assert f"{status}_count" in outcomes.sql
     assert "generic_possible_action_count" in possible_action_quality.sql
     assert "should_alert = true" in possible_action_quality.sql
+
+
+def test_event_alert_render_validation_reason_query_outputs_categories_only():
+    query = next(
+        query
+        for query in QUERIES
+        if query.name == "event_alert_render_validation_reason_summary"
+    )
+
+    assert "error_message" in query.sql
+    assert "call_type = 'event_alert_render'" in query.sql
+    assert "error_reason = 'schema_validation_failed'" in query.sql
+    assert "unsupported_trajectory" in query.sql
+    assert "market_claim_mismatch" in query.sql
+    assert "unknown_related_news_ids" in query.sql
+    assert "validation_reason" in query.sql
+    assert "SELECT validation_reason, count(*) AS calls" in query.sql
+    assert "SELECT error_message" not in query.sql
 
 
 def test_llm_usage_query_groups_by_call_type_model_status_and_symbol():

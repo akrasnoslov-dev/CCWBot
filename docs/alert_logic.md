@@ -34,13 +34,22 @@ representation is normalized (`1.3500` equals `1.35`), but a real value change (
 ```text
 market data -> relative-move evidence -> Exact Context Reuse -> compact significance LLM
 -> should_alert=false stop
--> should_alert=true -> alert-render LLM -> factual/news-only validation -> market event
+-> should_alert=true -> alert-render LLM
+-> render provider exhaustion -> deterministic presentation fallback
+-> factual/news-only validation -> market event
 -> strict four-hour Semantic Cooldown -> recipient eligibility -> idempotent delivery
 ```
 
 The significance call runs every analysis cycle and returns only the decision, confidence, and a
-constrained reason code. The render call runs only after `should_alert=true`; it renders the existing
-grounded Event Alert contract and must not re-decide significance. One coin market event has one
+constrained reason code. The render call runs only after `should_alert=true`; it supplies optional
+presentation copy, supporting-news ids, and urgency and must not re-decide significance. Event
+identity and market-fact title are backend-owned so model phrasing cannot invalidate
+those factual/identity fields. If the render provider chain is
+exhausted by invalid JSON/schema output, provider rate limiting/backoff, or provider-chain failure,
+the backend builds presentation-only text deterministically from the already supplied market
+evidence. That fallback uses no related-news attachment, uses neutral urgency, and still passes the
+same full factual/news-only validation before a market event can exist. It does not change
+significance, cooldown, recipient eligibility, or delivery policy. One coin market event has one
 durable Event Analysis and can have many deliveries. Provider calls never run in a recipient loop.
 Detection and market-event creation are global; BTC is free and non-BTC delivery requires the
 existing Premium/watchlist entitlement.

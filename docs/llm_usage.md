@@ -137,13 +137,25 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
 
 `event_analysis` is the compact always-on significance decision. `event_alert_render` runs only
-after a positive significance decision and returns only the six model-generated alert fields:
-`event_key`, `title`, `message_body`, `related_news_ids`, `possible_action`, and `urgency`. The
-backend supplies `symbol`, `should_alert=true`, significance `confidence`, and
-`reason_for_no_alert=null` before running the existing full factual/news validation. The render
-operation has its own logical operation id and sanitized terminal outcome for reconciliation. Both
-stages share the Event Analysis provider/model, completion budget, and reasoning-effort
-configuration.
+after a positive significance decision and returns only four presentation fields:
+`message_body`, `related_news_ids`, `possible_action`, and `urgency`. The backend owns event
+identity, the deterministic market-fact title, `symbol`, `should_alert=true`,
+significance `confidence`, and `reason_for_no_alert=null` before running the existing full
+factual/news validation. Unknown or duplicate render-selected news ids are discarded rather than
+turning presentation noise into a terminal Event Alert failure.
+
+If the complete render provider chain is exhausted because of invalid JSON/schema output,
+rate-limit/backoff state, or provider-chain failure, the backend uses
+`deterministic-event-alert-render-v1` to build presentation-only fields from already supplied
+market evidence. It attaches no related news, uses neutral urgency, and still passes the same full
+factual/news validation. The deterministic render fallback never changes the upstream
+`should_alert` decision, cooldown, eligibility, or delivery rules. Provider-attempt failures remain
+in `llm_usage_logs`; the render logical-operation outcome is recorded as completed with
+`provider=deterministic` and the original sanitized failure reason.
+
+The render operation has its own logical operation id and sanitized terminal outcome for
+reconciliation. Both LLM stages share the Event Analysis provider/model, completion budget, and
+reasoning-effort configuration.
 
 Defaults in brackets are the base budgets retained from the prior configuration.
 `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
