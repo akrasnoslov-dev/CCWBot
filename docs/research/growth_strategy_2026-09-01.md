@@ -75,7 +75,7 @@ yet statistically useful.
 
 For first-run onboarding only:
 
-1. Keep BTC active/free and do not show it as a toggle on the "Add ETH, SOL & GRAM" screen.
+1. Leave the existing free BTC default untouched and do not show BTC as a toggle on the "Add ETH, SOL & GRAM" screen.
 2. Show ETH, SOL, and GRAM as normal selectable Premium choices, without a lock icon that looks
    disabled.
 3. Use a clear `Continue ->` action.
