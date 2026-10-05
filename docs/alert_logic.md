@@ -5,15 +5,17 @@ Current flow, in simple form.
 ```mermaid
 flowchart TD
     A[1. Read market data] --> B[2. Build analysis context]
-    B --> C{3. Exact context already analysed?}
-    C -- Yes --> D[Reuse result]
-    C -- No --> E[4. LLM decides significance]
-    E -- No --> X[Stop]
+    B --> C{3. Exact positive analysis already exists?}
+    C -- Yes --> H[7. Reuse event + ready message]
+    C -- No --> D{Exact recent no-send result already exists?}
+    D -- Yes --> X[Stop Event Alert]
+    D -- No --> E[4. LLM decides significance]
+    E -- No --> X
     E -- Yes --> F[5. Build alert text]
-    D --> F
-    F --> G[6. Validate facts and reject news-only]
-    G --> H[7. Create or reuse one market event]
+    F --> G[6. Validate facts + reject news-only]
+    G --> H2[7. Create or reuse one market event]
     H --> I[8. Find eligible users]
+    H2 --> I
     I --> J[9. Apply 4h same-event cooldown]
     J --> K[10. Send once]
 ```
@@ -28,19 +30,27 @@ last message, 30-day relative-move context, previous Event Alert context, and re
 
 Numbers are evidence only. No backend numeric threshold decides whether an Event Alert is important.
 
-## Step 3 - Reuse only an exactly identical context
-Before an LLM call, the bot checks for the same canonical analysis context. Reuse is allowed only for
-an exact semantic match. No rounding buckets or movement tolerances.
+## Step 3 - Reuse only exact previous work
+Before new LLM calls, the bot checks whether this exact canonical context was already handled.
+
+Two cases:
+- an existing positive Event Analysis already has its event and rendered message -> reuse it and go
+  straight to recipient checks;
+- an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
+
+No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
-The significance LLM returns schema-validated `should_alert`, confidence, and reason.
+If nothing can be reused, the significance LLM returns schema-validated `should_alert`, confidence,
+and reason.
 
-- `false` -> stop.
-- news-only -> stop.
+- `false` -> stop;
+- news-only -> stop;
 - `true` -> continue.
 
 ## Step 5 - Build the message
-A second LLM call writes presentation text only. It cannot change the significance decision.
+Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
+change the significance decision.
 
 If supported render failures exhaust the provider chain, the backend may build neutral deterministic
 presentation text from the already validated market evidence.
@@ -49,9 +59,17 @@ presentation text from the already validated market evidence.
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.
 
-## Step 7 - Create one market event
-One detected coin event gets one durable Event Analysis. The same analysis can be delivered to many
-users. LLM calls never run inside the recipient loop.
+## Step 7 - Keep one event and one analysis
+A newly detected event is created once. A reusable positive event keeps its already existing Event
+Analysis and message.
+
+Core rule:
+
+```text
+1 coin market event = 1 AI analysis = many deliveries
+```
+
+LLM calls never run inside the recipient loop.
 
 ## Step 8 - Find eligible users
 Only now the bot checks delivery eligibility:
@@ -73,11 +91,5 @@ semantic event. A genuinely different semantic event can pass.
 ## Step 10 - Send once
 Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression
 outcomes and avoids sending the same event twice to the same recipient.
-
-## Core rule
-
-```text
-1 coin market event = 1 AI analysis = many deliveries
-```
 
 CoinGecko values keep full precision through analysis. Rounding is only for user-facing text.
