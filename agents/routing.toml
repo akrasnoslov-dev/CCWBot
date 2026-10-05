@@ -1,5 +1,5 @@
 version = 3
-description = "Codex task routing rules for CCWBot execution and review subagents."
+description = "Fallback Codex execution/review routing. ChatGPT is the primary CCWBot orchestrator."
 
 [defaults]
 runtime_bot_loads_agents = false
@@ -8,6 +8,8 @@ high_risk_skip_requires_written_reason = true
 prefer_parallel_subagents_when_available = true
 
 [execution]
+primary_control_plane = "chatgpt"
+codex_invocation_policy = "fallback_when_chat_tools_insufficient"
 orchestrator_model = "gpt-5.6-sol"
 default_worker_model = "gpt-5.6-terra"
 low_cost_worker_model = "gpt-5.6-luna"
