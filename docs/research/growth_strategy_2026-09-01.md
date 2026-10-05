@@ -6,103 +6,110 @@
 
 This is research/strategy, not a canonical product contract.
 
-## Original thesis
+## What is already done
 
-The main problem was activation, not traffic. A new user needed to understand the value, choose
-relevant coins, see useful output quickly, and reach Premium naturally before acquisition was
-scaled.
-
-The positioning still makes sense:
-
-> Stop watching charts. CCWBot watches your coins and explains meaningful moves in Telegram.
-
-## What is implemented now
-
-The original P0 foundation is largely done:
+The original P0 foundation is largely implemented:
 
 - product-event analytics;
 - first-touch acquisition attribution;
-- operator-created tracked acquisition links;
-- onboarding flow instead of command-only first use;
+- tracked acquisition links;
+- onboarding instead of command-only first use;
 - deterministic/cached instant brief;
 - Premium coin customisation;
-- one-time 7-day Premium trial flow;
-- trial lifecycle events;
-- paywall, checkout, and payment events;
-- `premium_value_delivered` tracking;
-- successful-payment enrichment of Premium/watchlist state;
+- one-time 7-day Premium trial;
+- paywall, checkout, payment, and Premium-value events;
+- successful-payment Premium/watchlist enrichment;
 - regression tests around onboarding, attribution, trials, and payments.
 
-So the old September instruction to first build instrumentation, onboarding, and trial is outdated.
+So the next job is **not** "build more growth features". The next job is to use production data and
+find the biggest real funnel loss.
 
-## What is still not proven
+## Next task
 
-The repository does not prove:
+**Owner:** ChatGPT.  
+**User action required now:** none, except granting/using the approved read-only production access if
+the active chat cannot reach it.
 
-- real production funnel conversion;
-- D7/D30 habit and Premium retention;
-- which acquisition source produces activated or paid users;
-- whether 199 Stars converts well;
-- whether trial users receive enough useful value before expiry;
-- a working referral/share growth loop;
-- which supported coins drive real demand;
-- scalable CAC/payback.
+### Goal
 
-Referral mechanics remain a hypothesis, not a current capability.
+Produce one production Growth Funnel Audit and choose exactly one next experiment.
 
-## Do this now
+### ChatGPT must do
 
-### 1. Measure the existing funnel
+1. Read `docs/product_analytics.md` and use its approved read-only production workflow.
+2. Measure the latest useful cohort/window with at least:
+   - attributed starts;
+   - onboarding started/completed;
+   - instant brief viewed;
+   - customise opened;
+   - trial offered/started;
+   - paywall viewed;
+   - checkout started;
+   - payment succeeded;
+   - Premium value delivered.
+3. Calculate conversion between meaningful adjacent stages. Do not compare unrelated denominators.
+4. Split by acquisition source/campaign where sample size is meaningful.
+5. Check early value/retention evidence that already exists: alert deliveries, report usage, return
+   activity, or trial/Premium lifecycle events.
+6. Mark every conclusion:
+   - `CONFIRMED` - directly shown by production evidence;
+   - `LIKELY` - plausible but sample/evidence is weak;
+   - `UNKNOWN` - not measurable yet.
+7. Identify the single largest **verified** bottleneck.
+8. Recommend one experiment only. State:
+   - exact product change;
+   - why this bottleneck matters;
+   - success metric;
+   - minimum sample/window;
+   - stop/keep rule.
+9. Do not implement a new growth feature until this audit is complete.
 
-Use current attribution and product events to measure:
+### Expected output
 
-1. attributed start -> onboarding;
-2. onboarding -> instant brief;
-3. instant brief -> customise;
-4. customise -> trial;
-5. trial -> paywall / checkout;
-6. checkout -> payment;
-7. trial/payment -> first Premium value;
-8. early return and useful delivery behavior.
-
-Do not add new analytics events until a concrete measurement gap is found.
-
-### 2. Bring a small qualified cohort
-
-Bring roughly 20-50 targeted users through tracked founder-led Telegram/community outreach.
-
-For each source compare:
-- starts;
-- activation;
-- trial starts;
-- paid conversion;
-- early retention/value delivery.
-
-Goal is learning, not reach.
-
-### 3. Fix the biggest measured drop
-
-Choose the next product change only after the first cohort gives real funnel data.
-
-Possible experiments, only if data supports them:
-- onboarding copy or CTA;
-- trial timing;
-- Premium value message;
-- post-payment UX;
-- personal digest/value recap.
-
-### 4. Delay scale and referrals
-
-Do not spend meaningful paid-acquisition budget or build a referral system before activation and
-retention are measurable. Referral without retention only multiplies churn.
-
-## Decision rule
-
-Next growth development should follow:
+A compact report like:
 
 ```text
-collect -> compare cohorts -> find biggest verified loss -> change one thing -> measure again
+Cohort/window:
+Users:
+
+START -> BRIEF: x / y = z%
+BRIEF -> CUSTOMISE: ...
+CUSTOMISE -> TRIAL: ...
+TRIAL -> PAYWALL: ...
+PAYWALL -> CHECKOUT: ...
+CHECKOUT -> PAID: ...
+PAID/TRIAL -> PREMIUM VALUE: ...
+
+Biggest confirmed loss:
+Evidence:
+Next experiment:
+Success metric:
+Stop/keep rule:
+Unknowns:
 ```
 
-The September document remains useful as hypothesis history, but it is no longer an implementation
-checklist.
+## If this work moves to another chat
+
+Copy only this prompt:
+
+> Continue CCWBot growth work. Use current `dev` repository evidence and the approved read-only
+> production investigation path. Read `docs/research/growth_strategy_2026-09-01.md` and
+> `docs/product_analytics.md`. Execute the **Next task** in the growth strategy: produce the
+> production Growth Funnel Audit, identify the single biggest confirmed bottleneck, and recommend
+> exactly one measurable experiment. Do not build a new growth feature before the audit. Mark
+> conclusions CONFIRMED / LIKELY / UNKNOWN.
+
+## After the audit
+
+Only then:
+1. implement the chosen experiment;
+2. measure again;
+3. keep or revert based on the stated rule;
+4. consider a small 20-50 user founder-led acquisition cohort;
+5. postpone paid scale and referral mechanics until activation/retention are proven.
+
+Current decision loop:
+
+```text
+measure -> find biggest verified loss -> change one thing -> measure again
+```
