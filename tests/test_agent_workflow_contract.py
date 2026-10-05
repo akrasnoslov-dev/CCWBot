@@ -158,7 +158,10 @@ def test_agentic_development_workflow_contract():
     ):
         assert required_text in workflow
 
-    assert "ChatGPT is the primary decision center, orchestrator, and final acceptance owner" in workflow
+    assert (
+        "ChatGPT is the primary decision center, orchestrator, and final acceptance owner"
+        in workflow
+    )
     assert "Use Codex only when a required action cannot be completed" in workflow
     assert "Do not create routine files under `docs/task_specs/`" in workflow
     assert "Do not create a permanent `docs/task_specs/` archive" in source_of_truth
@@ -179,6 +182,7 @@ def test_agentic_development_workflow_contract():
     assert codex_config["model"] == "gpt-5.6-sol"
     assert codex_config["agents"]["default_subagent_model"] == "gpt-5.6-terra"
     assert "max_concurrent_threads_per_session" not in codex_config["agents"]
+
 
 def test_graphify_tooling_is_opt_in_and_has_no_global_git_or_codex_side_effects():
     workflow = (ROOT / "docs" / "codex_instructions.md").read_text(encoding="utf-8")
