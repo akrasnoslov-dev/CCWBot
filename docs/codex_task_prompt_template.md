@@ -1,12 +1,10 @@
 # Codex Task Prompt Template
 
-Use this template for normal CCWBot Codex tasks.
+Use this template only when the ChatGPT orchestrator has determined that a task cannot be completed
+or reliably verified with ChatGPT's available tools and Codex is required as a fallback executor.
 
-Standing project/workflow rules must not be copied into task prompts. They live only in the
-canonical repository owners defined by `docs/source_of_truth.md`.
-
-A task prompt should describe only the requested delta. Codex must load standing rules from the
-repository before implementation.
+Standing project/workflow rules must not be copied into task prompts. They live in the canonical
+repository owners defined by `docs/source_of_truth.md`.
 
 ```markdown
 Task: <short task title>
@@ -27,14 +25,12 @@ Evidence / acceptance criteria:
 - <task-specific facts, reproduced failure, or expected result>
 
 Verification:
-- <task-specific checks beyond the repository defaults, or why a check is not applicable>
+- <task-specific checks beyond repository defaults, or why a check is not applicable>
 
-PR notes:
-- <task-specific PR notes only>
+Return to ChatGPT:
+- <diff/result, verification evidence, unresolved risks>
 ```
 
-Do not restate branch policy, product guardrails, agent routing, review policy, verification
-defaults, release rules, deployment rules, or other standing CCWBot rules in the prompt.
-
-For production releases, the task-specific delta may explicitly say that this task is a
-`dev` -> `main` release.
+Do not restate branch policy, product guardrails, routing, review policy, release rules, or deployment
+rules in the prompt. Codex does not become the final acceptance owner merely because this template
+is used.
