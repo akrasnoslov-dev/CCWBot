@@ -456,8 +456,12 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
     )
 
 
-async def _llm_provider_breakdown_rows(session: AsyncSession, *, now: datetime) -> tuple[str, ...]:
-    """Compact per-call-type/provider attempt counts over the last 24h.
+async def _llm_provider_breakdown_rows(
+    session: AsyncSession,
+    *,
+    now: datetime,
+) -> tuple[tuple[str, str, dict[str, int]], ...]:
+    """Per-call-type/provider attempt counts over the last 24h.
 
     These are provider-attempt diagnostics, not final product outcomes. Event Analysis health
     remains authoritative in ``_ai_health`` even when another call type is degraded. Only
@@ -496,21 +500,22 @@ async def _llm_provider_breakdown_rows(session: AsyncSession, *, now: datetime) 
         )
         counters["attempts"] += 1
         counters[_llm_outcome_category(status, error_reason)] += 1
-    breakdown: list[str] = []
-    for (call_type, provider), counters in sorted(grouped.items()):
-        calls = counters["attempts"]
-        attempt_label = "attempt" if calls == 1 else "attempts"
-        breakdown.append(
-            f"{call_type} / {provider}: {calls} {attempt_label} "
-            f"({counters['success']} success, {counters['rate_limit']} rate-limit, "
-            f"{counters['backoff']} backoff, {counters['circuit']} circuit, "
-            f"{counters['schema']} schema/JSON, {counters['failure']} provider/network)"
-        )
-    omitted = max(len(breakdown) - MAX_LLM_PROVIDER_BREAKDOWN_ROWS, 0)
-    visible = breakdown[:MAX_LLM_PROVIDER_BREAKDOWN_ROWS]
-    if omitted:
-        visible.append(f"{omitted} additional call-type/provider rows omitted")
-    return tuple(visible)
+    return tuple(
+        (call_type, provider, counters)
+        for (call_type, provider), counters in sorted(grouped.items())
+    )
+
+
+def _llm_failure_summary(counters: dict[str, int]) -> str:
+    categories = [
+        (counters["rate_limit"], "rate-limit"),
+        (counters["backoff"], "backoff"),
+        (counters["circuit"], "circuit"),
+        (counters["schema"], "schema/JSON"),
+        (counters["failure"], "provider/network"),
+    ]
+    categories.sort(key=lambda item: -item[0])
+    return ", ".join(f"{count} {label}" for count, label in categories if count)
 
 
 def _llm_outcome_category(status: str | None, error_reason: str | None) -> str:
@@ -558,6 +563,27 @@ async def build_admin_llm_diagnostics_text(
             rows = await _llm_provider_breakdown_rows(session, now=now)
     except Exception:
         return "LLM diagnostics\n\nTelemetry query failed."
+
+    issues = [row for row in rows if row[2]["success"] < row[2]["attempts"]]
+    healthy = [row for row in rows if row[2]["success"] == row[2]["attempts"]]
+    issues.sort(
+        key=lambda row: (
+            row[2]["success"] / max(row[2]["attempts"], 1),
+            row[0],
+            row[1],
+        )
+    )
+    healthy.sort(key=lambda row: (-row[2]["attempts"], row[0], row[1]))
+
+    visible_issues = issues[:MAX_LLM_PROVIDER_BREAKDOWN_ROWS]
+    remaining_slots = MAX_LLM_PROVIDER_BREAKDOWN_ROWS - len(visible_issues)
+    visible_healthy = healthy[:remaining_slots]
+    omitted = len(rows) - len(visible_issues) - len(visible_healthy)
+
+    total_attempts = sum(row[2]["attempts"] for row in rows)
+    total_success = sum(row[2]["success"] for row in rows)
+    total_failed = total_attempts - total_success
+
     active = []
     for backoff in get_active_llm_rate_limit_backoffs(now=now):
         provider = _llm_provider_label(str(backoff.get("provider") or ""))
@@ -571,12 +597,50 @@ async def build_admin_llm_diagnostics_text(
             if isinstance(limited_until, datetime)
             else ""
         )
-        active.append(f"Active limit: {call_types} / {provider}{until}")
-    lines = ["LLM diagnostics — last 24h", ""]
-    lines.extend(rows or ("No provider attempts recorded.",))
+        active.append(f"⚠️ {call_types} / {provider}{until}")
+
+    lines = ["LLM diagnostics — last 24h"]
+    if not rows:
+        lines.extend(("", "No provider attempts recorded."))
+    else:
+        attempt_label = "attempt" if total_attempts == 1 else "attempts"
+        failed_icon = "⚠️" if total_failed else "✅"
+        lines.extend(
+            (
+                "",
+                "Summary",
+                f"Total: {total_attempts} {attempt_label}",
+                f"✅ {total_success} successful",
+                f"{failed_icon} {total_failed} failed / limited",
+            )
+        )
+
+        if visible_issues:
+            lines.extend(("", "Issues"))
+            for call_type, provider, counters in visible_issues:
+                icon = "❌" if counters["success"] == 0 else "⚠️"
+                lines.append(
+                    f"{icon} {call_type} / {provider} — "
+                    f"{counters['success']}/{counters['attempts']} success"
+                )
+                detail = _llm_failure_summary(counters)
+                if detail:
+                    lines.append(f"   {detail}")
+
+        if visible_healthy:
+            lines.extend(("", "Healthy"))
+            for call_type, provider, counters in visible_healthy:
+                lines.append(
+                    f"✅ {call_type} / {provider} — "
+                    f"{counters['success']}/{counters['attempts']}"
+                )
+
+        if omitted:
+            lines.extend(("", f"… {omitted} additional call-type/provider rows omitted"))
+
     if active:
-        lines.extend(("", *active))
-    lines.extend(("", "Final feature outcomes are summarized in System status."))
+        lines.extend(("", "Active limits", *active))
+    lines.extend(("", "Final feature outcomes: System status."))
     return "\n".join(lines)
 
 

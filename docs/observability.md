@@ -176,8 +176,11 @@ Overall: ⚠️ Needs attention
 ```
 
 Provider attempts, rate limits, backoffs, circuit skips, schema failures, and active limits are
-shown separately under Admin -> LLM diagnostics. Mutually exclusive aggregate categories reconcile
-to total attempts and do not degrade System Status after a successful final feature outcome.
+shown separately under Admin -> LLM diagnostics. The screen starts with 24-hour totals, lists
+degraded call-type/provider groups before healthy groups, and shows only non-zero failure categories
+for each degraded group. Fully failed groups use ❌, partially successful groups use ⚠️, and healthy
+groups use ✅. Mutually exclusive aggregate categories reconcile to total attempts and do not
+degrade System Status after a successful final feature outcome.
 
 Current limitations:
 
