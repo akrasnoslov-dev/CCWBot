@@ -154,7 +154,7 @@ async def test_new_user_start_delivers_btc_brief_then_records_value_events(monke
 
 
 @pytest.mark.asyncio
-async def test_unfinished_v1_premium_intent_gets_btc_only_v2_brief_and_customize_keeps_intent(
+async def test_unfinished_v1_premium_intent_gets_btc_only_brief_and_customize_keeps_intent(
     monkeypatch,
 ):
     engine, session = await build_session()
@@ -192,14 +192,14 @@ async def test_unfinished_v1_premium_intent_gets_btc_only_v2_brief_and_customize
         assert await handle_onboarding_callback(
             SimpleNamespace(callback_query=query), "onboarding:customize"
         )
-        assert "Selected: BTC, ETH, GRAM, SOL" in query.edits[-1][0]
+        assert "Premium selected: ETH, GRAM, SOL" in query.edits[-1][0]
     finally:
         await session.close()
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_unfinished_v1_user_with_btc_disabled_still_gets_btc_only_v2_brief(monkeypatch):
+async def test_unfinished_v1_user_with_btc_disabled_still_gets_btc_only_brief(monkeypatch):
     engine, session = await build_session()
     try:
         user = await create_user(session)
@@ -397,14 +397,18 @@ async def test_customize_coins_opens_optional_selector_after_first_brief(monkeyp
             SimpleNamespace(callback_query=query), "onboarding:customize"
         ) is True
 
-        assert "Customize the coins" in query.edits[-1][0]
+        assert "Choose Premium coins to add" in query.edits[-1][0]
         buttons = [
             button.text
             for row in query.edits[-1][1]["reply_markup"].inline_keyboard
             for button in row
         ]
-        assert any("BTC · Free" in button for button in buttons)
+        assert all("BTC" not in button for button in buttons)
+        assert all("🔒" not in button for button in buttons)
         assert any("ETH · Premium" in button for button in buttons)
+        assert any("SOL · Premium" in button for button in buttons)
+        assert any("GRAM · Premium" in button for button in buttons)
+        assert buttons[-1] == "Continue →"
         customize_events = list(
             (
                 await session.scalars(
@@ -415,6 +419,7 @@ async def test_customize_coins_opens_optional_selector_after_first_brief(monkeyp
             ).all()
         )
         assert len(customize_events) == 1
+        assert customize_events[0].event_key == "onboarding:v3"
 
         assert await handle_onboarding_callback(
             SimpleNamespace(callback_query=query), "onboarding:customize"

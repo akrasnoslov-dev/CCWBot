@@ -140,6 +140,21 @@ Optional coin selection follows through the `Add ETH, SOL & GRAM →` action.
 `onboarding_customize_opened` records that activation click once per onboarding version, before
 the selector is rendered. Premium intent, trial, and paywall events retain their existing meanings.
 
+### Onboarding v3 selector experiment
+
+Onboarding v3 leaves the existing BTC free-default state untouched during the optional Premium-selection
+step and shows only ETH, SOL, and GRAM as selectable Premium choices. The selector change is isolated in analytics by
+`event_key = 'onboarding:v3'` for onboarding events.
+
+For this experiment, use:
+
+```text
+primary = unique trial_offered users / unique onboarding_customize_opened users
+```
+
+Do not mix v2 and v3 Customize cohorts when evaluating the selector. The dated baseline and
+keep/revert rule live in `research/growth_strategy_2026-09-01.md`.
+
 The old 25.0% (2 of 8) baseline represented active progression to the brief: a user pressed the
 old flow's confirmation CTA. In v2, `/start` automatically delivers the brief, so
 `onboarding_completed / new_users` now measures successful first-value delivery rather than the

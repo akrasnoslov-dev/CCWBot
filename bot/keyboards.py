@@ -43,6 +43,30 @@ def build_onboarding_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def build_onboarding_customize_keyboard(
+    selected_symbols: tuple[str, ...] | list[str],
+) -> InlineKeyboardMarkup:
+    """Premium-only onboarding selector.
+
+    BTC stays as the free default during onboarding. Users can change BTC later in /watchlist.
+    """
+    selected = set(selected_symbols)
+    buttons = []
+    for symbol in SUPPORTED_SYMBOLS:
+        if symbol == "btc":
+            continue
+        status = "✅" if symbol in selected else "⬜"
+        buttons.append(
+            InlineKeyboardButton(
+                f"{status} {display_symbol(symbol)} · Premium",
+                callback_data=f"onboarding:toggle:{symbol}",
+            )
+        )
+    rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton("Continue →", callback_data="onboarding:confirm")])
+    return InlineKeyboardMarkup(rows)
+
+
 def build_first_run_brief_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("Add ETH, SOL & GRAM →", callback_data="onboarding:customize")]]
