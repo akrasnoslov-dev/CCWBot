@@ -1,72 +1,76 @@
 # Event Alert logic
 
-## Product contract
+This file explains the current Event Alert path in simple steps.
 
-Event Alerts are market-event-first. BTC, ETH, GRAM, and SOL are checked on the configured
-automatic cadence; market data and selected news are supplied to one schema-validated Event
-Analysis per coin. News supports interpretation and standalone news-only alerts are disabled.
+## Short version
 
-No deterministic numeric market threshold may create, reject, suppress, or bypass an Event Alert.
-Prices, snapshots, analysed-window change, 24-hour change, and 30-day same-symbol relative-move
-percentiles are evidence for the LLM, not backend product-decision gates. Percentiles are context
-only; no percentile cutoff decides significance. If sufficient history is unavailable, relative
-context is null. The LLM's `should_alert` decides significance. The backend keeps deterministic
-evidence preparation, schema validation, canonical event identity, the market-event-first
-news-only guard, cooldown, recipient eligibility, and idempotent delivery safeguards.
-
-Event Analysis market change fields are explicitly percentage values: `chg_window_percent`,
-`chg24h_percent`, and `chg_since_msg_percent`. They are not decimal fractions; for example,
-`0.042` means `0.042%`, not `4.2%`. The LLM must not multiply them by 100 or invent a market
-significance threshold when reasoning about the supplied evidence.
-
-## Exact Context Reuse
-
-Before a provider call, CCWBot may reuse a durable result only when the canonical semantic Event
-Analysis input is exactly unchanged. The fingerprint includes normalized coin identity, full-price
-market facts, snapshot sequence, analysed-window fields, previous Event Alert context, selected
-news identity/content, and the versioned static prompt policy. It excludes operation IDs, tracing
-IDs, recipients, database IDs, redundant display metadata, and observation timestamps. Decimal
-representation is normalized (`1.3500` equals `1.35`), but a real value change (`-0.183` to
-`-0.184`) is different. There are no movement buckets, tolerances, or similarity comparisons.
-
-## Flow
-
-```text
-market data -> relative-move evidence -> Exact Context Reuse -> compact significance LLM
--> should_alert=false stop
--> should_alert=true -> alert-render LLM
--> render provider exhaustion -> deterministic presentation fallback
--> factual/news-only validation -> market event
--> strict four-hour Semantic Cooldown -> recipient eligibility -> idempotent delivery
+```mermaid
+flowchart TD
+    A[1. Check BTC / ETH / GRAM / SOL] --> B[2. Collect market facts + useful news]
+    B --> C{3. Exact same context already seen?}
+    C -- Yes --> D[Reuse old result. No new LLM call.]
+    C -- No --> E[4. Significance LLM: alert or no alert?]
+    E -- No --> F[Stop Event Alert]
+    E -- Yes --> G[5. Render alert text]
+    G --> H[6. Validate facts and reject news-only alerts]
+    H --> I[7. Create one market event + one analysis]
+    I --> J[8. Find eligible users]
+    J --> K{9. Same event/family sent in last 4h?}
+    K -- Yes --> L[Suppress duplicate]
+    K -- No --> M[10. Reserve delivery and send]
 ```
 
-The significance call runs every analysis cycle and returns only the decision, confidence, and a
-constrained reason code. The render call runs only after `should_alert=true`; it supplies optional
-presentation copy, supporting-news ids, and urgency and must not re-decide significance. Event
-identity and market-fact title are backend-owned so model phrasing cannot invalidate
-those factual/identity fields. If the render provider chain is
-exhausted by invalid JSON/schema output, provider rate limiting/backoff, or provider-chain failure,
-the backend builds presentation-only text deterministically from the already supplied market
-evidence. That fallback uses no related-news attachment, uses neutral urgency, and still passes the
-same full factual/news-only validation before a market event can exist. It does not change
-significance, cooldown, recipient eligibility, or delivery policy. One coin market event has one
-durable Event Analysis and can have many deliveries. Provider calls never run in a recipient loop.
-Detection and market-event creation are global; BTC is free and non-BTC delivery requires the
-existing Premium/watchlist entitlement.
+## Steps
 
-## Cooldown and precision
+**Step 1 - Run the check.**  
+Each supported coin - BTC, ETH, GRAM, SOL - has its own staggered automatic job. The configured
+default cadence is 30 minutes.
 
-The Semantic Cooldown is strict: the same canonical event key or semantic family for a recipient
-is suppressed for four hours. There is no urgency, larger-movement, direction, structural, or
-new-news bypass. A different semantic event is not suppressed by that rule.
+**Step 2 - Build the evidence.**  
+CCWBot takes full-precision price data, recent snapshots, the analysed-window move, 24h move,
+movement since the previous Event Alert, 30-day relative-move context, and up to a few relevant news
+items. News is supporting context, not the trigger by itself.
 
-CoinGecko automatic-price requests use `precision=full`. Decimal values are retained in the cache
-and in `Numeric(38,18)` price state, snapshots, and market events. User-facing rendering rounds
-only for readability after calculations and Event Analysis input are complete.
+**Step 3 - Avoid doing the same thinking twice.**  
+If the meaningful Event Analysis input is exactly unchanged, CCWBot can reuse the previous durable
+result instead of calling the LLM again. This is exact matching - no rounding buckets or
+"close enough" tolerance.
 
-## Operations
+**Step 4 - Decide whether the move matters.**  
+A small schema-validated significance LLM call returns `should_alert`, confidence, and a reason
+code. Backend code does not use a fixed price-change or percentile threshold to decide significance.
 
-`ops_event=event_alert_analysis_candidate` is evidence that a symbol reached analysis; it does
-not decide significance. Durable outcomes distinguish LLM no-alert, news-only rejection, exact
-context reuse, semantic cooldown, recipient filtering, and delivery. Historical threshold and
-similar-context rows remain readable as historical data only.
+**Step 5 - Write the alert only after "yes".**  
+If `should_alert=false`, the Event Alert stops. If `true`, a second LLM call writes the
+presentation text. If that render call fails in expected provider/schema ways, CCWBot builds safe
+presentation text deterministically from the same market facts.
+
+**Step 6 - Check the text against facts.**  
+The backend validates market claims, time-window claims, news IDs, and schema fields. A news-only
+decision is rejected. Standalone news-driven alerts are disabled by default.
+
+**Step 7 - Make one shared event.**  
+One coin market event gets one durable Event Analysis. The analysis is created once and can be sent
+to many users. LLM calls never run inside the recipient loop.
+
+**Step 8 - Find who may receive it.**  
+Detection happens even if nobody can receive the alert. BTC delivery is free. ETH, GRAM, and SOL
+require an enabled watchlist choice plus active Premium access.
+
+**Step 9 - Block repeats for four hours.**  
+For each recipient, the same canonical event key or the same semantic family is suppressed for a
+strict 4 hours. Urgency, a larger move, new news, or direction does not bypass this rule. A genuinely
+different event is allowed.
+
+**Step 10 - Send only once.**  
+CCWBot reserves each user/event delivery before Telegram send. An already delivered event is not sent
+again. Transient Telegram failures are retried; permanent blocked-user failures can disable future
+delivery to that user.
+
+## Important rules
+
+- Market numbers are evidence for the LLM, not backend alert thresholds.
+- Detection is global; user eligibility is checked only for delivery.
+- Exact Context Reuse and the 4-hour Semantic Cooldown are different protections.
+- "No Event Alert" does not stop normal Market Heartbeat delivery when that heartbeat is due.
+- User-facing formatting may round numbers; Event Analysis keeps source precision.
