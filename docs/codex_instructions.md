@@ -98,8 +98,7 @@ Before calling a non-trivial PR ready:
 - document schema/data/rollback risks when relevant;
 - state skipped checks and remaining risk explicitly.
 
-External GitHub `@codex review` is optional, not a recursive gate. Do not automatically trigger it
-after every fix.
+External GitHub `@codex review` is optional, not a recursive gate; do not automatically trigger it after every fix.
 
 A PR description should include:
 - summary;
@@ -117,6 +116,7 @@ A PR description should include:
 - Do not add global Codex hooks or custom Git merge drivers unless the repository provisions and
   tests them.
 - Production forensic SQL uses only the read-only `ccwbot_investigator` path.
+- Scheduled Dependabot version-update PRs are disabled. Dependency upgrades are explicit maintenance tasks so incompatible grouped upgrades are reviewed and tested intentionally.
 
 Feature-specific rules live in their canonical docs:
 - `docs/alert_logic.md`
