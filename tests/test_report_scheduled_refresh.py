@@ -116,9 +116,7 @@ async def test_failed_scheduled_refresh_backs_off_before_next_poll(monkeypatch):
     assert second is None
     generate.assert_awaited_once_with("weekly")
     remaining = reports._report_provider_backoff_until["weekly"] - time.monotonic()
-    assert remaining > reports.REPORT_CACHE_CHECK_INTERVAL_SECONDS if hasattr(
-        reports, "REPORT_CACHE_CHECK_INTERVAL_SECONDS"
-    ) else remaining > 15 * 60
+    assert remaining > 15 * 60
 
 
 @pytest.mark.asyncio
