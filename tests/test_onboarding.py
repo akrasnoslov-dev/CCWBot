@@ -446,8 +446,7 @@ async def test_customize_reenables_legacy_disabled_btc_and_stale_btc_toggle_cann
     engine, session = await build_session()
     try:
         user = await create_user(session)
-        await set_user_coin_subscription(session, user_id=user.id, symbol="btc", is_enabled=False)
-        await session.commit()
+        await set_legacy_subscriptions(session, user, enabled_symbols=set())
 
         monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
         monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
