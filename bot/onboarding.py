@@ -55,7 +55,7 @@ def build_onboarding_message(user: User, subscriptions) -> tuple[str, InlineKeyb
     selected = ", ".join(display_symbol(symbol) for symbol in premium_symbols) or "None yet"
     text = (
         "Choose Premium coins to add.\n\n"
-        "BTC monitoring stays active and free during onboarding. Select ETH, SOL, or GRAM, "
+        "BTC is the free coin and does not need a choice on this screen. Select ETH, SOL, or GRAM, "
         "then continue. You can change BTC later in /watchlist.\n\n"
         f"Premium selected: {selected}"
     )
