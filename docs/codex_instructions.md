@@ -124,8 +124,8 @@ For every non-trivial repository change:
 4. PR body must include `Self-review / risk check` with risky assumptions, edge cases, intentionally
    untouched areas, migration/rollback notes when relevant, and known follow-ups.
 5. Check existing automated PR review threads. Address valid P0/P1/P2 findings.
-6. External GitHub `@codex review` is optional, not a recursive gate; do not automatically trigger
-   it after every fix.
+6. External GitHub `@codex review` is optional, not a recursive gate.
+   The rule is: do not automatically trigger it after every fix.
 7. Run required verification from `docs/development.md`.
 8. Do not claim merge readiness with failed checks, unresolved blocking findings, or untested
    migrations unless the limitation is explicitly documented.
