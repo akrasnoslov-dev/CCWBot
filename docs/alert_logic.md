@@ -1,72 +1,95 @@
 # Event Alert logic
 
-## Product contract
+Current flow, in simple form.
 
-Event Alerts are market-event-first. BTC, ETH, GRAM, and SOL are checked on the configured
-automatic cadence; market data and selected news are supplied to one schema-validated Event
-Analysis per coin. News supports interpretation and standalone news-only alerts are disabled.
-
-No deterministic numeric market threshold may create, reject, suppress, or bypass an Event Alert.
-Prices, snapshots, analysed-window change, 24-hour change, and 30-day same-symbol relative-move
-percentiles are evidence for the LLM, not backend product-decision gates. Percentiles are context
-only; no percentile cutoff decides significance. If sufficient history is unavailable, relative
-context is null. The LLM's `should_alert` decides significance. The backend keeps deterministic
-evidence preparation, schema validation, canonical event identity, the market-event-first
-news-only guard, cooldown, recipient eligibility, and idempotent delivery safeguards.
-
-Event Analysis market change fields are explicitly percentage values: `chg_window_percent`,
-`chg24h_percent`, and `chg_since_msg_percent`. They are not decimal fractions; for example,
-`0.042` means `0.042%`, not `4.2%`. The LLM must not multiply them by 100 or invent a market
-significance threshold when reasoning about the supplied evidence.
-
-## Exact Context Reuse
-
-Before a provider call, CCWBot may reuse a durable result only when the canonical semantic Event
-Analysis input is exactly unchanged. The fingerprint includes normalized coin identity, full-price
-market facts, snapshot sequence, analysed-window fields, previous Event Alert context, selected
-news identity/content, and the versioned static prompt policy. It excludes operation IDs, tracing
-IDs, recipients, database IDs, redundant display metadata, and observation timestamps. Decimal
-representation is normalized (`1.3500` equals `1.35`), but a real value change (`-0.183` to
-`-0.184`) is different. There are no movement buckets, tolerances, or similarity comparisons.
-
-## Flow
-
-```text
-market data -> relative-move evidence -> Exact Context Reuse -> compact significance LLM
--> should_alert=false stop
--> should_alert=true -> alert-render LLM
--> render provider exhaustion -> deterministic presentation fallback
--> factual/news-only validation -> market event
--> strict four-hour Semantic Cooldown -> recipient eligibility -> idempotent delivery
+```mermaid
+flowchart TD
+    A[1. Read market data] --> B[2. Build analysis context]
+    B --> C{3. Exact positive analysis already exists?}
+    C -- Yes --> H[7. Reuse event + ready message]
+    C -- No --> D{Exact recent no-send result already exists?}
+    D -- Yes --> X[Stop Event Alert]
+    D -- No --> E[4. LLM decides significance]
+    E -- No --> X
+    E -- Yes --> F[5. Build alert text]
+    F --> G[6. Validate facts + reject news-only]
+    G --> H2[7. Create or reuse one market event]
+    H --> I[8. Find eligible users]
+    H2 --> I
+    I --> J[9. Apply 4h same-event cooldown]
+    J --> K[10. Send once]
 ```
 
-The significance call runs every analysis cycle and returns only the decision, confidence, and a
-constrained reason code. The render call runs only after `should_alert=true`; it supplies optional
-presentation copy, supporting-news ids, and urgency and must not re-decide significance. Event
-identity and market-fact title are backend-owned so model phrasing cannot invalidate
-those factual/identity fields. If the render provider chain is
-exhausted by invalid JSON/schema output, provider rate limiting/backoff, or provider-chain failure,
-the backend builds presentation-only text deterministically from the already supplied market
-evidence. That fallback uses no related-news attachment, uses neutral urgency, and still passes the
-same full factual/news-only validation before a market event can exist. It does not change
-significance, cooldown, recipient eligibility, or delivery policy. One coin market event has one
-durable Event Analysis and can have many deliveries. Provider calls never run in a recipient loop.
-Detection and market-event creation are global; BTC is free and non-BTC delivery requires the
-existing Premium/watchlist entitlement.
+## Step 1 - Read the market
+BTC, ETH, GRAM, and SOL are checked on the automatic schedule. Detection runs even when nobody is
+currently eligible to receive that coin.
 
-## Cooldown and precision
+## Step 2 - Build the evidence
+The bot prepares current price, recent snapshots, analysed-window move, 24h move, movement since the
+last message, 30-day relative-move context, previous Event Alert context, and relevant news.
 
-The Semantic Cooldown is strict: the same canonical event key or semantic family for a recipient
-is suppressed for four hours. There is no urgency, larger-movement, direction, structural, or
-new-news bypass. A different semantic event is not suppressed by that rule.
+Numbers are evidence only. No backend numeric threshold decides whether an Event Alert is important.
 
-CoinGecko automatic-price requests use `precision=full`. Decimal values are retained in the cache
-and in `Numeric(38,18)` price state, snapshots, and market events. User-facing rendering rounds
-only for readability after calculations and Event Analysis input are complete.
+## Step 3 - Reuse only exact previous work
+Before new LLM calls, the bot checks whether this exact canonical context was already handled.
 
-## Operations
+Two cases:
+- an existing positive Event Analysis already has its event and rendered message -> reuse it and go
+  straight to recipient checks;
+- an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
 
-`ops_event=event_alert_analysis_candidate` is evidence that a symbol reached analysis; it does
-not decide significance. Durable outcomes distinguish LLM no-alert, news-only rejection, exact
-context reuse, semantic cooldown, recipient filtering, and delivery. Historical threshold and
-similar-context rows remain readable as historical data only.
+No rounding buckets or movement tolerances are used.
+
+## Step 4 - Decide significance
+If nothing can be reused, the significance LLM returns schema-validated `should_alert`, confidence,
+and reason.
+
+- `false` -> stop;
+- news-only -> stop;
+- `true` -> continue.
+
+## Step 5 - Build the message
+Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
+change the significance decision.
+
+If supported render failures exhaust the provider chain, the backend may build neutral deterministic
+presentation text from the already validated market evidence.
+
+## Step 6 - Validate the message
+The backend validates schema and factual market claims. News may support the explanation, but a
+standalone news-only Event Alert is rejected.
+
+## Step 7 - Keep one event and one analysis
+A newly detected event is created once. A reusable positive event keeps its already existing Event
+Analysis and message.
+
+Core rule:
+
+```text
+1 coin market event = 1 AI analysis = many deliveries
+```
+
+LLM calls never run inside the recipient loop.
+
+## Step 8 - Find eligible users
+Only now the bot checks delivery eligibility:
+- coin enabled in watchlist;
+- BTC is free;
+- ETH, GRAM, and SOL require active Premium or trial;
+- valid Telegram destination;
+- duplicate chat IDs filtered.
+
+Market Heartbeat frequency does not decide Event Alert eligibility.
+
+## Step 9 - Block repeats for 4 hours
+For each recipient, the same canonical event key or the same semantic family is blocked for four
+hours.
+
+No bypass exists for a bigger move, urgency, new news, or a direction change inside the same
+semantic event. A genuinely different semantic event can pass.
+
+## Step 10 - Send once
+Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression
+outcomes and avoids sending the same event twice to the same recipient.
+
+CoinGecko values keep full precision through analysis. Rounding is only for user-facing text.

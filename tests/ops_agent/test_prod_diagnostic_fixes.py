@@ -31,6 +31,23 @@ def test_similarity_detector_ignores_analysis_only_no_alert_group():
     assert results["llm_repeated_alert_true_for_similar_situations"].status == "clear"
 
 
+def test_similarity_detector_ignores_single_event_recipient_fanout():
+    evidence = {
+        "evidence/db/alert_similarity_groups.json": {
+            "groups": [{
+                "symbols": ["BTC"],
+                "market_events": 1,
+                "sent_deliveries": 4,
+                "should_alert_true": 1,
+                "analyses": 2,
+            }]
+        }
+    }
+    results = {item.id: item for item in run_detectors(evidence, _period())}
+    assert results["similar_alert_groups"].status == "clear"
+    assert results["llm_repeated_alert_true_for_similar_situations"].status == "clear"
+
+
 def test_alert_evidence_projects_no_alert_market_context():
     assert "analysed_window_change_percent" in ALERT_EVIDENCE_SQL
     assert "relative_window_percentile_30d" in ALERT_EVIDENCE_SQL
