@@ -179,7 +179,10 @@ def test_agentic_development_workflow_contract():
 
     normalized_source_of_truth = " ".join(source_of_truth.split())
     assert "Do not create a `docs/task_specs/` record for every task" in source_of_truth
-    assert (\n        "Git history, the PR body, tests, and the canonical documents"\n        in normalized_source_of_truth\n    )
+    assert (
+        "Git history, the PR body, tests, and the canonical documents"
+        in normalized_source_of_truth
+    )
 
 
 def test_graphify_tooling_is_opt_in_and_has_no_global_git_or_codex_side_effects():
