@@ -48,6 +48,14 @@ and reason.
 - news-only -> stop;
 - `true` -> continue.
 
+The significance reason must agree with the decision. Alert reasons
+(`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
+`market_news_alignment`) are valid only with `should_alert=true`. Routine/unclear
+no-alert reasons are valid only with `should_alert=false`; `news_only` is a no-alert
+reason and remains backend-rejected even if a provider incorrectly pairs it with
+`should_alert=true`. Other contradictory pairs are schema-invalid and do not proceed to render
+or delivery.
+
 ## Step 5 - Build the message
 Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
 change the significance decision.

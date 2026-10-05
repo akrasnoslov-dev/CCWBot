@@ -29,6 +29,14 @@ EVENT_SIGNIFICANCE_REASON_CODES = {
     "news_only",
     "unclear",
 }
+EVENT_SIGNIFICANCE_ALERT_REASON_CODES = {
+    "unusual_move",
+    "fast_move",
+    "reversal",
+    "trend_acceleration",
+    "market_news_alignment",
+}
+EVENT_SIGNIFICANCE_NO_ALERT_ONLY_REASON_CODES = {"routine_move", "unclear"}
 RELATIVE_MOVE_MIN_SAMPLES = 100
 EVENT_RESULT_FIELDS = {
     "symbol",
@@ -690,6 +698,16 @@ def validate_event_significance_output(
     reason_code = str(result["reason_code"] or "").strip().lower()
     if reason_code not in EVENT_SIGNIFICANCE_REASON_CODES:
         raise EventAnalysisValidationError("invalid reason_code")
+    if (
+        not should_alert
+        and reason_code in EVENT_SIGNIFICANCE_ALERT_REASON_CODES
+    ) or (
+        should_alert
+        and reason_code in EVENT_SIGNIFICANCE_NO_ALERT_ONLY_REASON_CODES
+    ):
+        raise EventAnalysisValidationError(
+            "inconsistent significance decision: should_alert and reason_code disagree"
+        )
 
     return EventSignificanceDecision(
         symbol=normalized_symbol.upper(),
