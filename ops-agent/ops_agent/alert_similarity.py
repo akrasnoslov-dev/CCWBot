@@ -362,9 +362,17 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "detected_at": _iso(row.get("detected_at")),
         "price_change_percent": _float(row.get("price_change_percent")),
         "analysed_window_change_percent": _float(
-            numeric_context.get("analysed_window_change_percent")
+            row.get("analysed_window_change_percent")
+            if row.get("analysed_window_change_percent") is not None
+            else numeric_context.get("analysed_window_change_percent")
         ),
         "last_24h_change": _float(row.get("last_24h_change")),
+        "relative_window_percentile_30d": _float(
+            row.get("relative_window_percentile_30d")
+        ),
+        "relative_24h_percentile_30d": _float(
+            row.get("relative_24h_percentile_30d")
+        ),
         "last_7d_change": _float(row.get("last_7d_change")),
         "stable_related_news_ids": [
             str(item)
@@ -588,7 +596,16 @@ def _decision_timeline(
                 "delivery_count": row.get("delivery_count"),
                 "sent_delivery_count": row.get("sent_delivery_count"),
                 "price_change_percent": row.get("price_change_percent"),
+                "analysed_window_change_percent": row.get(
+                    "analysed_window_change_percent"
+                ),
                 "last_24h_change": row.get("last_24h_change"),
+                "relative_window_percentile_30d": row.get(
+                    "relative_window_percentile_30d"
+                ),
+                "relative_24h_percentile_30d": row.get(
+                    "relative_24h_percentile_30d"
+                ),
                 "last_7d_change": row.get("last_7d_change"),
                 "related_news_count": row.get("related_news_count"),
                 "urgency": row.get("urgency"),

@@ -223,6 +223,7 @@ AUTOMATIC_BTC_CHECK_JOB_NAME = AUTOMATIC_MARKET_CHECK_JOB_NAME
 MARKET_HEARTBEAT_JOB_NAME = "market_heartbeat_generation"
 DAILY_REPORT_CACHE_JOB_NAME = "daily_report_cache"
 WEEKLY_REPORT_CACHE_JOB_NAME = "weekly_report_cache"
+REPORT_CACHE_CHECK_INTERVAL_SECONDS = 15 * 60
 SEEN_NEWS_CLEANUP_JOB_NAME = "seen_news_cleanup"
 TELEGRAM_DELIVERY_MAX_ATTEMPTS = 3
 TELEGRAM_DELIVERY_RETRY_BACKOFF_SECONDS = (30, 120)
@@ -5326,21 +5327,22 @@ def schedule_report_cache_generation(app: Application) -> None:
 
     app.job_queue.run_repeating(
         generate_daily_report_cache_job,
-        interval=4 * 3600,
+        interval=REPORT_CACHE_CHECK_INTERVAL_SECONDS,
         first=60,
         name=DAILY_REPORT_CACHE_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 120},
     )
     app.job_queue.run_repeating(
         generate_weekly_report_cache_job,
-        interval=24 * 3600,
+        interval=REPORT_CACHE_CHECK_INTERVAL_SECONDS,
         first=120,
         name=WEEKLY_REPORT_CACHE_JOB_NAME,
         job_kwargs={"max_instances": 1, "coalesce": True, "misfire_grace_time": 300},
     )
     log(
         "ops_event=market_report_cache_scheduled "
-        "daily_interval_seconds=14400 weekly_interval_seconds=86400"
+        f"check_interval_seconds={REPORT_CACHE_CHECK_INTERVAL_SECONDS} "
+        "daily_expiry_seconds=14400 weekly_expiry_seconds=86400"
     )
 
 
