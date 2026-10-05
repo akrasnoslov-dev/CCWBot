@@ -107,7 +107,7 @@ schedule.
 
 ## Read-Only Forensic Database Access
 
-Interactive production investigations by Codex or an operator should use the dedicated
+Interactive production investigations by ChatGPT, fallback Codex, or an operator should use the dedicated
 `ccwbot_investigator` PostgreSQL role through the existing SSH tunnel to
 `127.0.0.1:5433`. Do not use the application owner role or a PostgreSQL superuser for normal
 forensics.
