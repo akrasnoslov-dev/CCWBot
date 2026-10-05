@@ -397,14 +397,18 @@ async def test_customize_coins_opens_optional_selector_after_first_brief(monkeyp
             SimpleNamespace(callback_query=query), "onboarding:customize"
         ) is True
 
-        assert "Customize the coins" in query.edits[-1][0]
+        assert "Choose Premium coins to add" in query.edits[-1][0]
         buttons = [
             button.text
             for row in query.edits[-1][1]["reply_markup"].inline_keyboard
             for button in row
         ]
-        assert any("BTC · Free" in button for button in buttons)
+        assert all("BTC" not in button for button in buttons)
+        assert all("🔒" not in button for button in buttons)
         assert any("ETH · Premium" in button for button in buttons)
+        assert any("SOL · Premium" in button for button in buttons)
+        assert any("GRAM · Premium" in button for button in buttons)
+        assert buttons[-1] == "Continue →"
         customize_events = list(
             (
                 await session.scalars(
