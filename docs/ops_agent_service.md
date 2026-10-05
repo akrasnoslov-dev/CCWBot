@@ -1,7 +1,9 @@
 # Ops-Agent Service
 
 `ops-agent` is an on-demand diagnostic bundle collector for CCWBot production operations.
-It helps Codex produce an English Markdown operational report from sanitized evidence.
+It gives the ChatGPT orchestrator sanitized evidence for an English Markdown operational report.
+Codex is a fallback analyzer only when ChatGPT cannot perform or reliably verify the required local
+bundle work with its available tools.
 
 ## Boundaries
 
@@ -71,8 +73,11 @@ Then inspect referenced `evidence/**` files only as needed to verify or expand f
 
 1. Run the safe collect wrapper; use `--since-container-start` when the requested period starts at the current `ccwbot` container start.
 2. Read the printed JSON and open only the published bundle path. If stdout or exit status was lost, recover the latest sanitized receipt with `--status latest`.
-3. Use `docs/ops-agent-report-codex-prompt.md` and `decision_report_context.md`.
-4. Write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
+3. ChatGPT analyzes the published evidence directly when its available tools are sufficient. If
+   local bundle access or verification requires Codex, use `docs/ops-agent-report-codex-prompt.md`
+   as the narrow fallback task plus `decision_report_context.md`.
+4. Write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`; ChatGPT remains
+   the final decision and acceptance owner.
 5. Mark success only after the report exists and the bundle is complete, unless the operator
    explicitly accepts a partial report.
 
