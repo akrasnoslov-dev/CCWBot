@@ -373,19 +373,21 @@ def _event_analysis_percent(value: object) -> object:
 
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
-        "JSON English. Is this market move noteworthy enough to interrupt the user?",
-        "Market decides;news supports,never alerts alone. A noteworthy market move alone can "
-        "alert;absence of news does not make it routine. Judge size/speed,asset unusualness,"
-        "short-vs-24h alignment/reversal. Use pw/p24 as evidence,not gates. "
-        "Do not default to no alert on unusual market evidence;unusual/fast moves favor alert,"
-        "routine moves no alert.",
-        "pw,p24=percentile of absolute move vs same asset's recent 30d history; context, not "
-        "thresholds. Do not apply a fixed cutoff. null=unknown.",
+        "JSON English.Is market move noteworthy enough to interrupt user?",
+        "Market decides;news alone cannot alert. Judge size/speed,asset unusualness,"
+        "short-vs-24h alignment/reversal. Market move alone can alert;"
+        "absence of news is not routine;"
+        "do not default to no alert;routine=>false.",
+        "pw,p24=30d same-asset abs-move percentile: context, not threshold;"
+        "do not apply a fixed cutoff;null=unknown.",
         "Input:sym;m={w,cw,c24,pw,p24};cw=% over w;c24=24h%;"
         "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
         "Output exactly symbol,should_alert,confidence,reason_code;confidence=low|medium|high;"
         "reason_code=unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment|"
         "routine_move|news_only|unclear.",
+        "Match reason: should_alert=true=>unusual_move|fast_move|reversal|trend_acceleration|"
+        "market_news_alignment;should_alert=false=>routine_move|news_only|unclear;"
+        "sole-news=>false+news_only.",
     )
 )
 

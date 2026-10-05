@@ -325,7 +325,7 @@ Compose binds the bot health endpoint to `127.0.0.1:${HEALTH_PORT:-8080}` only. 
 from the VPS itself for local checks and container health checks, but it should not be reachable
 directly from the public internet.
 
-PostgreSQL is intentionally not publicly exposed. Compose binds it to `127.0.0.1:5433` on the
+PostgreSQL is intentionally not publicly exposed. Compose binds it to `127.0.0.1:15433` on the
 VPS and keeps in-container traffic on Docker service networking. The bot container must connect
 to PostgreSQL with the `postgres:5432` service address, not `localhost` or host networking.
 
@@ -336,13 +336,13 @@ the application role. Expected read-only DBeaver/SQL-client setup:
 - SSH tunnel host: the VPS hostname or IP
 - SSH tunnel user/key: your VPS SSH credentials
 - Database host: `localhost`
-- Database port: `5433`
+- Database port: `15433`
 - Database name: `ccwbot`
 - Database user: `ccwbot_investigator`
 - Password: the separately provisioned investigator password; never commit or document its value
 
 After production updates, `docker ps` should show loopback bindings such as
-`127.0.0.1:8080->8080/tcp` and `127.0.0.1:5433->5432/tcp`, not `0.0.0.0` bindings.
+`127.0.0.1:8080->8080/tcp` and `127.0.0.1:15433->5432/tcp`, not `0.0.0.0` bindings.
 
 ## Warning/Error File Logs
 
