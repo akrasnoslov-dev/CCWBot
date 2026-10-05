@@ -374,9 +374,11 @@ def _event_analysis_percent(value: object) -> object:
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
         "JSON English. Is this market move noteworthy enough to interrupt the user?",
-        "Market decides;news supports but never alerts alone. Judge size/speed, unusualness for "
-        "this asset, and short-vs-24h alignment/reversal. Unusually large/fast relative moves "
-        "favor alert; routine moves favor no alert.",
+        "Market decides;news supports,never alerts alone. A noteworthy market move alone can "
+        "alert;absence of news does not make it routine. Judge size/speed,asset unusualness,"
+        "short-vs-24h alignment/reversal. Use pw/p24 as evidence,not gates. "
+        "Do not default to no alert on unusual market evidence;unusual/fast moves favor alert,"
+        "routine moves no alert.",
         "pw,p24=percentile of absolute move vs same asset's recent 30d history; context, not "
         "thresholds. Do not apply a fixed cutoff. null=unknown.",
         "Input:sym;m={w,cw,c24,pw,p24};cw=% over w;c24=24h%;"

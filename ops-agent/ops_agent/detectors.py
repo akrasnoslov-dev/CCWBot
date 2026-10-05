@@ -359,7 +359,16 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     repeated_content_groups = _list_payload_items(
         content_fingerprint_payload, "repeated_groups"
     )
-    similar_alert_groups = _list_payload_items(similarity_payload, "groups")
+    raw_similarity_groups = _list_payload_items(similarity_payload, "groups")
+    # Similarity among analysis-only no-alert decisions is useful forensic context, but it is
+    # not user-facing alert repetition. Only groups that produced repeated market events or
+    # deliveries are actionable for the generic similar-alert detector.
+    similar_alert_groups = [
+        row
+        for row in raw_similarity_groups
+        if _int(row.get("market_events")) >= 2
+        or _int(row.get("sent_deliveries")) >= 2
+    ]
     weak_identity_rows = [
         row
         for row in _list_payload_items(identity_payload, "rows")

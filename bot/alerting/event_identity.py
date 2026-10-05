@@ -317,7 +317,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
     )
     context = {
-        "schema_version": 9,
+        "schema_version": 10,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
