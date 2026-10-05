@@ -266,6 +266,13 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
     parts = data.split(":")
     if len(parts) == 2 and parts[1] == "customize":
         async with DB_SESSION_LOCAL() as session:
+            # Onboarding v3 hides BTC because it is the free default. Enforce that invariant
+            # before rendering the Premium-only selector, including unfinished legacy users.
+            if "btc" not in _selected_symbols(subscriptions):
+                await set_user_coin_subscription(
+                    session, user_id=user.id, symbol="btc", is_enabled=True
+                )
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             await record_product_event(
                 session,
                 user_id=user.id,
@@ -280,6 +287,9 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
 
     if len(parts) == 3 and parts[1] == "toggle" and parts[2] in SUPPORTED_SYMBOLS:
         symbol = parts[2]
+        if symbol == "btc":
+            await query.answer("BTC stays active during onboarding. Change it later in /watchlist.")
+            return True
         current = symbol in _selected_symbols(subscriptions)
         async with DB_SESSION_LOCAL() as session:
             user = await get_user_by_telegram_user_id(
