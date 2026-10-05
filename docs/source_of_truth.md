@@ -24,7 +24,7 @@ PR comments, copied files, and generated task prompts are context only.
 `AGENTS.md` and `CLAUDE.md` are bootstrap files. They point to canonical docs and must not become
 independent policy copies.
 
-## No standing rules outside canonical docs
+## No standing rules outside the repository
 
 Do not store durable CCWBot rules in:
 - task prompts;
