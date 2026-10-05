@@ -37,6 +37,12 @@ Permanent guardrails:
 
 Current product behavior:
 
+- New private-chat users receive an immediate deterministic cached BTC brief on `/start`. The
+  first-run CTA offers ETH, SOL, and GRAM customization after first value has been delivered.
+- Selecting Premium-coin intent is persisted. Eligible users can start one free 7-day Premium trial;
+  trial/paywall/checkout/payment/Premium-value events are recorded for funnel analysis.
+- First-touch acquisition attribution is supported through opaque `a1_<code>` Telegram deep links;
+  direct Telegram Ads that strip the start parameter must be measured as time-bounded cohorts.
 - Manual `/price` supports the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
   GRAM is the primary backend/product symbol; legacy `/price ton` still works as an alias.
 - BTC automatic alerts remain free.
