@@ -142,8 +142,8 @@ the selector is rendered. Premium intent, trial, and paywall events retain their
 
 ### Onboarding v3 selector experiment
 
-Onboarding v3 keeps BTC active during the optional Premium-selection step and shows only ETH, SOL,
-and GRAM as selectable Premium choices. The selector change is isolated in analytics by
+Onboarding v3 leaves the existing BTC free-default state untouched during the optional Premium-selection
+step and shows only ETH, SOL, and GRAM as selectable Premium choices. The selector change is isolated in analytics by
 `event_key = 'onboarding:v3'` for onboarding events.
 
 For this experiment, use:
