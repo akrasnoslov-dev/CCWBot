@@ -428,7 +428,8 @@ async def test_system_status_rate_limit_active_backoff(monkeypatch):
             now=now,
         )
 
-        assert "Active limit: Event Analysis / groq until 2026-06-15 17:00 UTC" in text
+        assert "Active limits" in text
+        assert "⚠️ Event Analysis / groq until 2026-06-15 17:00 UTC" in text
     finally:
         reset_llm_rate_limit_backoffs()
         await engine.dispose()
@@ -459,7 +460,8 @@ async def test_system_status_attributes_shared_model_backoff_to_triggering_call_
             now=now,
         )
 
-        assert "Active limit: Daily report / mistral until 2026-06-15 17:00 UTC" in text
+        assert "Active limits" in text
+        assert "⚠️ Daily report / mistral until 2026-06-15 17:00 UTC" in text
         assert "Market Heartbeat" not in text
     finally:
         await engine.dispose()
@@ -490,7 +492,7 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert "Event Analysis / groq: 1 attempt" in text
+        assert "❌ Event Analysis / groq — 0/1 success" in text
         assert "1 rate-limit" in text
     finally:
         await engine.dispose()
@@ -933,16 +935,23 @@ async def test_system_status_shows_per_call_type_provider_llm_breakdown():
             now=now,
         )
 
-        assert (
-            "Event Analysis / groq: 7 attempts (2 success, 1 rate-limit, 1 backoff, "
-            "1 circuit, 1 schema/JSON, 1 provider/network)"
-        ) in text
-        assert (
-            "Market Heartbeat / cerebras: 1 attempt (1 success, 0 rate-limit, "
-            "0 backoff, 0 circuit, 0 schema/JSON, 0 provider/network)"
-        ) in text
+        assert "Summary" in text
+        assert "Total: 8 attempts" in text
+        assert "✅ 3 successful" in text
+        assert "⚠️ 5 failed / limited" in text
+        assert "Issues" in text
+        assert "⚠️ Event Analysis / groq — 2/7 success" in text
+        assert "1 rate-limit, 1 backoff, 1 circuit, 1 schema/JSON, 1 provider/network" in text
+        assert "Healthy" in text
+        assert text.index("Issues") < text.index("Healthy")
+        assert "✅ Market Heartbeat / cerebras — 1/1" in text
+        assert "0 rate-limit" not in text
+        assert "0 backoff" not in text
+        assert "0 circuit" not in text
+        assert "0 schema/JSON" not in text
+        assert "0 provider/network" not in text
         # Provider with only stale (>24h) usage is not surfaced.
-        assert "/ mistral:" not in text
+        assert "/ mistral" not in text
     finally:
         await engine.dispose()
 
