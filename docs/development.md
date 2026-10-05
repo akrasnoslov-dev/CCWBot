@@ -81,6 +81,9 @@ behavior, use `project_context.md`, `alert_logic.md`, `market_reports.md`, and
 - Migration `0023_alert_outcome_decisions` adds nullable operator-facing decision observability
   fields to `alert_delivery_outcomes`: `decision_stage`, `decision_reason`, `previous_alert_id`,
   and `context_fingerprint`.
+- Current Alembic head on `dev` is `0031_onboarding_customize_event`.
+- Routine task specifications are not stored under `docs/task_specs/`. Keep temporary plans in the
+  active task/PR and durable rules in their canonical docs.
 
 ## Ops-Agent Development
 
