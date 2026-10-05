@@ -209,7 +209,11 @@ async def refresh_report_cache_scheduled(report_type: str) -> MarketReport | dic
             )
             return None
         result = await generate_report_cache(report_type)
-        status = result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
+        status = (
+            result.get("status")
+            if isinstance(result, dict)
+            else getattr(result, "status", None)
+        )
         if status != "completed":
             _start_report_provider_backoff(
                 report_type,
