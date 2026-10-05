@@ -1,10 +1,9 @@
 # Project Context
 
-CCWBot is a Python Telegram bot for crypto price checks, reports, Premium watchlists, and
-automatic Event Alerts.
+CCWBot is a Python Telegram bot for crypto price checks, reports, Premium watchlists, onboarding,
+growth attribution, and automatic Event Alerts.
 
 Runtime stack:
-
 - Python Telegram Bot API
 - Groq/OpenAI-compatible LLM calls
 - CoinGecko prices
@@ -19,53 +18,51 @@ Core invariant:
 1 coin market event = 1 AI analysis = many alert deliveries
 ```
 
-Do not place LLM/Groq calls inside recipient loops.
+Never place provider/LLM calls inside recipient loops.
 
-Permanent guardrails:
+## Permanent guardrails
 
 - Do not change Event Alert business logic unless explicitly requested.
-- Keep core development and runtime integrations free-tier / zero-cost where practical. Do not introduce a paid LLM/API subscription, billing-enabled provider tier, or other recurring external-service cost as a requirement without explicit owner approval. Prefer free-tier capacity, provider/model efficiency, caching, and graceful degradation first.
-- Do not change Premium, watchlist, subscription, payment, or grant/revoke behavior unless
+- Keep runtime integrations free-tier / zero-cost where practical. Do not make a paid external
+  service a requirement without owner approval.
+- Do not change Premium, watchlist, subscription, payment, trial, or grant/revoke behavior unless
   explicitly requested.
-- Do not expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs,
-  or diagnostic internals in user-facing Telegram messages.
-- Do not commit `.env`, `.ops-agent.env`, logs, generated reports, DB dumps, caches, local state,
-  or secrets.
-- Production forensic SQL investigations use the dedicated read-only `ccwbot_investigator`
-  role through an SSH tunnel. Lack of table `SELECT` permission is an access-provisioning gap,
-  not a reason to switch to the application/admin DB role.
+- Never expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs, or
+  diagnostic internals in user-facing Telegram messages.
+- Never commit secrets, local env files, logs, generated reports, DB dumps, caches, or local state.
+- Production forensic SQL uses the read-only `ccwbot_investigator` role through the approved SSH
+  tunnel.
 
-Current product behavior:
+## Current product behavior
 
-- Manual `/price` supports the active runtime symbols: `btc`, `eth`, `gram`, and `sol`.
-  GRAM is the primary backend/product symbol; legacy `/price ton` still works as an alias.
-- BTC automatic alerts remain free.
-- Non-BTC automatic alerts require active Premium and enabled watchlist choices.
-- Event Alerts are market-event-first: analysed-window market context is the primary basis,
-  and news is supporting context only. Standalone news-only Event Alerts are disabled.
-- No deterministic numeric market threshold may create, reject, suppress, or bypass an Event
-  Alert. Numeric market values are evidence for Event Analysis, not backend product gates.
-- Event Alert significance belongs to the schema-validated LLM decision. Pre-LLM Exact Context
-  Reuse is permitted only for exactly unchanged semantic Event Analysis input; it has no buckets,
-  tolerances, or rounded market values. Runtime IDs and observation timestamps are excluded.
-- The Semantic Cooldown is a strict four hours for the same canonical event key or semantic
-  family. It has no numeric-movement, new-news, or urgency bypass.
-- Recipient eligibility is delivery-only: detection and market-event creation run even when no
-  recipient can receive that coin's alert.
-- Automatic BTC, ETH, GRAM, and SOL Event Analysis retains CoinGecko full source precision through
-  cache, snapshots, calculations, and LLM input; presentation formatting is separate.
-- Event Alert `Possible action` stays in alert copy and is observed for quality; generic wording
-  is not a suppression gate.
+- Supported runtime symbols: BTC, ETH, GRAM, SOL. Legacy `/price ton` maps to GRAM.
+- BTC automatic alerts are free. Non-BTC automatic alerts require an enabled watchlist choice plus
+  active Premium/trial entitlement.
+- New-user onboarding provides an instant cached brief and a coin-customisation path.
+- Selecting Premium coin intent can activate the one-time 7-day Premium trial.
+- Growth analytics and first-touch acquisition attribution are persisted with allowlisted events.
+- Telegram Stars Premium remains 199 Stars/month.
+- Payment handling is idempotent and enriches the user's Premium/watchlist state after successful
+  payment.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
-- `/settings` is admin-only.
-- `/userid` works manually but stays hidden from menus/help.
-- Alert copy must stay cautious and include `Not financial advice.` where applicable.
+- `/settings` is admin-only. `/userid` works manually but stays hidden from menus/help.
 
-Repository authority and ownership are defined in `docs/source_of_truth.md`.
+## Event Alerts
 
-Detailed contracts live in `alert_logic.md` (Event Alerts), `market_reports.md` (daily and weekly
-reports), and `product_analytics.md` (attribution and funnel operations).
+- Detection is global for BTC, ETH, GRAM, and SOL. Recipient eligibility is checked only after a
+  significant market event exists.
+- Market context is primary. News is supporting context. Standalone news-only Event Alerts are
+  disabled by the product contract.
+- No deterministic numeric threshold may create, reject, suppress, or bypass an Event Alert.
+- Exact Context Reuse is allowed only when the canonical semantic analysis input is unchanged.
+- Significance is decided by schema-validated LLM output.
+- The same canonical event key or semantic family is suppressed for four hours per recipient.
+- CoinGecko automatic market data keeps full source precision through analysis; user-facing
+  formatting is separate.
+- Alert text must remain cautious and include `Not financial advice.` where applicable.
 
-This file is the canonical owner for cross-cutting product boundaries and architecture invariants.
-Workflow, release, operational, agent-routing, and feature-specific rules belong to their canonical
-owners and should be linked rather than repeated here.
+Detailed Event Alert flow: `docs/alert_logic.md`.
+Growth/attribution contract: `docs/product_analytics.md`.
+Report contract: `docs/market_reports.md`.
+
+Repository authority is defined in `docs/source_of_truth.md`.
