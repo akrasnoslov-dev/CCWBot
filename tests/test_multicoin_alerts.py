@@ -788,7 +788,10 @@ def test_report_cache_scheduler_replaces_weekly_direct_send_and_strong_signal():
         alerts.DAILY_REPORT_CACHE_JOB_NAME,
         alerts.WEEKLY_REPORT_CACHE_JOB_NAME,
     ]
-    assert [kwargs["interval"] for _, kwargs in captured] == [4 * 3600, 24 * 3600]
+    assert [kwargs["interval"] for _, kwargs in captured] == [
+        alerts.REPORT_CACHE_CHECK_INTERVAL_SECONDS,
+        alerts.REPORT_CACHE_CHECK_INTERVAL_SECONDS,
+    ]
     assert not hasattr(alerts, "strong_signal_check")
     assert not hasattr(alerts, "schedule_strong_signal_job")
 
