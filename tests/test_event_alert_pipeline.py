@@ -282,7 +282,7 @@ def _runtime_no_alert_payload(*, chg_window_percent: float) -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reason_code", ("routine_move", "unclear", "reversal"))
+@pytest.mark.parametrize("reason_code", ("routine_move", "unclear"))
 async def test_runtime_market_no_alert_reasons_record_llm_no_alert(
     monkeypatch, reason_code
 ):
@@ -1420,3 +1420,55 @@ async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkey
     assert "SOL up ~4.1% in the last 3 hours" in rendered
     assert "legacy verbose Event Alert payload" not in rendered
     assert "$105.49" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_event_significance_inconsistent_reason_is_schema_error(monkeypatch):
+    render = AsyncMock()
+    save_analysis = AsyncMock(return_value=321)
+    recorded_outcome = AsyncMock()
+    mark_usage = AsyncMock()
+    failures = []
+
+    monkeypatch.setattr(
+        alerts,
+        "ask_event_significance_raw",
+        AsyncMock(
+            return_value=(
+                "{}",
+                {
+                    "symbol": "BTC",
+                    "should_alert": False,
+                    "confidence": "medium",
+                    "reason_code": "unusual_move",
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
+    monkeypatch.setattr(alerts, "mark_llm_usage_log_status", mark_usage)
+    monkeypatch.setattr(
+        alerts,
+        "_log_event_analysis_failure",
+        lambda symbol, reason: failures.append((symbol, reason)),
+    )
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(
+        _runtime_no_alert_payload(chg_window_percent=1.5)
+    )
+
+    assert decision is None
+    assert analysis_id is None
+    render.assert_not_awaited()
+    save_analysis.assert_awaited_once()
+    assert save_analysis.await_args.kwargs["status"] == "schema_error"
+    assert save_analysis.await_args.kwargs["parsed_result"]["reason_code"] == "unusual_move"
+    recorded_outcome.assert_awaited_once()
+    assert recorded_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+    assert (
+        recorded_outcome.await_args.kwargs["reason_code"]
+        == alerts.REASON_LLM_INVALID_RESPONSE
+    )
+    assert failures

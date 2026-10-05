@@ -37,16 +37,30 @@ WITH recent_analyses AS (
         eai.reason_for_no_alert AS analysis_reason_for_no_alert,
         eai.related_news_ids,
         eai.plain_text AS analysis_plain_text,
-        NULLIF(eai.raw_input_json::jsonb #>> '{market,chg_window_percent}', '')::double precision
-            AS analysed_window_change_percent,
-        NULLIF(eai.raw_input_json::jsonb #>> '{market,chg24h_percent}', '')::double precision
-            AS analysis_24h_change_percent,
-        NULLIF(
-            eai.raw_input_json::jsonb #>> '{market,relative_window_percentile_30d}', ''
-        )::double precision AS relative_window_percentile_30d,
-        NULLIF(
-            eai.raw_input_json::jsonb #>> '{market,relative_24h_percentile_30d}', ''
-        )::double precision AS relative_24h_percentile_30d,
+        CASE
+            WHEN eai.raw_input_json IS JSON THEN
+                NULLIF(
+                    eai.raw_input_json::jsonb #>> '{market,chg_window_percent}', ''
+                )::double precision
+        END AS analysed_window_change_percent,
+        CASE
+            WHEN eai.raw_input_json IS JSON THEN
+                NULLIF(
+                    eai.raw_input_json::jsonb #>> '{market,chg24h_percent}', ''
+                )::double precision
+        END AS analysis_24h_change_percent,
+        CASE
+            WHEN eai.raw_input_json IS JSON THEN
+                NULLIF(
+                    eai.raw_input_json::jsonb #>> '{market,relative_window_percentile_30d}', ''
+                )::double precision
+        END AS relative_window_percentile_30d,
+        CASE
+            WHEN eai.raw_input_json IS JSON THEN
+                NULLIF(
+                    eai.raw_input_json::jsonb #>> '{market,relative_24h_percentile_30d}', ''
+                )::double precision
+        END AS relative_24h_percentile_30d,
         eai.created_at AS analysis_created_at
     FROM event_ai_analyses eai
     WHERE eai.created_at >= :since

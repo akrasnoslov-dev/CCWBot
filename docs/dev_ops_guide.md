@@ -109,7 +109,7 @@ schedule.
 
 Interactive production investigations by Codex or an operator should use the dedicated
 `ccwbot_investigator` PostgreSQL role through the existing SSH tunnel to
-`127.0.0.1:5433`. Do not use the application owner role or a PostgreSQL superuser for normal
+`127.0.0.1:15433`. Do not use the application owner role or a PostgreSQL superuser for normal
 forensics.
 
 Verify every new investigation session before evidence queries:
@@ -251,9 +251,17 @@ Normal bot restarts do not run migrations. For migrations, test locally first, c
 validation passed, verify a current backup, run `docker compose run --rm migrate` explicitly, then
 start or restart the bot.
 
-## Dependabot
+## Dependency updates
 
-Dependabot is configured in `.github/dependabot.yml` for Python dependencies and GitHub Actions.
-Do not merge Dependabot PRs blindly. Review the changelog/risk, run tests, and confirm CI is green.
-Dependabot Alerts and security updates may also require repository settings in GitHub; enable them
-manually if they are not already active.
+Scheduled Dependabot version-update PRs are disabled. In repository history they created mostly
+unused update PRs, and grouped Python updates can also produce incompatible pin sets.
+
+Handle dependency upgrades as explicit maintenance work:
+1. choose a small compatible upgrade set;
+2. review changelogs and compatibility risk;
+3. update pins intentionally;
+4. run the full repository verification before merge.
+
+Dependabot security alerts/security-update settings are separate GitHub repository settings. This
+repository documentation does not claim they are enabled or disabled; verify them in GitHub when
+security maintenance is needed.

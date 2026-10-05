@@ -105,6 +105,21 @@ async def test_daily_cache_fresh_by_seconds_at_fire_time_regenerates(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_failed_scheduled_refresh_backs_off_before_next_poll(monkeypatch):
+    generate = AsyncMock(return_value={"status": "failed"})
+    monkeypatch.setattr(reports, "generate_report_cache", generate)
+
+    first = await reports.refresh_report_cache_scheduled("weekly")
+    second = await reports.refresh_report_cache_scheduled("weekly")
+
+    assert first == {"status": "failed"}
+    assert second is None
+    generate.assert_awaited_once_with("weekly")
+    remaining = reports._report_provider_backoff_until["weekly"] - time.monotonic()
+    assert remaining > 15 * 60
+
+
+@pytest.mark.asyncio
 async def test_scheduled_refresh_respects_provider_backoff(monkeypatch, caplog):
     reports._report_provider_backoff_until["weekly"] = time.monotonic() + 300
     generate = AsyncMock(return_value={"status": "completed"})

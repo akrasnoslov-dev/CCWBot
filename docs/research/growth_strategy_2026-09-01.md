@@ -1,484 +1,122 @@
-# CCWBot Growth Strategy: 0 → 1 Premium
+# CCWBot Growth Strategy: 0 -> 1 Premium
 
-**Дата анализа:** 1 сентября 2026  
-**Проверенная версия продукта:** dev, commit 797a56a  
-**Главная цель:** рост числа пользователей, которые покупают и продолжают оплачивать Premium.
+**Original research:** 2026-09-01  
+**Production audit:** 2026-10-05  
+**Basis:** current `dev` implementation plus read-only production aggregates.
 
-> Status: dated growth research / strategy snapshot. This file is not a canonical source of product or workflow rules. Current behavior and guardrails are owned by docs/project_context.md and docs/codex_instructions.md.
+This is research/strategy, not a canonical product contract.
 
-## 1. Executive diagnosis
+## What is already done
 
-CCWBot пока не проблема acquisition. Главный bottleneck — продукт не превращает нового пользователя в человека, который понял ценность, сформировал привычку и увидел естественную причину платить.
+The original P0 foundation exists:
 
-Техническое ядро уже сильнее, чем текущая упаковка:
+- product-event analytics and first-touch attribution;
+- tracked acquisition links;
+- automatic first BTC brief;
+- Premium coin customisation;
+- one-time 7-day Premium trial;
+- paywall, checkout, payment, and Premium-value events;
+- successful-payment Premium/watchlist enrichment.
 
-- бот автоматически анализирует значимые рыночные события;
-- объединяет цену, движение, новости и AI-интерпретацию;
-- защищается от повторов и информационного шума;
-- создаёт один анализ события и доставляет его многим пользователям;
-- формирует market heartbeat, daily report и weekly report;
-- принимает recurring-платежи Telegram Stars.
+The next work is driven by production funnel evidence, not by the old September checklist.
 
-Но новый пользователь этого почти не видит. /start показывает список команд, не спрашивает, какие монеты важны, не даёт моментальную демонстрацию ценности и не ведёт к настройке. Free-пользователь в фактическом /watchlist видит только BTC; заблокированные Premium-монеты скрыты. Поэтому ограничения Premium почти невозможно почувствовать. Paywall открывается в основном только если пользователь сам зайдёт в /plan и нажмёт Subscribe.
+## Production Growth Funnel Audit
 
-Дополнительная проблема: после покупки Premium выбранные non-BTC монеты не включаются автоматически. Пользователь должен отдельно открыть /watchlist. При этом сохранённая Free-частота 4 часа становится Premium-default 6 часов, если пользователь сам не переключит её на 1 час. Первая минута после оплаты может выглядеть не как upgrade, а как отсутствие изменений.
+The production session was verified as `ccwbot_investigator` with both transaction read-only
+settings enabled.
 
-Главный вывод: до масштабирования трафика надо построить цепочку:
+Do not use the full Sep 2-Oct 5 totals as one conversion funnel because they mix different
+onboarding versions. The clean pre-v3 activation cohort starts at the first
+`onboarding_customize_opened` event: **2026-10-01 17:29 UTC**.
 
-релевантный deep link → выбор монет → моментальный персональный brief → первая полезная доставка → попытка отслеживать несколько монет → trial/paywall → немедленная Premium-ценность → регулярный персональный digest → referral/share.
+### Current comparable cohort
 
-Пока этой цепочки нет, платное привлечение будет покупать /start, а не Premium.
+| Stage | Users | Conversion from previous meaningful stage |
+|---|---:|---:|
+| Bot started | 23 | - |
+| Instant brief viewed | 22 | 95.7% of starts |
+| Customize opened | 10 | 45.5% of brief viewers |
+| Any coin-selection event | 6 | 60.0% of customize openers |
+| Trial offered | 2 | 20.0% of customize openers |
+| Trial started | 2 | 100% of offers |
+| Premium value delivered | 2 | 100% of trial starts |
+| Checkout started | 1 | sample too small |
+| Payment succeeded | 0 | sample too small |
 
-## 2. Что подтверждено, а что является гипотезой
+### What the selector data says
 
-### Подтверждённые факты из продукта
+This is the clearest verified loss.
 
-1. /start содержит короткое описание и команды /price, /watchlist, /reports, /plan; inline onboarding отсутствует.
-2. Поддерживаются BTC, ETH, GRAM и SOL. BTC automatic alerts бесплатны; non-BTC требуют Premium.
-3. Free heartbeat frequency — 4 часа. Premium может выбрать 1, 6 или 24 часа; default Premium — 6 часов.
-4. Event Alert analysis работает глобально каждые 30 минут по монете. Heartbeat frequency управляет регулярными heartbeat-сообщениями, а не скоростью обнаружения Event Alerts.
-5. Daily и weekly reports доступны бесплатно и создаются один раз для всех пользователей.
-6. Premium стоит 199 Stars в месяц. После оплаты пользователь должен вручную выбрать монеты в /watchlist.
-7. Бот хранит пользователей, watchlist, Premium entitlement, платежи, доставки, reports и LLM usage.
-8. Отдельных product/growth events для onboarding, campaign attribution, paywall impression, checkout start, referral и activation нет.
-9. Referral-механики и group growth loop нет. Пользовательский профиль сохраняется только для private chat.
-10. Пользовательские сообщения только на английском.
+- 10 users opened Customize.
+- 6 users toggled at least one coin.
+- All 6 generated a `BTC -> selected_count=0` event at some point.
+- 4 of those users never reached any selected coin above zero.
+- Only 2 users reached Premium intent; both were offered a trial, both started it, and both received
+  Premium value.
 
-### Непроверенные данные
+**CONFIRMED:** once a user reaches the trial offer, the current tiny sample converts cleanly.  
+**CONFIRMED:** most loss happens before Premium intent is formed inside the selector.  
+**LIKELY:** the selector is confusing because the CTA says "Add ETH, SOL & GRAM", but the next screen
+shows BTC as the first active toggle and Premium coins with lock icons.  
+**UNKNOWN:** paid conversion. The current comparable cohort is too young/small.
 
-- Фактические production-конверсии и retention не анализировались.
-- Реализованная цена 199 Stars известна, но фактическая чистая выручка после Telegram/Fragment не определена.
-- Нет данных, какие из BTC, ETH, SOL и GRAM чаще всего интересуют реальных пользователей.
+### Acquisition limitation
 
-### Growth-гипотезы
+Across all product-event history, 136 of 137 users with `bot_started` are unattributed; only one
+has a tracked `telegramads/general-crypto` attribution. Source-level optimisation is therefore not
+yet statistically useful.
 
-- Лучший первый ICP — Telegram-native владелец 2–4 крупных монет, который хочет быть в курсе, но не хочет постоянно смотреть графики.
-- Главный wedge — не «больше алертов», а «меньше шума + объяснение события прямо в Telegram».
-- Самый сильный Premium trigger — выбор второй/третьей монеты после демонстрации полезного brief.
-- Trial будет работать лучше немедленного жёсткого paywall, потому что значимые Event Alerts нерегулярны и пользователь может не увидеть ценность в первый день.
+## Experiment 1 - Premium-only onboarding selector
 
-## 3. Product audit и текущий user journey
+**Owner:** ChatGPT implements and verifies.  
+**User action:** none for development; production release remains a separate explicit release step.
 
-### Текущий путь
+### Change
 
-1. Пользователь открывает бота и нажимает Start.
-2. Видит название, общее описание и четыре slash-команды.
-3. Должен самостоятельно решить, куда идти.
-4. /price позволяет вручную проверить одну из четырёх монет.
-5. /reports открывает бесплатные daily/weekly reports.
-6. /watchlist у Free-пользователя фактически показывает только BTC и частоту 4 часа.
-7. /plan открывает My plan и Subscribe.
-8. /subscribe показывает invoice на 199 Stars.
-9. После платежа бот сообщает: «Use /watchlist to choose your coins».
-10. Пользователь вручную включает ETH/GRAM/SOL и при желании меняет частоту с 6h на 1h.
+For first-run onboarding only:
 
-### Где теряется Premium
+1. Leave the existing free BTC default untouched and do not show BTC as a toggle on the "Add ETH, SOL & GRAM" screen.
+2. Show ETH, SOL, and GRAM as normal selectable Premium choices, without a lock icon that looks
+   disabled.
+3. Use a clear `Continue ->` action.
+4. Keep full BTC/watchlist control available later in `/watchlist`.
+5. Bump onboarding analytics version to `v3` so the new cohort is separable from v2.
 
-- /start — справка, а не onboarding.
-- Нет выбора интересующих монет.
-- Нет instant preview.
-- Premium-монеты скрыты в Free-watchlist.
-- Paywall не связан с естественным пользовательским действием.
-- Reports полностью бесплатны и одинаковы для всех.
-- После оплаты нужна повторная настройка.
-- Premium default = 6h против Free = 4h.
-- Нет trial.
-- Нет attribution и product events.
-- Нет referral/share CTA.
+No pricing, trial duration, entitlement, payment, or Event Alert behavior changes.
 
-### Функции с наибольшим perceived value
+### Primary metric
 
-1. Event Alert с объяснением: что изменилось, рыночный контекст, связанная новость, что наблюдать дальше.
-2. Noise reduction: semantic cooldown и significance filtering уменьшают повторы.
-3. Multi-coin monitoring.
-4. Market Heartbeat.
-5. Daily/weekly report.
+`trial_offered / onboarding_customize_opened`
 
-## 4. Job To Be Done
+Pre-v3 baseline: **2 / 10 = 20%**.
 
-Самый сильный JTBD:
+### Decision rule
 
-«Пока я занимаюсь своей жизнью, наблюдай за моими основными криптоактивами и сообщай в Telegram только о действительно важных изменениях — сразу с понятным контекстом».
+Evaluate after at least **30 v3 Customize opens**:
 
-Другие сильные задачи:
+- **KEEP:** >=40% reach `trial_offered`, first-brief delivery remains >=95%, and
+  `trial_started / trial_offered` does not materially deteriorate.
+- **REVERT / redesign:** <=20% reach `trial_offered`.
+- **INCONCLUSIVE:** 21-39%; continue to 50 Customize opens before deciding.
 
-- быстро объяснить, почему рынок двинулся;
-- контролировать 2–4 актива без постоянного просмотра графиков;
-- снизить шум и не получать повторяющиеся алерты;
-- получать понятный daily/weekly итог.
-
-## 5. Первый ICP
-
-Beachhead #1:
-
-English-speaking Telegram users who hold BTC plus ETH and/or SOL, check prices several times per day, but do not use advanced professional tooling.
-
-Почему:
-
-- владеют несколькими поддерживаемыми монетами;
-- естественно чувствуют ограничение Free;
-- Telegram уже является привычным notification layer;
-- им важнее объяснение и спокойствие, чем RSI, webhooks и сотни индикаторов;
-- multi-coin monitoring создаёт постоянную причину платить.
-
-Beachhead #2 после group MVP:
-
-Админы Telegram crypto communities 5k–100k участников.
-
-Не брать первым:
-
-- memecoin traders;
-- advanced traders;
-- BTC-only holders как основной платящий сегмент.
-
-## 6. Рыночный wedge и positioning
-
-CCWBot не должен конкурировать количеством монет, charts, custom alerts или on-chain данными.
-
-Потенциальный wedge:
-
-Calm, explanation-first crypto monitoring inside Telegram. No charts to watch, no thresholds to configure, no exchange connection.
-
-Короткий value proposition:
-
-Stop watching charts. CCWBot watches your coins and explains meaningful moves in Telegram.
-
-Чего нельзя обещать:
-
-- guaranteed profit;
-- AI prediction accuracy;
-- «buy/sell before everyone»;
-- «never miss a move» без оговорки о provider availability;
-- персональные инвестиционные рекомендации.
-
-## 7. Free → Premium: рекомендуемая модель
-
-Один план: Free + Premium.
-
-### Free
-
-- BTC Event Alerts;
-- BTC heartbeat раз в 4 часа;
-- manual price для четырёх монет;
-- общий daily report;
-- возможность выбрать интерес к ETH/SOL/GRAM и увидеть, что они входят в Premium;
-- один instant personalized preview во время onboarding.
-
-### 7-day Premium trial, запускаемый при выборе второй монеты
-
-- все выбранные монеты сразу активируются;
-- heartbeat default 1 час;
-- персональный daily digest только по выбранным монетам;
-- фиксируются delivered value events;
-- trial не требует Stars до окончания.
-
-### Premium 199 Stars/month
-
-- до четырёх активных монет;
-- 1h heartbeat по умолчанию;
-- Event Alerts по всем выбранным монетам;
-- персональный daily digest и weekly recap;
-- сохранение watchlist и delivery history;
-- share/referral rewards.
-
-Trial лучше запускать не на первом /start, а когда пользователь выбирает вторую Premium-монету.
-
-### После оплаты
-
-- автоматически включить trial/watchlist choices;
-- установить 1h frequency;
-- показать активные монеты и дату доступа;
-- дать кнопки View my watchlist, Get today’s brief, Invite a friend;
-- не заставлять пользователя вводить /watchlist вручную.
-
-## 8. Growth funnel
-
-Рекомендуемые этапы:
-
-1. Impression.
-2. Bot Start.
-3. Activation.
-4. Habit.
-5. Paywall exposure.
-6. Purchase.
-7. Premium retention.
-8. Referral.
-
-Рекомендуемое activation event:
-
-watchlist_intent_completed = пользователь выбрал не менее двух монет и открыл первый персональный market brief в течение 10 минут после /start.
-
-Рекомендуемый aha moment:
-
-Пользователь получает alert по своей монете и за 20–30 секунд понимает: что изменилось, почему это важно и что наблюдать дальше — без открытия exchange, chart и news feed.
-
-### Минимальная event taxonomy
-
-- bot_started: is_new, source, campaign, creative, referrer_code;
-- onboarding_started;
-- coin_interest_selected: symbol, selected_count;
-- onboarding_completed;
-- instant_brief_viewed;
-- trial_offered;
-- trial_started;
-- trial_expired;
-- watchlist_updated;
-- paywall_viewed: trigger, variant, current_selected_count;
-- checkout_started;
-- payment_succeeded: plan, price_stars, first/recurring;
-- report_viewed: daily/weekly/personal;
-- share_clicked: object_type, campaign;
-- referral_joined;
-- referral_activated;
-- referral_paid;
-- premium_expired;
-- bot_blocked.
-
-Deliveries уже можно связывать через текущие alerts и alert_delivery_outcomes; не нужно дублировать каждый backend decision в growth table.
-
-## 9. Acquisition strategy
-
-До исправления onboarding и instrumentation acquisition ограничить founder-led и маленькими тестами.
-
-Главная цель первых 30 дней — не максимальный reach, а доказательство цепочки:
-
-qualified start → activation → first payment → month-2 intent.
-
-Приоритетные бесплатные и low-cost каналы:
-
-- Telegram micro-communities;
-- public CCWBot Market Pulse channel;
-- creator affiliate;
-- Reddit problem-led posts;
-- X event commentary;
-- coin-specific partnerships;
-- direct user interviews.
-
-Не делать Reddit/X paid главным каналом на стадии 0 → 1.
-
-Paid Telegram Ads имеет смысл только после доказанной воронки и retention.
-
-## 10. CAC rule
-
-Не переводить 199 Stars в условные доллары по retail-цене Stars. Использовать фактическую чистую сумму, которую владелец получает после withdrawal.
-
-Определения:
-
-Net monthly revenue = реально полученная сумма с 199 Stars после платформенных потерь.
-
-Gross margin contribution = net revenue − переменные LLM/data/delivery costs.
-
-Observed LTV = monthly contribution × среднее число оплаченных месяцев.
-
-Пока retention неизвестен:
-
-- hard CAC ceiling: не больше contribution первых 90 дней;
-- рабочая цель: CAC ≤ 30–40% осторожно рассчитанного LTV;
-- scale condition: payback ≤3 месяца и M2 retention ≥60%;
-- kill condition: после 30 paywall exposures нет покупок либо CAC projection >150% 90-day contribution.
-
-## 11. Product-led growth opportunities
-
-### P0
-
-1. Inline onboarding: выбрать монеты, цель и частоту; закончить instant brief.
-2. Показать locked coins: ETH/GRAM/SOL должны быть видимы Free-пользователю.
-3. Intent-triggered trial: выбор второй монеты запускает 7 дней Premium.
-4. 1h Premium default.
-5. Post-payment auto-activation.
-6. Growth events + attribution.
-
-### P1
-
-7. Personal daily digest: фильтровать уже созданный cached global report по watchlist; не делать LLM call per user.
-8. Value recap: weekly и trial-end summary по фактическим доставкам.
-9. Shareable report/alert card: deterministic rendering из validated backend data.
-10. Deep-linked coin onboarding.
-11. Referral rewards.
-
-### P2
-
-12. Group mode.
-13. Creator watchlist/templates.
-14. Mini App при необходимости.
-15. Больше монет только после данных о потерянном demand; сначала добавить unsupported_coin_requested.
-
-## 12. Viral loop hypotheses
-
-Приоритетные механики:
-
-- dual-sided referral Premium days;
-- temporary second-coin unlock for qualified referral;
-- shareable Event Alert card with tracked deep link;
-- Daily Market Pulse card for forwarding;
-- weekly watchlist recap card;
-- coin deep link that preselects a coin;
-- group bot with private Premium conversion;
-- creator affiliate;
-- gift Premium.
-
-Не использовать public referral leaderboard на старте из-за spam/fake-account incentives.
-
-## 13. Превратить продукт в content + distribution engine
-
-Что уже можно переиспользовать:
-
-- validated Event Alert;
-- source-backed news links;
-- market heartbeat;
-- cached daily report;
-- cached weekly report;
-- deterministic price/change fields;
-- semantic family и urgency.
-
-Сохранить invariant:
-
-1 coin market event = 1 AI analysis = many deliveries.
-
-Public content должен быть ещё одним delivery target, а не новым LLM call.
-
-Рекомендуемый flow:
-
-Validated market event/report
-→ deterministic content templates
-→ approval queue during first 30 days
-→ Telegram channel post
-→ X post draft
-→ Reddit draft
-→ shareable PNG card
-→ tracked bot deep link.
-
-Safety:
-
-- exact market data берётся из backend;
-- Not financial advice остаётся;
-- никаких price targets или guaranteed outcomes;
-- первые 30 дней — human approval;
-- не публиковать одинаковый контент во все communities;
-- не превращать автоматизацию в reply spam.
-
-## 14. Топ growth experiments
-
-Приоритет по dependency:
-
-1. Product events + deep-link attribution.
-2. New /start: coin selection + instant brief.
-3. Locked multi-coin UX + trial on second coin.
-4. Post-payment auto-enable + 1h default.
-5. Personal daily digest from cached report.
-6. Public Telegram Market Pulse channel.
-7. Micro-channel affiliate pilots.
-8. Shareable Event/Daily cards.
-9. Dual-sided referral rewards.
-10. Paywall value-message test at 199 Stars.
-
-Experiment 1 должен быть первым, затем 2–4, потом acquisition.
-
-## 15. Execution plan
-
-### Первые 48 часов
-
-- Зафиксировать event taxonomy и funnel SQL.
-- Сделать UX spec нового /start.
-- Составить список 20 target users и 30 каналов.
-- Подготовить 3 creatives.
-
-### Первая неделя
-
-- Ship analytics + deep links.
-- Ship onboarding + instant cached brief.
-- Показать locked coins.
-- Исправить Premium first minute.
-- Провести 10 interviews.
-
-### Первые 30 дней
-
-- Intent-triggered 7-day trial.
-- Personal digest from cache.
-- Market Pulse channel.
-- 10 community/creator pilots.
-- Value-message paywall test.
-- Shareable cards MVP.
-
-### 30–90 дней
-
-- Масштабировать только каналы с доказанным activated CAC, paid conversion и D30 retention.
-- Запустить dual-sided referral после fraud rules.
-- Добавить group daily pulse MVP и private-chat conversion path.
-- Построить creator dashboard/report вручную или через простую admin view.
-- Тестировать second language только отдельной cohort.
-- Собирать unsupported_coin_requested.
-- Проверить 199 vs 299 Stars после ≥20 paid и измеримого M2.
-
-90-day gates:
-
-- ≥20 organic/partner paid users;
-- M2 Premium retention ≥60%;
-- paywall→paid ≥10%;
-- ≥35% activated users имеют D7 habit;
-- хотя бы один channel с payback projection ≤3 months;
-- referred users не хуже direct users по activation/retention.
-
-## 16. DO THIS NOW
-
-### 1. Instrumentation и attribution
-
-Почему: сейчас невозможно доказать, где теряются пользователи и какой канал приводит Premium.
-
-Техническое направление:
-
-- Alembic migration для product events;
-- ProductEvent и при необходимости UserAcquisition;
-- allowlisted events/properties;
-- сохранять /start payload source/campaign/creative/referrer;
-- записывать paywall view, checkout start и payment success;
-- не хранить raw Telegram ID в event properties; использовать internal user_id FK;
-- добавить funnel/cohort SQL и regression tests.
-
-Acceptance criteria:
-
-по одному тестовому пользователю восстанавливается путь source → start → activation → paywall → checkout → paid; duplicate payment не создаёт вторую purchase conversion.
-
-### 2. Новый /start с instant aha
-
-Предлагаемый flow:
-
-Start
-→ Which coins do you want me to watch?
-→ BTC / ETH / SOL / GRAM multi-select
-→ What do you want?: Important moves / Calm updates / Daily brief
-→ Show current personalized brief from cached market/report data
-→ Confirm Free or start trial when ≥2 coins selected.
-
-Guardrail:
-
-instant brief должен переиспользовать cache и не создавать LLM call per user.
-
-Acceptance criteria:
-
-новый пользователь выбирает ≥2 coins и получает персональный brief ≤60 секунд и ≤5 taps; все steps записаны в analytics.
-
-### 3. Исправить Premium activation до покупки traffic
-
-Изменения:
-
-- показывать ETH/GRAM/SOL как locked в фактическом Free /watchlist;
-- запускать 7-day trial при подтверждённом выборе второй монеты;
-- после payment success автоматически включать выбранные coins;
-- Premium default frequency сделать 1h, не 6h;
-- после оплаты показывать активную watchlist и кнопку получить сегодняшний brief;
-- записывать trial_started, paywall_viewed, checkout_started, payment_succeeded, premium_value_delivered.
-
-Acceptance criteria:
-
-payment success в том же interaction показывает работающий Premium; выбранные coins активны; первый Premium heartbeat/digest не требует дополнительной команды; повторный payment остаётся idempotent.
-
-## Итоговое решение
-
-Не покупать массовый traffic сейчас.
-
-Первые деньги и разработка должны идти в измеримый onboarding, instant value и Premium activation. После этого получить 20–50 qualified users через founder-led Telegram partnerships и проверить, покупают ли они обещание:
-
-CCWBot watches your coins, filters noise and explains meaningful moves in Telegram.
-
-Если эта cohort активируется, платит и продлевает Premium — масштабировать Telegram content, creators и group distribution. Если нет — менять product/value proposition на основе event data и интервью, а не увеличивать рекламный бюджет.
+Do not start a second onboarding experiment before this one is measured.
+
+## What happens after Experiment 1
+
+1. Release v3 to production explicitly.
+2. Wait for the minimum sample.
+3. Run the same read-only funnel query.
+4. Keep/revert using the rule above.
+5. Then address the next largest verified bottleneck.
+6. Use tracked links for future founder-led cohorts; do not optimise acquisition source while almost
+   all users remain unattributed.
+
+## Handoff prompt for a new chat
+
+> Continue CCWBot growth work from current `dev`. Read
+> `docs/research/growth_strategy_2026-09-01.md` and `docs/product_analytics.md`. Check whether
+> onboarding v3 is already in production. If not, prepare the explicit production release; if yes,
+> use the approved read-only `ccwbot_investigator` path to measure the v3 experiment. Do not start
+> another growth experiment until at least 30 v3 `onboarding_customize_opened` events exist.
+> Evaluate `trial_offered / onboarding_customize_opened` against the documented keep/revert rule,
+> and mark conclusions CONFIRMED / LIKELY / UNKNOWN.

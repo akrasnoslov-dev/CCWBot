@@ -109,6 +109,8 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "do not apply a fixed cutoff" in lowered
     assert "unusual" in lowered
     assert "noteworthy" in lowered
+    assert "should_alert=true" in lowered
+    assert "should_alert=false" in lowered
     assert len(prompt) <= 1400
     assert len(prompt) < len(ai_agent_groq.build_event_analysis_prompt(payload)) * 0.75
 
@@ -138,3 +140,45 @@ def test_event_significance_output_is_small_and_constrained():
             },
             expected_symbol="SOL",
         )
+
+
+@pytest.mark.parametrize(
+    ("should_alert", "reason_code"),
+    (
+        (False, "unusual_move"),
+        (False, "fast_move"),
+        (False, "reversal"),
+        (False, "trend_acceleration"),
+        (False, "market_news_alignment"),
+        (True, "routine_move"),
+        (True, "unclear"),
+    ),
+)
+def test_event_significance_rejects_internally_inconsistent_reason_polarity(
+    should_alert, reason_code
+):
+    with pytest.raises(EventAnalysisValidationError, match="inconsistent significance decision"):
+        validate_event_significance_output(
+            {
+                "symbol": "BTC",
+                "should_alert": should_alert,
+                "confidence": "medium",
+                "reason_code": reason_code,
+            },
+            expected_symbol="BTC",
+        )
+
+
+def test_event_significance_allows_true_news_only_for_backend_safety_rejection():
+    decision = validate_event_significance_output(
+        {
+            "symbol": "BTC",
+            "should_alert": True,
+            "confidence": "medium",
+            "reason_code": "news_only",
+        },
+        expected_symbol="BTC",
+    )
+
+    assert decision.should_alert is True
+    assert decision.reason_code == "news_only"

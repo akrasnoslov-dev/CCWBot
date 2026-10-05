@@ -229,7 +229,7 @@ def test_compact_event_analysis_payload_preserves_decision_and_grounding_facts()
 def test_exact_context_tracks_the_compact_model_contract_not_redundant_input_fields():
     context = _canonical_event_analysis_context(_fixture(news=True, previous=True))
 
-    assert context["schema_version"] == 9
+    assert context["schema_version"] == 10
     assert context["symbol"] == "btc"
     assert context["market"]["price"] == Decimal("112345.678901234567")
     assert context["last_msg"] == {

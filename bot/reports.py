@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 REPORT_COOLDOWN_SECONDS = 60
 REPORT_RATE_LIMIT_PRUNE_AFTER_SECONDS = 3600
 REPORT_PROVIDER_BACKOFF_SECONDS = 300
+REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS = 60 * 60
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
 DETERMINISTIC_REPORT_PROVIDER = "deterministic"
 DETERMINISTIC_REPORT_MODEL = "deterministic-market-report-v1"
@@ -119,10 +120,10 @@ def _is_report_provider_backoff_active(report_type: str) -> bool:
     return True
 
 
-def _start_report_provider_backoff(report_type: str) -> None:
-    _report_provider_backoff_until[report_type] = (
-        time.monotonic() + REPORT_PROVIDER_BACKOFF_SECONDS
-    )
+def _start_report_provider_backoff(
+    report_type: str, *, seconds: int = REPORT_PROVIDER_BACKOFF_SECONDS
+) -> None:
+    _report_provider_backoff_until[report_type] = time.monotonic() + seconds
 
 
 def _is_fresh_report(report: MarketReport | None) -> bool:
@@ -207,7 +208,18 @@ async def refresh_report_cache_scheduled(report_type: str) -> MarketReport | dic
                 f"report_type={report_type} reason=provider_backoff"
             )
             return None
-        return await generate_report_cache(report_type)
+        result = await generate_report_cache(report_type)
+        status = (
+            result.get("status")
+            if isinstance(result, dict)
+            else getattr(result, "status", None)
+        )
+        if status != "completed":
+            _start_report_provider_backoff(
+                report_type,
+                seconds=REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS,
+            )
+        return result
 
 
 async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, Any] | None:

@@ -25,13 +25,14 @@ from bot.domain.premium import (
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol, is_symbol_free
 from bot.keyboards import (
     build_first_run_brief_keyboard,
+    build_onboarding_customize_keyboard,
     build_onboarding_keyboard,
     build_premium_paywall_keyboard,
     build_trial_offer_keyboard,
 )
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 
-ONBOARDING_VERSION = "v2"
+ONBOARDING_VERSION = "v3"
 INSTANT_BRIEF_MAX_AGE = timedelta(hours=6)
 
 
@@ -50,14 +51,15 @@ def _premium_active(user: User) -> bool:
 
 def build_onboarding_message(user: User, subscriptions) -> tuple[str, InlineKeyboardMarkup]:
     selected_symbols = _selected_symbols(subscriptions)
-    selected = ", ".join(display_symbol(symbol) for symbol in selected_symbols) or "None yet"
+    premium_symbols = [symbol for symbol in selected_symbols if not is_symbol_free(symbol)]
+    selected = ", ".join(display_symbol(symbol) for symbol in premium_symbols) or "None yet"
     text = (
-        "Customize the coins you want monitored.\n\n"
-        "BTC monitoring is already active and free. ETH, SOL, and GRAM are Premium capabilities; "
-        "select them to save your intent.\n\n"
-        f"Selected: {selected}"
+        "Choose Premium coins to add.\n\n"
+        "BTC is the free coin and does not need a choice on this screen. Select ETH, SOL, or GRAM, "
+        "then continue. You can change BTC later in /watchlist.\n\n"
+        f"Premium selected: {selected}"
     )
-    return text, build_onboarding_keyboard(selected_symbols, premium_active=_premium_active(user))
+    return text, build_onboarding_customize_keyboard(selected_symbols)
 
 
 def build_returning_user_message() -> tuple[str, InlineKeyboardMarkup]:
@@ -88,7 +90,7 @@ def _premium_intent_count(subscriptions) -> int:
 
 
 def _first_run_btc_subscription():
-    """Represent the v2 first value independently of legacy saved watchlist intent."""
+    """Represent first-run BTC value independently of legacy saved watchlist intent."""
     return (SimpleNamespace(symbol="btc", is_enabled=True),)
 
 
@@ -264,6 +266,13 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
     parts = data.split(":")
     if len(parts) == 2 and parts[1] == "customize":
         async with DB_SESSION_LOCAL() as session:
+            # Onboarding v3 hides BTC because it is the free default. Enforce that invariant
+            # before rendering the Premium-only selector, including unfinished legacy users.
+            if "btc" not in _selected_symbols(subscriptions):
+                await set_user_coin_subscription(
+                    session, user_id=user.id, symbol="btc", is_enabled=True
+                )
+            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
             await record_product_event(
                 session,
                 user_id=user.id,
@@ -278,6 +287,9 @@ async def handle_onboarding_callback(update: Update, data: str) -> bool:
 
     if len(parts) == 3 and parts[1] == "toggle" and parts[2] in SUPPORTED_SYMBOLS:
         symbol = parts[2]
+        if symbol == "btc":
+            await query.answer("BTC stays active during onboarding. Change it later in /watchlist.")
+            return True
         current = symbol in _selected_symbols(subscriptions)
         async with DB_SESSION_LOCAL() as session:
             user = await get_user_by_telegram_user_id(
