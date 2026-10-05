@@ -1,242 +1,160 @@
 # Codex Instructions
 
-This file is the canonical owner for CCWBot agent-assisted implementation workflow, including
-branch/PR rules, PR-readiness gates, and review policy. ChatGPT Work and Codex use the OpenAI model
-routing defined below. Claude Code follows the shared workflow gates but uses its own platform model.
+This file owns CCWBot's ChatGPT-first implementation workflow, Codex fallback policy, branch/PR
+rules, PR-readiness gates, and review policy.
 
-Read `docs/source_of_truth.md` first. `AGENTS.md` and external task prompts are bootstrap/context
-only and must not contain independent standing workflow or project rules.
-
-Do not copy durable CCWBot rules into ChatGPT/Codex/Claude project instructions, chat memory,
-PR comments, or generated task prompts. A task prompt may define only the requested delta.
+Read `docs/source_of_truth.md` first. Product behavior belongs to the feature-specific canonical
+docs, not here.
 
 ## Evidence-first verification
-
-This gate is mandatory for diagnosis, implementation planning, repository-status claims, and
-production conclusions. Accuracy and primary evidence take priority over speed or a convenient
-answer.
 
 Before stating a material claim about current implementation, behavior, root cause, configuration,
 production state, GitHub state, or available functionality:
 
-1. Inspect the relevant current primary evidence instead of relying on memory, inference, naming,
-   stale documentation, or prior conversation context:
+1. Inspect the relevant current primary evidence:
    - current `dev` code for implementation behavior;
-   - canonical repository documentation for intended behavior;
+   - canonical repository docs for intended behavior;
    - production logs/database/ops evidence for actual production behavior;
    - current GitHub PR/CI/branch state for repository status;
-   - current provider/vendor documentation or production telemetry for external capabilities,
-     models, limits, or API behavior that may change over time.
-2. For bugs, incidents, reports, or suspicious behavior, trace the complete relevant execution path.
-   Do not stop at one symptom or intermediate stage and present it as the cause.
-3. Before proposing that functionality is missing or needs to be added, verify repository-wide that
-   it is not already implemented, and verify how the existing path behaves.
-4. Classify every material diagnostic conclusion as one of:
-   - `CONFIRMED` - directly demonstrated by primary evidence;
-   - `LIKELY` - supported by evidence but not fully proven;
-   - `UNKNOWN` - evidence is insufficient.
-5. If code and canonical documentation disagree, report the implementation/design drift explicitly.
-   Runtime code is evidence of what exists; canonical docs own what is intended.
-6. If evidence sources conflict, do not reconcile them by assumption. Identify the contradiction and
-   inspect the source needed to resolve it.
-7. If primary evidence is available but has not yet been checked, check it before answering or
-   proposing a fix. If it cannot be accessed, state exactly what remains unverified.
-8. Never propose a behavioral fix until the existing behavior and failure path have been verified.
-   A hypothesis may guide investigation, but it must not be presented as an established defect.
+   - current provider/vendor docs or telemetry for external capabilities that may change.
+2. For bugs or incidents, trace the complete relevant execution path.
+3. Before proposing missing functionality, verify repository-wide that it is not already present.
+4. Classify material diagnostic conclusions as `CONFIRMED`, `LIKELY`, or `UNKNOWN`.
+5. If code and canonical docs disagree, report the drift. Do not resolve it by assumption.
+6. If primary evidence is available, inspect it before proposing a behavioral fix.
 
-## Mandatory agentic execution pipeline
+Accuracy and evidence quality take priority over speed.
 
-Apply this pipeline to every non-trivial feature, bug fix, refactor, or project task, regardless of
-whether the request initially appears clear.
+## ChatGPT-first orchestration
 
-### Clarification gate
+For CCWBot work initiated in ChatGPT:
 
-Before implementation, ask the user one compact batch of clarification questions that resolves
-requirements, constraints, success criteria, important edge cases, and explicit non-goals. Wait for
-the answers before changing implementation files. Read-only repository inspection may happen first
-when needed to ask better questions.
+1. ChatGPT is the primary decision center, orchestrator, and final acceptance owner.
+2. Use capabilities available directly from ChatGPT first: repository connectors, file tools,
+   browser/research tools, connected apps, and approved workspace/bridge access.
+3. Do not invoke Codex merely because a task touches code, files, GitHub, a terminal, or multiple
+   steps.
+4. Use Codex only when a required action cannot be completed or reliably verified with the tools
+   available to ChatGPT in the current session.
+5. When Codex is needed, delegate a narrow task with explicit scope and acceptance criteria.
+   ChatGPT reviews the returned diff/evidence and keeps the final decision.
+6. Codex output is execution evidence, not a new source of truth.
+7. If ChatGPT can complete the task directly, keep the work in ChatGPT.
 
-### Task specification and plan
+This is the default CCWBot bridge policy. Do not invert it by making Codex the default orchestrator.
 
-After clarification and before coding:
+### Bridge permissions
 
-1. Create one task-specific specification under `docs/task_specs/YYYY-MM-DD-<task-slug>.md`.
-2. Record the goal, clarified requirements, out-of-scope items, acceptance criteria, expected
-   files/areas, risks, migration/data impact, test strategy, and proposed decomposition.
-3. Write a short implementation plan derived from that specification.
-4. Keep the specification current during long-running work when accepted scope or decisions change.
+When approved bridge/workspace access is available:
 
-Task specifications are task-specific records, not canonical owners of standing project policy.
-After the task is complete they may remain as historical implementation context, but durable rules
-must be moved to the canonical owner defined by `docs/source_of_truth.md`.
+- Default operating intent is `CHATGPT_ARCHITECT`.
+- Default permission level is `L3_WORKSPACE_WRITE` for the approved narrow CCWBot workspace only.
+- L3 permits task-scoped source reads, source writes, and project-local verification needed for the
+  assigned work.
+- L3 does not authorize secrets/credential reads, dependency installation, unrelated broad deletes,
+  git history mutation, access outside the approved workspace, or irreversible external actions.
+- L4/L5 actions still require explicit owner approval for the exact action.
+- Never widen roots or permissions just to make a tool path work.
 
-### Test-first gate
+## Plan and task context
+
+For non-trivial work, write a short plan before changing files. Keep task-specific requirements,
+risks, acceptance criteria, and temporary notes in the active chat/task or PR.
+
+Do not create routine files under `docs/task_specs/`. Durable rules belong in their canonical
+owners; historical task detail belongs in Git history and PRs.
+
+Ask clarification only when missing information materially changes the implementation. Read-only
+inspection may happen first to resolve uncertainty.
+
+## Test-first gate
 
 Define validation before production implementation.
 
-- For behavior changes and bug fixes, add or modify the focused automated test first and run it
-  before the implementation change. The expected new behavior should fail for the intended reason
-  on the old implementation.
-- For documentation, configuration, migration, or infrastructure work where a normal unit/regression
-  test is not meaningful, create the strongest applicable contract, validation, lint, migration,
-  or configuration check first and document why a conventional failing test is not applicable.
-- Keep tests as an executable contract throughout implementation.
-- Run focused checks after each meaningful slice and the repository-required verification before
-  final acceptance.
+- For behavior changes and bug fixes, add or modify focused automated tests first when practical.
+- For docs/config/migration/infrastructure work, use the strongest applicable contract, lint,
+  migration, or configuration check.
+- Run focused checks after meaningful changes and repository-required verification before final
+  acceptance.
 
-**No green verification, no completion.** Never describe a task as done while an applicable required
-check is failing, was skipped without an explicit reason, or has not been run.
+**No green verification, no completion.** If a required check cannot be run, state exactly which
+check was not run, why, and what risk remains.
 
-### Single-checkout branch workflow
+## Single-checkout branch workflow
 
-Use one local repository checkout for normal development. Do not create Git worktrees by default.
+- Start normal task branches from current `dev`.
+- Use one implementation writer at a time.
+- Do not create Git worktrees by default.
+- Preserve intentional uncommitted user work.
+- Merge accepted task branches through the normal PR flow.
+- Create a worktree only when the owner explicitly requests one.
 
-- Keep the normal local CCWBot checkout as the only working folder.
-- Start task branches from current `dev` and switch branches in that same checkout.
-- Use one implementation writer at a time in the shared checkout. Read-only analysis and review
-  agents may run in parallel when useful.
-- Before switching branches or integrating changes, confirm the working tree is clean or preserve
-  intentional user changes without overwriting them.
-- Merge accepted task branches through the normal PR flow, resolving conflicts and rerunning
-  affected tests after integration.
-- Create a `git worktree` only when the owner explicitly requests one for a specific task.
+## Codex fallback and worker routing
 
-### Orchestrator and workers
+When ChatGPT decides Codex is required, `agents/routing.toml` owns delegated execution/review
+routing and `.codex/config.toml` is its executable model adapter.
 
-The orchestrator owns decomposition, routing, integration, review, and final acceptance. For
-ChatGPT Work and Codex, use the following OpenAI routing:
+Current fallback routing:
 
-- Orchestrator and final acceptance model: `gpt-5.6-sol`.
+- Codex orchestration/final worker model: `gpt-5.6-sol`.
 - Default implementation worker: `gpt-5.6-terra`.
-- Use `gpt-5.6-luna` for simple, mechanical, low-risk, well-specified subtasks.
-- Use Sol as an implementation worker only as an escalation when task complexity, risk, or a failed
-  lower-tier attempt justifies the extra cost.
-- Worker count is adaptive for analysis and review, but implementation defaults to one writer at a
-  time in the single checkout. Additional implementation writers require explicit owner approval.
-- Give each worker only the task specification, relevant canonical rules, assigned scope, acceptance
-  criteria, and evidence needed for its subtask.
-- The orchestrator must review worker diffs and test evidence before integration; worker completion
-  is not final acceptance.
+- Low-cost mechanical worker: `gpt-5.6-luna`.
+- Sol as implementation worker is escalation-only.
+- Worker count may be adaptive for analysis/review, but implementation defaults to one writer.
+- Required review agents come from `agents/routing.toml`.
 
-Execution model policy is canonical in `agents/routing.toml`. Codex project defaults in
-`.codex/config.toml` are an executable adapter and must remain consistent with that policy.
+These settings apply only after Codex has actually been delegated work. They do not make Codex the
+primary CCWBot control plane.
 
-### Token-efficiency objective
+## Token-efficiency objective
 
-Minimize token use while preserving correctness and evidence quality.
+- Search first, then read only relevant code and canonical docs.
+- Reuse already inspected evidence instead of repeatedly loading the repository.
+- Keep delegated tasks narrow.
+- Parallelize only independent read/review work.
+- Avoid duplicate reviews and reruns when evidence has not changed.
 
-- Use Sol mainly for clarification synthesis, planning, decomposition, risky decisions, review, and
-  final acceptance rather than routine implementation.
-- Prefer Terra or Luna for bounded worker tasks according to complexity.
-- Avoid repeatedly loading the whole repository. Search first, then read only relevant files and
-  canonical docs.
-- Reuse the task specification as compact shared context instead of restating the full conversation
-  to every worker.
-- Parallelize only independent work. Do not create workers whose coordination cost exceeds their
-  expected benefit.
-- Avoid recursive or duplicate reviews and reruns when evidence has not changed.
+## PR-readiness workflow
 
+For every non-trivial repository change:
 
-### Default ChatGPT bridge mode for CCWBot
+1. Search repository-wide for affected concepts before editing.
+2. Add regression coverage for behavior changes unless genuinely not applicable.
+3. Review the full diff.
+4. PR body must include `Self-review / risk check` with risky assumptions, edge cases, intentionally
+   untouched areas, migration/rollback notes when relevant, and known follow-ups.
+5. Check existing automated PR review threads. Address valid P0/P1/P2 findings.
+6. External GitHub `@codex review` is optional, not a recursive gate; do not automatically trigger
+   it after every fix.
+7. Run required verification from `docs/development.md`.
+8. Do not claim merge readiness with failed checks, unresolved blocking findings, or untested
+   migrations unless the limitation is explicitly documented.
 
-When the user-level `codex-chatgpt-bridge` skill is available and bridge-assisted work is appropriate,
-use these CCWBot defaults:
+## Safe defaults
 
-- Operating mode: `CHATGPT_ARCHITECT`.
-- Permission level: `L3_WORKSPACE_WRITE` for the approved narrow CCWBot workspace only.
-- The owner pre-approves ChatGPT source reads, source writes, and project-local self-verification
-  needed for the assigned task inside that workspace.
-- Keep Codex as the orchestrator/integrator and independent verifier. Codex retains ownership of
-  git operations, authoritative verification, and final completion claims.
-- L3 does not authorize reading secrets or credential stores, installing dependencies, broad or
-  unrelated deletes, git commit/push/history mutation, access outside the approved workspace, or
-  irreversible/external actions.
-- L4/L5 actions still require explicit owner approval for the exact privileged or irreversible action.
-- If the bridge is unavailable or unhealthy, fall back to the normal local Codex workflow. Do not
-  broaden roots or permissions to recover connectivity.
-- Treat L3 as a policy grant, not a sandbox. Bridge shell execution can carry the local user's
-  authority, so the workspace must remain narrow and secret-free and diffs must be independently
-  reviewed before git or release actions.
-
-Before non-trivial work:
-
-1. Read `AGENTS.md`, this file, `docs/project_context.md`, and `agents/routing.toml`.
-2. Inspect installed skills under `C:\Users\Loki\.codex\skills\`,
-   `C:\Users\Loki\.agents\skills\`, and `.agents/skills/` when present.
-3. Read and apply every relevant skill instruction file (`SKILL.md`, `README.md`, or equivalent).
-4. If no installed skill applies, state that explicitly in the final response and PR body.
-5. Use required review agents when routing says they apply.
-6. Check the current branch, working-tree status, and sync state.
-7. Do not overwrite uncommitted user work.
-
-Mandatory implementation and PR-readiness workflow for every non-trivial task:
-
-1. Write a short implementation plan before changing files. Cover expected files or areas to
-   change, risky edge cases, DB/schema/data migration impact, tests to add, and what belongs in
-   the current PR versus follow-up work.
-2. Search repository-wide for affected concepts before coding, not only obvious files. For
-   migrations or renames, explicitly search for direct columns/fields, lowercase supported-symbol
-   fields, JSON metadata fields, docs/tests/ops-agent queries, user-facing copy, and
-   historical/cache tables.
-3. Add at least one regression test for every bug fix or behavior change that would fail on the
-   old behavior, unless the task is documentation-only or tests are genuinely not applicable.
-4. Before saying a PR is ready, review the full diff and update the PR body with a section named
-   `Self-review / risk check`. Include risky assumptions checked, edge cases tested, files
-   intentionally not changed and why, data migration coverage when relevant, rollback/downgrade
-   considerations when relevant, and known limitations or follow-ups.
-5. Check existing automated PR review comments or threads before saying the PR is ready.
-   Address all valid P0/P1/P2 findings and do not claim merge readiness while a valid blocking
-   thread remains unresolved. External GitHub `@codex review` is optional, not a recursive gate:
-   do not automatically trigger it after every fix. By default, use internal task-review agents
-   plus self-review as the primary review mechanism. If an external review is explicitly requested
-   or already running, inspect that result once. After a narrow review-fix, do not start another
-   external review unless the user explicitly asks or the fix materially changes architecture,
-   security, database behavior, or product logic.
-6. Run the required verification commands from the project docs. If a command cannot be run, state
-   exactly which command was not run, why it was not run, and what risk remains.
-7. Do not claim a PR is ready to merge when there are unresolved valid review threads, untested
-   migrations, failed checks, missing required verification, or known CI/test gaps, unless those
-   limitations are explicitly documented and the user is asked to decide.
-
-Safe defaults:
-
-- Work from `dev` or a focused branch based on `dev`.
-- Open normal PRs against `dev`.
-- Open `dev` -> `main` PRs only for explicit production releases.
+- Normal task PRs target `dev`.
+- `dev` -> `main` PRs are production releases only when explicitly requested.
 - Never commit `.env`, `.ops-agent.env`, local state, caches, logs, generated reports, DB dumps,
   or secrets.
 - Do not change product behavior unless explicitly requested.
 - Do not rename `bot/services/ai_agent_groq.py`.
-- Put new project/process documentation under `docs/`; keep only `README.md` and `AGENTS.md`
-  at the repository root, plus `CLAUDE.md` for Claude Code. Use subtree README.md files only
-  when the content belongs to that local tool or package directory.
-- Codex skills are developer tooling only. Local user skills live under
-  `C:\Users\Loki\.codex\skills\` and `C:\Users\Loki\.agents\skills\`; project-copied skills
-  live under `.agents/skills/` when present and may be pinned by `skills-lock.json`.
-- Do not automatically install or upgrade Graphify or other developer-tool packages. Pin and
-  explicitly approve a dependency change before fetching it. Do not send repository content to external semantic-extraction providers without explicit user approval for that specific run.
-- Do not add global Codex hooks or custom Git merge drivers for developer tooling unless the
-  repository provisions them reproducibly and a contract test verifies their behavior.
-- For production forensic SQL, connect only through the SSH tunnel with `ccwbot_investigator`.
-  Verify the session is read-only before evidence queries. If a required table returns
-  `permission denied`, stop and report the missing grant; never switch to the application/admin
-  role or modify privileges from the investigation session.
+- Keep project/process documentation under `docs/`; root bootstrap exceptions are `README.md`,
+  `AGENTS.md`, and `CLAUDE.md`.
+- Do not automatically install or upgrade Graphify or other developer-tool packages.
+- Do not send repository content to external semantic-extraction providers without explicit user
+  approval for that specific run.
+- Do not add global Codex hooks or custom Git merge drivers unless the repository provisions and
+  tests them.
+- Production forensic SQL uses only the read-only `ccwbot_investigator` role through the approved
+  SSH tunnel. A permission error is an access-provisioning issue, not permission to switch roles.
 
 Follow `project_context.md`, `alert_logic.md`, `market_reports.md`, and
-`product_analytics.md` for product guardrails. Follow `ops_agent_service.md` for ops-agent/report
-boundaries. These rules are not repeated here.
-
-Use the default verification and migration checks from `development.md`; use
-`release_checklist.md` for release-only gates. Short future prompts can use
-`codex_task_prompt_template.md` and only describe the concrete task-specific problem, goal, scope,
-verification, and PR notes.
-
+`product_analytics.md` for product rules. Follow `ops_agent_service.md` for ops-agent boundaries.
 
 ## PR description and merge ownership
 
 Every non-trivial PR should state: summary, files changed, behavior impact, database/schema impact,
-verification performed, manual verification status, protected-file changes when relevant, known
-limitations/follow-ups, and `Self-review / risk check`.
+verification performed, manual verification status, known limitations/follow-ups, and
+`Self-review / risk check`.
 
-Normal task PRs target `dev`. Production release PRs target `main` only when explicitly
-requested. Do not auto-merge unless the user explicitly asks for the merge.
+Do not auto-merge unless the user explicitly asks.
