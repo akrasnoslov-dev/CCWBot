@@ -440,6 +440,43 @@ async def test_customize_coins_opens_optional_selector_after_first_brief(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_customize_reenables_legacy_disabled_btc_and_stale_btc_toggle_cannot_disable_it(
+    monkeypatch,
+):
+    engine, session = await build_session()
+    try:
+        user = await create_user(session)
+        await set_user_coin_subscription(session, user_id=user.id, symbol="btc", is_enabled=False)
+        await session.commit()
+
+        monkeypatch.setattr("bot.onboarding.DB_ENABLED", True)
+        monkeypatch.setattr("bot.onboarding.DB_SESSION_LOCAL", lambda: SessionContext(session))
+        query = FakeQuery()
+
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:customize"
+        ) is True
+
+        btc = await session.scalar(
+            select(UserCoinSubscription).where(
+                UserCoinSubscription.user_id == user.id,
+                UserCoinSubscription.symbol == "btc",
+            )
+        )
+        assert btc.is_enabled is True
+
+        assert await handle_onboarding_callback(
+            SimpleNamespace(callback_query=query), "onboarding:toggle:btc"
+        ) is True
+        await session.refresh(btc)
+        assert btc.is_enabled is True
+        assert "BTC stays active during onboarding" in query.answers[-1][0]
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_failed_first_brief_delivery_does_not_complete_onboarding(monkeypatch):
     engine, session = await build_session()
     try:
