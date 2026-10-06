@@ -75,9 +75,9 @@ collection gap, or explicit investigation question requires them.
 5. Mark success only after the report exists and the bundle is complete, unless the operator
    explicitly accepts a partial report.
 
-If a bundle or report is partial, include `Collector Status` in the report and list every failed
-or partial collector. Missing evidence, skipped evidence, and detector `unknown` states are not
-healthy evidence; describe them as gaps and lower confidence for affected findings.
+If a bundle or report is partial, list every failed or partial collector in report Coverage.
+Missing evidence, skipped evidence, and detector `unknown` states are not healthy evidence;
+describe them as gaps and lower confidence for affected findings.
 
 ## Event Alert Regression Evidence
 
