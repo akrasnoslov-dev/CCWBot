@@ -13,6 +13,10 @@ import pytest
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from alembic import command
 from ops_agent.alert_similarity import build_alert_evidence_payloads
 from ops_agent.collectors import db as db_collector
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
@@ -36,10 +40,6 @@ from ops_agent.db_queries import (
 from ops_agent.detectors import run_detectors
 from ops_agent.redaction import RedactionReport, ReferenceMapper
 from ops_agent.schemas import Period
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from alembic import command
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

@@ -172,18 +172,14 @@ OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@loca
 The test runs Alembic to head, `EXPLAIN`s every ops-agent DB query, and verifies malformed
 `alerts.numeric_context` text does not break same-family or same-news collectors.
 
-The command prints one JSON object. On a successful or partial published collection it includes the published bundle path. If task/SSH tooling loses stdout or the exit code, use `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` and trust the receipt's `published_bundle_path`; do not infer a bundle from an unfinished staging directory. Codex should read the published bundle in this order:
+The command prints one JSON object. On a successful or partial published collection it includes the published bundle path. If task/SSH tooling loses stdout or the exit code, use `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` and trust the receipt's `published_bundle_path`; do not infer a bundle from an unfinished staging directory.
 
-1. `CODEX_INSTRUCTIONS.md`
-2. `manifest.json`
-3. `bundle_summary.md`
-4. `decision_report_context.md`
-5. `detectors/detector_summary.md`
-6. `detectors/detector_results.json`
-7. `redaction_report.json`
-8. `limits.json`
+For report analysis, read only `manifest.json` and `decision_report_context.md` first. The compact
+decision context contains report-driving aggregates, collection gaps, triggered/unknown findings,
+and targeted evidence paths. Do not preload the rest of the bundle. Open detector or evidence files
+only to verify a referenced finding or answer an explicit investigation question.
 
-Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. The generated `decision_report_context.md` is Markdown-only decision context; use it to start the final report, then verify important claims against detectors and evidence. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repository checkout. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
+Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repository checkout. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
 Log evidence scans every retained CCWBot log file completely and is period-aware when timestamps
 are parseable. Bundles separate timestamped

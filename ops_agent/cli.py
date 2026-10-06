@@ -20,7 +20,7 @@ from ops_agent.detectors import (
     run_detectors,
 )
 from ops_agent.redaction import RedactionReport, ReferenceMapper
-from ops_agent.report_markdown import render_decision_report_context
+from ops_agent.report_context import render_report_context
 from ops_agent.retention import apply_retention
 from ops_agent.state import (
     load_state,
@@ -116,7 +116,7 @@ def _write_decision_context(
     try:
         writer.write_text(
             "decision_report_context.md",
-            render_decision_report_context(
+            render_report_context(
                 period=period,
                 evidence=evidence,
                 detector_results=detector_results,

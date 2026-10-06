@@ -168,7 +168,7 @@ def _stub_collectors(
     monkeypatch.setattr(cli, "detector_summary", lambda _results: "# Detector Summary\n")
     monkeypatch.setattr(
         cli,
-        "render_decision_report_context",
+        "render_report_context",
         lambda **kwargs: f"# Context\nStatus: {kwargs['collection_status']}\n",
     )
 
