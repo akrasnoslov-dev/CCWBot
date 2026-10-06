@@ -15,6 +15,7 @@ from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.event_text import event_alert_presentation_fallback
 from bot.db.database import Base, EventAiAnalysis, save_price_snapshot
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS
+from bot.services.llm.errors import AllProvidersFailedError
 
 
 async def _session_factory():
@@ -409,7 +410,7 @@ async def test_event_significance_news_only_true_is_rejected_before_render(monke
             "rate_limit",
         ),
         (
-            alerts.AllProvidersFailedError(
+            AllProvidersFailedError(
                 "render providers exhausted",
                 mixed_failure=True,
             ),
@@ -417,7 +418,7 @@ async def test_event_significance_news_only_true_is_rejected_before_render(monke
         ),
     ),
 )
-async def test_render_failure_uses_deterministic_presentation_fallback(
+async def test_render_failure_is_terminal_without_non_llm_fallback(
     monkeypatch, render_error, expected_reason
 ):
     successes = []
@@ -463,31 +464,21 @@ async def test_render_failure_uses_deterministic_presentation_fallback(
     payload = _runtime_no_alert_payload(chg_window_percent=4.0)
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
-    expected_situation, expected_action = event_alert_presentation_fallback(
-        payload["market"], []
-    )
-    assert analysis_id == 323
-    assert decision is not None
-    assert decision.should_alert is True
-    assert decision.symbol == "BTC"
-    assert decision.confidence == "high"
-    assert decision.urgency == "normal"
-    assert decision.related_news_ids == []
-    assert decision.message_body == expected_situation
-    assert decision.possible_action == expected_action
-    assert successes == [True]
-    assert failures == []
+    assert decision is None
+    assert analysis_id is None
+    assert successes == []
+    assert failures == [("BTC", expected_reason)]
 
     render_outcome.assert_awaited_once()
     render_kwargs = render_outcome.await_args.kwargs
-    assert render_kwargs["status"] == "completed"
+    assert render_kwargs["status"] == "llm_error"
     assert render_kwargs["error_reason"] == expected_reason
-    assert render_kwargs["provider"] == alerts.DETERMINISTIC_EVENT_ALERT_RENDER_PROVIDER
-    assert render_kwargs["model"] == alerts.DETERMINISTIC_EVENT_ALERT_RENDER_MODEL
 
     save_analysis.assert_awaited_once()
-    assert save_analysis.await_args.kwargs["status"] == "success"
-    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_SHOULD_ALERT
+    assert save_analysis.await_args.kwargs["status"] == "llm_error"
+    delivery_outcome.assert_awaited_once()
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
 
 
 def test_event_alert_render_materialization_keeps_identity_and_facts_backend_owned():
@@ -623,7 +614,7 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_factual_render_validation_failure_uses_grounded_fallback(monkeypatch):
+async def test_factual_render_validation_failure_does_not_use_non_llm_fallback(monkeypatch):
     payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     monkeypatch.setattr(
         alerts,
@@ -654,12 +645,8 @@ async def test_factual_render_validation_failure_uses_grounded_fallback(monkeypa
 
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
-    assert analysis_id == 321
-    assert decision is not None
-    assert decision.should_alert is True
-    assert decision.related_news_ids == []
-    assert "unavailable" not in decision.message_body.lower()
-    assert "buy" not in decision.possible_action.lower()
+    assert analysis_id is None
+    assert decision is None
     create_market_event.assert_not_awaited()
 
 

@@ -63,6 +63,13 @@ def _http_error(status_code):
     return err
 
 
+def _cloudflare_error(status_code, *, code, message):
+    err = RuntimeError(message)
+    err.status_code = status_code
+    err.body = {"error": {"code": code, "message": message}}
+    return err
+
+
 def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
     for provider in ("groq", "gemini", "mistral"):
@@ -446,6 +453,115 @@ async def _call_validated(router, validate, call_type="event_analysis"):
         response_format=None,
         validate_response=validate,
     )
+
+
+@pytest.mark.asyncio
+async def test_event_alert_render_uses_four_step_model_chain(monkeypatch):
+    for name in (
+        "GROQ_EVENT_ANALYSIS_MODEL",
+        "GROQ_EVENT_RENDER_FALLBACK_MODEL",
+        "CLOUDFLARE_EVENT_RENDER_MODEL",
+        "GEMINI_EVENT_RENDER_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-id")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    call_order = []
+
+    def groq_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, "not json")
+
+    def cloudflare_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, "still not json")
+
+    def gemini_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, '{"ok": true}')
+
+    groq = FakeProvider("groq", groq_behavior)
+    cloudflare = FakeProvider("cloudflare", cloudflare_behavior)
+    gemini = FakeProvider("gemini", gemini_behavior)
+    router = LLMRouter(
+        registry={
+            "groq": groq,
+            "cloudflare": cloudflare,
+            "gemini": gemini,
+        }
+    )
+
+    provider, parsed = await _call_validated(
+        router,
+        _parse_json_validate,
+        call_type="event_alert_render",
+    )
+
+    assert provider == "gemini"
+    assert parsed == {"ok": True}
+    assert call_order == [
+        ("groq", "openai/gpt-oss-120b"),
+        ("groq", "qwen/qwen3.8-27b"),
+        ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        ("gemini", "gemini-3.5-flash-lite"),
+    ]
+    assert groq.calls == 2
+    assert cloudflare.calls == 1
+    assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cloudflare_error",
+    [
+        _cloudflare_error(408, code=3007, message="Request timeout"),
+        _cloudflare_error(400, code=5007, message="No such model"),
+    ],
+)
+async def test_event_alert_render_cloudflare_transient_or_missing_model_reaches_gemini(
+    monkeypatch, cloudflare_error
+):
+    for name in (
+        "GROQ_EVENT_ANALYSIS_MODEL",
+        "GROQ_EVENT_RENDER_FALLBACK_MODEL",
+        "CLOUDFLARE_EVENT_RENDER_MODEL",
+        "GEMINI_EVENT_RENDER_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-id")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    groq = FakeProvider(
+        "groq", lambda name, model: _content_result(name, model, "not json")
+    )
+    cloudflare = FakeProvider("cloudflare", cloudflare_error)
+    gemini = FakeProvider(
+        "gemini", lambda name, model: _content_result(name, model, '{"ok": true}')
+    )
+    router = LLMRouter(
+        registry={
+            "groq": groq,
+            "cloudflare": cloudflare,
+            "gemini": gemini,
+        }
+    )
+
+    provider, parsed = await _call_validated(
+        router,
+        _parse_json_validate,
+        call_type="event_alert_render",
+    )
+
+    assert provider == "gemini"
+    assert parsed == {"ok": True}
+    assert groq.calls == 2
+    assert cloudflare.calls == 1
+    assert gemini.calls == 1
 
 
 @pytest.mark.asyncio

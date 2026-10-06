@@ -460,12 +460,12 @@ async def _llm_provider_breakdown_rows(
     session: AsyncSession,
     *,
     now: datetime,
-) -> tuple[tuple[str, str, dict[str, int]], ...]:
-    """Per-call-type/provider attempt counts over the last 24h.
+) -> tuple[tuple[str, str, str, dict[str, int]], ...]:
+    """Per-call-type/provider/model attempt counts over the last 24h.
 
-    These are provider-attempt diagnostics, not final product outcomes. Event Analysis health
-    remains authoritative in ``_ai_health`` even when another call type is degraded. Only
-    normalized categories are rendered; raw errors and provider payloads never reach Telegram.
+    Models are surfaced only for Event Alert Render, where two different Groq models are separate
+    chain steps. Other call types keep the compact provider-only display. Only allowlisted model
+    labels are rendered; raw model/env values never reach Telegram.
     """
     since = now - timedelta(hours=24)
     rows = (
@@ -473,19 +473,30 @@ async def _llm_provider_breakdown_rows(
             select(
                 LlmUsageLog.call_type,
                 LlmUsageLog.provider,
+                LlmUsageLog.model,
                 LlmUsageLog.status,
                 LlmUsageLog.error_reason,
             )
             .where(LlmUsageLog.created_at >= since)
-            .order_by(LlmUsageLog.call_type, LlmUsageLog.provider, LlmUsageLog.id)
+            .order_by(
+                LlmUsageLog.call_type,
+                LlmUsageLog.provider,
+                LlmUsageLog.model,
+                LlmUsageLog.id,
+            )
         )
     ).all()
-    grouped: dict[tuple[str, str], dict[str, int]] = {}
-    for call_type_value, provider_value, status, error_reason in rows:
-        key = (
-            _llm_call_type_label(call_type_value),
-            _llm_provider_label(provider_value),
+    grouped: dict[tuple[str, str, str], dict[str, int]] = {}
+    for call_type_value, provider_value, model_value, status, error_reason in rows:
+        call_type = _llm_call_type_label(call_type_value)
+        # Group by normalized model identity, not by its safe display label. Otherwise two
+        # operator-overridden Groq models both become "custom model" and collapse into one row.
+        model_identity = (
+            str(model_value or "").strip().lower()
+            if str(call_type_value or "").strip().lower() == "event_alert_render"
+            else ""
         )
+        key = (call_type, _llm_provider_label(provider_value), model_identity)
         counters = grouped.setdefault(
             key,
             {
@@ -500,10 +511,28 @@ async def _llm_provider_breakdown_rows(
         )
         counters["attempts"] += 1
         counters[_llm_outcome_category(status, error_reason)] += 1
-    return tuple(
-        (call_type, provider, counters)
-        for (call_type, provider), counters in sorted(grouped.items())
+
+    custom_model_identities = sorted(
+        {
+            model_identity
+            for call_type, _provider, model_identity in grouped
+            if call_type == "Event Alert Render"
+            and model_identity
+            and _llm_model_label(model_identity) == "custom model"
+        }
     )
+    custom_model_labels = {
+        model_identity: f"custom model {index}"
+        for index, model_identity in enumerate(custom_model_identities, start=1)
+    }
+
+    result = []
+    for (call_type, provider, model_identity), counters in sorted(grouped.items()):
+        model = _llm_model_label(model_identity) if model_identity else ""
+        if model == "custom model":
+            model = custom_model_labels.get(model_identity, model)
+        result.append((call_type, provider, model, counters))
+    return tuple(result)
 
 
 def _llm_failure_summary(counters: dict[str, int]) -> str:
@@ -564,40 +593,47 @@ async def build_admin_llm_diagnostics_text(
     except Exception:
         return "LLM diagnostics\n\nTelemetry query failed."
 
-    issues = [row for row in rows if row[2]["success"] < row[2]["attempts"]]
-    healthy = [row for row in rows if row[2]["success"] == row[2]["attempts"]]
+    issues = [row for row in rows if row[3]["success"] < row[3]["attempts"]]
+    healthy = [row for row in rows if row[3]["success"] == row[3]["attempts"]]
     issues.sort(
         key=lambda row: (
-            row[2]["success"] / max(row[2]["attempts"], 1),
+            row[3]["success"] / max(row[3]["attempts"], 1),
             row[0],
             row[1],
+            row[2],
         )
     )
-    healthy.sort(key=lambda row: (-row[2]["attempts"], row[0], row[1]))
+    healthy.sort(key=lambda row: (-row[3]["attempts"], row[0], row[1], row[2]))
 
     visible_issues = issues[:MAX_LLM_PROVIDER_BREAKDOWN_ROWS]
     remaining_slots = MAX_LLM_PROVIDER_BREAKDOWN_ROWS - len(visible_issues)
     visible_healthy = healthy[:remaining_slots]
     omitted = len(rows) - len(visible_issues) - len(visible_healthy)
 
-    total_attempts = sum(row[2]["attempts"] for row in rows)
-    total_success = sum(row[2]["success"] for row in rows)
+    total_attempts = sum(row[3]["attempts"] for row in rows)
+    total_success = sum(row[3]["success"] for row in rows)
     total_failed = total_attempts - total_success
 
     active = []
     for backoff in get_active_llm_rate_limit_backoffs(now=now):
         provider = _llm_provider_label(str(backoff.get("provider") or ""))
+        raw_call_types = tuple(str(value) for value in backoff.get("call_types") or ())
         call_types = (
-            ", ".join(_llm_call_type_label(str(value)) for value in backoff.get("call_types") or ())
-            or "Other LLM"
+            ", ".join(_llm_call_type_label(value) for value in raw_call_types) or "Other LLM"
         )
+        model = (
+            _llm_model_label(str(backoff.get("model") or ""))
+            if "event_alert_render" in raw_call_types
+            else ""
+        )
+        endpoint = f"{provider} · {model}" if model else provider
         limited_until = backoff.get("limited_until")
         until = (
             f" until {_format_utc(limited_until)}"
             if isinstance(limited_until, datetime)
             else ""
         )
-        active.append(f"⚠️ {call_types} / {provider}{until}")
+        active.append(f"⚠️ {call_types} / {endpoint}{until}")
 
     lines = ["LLM diagnostics — last 24h"]
     if not rows:
@@ -617,10 +653,11 @@ async def build_admin_llm_diagnostics_text(
 
         if visible_issues:
             lines.extend(("", "Issues"))
-            for call_type, provider, counters in visible_issues:
+            for call_type, provider, model, counters in visible_issues:
                 icon = "❌" if counters["success"] == 0 else "⚠️"
+                endpoint = f"{provider} · {model}" if model else provider
                 lines.append(
-                    f"{icon} {call_type} / {provider} — "
+                    f"{icon} {call_type} / {endpoint} — "
                     f"{counters['success']}/{counters['attempts']} success"
                 )
                 detail = _llm_failure_summary(counters)
@@ -629,9 +666,10 @@ async def build_admin_llm_diagnostics_text(
 
         if visible_healthy:
             lines.extend(("", "Healthy"))
-            for call_type, provider, counters in visible_healthy:
+            for call_type, provider, model, counters in visible_healthy:
+                endpoint = f"{provider} · {model}" if model else provider
                 lines.append(
-                    f"✅ {call_type} / {provider} — "
+                    f"✅ {call_type} / {endpoint} — "
                     f"{counters['success']}/{counters['attempts']}"
                 )
 
@@ -647,11 +685,21 @@ async def build_admin_llm_diagnostics_text(
 def _llm_call_type_label(value: str | None) -> str:
     return {
         "event_analysis": "Event Analysis",
+        "event_alert_render": "Event Alert Render",
         "market_heartbeat": "Market Heartbeat",
         "daily_report": "Daily report",
         "weekly_report": "Weekly report",
         "news_intelligence": "News intelligence",
     }.get(str(value or "").strip().lower(), "Other LLM")
+
+
+def _llm_model_label(value: str | None) -> str:
+    return {
+        "openai/gpt-oss-120b": "GPT-OSS 120B",
+        "qwen/qwen3.8-27b": "Qwen 3.8 27B",
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "Llama 3.3 70B",
+        "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
+    }.get(str(value or "").strip().lower(), "custom model")
 
 
 def _llm_provider_label(value: str | None) -> str:
@@ -662,6 +710,7 @@ def _llm_provider_label(value: str | None) -> str:
         "cerebras": "cerebras",
         "gemini": "gemini",
         "mistral": "mistral",
+        "cloudflare": "cloudflare",
     }.get(normalized, "other provider")
 
 

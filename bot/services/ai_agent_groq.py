@@ -143,6 +143,7 @@ _GROQ_STRICT_SCHEMA_MODELS = frozenset(
     {
         "openai/gpt-oss-20b",
         "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b",
     }
 )
 
@@ -296,28 +297,25 @@ _MARKET_REPORT_JSON_SCHEMA = {
 def _structured_response_formats(
     *, call_type: str, schema_name: str, schema: dict
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
-    """Return the shared JSON mode plus a strict Groq override when supported."""
+    """Return shared JSON mode plus strict overrides for verified Groq model attempts."""
     if not _groq_json_mode_enabled():
         return None, None
 
     json_object = {"type": "json_object"}
-    groq_model = llm_config.model_for("groq", call_type)
-    if groq_model not in _GROQ_STRICT_SCHEMA_MODELS:
-        return json_object, None
-
-    return (
-        json_object,
-        {
-            "groq": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": schema,
-                },
-            }
+    strict_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema,
         },
-    )
+    }
+    overrides = {
+        f"{provider}:{model}": strict_format
+        for provider, model in llm_config.provider_attempts(call_type)
+        if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS
+    }
+    return json_object, overrides or None
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
