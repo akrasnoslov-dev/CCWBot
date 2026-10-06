@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+
 from ops_agent.collectors.logs import LOG_PATTERNS, collect_logs, parse_log_timestamp
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport, ReferenceMapper
