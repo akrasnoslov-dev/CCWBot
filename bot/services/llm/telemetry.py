@@ -138,6 +138,11 @@ def is_model_unavailable_error(error: Exception) -> bool:
     haystack = _error_haystack(error)
     if any(marker in haystack for marker in _MODEL_ERROR_MARKERS):
         return True
+    # Cloudflare Workers AI reports a missing model as HTTP 400 with internal code 5007.
+    # That is provider/model availability, not a malformed request, so the next fallback
+    # must still be attempted.
+    if "5007" in _provider_error_identifiers(error):
+        return True
     if _MODEL_ERROR_MESSAGE_RE.search(haystack):
         return True
     return status_code == 404
@@ -183,16 +188,16 @@ def _provider_error_identifiers(error: Exception) -> set[str]:
     identifiers: set[str] = set()
     for attribute in ("code", "type"):
         value = getattr(error, attribute, None)
-        if isinstance(value, str):
-            identifiers.add(value.strip().lower())
+        if isinstance(value, (str, int)):
+            identifiers.add(str(value).strip().lower())
     body = getattr(error, "body", None)
     if isinstance(body, dict):
         nested = body.get("error")
         source = nested if isinstance(nested, dict) else body
         for key in ("code", "type"):
             value = source.get(key)
-            if isinstance(value, str):
-                identifiers.add(value.strip().lower())
+            if isinstance(value, (str, int)):
+                identifiers.add(str(value).strip().lower())
     return identifiers
 
 
@@ -262,6 +267,10 @@ def classify_ai_error_reason(error: Exception) -> str:
             status_code_int = int(effective_status_code)
         except (TypeError, ValueError):
             status_code_int = None
+        if status_code_int == 408:
+            # Some OpenAI-compatible providers, including Cloudflare Workers AI, use HTTP 408
+            # for inference timeouts/aborts. This is transient and fallback-eligible.
+            return "timeout"
         if status_code_int is not None and 400 <= status_code_int < 500:
             # Sub-classify so the router can tell "this provider cannot serve this model"
             # (worth trying the next provider) from "this request is broken" (is not).

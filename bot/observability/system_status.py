@@ -489,12 +489,14 @@ async def _llm_provider_breakdown_rows(
     grouped: dict[tuple[str, str, str], dict[str, int]] = {}
     for call_type_value, provider_value, model_value, status, error_reason in rows:
         call_type = _llm_call_type_label(call_type_value)
-        model = (
-            _llm_model_label(model_value)
+        # Group by normalized model identity, not by its safe display label. Otherwise two
+        # operator-overridden Groq models both become "custom model" and collapse into one row.
+        model_identity = (
+            str(model_value or "").strip().lower()
             if str(call_type_value or "").strip().lower() == "event_alert_render"
             else ""
         )
-        key = (call_type, _llm_provider_label(provider_value), model)
+        key = (call_type, _llm_provider_label(provider_value), model_identity)
         counters = grouped.setdefault(
             key,
             {
@@ -509,10 +511,28 @@ async def _llm_provider_breakdown_rows(
         )
         counters["attempts"] += 1
         counters[_llm_outcome_category(status, error_reason)] += 1
-    return tuple(
-        (call_type, provider, model, counters)
-        for (call_type, provider, model), counters in sorted(grouped.items())
+
+    custom_model_identities = sorted(
+        {
+            model_identity
+            for call_type, _provider, model_identity in grouped
+            if call_type == "Event Alert Render"
+            and model_identity
+            and _llm_model_label(model_identity) == "custom model"
+        }
     )
+    custom_model_labels = {
+        model_identity: f"custom model {index}"
+        for index, model_identity in enumerate(custom_model_identities, start=1)
+    }
+
+    result = []
+    for (call_type, provider, model_identity), counters in sorted(grouped.items()):
+        model = _llm_model_label(model_identity) if model_identity else ""
+        if model == "custom model":
+            model = custom_model_labels.get(model_identity, model)
+        result.append((call_type, provider, model, counters))
+    return tuple(result)
 
 
 def _llm_failure_summary(counters: dict[str, int]) -> str:
