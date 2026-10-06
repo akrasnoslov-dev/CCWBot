@@ -54,7 +54,7 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - `bot/services/` contains external service integrations for CoinGecko, RSS news, and LLM
   providers.
 - `alembic/` contains database migrations.
-- `ops-agent/` contains the repo-managed production diagnostics collector and sanitized
+- `ops_agent/` contains the repo-managed production diagnostics collector and sanitized
   report-context generator.
 - `tests/` contains unit tests that avoid real Telegram, LLM provider, CoinGecko, and PostgreSQL
   calls.
@@ -410,7 +410,7 @@ Normal work should be opened as pull requests against `dev`. Only open pull requ
 3. Verify `/opt/backups` has a recent backup or create one with `sudo scripts/backup_postgres.sh`.
 4. If migrations are needed, run `docker compose run --rm migrate`.
 5. Run `docker compose up -d --build`.
-6. If the release changed anything under `ops-agent/`, rebuild that image separately — step 5
+6. If the release changed anything under `ops_agent/`, rebuild that image separately — step 5
    does not touch it. See "Deploying Ops-Agent Changes" in `docs/dev_ops_guide.md`.
 7. Check container health with `docker compose ps`.
 8. Check bot logs with `docker compose logs -f`.

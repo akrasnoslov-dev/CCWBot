@@ -1,7 +1,7 @@
 """Model identifiers the shipped bot defaults to, for drift detection.
 
 The ops-agent runs from its own image, which does not contain ``bot/`` (see
-``ops-agent/Dockerfile``), so it cannot import the bot's configuration to learn what the
+``ops_agent/Dockerfile``), so it cannot import the bot's configuration to learn what the
 current defaults are. These constants are therefore a deliberate copy.
 
 The copy is kept honest by ``tests/ops_agent/test_expected_models_match_bot_defaults.py``,

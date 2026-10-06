@@ -2,7 +2,7 @@ services:
   ops-agent:
     build:
       context: .
-      dockerfile: ops-agent/Dockerfile
+      dockerfile: ops_agent/Dockerfile
     env_file:
       - path: .ops-agent.env
         required: false

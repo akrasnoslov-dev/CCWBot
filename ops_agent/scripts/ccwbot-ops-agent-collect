@@ -194,17 +194,17 @@ interrupted() {
 trap cleanup EXIT
 trap interrupted INT TERM
 
-if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --format json > "$docker_status_file" 2>/dev/null; then
+if ! env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml ps --all --format json > "$docker_status_file" 2>/dev/null; then
   printf '{"status":"failed","error":"docker_status_unavailable"}\n' > "$docker_status_file"
 fi
 
-container_ids=$(env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml ps --all --quiet 2>/dev/null || true)
+container_ids=$(env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml ps --all --quiet 2>/dev/null || true)
 if [ -n "$container_ids" ]; then
   # shellcheck disable=SC2086
   env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" inspect --format '{"Name": {{json .Name}}, "RestartCount": {{json .RestartCount}}}' $container_ids > "$docker_restarts_file" 2>/dev/null || : > "$docker_restarts_file"
 fi
 
-set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm -v "$docker_status_file:/tmp/ops-agent-docker-status.json:ro" -e OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json -v "$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro" -e OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json ops-agent collect
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml run --rm -v "$docker_status_file:/tmp/ops-agent-docker-status.json:ro" -e OPS_AGENT_DOCKER_STATUS_JSON_PATH=/tmp/ops-agent-docker-status.json -v "$docker_restarts_file:/tmp/ops-agent-docker-restarts.json:ro" -e OPS_AGENT_DOCKER_RESTARTS_JSON_PATH=/tmp/ops-agent-docker-restarts.json ops-agent collect
 
 if [ -n "$since" ]; then
   set -- "$@" --since "$since"

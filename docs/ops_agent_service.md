@@ -23,7 +23,7 @@ Docker image. A normal bot-only deploy is not enough to prove the collector imag
 ## Production Access Model
 
 Production collection should use the root-owned safe wrappers documented in
-`ops-agent/README.md`:
+`ops_agent/README.md`:
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect
@@ -141,6 +141,6 @@ outcomes without exposing source IDs. Similarity remains evidence, not proof of 
 
 ## Local References
 
-- Current operator runbook: `ops-agent/README.md`
+- Current operator runbook: `ops_agent/README.md`
 - Report-writing prompt: `docs/ops-agent-report-codex-prompt.md`
 - Read-only SQL snippets: `docs/observability.md`

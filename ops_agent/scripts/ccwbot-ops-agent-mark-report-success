@@ -84,7 +84,7 @@ safe_relative_path "$report_rel" || reject "unsafe report path"
 [ -x "$DOCKER" ] || reject "/usr/bin/docker is not executable"
 
 cd /opt/CCWBot
-set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent mark-report-success \
+set -- env -i PATH=/usr/bin:/bin HOME=/root "$DOCKER" compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml run --rm ops-agent mark-report-success \
   --bundle "/app/reports/ops-agent/bundles/$bundle_rel" \
   --report "/app/reports/ops-agent/reports/$report_rel"
 
