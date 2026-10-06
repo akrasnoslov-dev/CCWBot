@@ -316,9 +316,9 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     previous_event_alert = (
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
     )
-    recent_event_alert_counts = input_payload.get("recent_event_alert_counts")
-    recent_event_alert_counts = (
-        recent_event_alert_counts if isinstance(recent_event_alert_counts, dict) else {}
+    recent_event_counts = input_payload.get("recent_event_counts")
+    recent_event_counts = (
+        recent_event_counts if isinstance(recent_event_counts, dict) else {}
     )
     context = {
         "schema_version": 11,
@@ -351,10 +351,10 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             "analysed_window_move": previous_event_alert.get("analysed_window_move"),
             "age_minutes": previous_event_alert.get("age_minutes"),
         }
-    if recent_event_alert_counts:
-        context["recent_event_alert_counts"] = {
-            "h6": recent_event_alert_counts.get("h6"),
-            "h24": recent_event_alert_counts.get("h24"),
+    if recent_event_counts:
+        context["recent_event_counts"] = {
+            "h6": recent_event_counts.get("h6"),
+            "h24": recent_event_counts.get("h24"),
         }
     return context
 

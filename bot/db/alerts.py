@@ -256,21 +256,19 @@ async def get_latest_sent_event_alert_context_for_symbol(
     return alert, event_key, semantic_family
 
 
-async def count_recent_sent_event_alerts_for_symbol(
+async def count_recent_market_events_for_symbol(
     session: AsyncSession,
     *,
     symbol: str,
-    alert_type: str,
+    event_type: str,
     since: datetime,
 ) -> int:
-    """Count distinct sent market events for one symbol since a cutoff."""
+    """Count event-level detections without recipient-delivery fan-out."""
     statement = (
-        select(func.count(func.distinct(Alert.market_event_id)))
-        .where(Alert.symbol == symbol.upper())
-        .where(Alert.alert_type == alert_type)
-        .where(Alert.status == "sent")
-        .where(Alert.created_at >= since)
-        .where(Alert.market_event_id.is_not(None))
+        select(func.count(MarketEvent.id))
+        .where(MarketEvent.symbol == symbol.upper())
+        .where(MarketEvent.event_type == event_type)
+        .where(MarketEvent.detected_at >= since)
     )
     return int(await session.scalar(statement) or 0)
 

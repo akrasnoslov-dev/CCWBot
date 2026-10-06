@@ -68,7 +68,7 @@ def _payload() -> dict:
             "created_at": "2026-09-30T10:00:00+00:00",
             "age_minutes": 2595,
         },
-        "recent_event_alert_counts": {"h6": 2, "h24": 5},
+        "recent_event_counts": {"h6": 2, "h24": 5},
     }
 
 

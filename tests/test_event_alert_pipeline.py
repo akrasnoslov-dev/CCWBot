@@ -152,8 +152,14 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
         "get_price_snapshots_since",
         AsyncMock(
             return_value=[
-                SimpleNamespace(price=101, checked_at=now - timedelta(minutes=60)),
-                SimpleNamespace(price=102, checked_at=now - timedelta(minutes=30)),
+                SimpleNamespace(
+                    price=101,
+                    checked_at=now - timedelta(minutes=60) + timedelta(seconds=3),
+                ),
+                SimpleNamespace(
+                    price=102,
+                    checked_at=now - timedelta(minutes=30) + timedelta(seconds=4),
+                ),
                 SimpleNamespace(price=104, checked_at=now),
             ]
         ),
@@ -166,7 +172,7 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
     )
     monkeypatch.setattr(
         alerts,
-        "count_recent_sent_event_alerts_for_symbol",
+        "count_recent_market_events_for_symbol",
         AsyncMock(side_effect=[2, 5]),
     )
     monkeypatch.setattr(
@@ -203,9 +209,84 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
     assert market["chg1h_percent"] == pytest.approx((104 / 101 - 1) * 100)
     assert market["relative_window_percentile_30d"] == pytest.approx(40.0)
     assert market["relative_24h_percentile_30d"] == pytest.approx(80.0)
-    assert payload["recent_event_alert_counts"] == {"h6": 2, "h24": 5}
+    assert payload["recent_event_counts"] == {"h6": 2, "h24": 5}
     assert payload["previous_event_alert"]["age_minutes"] == 45
     assert "should_alert" not in market
+
+
+def test_short_window_move_uses_nearest_snapshot_on_either_side():
+    now = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+    snapshots = [
+        SimpleNamespace(price=100, checked_at=now - timedelta(minutes=60)),
+        SimpleNamespace(price=102, checked_at=now - timedelta(minutes=30) + timedelta(seconds=4)),
+        SimpleNamespace(price=104, checked_at=now),
+    ]
+
+    move = alerts._snapshot_change_percent_for_lookback(
+        snapshots,
+        current_price=104,
+        now=now,
+        lookback_minutes=30,
+        max_reference_offset_seconds=900,
+    )
+
+    assert move == pytest.approx((104 / 102 - 1) * 100)
+
+
+def test_short_window_move_rejects_missing_cycle_instead_of_mislabeling_old_snapshot():
+    now = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+    snapshots = [
+        SimpleNamespace(price=100, checked_at=now - timedelta(minutes=60)),
+        SimpleNamespace(price=104, checked_at=now),
+    ]
+
+    move = alerts._snapshot_change_percent_for_lookback(
+        snapshots,
+        current_price=104,
+        now=now,
+        lookback_minutes=30,
+        max_reference_offset_seconds=900,
+    )
+
+    assert move is None
+
+
+@pytest.mark.asyncio
+async def test_recent_event_counts_are_event_level_not_recipient_delivery_level():
+    engine, session_factory = await _session_factory()
+    now = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+    try:
+        async with session_factory() as session:
+            for index, hours_ago in enumerate((2, 8, 30), start=1):
+                await alerts.get_or_create_market_event(
+                    session,
+                    symbol="BTC",
+                    event_type=alerts.EVENT_ALERT_TYPE,
+                    event_key=f"btc_event_{index}",
+                    event_instance_key=f"btc_event_instance_{index}",
+                    price=Decimal("100"),
+                    previous_price=Decimal("99"),
+                    price_change_percent=1.0,
+                    detected_at=now - timedelta(hours=hours_ago),
+                )
+
+            count_6h = await alerts.count_recent_market_events_for_symbol(
+                session,
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                since=now - timedelta(hours=6),
+            )
+            count_24h = await alerts.count_recent_market_events_for_symbol(
+                session,
+                symbol="BTC",
+                event_type=alerts.EVENT_ALERT_TYPE,
+                since=now - timedelta(hours=24),
+            )
+
+        assert count_6h == 1
+        assert count_24h == 2
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

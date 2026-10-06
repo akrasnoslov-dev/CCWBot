@@ -27,7 +27,7 @@ currently eligible to receive that coin.
 ## Step 2 - Build the evidence
 The bot prepares current price, recent snapshots, compact 30m/1h moves when reliable,
 analysed-window and 24h moves, movement since the last message, 30-day relative-move context,
-previous Event Alert context, recent 6h/24h Event Alert counts, and relevant news.
+previous Event Alert context, recent 6h/24h alert-worthy market-event counts, and relevant news.
 
 Numbers are evidence only. No backend numeric threshold decides whether an Event Alert is important.
 
