@@ -16,6 +16,28 @@ def test_env_example_uses_semantic_event_alert_cooldown_not_legacy_threshold():
     assert "EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS=14400" in env_example
 
 
+def test_env_example_keeps_operator_model_switches_explicit():
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    expected = (
+        "GROQ_MODEL=openai/gpt-oss-20b",
+        "GROQ_EVENT_ANALYSIS_MODEL=openai/gpt-oss-120b",
+        "GROQ_EVENT_RENDER_FALLBACK_MODEL=qwen/qwen3.8-27b",
+        "GROQ_MARKET_HEARTBEAT_MODEL=openai/gpt-oss-20b",
+        "GROQ_REPORT_MODEL=openai/gpt-oss-20b",
+        "GROQ_NEWS_INTELLIGENCE_MODEL=openai/gpt-oss-20b",
+        "GEMINI_MODEL=gemini-3.8-flash",
+        "GEMINI_EVENT_RENDER_MODEL=gemini-3.5-flash-lite",
+        "MISTRAL_MODEL=mistral-small-2603",
+        "CLOUDFLARE_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "CLOUDFLARE_EVENT_RENDER_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    )
+    for line in expected:
+        assert line in env_example
+
+    assert "GROQ_JSON_MODE_RETRY_PLAIN" not in env_example
+
+
 def test_single_admin_user_id_parses_for_backward_compatibility():
     assert config.combine_telegram_admin_user_ids("111111111", None) == (111111111,)
 
