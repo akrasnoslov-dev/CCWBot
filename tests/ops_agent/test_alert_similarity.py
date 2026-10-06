@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+
 from ops_agent.alert_similarity import build_alert_evidence_payloads, normalize_alert_text
 from ops_agent.schemas import Period
 
