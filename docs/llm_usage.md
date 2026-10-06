@@ -7,29 +7,35 @@ recorded at the time of the call.
 
 ## Provider fallback (redundancy)
 
-Groq is the primary LLM provider. Gemini and Mistral form an ordered fallback chain, configured
+Groq is the primary LLM provider. General call types use the ordered provider chain configured
 via `LLM_PROVIDER_PRIORITY` (default `groq,gemini,mistral`) with optional
-per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, `LLM_HEARTBEAT_PROVIDERS`.
-All providers are reached through the OpenAI-compatible chat-completions API (Gemini via its
-OpenAI-compatible endpoint), so no extra client dependency is required.
+per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, and
+`LLM_HEARTBEAT_PROVIDERS`. These providers are reached through OpenAI-compatible
+chat-completions APIs.
 
-The shipped fallback defaults are `gemini-3.8-flash` and the pinned Mistral Small 4 endpoint
-`mistral-small-2603`. Model environment variables are intentional overrides, not normal required
-configuration: leave them unset in ordinary deployments so the pinned code defaults stay
-authoritative. If an override is needed, verify the resolved `ops_event=llm_config` startup line
-and remove the override again when it is no longer intentional. Avoid moving `-latest` aliases as
-the default production configuration because they can silently change model behavior.
+`event_alert_render` is intentionally different: it uses a fixed model-level LLM chain so the
+same Groq account can try a second model before changing infrastructure:
+
+`Groq openai/gpt-oss-120b -> Groq qwen/qwen3.8-27b -> Cloudflare
+@cf/meta/llama-3.3-70b-instruct-fp8-fast -> Gemini gemini-3.5-flash-lite`.
+
+The first two attempts share `GROQ_API_KEY`. Cloudflare requires both
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; if either is missing, that step is excluded.
+The final render fallback uses the existing `GEMINI_API_KEY`. Generic Gemini/Mistral defaults
+remain `gemini-3.8-flash` and `mistral-small-2603` for call types that use the generic chain.
+Model environment variables are intentional overrides, not normal required configuration: leave
+them unset in ordinary deployments so pinned code defaults stay authoritative.
 
 The project-wide zero-cost/free-tier service policy is owned by `docs/project_context.md`.
 For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
 efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
-The router (`bot/services/llm/router.py`) tries each configured provider in priority order. It
-advances to the next provider on a rate limit, timeout, 5xx, auth, or network error, and on a
-provider-side model failure. It surfaces a genuine request defect to the caller unchanged. When
-every provider is exhausted it raises the exception each existing caller already handles, so the
-deterministic fallback / `skipped_due_to_rate_limit` paths are unchanged — they now trigger only
-after the whole chain is exhausted, not on the first Groq rate limit.
+The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
+advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid
+validated output. It surfaces a genuine request defect to the caller unchanged. Generic call types
+retain their existing terminal handling after chain exhaustion. Event Alert Render is stricter:
+exhausting its four LLM attempts is terminal for that render operation; it does not substitute a
+non-LLM presentation.
 
 ### Which 4xx responses fall back
 
@@ -131,7 +137,7 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
-| `event_alert_render` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
+| `event_alert_render` | dedicated 4-step chain (GPT-OSS 120B -> Qwen 3.8 27B -> Cloudflare Llama 3.3 70B -> Gemini 3.5 Flash-Lite) | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | model-dependent |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
@@ -144,18 +150,15 @@ significance `confidence`, and `reason_for_no_alert=null` before running the exi
 factual/news validation. Unknown or duplicate render-selected news ids are discarded rather than
 turning presentation noise into a terminal Event Alert failure.
 
-If the complete render provider chain is exhausted because of invalid JSON/schema output,
-rate-limit/backoff state, or provider-chain failure, the backend uses
-`deterministic-event-alert-render-v1` to build presentation-only fields from already supplied
-market evidence. It attaches no related news, uses neutral urgency, and still passes the same full
-factual/news validation. The deterministic render fallback never changes the upstream
-`should_alert` decision, cooldown, eligibility, or delivery rules. Provider-attempt failures remain
-in `llm_usage_logs`; the render logical-operation outcome is recorded as completed with
-`provider=deterministic` and the original sanitized failure reason.
+If all four render LLM attempts are exhausted because of invalid JSON/schema output,
+rate-limit/backoff state, provider failure, or unavailable configuration, the render operation
+fails. No deterministic/non-LLM presentation is generated and no Event Alert is delivered from
+that failed render. Provider-attempt failures remain in `llm_usage_logs`, and the render logical
+operation is recorded as failed for reconciliation.
 
-The render operation has its own logical operation id and sanitized terminal outcome for
-reconciliation. Both LLM stages share the Event Analysis provider/model, completion budget, and
-reasoning-effort configuration.
+The render operation has its own logical operation id and sanitized terminal outcome. Significance
+and rendering therefore remain separately attributable: Event Analysis uses its normal
+significance chain, while rendering uses the dedicated model-level chain above.
 
 Defaults in brackets are the base budgets retained from the prior configuration.
 `GROQ_EVENT_ANALYSIS_MAX_TOKENS` still works as the legacy name for the
@@ -194,16 +197,16 @@ model family. The shared OpenAI-compatible provider keeps the existing `temperat
 for Groq, Mistral, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
 `gemini-3.*` model identifiers.
 
-Groq GPT-OSS supports strict JSON Schema Structured Outputs and `reasoning_effort`. Event
-Analysis on `openai/gpt-oss-120b`, Market Heartbeat on `openai/gpt-oss-20b`, and Market Reports
-on the configured verified GPT-OSS Groq model use `response_format.type=json_schema` with
-`strict=true`. For reports, the provider schema requires every top-level field and every
-`coin_cards` object field, preventing the missing-field payload that caused the 2026-09-29
-Daily Report fallback incident. Existing application validators still run afterwards for semantic,
-grounding, active-symbol, safety, and non-empty checks. Gemini/Mistral fallbacks and an
-operator-supplied Groq model outside the verified strict-schema allowlist keep JSON Object Mode, so
-a provider-specific optimization cannot make the fallback request incompatible. `GROQ_JSON_MODE=false`
-disables both response-format modes while preserving application parsing and fallback behavior.
+Groq GPT-OSS and the pinned `qwen/qwen3.8-27b` render fallback support strict JSON Schema
+Structured Outputs. Verified Groq models use `response_format.type=json_schema` with
+`strict=true`; existing application validators still run afterwards for semantic, grounding,
+active-symbol, safety, and non-empty checks. Cloudflare, Gemini, Mistral, and an operator-supplied
+Groq model outside the verified strict-schema allowlist keep JSON Object Mode so one provider's
+strict-schema contract cannot make another provider's request incompatible. For reports, the
+strict provider schema requires every top-level field and every `coin_cards` object field,
+preventing the missing-field payload that caused the 2026-09-29 Daily Report fallback incident.
+`GROQ_JSON_MODE=false` disables both response-format modes while preserving application parsing
+and fallback behavior.
 
 Groq GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests;
 it is for other Groq reasoning-model families.

@@ -449,6 +449,64 @@ async def _call_validated(router, validate, call_type="event_analysis"):
 
 
 @pytest.mark.asyncio
+async def test_event_alert_render_uses_four_step_model_chain(monkeypatch):
+    for name in (
+        "GROQ_EVENT_ANALYSIS_MODEL",
+        "GROQ_EVENT_RENDER_FALLBACK_MODEL",
+        "CLOUDFLARE_EVENT_RENDER_MODEL",
+        "GEMINI_EVENT_RENDER_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cloudflare-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-id")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    call_order = []
+
+    def groq_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, "not json")
+
+    def cloudflare_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, "still not json")
+
+    def gemini_behavior(name, model):
+        call_order.append((name, model))
+        return _content_result(name, model, '{"ok": true}')
+
+    groq = FakeProvider("groq", groq_behavior)
+    cloudflare = FakeProvider("cloudflare", cloudflare_behavior)
+    gemini = FakeProvider("gemini", gemini_behavior)
+    router = LLMRouter(
+        registry={
+            "groq": groq,
+            "cloudflare": cloudflare,
+            "gemini": gemini,
+        }
+    )
+
+    provider, parsed = await _call_validated(
+        router,
+        _parse_json_validate,
+        call_type="event_alert_render",
+    )
+
+    assert provider == "gemini"
+    assert parsed == {"ok": True}
+    assert call_order == [
+        ("groq", "openai/gpt-oss-120b"),
+        ("groq", "qwen/qwen3.8-27b"),
+        ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        ("gemini", "gemini-3.5-flash-lite"),
+    ]
+    assert groq.calls == 2
+    assert cloudflare.calls == 1
+    assert gemini.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_invalid_json_output_advances_to_next_provider(monkeypatch):
     # The production 2026-07-10 case: primary switched out on 5xx is one thing, but a
     # provider that answers with unparseable JSON must also advance the chain.

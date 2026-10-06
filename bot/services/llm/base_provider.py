@@ -2,9 +2,9 @@
 
 ``BaseProvider`` is the common contract. ``OpenAICompatibleProvider`` holds the chat-completion
 logic generalized out of the old ``_run_groq_chat_completion`` (JSON mode, raw-response header
-capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, and Mistral
-all speak the OpenAI chat-completions protocol, so each concrete provider is a thin subclass
-that only sets its name and reads its base URL / API key from :mod:`bot.services.llm.config`.
+capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, Mistral, and Cloudflare
+Workers AI expose compatible chat-completions endpoints, so each concrete provider stays thin and
+reads its endpoint / credentials from :mod:`bot.services.llm.config`.
 """
 
 import asyncio
@@ -61,8 +61,8 @@ class BaseProvider(ABC):
     name: str = "base"
 
     def is_configured(self) -> bool:
-        """True when this provider has an API key and can be attempted."""
-        return config.api_key(self.name) is not None
+        """True when this provider has all configuration required for an attempt."""
+        return config.provider_is_configured(self.name)
 
     @abstractmethod
     async def chat_completion(
@@ -98,9 +98,12 @@ class OpenAICompatibleProvider(BaseProvider):
         if not api_key:
             env_name = config.api_key_env(self.name) or f"{self.name.upper()}_API_KEY"
             raise RuntimeError(f"{env_name} is not configured.")
+        base_url = config.base_url(self.name)
+        if not base_url:
+            raise RuntimeError(f"{self.name} provider endpoint is not configured.")
         return AsyncOpenAI(
             api_key=api_key,
-            base_url=config.base_url(self.name),
+            base_url=base_url,
             timeout=httpx.Timeout(20.0, connect=10.0),
             max_retries=0,
         )

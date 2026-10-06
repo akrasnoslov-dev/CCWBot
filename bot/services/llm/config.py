@@ -22,14 +22,14 @@ from bot.services.llm.env import (
 
 logger = logging.getLogger(__name__)
 
-# Ordered default chain: Groq primary, then Gemini and Mistral.
+# Ordered default chain for general LLM work. Event Alert rendering has a dedicated
+# model-level chain because it deliberately retries a second Groq model before changing providers.
 DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini", "mistral"]
-KNOWN_PROVIDERS = frozenset(DEFAULT_PROVIDER_PRIORITY)
+KNOWN_PROVIDERS = frozenset((*DEFAULT_PROVIDER_PRIORITY, "cloudflare"))
 
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
 _CALL_TYPE_PRIORITY_ENV = {
     "event_analysis": "LLM_EVENT_PROVIDERS",
-    "event_alert_render": "LLM_EVENT_PROVIDERS",
     "market_heartbeat": "LLM_HEARTBEAT_PROVIDERS",
     "daily_report": "LLM_REPORT_PROVIDERS",
     "weekly_report": "LLM_REPORT_PROVIDERS",
@@ -40,11 +40,11 @@ _PROVIDER_API_KEY_ENV = {
     "groq": "GROQ_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    "cloudflare": "CLOUDFLARE_API_TOKEN",
 }
 
-# All providers are reached through the OpenAI-compatible chat-completions API, so we
-# only need a base URL per provider — no extra client library. Gemini exposes an
-# OpenAI-compatible endpoint, which keeps the provider code uniform and avoids a new dependency.
+# All providers are reached through OpenAI-compatible chat-completions endpoints. Cloudflare's
+# base URL is account-scoped and therefore resolved dynamically in base_url().
 _PROVIDER_BASE_URL = {
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -68,7 +68,25 @@ _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 _FALLBACK_MODEL_ENV = {
     "gemini": ("GEMINI_MODEL", "gemini-3.8-flash"),
     "mistral": ("MISTRAL_MODEL", "mistral-small-2603"),
+    "cloudflare": (
+        "CLOUDFLARE_MODEL",
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    ),
 }
+
+# Event Alert rendering intentionally uses a model-level chain rather than the generic
+# provider-only chain. The second step reuses Groq with a different model, so this cannot be
+# represented by a de-duplicated provider priority list.
+_EVENT_ALERT_RENDER_ATTEMPTS = (
+    ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
+    ("groq", "GROQ_EVENT_RENDER_FALLBACK_MODEL", "qwen/qwen3.8-27b"),
+    (
+        "cloudflare",
+        "CLOUDFLARE_EVENT_RENDER_MODEL",
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    ),
+    ("gemini", "GEMINI_EVENT_RENDER_MODEL", "gemini-3.5-flash-lite"),
+)
 
 # Every call type that reaches a provider, in a stable order for the startup configuration log.
 # ``legacy_alert_payload`` is the older price-alert path; it is listed so the startup log covers
@@ -217,7 +235,21 @@ def api_key(provider: str) -> str | None:
     return value or None
 
 
+def provider_is_configured(provider: str) -> bool:
+    """True when all non-secret configuration required by a provider is present."""
+    if api_key(provider) is None:
+        return False
+    if provider == "cloudflare":
+        return bool(str(os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip())
+    return True
+
+
 def base_url(provider: str) -> str | None:
+    if provider == "cloudflare":
+        account_id = str(os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip()
+        if not account_id:
+            return None
+        return f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
     return _PROVIDER_BASE_URL.get(provider)
 
 
@@ -252,6 +284,16 @@ def model_for(provider: str, call_type: str) -> str:
     if not env_name:
         return default
     return _model_from_env(env_name, default)
+
+
+def provider_attempts(call_type: str) -> list[tuple[str, str]]:
+    """Return the ordered concrete provider/model attempts for one logical LLM operation."""
+    if call_type == "event_alert_render":
+        return [
+            (provider, _model_from_env(env_name, default))
+            for provider, env_name, default in _EVENT_ALERT_RENDER_ATTEMPTS
+        ]
+    return [(provider, model_for(provider, call_type)) for provider in provider_priority(call_type)]
 
 
 def max_tokens_for(call_type: str) -> int:
@@ -355,32 +397,31 @@ def resolved_configuration() -> list[dict]:
     """Return the fully resolved per-call-type LLM configuration.
 
     Model identifiers, provider names, token budgets, and reasoning effort only — never API
-    keys or any other credential value. ``providers`` lists the chain as configured; a provider
-    with no API key is excluded at call time by the router, which is reported separately as
-    ``configured=false`` so "why did my fallback not engage?" is answerable from the log alone.
+    keys or any other credential value. Attempts are kept as an ordered list because Event Alert
+    rendering deliberately contains two Groq attempts with different models.
     """
     resolved: list[dict] = []
     for call_type in KNOWN_CALL_TYPES:
-        chain = provider_priority(call_type)
+        attempts = []
+        for provider, model in provider_attempts(call_type):
+            attempts.append(
+                {
+                    "provider": provider,
+                    "model": model,
+                    "configured": provider_is_configured(provider),
+                    "effective_max_tokens": effective_max_tokens_for(
+                        call_type=call_type,
+                        provider=provider,
+                        model=model,
+                    ),
+                    "reasoning_effort": reasoning_effort_for(model, call_type),
+                }
+            )
         resolved.append(
             {
                 "call_type": call_type,
-                "providers": chain,
-                "models": {name: model_for(name, call_type) for name in chain},
-                "configured": {name: api_key(name) is not None for name in chain},
+                "attempts": attempts,
                 "max_tokens": max_tokens_for(call_type),
-                "effective_max_tokens": {
-                    name: effective_max_tokens_for(
-                        call_type=call_type,
-                        provider=name,
-                        model=model_for(name, call_type),
-                    )
-                    for name in chain
-                },
-                "reasoning_effort": {
-                    name: reasoning_effort_for(model_for(name, call_type), call_type)
-                    for name in chain
-                },
             }
         )
     return resolved
@@ -408,16 +449,21 @@ def _safe_log_value(value: str | None, *, max_chars: int = 80) -> str:
 
 def _format_chain(entry: dict) -> str:
     parts = []
-    for name in entry["providers"]:
-        effort = entry["reasoning_effort"].get(name)
-        effective_budget = entry["effective_max_tokens"].get(name)
+    for attempt in entry["attempts"]:
+        effort = attempt["reasoning_effort"]
         parts.append(
             "{provider}:{model}{effort}/max={effective_budget}{unconfigured}".format(
-                provider=name,
-                model=_safe_log_value(entry["models"].get(name)),
+                provider=attempt["provider"],
+                model=_safe_log_value(attempt["model"]),
                 effort=f"/effort={effort}" if effort else "",
-                effective_budget=effective_budget,
-                unconfigured="" if entry["configured"].get(name) else "(no_api_key)",
+                effective_budget=attempt["effective_max_tokens"],
+                unconfigured=(
+                    ""
+                    if attempt["configured"]
+                    else "(no_api_key)"
+                    if api_key(attempt["provider"]) is None
+                    else "(missing_config)"
+                ),
             )
         )
     return ",".join(parts) or "none"
@@ -443,20 +489,14 @@ def log_resolved_configuration() -> None:
 
 
 def _warn_undersized_thinking_budgets(entry: dict) -> None:
-    """Warn when a chain member reasons internally but has no budget left to answer.
-
-    The shipped Gemini default is a thinking model while the call-type budgets are
-    sized for the llama primary. That combination fails with an empty completion rather than a
-    recognisable error, so it is surfaced at startup instead of one dead call at a time.
-    """
-    for name in entry["providers"]:
-        if not entry["configured"].get(name):
-            # No API key, so the router never attempts it; warning would be noise.
+    """Warn when a chain member reasons internally but has no budget left to answer."""
+    for attempt in entry["attempts"]:
+        if not attempt["configured"]:
             continue
-        model = entry["models"].get(name)
+        model = attempt["model"]
         if not is_thinking_model(model):
             continue
-        budget = entry["effective_max_tokens"].get(name, entry["max_tokens"])
+        budget = attempt["effective_max_tokens"]
         desired_budget = entry["max_tokens"] + reasoning_headroom_tokens_for(
             model=model,
             call_type=entry["call_type"],
@@ -467,7 +507,7 @@ def _warn_undersized_thinking_budgets(entry: dict) -> None:
             "ops_event=llm_config_budget_risk call_type=%s provider=%s model=%s max_tokens=%s "
             "recommended_min=%s reason=reasoning_tokens_consume_completion_budget",
             entry["call_type"],
-            name,
+            attempt["provider"],
             _safe_log_value(model),
             budget,
             desired_budget,
