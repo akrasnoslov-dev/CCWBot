@@ -152,6 +152,8 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
         "get_price_snapshots_since",
         AsyncMock(
             return_value=[
+                SimpleNamespace(price=101, checked_at=now - timedelta(minutes=60)),
+                SimpleNamespace(price=102, checked_at=now - timedelta(minutes=30)),
                 SimpleNamespace(price=104, checked_at=now),
             ]
         ),
@@ -163,7 +165,24 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
         AsyncMock(return_value=historical),
     )
     monkeypatch.setattr(
-        alerts, "_get_previous_event_alert_for_input", AsyncMock(return_value=(None, None))
+        alerts,
+        "count_recent_sent_event_alerts_for_symbol",
+        AsyncMock(side_effect=[2, 5]),
+    )
+    monkeypatch.setattr(
+        alerts,
+        "_get_previous_event_alert_for_input",
+        AsyncMock(
+            return_value=(
+                {
+                    "canonical_event_key": "sol_price_uptrend",
+                    "semantic_family": "price_uptrend",
+                    "analysed_window_move": 1.2,
+                    "created_at": (now - timedelta(minutes=45)).isoformat(),
+                },
+                10,
+            )
+        ),
     )
 
     payload = await alerts._build_event_analysis_input(
@@ -180,8 +199,12 @@ async def test_event_analysis_input_adds_relative_move_context_without_alert_gat
     market = payload["market"]
     assert market["analysed_window_minutes"] == 180
     assert market["chg_window_percent"] == pytest.approx(4.0)
+    assert market["chg30m_percent"] == pytest.approx((104 / 102 - 1) * 100)
+    assert market["chg1h_percent"] == pytest.approx((104 / 101 - 1) * 100)
     assert market["relative_window_percentile_30d"] == pytest.approx(40.0)
     assert market["relative_24h_percentile_30d"] == pytest.approx(80.0)
+    assert payload["recent_event_alert_counts"] == {"h6": 2, "h24": 5}
+    assert payload["previous_event_alert"]["age_minutes"] == 45
     assert "should_alert" not in market
 
 

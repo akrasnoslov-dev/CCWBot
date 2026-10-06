@@ -4,7 +4,7 @@ import bot.alerts as alerts
 import bot.services.ai_agent_groq as ai_agent_groq
 
 
-def test_significance_prompt_resists_conservative_no_alert_default():
+def test_significance_prompt_defaults_to_no_alert_and_requires_new_significance():
     payload = {
         "symbol": "GRAM",
         "market": {
@@ -17,9 +17,10 @@ def test_significance_prompt_resists_conservative_no_alert_default():
         "news": [],
     }
     prompt = ai_agent_groq.build_event_significance_prompt(payload).lower()
-    assert "market move alone" in prompt
-    assert "absence of news" in prompt
-    assert "default" in prompt and "no alert" in prompt
+    assert "default=>no alert" in prompt
+    assert "important and new" in prompt
+    assert "materially noteworthy new move" in prompt
+    assert "news alone cannot alert" in prompt
     assert "fixed cutoff" in prompt
 
 

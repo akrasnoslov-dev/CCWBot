@@ -371,14 +371,16 @@ def _event_analysis_percent(value: object) -> object:
 
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
-        "JSON English.Is market move noteworthy enough to interrupt user?",
-        "Market decides;news alone cannot alert. Judge size/speed,asset unusualness,"
-        "short-vs-24h alignment/reversal. Market move alone can alert;"
-        "absence of news is not routine;"
-        "do not default to no alert;routine=>false.",
+        "JSON English.Decide if market state is important AND new enough to interrupt user now.",
+        "Default=>no alert. Market decides;news alone cannot alert. Judge size/speed,asset "
+        "unusualness,recent path,24h context,and what changed since prev. Routine/modest/repeated/"
+        "continuation=>false;true only for materially noteworthy new move,clear escalation,or "
+        "meaningful reversal. Direction alignment/divergence alone is not significance.",
         "pw,p24=30d same-asset abs-move percentile: context, not threshold;"
         "do not apply a fixed cutoff;null=unknown.",
-        "Input:sym;m={w,cw,c24,pw,p24};cw=% over w;c24=24h%;"
+        "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
+        "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
+        "prev={min,f,cw};min=minutes since prev;cnt={h6,h24}=recent sent Event Alert counts;"
         "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
         "Output exactly symbol,should_alert,confidence,reason_code;confidence=low|medium|high;"
         "reason_code=unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment|"
@@ -394,6 +396,12 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
     """Return the small always-on model view used only for significance."""
     market = input_payload.get("market")
     market = market if isinstance(market, dict) else {}
+    snapshots = market.get("snapshots")
+    snapshots = snapshots if isinstance(snapshots, list) else []
+    previous_alert = input_payload.get("previous_event_alert")
+    previous_alert = previous_alert if isinstance(previous_alert, dict) else {}
+    recent_counts = input_payload.get("recent_event_alert_counts")
+    recent_counts = recent_counts if isinstance(recent_counts, dict) else {}
     news_items = input_payload.get("news")
     news_items = news_items if isinstance(news_items, list) else []
 
@@ -411,17 +419,38 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
             compact_item["h"] = age_hours
         compact_news.append(compact_item)
 
-    return {
+    compact_snapshots = [
+        [item.get("m"), item.get("p")]
+        for item in snapshots[-6:]
+        if isinstance(item, dict)
+    ]
+    payload = {
         "sym": input_payload.get("symbol"),
         "m": {
+            "s": compact_snapshots,
             "w": market.get("analysed_window_minutes"),
+            "c30": _event_analysis_percent(market.get("chg30m_percent")),
+            "c60": _event_analysis_percent(market.get("chg1h_percent")),
             "cw": _event_analysis_percent(market.get("chg_window_percent")),
             "c24": _event_analysis_percent(market.get("chg24h_percent")),
+            "cl": _event_analysis_percent(market.get("chg_since_msg_percent")),
             "pw": _event_analysis_percent(market.get("relative_window_percentile_30d")),
             "p24": _event_analysis_percent(market.get("relative_24h_percentile_30d")),
         },
         "n": compact_news,
     }
+    if previous_alert:
+        payload["prev"] = {
+            "min": previous_alert.get("age_minutes"),
+            "f": previous_alert.get("semantic_family"),
+            "cw": _event_analysis_percent(previous_alert.get("analysed_window_move")),
+        }
+    if recent_counts:
+        payload["cnt"] = {
+            "h6": recent_counts.get("h6"),
+            "h24": recent_counts.get("h24"),
+        }
+    return payload
 
 
 def build_event_significance_prompt(input_payload: dict) -> str:

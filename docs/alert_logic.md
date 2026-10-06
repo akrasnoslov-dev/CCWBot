@@ -25,8 +25,9 @@ BTC, ETH, GRAM, and SOL are checked on the automatic schedule. Detection runs ev
 currently eligible to receive that coin.
 
 ## Step 2 - Build the evidence
-The bot prepares current price, recent snapshots, analysed-window move, 24h move, movement since the
-last message, 30-day relative-move context, previous Event Alert context, and relevant news.
+The bot prepares current price, recent snapshots, compact 30m/1h moves when reliable,
+analysed-window and 24h moves, movement since the last message, 30-day relative-move context,
+previous Event Alert context, recent 6h/24h Event Alert counts, and relevant news.
 
 Numbers are evidence only. No backend numeric threshold decides whether an Event Alert is important.
 
@@ -42,7 +43,10 @@ No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
 If nothing can be reused, the significance LLM returns schema-validated `should_alert`, confidence,
-and reason.
+and reason. Its default is no alert: the current market state must be important and materially new
+enough to interrupt the user. Routine, modest, repeated, or continuing versions of the previous
+alert are normally no-alert decisions; a genuinely noteworthy new move, clear escalation, or
+meaningful reversal can alert. Direction alignment/divergence alone is not significance.
 
 - `false` -> stop;
 - news-only -> stop;
