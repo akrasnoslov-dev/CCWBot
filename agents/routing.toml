@@ -91,18 +91,29 @@ triggers = [
 ]
 
 [[rules]]
-id = "ops_agent_observability"
-description = "Diagnostic collection, sanitized operational evidence, and generated report finalization."
+id = "ops_agent_report"
+description = "Read-only analysis of a published sanitized ops-agent bundle and final report generation."
+must_use = ["ops_observability_agent"]
+also_consider = ["security_review_agent"]
+triggers = [
+  "production ops report",
+  "diagnostic bundle report",
+  "collector status review",
+  "report finalization",
+  "decision_report_context",
+]
+
+[[rules]]
+id = "ops_agent_observability_change"
+description = "Changes to ops-agent collection, detectors, redaction, evidence contracts, or investigator access."
 must_use = ["ops_observability_agent", "security_review_agent", "test_ci_agent"]
 also_consider = ["devops_release_agent", "architecture_guardian"]
 triggers = [
-  "ops-agent",
-  "diagnostic bundle",
-  "collector status",
-  "evidence collection",
-  "detector",
+  "ops-agent code change",
+  "collector implementation",
+  "evidence collection code",
+  "detector implementation",
   "redaction",
-  "report finalization",
   "ccwbot_investigator",
 ]
 

@@ -1,291 +1,138 @@
-# CCWBot Ops-Agent Report Analysis Prompt For Codex
+# CCWBot Ops-Agent Report Analysis
 
-You are analyzing a CCWBot ops-agent diagnostic bundle and writing the final operational report.
+Use `docs/ops_agent_service.md` for production access, safety, bundle publication, partial-bundle,
+and report-success rules. This document owns evidence interpretation and final report shape.
 
-## Role
+## Goal
 
-Follow `ops_agent_service.md` for service boundaries, production access, safety rules, partial
-bundle handling, and report-success conditions. This prompt owns evidence interpretation and the
-final report format.
+Write one concise English Markdown operational report from the sanitized published bundle.
+Do not apply fixes or change production while generating the report.
 
-Your role is to read the exported bundle, distinguish confirmed findings from likely or unknown
-ones, and write a concise English Markdown report under
-`/opt/CCWBot/reports/ops-agent/reports/`. Do not apply fixes or change production systems unless
-the operator explicitly asks.
+## Preflight
 
-## Bundle preflight
+Analyze only a published directory under `reports/ops-agent/bundles/` with `manifest.json`.
+Never analyze `.in-progress/`.
 
-Analyze only a published bundle directory under `reports/ops-agent/bundles/` that contains
-`manifest.json`. A path under `.in-progress/` is unfinished staging, not a production bundle,
-even if it contains other files.
+If collection stdout/exit status is unavailable, recover the result with:
 
-If collection stdout or the exit code was lost, use the latest sanitized root-wrapper receipt
-(`sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest`) to recover the terminal state and
-published bundle path. Do not infer a valid bundle from directory creation alone.
+```bash
+sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest
+```
 
-## Required reading order
+The manifest is authoritative for bundle status, period, collector status, and file inventory.
 
-Start with the published bundle-specific instructions and metadata:
+## Token-efficient reading contract
+
+Mandatory first read only:
 
 1. `manifest.json`
-2. `CODEX_INSTRUCTIONS.md`
-3. `bundle_summary.md`
-4. `decision_report_context.md`
-5. `detectors/detector_summary.md`
-6. `detectors/detector_results.json`
-7. `redaction_report.json`
-8. `limits.json`
+2. `decision_report_context.md`
 
-Only then inspect referenced `evidence/**` files when needed to verify or expand a finding.
+Do **not** preload `CODEX_INSTRUCTIONS.md`, `bundle_summary.md`,
+`detectors/detector_summary.md`, `detectors/detector_results.json`,
+`redaction_report.json`, `limits.json`, or `evidence/**`.
 
-Treat detector results as leads, not as final truth. Verify important findings against evidence where possible.
+After the two mandatory files:
 
-## Evidence strength
+- identify triggered/unknown findings, collection gaps, and explicit investigation questions;
+- open only evidence paths referenced by those items;
+- inspect additional sanitized evidence only when needed to prove/disprove a material conclusion;
+- do not inspect healthy evidence streams merely to restate that they are healthy;
+- stop reading once the report decision is supported.
 
-Use period-matched DB rows and period-matched log excerpts as the strongest evidence for the requested report period.
+Detector results are leads. Verify material triggered findings against referenced sanitized evidence
+before calling a root cause confirmed.
 
-Log evidence is split into:
+## Evidence rules
 
-* `period_matched_*`: timestamped log lines inside the requested `since` / `until` period;
-* `tail_context_*`: matching log lines without parseable timestamps.
+Use period-matched DB/log evidence as strongest period evidence. Tail-context logs are supporting
+context only and cannot alone prove a period-specific incident.
 
-Treat tail-context logs as supporting context only. Do not use them alone to claim a period-specific incident unless other period evidence agrees. If no period-matched logs are available, say why if the bundle provides a reason.
+Classify every material conclusion as:
 
-## Partial bundle handling
+- **Confirmed** - direct evidence proves it.
+- **Likely** - evidence strongly supports it but a causal link remains unproven.
+- **Unknown** - evidence is insufficient.
 
-If `manifest.json` says the bundle is partial:
+Never turn inaccessible evidence into "missing production evidence".
 
-* include a `Collection Gaps` section in the final report;
-* include `Collector Status` and list every failed or partial collector;
-* state which collectors failed or returned partial data;
-* do not infer that missing data means there are no problems;
-* keep detector statuses marked as `unknown` when evidence is missing;
-* do not treat `unknown` as healthy;
-* do not infer absence of issues from missing evidence;
-* lower confidence for affected findings;
-* do not run `mark-report-success` unless the operator explicitly accepts the partial report.
+If the manifest is partial, continue with unaffected evidence, list every non-ok collector, state
+the sanitized reason when available, and lower confidence only where the missing evidence matters.
+`unknown` is not healthy.
 
-## Market events without deliveries
+## Event Alert invariants
 
-Market events without alert delivery rows need classification before they are treated as delivery failures.
+Keep pipeline stages separate: market-event generation, candidate crossing, pre-LLM reuse,
+suppression/cooldown, LLM decision, event creation, recipient eligibility, and delivery.
 
-Separate:
+Preserve:
 
-* expected no-delivery because the AI analysis had `should_alert=false`;
-* expected no-delivery because no eligible recipients likely existed;
-* expected no-delivery because product gating may explain a non-BTC event;
-* no-delivery tied to LLM failure or rate limiting;
-* no-delivery despite `should_alert=true` and likely eligible recipients;
-* unknown cases where the schema or available evidence is insufficient.
+```text
+1 coin market event = 1 AI analysis = many alert deliveries
+```
 
-Do not frame non-BTC no-delivery as a bug when Premium/watchlist gating or no eligible recipients likely explains it.
+Recipient Premium/watchlist filtering can explain no delivery to a recipient; it cannot by itself
+explain why no market event was generated. News is supporting context, not a standalone market-event
+trigger unless current repository behavior explicitly says otherwise.
 
-## Alert repetition evidence
+Do not recommend threshold, suppression, reuse, gating, prompt, identity, or delivery changes unless
+sanitized evidence shows current behavior is wrong.
 
-When the bundle includes alert repetition files, use them to diagnose noisy automatic
-alerts and backend filtering opportunities:
+## Investigation questions
 
-* `evidence/db/alert_delivery_distribution.json` shows which symbols produced the most deliveries.
-* `evidence/db/event_analysis_decision_timeline.json` shows sanitized LLM decision flow.
-* `evidence/db/alert_content_fingerprints.json` shows exact repeated content hash groups.
-* `evidence/db/alert_similarity_groups.json` shows near-similar alert groups.
-* `evidence/db/aggregate_metrics.json` query `event_alert_llm_estimates` shows sanitized
-  Event Alert cadence, payload points, analysed window, and estimated LLM calls per hour/day.
-* `evidence/db/backend_suppression_effectiveness.json` shows inferred cooldown/dedup effectiveness.
-* `evidence/logs/pattern_counts.json` shows logged Event Alert suppression reasons in
-  `suppression_reason_counts` when the runtime emitted `ops_event=event_alert_suppression`.
-* `evidence/db/event_identity_quality.json` shows weak event-key or event-identity signals.
-
-Do not quote alert text or LLM output. Use hashes, group ids, counts, symbols,
-event keys, time windows, and safe terms only. Treat content hashes as bundle-local;
-do not compare them across bundles. Treat database suppression effectiveness as inferred;
-logged `suppression_reason_counts` are direct operational-log evidence but still not durable
-database rows.
+Answer each supplied question explicitly. For each, give the conclusion, evidence, confidence,
+missing evidence if any, and next action. Do not manufacture a root cause.
 
 ## Final report format
 
-Write the final report in English Markdown only. Do not create a JSON summary file.
-Use `decision_report_context.md` as the starting structure, then verify important
-claims against detector results and evidence files. Do not copy uncertainty as fact.
-
-Write the final report using this structure:
+Default target: **800-1500 words**. Expand only when an investigation genuinely requires it.
 
 ```markdown
 # CCWBot Operational Report
 
 ## Executive Summary
-
 Status: healthy / needs attention / degraded
 Top issue: ...
 Affected users: ...
-Most severe finding: ...
-Recommended next fix: ...
+Next action: ...
 
-## Report Metadata
+## Coverage
+- Window: ...
+- Bundle: ...
+- Bundle status: ...
+- Collection gaps: ...
 
-Report window start: ...
-Report window end: ...
-Generated at: ...
-Environment/source: ...
-Data sources used: ...
-Command/date input caveat: ...
+## Findings
+| Severity | Confidence | Finding | User impact | Evidence | Action |
+|---|---|---|---|---|---|
 
-## User Impact
-
-| Metric | Count | Notes |
+## Operational Metrics
+| Metric | Value | Notes |
 |---|---:|---|
 
-## Severity Table
+## Investigation Questions
+<!-- Include only when supplied. -->
 
-| Severity | Finding | Impact | Confidence |
-|---|---|---|---|
+## Limitations / Evidence Gaps
 
-## Alert Quality
-
-## Delivery Funnel
-
-| Stage | Count | Conversion |
-|---|---:|---:|
-
-## Suppression Reasons
-
-## Top Noisy Event Families
-
-## Confirmed Findings
-
-### Finding title
-**Severity:** critical / high / medium / low
-**Evidence:**
-**User impact:**
-**Recommended action:**
-**Confidence:** high / medium / low
-
-## Likely Findings
-
-## Unknown / Needs Investigation
-
-## Data Completeness and Limitations
-
-- Market events available: yes/no
-- AI analyses available: yes/no
-- Alert delivery records available: yes/no
-- Telegram failure details available: yes/no
-- Warning/error logs available: yes/no
-- Suppression reason data available: yes/no
-- Semantic family data available: yes/no
-
-Limitations:
-- ...
-
-## Recommended Next Actions
-
-## Evidence Appendix
+## Evidence References
 ```
 
-If there are no findings for a section, write `No findings.`
+Rules:
 
-## Required decision fields
+- put each finding in one place; do not repeat it in separate Confirmed/Likely/Severity sections;
+- express confidence in the Findings table;
+- omit healthy/default detail unless it changes the operator decision;
+- use percentages beside counts when a meaningful denominator exists;
+- use sanitized paths/refs, never raw evidence dumps;
+- if there are no findings, say the available evidence is healthy and keep the report short;
+- do not restate repository rules in the report;
+- do not include implementation prompts.
 
-The Executive Summary must answer:
+## Report completion
 
-* what happened;
-* how many users were affected, when available;
-* how severe the problem is;
-* what should be fixed first;
-* whether planned work covers the fix or new work is required.
+Save only under `/opt/CCWBot/reports/ops-agent/reports/`.
 
-Major findings must include Severity, Evidence, User impact, Recommended action, and Confidence.
-
-## Percentages and missing data
-
-Show percentages next to counts when a meaningful denominator exists, for example:
-
-* failed deliveries: `X / Y attempts, Z%`;
-* alerts containing `n/a`: `X / Y Event Alerts, Z%`;
-* duplicate analyses: `X / Y analyses, Z%`;
-* affected events: `X / Y market events, Z%`.
-
-If the denominator is zero or unavailable, write `not available` with a short
-reason. Do not invent paid/free breakdowns or missing user counts.
-
-## Alert Quality
-
-The Alert Quality section must make user-facing Event Alert content issues obvious.
-Group issues by symbol, trigger source, and alert type where available.
-
-Track at minimum:
-
-* alerts containing `n/a`;
-* alerts containing `unknown`;
-* alerts containing `unavailable`;
-* alerts containing `null`;
-* alerts with old/confusing percentage labels;
-* alerts with empty related context;
-* malformed formatting.
-
-Do not expose private Telegram message text. Use counts, percentages, symbols,
-trigger sources, alert types, hashes, refs, and safe terms only.
-
-## Delivery Funnel
-
-Show the alert pipeline from market events to Telegram delivery outcomes. If a
-stage cannot be calculated reliably, show `not available` and explain why.
-
-## Suppression and noisy families
-
-If suppression reason or semantic family data is unavailable, state that as a known
-limitation. Do not leave these sections empty without explanation.
-
-For noisy event families, include the available semantic family or bundle-local
-semantic group id, event key, event instance reference, symbol, trigger source,
-count, affected users when available, and safe evidence summary.
-
-## Root-cause confidence
-
-Separate findings into:
-
-* `Confirmed`: direct evidence proves the issue.
-* `Likely`: strong evidence exists, but one or more links are not fully proven.
-* `Unknown / Needs Investigation`: a symptom exists, but evidence is insufficient.
-
-Avoid speculative conclusions written as facts.
-
-## Severity rules
-
-Use these severity levels:
-
-* `critical`: user-facing broken messages, misleading/unusable alerts, high delivery failure rate, bot likely down, health unavailable with no recent successful activity, payment corruption, widespread delivery failure, or repeated LLM/report failure blocking core function.
-* `high`: duplicate/noisy alerts affecting many users, user-visible degradation, repeated delivery failures, stale market data, failed reports, active blocked users, duplicate deliveries, premium/payment inconsistency.
-* `medium`: internal inconsistency, degraded observability, partial degradation, rate-limit pressure, stale heartbeats, news intelligence failures, non-widespread exceptions, or limited user impact.
-* `low`: report-only issue, documentation gap, minor formatting issue, noisy logs, isolated failures, cleanup suggestions.
-* `info`: normal metrics and no-action observations.
-
-## Confidence rules
-
-Use:
-
-* `high`: direct DB/log evidence clearly supports the finding.
-* `medium`: evidence is strong but incomplete, indirect, or partially limited.
-* `low`: finding is plausible but needs more verification.
-
-## Writing style
-
-* Be concise and practical.
-* Sort findings from most urgent to least urgent.
-* Avoid broad rewrites unless evidence clearly supports them.
-* Recommendations should be actionable but not overly detailed.
-* Do not include implementation prompts.
-* Do not paste raw evidence when a short sanitized reference is enough.
-* If the data looks normal, say so clearly.
-
-## Report success flow
-
-After writing the final report:
-
-1. Save it under `/opt/CCWBot/reports/ops-agent/reports/`.
-2. Run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only if:
-
-   * the report was successfully written;
-   * the bundle is complete;
-   * or the operator explicitly accepted a partial report.
-3. Do not advance report state if the report was not written.
+Follow `docs/ops_agent_service.md` for report-success state. Never advance report-success state
+when the operator has explicitly prohibited it, when the report was not written, or when the bundle
+is not certifiable.

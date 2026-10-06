@@ -143,6 +143,7 @@ _GROQ_STRICT_SCHEMA_MODELS = frozenset(
     {
         "openai/gpt-oss-20b",
         "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b",
     }
 )
 
@@ -296,28 +297,25 @@ _MARKET_REPORT_JSON_SCHEMA = {
 def _structured_response_formats(
     *, call_type: str, schema_name: str, schema: dict
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
-    """Return the shared JSON mode plus a strict Groq override when supported."""
+    """Return shared JSON mode plus strict overrides for verified Groq model attempts."""
     if not _groq_json_mode_enabled():
         return None, None
 
     json_object = {"type": "json_object"}
-    groq_model = llm_config.model_for("groq", call_type)
-    if groq_model not in _GROQ_STRICT_SCHEMA_MODELS:
-        return json_object, None
-
-    return (
-        json_object,
-        {
-            "groq": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": schema,
-                },
-            }
+    strict_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema,
         },
-    )
+    }
+    overrides = {
+        f"{provider}:{model}": strict_format
+        for provider, model in llm_config.provider_attempts(call_type)
+        if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS
+    }
+    return json_object, overrides or None
 
 
 def _parse_json(raw_content: str | None) -> dict | None:
@@ -373,14 +371,17 @@ def _event_analysis_percent(value: object) -> object:
 
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
-        "JSON English.Is market move noteworthy enough to interrupt user?",
-        "Market decides;news alone cannot alert. Judge size/speed,asset unusualness,"
-        "short-vs-24h alignment/reversal. Market move alone can alert;"
-        "absence of news is not routine;"
-        "do not default to no alert;routine=>false.",
+        "JSON English.Decide if market state is important AND new enough to interrupt user now.",
+        "Default=>no alert. Market decides;news alone cannot alert. Judge size/speed,asset "
+        "unusualness,recent path,24h context,and what changed since prev. Routine/modest/repeated/"
+        "continuation=>false;true only for materially noteworthy new move,clear escalation,or "
+        "meaningful reversal. Direction alignment/divergence alone is not significance.",
         "pw,p24=30d same-asset abs-move percentile: context, not threshold;"
         "do not apply a fixed cutoff;null=unknown.",
-        "Input:sym;m={w,cw,c24,pw,p24};cw=% over w;c24=24h%;"
+        "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
+        "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
+        "prev={min,f,cw};min=minutes since prev;"
+        "cnt={h6,h24}=recent alert-worthy market-event counts;"
         "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
         "Output exactly symbol,should_alert,confidence,reason_code;confidence=low|medium|high;"
         "reason_code=unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment|"
@@ -396,6 +397,12 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
     """Return the small always-on model view used only for significance."""
     market = input_payload.get("market")
     market = market if isinstance(market, dict) else {}
+    snapshots = market.get("snapshots")
+    snapshots = snapshots if isinstance(snapshots, list) else []
+    previous_alert = input_payload.get("previous_event_alert")
+    previous_alert = previous_alert if isinstance(previous_alert, dict) else {}
+    recent_counts = input_payload.get("recent_event_counts")
+    recent_counts = recent_counts if isinstance(recent_counts, dict) else {}
     news_items = input_payload.get("news")
     news_items = news_items if isinstance(news_items, list) else []
 
@@ -413,17 +420,38 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
             compact_item["h"] = age_hours
         compact_news.append(compact_item)
 
-    return {
+    compact_snapshots = [
+        [item.get("m"), item.get("p")]
+        for item in snapshots[-6:]
+        if isinstance(item, dict)
+    ]
+    payload = {
         "sym": input_payload.get("symbol"),
         "m": {
+            "s": compact_snapshots,
             "w": market.get("analysed_window_minutes"),
+            "c30": _event_analysis_percent(market.get("chg30m_percent")),
+            "c60": _event_analysis_percent(market.get("chg1h_percent")),
             "cw": _event_analysis_percent(market.get("chg_window_percent")),
             "c24": _event_analysis_percent(market.get("chg24h_percent")),
+            "cl": _event_analysis_percent(market.get("chg_since_msg_percent")),
             "pw": _event_analysis_percent(market.get("relative_window_percentile_30d")),
             "p24": _event_analysis_percent(market.get("relative_24h_percentile_30d")),
         },
         "n": compact_news,
     }
+    if previous_alert:
+        payload["prev"] = {
+            "min": previous_alert.get("age_minutes"),
+            "f": previous_alert.get("semantic_family"),
+            "cw": _event_analysis_percent(previous_alert.get("analysed_window_move")),
+        }
+    if recent_counts:
+        payload["cnt"] = {
+            "h6": recent_counts.get("h6"),
+            "h24": recent_counts.get("h24"),
+        }
+    return payload
 
 
 def build_event_significance_prompt(input_payload: dict) -> str:

@@ -84,7 +84,7 @@ behavior, use `project_context.md`, `alert_logic.md`, `market_reports.md`, and
 
 ## Ops-Agent Development
 
-`ops-agent/` is the repo-managed diagnostics collector. Its operational contract is in
+`ops_agent/` is the repo-managed diagnostics collector. Its operational contract is in
 `ops_agent_service.md`; the production wrapper is:
 
 ```bash

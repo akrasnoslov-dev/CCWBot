@@ -178,7 +178,9 @@ Overall: ⚠️ Needs attention
 Provider attempts, rate limits, backoffs, circuit skips, schema failures, and active limits are
 shown separately under Admin -> LLM diagnostics. The screen starts with 24-hour totals, lists
 degraded call-type/provider groups before healthy groups, and shows only non-zero failure categories
-for each degraded group. Fully failed groups use ❌, partially successful groups use ⚠️, and healthy
+for each degraded group. Event Alert Render is model-aware so the two Groq steps and external
+fallbacks remain distinguishable; model identifiers outside the allowlisted render chain are not
+printed. Fully failed groups use ❌, partially successful groups use ⚠️, and healthy
 groups use ✅. Mutually exclusive aggregate categories reconcile to total attempts and do not
 degrade System Status after a successful final feature outcome.
 
@@ -194,7 +196,7 @@ Current limitations:
 ## Ops-agent diagnostics
 
 For diagnostic bundle collection, evidence completeness, report writing, and safety boundaries,
-use `ops_agent_service.md` and `ops-agent/README.md`. This document contains direct read-only SQL
+use `ops_agent_service.md` and `ops_agent/README.md`. This document contains direct read-only SQL
 only.
 
 ## Event Alerts With Market Events

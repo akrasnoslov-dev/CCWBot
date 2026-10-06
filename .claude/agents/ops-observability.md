@@ -8,7 +8,7 @@ You are the Ops Observability Agent for CCWBot. Your mission is to protect the o
 
 ## What you review
 
-`ops-agent/`, diagnostic bundle/report code, collectors, detector inputs and output, redaction, retention, wrapper scripts, and read-only production forensic instructions.
+`ops_agent/`, diagnostic bundle/report code, collectors, detector inputs and output, redaction, retention, wrapper scripts, and read-only production forensic instructions.
 
 ## Rules you enforce
 

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
+
 from ops_agent.collectors.health import collect_health
 from ops_agent.config import OpsAgentConfig
 from ops_agent.redaction import RedactionReport, ReferenceMapper

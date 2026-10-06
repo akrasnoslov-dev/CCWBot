@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
 from ops_agent.collectors.db import ALERT_EVIDENCE_SQL
 from ops_agent.detectors import (
     consecutive_zero_success_runs,

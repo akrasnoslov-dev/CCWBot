@@ -957,6 +957,85 @@ async def test_system_status_shows_per_call_type_provider_llm_breakdown():
 
 
 @pytest.mark.asyncio
+async def test_llm_diagnostics_separates_event_render_models():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            for model, status in (
+                ("openai/gpt-oss-120b", "invalid_json"),
+                ("qwen/qwen3.8-27b", "success"),
+            ):
+                session.add(
+                    LlmUsageLog(
+                        provider="groq",
+                        model=model,
+                        call_type="event_alert_render",
+                        status=status,
+                        created_at=now - timedelta(minutes=5),
+                    )
+                )
+            session.add(
+                LlmUsageLog(
+                    provider="cloudflare",
+                    model="@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+                    call_type="event_alert_render",
+                    status="success",
+                    created_at=now - timedelta(minutes=4),
+                )
+            )
+            await session.commit()
+
+        text = await build_admin_llm_diagnostics_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "Event Alert Render / groq · GPT-OSS 120B — 0/1 success" in text
+        assert "Event Alert Render / groq · Qwen 3.8 27B — 1/1" in text
+        assert "Event Alert Render / cloudflare · Llama 3.3 70B — 1/1" in text
+        assert "Other LLM" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            for model, status in (
+                ("alpha-secret-model", "invalid_json"),
+                ("beta-secret-model", "success"),
+            ):
+                session.add(
+                    LlmUsageLog(
+                        provider="groq",
+                        model=model,
+                        call_type="event_alert_render",
+                        status=status,
+                        created_at=now - timedelta(minutes=5),
+                    )
+                )
+            await session.commit()
+
+        text = await build_admin_llm_diagnostics_text(
+            db_enabled=True,
+            session_factory=session_local,
+            now=now,
+        )
+
+        assert "Event Alert Render / groq · custom model 1 — 0/1 success" in text
+        assert "Event Alert Render / groq · custom model 2 — 1/1" in text
+        assert "alpha-secret-model" not in text
+        assert "beta-secret-model" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_system_status_bounds_provider_breakdown_for_telegram_card():
     now = _now()
     engine, session_local = await build_session_factory()

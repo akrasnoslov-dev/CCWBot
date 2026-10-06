@@ -18,8 +18,9 @@ When callers pass ``validate_response``, invalid provider *output* is also fallb
 the callback parses/validates each provider's raw response and raises ``AIInvalidJsonError``
 or ``AISchemaValidationError`` when the output cannot be trusted, which makes the router
 advance to the next provider (logged as ``llm_provider_switch reason=invalid_output``).
-Each provider is attempted at most once per logical call — one full pass over the chain,
-never a retry loop on the same provider.
+Each concrete provider/model entry is attempted at most once per logical call. A provider may
+appear more than once when the chain intentionally tries distinct models (Event Alert Render uses
+this for GPT-OSS followed by Qwen on Groq); there is still no retry loop for the same entry.
 
 Exhaustion mapping preserves the exception contract existing callers already handle:
 - if any provider returned invalid output -> the last ``AIInvalidJsonError`` /
@@ -37,6 +38,7 @@ Exhaustion mapping preserves the exception contract existing callers already han
 import logging
 
 from bot.services.llm import breaker, config
+from bot.services.llm.cloudflare_provider import get_provider as _cloudflare_provider
 from bot.services.llm.errors import (
     AIInvalidJsonError,
     AIProviderRateLimitError,
@@ -93,8 +95,8 @@ _FALLBACK_REASONS = frozenset(
     }
 )
 
-# Providers whose missing API key we have already logged, to avoid per-call log spam.
-_warned_missing_keys: set[str] = set()
+# Providers whose incomplete configuration we have already logged, to avoid per-call log spam.
+_warned_unconfigured: set[str] = set()
 
 
 def _default_registry() -> dict:
@@ -102,6 +104,7 @@ def _default_registry() -> dict:
         "groq": _groq_provider(),
         "gemini": _gemini_provider(),
         "mistral": _mistral_provider(),
+        "cloudflare": _cloudflare_provider(),
     }
 
 
@@ -109,21 +112,21 @@ class LLMRouter:
     def __init__(self, registry: dict | None = None):
         self._registry = registry if registry is not None else _default_registry()
 
-    def _providers_for(self, call_type: str) -> list[tuple[str, object]]:
-        selected: list[tuple[str, object]] = []
-        for name in config.provider_priority(call_type):
+    def _attempts_for(self, call_type: str) -> list[tuple[str, object, str]]:
+        selected: list[tuple[str, object, str]] = []
+        for name, model in config.provider_attempts(call_type):
             provider = self._registry.get(name)
             if provider is None:
                 continue
-            if config.api_key(name) is None:
-                if name not in _warned_missing_keys:
-                    _warned_missing_keys.add(name)
+            if not config.provider_is_configured(name):
+                if name not in _warned_unconfigured:
+                    _warned_unconfigured.add(name)
                     logger.info(
-                        "ops_event=llm_provider_excluded provider=%s reason=missing_api_key",
+                        "ops_event=llm_provider_excluded provider=%s reason=missing_config",
                         name,
                     )
                 continue
-            selected.append((name, provider))
+            selected.append((name, provider, model))
         return selected
 
     async def chat_completion(
@@ -183,8 +186,8 @@ class LLMRouter:
         to mark the provider's output as unusable and advance the chain. Without it the raw
         :class:`ProviderResult` is returned unchanged.
         """
-        providers = self._providers_for(call_type)
-        if not providers:
+        attempts = self._attempts_for(call_type)
+        if not attempts:
             raise AllProvidersFailedError(
                 f"No configured LLM providers for call_type={call_type}",
                 rate_limited=False,
@@ -196,6 +199,7 @@ class LLMRouter:
         saw_rate_limit = False
         saw_other_fallback = False
         rate_limited_name: str | None = None
+        rate_limited_model: str | None = None
         rate_limit_untils: list = []
         last_error: Exception | None = None
         invalid_output_error: Exception | None = None
@@ -204,8 +208,8 @@ class LLMRouter:
         failure_categories: list[str] = []
         input_chars = message_input_chars(messages)
 
-        for index, (name, provider) in enumerate(providers):
-            model = (model_overrides or {}).get(name) or config.model_for(name, call_type)
+        for index, (name, provider, configured_model) in enumerate(attempts):
+            model = (model_overrides or {}).get(name) or configured_model
             attempt_max_tokens = config.effective_max_tokens_for(
                 call_type=call_type,
                 provider=name,
@@ -247,8 +251,12 @@ class LLMRouter:
             # accept it, and omits it entirely everywhere else.
             reasoning_effort = config.reasoning_effort_for(model, call_type)
             attempt_response_format = response_format
-            if response_format_overrides is not None and name in response_format_overrides:
-                attempt_response_format = response_format_overrides[name]
+            if response_format_overrides is not None:
+                model_key = f"{name}:{model}"
+                if model_key in response_format_overrides:
+                    attempt_response_format = response_format_overrides[model_key]
+                elif name in response_format_overrides:
+                    attempt_response_format = response_format_overrides[name]
             attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
@@ -278,6 +286,7 @@ class LLMRouter:
                 last_error = error
                 if rate_limited_name is None:
                     rate_limited_name = name
+                    rate_limited_model = model
                 if error.limited_until is not None:
                     rate_limit_untils.append(error.limited_until)
                 failure_categories.append(f"{name}:rate_limit")
@@ -301,6 +310,7 @@ class LLMRouter:
                         saw_rate_limit = True
                         if rate_limited_name is None:
                             rate_limited_name = name
+                            rate_limited_model = model
                     else:
                         saw_other_fallback = True
                     failure_categories.append(f"{name}:{reason}")
@@ -390,12 +400,13 @@ class LLMRouter:
             # request was rate-limited. Mixed exhausted chains remain AllProvidersFailedError:
             # a 429 from one provider is provider pressure, not proof that the logical call was
             # terminally rate-limited.
-            terminal_name = rate_limited_name or providers[-1][0]
+            terminal_name = rate_limited_name or attempts[-1][0]
+            terminal_model = rate_limited_model or attempts[-1][2]
             limited_until = min(rate_limit_untils) if rate_limit_untils else None
             raise AIProviderRateLimitError(
                 f"All providers rate limited for call_type={call_type}",
                 provider=terminal_name,
-                model=config.model_for(terminal_name, call_type),
+                model=terminal_model,
                 limited_until=limited_until,
             ) from last_error
 

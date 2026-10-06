@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+from ops_agent import cli
 from ops_agent.bundle import BundleSizeLimitError, BundleWriter
 from ops_agent.cli import _mark_report_success, _validate_bundle, build_parser
 from ops_agent.config import OpsAgentConfig, OpsAgentLimits
 from ops_agent.redaction import RedactionReport
 from ops_agent.schemas import Period
 from ops_agent.state import load_state, parse_timestamp, resolve_period
-
-from ops_agent import cli
 
 
 def _write_test_collect_wrapper(
@@ -60,7 +60,7 @@ exit 0
     )
     fake_docker.chmod(0o755)
 
-    source = Path("ops-agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
+    source = Path("ops_agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
     source = source.replace("DOCKER=/usr/bin/docker", f"DOCKER={fake_docker}")
     source = source.replace("ROOT=/opt/CCWBot", f"ROOT={root}")
     wrapper = tmp_path / "ccwbot-ops-agent-collect"
@@ -168,7 +168,7 @@ def _stub_collectors(
     monkeypatch.setattr(cli, "detector_summary", lambda _results: "# Detector Summary\n")
     monkeypatch.setattr(
         cli,
-        "render_decision_report_context",
+        "render_report_context",
         lambda **kwargs: f"# Context\nStatus: {kwargs['collection_status']}\n",
     )
 
@@ -222,7 +222,7 @@ def test_parse_timestamp_rejects_ambiguous_slash_dates_with_operator_message():
 
 
 def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
-    compose = Path("ops-agent/docker-compose.ops-agent.yml").read_text(encoding="utf-8")
+    compose = Path("ops_agent/docker-compose.ops-agent.yml").read_text(encoding="utf-8")
 
     assert ".ops-agent.env" in compose
     assert "- .env" not in compose
@@ -230,8 +230,23 @@ def test_ops_agent_compose_overlay_passes_only_explicit_ops_agent_env():
     assert "GROQ_API_KEY" not in compose
 
 
+def test_ops_agent_has_one_repo_source_directory_and_root_env_template():
+    source_dir = Path("ops_agent")
+    env_template = Path(".ops-agent.env.example").read_text(encoding="utf-8")
+
+    assert source_dir.is_dir()
+    assert (source_dir / "cli.py").is_file()
+    assert (source_dir / "Dockerfile").is_file()
+    assert (source_dir / "docker-compose.ops-agent.yml").is_file()
+    assert not Path("ops-agent").exists()
+    assert "<repo>/.ops-agent.env" in env_template
+    assert "/opt/CCWBot/.ops-agent.env" in env_template
+    assert "OPS_AGENT_DATABASE_URL=" in env_template
+    assert "OPS_AGENT_HEALTH_URL=http://bot:8080/health" in env_template
+
+
 def test_production_collect_wrapper_restricts_arguments():
-    script = Path("ops-agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
+    script = Path("ops_agent/scripts/ccwbot-ops-agent-collect").read_text(encoding="utf-8")
 
     assert "DOCKER=/usr/bin/docker" in script
     assert "env -i" in script
@@ -384,7 +399,7 @@ def test_collect_wrapper_since_container_start_fails_before_collection_over_720h
 
 
 def test_production_mark_success_wrapper_restricts_paths_and_arguments():
-    script = Path("ops-agent/scripts/ccwbot-ops-agent-mark-report-success").read_text(
+    script = Path("ops_agent/scripts/ccwbot-ops-agent-mark-report-success").read_text(
         encoding="utf-8"
     )
 
@@ -401,7 +416,7 @@ def test_production_mark_success_wrapper_restricts_paths_and_arguments():
 
 
 def test_ops_agent_runbook_documents_safe_production_report_tree():
-    readme = Path("ops-agent/README.md").read_text(encoding="utf-8")
+    readme = Path("ops_agent/README.md").read_text(encoding="utf-8")
 
     assert "install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent" in readme
     assert "install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles" in readme

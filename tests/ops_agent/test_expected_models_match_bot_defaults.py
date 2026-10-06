@@ -8,9 +8,8 @@ the drift detector silently comparing against a value nobody ships any more.
 
 from __future__ import annotations
 
-from ops_agent.expected_models import SHIPPED_DEFAULT_MODELS
-
 from bot.services.llm import config as llm_config
+from ops_agent.expected_models import SHIPPED_DEFAULT_MODELS
 
 
 def test_ops_agent_expected_models_match_the_bot_defaults():

@@ -23,7 +23,7 @@ Docker image. A normal bot-only deploy is not enough to prove the collector imag
 ## Production Access Model
 
 Production collection should use the root-owned safe wrappers documented in
-`ops-agent/README.md`:
+`ops_agent/README.md`:
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect
@@ -54,36 +54,36 @@ creation.
 
 ## Required Evidence Reading Order
 
-For each published generated bundle, read:
+For each published generated bundle, read only:
 
 1. `manifest.json`
-2. `CODEX_INSTRUCTIONS.md`
-3. `bundle_summary.md`
-4. `decision_report_context.md`
-5. `detectors/detector_summary.md`
-6. `detectors/detector_results.json`
-7. `redaction_report.json`
-8. `limits.json`
+2. `decision_report_context.md`
 
-Then inspect referenced `evidence/**` files only as needed to verify or expand findings.
+The decision context is a compact deterministic packet containing report-driving aggregates,
+non-ok collectors, triggered/unknown detector findings, and targeted evidence paths.
+
+Do not preload the remaining bundle files. Inspect `detectors/**`, `redaction_report.json`,
+`limits.json`, `bundle_summary.md`, or `evidence/**` only when a referenced finding,
+collection gap, or explicit investigation question requires them.
 
 ## Final Report Flow
 
 1. Run the safe collect wrapper; use `--since-container-start` when the requested period starts at the current `ccwbot` container start.
 2. Read the printed JSON and open only the published bundle path. If stdout or exit status was lost, recover the latest sanitized receipt with `--status latest`.
-3. Use `docs/ops-agent-report-codex-prompt.md` and `decision_report_context.md`.
-4. Write the final Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
+3. Read `manifest.json` and `decision_report_context.md`; load only targeted evidence needed for triggered/unknown findings or explicit questions.
+4. Use `docs/ops-agent-report-codex-prompt.md` to write one concise Markdown report under `/opt/CCWBot/reports/ops-agent/reports/`.
 5. Mark success only after the report exists and the bundle is complete, unless the operator
    explicitly accepts a partial report.
 
-If a bundle or report is partial, include `Collector Status` in the report and list every failed
-or partial collector. Missing evidence, skipped evidence, and detector `unknown` states are not
-healthy evidence; describe them as gaps and lower confidence for affected findings.
+If a bundle or report is partial, list every failed or partial collector in report Coverage.
+Missing evidence, skipped evidence, and detector `unknown` states are not healthy evidence;
+describe them as gaps and lower confidence for affected findings.
 
-## Event Alert Regression Section
+## Event Alert Regression Evidence
 
-Generated decision context includes `## Event Alert Regression Checks`. The section is Markdown-only
-and summarizes:
+The compact decision context summarizes the regression status and non-zero regression counters.
+When those signals require investigation, open the referenced sanitized Event Alert regression
+evidence. It covers:
 
 - duplicate attached successful Event Alert analyses for one market event;
 - same-semantic Event Alerts delivered inside the strict cooldown window;
@@ -97,11 +97,9 @@ and summarizes:
 - old/confusing percentage labels such as `Since last BTC alert`, `Analysed-window change`, and
   generic `Price change`.
 
-Generated decision context also includes `## Decision Reasons`, based on sanitized
-`alert_delivery_outcomes` fields. It reports counts for `news_only_rejected`, `llm_no_alert`,
-`semantic_cooldown_suppressed`, `exact_context_reused`, pre-LLM exact-context skips,
-delivered rows with decision reasons, missing/unknown decision
-reasons, and generic `Possible action` wording as a quality metric only.
+Decision-reason detail remains available in sanitized aggregate evidence. Read it only when a
+triggered/unknown finding or investigation question needs that detail; it is intentionally not
+preloaded into the compact decision context.
 
 An `OK` status means none of those regressions were found in collected evidence. `Warning` means
 likely same-family repeat noise needs review. `Critical` means a core invariant, observability, or
@@ -141,6 +139,6 @@ outcomes without exposing source IDs. Similarity remains evidence, not proof of 
 
 ## Local References
 
-- Current operator runbook: `ops-agent/README.md`
+- Current operator runbook: `ops_agent/README.md`
 - Report-writing prompt: `docs/ops-agent-report-codex-prompt.md`
 - Read-only SQL snippets: `docs/observability.md`

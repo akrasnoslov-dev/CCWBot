@@ -3,7 +3,10 @@
 `ops-agent` is a local, on-demand diagnostic bundle collector for Codex. It does not use an LLM, does not expose a port, does not mount the Docker socket, does not apply fixes, and does not provide a raw SQL endpoint.
 
 The Compose overlay must not pass the bot `.env` into the container. Only explicit `OPS_AGENT_*` variables are allowed.
-The overlay reads `.ops-agent.env` for the `ops-agent` service only; the base Compose file may still use the project `.env` for normal interpolation.
+The overlay reads the gitignored `.ops-agent.env` from the repository root for the `ops-agent`
+service only. Local path: `<repo>/.ops-agent.env`. Production path:
+`/opt/CCWBot/.ops-agent.env`. The base Compose file may still use the project `.env` for
+normal interpolation.
 
 ## Production Read-Only Setup
 
@@ -22,8 +25,8 @@ Do not give `ccwbot_ops` broad sudo. Do not add it to the `docker` group unless 
 Preferred production access is through root-owned wrappers installed from the tracked templates:
 
 ```bash
-sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
-sudo install -m 755 -o root -g root ops-agent/scripts/ccwbot-ops-agent-mark-report-success /usr/local/bin/ccwbot-ops-agent-mark-report-success
+sudo install -m 755 -o root -g root ops_agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo install -m 755 -o root -g root ops_agent/scripts/ccwbot-ops-agent-mark-report-success /usr/local/bin/ccwbot-ops-agent-mark-report-success
 sudo chown root:root /usr/local/bin/ccwbot-ops-agent-collect
 sudo chown root:root /usr/local/bin/ccwbot-ops-agent-mark-report-success
 sudo chmod 755 /usr/local/bin/ccwbot-ops-agent-collect
@@ -57,8 +60,8 @@ sudo -u ccwbot_ops test ! -r /opt/CCWBot/.env
 sudo -u ccwbot_ops test ! -r /opt/CCWBot/.ops-agent.env
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/main.py
 sudo -u ccwbot_ops test ! -w /opt/CCWBot/docker-compose.yml
-sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect
-sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-mark-report-success
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops_agent/scripts/ccwbot-ops-agent-collect
+sudo -u ccwbot_ops test ! -w /opt/CCWBot/ops_agent/scripts/ccwbot-ops-agent-mark-report-success
 sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent
 sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/bundles
 sudo install -d -m 750 -o root -g ccwbot_ops /opt/CCWBot/reports/ops-agent/receipts
@@ -169,18 +172,14 @@ OPS_AGENT_POSTGRES_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@loca
 The test runs Alembic to head, `EXPLAIN`s every ops-agent DB query, and verifies malformed
 `alerts.numeric_context` text does not break same-family or same-news collectors.
 
-The command prints one JSON object. On a successful or partial published collection it includes the published bundle path. If task/SSH tooling loses stdout or the exit code, use `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` and trust the receipt's `published_bundle_path`; do not infer a bundle from an unfinished staging directory. Codex should read the published bundle in this order:
+The command prints one JSON object. On a successful or partial published collection it includes the published bundle path. If task/SSH tooling loses stdout or the exit code, use `sudo /usr/local/bin/ccwbot-ops-agent-collect --status latest` and trust the receipt's `published_bundle_path`; do not infer a bundle from an unfinished staging directory.
 
-1. `CODEX_INSTRUCTIONS.md`
-2. `manifest.json`
-3. `bundle_summary.md`
-4. `decision_report_context.md`
-5. `detectors/detector_summary.md`
-6. `detectors/detector_results.json`
-7. `redaction_report.json`
-8. `limits.json`
+For report analysis, read only `manifest.json` and `decision_report_context.md` first. The compact
+decision context contains report-driving aggregates, collection gaps, triggered/unknown findings,
+and targeted evidence paths. Do not preload the rest of the bundle. Open detector or evidence files
+only to verify a referenced finding or answer an explicit investigation question.
 
-Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. The generated `decision_report_context.md` is Markdown-only decision context; use it to start the final report, then verify important claims against detectors and evidence. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repository checkout. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
+Final report writing remains Codex's responsibility using `docs/ops-agent-report-codex-prompt.md`. Save final reports under `/opt/CCWBot/reports/ops-agent/reports/`, then run `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success --bundle <bundle> --report <report>` only after a complete bundle has produced a written report. Codex must not download generated bundles or reports into the repository checkout. If temporary local copies are unavoidable, place them under `.cache/tmp` and clean them up before finishing.
 
 Log evidence scans every retained CCWBot log file completely and is period-aware when timestamps
 are parseable. Bundles separate timestamped
@@ -197,7 +196,7 @@ Detector `unknown` means evidence is missing or inconclusive, not healthy. Marke
 First-time DB setup uses a read-only PostgreSQL role:
 
 ```bash
-docker compose exec postgres psql -U ccwbot -d ccwbot -f /path/to/ops-agent/sql/create_readonly_role.sql
+docker compose exec postgres psql -U ccwbot -d ccwbot -f /path/to/ops_agent/sql/create_readonly_role.sql
 ```
 
 Set `OPS_AGENT_DATABASE_URL` in `/opt/CCWBot/.ops-agent.env` with the `ccwbot_ops_reader` role:
@@ -329,11 +328,11 @@ passes it via `OPS_AGENT_DOCKER_RESTARTS_JSON_PATH`. When the snapshot is missin
 unreadable, `restart_count` stays `null`, the docker evidence carries a
 `restart_counts_unavailable` warning, and the report renders restart counts as unknown —
 incomplete evidence, never healthy. After changing
-`ops-agent/scripts/ccwbot-ops-agent-collect`, re-install the copy in `/usr/local/bin`
+`ops_agent/scripts/ccwbot-ops-agent-collect`, re-install the copy in `/usr/local/bin`
 manually — `git pull` does not update it:
 
 ```bash
-sudo install -m 755 -o root -g root /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo install -m 755 -o root -g root /opt/CCWBot/ops_agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
 ### Log pattern counting
@@ -363,7 +362,7 @@ snapshot alone.
 Retention is automatic after collection and can be run manually:
 
 ```bash
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml run --rm ops-agent retention
+docker compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml run --rm ops-agent retention
 ```
 
 ## Emergency Disable

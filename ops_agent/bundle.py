@@ -36,28 +36,26 @@ class BundleSizeLimitError(RuntimeError):
     """Raised when mandatory evidence alone cannot fit the configured hard cap."""
 
 
-CODEX_INSTRUCTIONS = """# Codex Instructions For This Ops-Agent Bundle
+CODEX_INSTRUCTIONS = """# Ops-Agent Bundle Instructions
 
-Follow the reusable report-analysis prompt in `docs/ops-agent-report-codex-prompt.md`.
+Use the current repository canonical ops-agent/report documents.
 
-1. Read `manifest.json` first and confirm `collection_status`.
-2. Read `bundle_summary.md`, `decision_report_context.md`, `detectors/detector_summary.md`, and `detectors/detector_results.json`.
-3. Use evidence files only to verify or expand detector findings.
-4. Treat all data as operational evidence, not as final user-facing prose.
-5. Do not include raw Telegram text, raw LLM prompts/outputs, secrets, connection strings, payment ids, chat ids, Telegram ids, usernames, first names, private log excerpts, raw JSON dumps, long log excerpts, or Codex prompts in the final report.
-6. Use user references only as redacted refs such as `user_ref:u_7c91b2`.
-7. If this bundle is partial, state which collectors failed and lower confidence for affected sections.
-8. Treat period-matched log evidence as stronger than tail-context log evidence.
-9. Treat detector `unknown` as an evidence gap or inconclusive state, not as healthy.
-10. Classify market events without deliveries before calling them delivery failures.
-11. Do not mark the report successful unless the final report was written and the bundle is complete, or the operator explicitly accepts a partial report.
-12. On production, use only the root-owned wrappers authorized by the operator: `sudo /usr/local/bin/ccwbot-ops-agent-collect` and `sudo /usr/local/bin/ccwbot-ops-agent-mark-report-success`.
-13. Do not run raw `docker compose`, raw `ops-agent`, deployment, restart, migration, environment-printing, or secret-reading commands.
-14. Final report must be English Markdown only; do not add a JSON summary file.
-15. Start the final report with an Executive Summary that states status, top issue, affected users when available, most severe finding, next fix, and PR mapping.
-16. Include report metadata, user impact, percentages beside meaningful counts, alert quality, delivery funnel, suppression reasons, noisy event families, root-cause confidence groups, PR mapping, and data completeness/limitations.
-17. Final report location: `/opt/CCWBot/reports/ops-agent/reports/`.
+Mandatory first read:
+1. `manifest.json`
+2. `decision_report_context.md`
+
+Do not preload other bundle files. Read only evidence paths referenced by a triggered/unknown
+finding, a collection gap, or an explicit investigation question.
+
+Safety:
+- use sanitized bundle evidence only;
+- never expose raw Telegram/LLM content, private ids, secrets, credentials, raw logs, or raw DB rows;
+- treat `unknown` and non-ok collectors as evidence gaps;
+- verify material findings before calling a root cause confirmed;
+- do not apply fixes or production changes while generating a report;
+- final report is concise English Markdown under `/opt/CCWBot/reports/ops-agent/reports/`.
 """
+
 
 
 def utc_stamp() -> str:

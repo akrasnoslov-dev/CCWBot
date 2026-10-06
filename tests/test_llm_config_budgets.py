@@ -576,6 +576,49 @@ def test_model_value_is_stripped(monkeypatch):
     assert llm_config.model_for("groq", "event_analysis") == "llama-3.1-8b-instant"
 
 
+def test_event_alert_render_uses_dedicated_model_level_chain(monkeypatch):
+    for name in (
+        "GROQ_EVENT_ANALYSIS_MODEL",
+        "GROQ_EVENT_RENDER_FALLBACK_MODEL",
+        "CLOUDFLARE_EVENT_RENDER_MODEL",
+        "GEMINI_EVENT_RENDER_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert llm_config.provider_attempts("event_alert_render") == [
+        ("groq", "openai/gpt-oss-120b"),
+        ("groq", "qwen/qwen3.8-27b"),
+        ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        ("gemini", "gemini-3.5-flash-lite"),
+    ]
+
+
+def test_event_alert_render_model_overrides_are_independent(monkeypatch):
+    monkeypatch.setenv("GROQ_EVENT_RENDER_FALLBACK_MODEL", "qwen/custom")
+    monkeypatch.setenv("CLOUDFLARE_EVENT_RENDER_MODEL", "@cf/custom")
+    monkeypatch.setenv("GEMINI_EVENT_RENDER_MODEL", "gemini-custom")
+
+    assert llm_config.provider_attempts("event_alert_render")[1:] == [
+        ("groq", "qwen/custom"),
+        ("cloudflare", "@cf/custom"),
+        ("gemini", "gemini-custom"),
+    ]
+
+
+def test_cloudflare_requires_token_and_account_id(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-token")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    assert llm_config.provider_is_configured("cloudflare") is False
+    assert llm_config.base_url("cloudflare") is None
+
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-123")
+    assert llm_config.provider_is_configured("cloudflare") is True
+    assert (
+        llm_config.base_url("cloudflare")
+        == "https://api.cloudflare.com/client/v4/accounts/account-123/ai/v1"
+    )
+
+
 # --- startup configuration log ---------------------------------------------------------
 
 

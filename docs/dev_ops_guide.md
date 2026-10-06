@@ -148,14 +148,14 @@ Ops-agent code does not reach production the way bot code does. Two steps are ea
 both have caused real deployment gaps where an operator believed a fix was live and it was not.
 
 **1. The `ops-agent` image must be rebuilt explicitly.** The ops-agent is not declared in the
-root `docker-compose.yml` at all — it lives in the `ops-agent/docker-compose.ops-agent.yml`
+root `docker-compose.yml` at all — it lives in the `ops_agent/docker-compose.ops-agent.yml`
 overlay under the `ops` profile. A plain `docker compose up -d --build`, which is what the deploy
 checklist runs, therefore never sees the service and never rebuilds it. After any change under
-`ops-agent/`, rebuild it explicitly with the overlay:
+`ops_agent/`, rebuild it explicitly with the overlay:
 
 ```bash
 cd /opt/CCWBot
-docker compose -f docker-compose.yml -f ops-agent/docker-compose.ops-agent.yml build ops-agent
+docker compose -f docker-compose.yml -f ops_agent/docker-compose.ops-agent.yml build ops-agent
 ```
 
 Until that runs, collection keeps using the previously built image: old queries, old collectors,
@@ -163,12 +163,12 @@ old detectors. The bundle will look healthy and current, because nothing reports
 version produced it.
 
 **2. The host wrapper is not updated by Git.** `/usr/local/bin/ccwbot-ops-agent-collect` is an
-installed copy. `git pull` updates only `ops-agent/scripts/ccwbot-ops-agent-collect` in the repo,
+installed copy. `git pull` updates only `ops_agent/scripts/ccwbot-ops-agent-collect` in the repo,
 and `docker compose up -d --build` never touches `/usr/local/bin` at all. Reinstall it manually
 whenever that script changes:
 
 ```bash
-sudo install -m 755 /opt/CCWBot/ops-agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
+sudo install -m 755 /opt/CCWBot/ops_agent/scripts/ccwbot-ops-agent-collect /usr/local/bin/ccwbot-ops-agent-collect
 ```
 
 A stale installed wrapper was the root cause of the July 2026 partial-bundle streak.
@@ -176,13 +176,13 @@ A stale installed wrapper was the root cause of the July 2026 partial-bundle str
 Checklist after deploying an ops-agent change:
 
 1. Rebuild the image with the overlay (command above).
-2. Reinstall the host wrapper if `ops-agent/scripts/ccwbot-ops-agent-collect` changed.
+2. Reinstall the host wrapper if `ops_agent/scripts/ccwbot-ops-agent-collect` changed.
 3. Collect a short no-state bundle and confirm the expected new collectors or detectors appear.
 4. Confirm `Collector Status` lists no failures.
 
 ## Ops-Agent Diagnostics
 
-The production ops-agent wrapper should point at the repo-managed `ops-agent/` source. Use only the
+The production ops-agent wrapper should point at the repo-managed `ops_agent/` source. Use only the
 safe wrapper for collection:
 
 ```bash
