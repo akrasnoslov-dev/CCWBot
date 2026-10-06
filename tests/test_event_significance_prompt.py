@@ -25,6 +25,8 @@ def _payload() -> dict:
             ],
             "analysed_window_minutes": 180,
             "chg_window_percent": Decimal("4.0275"),
+            "chg30m_percent": Decimal("1.1"),
+            "chg1h_percent": Decimal("2.2"),
             "chg24h_percent": Decimal("3.5347"),
             "chg_since_msg_percent": Decimal("5.1"),
             "relative_window_percentile_30d": Decimal("99.2"),
@@ -64,7 +66,9 @@ def _payload() -> dict:
             "semantic_family": "price_uptrend",
             "analysed_window_move": Decimal("1.2"),
             "created_at": "2026-09-30T10:00:00+00:00",
+            "age_minutes": 2595,
         },
+        "recent_event_counts": {"h6": 2, "h24": 5},
     }
 
 
@@ -86,9 +90,17 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
 
     assert compact["sym"] == "SOL"
     assert compact["m"] == {
+        "s": [
+            [-180, Decimal("144.2")],
+            [-90, Decimal("146.1")],
+            [0, Decimal("150.0")],
+        ],
         "w": 180,
+        "c30": Decimal("1.1"),
+        "c60": Decimal("2.2"),
         "cw": Decimal("4.0275"),
         "c24": Decimal("3.5347"),
+        "cl": Decimal("5.1"),
         "pw": Decimal("99.2"),
         "p24": Decimal("91.3"),
     }
@@ -98,21 +110,20 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert compact["n"][0]["mat"] is True
     assert "x" not in compact["n"][0]
     assert "src" not in compact["n"][0]
-    assert "s" not in compact["m"]
-    assert "cl" not in compact["m"]
-    assert "prev" not in compact
+    assert compact["prev"] == {"min": 2595, "f": "price_uptrend", "cw": Decimal("1.2")}
+    assert compact["cnt"] == {"h6": 2, "h24": 5}
 
     prompt = ai_agent_groq.build_event_significance_prompt(payload)
     lowered = prompt.lower()
     assert "context, not" in lowered
     assert "threshold" in lowered
     assert "do not apply a fixed cutoff" in lowered
-    assert "unusual" in lowered
-    assert "noteworthy" in lowered
+    assert "default=>no alert" in lowered
+    assert "important and new" in lowered
+    assert "continuation=>false" in lowered
     assert "should_alert=true" in lowered
     assert "should_alert=false" in lowered
-    assert len(prompt) <= 1400
-    assert len(prompt) < len(ai_agent_groq.build_event_analysis_prompt(payload)) * 0.75
+    assert len(prompt) <= 1650
 
 
 def test_event_significance_output_is_small_and_constrained():

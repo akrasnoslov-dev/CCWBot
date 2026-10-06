@@ -316,8 +316,12 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
     previous_event_alert = (
         previous_event_alert if isinstance(previous_event_alert, dict) else {}
     )
+    recent_event_counts = input_payload.get("recent_event_counts")
+    recent_event_counts = (
+        recent_event_counts if isinstance(recent_event_counts, dict) else {}
+    )
     context = {
-        "schema_version": 10,
+        "schema_version": 11,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
@@ -326,6 +330,8 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "snapshots",
                 "analysed_window_minutes",
                 "chg_window_percent",
+                "chg30m_percent",
+                "chg1h_percent",
                 "chg24h_percent",
                 "chg_since_msg_percent",
                 "relative_window_percentile_30d",
@@ -343,6 +349,12 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             "canonical_event_key": previous_event_alert.get("canonical_event_key"),
             "semantic_family": previous_event_alert.get("semantic_family"),
             "analysed_window_move": previous_event_alert.get("analysed_window_move"),
+            "age_minutes": previous_event_alert.get("age_minutes"),
+        }
+    if recent_event_counts:
+        context["recent_event_counts"] = {
+            "h6": recent_event_counts.get("h6"),
+            "h24": recent_event_counts.get("h24"),
         }
     return context
 

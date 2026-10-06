@@ -66,6 +66,7 @@ from bot.config import (
 from bot.db.database import (
     attach_analysis_to_market_event,
     cleanup_seen_news,
+    count_recent_market_events_for_symbol,
     get_active_users_with_alert_preferences,
     get_last_sent_alert,
     get_last_sent_alert_at,
@@ -1057,6 +1058,34 @@ def _snapshot_at_or_before(snapshots: list, cutoff: datetime):
         <= cutoff_utc
     ]
     return eligible[-1] if eligible else None
+
+
+def _snapshot_change_percent_for_lookback(
+    snapshots: list,
+    *,
+    current_price: float,
+    now: datetime,
+    lookback_minutes: int,
+    max_reference_offset_seconds: int,
+) -> float | None:
+    target = (now - timedelta(minutes=lookback_minutes)).astimezone(timezone.utc)
+    if not snapshots:
+        return None
+
+    def _checked_at(snapshot) -> datetime:
+        checked_at = snapshot.checked_at
+        if checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=timezone.utc)
+        return checked_at.astimezone(timezone.utc)
+
+    reference = min(
+        snapshots,
+        key=lambda snapshot: abs((_checked_at(snapshot) - target).total_seconds()),
+    )
+    offset_seconds = abs((_checked_at(reference) - target).total_seconds())
+    if offset_seconds > max(1, int(max_reference_offset_seconds)):
+        return None
+    return _snapshot_change_percent(current_price, reference)
 
 
 def _related_news_by_id(
@@ -2756,6 +2785,9 @@ async def _build_event_analysis_input(
     )
     window_reference_price: Decimal | None = None
     historical_inputs: list[str] = []
+    short_move_30m = None
+    short_move_60m = None
+    recent_event_counts: dict[str, int] | None = None
     db_snapshots_available = bool(DB_ENABLED and DB_SESSION_LOCAL)
 
     if db_snapshots_available:
@@ -2782,6 +2814,38 @@ async def _build_event_analysis_input(
                 since=now - timedelta(days=30),
                 until=now,
             )
+            recent_event_counts = {
+                "h6": await count_recent_market_events_for_symbol(
+                    session,
+                    symbol=normalized_symbol,
+                    event_type=EVENT_ALERT_TYPE,
+                    since=now - timedelta(hours=6),
+                ),
+                "h24": await count_recent_market_events_for_symbol(
+                    session,
+                    symbol=normalized_symbol,
+                    event_type=EVENT_ALERT_TYPE,
+                    since=now - timedelta(hours=24),
+                ),
+            }
+        max_short_window_offset_seconds = max(
+            60,
+            int(event_analysis_interval_seconds) // 2,
+        )
+        short_move_30m = _snapshot_change_percent_for_lookback(
+            snapshots,
+            current_price=current_price,
+            now=now,
+            lookback_minutes=30,
+            max_reference_offset_seconds=max_short_window_offset_seconds,
+        )
+        short_move_60m = _snapshot_change_percent_for_lookback(
+            snapshots,
+            current_price=current_price,
+            now=now,
+            lookback_minutes=60,
+            max_reference_offset_seconds=max_short_window_offset_seconds,
+        )
         if latest_alert:
             last_message_at = latest_alert.created_at.astimezone(timezone.utc).isoformat()
             last_message_type = latest_alert.alert_type
@@ -2871,6 +2935,25 @@ async def _build_event_analysis_input(
     snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
     candidate_news = _compact_event_analysis_news(candidate_news, limit=3)
     previous_event_alert, _ = await _get_previous_event_alert_for_input(normalized_symbol)
+    if previous_event_alert:
+        raw_previous_at = previous_event_alert.get("created_at")
+        try:
+            previous_at = datetime.fromisoformat(str(raw_previous_at).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            previous_at = None
+        if previous_at is not None:
+            if previous_at.tzinfo is None:
+                previous_at = previous_at.replace(tzinfo=timezone.utc)
+            previous_event_alert["age_minutes"] = max(
+                0,
+                int(
+                    (
+                        now.astimezone(timezone.utc)
+                        - previous_at.astimezone(timezone.utc)
+                    ).total_seconds()
+                    // 60
+                ),
+            )
 
     payload = {
         "analysis_id": analysis_id,
@@ -2884,6 +2967,8 @@ async def _build_event_analysis_input(
             "payload_points": EVENT_ANALYSIS_PAYLOAD_POINTS,
             "analysed_window_minutes": analysed_window_minutes,
             "chg_window_percent": analysed_window_change,
+            "chg30m_percent": short_move_30m,
+            "chg1h_percent": short_move_60m,
             "chg24h_percent": change_24h,
             "chg_since_msg_percent": change_since_last_message,
             "relative_window_percentile_30d": relative_window_percentile,
@@ -2901,6 +2986,8 @@ async def _build_event_analysis_input(
             "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts.",
         },
     }
+    if recent_event_counts is not None:
+        payload["recent_event_counts"] = recent_event_counts
     if previous_event_alert:
         payload["previous_event_alert"] = previous_event_alert
     return payload
