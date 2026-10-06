@@ -33,12 +33,16 @@ def render_report_context(
     regression = _event_regression_summary(evidence)
     report_status = _report_status(collection_status, attention, quality, regression)
     evidence_refs = _targeted_evidence_refs(attention, quality, regression)
+    read_plan = [f"- `{path}`" for path in evidence_refs] or [
+        "- No extra evidence read is required by current findings."
+    ]
 
     lines = [
         "# Ops-Agent Compact Report Context",
         "",
         "Read `manifest.json` and this file first. Do not preload other bundle files. "
-        "Open only evidence paths listed under a finding/gap or needed to answer an explicit investigation question.",
+        "Open only evidence paths listed under a finding/gap or needed to answer "
+        "an explicit investigation question.",
         "",
         "## Metadata",
         "",
@@ -75,11 +79,12 @@ def render_report_context(
         "",
         "## Targeted Evidence Read Plan",
         "",
-        *([f"- `{path}`" for path in evidence_refs] or ["- No extra evidence read is required by current findings."]),
+        *read_plan,
         "",
         "## Report Writing Contract",
         "",
-        "- Verify material triggered findings against their referenced evidence before calling a root cause confirmed.",
+        "- Verify material triggered findings against their referenced evidence before "
+        "calling a root cause confirmed.",
         "- Treat detector `unknown` and non-ok collectors as evidence gaps, not healthy states.",
         "- Keep confirmed, likely, and unknown conclusions distinct.",
         "- Do not repeat the same finding across multiple report sections.",
@@ -124,7 +129,11 @@ def _report_status(
     if collection_status != "complete":
         return "degraded"
     severities = {result.severity for result in attention if result.status == "triggered"}
-    if "critical" in severities or quality["severe_count"] > 0 or regression["status"] == "critical":
+    if (
+        "critical" in severities
+        or quality["severe_count"] > 0
+        or regression["status"] == "critical"
+    ):
         return "degraded"
     if attention or quality["issue_count"] > 0 or regression["status"] in {"warning", "unknown"}:
         return "needs attention"
@@ -177,9 +186,18 @@ def _key_metrics(evidence: dict[str, Any]) -> list[str]:
             [
                 ("Active users", _int(impact.get("active_users_current"))),
                 ("Users receiving Event Alerts", _int(impact.get("users_received_event_alerts"))),
-                ("Users affected by delivery failures", _int(impact.get("users_affected_by_delivery_failures"))),
-                ("Users affected by noisy/duplicate alerts", _int(impact.get("users_affected_by_duplicate_alerts"))),
-                ("Users affected by content quality", _int(impact.get("users_affected_by_content_quality_issues"))),
+                (
+                    "Users affected by delivery failures",
+                    _int(impact.get("users_affected_by_delivery_failures")),
+                ),
+                (
+                    "Users affected by noisy/duplicate alerts",
+                    _int(impact.get("users_affected_by_duplicate_alerts")),
+                ),
+                (
+                    "Users affected by content quality",
+                    _int(impact.get("users_affected_by_content_quality_issues")),
+                ),
             ]
         )
     if funnel:
@@ -194,7 +212,8 @@ def _key_metrics(evidence: dict[str, Any]) -> list[str]:
                 ("Telegram failed", f"{failed} / {attempts} ({_pct(failed, attempts)})"),
             ]
         )
-    return ["| Metric | Value |", "|---|---:|", *[f"| {name} | {value} |" for name, value in metrics]]
+    metric_rows = [f"| {name} | {value} |" for name, value in metrics]
+    return ["| Metric | Value |", "|---|---:|", *metric_rows]
 
 
 def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -214,7 +233,8 @@ def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
         lines = ["- No alert-quality issue groups in collected evidence."]
     else:
         lines = [f"- Event Alert deliveries: {total}", "- Issue groups:"]
-        for name, count in sorted(grouped.items(), key=lambda pair: (-pair[1], pair[0]))[:MAX_ALERT_QUALITY_ISSUES]:
+        ordered = sorted(grouped.items(), key=lambda pair: (-pair[1], pair[0]))
+        for name, count in ordered[:MAX_ALERT_QUALITY_ISSUES]:
             lines.append(f"  - `{name}`: {count} ({_pct(count, total)})")
     return {
         "lines": lines,
