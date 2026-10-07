@@ -725,8 +725,9 @@ def validate_event_significance_output(
         raise EventAnalysisValidationError(
             "inconsistent significance decision: should_alert and reason_code disagree"
         )
-    is_material_and_new = materiality == "material" and novelty == "new"
-    if should_alert != is_material_and_new:
+    if should_alert and not (
+        materiality == "material" and novelty == "new"
+    ):
         raise EventAnalysisValidationError(
             "inconsistent significance decision: should_alert requires materiality and novelty"
         )
