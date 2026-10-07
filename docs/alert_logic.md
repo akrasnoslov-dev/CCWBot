@@ -43,22 +43,32 @@ No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
 If nothing can be reused, the significance LLM returns schema-validated `should_alert`, confidence,
-and reason. Its default is no alert: the current market state must be important and materially new
-enough to interrupt the user. Routine, modest, repeated, or continuing versions of the previous
-alert are normally no-alert decisions; a genuinely noteworthy new move, clear escalation, or
-meaningful reversal can alert. Direction alignment/divergence alone is not significance.
+`materiality`, `novelty`, and reason. Its default is no alert.
 
-- `false` -> stop;
-- news-only -> stop;
-- `true` -> continue.
+The model must judge these in order:
 
-The significance reason must agree with the decision. Alert reasons
-(`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
-`market_news_alignment`) are valid only with `should_alert=true`. Routine/unclear
-no-alert reasons are valid only with `should_alert=false`; `news_only` is a no-alert
-reason and remains backend-rejected even if a provider incorrectly pairs it with
-`should_alert=true`. Other contradictory pairs are schema-invalid and do not proceed to render
-or delivery.
+1. **Materiality** — is the current market move itself materially noteworthy for this asset?
+2. **Novelty** — if material, is it materially new versus recent Event Alerts and recent
+   alert-worthy market events?
+3. **Reason** — only then classify the positive pattern.
+
+The 24h move, news, previous alerts, and recent-event counts are context. They do not make an
+otherwise routine current move material. Previous alerts and recent-event counts can reduce novelty
+but cannot increase materiality. A small counter-move against a larger 24h trend is not, by itself,
+a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
+faster than another; the current move itself must be materially noteworthy for the asset.
+
+There is still no deterministic numeric threshold in the backend. Percentages and historical
+percentiles are evidence for the LLM, not hard gates.
+
+- `should_alert=true` is schema-valid only with `materiality=material` and `novelty=new`;
+- otherwise the result must be `should_alert=false`;
+- news-only -> false;
+- contradictory field combinations are schema-invalid and do not proceed to render or delivery.
+
+Alert reasons (`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
+`market_news_alignment`) are valid only with a positive decision. No-alert reasons
+(`routine_move`, `news_only`, `unclear`) are valid only with a negative decision.
 
 ## Step 5 - Build the message
 Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
