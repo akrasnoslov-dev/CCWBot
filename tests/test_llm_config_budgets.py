@@ -233,9 +233,15 @@ def test_event_analysis_medium_default_reserves_matching_reasoning_headroom():
         llm_config.effective_max_tokens_for(
             call_type="event_analysis", provider="groq", model=model
         )
-        == 8492
+        == 6300
     )
     assert llm_config.reasoning_effort_for(model, "event_alert_render") == "low"
+    assert (
+        llm_config.effective_max_tokens_for(
+            call_type="event_analysis", provider="gemini", model=model
+        )
+        == 8492
+    )
 
 
 def test_reasoning_effort_per_call_type_wins_over_global(monkeypatch):
@@ -283,7 +289,7 @@ def test_invalid_per_call_type_effort_does_not_inherit_the_global_value(monkeypa
                 provider="groq",
                 model="gpt-oss-120b",
             )
-            == llm_config.max_tokens_for("event_analysis") + 8192
+            == 6300
         )
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
@@ -379,7 +385,7 @@ async def test_router_raises_only_thinking_attempt_budget(monkeypatch):
         response_format=None,
     )
 
-    assert groq.seen[0]["max_tokens"] == 8492
+    assert groq.seen[0]["max_tokens"] == 6300
     assert mistral.seen == []
 
 
@@ -402,7 +408,7 @@ async def test_router_uses_shipped_effort_and_matching_headroom_after_invalid_ov
 
     assert provider.seen[0] == {
         "model": "openai/gpt-oss-120b",
-        "max_tokens": 8492,
+        "max_tokens": 6300,
         "reasoning_effort": "medium",
     }
 
@@ -744,7 +750,7 @@ def test_gemini_thinking_model_uses_event_analysis_medium_reasoning_effort(monke
 @pytest.mark.parametrize(
     ("call_type", "base_budget", "effective_budget"),
     [
-        ("event_analysis", 300, 8492),
+        ("event_analysis", 300, 6300),
         ("market_heartbeat", 350, 1374),
         ("daily_report", 800, 1824),
         ("weekly_report", 800, 1824),
