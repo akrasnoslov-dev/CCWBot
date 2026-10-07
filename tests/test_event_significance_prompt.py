@@ -119,11 +119,16 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "threshold" in lowered
     assert "do not apply a fixed cutoff" in lowered
     assert "default=>no alert" in lowered
-    assert "important and new" in lowered
-    assert "continuation=>false" in lowered
+    assert "materiality first" in lowered
+    assert "24h context cannot upgrade" in lowered
+    assert "recent alerts only reduce novelty" in lowered
+    assert "opposite sign vs c24 alone is not reversal" in lowered
+    assert "calibration examples are not thresholds" in lowered
+    assert "materiality=material" in lowered
+    assert "novelty=new" in lowered
     assert "should_alert=true" in lowered
     assert "should_alert=false" in lowered
-    assert len(prompt) <= 1650
+    assert len(prompt) <= 2600
 
 
 def test_event_significance_output_is_small_and_constrained():
@@ -132,6 +137,8 @@ def test_event_significance_output_is_small_and_constrained():
             "symbol": "SOL",
             "should_alert": True,
             "confidence": "high",
+            "materiality": "material",
+            "novelty": "new",
             "reason_code": "unusual_move",
         },
         expected_symbol="SOL",
@@ -139,6 +146,8 @@ def test_event_significance_output_is_small_and_constrained():
 
     assert decision.should_alert is True
     assert decision.confidence == "high"
+    assert decision.materiality == "material"
+    assert decision.novelty == "new"
     assert decision.reason_code == "unusual_move"
 
     with pytest.raises(EventAnalysisValidationError, match="reason_code"):
@@ -147,6 +156,8 @@ def test_event_significance_output_is_small_and_constrained():
                 "symbol": "SOL",
                 "should_alert": False,
                 "confidence": "medium",
+                "materiality": "routine",
+                "novelty": "new",
                 "reason_code": "four_percent_threshold",
             },
             expected_symbol="SOL",
@@ -174,22 +185,64 @@ def test_event_significance_rejects_internally_inconsistent_reason_polarity(
                 "symbol": "BTC",
                 "should_alert": should_alert,
                 "confidence": "medium",
+                "materiality": "material" if should_alert else "routine",
+                "novelty": "new",
                 "reason_code": reason_code,
             },
             expected_symbol="BTC",
         )
 
 
-def test_event_significance_allows_true_news_only_for_backend_safety_rejection():
-    decision = validate_event_significance_output(
-        {
-            "symbol": "BTC",
-            "should_alert": True,
-            "confidence": "medium",
-            "reason_code": "news_only",
-        },
-        expected_symbol="BTC",
-    )
+def test_event_significance_rejects_true_news_only_as_inconsistent():
+    with pytest.raises(EventAnalysisValidationError, match="inconsistent significance decision"):
+        validate_event_significance_output(
+            {
+                "symbol": "BTC",
+                "should_alert": True,
+                "confidence": "medium",
+                "materiality": "material",
+                "novelty": "new",
+                "reason_code": "news_only",
+            },
+            expected_symbol="BTC",
+        )
 
-    assert decision.should_alert is True
-    assert decision.reason_code == "news_only"
+
+@pytest.mark.parametrize(
+    ("materiality", "novelty"),
+    (
+        ("routine", "new"),
+        ("unclear", "new"),
+        ("material", "continuation"),
+        ("material", "repeated"),
+        ("material", "unclear"),
+    ),
+)
+def test_event_significance_true_requires_material_and_new(materiality, novelty):
+    with pytest.raises(EventAnalysisValidationError, match="materiality and novelty"):
+        validate_event_significance_output(
+            {
+                "symbol": "ETH",
+                "should_alert": True,
+                "confidence": "high",
+                "materiality": materiality,
+                "novelty": novelty,
+                "reason_code": "fast_move",
+            },
+            expected_symbol="ETH",
+        )
+
+
+def test_event_significance_false_rejects_material_and_new_pair():
+    with pytest.raises(EventAnalysisValidationError, match="materiality and novelty"):
+        validate_event_significance_output(
+            {
+                "symbol": "ETH",
+                "should_alert": False,
+                "confidence": "medium",
+                "materiality": "material",
+                "novelty": "new",
+                "reason_code": "routine_move",
+            },
+            expected_symbol="ETH",
+        )
