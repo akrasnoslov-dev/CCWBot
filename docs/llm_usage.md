@@ -167,6 +167,9 @@ event-analysis budget and is used when `LLM_EVENT_ANALYSIS_MAX_TOKENS` is unset.
 The router resolves an effective budget per provider/model attempt. Plain models keep the base
 answer ceiling; known thinking models add 1024, 8192, or 24576 completion tokens of reasoning
 headroom for low, medium, or high effort so the configured JSON-answer capacity remains available.
+Groq Event Analysis is the provider-specific exception: its shipped medium-effort attempt is capped
+at `max_tokens=6300` so the compact prompt plus requested completion remains below Groq's 8K
+free-tier token-per-minute capacity. This capacity guard does not affect alert significance.
 This avoids raising a plain primary's ceiling merely because a thinking model exists later in the
 fallback chain. Startup chain entries include `/max=N` for the effective attempt budget. The
 sanity ceiling remains 32768; startup emits `llm_config_budget_risk` if answer budget plus reasoning
@@ -213,8 +216,9 @@ it is for other Groq reasoning-model families.
 
 The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-oss-20b` for the
 other structured call types. They replace the Llama 3 defaults scheduled to shut down on
-2026-08-16. Event Analysis uses medium reasoning effort by default; the other shipped reasoning
-call types use low effort, with the matching additional headroom above.
+2026-08-16. Event Analysis uses medium reasoning effort by default; its Groq attempt is capped at
+6300 effective completion tokens for free-tier TPM safety. The other shipped reasoning call types
+use low effort, with the matching additional headroom above.
 
 The completion budget is sent as `max_tokens`. All providers accept it, and Groq documents it
 as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
