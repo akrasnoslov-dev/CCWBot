@@ -672,7 +672,7 @@ def test_startup_log_marks_providers_without_an_api_key(monkeypatch, caplog):
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
-    assert "gemini:gpt-oss-120b/effort=low/max=1324(no_api_key)" in joined
+    assert "gemini:gpt-oss-120b/effort=medium/max=8492(no_api_key)" in joined
     assert "groq:llama-3.3-70b-versatile(no_api_key)" not in joined
 
 
@@ -701,7 +701,7 @@ def test_startup_log_reports_safe_effective_budget_for_thinking_model(monkeypatc
         llm_config.log_resolved_configuration()
 
     joined = "\n".join(record.getMessage() for record in caplog.records)
-    assert "gemini:gpt-oss-120b/effort=low/max=1324" in joined
+    assert "gemini:gpt-oss-120b/effort=medium/max=8492" in joined
     assert "llm_config_budget_risk" not in joined
 
 
