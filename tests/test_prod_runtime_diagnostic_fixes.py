@@ -18,10 +18,11 @@ def test_significance_prompt_defaults_to_no_alert_and_requires_new_significance(
     }
     prompt = ai_agent_groq.build_event_significance_prompt(payload).lower()
     assert "default=>no alert" in prompt
-    assert "important and new" in prompt
-    assert "materially noteworthy new move" in prompt
-    assert "news alone cannot alert" in prompt
-    assert "fixed cutoff" in prompt
+    assert "materiality first" in prompt
+    assert "24h context cannot upgrade" in prompt
+    assert "recent alerts only reduce novelty" in prompt
+    assert "news cannot upgrade routine market action" in prompt
+    assert "no fixed numeric cutoff" in prompt
 
 
 def test_report_scheduler_check_interval_fits_refresh_grace():
