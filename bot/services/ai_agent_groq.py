@@ -153,6 +153,14 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
         "symbol": {"type": "string"},
         "should_alert": {"type": "boolean"},
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "materiality": {
+            "type": "string",
+            "enum": ["material", "routine", "unclear"],
+        },
+        "novelty": {
+            "type": "string",
+            "enum": ["new", "continuation", "repeated", "unclear"],
+        },
         "reason_code": {
             "type": "string",
             "enum": [
@@ -167,7 +175,14 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
             ],
         },
     },
-    "required": ["symbol", "should_alert", "confidence", "reason_code"],
+    "required": [
+        "symbol",
+        "should_alert",
+        "confidence",
+        "materiality",
+        "novelty",
+        "reason_code",
+    ],
     "additionalProperties": False,
 }
 
@@ -371,24 +386,37 @@ def _event_analysis_percent(value: object) -> object:
 
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
-        "JSON English.Decide if market state is important AND new enough to interrupt user now.",
-        "Default=>no alert. Market decides;news alone cannot alert. Judge size/speed,asset "
-        "unusualness,recent path,24h context,and what changed since prev. Routine/modest/repeated/"
-        "continuation=>false;true only for materially noteworthy new move,clear escalation,or "
-        "meaningful reversal. Direction alignment/divergence alone is not significance.",
-        "pw,p24=30d same-asset abs-move percentile: context, not threshold;"
-        "do not apply a fixed cutoff;null=unknown.",
+        "JSON English.Decide whether the CURRENT market move is materially noteworthy AND "
+        "materially new enough to interrupt the user now. Default=>no alert. "
+        "No fixed numeric cutoff.",
+        "Decision order: materiality first, then novelty, then reason. Judge current-move "
+        "materiality from recent path,size,speed,and same-asset unusualness. "
+        "24h context cannot upgrade a routine current move to material. "
+        "News cannot upgrade routine market action either.",
+        "If material, judge novelty against prev and cnt. Recent alerts only reduce novelty; "
+        "they never make a move more material. Repeated/continuing versions of the previous "
+        "event=>no alert unless the supplied current market evidence itself is a clear "
+        "material escalation.",
+        "Reason semantics: fast_move means the current move itself is materially fast for this "
+        "asset; merely being faster than an adjacent window is insufficient. reversal requires "
+        "a materially noteworthy counter-move in the recent path; opposite sign vs c24 alone "
+        "is not reversal. Direction alignment/divergence alone is not significance.",
+        "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. "
+        "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6 with no "
+        "material market evidence=>routine/no alert; cw=.03,c30=.16,c60=.25,pw=7 without other "
+        "material market evidence=>routine/no alert.",
         "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
         "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
         "prev={min,f,cw};min=minutes since prev;"
         "cnt={h6,h24}=recent alert-worthy market-event counts;"
         "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
-        "Output exactly symbol,should_alert,confidence,reason_code;confidence=low|medium|high;"
-        "reason_code=unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment|"
-        "routine_move|news_only|unclear.",
-        "Match reason: should_alert=true=>unusual_move|fast_move|reversal|trend_acceleration|"
-        "market_news_alignment;should_alert=false=>routine_move|news_only|unclear;"
-        "sole-news=>false+news_only.",
+        "Output exactly symbol,should_alert,confidence,materiality,novelty,reason_code. "
+        "materiality=material|routine|unclear;novelty=new|continuation|repeated|unclear;"
+        "confidence=low|medium|high.",
+        "should_alert=true only when materiality=material AND novelty=new AND reason_code is one "
+        "of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment. "
+        "Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. "
+        "Sole-news=>false+news_only.",
     )
 )
 

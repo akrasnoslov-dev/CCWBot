@@ -402,6 +402,8 @@ async def test_runtime_market_no_alert_reasons_record_llm_no_alert(
                     "symbol": "BTC",
                     "should_alert": False,
                     "confidence": "medium",
+                    "materiality": "routine",
+                    "novelty": "new",
                     "reason_code": reason_code,
                 },
             )
@@ -442,6 +444,8 @@ async def test_event_significance_false_never_calls_render(monkeypatch):
                     "symbol": "BTC",
                     "should_alert": False,
                     "confidence": "high",
+                    "materiality": "routine",
+                    "novelty": "new",
                     "reason_code": "routine_move",
                 },
             )
@@ -467,8 +471,9 @@ async def test_event_significance_false_never_calls_render(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_event_significance_news_only_true_is_rejected_before_render(monkeypatch):
+async def test_event_significance_news_only_true_is_schema_rejected_before_render(monkeypatch):
     render = AsyncMock()
+    save_analysis = AsyncMock(return_value=322)
     recorded_outcome = AsyncMock()
     monkeypatch.setattr(
         alerts,
@@ -480,25 +485,27 @@ async def test_event_significance_news_only_true_is_rejected_before_render(monke
                     "symbol": "BTC",
                     "should_alert": True,
                     "confidence": "high",
+                    "materiality": "material",
+                    "novelty": "new",
                     "reason_code": "news_only",
                 },
             )
         ),
     )
     monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
-    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=322))
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
 
     payload = _runtime_no_alert_payload(chg_window_percent=4.0)
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
-    assert analysis_id == 322
-    assert decision is not None
-    assert decision.should_alert is False
-    assert decision.reason_for_no_alert == "news_only"
+    assert analysis_id is None
+    assert decision is None
     render.assert_not_awaited()
-    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_NEWS_ONLY_REJECTED
+    save_analysis.assert_awaited_once()
+    assert save_analysis.await_args.kwargs["status"] == "schema_error"
+    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
 
 
 @pytest.mark.asyncio
@@ -537,6 +544,8 @@ async def test_render_failure_is_terminal_without_non_llm_fallback(
                     "symbol": "BTC",
                     "should_alert": True,
                     "confidence": "high",
+                    "materiality": "material",
+                    "novelty": "new",
                     "reason_code": "unusual_move",
                 },
             )
@@ -644,6 +653,8 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
         "symbol": "BTC",
         "should_alert": True,
         "confidence": "high",
+        "materiality": "material",
+        "novelty": "new",
         "reason_code": "unusual_move",
     }
     render_parsed = {
@@ -713,6 +724,8 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
     assert payload["significance_decision"] == {
         "should_alert": True,
         "confidence": "high",
+        "materiality": "material",
+        "novelty": "new",
         "reason_code": "unusual_move",
     }
 
@@ -730,6 +743,8 @@ async def test_factual_render_validation_failure_does_not_use_non_llm_fallback(m
                     "symbol": "BTC",
                     "should_alert": True,
                     "confidence": "high",
+                    "materiality": "material",
+                    "novelty": "new",
                     "reason_code": "unusual_move",
                 },
             )
@@ -1531,6 +1546,8 @@ async def test_event_significance_inconsistent_reason_is_schema_error(monkeypatc
                     "symbol": "BTC",
                     "should_alert": False,
                     "confidence": "medium",
+                    "materiality": "routine",
+                    "novelty": "new",
                     "reason_code": "unusual_move",
                 },
             )

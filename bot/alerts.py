@@ -3701,6 +3701,8 @@ async def _create_event_analysis_decision(
     input_payload["significance_decision"] = {
         "should_alert": True,
         "confidence": significance.confidence,
+        "materiality": significance.materiality,
+        "novelty": significance.novelty,
         "reason_code": significance.reason_code,
     }
     candidate_news_ids = {
