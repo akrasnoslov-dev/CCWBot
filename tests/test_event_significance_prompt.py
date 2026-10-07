@@ -117,7 +117,7 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     lowered = prompt.lower()
     assert "context, not" in lowered
     assert "threshold" in lowered
-    assert "do not apply a fixed cutoff" in lowered
+    assert "no fixed numeric cutoff" in lowered
     assert "default=>no alert" in lowered
     assert "materiality first" in lowered
     assert "24h context cannot upgrade" in lowered
