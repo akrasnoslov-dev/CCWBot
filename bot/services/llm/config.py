@@ -141,6 +141,7 @@ _CALL_TYPE_REASONING_EFFORT_ENV = {
 }
 REASONING_EFFORT_CHOICES = ("low", "medium", "high")
 _DEFAULT_REASONING_EFFORT = "low"
+_GROQ_EVENT_ANALYSIS_MEDIUM_MAX_TOKENS = 6300
 _DEFAULT_REASONING_EFFORT_BY_CALL_TYPE = {
     # Production replay showed that low effort systematically over-classified routine
     # market moves after the significance/render split. Event Analysis needs the extra
@@ -338,11 +339,20 @@ def effective_max_tokens_for(
     explicit reasoning headroom in addition to the configured answer ceiling. This avoids
     raising plain-model attempts merely because a thinking model exists later in the chain.
     """
-    del provider  # Reserved for future provider-specific constraints without changing callers.
     budget = max_tokens_for(call_type) if requested_max_tokens is None else requested_max_tokens
     if is_thinking_model(model):
         headroom = reasoning_headroom_tokens_for(model=model, call_type=call_type)
-        return min(budget + headroom, _MAX_TOKENS_CEILING)
+        effective = min(budget + headroom, _MAX_TOKENS_CEILING)
+        # Groq Free exposes an 8K TPM limit for GPT-OSS. Keep the shipped medium Event Analysis
+        # request below that ceiling with room for the compact prompt. This is a provider-capacity
+        # guard only; it does not change alert significance or add a market threshold.
+        if (
+            provider.strip().lower() == "groq"
+            and call_type == "event_analysis"
+            and reasoning_effort_for(model, call_type) == "medium"
+        ):
+            return min(effective, _GROQ_EVENT_ANALYSIS_MEDIUM_MAX_TOKENS)
+        return effective
     return budget
 
 
