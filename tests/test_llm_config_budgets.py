@@ -175,7 +175,7 @@ def test_invalid_reasoning_effort_falls_back_and_warns(monkeypatch, caplog):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "low"
+        assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "medium"
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
 
@@ -194,27 +194,28 @@ def test_unknown_provider_name_in_a_chain_warns(monkeypatch, caplog):
 # --- reasoning effort ------------------------------------------------------------------
 
 
-def test_reasoning_effort_defaults_to_low_for_reasoning_models():
-    for call_type in llm_config.KNOWN_CALL_TYPES:
+def test_reasoning_effort_uses_medium_only_for_event_analysis_by_default():
+    assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "medium"
+    for call_type in set(llm_config.KNOWN_CALL_TYPES) - {"event_analysis"}:
         assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", call_type) == "low"
 
 
 @pytest.mark.parametrize(
-    ("call_type", "expected_max_tokens"),
+    ("call_type", "expected_effort", "expected_max_tokens"),
     [
-        ("event_analysis", 1324),
-        ("market_heartbeat", 1374),
-        ("daily_report", 1824),
+        ("event_analysis", "medium", 8492),
+        ("market_heartbeat", "low", 1374),
+        ("daily_report", "low", 1824),
     ],
 )
-def test_gemini_38_structured_call_types_use_low_effort_with_headroom(
-    monkeypatch, call_type, expected_max_tokens
+def test_gemini_38_structured_call_types_use_call_type_effort_with_headroom(
+    monkeypatch, call_type, expected_effort, expected_max_tokens
 ):
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     model = llm_config.model_for("gemini", call_type)
 
     assert model == "gemini-3.8-flash"
-    assert llm_config.reasoning_effort_for(model, call_type) == "low"
+    assert llm_config.reasoning_effort_for(model, call_type) == expected_effort
     assert (
         llm_config.effective_max_tokens_for(
             call_type=call_type,
@@ -223,6 +224,18 @@ def test_gemini_38_structured_call_types_use_low_effort_with_headroom(
         )
         == expected_max_tokens
     )
+
+
+def test_event_analysis_medium_default_reserves_matching_reasoning_headroom():
+    model = "openai/gpt-oss-120b"
+    assert llm_config.reasoning_effort_for(model, "event_analysis") == "medium"
+    assert (
+        llm_config.effective_max_tokens_for(
+            call_type="event_analysis", provider="groq", model=model
+        )
+        == 8492
+    )
+    assert llm_config.reasoning_effort_for(model, "event_alert_render") == "low"
 
 
 def test_reasoning_effort_per_call_type_wins_over_global(monkeypatch):
@@ -263,14 +276,14 @@ def test_invalid_per_call_type_effort_does_not_inherit_the_global_value(monkeypa
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") == "low"
+        assert llm_config.reasoning_effort_for("gpt-oss-120b", "event_analysis") == "medium"
         assert (
             llm_config.effective_max_tokens_for(
                 call_type="event_analysis",
                 provider="groq",
                 model="gpt-oss-120b",
             )
-            == llm_config.max_tokens_for("event_analysis") + 1024
+            == llm_config.max_tokens_for("event_analysis") + 8192
         )
 
     assert any("LLM_EVENT_ANALYSIS_REASONING_EFFORT" in r.getMessage() for r in caplog.records)
@@ -341,11 +354,11 @@ async def _route(monkeypatch, provider, *, call_type="event_analysis", max_token
 
 
 @pytest.mark.asyncio
-async def test_router_uses_low_reasoning_effort_by_default(monkeypatch):
+async def test_router_uses_medium_reasoning_effort_for_event_analysis_by_default(monkeypatch):
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
     provider = _RecordingProvider("groq")
     await _route(monkeypatch, provider)
-    assert provider.seen[0]["reasoning_effort"] == "low"
+    assert provider.seen[0]["reasoning_effort"] == "medium"
 
 
 @pytest.mark.asyncio
@@ -366,7 +379,7 @@ async def test_router_raises_only_thinking_attempt_budget(monkeypatch):
         response_format=None,
     )
 
-    assert groq.seen[0]["max_tokens"] == 1324
+    assert groq.seen[0]["max_tokens"] == 8492
     assert mistral.seen == []
 
 
@@ -380,7 +393,7 @@ async def test_router_passes_configured_reasoning_effort(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_router_uses_low_effort_and_matching_headroom_after_invalid_override(monkeypatch):
+async def test_router_uses_shipped_effort_and_matching_headroom_after_invalid_override(monkeypatch):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "extreme")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
     provider = _RecordingProvider("groq")
@@ -389,8 +402,8 @@ async def test_router_uses_low_effort_and_matching_headroom_after_invalid_overri
 
     assert provider.seen[0] == {
         "model": "openai/gpt-oss-120b",
-        "max_tokens": 1324,
-        "reasoning_effort": "low",
+        "max_tokens": 8492,
+        "reasoning_effort": "medium",
     }
 
 
@@ -723,15 +736,15 @@ def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch
     assert not [r for r in caplog.records if "llm_config_budget_risk" in r.getMessage()]
 
 
-def test_gemini_thinking_model_uses_supported_low_reasoning_effort(monkeypatch):
+def test_gemini_thinking_model_uses_event_analysis_medium_reasoning_effort(monkeypatch):
     assert llm_config.is_thinking_model("gemini-2.5-flash") is True
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "low"
+    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "medium"
 
 
 @pytest.mark.parametrize(
     ("call_type", "base_budget", "effective_budget"),
     [
-        ("event_analysis", 300, 1324),
+        ("event_analysis", 300, 8492),
         ("market_heartbeat", 350, 1374),
         ("daily_report", 800, 1824),
         ("weekly_report", 800, 1824),
