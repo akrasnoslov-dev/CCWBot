@@ -18,7 +18,16 @@ EVENT_ANALYSIS_SUCCESS_STATUSES = {"success", "no_alert"}
 EVENT_ANALYSIS_FAILURE_STATUSES = {"invalid_json", "llm_error", "schema_error"}
 ALLOWED_URGENCY = {"low", "normal", "high"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
-EVENT_SIGNIFICANCE_FIELDS = {"symbol", "should_alert", "confidence", "reason_code"}
+EVENT_SIGNIFICANCE_FIELDS = {
+    "symbol",
+    "should_alert",
+    "confidence",
+    "materiality",
+    "novelty",
+    "reason_code",
+}
+EVENT_SIGNIFICANCE_MATERIALITY = {"material", "routine", "unclear"}
+EVENT_SIGNIFICANCE_NOVELTY = {"new", "continuation", "repeated", "unclear"}
 EVENT_SIGNIFICANCE_REASON_CODES = {
     "unusual_move",
     "fast_move",
@@ -36,7 +45,7 @@ EVENT_SIGNIFICANCE_ALERT_REASON_CODES = {
     "trend_acceleration",
     "market_news_alignment",
 }
-EVENT_SIGNIFICANCE_NO_ALERT_ONLY_REASON_CODES = {"routine_move", "unclear"}
+EVENT_SIGNIFICANCE_NO_ALERT_ONLY_REASON_CODES = {"routine_move", "news_only", "unclear"}
 RELATIVE_MOVE_MIN_SAMPLES = 100
 EVENT_RESULT_FIELDS = {
     "symbol",
@@ -141,6 +150,8 @@ class EventSignificanceDecision:
     symbol: str
     should_alert: bool
     confidence: str
+    materiality: str
+    novelty: str
     reason_code: str
 
 
@@ -695,6 +706,12 @@ def validate_event_significance_output(
     confidence = _required_choice(
         result["confidence"], ALLOWED_CONFIDENCE, "confidence"
     )
+    materiality = _required_choice(
+        result["materiality"], EVENT_SIGNIFICANCE_MATERIALITY, "materiality"
+    )
+    novelty = _required_choice(
+        result["novelty"], EVENT_SIGNIFICANCE_NOVELTY, "novelty"
+    )
     reason_code = str(result["reason_code"] or "").strip().lower()
     if reason_code not in EVENT_SIGNIFICANCE_REASON_CODES:
         raise EventAnalysisValidationError("invalid reason_code")
@@ -708,11 +725,19 @@ def validate_event_significance_output(
         raise EventAnalysisValidationError(
             "inconsistent significance decision: should_alert and reason_code disagree"
         )
+    if should_alert and not (
+        materiality == "material" and novelty == "new"
+    ):
+        raise EventAnalysisValidationError(
+            "inconsistent significance decision: should_alert requires materiality and novelty"
+        )
 
     return EventSignificanceDecision(
         symbol=normalized_symbol.upper(),
         should_alert=should_alert,
         confidence=confidence,
+        materiality=materiality,
+        novelty=novelty,
         reason_code=reason_code,
     )
 
