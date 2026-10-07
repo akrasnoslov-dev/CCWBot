@@ -136,7 +136,7 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
-| `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` |
+| `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` (default `medium`) |
 | `event_alert_render` | dedicated 4-step chain (GPT-OSS 120B -> Qwen 3.8 27B -> Cloudflare Llama 3.3 70B -> Gemini 3.5 Flash-Lite) | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | model-dependent |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
@@ -172,9 +172,9 @@ fallback chain. Startup chain entries include `/max=N` for the effective attempt
 sanity ceiling remains 32768; startup emits `llm_config_budget_risk` if answer budget plus reasoning
 headroom would exceed it.
 
-`reasoning_effort` (`low` / `medium` / `high`) defaults to `low` for reasoning-capable models and
-is omitted for non-reasoning models. `LLM_REASONING_EFFORT` sets a global override that a
-per-call-type variable overrides.
+`reasoning_effort` (`low` / `medium` / `high`) defaults to `medium` for `event_analysis` and `low`
+for the other reasoning-capable call types; it is omitted for non-reasoning models.
+`LLM_REASONING_EFFORT` sets a global override that a per-call-type variable overrides.
 
 The gate for sending the parameter is the resolved **model identifier**, not the provider: a
 provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
@@ -213,7 +213,8 @@ it is for other Groq reasoning-model families.
 
 The Groq defaults are `openai/gpt-oss-120b` for Event Analysis and `openai/gpt-oss-20b` for the
 other structured call types. They replace the Llama 3 defaults scheduled to shut down on
-2026-08-16. Their attempts use low reasoning effort and the additional headroom above.
+2026-08-16. Event Analysis uses medium reasoning effort by default; the other shipped reasoning
+call types use low effort, with the matching additional headroom above.
 
 The completion budget is sent as `max_tokens`. All providers accept it, and Groq documents it
 as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
