@@ -415,7 +415,7 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "confidence=low|medium|high.",
         "should_alert=true only when materiality=material AND novelty=new AND reason_code is one "
         "of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment. "
-        "Otherwise false with reason_code=routine_move|news_only|unclear. "
+        "Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. "
         "Sole-news=>false+news_only.",
     )
 )
