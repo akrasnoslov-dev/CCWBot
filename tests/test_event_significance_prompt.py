@@ -233,16 +233,20 @@ def test_event_significance_true_requires_material_and_new(materiality, novelty)
         )
 
 
-def test_event_significance_false_rejects_material_and_new_pair():
-    with pytest.raises(EventAnalysisValidationError, match="materiality and novelty"):
-        validate_event_significance_output(
-            {
-                "symbol": "ETH",
-                "should_alert": False,
-                "confidence": "medium",
-                "materiality": "material",
-                "novelty": "new",
-                "reason_code": "routine_move",
-            },
-            expected_symbol="ETH",
-        )
+def test_event_significance_false_allows_material_and_new_with_no_alert_reason():
+    decision = validate_event_significance_output(
+        {
+            "symbol": "ETH",
+            "should_alert": False,
+            "confidence": "medium",
+            "materiality": "material",
+            "novelty": "new",
+            "reason_code": "routine_move",
+        },
+        expected_symbol="ETH",
+    )
+
+    assert decision.should_alert is False
+    assert decision.materiality == "material"
+    assert decision.novelty == "new"
+    assert decision.reason_code == "routine_move"
