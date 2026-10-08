@@ -131,6 +131,67 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert len(prompt) <= 2600
 
 
+
+def test_active_one_stage_prompt_keeps_rich_context_and_production_calibration():
+    payload = _payload()
+    compact = ai_agent_groq._event_analysis_prompt_payload(payload)
+
+    assert compact["m"]["c30"] == Decimal("1.1")
+    assert compact["m"]["c60"] == Decimal("2.2")
+    assert compact["m"]["pw"] == Decimal("99.2")
+    assert compact["m"]["p24"] == Decimal("91.3")
+    assert compact["prev"] == {
+        "min": 2595,
+        "k": "sol_price_uptrend",
+        "f": "price_uptrend",
+        "cw": Decimal("1.2"),
+    }
+    assert compact["cnt"] == {"h6": 2, "h24": 5}
+
+    prompt = ai_agent_groq.build_event_analysis_prompt(payload).lower()
+    assert "decide whether the current market move is materially noteworthy" in prompt
+    assert "materially new enough" in prompt
+    assert "grounded event alert" in prompt
+    assert "no fixed numeric cutoff" in prompt
+    assert "calibration examples are not thresholds" in prompt
+    assert "cw=.003,c30=-.045,c60=-.254,pw=.6" in prompt
+    assert "cw=.03,c30=.16,c60=.25,pw=7" in prompt
+    assert "cw=-.238,c30=.14,c60=.352,c24=-5,pw=42" in prompt
+    assert "prev.min=89,cnt.h24=14" in prompt
+
+
+@pytest.mark.parametrize(
+    ("cw", "c30", "c60", "c24", "pw"),
+    (
+        (Decimal("0.0029"), Decimal("-0.045"), Decimal("-0.254"), Decimal("-0.0057"), Decimal("0.6")),
+        (Decimal("0.028"), Decimal("0.156"), Decimal("0.251"), Decimal("-1.0"), Decimal("7.2")),
+        (Decimal("-0.238"), Decimal("0.140"), Decimal("0.352"), Decimal("-5.001"), Decimal("42.1")),
+    ),
+)
+def test_active_one_stage_prompt_preserves_small_move_evidence_without_backend_gate(
+    cw, c30, c60, c24, pw
+):
+    payload = _payload()
+    payload["market"].update(
+        {
+            "chg_window_percent": cw,
+            "chg30m_percent": c30,
+            "chg1h_percent": c60,
+            "chg24h_percent": c24,
+            "relative_window_percentile_30d": pw,
+        }
+    )
+    compact = ai_agent_groq._event_analysis_prompt_payload(payload)
+
+    assert compact["m"]["cw"] == cw
+    assert compact["m"]["c30"] == c30
+    assert compact["m"]["c60"] == c60
+    assert compact["m"]["c24"] == c24
+    assert compact["m"]["pw"] == pw
+    assert "threshold_percent" not in compact
+    assert "should_alert" not in compact
+
+
 def test_event_significance_output_is_small_and_constrained():
     decision = validate_event_significance_output(
         {
