@@ -9,10 +9,9 @@ flowchart TD
     C -- Yes --> H[7. Reuse event + ready message]
     C -- No --> D{Exact recent no-send result already exists?}
     D -- Yes --> X[Stop Event Alert]
-    D -- No --> E[4. LLM decides significance]
+    D -- No --> E[4. Event Analysis LLM decides + renders]
     E -- No --> X
-    E -- Yes --> F[5. Build alert text]
-    F --> G[6. Validate facts + reject news-only]
+    E -- Yes --> G[6. Validate facts + reject news-only]
     G --> H2[7. Create or reuse one market event]
     H --> I[8. Find eligible users]
     H2 --> I
@@ -41,45 +40,45 @@ Two cases:
 
 No rounding buckets or movement tolerances are used.
 
-## Step 4 - Decide significance
-If nothing can be reused, the significance LLM returns schema-validated `should_alert`, confidence,
-`materiality`, `novelty`, and reason. Its default is no alert.
+## Step 4 - Decide significance and render together
+If nothing can be reused, one full Event Analysis LLM call decides `should_alert` and, only for a
+positive decision, must also return the grounded Event Alert fields. Its default is no alert.
 
-The model must judge these in order:
+This one-stage contract is intentional. Production evidence showed that the compact significance-only
+classifier introduced in October 2026 over-classified routine current moves because it could choose a
+positive label such as `fast_move` or `reversal` without having to construct a grounded alert from
+the same evidence. The full decision contract requires the model to make one coherent judgement:
+the current move must be materially noteworthy, materially new enough to interrupt the user, and
+strong enough to support the alert it returns.
+
+The model must reason in this order:
 
 1. **Materiality** — is the current market move itself materially noteworthy for this asset?
 2. **Novelty** — if material, is it materially new versus recent Event Alerts and recent
    alert-worthy market events?
-3. **Reason** — only then classify the positive pattern.
+3. **Grounding** — if both are satisfied, can the supplied current market evidence support the
+   returned title/message without inventing significance?
 
-The 24h move, news, previous alerts, and recent-event counts are context. They do not make an
-otherwise routine current move material. Previous alerts and recent-event counts can reduce novelty
-but cannot increase materiality. A small counter-move against a larger 24h trend is not, by itself,
-a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
-faster than another; the current move itself must be materially noteworthy for the asset.
+The 30m/1h path, analysed-window move, 24h move, 30-day same-asset percentiles, previous Event Alert,
+recent 6h/24h event counts, and news are evidence only. A large 24h move, opposite direction versus
+24h, news, or a short-window speed difference does not by itself upgrade a routine current move.
+Previous alerts and recent-event counts can reduce novelty but cannot increase materiality.
 
-There is still no deterministic numeric threshold in the backend. Percentages and historical
-percentiles are evidence for the LLM, not hard gates.
-
-- `should_alert=true` is schema-valid only with `materiality=material` and `novelty=new`;
-- otherwise the result must be `should_alert=false`;
-- news-only -> false;
-- contradictory field combinations are schema-invalid and do not proceed to render or delivery.
-
-Alert reasons (`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
-`market_news_alignment`) are valid only with a positive decision. No-alert reasons
-(`routine_move`, `news_only`, `unclear`) are valid only with a negative decision.
+There is still no deterministic numeric threshold in the backend. Percentages, historical
+percentiles, and calibration examples are evidence for the LLM, not hard gates.
 
 ## Step 5 - Build the message
-Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
-change the significance decision.
+There is no separate render LLM call in the active Event Alert path. A positive Event Analysis must
+return its grounded alert text in the same schema-validated response that made the significance
+decision. A negative decision returns no alert text.
 
-If supported render failures exhaust the provider chain, the backend may build neutral deterministic
-presentation text from the already validated market evidence.
+Keeping decision and grounding in one model response prevents a small classifier from rationalizing
+a positive label independently of the message it would need to justify.
 
 ## Step 6 - Validate the message
-The backend validates schema and factual market claims. News may support the explanation, but a
-standalone news-only Event Alert is rejected.
+The backend validates the one-stage Event Analysis schema and factual market claims. News may support
+the explanation, but a standalone news-only Event Alert is rejected. Invalid output falls through the
+normal provider fallback path and never proceeds to delivery.
 
 ## Step 7 - Keep one event and one analysis
 A newly detected event is created once. A reusable positive event keeps its already existing Event
