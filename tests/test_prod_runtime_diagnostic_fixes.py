@@ -4,24 +4,32 @@ import bot.alerts as alerts
 import bot.services.ai_agent_groq as ai_agent_groq
 
 
-def test_significance_prompt_defaults_to_no_alert_and_requires_new_significance():
+def test_active_event_analysis_prompt_defaults_to_no_alert_and_requires_grounding():
     payload = {
         "symbol": "GRAM",
         "market": {
             "analysed_window_minutes": 180,
+            "chg30m_percent": 0.2,
+            "chg1h_percent": 0.4,
             "chg_window_percent": 1.11,
             "chg24h_percent": 3.2,
             "relative_window_percentile_30d": 97.0,
             "relative_24h_percentile_30d": 99.0,
         },
+        "previous_event_alert": {
+            "age_minutes": 90,
+            "semantic_family": "price_uptrend",
+            "analysed_window_move": 1.0,
+        },
+        "recent_event_counts": {"h6": 2, "h24": 8},
         "news": [],
     }
-    prompt = ai_agent_groq.build_event_significance_prompt(payload).lower()
+    prompt = ai_agent_groq.build_event_analysis_prompt(payload).lower()
     assert "default=>no alert" in prompt
-    assert "materiality first" in prompt
-    assert "24h context cannot upgrade" in prompt
-    assert "recent alerts only reduce novelty" in prompt
-    assert "news cannot upgrade routine market action" in prompt
+    assert "current-move materiality" in prompt
+    assert "cannot upgrade a routine current move" in prompt
+    assert "recent alerts/events reduce novelty" in prompt
+    assert "grounded event alert" in prompt
     assert "no fixed numeric cutoff" in prompt
 
 
