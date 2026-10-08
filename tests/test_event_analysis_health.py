@@ -302,30 +302,31 @@ def test_a_news_only_rejection_clears_the_failure_streak():
     assert success_at < news_only_at
 
 
-def test_terminal_significance_and_render_failures_count(caplog):
-    # Active significance backoff remains a non-failure skip. Once significance succeeds,
-    # exhausting the render LLM chain is terminal because non-LLM presentation fallback is
-    # intentionally disabled.
+def test_terminal_one_stage_event_analysis_failures_count():
     import inspect
 
     from bot import alerts
 
     source = inspect.getsource(alerts._create_event_analysis_decision)
 
-    assert "event analysis schema validation failed" not in source
-    significance_backoff = source.split(
+    assert "ask_event_analysis_raw" in source
+    assert "ask_event_significance_raw" not in source
+    assert "ask_event_alert_render_raw" not in source
+
+    backoff = source.split(
         "except LLMRateLimitBackoffActive as error:", 1
     )[1].split("except AISchemaValidationError as error:", 1)[0]
-    assert "_log_event_analysis_failure(" not in significance_backoff
+    assert "_log_event_analysis_failure(" not in backoff
 
-    render_source = source.split("render_result = await ask_event_alert_render_raw", 1)[1]
-    render_failure = render_source.split(
-        "except Exception as error:", 1
-    )[1].split("normalized_render =", 1)[0]
-    assert "_log_event_analysis_failure(" in render_failure
-    assert "event_alert_render_fallback" not in render_source
-    assert "_deterministic_event_alert_render_result_for_validation" not in source
+    schema_failure = source.split(
+        "except AISchemaValidationError as error:", 1
+    )[1].split("except Exception as error:", 1)[0]
+    assert "_log_event_analysis_failure(" in schema_failure
 
+    generic_failure = source.split("except Exception as error:", 1)[1].split(
+        "normalized_parsed =", 1
+    )[0]
+    assert "_log_event_analysis_failure(" in generic_failure
 
 def test_skipped_delivery_reasons_are_reported_separately():
     # `skipped_count` covers both "already delivered" and "delivery not scheduled", which the
