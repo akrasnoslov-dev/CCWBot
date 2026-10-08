@@ -151,8 +151,6 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
     "type": "object",
     "properties": {
         "symbol": {"type": "string"},
-        "should_alert": {"type": "boolean"},
-        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
         "materiality": {
             "type": "string",
             "enum": ["material", "routine", "unclear"],
@@ -161,6 +159,7 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
             "type": "string",
             "enum": ["new", "continuation", "repeated", "unclear"],
         },
+        "should_alert": {"type": "boolean"},
         "reason_code": {
             "type": "string",
             "enum": [
@@ -174,14 +173,15 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
                 "unclear",
             ],
         },
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
     },
     "required": [
         "symbol",
-        "should_alert",
-        "confidence",
         "materiality",
         "novelty",
+        "should_alert",
         "reason_code",
+        "confidence",
     ],
     "additionalProperties": False,
 }
@@ -389,18 +389,16 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "JSON English.Decide whether the CURRENT market move is materially noteworthy AND "
         "materially new enough to interrupt the user now. Default=>no alert. "
         "No fixed numeric cutoff.",
-        "Decision order: materiality first, then novelty, then reason. Judge current-move "
-        "materiality from recent path,size,speed,and same-asset unusualness. "
-        "24h context cannot upgrade a routine current move to material. "
-        "News cannot upgrade routine market action either.",
-        "If material, judge novelty against prev and cnt. Recent alerts only reduce novelty; "
-        "they never make a move more material. Repeated/continuing versions of the previous "
-        "event=>no alert unless the supplied current market evidence itself is a clear "
-        "material escalation.",
-        "Reason semantics: fast_move means the current move itself is materially fast for this "
-        "asset; merely being faster than an adjacent window is insufficient. reversal requires "
-        "a materially noteworthy counter-move in the recent path; opposite sign vs c24 alone "
-        "is not reversal. Direction alignment/divergence alone is not significance.",
+        "Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and "
+        "same-asset unusualness. Direction change or adjacent-window speed can support materiality "
+        "only with materially noteworthy current-path evidence. Large c24/p24, news, previous "
+        "alerts, and recent counts never increase materiality.",
+        "Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and "
+        "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty "
+        "should be unclear.",
+        "Q3 should_alert: true only when Q1=material AND Q2=new. Otherwise false. "
+        "Only after Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot "
+        "make materiality or novelty true.",
         "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. "
         "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6 with no "
         "material market evidence=>routine/no alert; cw=.03,c30=.16,c60=.25,pw=7 without other "
@@ -410,7 +408,7 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "prev={min,f,cw};min=minutes since prev;"
         "cnt={h6,h24}=recent alert-worthy market-event counts;"
         "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
-        "Output exactly symbol,should_alert,confidence,materiality,novelty,reason_code. "
+        "Output exactly symbol,materiality,novelty,should_alert,reason_code,confidence. "
         "materiality=material|routine|unclear;novelty=new|continuation|repeated|unclear;"
         "confidence=low|medium|high.",
         "should_alert=true only when materiality=material AND novelty=new AND reason_code is one "

@@ -119,16 +119,40 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "threshold" in lowered
     assert "no fixed numeric cutoff" in lowered
     assert "default=>no alert" in lowered
-    assert "materiality first" in lowered
-    assert "24h context cannot upgrade" in lowered
-    assert "recent alerts only reduce novelty" in lowered
-    assert "opposite sign vs c24 alone is not reversal" in lowered
+    assert "q1 materiality" in lowered
+    assert "q2 novelty" in lowered
+    assert "q3 should_alert" in lowered
+    assert "large c24/p24" in lowered
+    assert "only with materially noteworthy current-path evidence" in lowered
+    assert "recent counts never increase materiality" in lowered
+    assert "previous/recent events can only reduce novelty" in lowered
+    assert "only after q1/q2/q3 choose reason_code" in lowered
     assert "calibration examples are not thresholds" in lowered
     assert "materiality=material" in lowered
     assert "novelty=new" in lowered
     assert "should_alert=true" in lowered
     assert "should_alert=false" in lowered
     assert len(prompt) <= 2600
+
+def test_event_significance_schema_generates_reasoning_before_decision():
+    schema = ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA
+
+    assert list(schema["properties"]) == [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence",
+    ]
+    assert schema["required"] == [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence",
+    ]
 
 
 def test_event_significance_output_is_small_and_constrained():
