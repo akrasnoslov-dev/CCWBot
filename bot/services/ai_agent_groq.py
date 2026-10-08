@@ -365,9 +365,9 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "novelty against prev and cnt; recent alerts/events reduce novelty and never increase "
         "materiality. Repeated/continuing versions=>false unless current evidence itself shows "
         "a clear material escalation.",
-        "A true decision must be strong enough to support the grounded title/body you return from "
-        "the supplied CURRENT market evidence. If the only interesting fact is broader 24h context, "
-        "a small counter-tick, adjacent-window speed, or repetition, return false.",
+        "A true decision must be strong enough to support the grounded title/body you return "
+        "from the supplied CURRENT market evidence. If the only interesting fact is broader 24h "
+        "context, a small counter-tick, adjacent-window speed, or repetition, return false.",
         "pw,p24=30d same-asset abs-move percentile: context, not thresholds;null=unknown. "
         "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6=>routine/no "
         "alert; cw=.03,c30=.16,c60=.25,pw=7=>routine/no alert; "
