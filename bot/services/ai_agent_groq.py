@@ -173,8 +173,8 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
                 "unclear",
             ],
         },
-    },
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+    },
     "required": [
         "symbol",
         "materiality",
