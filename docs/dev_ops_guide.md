@@ -251,6 +251,66 @@ Normal bot restarts do not run migrations. For migrations, test locally first, c
 validation passed, verify a current backup, run `docker compose run --rm migrate` explicitly, then
 start or restart the bot.
 
+## Non-interactive, least-privilege bot deploys
+
+The production `ccwbot_deploy` account authenticates with its **own dedicated SSH key**
+and is not in the `docker` group. Its private key is kept on the operator's local
+machine, never in Git or on the VPS. The public key lives only in the account's
+`authorized_keys`. Do not remove the passphrase from the operator's personal root key.
+
+The root-owned wrapper `/usr/local/bin/ccwbot-deploy-safe` implements only
+`status`, `backup`, `deploy` and `rollback`. It rejects extra parameters,
+requires a clean `main` checkout for state-changing commands, verifies the
+fixed repository origin, creates and gzip-verifies a fresh database backup,
+allows fast-forward updates from `origin/main`, and checks `/health`.
+Deploying changes under `ops_agent/` or `alembic/versions/` requires the
+manual operator runbook instead. The wrapper saves the verified previous
+deployment revision for a constrained rollback. It must remain root-owned,
+not editable by the deploy user.
+
+Canonical installation inputs:
+
+- `scripts/ccwbot-deploy-safe.sh`
+- `scripts/ccwbot-deploy.sudoers`
+
+Install or refresh them **only from a reviewed main release**, using an
+authorized root operator on production (not the deploy account):
+
+```bash
+cd /opt/CCWBot
+bash -n scripts/ccwbot-deploy-safe.sh
+install -o root -g root -m 755 scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
+install -o root -g root -m 440 scripts/ccwbot-deploy.sudoers /etc/sudoers.d/ccwbot-deploy.tmp
+visudo -cf /etc/sudoers.d/ccwbot-deploy.tmp
+mv /etc/sudoers.d/ccwbot-deploy.tmp /etc/sudoers.d/ccwbot-deploy
+visudo -cf /etc/sudoers.d/ccwbot-deploy
+```
+
+Then verify over the separate SSH alias with noninteractive authentication:
+
+```bash
+ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n -l'
+ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
+ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/bin/id'
+```
+
+The first two must succeed, and the last **must fail**; additional parameters
+must likewise be denied. Only the wrapper may run as root. Do not grant
+`NOPASSWD: ALL`, write access to the production repository, or Docker-group
+membership to this account.
+
+For a vetted main release without migrations or ops-agent modifications:
+
+```bash
+ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
+```
+
+This is not evidence of Event Alert quality. After deploying, separately
+verify fresh Event Analysis outcomes and sanitized operational diagnostics
+through the approved read-only investigator and ops-agent paths. If the
+wrapper fails partway through, inspect the exact stage and use the manual
+recovery runbook; never bypass its guards with unrestricted sudo.
+
 ## Dependency updates
 
 Scheduled Dependabot version-update PRs are disabled. In repository history they created mostly
