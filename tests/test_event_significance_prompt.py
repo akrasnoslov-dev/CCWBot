@@ -131,6 +131,72 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert len(prompt) <= 2600
 
 
+
+
+def test_event_significance_schema_generates_reasoning_before_decision():
+    schema = ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA
+
+    assert list(schema["properties"]) == [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence",
+    ]
+    assert schema["required"] == [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("materiality", "novelty", "should_alert"),
+    (
+        ("routine", "new", False),
+        ("unclear", "continuation", False),
+        ("material", "new", False),
+    ),
+)
+def test_event_significance_rejects_out_of_order_decision_state(
+    materiality, novelty, should_alert
+):
+    with pytest.raises(EventAnalysisValidationError, match="decision sequence"):
+        validate_event_significance_output(
+            {
+                "symbol": "ETH",
+                "should_alert": should_alert,
+                "confidence": "medium",
+                "materiality": materiality,
+                "novelty": novelty,
+                "reason_code": "routine_move",
+            },
+            expected_symbol="ETH",
+        )
+
+
+def test_event_significance_accepts_material_continuation_as_no_alert():
+    decision = validate_event_significance_output(
+        {
+            "symbol": "ETH",
+            "should_alert": False,
+            "confidence": "medium",
+            "materiality": "material",
+            "novelty": "continuation",
+            "reason_code": "routine_move",
+        },
+        expected_symbol="ETH",
+    )
+
+    assert decision.should_alert is False
+    assert decision.materiality == "material"
+    assert decision.novelty == "continuation"
+
+
 def test_event_significance_output_is_small_and_constrained():
     decision = validate_event_significance_output(
         {
