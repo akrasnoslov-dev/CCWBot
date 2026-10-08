@@ -15,7 +15,6 @@ from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.event_text import event_alert_presentation_fallback
 from bot.db.database import Base, EventAiAnalysis, save_price_snapshot
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS
-from bot.services.llm.errors import AllProvidersFailedError
 
 
 async def _session_factory():
@@ -387,30 +386,23 @@ def _runtime_no_alert_payload(*, chg_window_percent: float) -> dict:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reason_code", ("routine_move", "unclear"))
-async def test_runtime_market_no_alert_reasons_record_llm_no_alert(
-    monkeypatch, reason_code
+@pytest.mark.parametrize(
+    "reason_for_no_alert",
+    (
+        "The current move is routine relative to the supplied market path.",
+        "The broader 24h move is notable but the current analysed-window move is routine.",
+        "Recent market activity is repetitive and does not justify another interruption.",
+    ),
+)
+async def test_runtime_market_no_alert_explanations_record_llm_no_alert(
+    monkeypatch, reason_for_no_alert
 ):
     recorded_outcome = AsyncMock()
     monkeypatch.setattr(
         alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": False,
-                    "confidence": "medium",
-                    "materiality": "routine",
-                    "novelty": "new",
-                    "reason_code": reason_code,
-                },
-            )
-        ),
+        "ask_event_analysis_raw",
+        AsyncMock(return_value=("{}", _no_alert_result(reason_for_no_alert))),
     )
-    render = AsyncMock()
-    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
@@ -420,179 +412,37 @@ async def test_runtime_market_no_alert_reasons_record_llm_no_alert(
     )
 
     assert decision is not None
-    assert decision.reason_for_no_alert == reason_code
+    assert decision.should_alert is False
     assert analysis_id == 321
-    render.assert_not_awaited()
     assert (
         recorded_outcome.await_args.kwargs["decision_reason"]
         == alerts.DECISION_REASON_LLM_NO_ALERT
     )
     assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_NO_ALERT
 
+def test_event_analysis_runtime_uses_one_stage_llm_entrypoint():
+    assert hasattr(alerts, "ask_event_analysis_raw")
+    assert not hasattr(alerts, "ask_event_significance_raw")
+    assert not hasattr(alerts, "ask_event_alert_render_raw")
 
 @pytest.mark.asyncio
-async def test_event_significance_false_never_calls_render(monkeypatch):
-    render = AsyncMock()
-    recorded_outcome = AsyncMock()
+async def test_all_factual_validation_failures_cannot_create_a_market_event(monkeypatch):
+    payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     monkeypatch.setattr(
         alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": False,
-                    "confidence": "high",
-                    "materiality": "routine",
-                    "novelty": "new",
-                    "reason_code": "routine_move",
-                },
-            )
-        ),
+        "ask_event_analysis_raw",
+        AsyncMock(side_effect=alerts.AISchemaValidationError("window market claim is unavailable")),
     )
-    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
-    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
-    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    create_market_event = AsyncMock()
+    monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
 
-    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
-    payload["market"]["relative_window_percentile_30d"] = 100.0
-    payload["market"]["relative_24h_percentile_30d"] = 100.0
-
-    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
-
-    assert analysis_id == 321
-    assert decision is not None
-    assert decision.should_alert is False
-    assert decision.reason_for_no_alert == "routine_move"
-    render.assert_not_awaited()
-    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_NO_ALERT
-
-
-@pytest.mark.asyncio
-async def test_event_significance_news_only_true_is_schema_rejected_before_render(monkeypatch):
-    render = AsyncMock()
-    save_analysis = AsyncMock(return_value=322)
-    recorded_outcome = AsyncMock()
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": True,
-                    "confidence": "high",
-                    "materiality": "material",
-                    "novelty": "new",
-                    "reason_code": "news_only",
-                },
-            )
-        ),
-    )
-    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
-    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
-    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
-    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
-
-    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
-    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
-
-    assert analysis_id is None
-    assert decision is None
-    render.assert_not_awaited()
-    save_analysis.assert_awaited_once()
-    assert save_analysis.await_args.kwargs["status"] == "schema_error"
-    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("render_error", "expected_reason"),
-    (
-        (
-            alerts.AISchemaValidationError("render failed"),
-            "schema_validation_failed",
-        ),
-        (
-            alerts.AIProviderRateLimitError("render rate limited"),
-            "rate_limit",
-        ),
-        (
-            AllProvidersFailedError(
-                "render providers exhausted",
-                mixed_failure=True,
-            ),
-            "mixed_provider_failures",
-        ),
-    ),
-)
-async def test_render_failure_is_terminal_without_non_llm_fallback(
-    monkeypatch, render_error, expected_reason
-):
-    successes = []
-    failures = []
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": True,
-                    "confidence": "high",
-                    "materiality": "material",
-                    "novelty": "new",
-                    "reason_code": "unusual_move",
-                },
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_alert_render_raw",
-        AsyncMock(side_effect=render_error),
-    )
-    monkeypatch.setattr(
-        alerts.event_analysis_health,
-        "record_success",
-        lambda: successes.append(True),
-    )
-    monkeypatch.setattr(
-        alerts,
-        "_log_event_analysis_failure",
-        lambda symbol, reason: failures.append((symbol, reason)),
-    )
-    render_outcome = AsyncMock()
-    save_analysis = AsyncMock(return_value=323)
-    delivery_outcome = AsyncMock()
-    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
-    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
-    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
-    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
-
-    payload = _runtime_no_alert_payload(chg_window_percent=4.0)
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
     assert decision is None
     assert analysis_id is None
-    assert successes == []
-    assert failures == [("BTC", expected_reason)]
-
-    render_outcome.assert_awaited_once()
-    render_kwargs = render_outcome.await_args.kwargs
-    assert render_kwargs["status"] == "llm_error"
-    assert render_kwargs["error_reason"] == expected_reason
-
-    save_analysis.assert_awaited_once()
-    assert save_analysis.await_args.kwargs["status"] == "llm_error"
-    delivery_outcome.assert_awaited_once()
-    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
-    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
-
+    create_market_event.assert_not_awaited()
 
 def test_event_alert_render_materialization_keeps_identity_and_facts_backend_owned():
     payload = _runtime_no_alert_payload(chg_window_percent=4.0)
@@ -640,7 +490,7 @@ def test_event_alert_render_validation_reason_is_safe_category(message, expected
 
 
 @pytest.mark.asyncio
-async def test_event_significance_true_calls_render_once(monkeypatch):
+async def test_event_analysis_true_uses_one_stage_grounded_result(monkeypatch):
     class _AttributedResult(tuple):
         def __new__(cls, raw, parsed, *, provider, model):
             value = super().__new__(cls, (raw, parsed))
@@ -649,51 +499,40 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
             value.usage_log_id = None
             return value
 
-    significance_parsed = {
+    parsed = {
         "symbol": "BTC",
         "should_alert": True,
-        "confidence": "high",
-        "materiality": "material",
-        "novelty": "new",
-        "reason_code": "unusual_move",
-    }
-    render_parsed = {
-        "message_body": "The supplied move is unusually strong relative to recent history.",
+        "event_key": "btc_price_uptrend",
+        "title": "BTC up ~4.0% in the last 3 hours",
+        "message_body": "The supplied current market evidence is notable.",
         "related_news_ids": [],
         "possible_action": "Monitor whether the move persists in the next snapshots.",
         "urgency": "normal",
+        "confidence": "high",
+        "reason_for_no_alert": None,
     }
-    render = AsyncMock(
+    one_stage = AsyncMock(
         return_value=_AttributedResult(
-            "render-raw",
-            render_parsed,
+            "analysis-raw",
+            parsed,
             provider="groq",
-            model="render-model",
+            model="one-stage-model",
         )
     )
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=_AttributedResult(
-                "significance-raw",
-                significance_parsed,
-                provider="mistral",
-                model="significance-model",
-            )
-        ),
-    )
-    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
     render_outcome = AsyncMock()
     save_analysis = AsyncMock(return_value=654)
     delivery_outcome = AsyncMock()
+
+    monkeypatch.setattr(alerts, "ask_event_analysis_raw", one_stage)
     monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
 
     payload = _runtime_no_alert_payload(chg_window_percent=4.0)
+    payload["market"]["price"] = 104.0
     payload["market"]["relative_window_percentile_30d"] = 99.0
+
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
     assert analysis_id == 654
@@ -701,73 +540,17 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
     assert decision.should_alert is True
     assert decision.symbol == "BTC"
     assert decision.confidence == "high"
-    assert decision.reason_for_no_alert is None
-    render.assert_awaited_once()
-    render_outcome.assert_awaited_once()
-    assert render_outcome.await_args.kwargs["status"] == "success"
-    render_operation_id = render_outcome.await_args.kwargs["llm_operation_id"]
-    assert render_operation_id
-    assert render_outcome.await_args.kwargs["provider"] == "groq"
-    assert render_outcome.await_args.kwargs["model"] == "render-model"
+    one_stage.assert_awaited_once()
+    render_outcome.assert_not_awaited()
 
     save_kwargs = save_analysis.await_args.kwargs
-    assert save_kwargs["raw_output_json"] == "significance-raw"
-    assert save_kwargs["parsed_result"] == significance_parsed
-    assert save_kwargs["provider"] == "mistral"
-    assert save_kwargs["model"] == "significance-model"
-    assert save_kwargs["llm_operation_id"] != render_operation_id
-    assert (
-        f"render_operation_id={render_operation_id}"
-        in delivery_outcome.await_args.kwargs["detail"]
-    )
-
-    assert payload["significance_decision"] == {
-        "should_alert": True,
-        "confidence": "high",
-        "materiality": "material",
-        "novelty": "new",
-        "reason_code": "unusual_move",
-    }
-
-
-@pytest.mark.asyncio
-async def test_factual_render_validation_failure_does_not_use_non_llm_fallback(monkeypatch):
-    payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": True,
-                    "confidence": "high",
-                    "materiality": "material",
-                    "novelty": "new",
-                    "reason_code": "unusual_move",
-                },
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        alerts,
-        "ask_event_alert_render_raw",
-        AsyncMock(side_effect=alerts.AISchemaValidationError("window market claim is unavailable")),
-    )
-    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", AsyncMock())
-    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))
-    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
-    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
-    create_market_event = AsyncMock()
-    monkeypatch.setattr(alerts, "_get_or_create_event_alert_market_event", create_market_event)
-
-    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
-
-    assert analysis_id is None
-    assert decision is None
-    create_market_event.assert_not_awaited()
-
+    assert save_kwargs["raw_output_json"] == "analysis-raw"
+    assert save_kwargs["parsed_result"] == parsed
+    assert save_kwargs["provider"] == "groq"
+    assert save_kwargs["model"] == "one-stage-model"
+    assert save_kwargs["status"] == "success"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    assert "significance_decision" not in payload
 
 @pytest.mark.parametrize(
     ("reason_for_no_alert", "chg_window_percent", "expected_reason"),
@@ -1529,8 +1312,19 @@ async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkey
 
 
 @pytest.mark.asyncio
-async def test_event_significance_inconsistent_reason_is_schema_error(monkeypatch):
-    render = AsyncMock()
+async def test_one_stage_inconsistent_full_result_is_schema_error(monkeypatch):
+    invalid = {
+        "symbol": "BTC",
+        "should_alert": True,
+        "event_key": "btc_price_uptrend",
+        "title": None,
+        "message_body": None,
+        "related_news_ids": [],
+        "possible_action": None,
+        "urgency": "normal",
+        "confidence": "medium",
+        "reason_for_no_alert": None,
+    }
     save_analysis = AsyncMock(return_value=321)
     recorded_outcome = AsyncMock()
     mark_usage = AsyncMock()
@@ -1538,22 +1332,9 @@ async def test_event_significance_inconsistent_reason_is_schema_error(monkeypatc
 
     monkeypatch.setattr(
         alerts,
-        "ask_event_significance_raw",
-        AsyncMock(
-            return_value=(
-                "{}",
-                {
-                    "symbol": "BTC",
-                    "should_alert": False,
-                    "confidence": "medium",
-                    "materiality": "routine",
-                    "novelty": "new",
-                    "reason_code": "unusual_move",
-                },
-            )
-        ),
+        "ask_event_analysis_raw",
+        AsyncMock(return_value=("{}", invalid)),
     )
-    monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render)
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", recorded_outcome)
     monkeypatch.setattr(alerts, "mark_llm_usage_log_status", mark_usage)
@@ -1569,14 +1350,10 @@ async def test_event_significance_inconsistent_reason_is_schema_error(monkeypatc
 
     assert decision is None
     assert analysis_id is None
-    render.assert_not_awaited()
     save_analysis.assert_awaited_once()
     assert save_analysis.await_args.kwargs["status"] == "schema_error"
-    assert save_analysis.await_args.kwargs["parsed_result"]["reason_code"] == "unusual_move"
     recorded_outcome.assert_awaited_once()
     assert recorded_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
-    assert (
-        recorded_outcome.await_args.kwargs["reason_code"]
-        == alerts.REASON_LLM_INVALID_RESPONSE
-    )
+    assert recorded_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
     assert failures
+
