@@ -390,8 +390,9 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "materially new enough to interrupt the user now. Default=>no alert. "
         "No fixed numeric cutoff.",
         "Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and "
-        "same-asset unusualness. A non-zero move, direction change, adjacent-window speed, "
-        "large c24/p24, news, previous alerts, or recent counts alone cannot make Q1 material.",
+        "same-asset unusualness. Direction change or adjacent-window speed can support materiality "
+        "only with materially noteworthy current-path evidence. Large c24/p24, news, previous "
+        "alerts, and recent counts never increase materiality.",
         "Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and "
         "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty "
         "should be unclear.",
