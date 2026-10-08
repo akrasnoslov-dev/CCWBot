@@ -31,10 +31,8 @@ from bot.alerting.event_analysis import (
     EVENT_ANALYSIS_TYPE,
     EventAnalysisDecision,
     EventAnalysisValidationError,
-    EventSignificanceDecision,
     empirical_absolute_move_percentile,
     validate_event_analysis_output,
-    validate_event_significance_output,
     with_canonical_event_key,
 )
 from bot.alerting.event_text import (
@@ -122,8 +120,7 @@ from bot.services.ai_agent_groq import (
     AIProviderRateLimitError,
     AISchemaValidationError,
     LLMRateLimitBackoffActive,
-    ask_event_alert_render_raw,
-    ask_event_significance_raw,
+    ask_event_analysis_raw,
     ask_market_heartbeat_raw,
     classify_ai_error_reason,
     mark_llm_usage_log_status,
@@ -3456,61 +3453,50 @@ async def _save_event_alert_render_outcome(
         )
 
 
-def _no_alert_decision_from_significance(
-    significance: EventSignificanceDecision,
-) -> EventAnalysisDecision:
-    return EventAnalysisDecision(
-        symbol=significance.symbol,
-        should_alert=False,
-        event_key=None,
-        title=None,
-        message_body=None,
-        related_news_ids=[],
-        possible_action=None,
-        urgency=None,
-        confidence=significance.confidence,
-        reason_for_no_alert=significance.reason_code,
-    )
-
-
 async def _create_event_analysis_decision(
     input_payload: dict,
 ) -> tuple[EventAnalysisDecision | None, int | None]:
-    decision_raw_output = None
-    decision_parsed = None
-    decision_usage_log_id = None
-    decision_provider = "groq"
-    decision_model = GROQ_EVENT_ANALYSIS_MODEL
-    decision_operation_id = new_llm_operation_id()
+    raw_output = None
+    parsed = None
+    usage_log_id = None
+    analysis_provider = "groq"
+    analysis_model = GROQ_EVENT_ANALYSIS_MODEL
+    llm_operation_id = new_llm_operation_id()
     expected_symbol = str(input_payload["symbol"])
-    context_fingerprint = _event_context_fingerprint(input_payload)
     logger.info(
         "ops_event=event_alert_llm_operation symbol=%s status=started "
         "operation_id=%s context_fingerprint=%s",
         normalize_symbol(expected_symbol).upper(),
-        decision_operation_id,
-        context_fingerprint,
+        llm_operation_id,
+        _event_context_fingerprint(input_payload),
     )
+    candidate_news_ids = {
+        str(item["news_id"])
+        for item in input_payload.get("news", input_payload.get("candidate_news", []))
+    }
 
-    def _significance_schema_check(provider_parsed: dict) -> None:
+    def _schema_check(provider_parsed: dict) -> None:
+        # Runs during the provider pass so a schema-invalid answer from one provider
+        # falls back to the next provider in the chain instead of losing the analysis.
         try:
-            validate_event_significance_output(
-                provider_parsed,
+            validate_event_analysis_output(
+                _normalize_event_analysis_result_for_validation(provider_parsed),
                 expected_symbol=expected_symbol,
+                candidate_news_ids=candidate_news_ids,
+                market_data=input_payload.get("market"),
+                last_msg=input_payload.get("last_msg"),
+                timestamp_utc=input_payload.get("timestamp_utc"),
             )
         except EventAnalysisValidationError as error:
             raise AISchemaValidationError(str(error)) from error
 
     try:
-        with llm_operation_scope(decision_operation_id):
-            result = await ask_event_significance_raw(
-                input_payload,
-                schema_check=_significance_schema_check,
-            )
-        decision_raw_output, decision_parsed = result
-        decision_usage_log_id = getattr(result, "usage_log_id", None)
-        decision_provider = getattr(result, "provider", None) or decision_provider
-        decision_model = getattr(result, "model", None) or decision_model
+        with llm_operation_scope(llm_operation_id):
+            result = await ask_event_analysis_raw(input_payload, schema_check=_schema_check)
+        raw_output, parsed = result
+        usage_log_id = getattr(result, "usage_log_id", None)
+        analysis_provider = getattr(result, "provider", None) or analysis_provider
+        analysis_model = getattr(result, "model", None) or analysis_model
     except AIProviderRateLimitError as error:
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
@@ -3518,12 +3504,12 @@ async def _create_event_analysis_decision(
             status="rate_limit",
             error_message=str(error),
             error_reason=classify_ai_error_reason(error),
-            provider=getattr(error, "provider", None) or decision_provider,
-            model=getattr(error, "model", None) or decision_model,
-            llm_operation_id=decision_operation_id,
+            provider=getattr(error, "provider", None) or analysis_provider,
+            model=getattr(error, "model", None) or analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_RATE_LIMITED,
             reason_code=REASON_LLM_RATE_LIMITED,
@@ -3531,16 +3517,16 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=context_fingerprint,
-            detail="event_significance_provider_rate_limited",
+            context_fingerprint=_event_context_fingerprint(input_payload),
+            detail="event_analysis_provider_rate_limited",
         )
         _log_event_alert_suppression(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             suppression_reason=SUPPRESSION_LLM_RATE_LIMITED,
             suppression_count=1,
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_analysis_failure(str(input_payload["symbol"]), classify_ai_error_reason(error))
         return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
@@ -3549,10 +3535,10 @@ async def _create_event_analysis_decision(
             status="skipped_due_to_rate_limit",
             error_message=str(error),
             error_reason=classify_ai_error_reason(error),
-            llm_operation_id=decision_operation_id,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_RATE_LIMITED,
             reason_code=REASON_LLM_RATE_LIMITED,
@@ -3560,29 +3546,32 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=context_fingerprint,
-            detail="event_significance_backoff_active",
+            context_fingerprint=_event_context_fingerprint(input_payload),
+            detail="event_analysis_backoff_active",
         )
         _log_event_alert_suppression(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             suppression_reason=SUPPRESSION_LLM_RATE_LIMITED,
             suppression_count=1,
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
         return None, None
     except AISchemaValidationError as error:
+        # Every provider in the chain returned schema-invalid output; keep the same
+        # terminal handling the post-call schema validation used before the router
+        # made schema failures fallback-eligible.
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
             raw_output_json=getattr(error, "raw_content", None),
             status="schema_error",
             error_message=str(error),
             error_reason=classify_ai_error_reason(error),
-            provider=getattr(error, "provider", None) or decision_provider,
-            model=getattr(error, "model", None) or decision_model,
-            llm_operation_id=decision_operation_id,
+            provider=getattr(error, "provider", None) or analysis_provider,
+            model=getattr(error, "model", None) or analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_FAILED,
             reason_code=REASON_LLM_INVALID_RESPONSE,
@@ -3590,26 +3579,29 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=context_fingerprint,
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=classify_ai_error_reason(error),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        # Counts toward the failure streak: a schema failure is a failed analysis, and a
+        # continuous schema-failure outage must escalate exactly like any other.
+        _log_event_analysis_failure(str(input_payload["symbol"]), classify_ai_error_reason(error))
         return None, None
     except Exception as error:
+        raw_output = getattr(error, "raw_content", raw_output)
         reason = classify_ai_error_reason(error)
         status = "invalid_json" if reason == "invalid_json" else "llm_error"
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=getattr(error, "raw_content", decision_raw_output),
+            raw_output_json=raw_output,
             status=status,
             error_message=str(error),
             error_reason=reason,
-            provider=getattr(error, "provider", None) or decision_provider,
-            model=getattr(error, "model", None) or decision_model,
-            llm_operation_id=decision_operation_id,
+            provider=getattr(error, "provider", None) or analysis_provider,
+            model=getattr(error, "model", None) or analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_FAILED,
             reason_code=REASON_LLM_INVALID_RESPONSE,
@@ -3617,193 +3609,16 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=context_fingerprint,
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=reason,
         )
-        _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_analysis_failure(str(input_payload["symbol"]), reason)
         return None, None
 
-    try:
-        significance = validate_event_significance_output(
-            decision_parsed,
-            expected_symbol=expected_symbol,
-        )
-    except EventAnalysisValidationError as error:
-        schema_error = AISchemaValidationError(str(error))
-        await mark_llm_usage_log_status(
-            decision_usage_log_id,
-            status="schema_error",
-            error_reason=classify_ai_error_reason(schema_error),
-            error_message=str(error),
-        )
-        analysis_id = await _save_event_analysis_attempt(
-            input_payload=input_payload,
-            raw_output_json=decision_raw_output,
-            status="schema_error",
-            parsed_result=decision_parsed,
-            error_message=str(error),
-            error_reason=classify_ai_error_reason(schema_error),
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
-        )
-        await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
-            alert_type=EVENT_ALERT_TYPE,
-            status=OUTCOME_FAILED,
-            reason_code=REASON_LLM_INVALID_RESPONSE,
-            event_ai_analysis_id=analysis_id,
-            trigger_source=EVENT_ANALYSIS_TYPE,
-            decision_stage=DECISION_STAGE_LLM,
-            decision_reason=DECISION_REASON_UNKNOWN,
-            context_fingerprint=context_fingerprint,
-            detail=classify_ai_error_reason(schema_error),
-        )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
-        return None, None
-
-    if not significance.should_alert or significance.reason_code == "news_only":
-        event_analysis_health.record_success()
-        decision = _no_alert_decision_from_significance(significance)
-        analysis_id = await _save_event_analysis_attempt(
-            input_payload=input_payload,
-            raw_output_json=decision_raw_output,
-            status="no_alert",
-            parsed_result=decision_parsed,
-            decision=decision,
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
-        )
-        news_only = significance.reason_code == "news_only"
-        decision_reason = (
-            DECISION_REASON_NEWS_ONLY_REJECTED
-            if news_only
-            else DECISION_REASON_LLM_NO_ALERT
-        )
-        reason_code = REASON_NEWS_ONLY_REJECTED if news_only else REASON_LLM_NO_ALERT
-        await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
-            alert_type=EVENT_ALERT_TYPE,
-            status=OUTCOME_NOT_SCHEDULED,
-            reason_code=reason_code,
-            event_ai_analysis_id=analysis_id,
-            trigger_source=EVENT_ANALYSIS_TYPE,
-            semantic_family=_semantic_family_from_payload(input_payload),
-            decision_stage=DECISION_STAGE_LLM,
-            decision_reason=decision_reason,
-            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-            context_fingerprint=context_fingerprint,
-            detail=f"event_significance:{significance.reason_code}",
-        )
-        return decision, analysis_id
-
-    input_payload["significance_decision"] = {
-        "should_alert": True,
-        "confidence": significance.confidence,
-        "materiality": significance.materiality,
-        "novelty": significance.novelty,
-        "reason_code": significance.reason_code,
-    }
-    candidate_news_ids = {
-        str(item["news_id"])
-        for item in input_payload.get("news", input_payload.get("candidate_news", []))
-        if isinstance(item, dict) and item.get("news_id") is not None
-    }
-    render_operation_id = new_llm_operation_id()
-    render_raw_output = None
-    render_parsed = None
-    render_usage_log_id = None
-    render_provider = None
-    render_model = None
-
-    def _render_schema_check(provider_parsed: dict) -> None:
-        try:
-            validate_event_analysis_output(
-                _event_alert_render_result_for_validation(
-                    provider_parsed,
-                    input_payload=input_payload,
-                    expected_symbol=expected_symbol,
-                    confidence=significance.confidence,
-                    candidate_news_ids=candidate_news_ids,
-                ),
-                expected_symbol=expected_symbol,
-                candidate_news_ids=candidate_news_ids,
-                market_data=input_payload.get("market"),
-                last_msg=input_payload.get("last_msg"),
-                timestamp_utc=input_payload.get("timestamp_utc"),
-            )
-        except EventAnalysisValidationError as error:
-            validation_reason = _event_alert_render_validation_reason(error)
-            logger.warning(
-                "ops_event=event_alert_render_validation_failed symbol=%s reason=%s",
-                normalize_symbol(expected_symbol).upper(),
-                validation_reason,
-            )
-            raise AISchemaValidationError(validation_reason) from error
-
-    logger.info(
-        "ops_event=event_alert_render_llm_operation symbol=%s status=started operation_id=%s",
-        normalize_symbol(expected_symbol).upper(),
-        render_operation_id,
-    )
-    try:
-        with llm_operation_scope(render_operation_id):
-            render_result = await ask_event_alert_render_raw(
-                input_payload,
-                schema_check=_render_schema_check,
-            )
-        render_raw_output, render_parsed = render_result
-        render_usage_log_id = getattr(render_result, "usage_log_id", None)
-        render_provider = getattr(render_result, "provider", None) or render_provider
-        render_model = getattr(render_result, "model", None) or render_model
-    except Exception as error:
-        reason = classify_ai_error_reason(error)
-        await _save_event_alert_render_outcome(
-            llm_operation_id=render_operation_id,
-            symbol=expected_symbol,
-            status="llm_error",
-            error_reason=reason,
-            provider=getattr(error, "provider", None) or render_provider,
-            model=getattr(error, "model", None) or render_model,
-        )
-        analysis_id = await _save_event_analysis_attempt(
-            input_payload=input_payload,
-            raw_output_json=decision_raw_output,
-            status="llm_error",
-            parsed_result=decision_parsed,
-            error_message=str(error),
-            error_reason=reason,
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
-        )
-        await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
-            alert_type=EVENT_ALERT_TYPE,
-            status=OUTCOME_FAILED,
-            reason_code=REASON_LLM_INVALID_RESPONSE,
-            event_ai_analysis_id=analysis_id,
-            trigger_source=EVENT_ANALYSIS_TYPE,
-            decision_stage=DECISION_STAGE_LLM,
-            decision_reason=DECISION_REASON_UNKNOWN,
-            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-            context_fingerprint=context_fingerprint,
-            detail=f"event_alert_render_failed:{reason}",
-        )
-        _log_event_analysis_failure(expected_symbol, reason)
-        return None, None
-
-    normalized_render = _event_alert_render_result_for_validation(
-        render_parsed,
-        input_payload=input_payload,
-        expected_symbol=expected_symbol,
-        confidence=significance.confidence,
-        candidate_news_ids=candidate_news_ids,
-    )
+    normalized_parsed = _normalize_event_analysis_result_for_validation(parsed)
     try:
         decision = validate_event_analysis_output(
-            normalized_render,
+            normalized_parsed,
             expected_symbol=expected_symbol,
             candidate_news_ids=candidate_news_ids,
             market_data=input_payload.get("market"),
@@ -3811,40 +3626,26 @@ async def _create_event_analysis_decision(
             timestamp_utc=input_payload.get("timestamp_utc"),
         )
     except EventAnalysisValidationError as error:
-        validation_reason = _event_alert_render_validation_reason(error)
-        logger.warning(
-            "ops_event=event_alert_render_validation_failed symbol=%s reason=%s",
-            normalize_symbol(expected_symbol).upper(),
-            validation_reason,
-        )
-        schema_error = AISchemaValidationError(validation_reason)
+        schema_error = AISchemaValidationError(str(error))
         await mark_llm_usage_log_status(
-            render_usage_log_id,
+            usage_log_id,
             status="schema_error",
             error_reason=classify_ai_error_reason(schema_error),
             error_message=str(error),
-        )
-        await _save_event_alert_render_outcome(
-            llm_operation_id=render_operation_id,
-            symbol=expected_symbol,
-            status="schema_error",
-            error_reason=classify_ai_error_reason(schema_error),
-            provider=render_provider,
-            model=render_model,
         )
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=decision_raw_output,
+            raw_output_json=raw_output,
             status="schema_error",
-            parsed_result=decision_parsed,
+            parsed_result=normalized_parsed,
             error_message=str(error),
             error_reason=classify_ai_error_reason(schema_error),
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
+            provider=analysis_provider,
+            model=analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_FAILED,
             reason_code=REASON_LLM_INVALID_RESPONSE,
@@ -3852,37 +3653,35 @@ async def _create_event_analysis_decision(
             trigger_source=EVENT_ANALYSIS_TYPE,
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_UNKNOWN,
-            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-            context_fingerprint=context_fingerprint,
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=classify_ai_error_reason(schema_error),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_analysis_failure(
+            str(input_payload["symbol"]), classify_ai_error_reason(schema_error)
+        )
         return None, None
 
-    await _save_event_alert_render_outcome(
-        llm_operation_id=render_operation_id,
-        symbol=expected_symbol,
-        status="success",
-        error_reason=None,
-        provider=render_provider,
-        model=render_model,
-    )
+    # The LLM answered and the answer validated. Recorded here, above every branch that
+    # follows, because all of them are successful analyses: `no_alert` and a news-only
+    # rejection both mean the pipeline worked and decided against alerting. Recording it
+    # further down would leave the failure streak elevated through a run of news-only
+    # rejections, so /health would report degraded while the LLM was demonstrably working.
     event_analysis_health.record_success()
 
     if _is_news_only_event_alert_decision(decision, input_payload):
         rejected_decision = _as_news_only_rejected_decision(decision)
         analysis_id = await _save_event_analysis_attempt(
             input_payload=input_payload,
-            raw_output_json=decision_raw_output,
+            raw_output_json=raw_output,
             status="no_alert",
-            parsed_result=decision_parsed,
+            parsed_result=normalized_parsed,
             decision=rejected_decision,
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
+            provider=analysis_provider,
+            model=analysis_model,
+            llm_operation_id=llm_operation_id,
         )
         await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
+            symbol=str(input_payload["symbol"]),
             alert_type=EVENT_ALERT_TYPE,
             status=OUTCOME_NOT_SCHEDULED,
             reason_code=REASON_NEWS_ONLY_REJECTED,
@@ -3891,61 +3690,78 @@ async def _create_event_analysis_decision(
             semantic_family=_semantic_family_from_payload(input_payload),
             decision_stage=DECISION_STAGE_LLM,
             decision_reason=DECISION_REASON_NEWS_ONLY_REJECTED,
-            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-            context_fingerprint=context_fingerprint,
+            previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
+            context_fingerprint=_event_context_fingerprint(input_payload),
             detail=_event_market_decision_detail(input_payload, rejected_decision),
+        )
+        logger.info(
+            "%s LLM event analysis rejected as news-only.",
+            str(input_payload["symbol"]).upper(),
         )
         return rejected_decision, analysis_id
 
-    decision, canonical = with_canonical_event_key(
-        decision,
-        related_news=_selected_event_analysis_news(
-            input_payload,
-            decision.related_news_ids,
-        ),
-    )
-    input_payload["raw_event_key"] = canonical.raw_event_key
-    input_payload["canonical_event_key"] = canonical.canonical_event_key
-    input_payload["semantic_family"] = canonical.semantic_family
-    logger.info(
-        "event_key_canonicalized symbol=%s raw_event_key=%s canonical_event_key=%s "
-        "semantic_family=%s reason=%s",
-        decision.symbol,
-        canonical.raw_event_key,
-        canonical.canonical_event_key,
-        canonical.semantic_family,
-        canonical.reason,
-    )
+    if decision.should_alert:
+        decision, canonical = with_canonical_event_key(
+            decision,
+            related_news=_selected_event_analysis_news(input_payload, decision.related_news_ids),
+        )
+        input_payload["raw_event_key"] = canonical.raw_event_key
+        input_payload["canonical_event_key"] = canonical.canonical_event_key
+        input_payload["semantic_family"] = canonical.semantic_family
+        logger.info(
+            "event_key_canonicalized symbol=%s raw_event_key=%s canonical_event_key=%s "
+            "semantic_family=%s reason=%s",
+            decision.symbol,
+            canonical.raw_event_key,
+            canonical.canonical_event_key,
+            canonical.semantic_family,
+            canonical.reason,
+        )
 
+    status = "success" if decision.should_alert else "no_alert"
     analysis_id = await _save_event_analysis_attempt(
         input_payload=input_payload,
-        raw_output_json=decision_raw_output,
-        status="success",
-        parsed_result=decision_parsed,
+        raw_output_json=raw_output,
+        status=status,
+        parsed_result=normalized_parsed,
         decision=decision,
-        provider=decision_provider,
-        model=decision_model,
-        llm_operation_id=decision_operation_id,
+        provider=analysis_provider,
+        model=analysis_model,
+        llm_operation_id=llm_operation_id,
+    )
+    decision_reason = (
+        DECISION_REASON_LLM_SHOULD_ALERT
+        if decision.should_alert
+        else _llm_no_alert_decision_reason(decision, input_payload)
     )
     await _record_alert_delivery_outcome(
-        symbol=expected_symbol,
+        symbol=str(input_payload["symbol"]),
         alert_type=EVENT_ALERT_TYPE,
-        status=OUTCOME_ALLOWED,
-        reason_code=REASON_LLM_SHOULD_ALERT,
+        status=OUTCOME_ALLOWED if decision.should_alert else OUTCOME_NOT_SCHEDULED,
+        reason_code=REASON_LLM_SHOULD_ALERT
+        if decision.should_alert
+        else (
+            REASON_NEWS_ONLY_REJECTED
+            if decision_reason == DECISION_REASON_NEWS_ONLY_REJECTED
+            else REASON_LLM_NO_ALERT
+        ),
         event_ai_analysis_id=analysis_id,
         trigger_source=EVENT_ANALYSIS_TYPE,
         event_instance_key=_event_instance_key_for_decision(
             decision=decision,
             input_payload=input_payload,
-        ),
+        )
+        if decision.should_alert
+        else None,
         semantic_family=_semantic_family_from_payload(input_payload),
         decision_stage=DECISION_STAGE_LLM,
-        decision_reason=DECISION_REASON_LLM_SHOULD_ALERT,
-        previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-        context_fingerprint=context_fingerprint,
+        decision_reason=decision_reason,
+        previous_alert_id=await _get_previous_event_alert_id(str(input_payload["symbol"])),
+        context_fingerprint=_event_context_fingerprint(input_payload),
         detail=(
-            f"market_event_first_llm_allowed:{significance.reason_code};"
-            f"render_operation_id={render_operation_id}"
+            "market_event_first_llm_allowed"
+            if decision.should_alert
+            else _event_market_decision_detail(input_payload, decision)
         ),
     )
     return decision, analysis_id
