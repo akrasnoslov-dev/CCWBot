@@ -391,10 +391,9 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "Q1 market_materiality: judge the CURRENT move itself from recent path,size,speed,and "
         "same-asset unusualness. A non-zero move, direction change, adjacent-window speed, "
         "large 24h context, news, previous alerts, or recent counts cannot make Q1 material.",
-        "If material, judge novelty against prev and cnt. Recent alerts only reduce novelty; "
-        "they never make a move more material. Repeated/continuing versions of the previous "
-        "event=>no alert unless the supplied current market evidence itself is a clear "
-        "material escalation.",
+        "Q2 novelty: ONLY if Q1=material, judge whether the move is materially new versus prev and "
+        "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, "
+        "novelty=unclear.",
         "Reason semantics: fast_move means the current move itself is materially fast for this "
         "asset; merely being faster than an adjacent window is insufficient. reversal requires "
         "a materially noteworthy counter-move in the recent path; opposite sign vs c24 alone "
