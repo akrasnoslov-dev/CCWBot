@@ -151,7 +151,7 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
     "type": "object",
     "properties": {
         "symbol": {"type": "string"},
-        "market_materiality": {
+        "materiality": {
             "type": "string",
             "enum": ["material", "routine", "unclear"],
         },
@@ -160,7 +160,7 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
             "enum": ["new", "continuation", "repeated", "unclear"],
         },
         "should_alert": {"type": "boolean"},
-        "pattern": {
+        "reason_code": {
             "type": "string",
             "enum": [
                 "unusual_move",
@@ -177,10 +177,10 @@ _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
     },
     "required": [
         "symbol",
-        "market_materiality",
+        "materiality",
         "novelty",
         "should_alert",
-        "pattern",
+        "reason_code",
         "confidence",
     ],
     "additionalProperties": False,
