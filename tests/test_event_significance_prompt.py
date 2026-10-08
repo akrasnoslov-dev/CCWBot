@@ -163,9 +163,27 @@ def test_active_one_stage_prompt_keeps_rich_context_and_production_calibration()
 @pytest.mark.parametrize(
     ("cw", "c30", "c60", "c24", "pw"),
     (
-        (Decimal("0.0029"), Decimal("-0.045"), Decimal("-0.254"), Decimal("-0.0057"), Decimal("0.6")),
-        (Decimal("0.028"), Decimal("0.156"), Decimal("0.251"), Decimal("-1.0"), Decimal("7.2")),
-        (Decimal("-0.238"), Decimal("0.140"), Decimal("0.352"), Decimal("-5.001"), Decimal("42.1")),
+        (
+            Decimal("0.0029"),
+            Decimal("-0.045"),
+            Decimal("-0.254"),
+            Decimal("-0.0057"),
+            Decimal("0.6"),
+        ),
+        (
+            Decimal("0.028"),
+            Decimal("0.156"),
+            Decimal("0.251"),
+            Decimal("-1.0"),
+            Decimal("7.2"),
+        ),
+        (
+            Decimal("-0.238"),
+            Decimal("0.140"),
+            Decimal("0.352"),
+            Decimal("-5.001"),
+            Decimal("42.1"),
+        ),
     ),
 )
 def test_active_one_stage_prompt_preserves_small_move_evidence_without_backend_gate(
