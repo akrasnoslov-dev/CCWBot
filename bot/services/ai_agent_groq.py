@@ -394,10 +394,9 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "Q2 novelty: ONLY if Q1=material, judge whether the move is materially new versus prev and "
         "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, "
         "novelty=unclear.",
-        "Reason semantics: fast_move means the current move itself is materially fast for this "
-        "asset; merely being faster than an adjacent window is insufficient. reversal requires "
-        "a materially noteworthy counter-move in the recent path; opposite sign vs c24 alone "
-        "is not reversal. Direction alignment/divergence alone is not significance.",
+        "Q3 decision: set should_alert from Q1 and Q2. material+new=>true; all other "
+        "combinations=>false. Choose pattern only after Q1/Q2/Q3; pattern labels the decision "
+        "and never establishes materiality or novelty.",
         "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. "
         "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6 with no "
         "material market evidence=>routine/no alert; cw=.03,c30=.16,c60=.25,pw=7 without other "
