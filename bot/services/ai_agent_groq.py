@@ -391,7 +391,7 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "No fixed numeric cutoff.",
         "Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and "
         "same-asset unusualness. A non-zero move, direction change, adjacent-window speed, "
-        "large c24/p24, news, previous alerts, or recent counts cannot make Q1 material.",
+        "large c24/p24, news, previous alerts, or recent counts alone cannot make Q1 material.",
         "Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and "
         "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty "
         "should be unclear.",
