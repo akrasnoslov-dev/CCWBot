@@ -123,7 +123,8 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "q2 novelty" in lowered
     assert "q3 should_alert" in lowered
     assert "large c24/p24" in lowered
-    assert "recent counts alone cannot make q1 material" in lowered
+    assert "only with materially noteworthy current-path evidence" in lowered
+    assert "recent counts never increase materiality" in lowered
     assert "previous/recent events can only reduce novelty" in lowered
     assert "only after q1/q2/q3 choose reason_code" in lowered
     assert "calibration examples are not thresholds" in lowered
