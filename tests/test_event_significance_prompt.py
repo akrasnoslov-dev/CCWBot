@@ -119,27 +119,51 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "threshold" in lowered
     assert "no fixed numeric cutoff" in lowered
     assert "default=>no alert" in lowered
-    assert "materiality first" in lowered
-    assert "24h context cannot upgrade" in lowered
-    assert "recent alerts only reduce novelty" in lowered
-    assert "opposite sign vs c24 alone is not reversal" in lowered
+    assert "q1 market_materiality" in lowered
+    assert "q2 novelty" in lowered
+    assert "q3 should_alert" in lowered
+    assert "strictly in order" in lowered
+    assert "do not choose a pattern first" in lowered
+    assert "large m.c24/m.p24" in lowered
+    assert "previous/recent events can only reduce novelty" in lowered
+    assert "pattern is a label" in lowered
     assert "calibration examples are not thresholds" in lowered
-    assert "materiality=material" in lowered
-    assert "novelty=new" in lowered
+    assert "cw=-.238" in lowered
     assert "should_alert=true" in lowered
     assert "should_alert=false" in lowered
-    assert len(prompt) <= 2600
+    assert len(prompt) <= 3000
+
+
+def test_event_significance_schema_orders_reasoning_before_final_decision():
+    schema = ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA
+
+    assert list(schema["properties"]) == [
+        "symbol",
+        "market_materiality",
+        "novelty",
+        "should_alert",
+        "pattern",
+        "confidence",
+    ]
+    assert schema["required"] == [
+        "symbol",
+        "market_materiality",
+        "novelty",
+        "should_alert",
+        "pattern",
+        "confidence",
+    ]
 
 
 def test_event_significance_output_is_small_and_constrained():
     decision = validate_event_significance_output(
         {
             "symbol": "SOL",
-            "should_alert": True,
-            "confidence": "high",
-            "materiality": "material",
+            "market_materiality": "material",
             "novelty": "new",
-            "reason_code": "unusual_move",
+            "should_alert": True,
+            "pattern": "unusual_move",
+            "confidence": "high",
         },
         expected_symbol="SOL",
     )
@@ -154,18 +178,18 @@ def test_event_significance_output_is_small_and_constrained():
         validate_event_significance_output(
             {
                 "symbol": "SOL",
+                "market_materiality": "routine",
+                "novelty": "unclear",
                 "should_alert": False,
+                "pattern": "four_percent_threshold",
                 "confidence": "medium",
-                "materiality": "routine",
-                "novelty": "new",
-                "reason_code": "four_percent_threshold",
             },
             expected_symbol="SOL",
         )
 
 
 @pytest.mark.parametrize(
-    ("should_alert", "reason_code"),
+    ("should_alert", "pattern"),
     (
         (False, "unusual_move"),
         (False, "fast_move"),
@@ -177,17 +201,17 @@ def test_event_significance_output_is_small_and_constrained():
     ),
 )
 def test_event_significance_rejects_internally_inconsistent_reason_polarity(
-    should_alert, reason_code
+    should_alert, pattern
 ):
     with pytest.raises(EventAnalysisValidationError, match="inconsistent significance decision"):
         validate_event_significance_output(
             {
                 "symbol": "BTC",
+                "market_materiality": "material" if should_alert else "routine",
+                "novelty": "new" if should_alert else "unclear",
                 "should_alert": should_alert,
+                "pattern": pattern,
                 "confidence": "medium",
-                "materiality": "material" if should_alert else "routine",
-                "novelty": "new",
-                "reason_code": reason_code,
             },
             expected_symbol="BTC",
         )
@@ -198,11 +222,11 @@ def test_event_significance_rejects_true_news_only_as_inconsistent():
         validate_event_significance_output(
             {
                 "symbol": "BTC",
-                "should_alert": True,
-                "confidence": "medium",
-                "materiality": "material",
+                "market_materiality": "material",
                 "novelty": "new",
-                "reason_code": "news_only",
+                "should_alert": True,
+                "pattern": "news_only",
+                "confidence": "medium",
             },
             expected_symbol="BTC",
         )
@@ -223,30 +247,87 @@ def test_event_significance_true_requires_material_and_new(materiality, novelty)
         validate_event_significance_output(
             {
                 "symbol": "ETH",
-                "should_alert": True,
-                "confidence": "high",
-                "materiality": materiality,
+                "market_materiality": materiality,
                 "novelty": novelty,
-                "reason_code": "fast_move",
+                "should_alert": True,
+                "pattern": "fast_move",
+                "confidence": "high",
             },
             expected_symbol="ETH",
         )
 
 
-def test_event_significance_false_allows_material_and_new_with_no_alert_reason():
+def test_event_significance_false_requires_non_new_or_non_material_state():
     decision = validate_event_significance_output(
         {
             "symbol": "ETH",
+            "market_materiality": "material",
+            "novelty": "continuation",
             "should_alert": False,
+            "pattern": "routine_move",
             "confidence": "medium",
-            "materiality": "material",
-            "novelty": "new",
-            "reason_code": "routine_move",
         },
         expected_symbol="ETH",
     )
 
     assert decision.should_alert is False
     assert decision.materiality == "material"
-    assert decision.novelty == "new"
+    assert decision.novelty == "continuation"
     assert decision.reason_code == "routine_move"
+
+
+@pytest.mark.parametrize(
+    ("market_materiality", "novelty", "should_alert"),
+    (
+        ("routine", "new", False),
+        ("unclear", "continuation", False),
+        ("material", "new", False),
+    ),
+)
+def test_event_significance_rejects_out_of_order_three_question_results(
+    market_materiality, novelty, should_alert
+):
+    with pytest.raises(EventAnalysisValidationError, match="three-question"):
+        validate_event_significance_output(
+            {
+                "symbol": "ETH",
+                "market_materiality": market_materiality,
+                "novelty": novelty,
+                "should_alert": should_alert,
+                "pattern": "routine_move",
+                "confidence": "medium",
+            },
+            expected_symbol="ETH",
+        )
+
+
+@pytest.mark.parametrize(
+    ("cw", "c30", "c60", "c24", "pw"),
+    (
+        (Decimal("0.0029"), Decimal("-0.045"), Decimal("-0.254"), Decimal("-0.0057"), Decimal("0.6")),
+        (Decimal("0.028"), Decimal("0.156"), Decimal("0.251"), Decimal("-0.615"), Decimal("7.2")),
+        (Decimal("-0.238"), Decimal("0.140"), Decimal("0.352"), Decimal("-5.001"), Decimal("42.1")),
+    ),
+)
+def test_false_positive_calibration_cases_remain_model_evidence_not_backend_thresholds(
+    cw, c30, c60, c24, pw
+):
+    payload = _payload()
+    payload["market"].update(
+        {
+            "chg_window_percent": cw,
+            "chg30m_percent": c30,
+            "chg1h_percent": c60,
+            "chg24h_percent": c24,
+            "relative_window_percentile_30d": pw,
+        }
+    )
+    compact = ai_agent_groq._event_significance_prompt_payload(payload)
+
+    assert compact["m"]["cw"] == cw
+    assert compact["m"]["c30"] == c30
+    assert compact["m"]["c60"] == c60
+    assert compact["m"]["c24"] == c24
+    assert compact["m"]["pw"] == pw
+    assert "threshold_percent" not in compact
+    assert "should_alert" not in compact
