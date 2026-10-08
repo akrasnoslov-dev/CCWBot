@@ -1,7 +1,7 @@
 """Contract checks for the installed, least-privilege production deploy wrapper."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "scripts" / "ccwbot-deploy-safe.sh"
