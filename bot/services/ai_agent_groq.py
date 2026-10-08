@@ -385,13 +385,12 @@ def _event_analysis_percent(value: object) -> object:
 
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
     (
-        "JSON English.Decide whether the CURRENT market move is materially noteworthy AND "
-        "materially new enough to interrupt the user now. Default=>no alert. "
+        "JSON English. Answer Q1, Q2, and Q3 strictly in order. "
+        "Do not choose a pattern first and then justify it. Default=>no alert. "
         "No fixed numeric cutoff.",
-        "Decision order: materiality first, then novelty, then reason. Judge current-move "
-        "materiality from recent path,size,speed,and same-asset unusualness. "
-        "24h context cannot upgrade a routine current move to material. "
-        "News cannot upgrade routine market action either.",
+        "Q1 market_materiality: judge the CURRENT move itself from recent path,size,speed,and "
+        "same-asset unusualness. A non-zero move, direction change, adjacent-window speed, "
+        "large 24h context, news, previous alerts, or recent counts cannot make Q1 material.",
         "If material, judge novelty against prev and cnt. Recent alerts only reduce novelty; "
         "they never make a move more material. Repeated/continuing versions of the previous "
         "event=>no alert unless the supplied current market evidence itself is a clear "
