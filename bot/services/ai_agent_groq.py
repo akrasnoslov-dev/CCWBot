@@ -356,13 +356,29 @@ def sanitize_alert_message(message: str) -> str:
 
 _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
     (
-        "JSON English. Market decides;news alone cannot alert. No invented thresholds. "
-        "Routine/modest/stable=>false unless other supplied facts warrant alert.",
+        "JSON English. Decide whether the CURRENT market move is materially noteworthy AND "
+        "materially new enough to interrupt the user now, then render a grounded Event Alert "
+        "only when it is. Default=>no alert. No fixed numeric cutoff.",
+        "Decision order: first judge current-move materiality from recent path,size,speed,and "
+        "same-asset unusualness. A large c24, opposite sign vs c24, news, or merely being faster "
+        "than an adjacent window cannot upgrade a routine current move to material. Then judge "
+        "novelty against prev and cnt; recent alerts/events reduce novelty and never increase "
+        "materiality. Repeated/continuing versions=>false unless current evidence itself shows "
+        "a clear material escalation.",
+        "A true decision must be strong enough to support the grounded title/body you return from "
+        "the supplied CURRENT market evidence. If the only interesting fact is broader 24h context, "
+        "a small counter-tick, adjacent-window speed, or repetition, return false.",
+        "pw,p24=30d same-asset abs-move percentile: context, not thresholds;null=unknown. "
+        "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6=>routine/no "
+        "alert; cw=.03,c30=.16,c60=.25,pw=7=>routine/no alert; "
+        "cw=-.238,c30=.14,c60=.352,c24=-5,pw=42,prev.min=89,cnt.h24=14=>routine/no alert "
+        "absent other material current evidence.",
         "Keys:symbol,should_alert,event_key,title,message_body,related_news_ids,"
         "possible_action,urgency,confidence,reason_for_no_alert.",
-        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...],0=now,<0=older;"
-        "cw=% over w;c24=24h%;cl=since alert%;n={i,src,t,x,r,mat,h},h=hours old;"
-        "prev={k,f,cw}. .042=.042%;null=unknown.",
+        "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
+        "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
+        "prev={min,k,f,cw};min=minutes since prev;cnt={h6,h24}=recent alert-worthy market-event "
+        "counts;n={i,src,t,x,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
         "Facts:no derived cw or invented prior/sub-window moves,%,trajectory. "
         "consistent/persistent/throughout requires s;news not causal.",
         "symbol=sym. false=>event_key/title/message_body/possible_action/urgency=null;"
@@ -371,7 +387,6 @@ _EVENT_ANALYSIS_INSTRUCTIONS = "\n".join(
         "body concise/no extra numbers;action monitor-only/no trade;news IDs only n.i.",
     )
 )
-
 
 def _event_analysis_percent(value: object) -> object:
     """Bound model-visible percent precision without erasing a non-zero sign."""
@@ -515,11 +530,13 @@ async def ask_event_significance_raw(input_payload: dict, *, schema_check=None) 
 
 
 def _event_analysis_prompt_payload(input_payload: dict) -> dict:
-    """Return the compact semantic model view without runtime or repeated static fields."""
+    """Return the grounded one-stage Event Analysis model view."""
     market = input_payload.get("market")
     market = market if isinstance(market, dict) else {}
     previous_alert = input_payload.get("previous_event_alert")
     previous_alert = previous_alert if isinstance(previous_alert, dict) else {}
+    recent_counts = input_payload.get("recent_event_counts")
+    recent_counts = recent_counts if isinstance(recent_counts, dict) else {}
     news_items = input_payload.get("news")
     news_items = news_items if isinstance(news_items, list) else []
     snapshots = market.get("snapshots")
@@ -555,20 +572,29 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
         "m": {
             "s": compact_snapshots,
             "w": market.get("analysed_window_minutes"),
+            "c30": _event_analysis_percent(market.get("chg30m_percent")),
+            "c60": _event_analysis_percent(market.get("chg1h_percent")),
             "cw": _event_analysis_percent(market.get("chg_window_percent")),
             "c24": _event_analysis_percent(market.get("chg24h_percent")),
             "cl": _event_analysis_percent(market.get("chg_since_msg_percent")),
+            "pw": _event_analysis_percent(market.get("relative_window_percentile_30d")),
+            "p24": _event_analysis_percent(market.get("relative_24h_percentile_30d")),
         },
         "n": compact_news,
     }
     if previous_alert:
         payload["prev"] = {
+            "min": previous_alert.get("age_minutes"),
             "k": previous_alert.get("canonical_event_key"),
             "f": previous_alert.get("semantic_family"),
             "cw": _event_analysis_percent(previous_alert.get("analysed_window_move")),
         }
+    if recent_counts:
+        payload["cnt"] = {
+            "h6": recent_counts.get("h6"),
+            "h24": recent_counts.get("h24"),
+        }
     return payload
-
 
 def build_event_analysis_prompt(input_payload: dict) -> str:
     payload = _json_dumps(_event_analysis_prompt_payload(input_payload))
