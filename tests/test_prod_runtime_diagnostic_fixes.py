@@ -18,10 +18,12 @@ def test_significance_prompt_defaults_to_no_alert_and_requires_new_significance(
     }
     prompt = ai_agent_groq.build_event_significance_prompt(payload).lower()
     assert "default=>no alert" in prompt
-    assert "materiality first" in prompt
-    assert "24h context cannot upgrade" in prompt
-    assert "recent alerts only reduce novelty" in prompt
-    assert "news cannot upgrade routine market action" in prompt
+    assert "q1 materiality" in prompt
+    assert "q2 novelty" in prompt
+    assert "q3 should_alert" in prompt
+    assert "large c24/p24" in prompt
+    assert "previous/recent events can only reduce novelty" in prompt
+    assert "only after q1/q2/q3 choose reason_code" in prompt
     assert "no fixed numeric cutoff" in prompt
 
 
