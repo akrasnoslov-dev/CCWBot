@@ -269,8 +269,10 @@ installation; never assume the live script matches the GitHub PR.
 
 - Requires root, fixed origin, clean main checkout, and root-owned,
   non-group/other-writable, non-symlink trusted paths: /opt, repository,
-  .git and its config, scripts/backup_postgres.sh, Dockerfile and Compose.
+  .git and its config, scripts/backup_postgres.sh, Dockerfile, Compose,
+  the installed /usr/local/bin/ccwbot-deploy-safe and its /usr ancestry.
   Keep all ancestors and descendants inaccessible for writes by the deploy user.
+  /opt/backups must be root-owned, non-symlinked and not writable by others.
 - Root-controlled /run and a root-owned 0700 directory
   /run/ccwbot-deploy-safe.lock hold the flock on a directory descriptor.
   No predictable writable /run/lock file is created or truncated.
@@ -307,7 +309,7 @@ PR #301 does not grant approval to execute these commands.
     git rev-parse HEAD
     bash -n scripts/ccwbot-deploy-safe.sh
     sha256sum scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
-    stat -c '%u %a %n' /opt /opt/CCWBot /opt/CCWBot/.git /opt/CCWBot/.git/config /opt/CCWBot/scripts /opt/CCWBot/scripts/backup_postgres.sh /opt/CCWBot/docker-compose.yml /opt/CCWBot/Dockerfile /run
+    stat -c '%u %a %n' /usr /usr/local /usr/local/bin /usr/local/bin/ccwbot-deploy-safe /opt /opt/backups /opt/CCWBot /opt/CCWBot/.git /opt/CCWBot/.git/config /opt/CCWBot/scripts /opt/CCWBot/scripts/backup_postgres.sh /opt/CCWBot/docker-compose.yml /opt/CCWBot/Dockerfile /run
     install -o root -g root -m 755 scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
     install -o root -g root -m 440 scripts/ccwbot-deploy.sudoers /etc/sudoers.d/ccwbot-deploy.tmp
     visudo -cf /etc/sudoers.d/ccwbot-deploy.tmp
