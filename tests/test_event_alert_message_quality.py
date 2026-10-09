@@ -48,7 +48,7 @@ def test_short_window_pace_is_a_provable_snapshot_relationship(
     ("overrides", "invalid_reason"),
     [
         ({"chg1h_percent": None}, "missing hour"),
-        ({"chg30m_percent": -1}, "opposite 30m direction"),
+        ({"chg30m_percent": 1}, "opposite 30m direction"),
         ({"analysed_window_minutes": 30}, "short analysed window"),
         ({"chg30m_percent": "NaN"}, "invalid number"),
         ({"snapshots": []}, "missing snapshots"),
