@@ -161,11 +161,17 @@ def _current_status(evidence: dict[str, Any]) -> list[str]:
     services = [item for item in (docker.get("services") or []) if isinstance(item, dict)]
     service_summary = "not available"
     if services:
+        # Docker evidence uses sanitized is_running / running_state / health, not
+        # the raw Compose Status/State keys (nor a per-service "status" field).
         unhealthy = sum(
             1
             for item in services
-            if str(item.get("status") or item.get("state") or "").lower()
-            not in {"running", "healthy", "ok", "up"}
+            if (
+                item.get("is_running") is False
+                or (item.get("is_running") is None
+                    and str(item.get("running_state") or "").lower() != "running")
+                or str(item.get("health") or "").lower() in {"unhealthy", "starting"}
+            )
         )
         service_summary = f"{len(services)} services, {unhealthy} non-healthy"
     return [
@@ -218,8 +224,19 @@ def _key_metrics(evidence: dict[str, Any]) -> list[str]:
 
 def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     quality = _payload(evidence, "evidence/db/alert_quality.json")
+    if not quality:
+        return {
+            "lines": ["- Alert-quality evidence unavailable."],
+            "issue_count": 0,
+            "severe_count": 0,
+            "needs_evidence": True,
+        }
     issues = [item for item in (quality.get("issues") or []) if isinstance(item, dict)]
     total = _int(quality.get("total_event_alert_deliveries"))
+    sampled_attempts = _int(quality.get("sampled_event_alert_attempts"))
+    non_sent = _int(quality.get("sampled_non_sent_event_alerts"))
+    funnel = _query_row(evidence, "delivery_funnel")
+    full_sent = _int(funnel.get("telegram_delivered")) if funnel else None
     grouped: dict[str, int] = {}
     severe_count = 0
     severe_names = {"contains_n_a", "contains_unknown", "contains_unavailable", "contains_null"}
@@ -232,10 +249,22 @@ def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     if not issues:
         lines = ["- No alert-quality issue groups in collected evidence."]
     else:
-        lines = [f"- Event Alert deliveries: {total}", "- Issue groups:"]
+        lines = ["- Issue groups (sampled sent deliveries only):"]
         ordered = sorted(grouped.items(), key=lambda pair: (-pair[1], pair[0]))
         for name, count in ordered[:MAX_ALERT_QUALITY_ISSUES]:
             lines.append(f"  - `{name}`: {count} ({_pct(count, total)})")
+    if full_sent is not None:
+        lines.insert(
+            0,
+            f"- Sampled sent Event Alert deliveries: {total} of {full_sent} "
+            f"(full-period sent; {max(full_sent - total, 0)} outside sample)."
+        )
+    else:
+        lines.insert(0, f"- Sampled sent Event Alert deliveries: {total} (full total unavailable).")
+    if sampled_attempts or non_sent:
+        lines.insert(
+            1, f"- Sampled attempts: {sampled_attempts}; excluded non-sent: {non_sent}."
+        )
     return {
         "lines": lines,
         "issue_count": sum(grouped.values()),
