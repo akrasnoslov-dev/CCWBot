@@ -30,7 +30,29 @@ _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
 _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
     r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
     r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
-    r"accelerat\w*|decelerat\w*|faster|slower)\b"
+    r"accelerat\w*|decelerat\w*|faster|slower|percentiles?|rare|unprecedented|"
+    r"record|historic|ath)\b"
+)
+# This only applies to unstructured Render prose, not to deterministic fallbacks.
+# A market relationship may be paraphrased, but an extra company, news event,
+# metric, or invented mechanism is not part of the validated evidence contract.
+_SAFE_MARKET_CONTEXT_WORDS = frozenset(
+    """
+    a an the this that these those and or but with within against while of to from
+    in on for as by than into across through toward towards back rather not still
+    is are was were be been being has have had may might can could only
+    supplied available observed latest recent earlier previous current next
+    snapshot snapshots path paths step steps sequence sequences price market
+    move moved moves movement change changes direction directional trend trends
+    trajectory trajectories short term broader hour day window
+    positive negative persistent persistence persist persists consistent
+    aligning alignment align aligns aligned diverge diverges divergent divergence
+    reversal reverses reverse reversing reversed turn turning turned
+    continues continue continuation strength stronger weakness weaker
+    lower higher downward upward up down rising falling rise fall
+    same opposite shows show showing indicates indicate suggesting suggests
+    compared relative part some wider overall remains remained
+    """.split()
 )
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _PERCENT_VALUE_RE = re.compile(
@@ -159,7 +181,10 @@ def _is_safe_llm_situation(
     *,
     market_data: dict,
 ) -> bool:
-    return _is_safe_structured_market_interpretation(value, market_data)
+    words = re.findall(r"[a-z]+", value.lower())
+    return bool(words) and all(
+        word in _SAFE_MARKET_CONTEXT_WORDS for word in words
+    ) and _is_safe_structured_market_interpretation(value, market_data)
 
 
 def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> bool:
