@@ -22,7 +22,15 @@ _UNSUPPORTED_MARKET_CLAIM_RE = re.compile(
     r"whales?|on[ -]?chain)\b"
 )
 _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
-    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after)\b"
+    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after|following|"
+    r"triggered|sparked|attributed to)\b"
+)
+# Unstructured Render prose cannot establish a catalyst, a new piece of news, or
+# acceleration. Such claims are replaced by context derived from market evidence.
+_UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
+    r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
+    r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
+    r"accelerat\w*|decelerat\w*|faster|slower)\b"
 )
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _PERCENT_VALUE_RE = re.compile(
@@ -117,8 +125,10 @@ def compact_event_alert_situation(
     cleaned = " ".join(str(value or "").split()).strip()
     if not cleaned:
         return fallback
-    if _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned) or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(
-        cleaned
+    if (
+        _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
+        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(cleaned)
+        or _UNSUPPORTED_EVENT_CLAIM_RE.search(cleaned)
     ):
         return fallback
     # Free-form LLM copy cannot establish unstructured facts (for example demand, sentiment,
@@ -340,6 +350,12 @@ def event_alert_presentation_fallback(
             "direction or continue diverging.",
         )
 
+    # Only describe acceleration/slowdown after both reliable overlapping windows
+    # and the primary market move agree in direction. This is explanation, not a gate.
+    pace_context = _short_window_pace_context(market_data)
+    if pace_context is not None:
+        return pace_context
+
     if has_persistence:
         return (
             "The move developed across the supplied snapshots rather than a single observation, "
@@ -381,6 +397,38 @@ def event_alert_presentation_fallback(
         "Watch the next short-term snapshots for continuation or a quick reversal of the "
         "current move.",
     )
+
+
+def _short_window_pace_context(market_data: dict) -> tuple[str, str] | None:
+    """Compare the latest 30-minute rate against the one-hour average, never significance."""
+    window = _decimal_market_value(market_data.get("analysed_window_minutes"))
+    change = _decimal_market_value(market_data.get("chg_window_percent"))
+    change_30m = _decimal_market_value(market_data.get("chg30m_percent"))
+    change_1h = _decimal_market_value(market_data.get("chg1h_percent"))
+    if (
+        window is None
+        or window < 60
+        or any(value is None or value == 0 for value in (change, change_30m, change_1h))
+    ):
+        return None
+    if not ((change > 0) == (change_30m > 0) == (change_1h > 0)):
+        return None
+    latest_rate = abs(change_30m) * 2
+    hour_rate = abs(change_1h)
+    if latest_rate > hour_rate:
+        return (
+            "The latest 30-minute change is steeper than the one-hour average in the same "
+            "direction, so the move has picked up pace.",
+            "Watch whether the next 30-minute observation keeps that faster pace or eases.",
+        )
+    if latest_rate < hour_rate:
+        return (
+            "The latest 30-minute change is slower than the one-hour average; "
+            "the pace of the move has eased.",
+            "Watch whether the next 30-minute observation slows further or resumes "
+            "the earlier pace.",
+        )
+    return None
 
 
 def _has_persistent_snapshot_direction(step_changes: list[Decimal]) -> bool:
