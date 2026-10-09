@@ -28,6 +28,10 @@ trusted_path() {
   (( (8#$mode & 0022) == 0 )) || fail "writable trusted path: $path"
 }
 trusted_path /opt dir
+trusted_path /usr dir
+trusted_path /usr/local dir
+trusted_path /usr/local/bin dir
+trusted_path /usr/local/bin/ccwbot-deploy-safe file
 trusted_path "$ROOT" dir
 trusted_path "$ROOT/.git" dir
 trusted_path "$ROOT/.git/config" file
@@ -71,6 +75,11 @@ clean_main() {
 }
 backup() {
   local before path epoch
+  [ ! -L /opt/backups ] || fail "symlinked backup directory"
+  if [ ! -e /opt/backups ]; then
+    /usr/bin/mkdir -m 700 -- /opt/backups || fail "cannot create backup directory"
+  fi
+  trusted_path /opt/backups dir
   before=$(/usr/bin/date -u +%s)
   "$ROOT/scripts/backup_postgres.sh" || fail "backup command failed"
   path=$(/usr/bin/find /opt/backups -maxdepth 1 -type f -name 'ccwbot-postgres-*.sql.gz' -printf '%T@ %p\n' | /usr/bin/sort -rn | /usr/bin/sed -n '1p' | /usr/bin/cut -d' ' -f2-)
