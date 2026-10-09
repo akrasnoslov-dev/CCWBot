@@ -3775,15 +3775,26 @@ async def _create_event_analysis_decision(
     except Exception as error:
         # The router already tried all configured providers. Do not call another LLM:
         # replace only exhausted invalid output with a backend-derived neutral render.
-        if isinstance(error, (AISchemaValidationError, AIInvalidJsonError)):
-            candidate = _verified_event_alert_render_fallback(input_payload)
-            try:
-                _render_schema_check(candidate)
-            except AISchemaValidationError as fallback_error:
-                error = fallback_error
-            else:
-                render_parsed = candidate
-                render_fallback_reason = classify_ai_error_reason(error)
+        if (
+            isinstance(error, (AISchemaValidationError, AIInvalidJsonError))
+            and getattr(error, "_llm_all_exhausted_attempts_invalid_output", False)
+        ):
+            # Invalid-output recovery is presentation only. An otherwise flat
+            # market with available news cannot become an Event Alert merely
+            # because neutral fallback drops related_news_ids, disabling the
+            # downstream news-only rejection.
+            if not (
+                candidate_news_ids
+                and not _has_non_flat_analysed_market_context(input_payload)
+            ):
+                candidate = _verified_event_alert_render_fallback(input_payload)
+                try:
+                    _render_schema_check(candidate)
+                except AISchemaValidationError as fallback_error:
+                    error = fallback_error
+                else:
+                    render_parsed = candidate
+                    render_fallback_reason = classify_ai_error_reason(error)
         if render_fallback_reason is None:
             reason = classify_ai_error_reason(error)
             await _save_event_alert_render_outcome(

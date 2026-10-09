@@ -746,10 +746,12 @@ async def test_exhausted_factual_render_failure_uses_safe_fallback(monkeypatch):
             )
         ),
     )
+    fully_invalid = alerts.AISchemaValidationError("window market claim is unavailable")
+    fully_invalid._llm_all_exhausted_attempts_invalid_output = True
     monkeypatch.setattr(
         alerts,
         "ask_event_alert_render_raw",
-        AsyncMock(side_effect=alerts.AISchemaValidationError("window market claim is unavailable")),
+        AsyncMock(side_effect=fully_invalid),
     )
     monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", AsyncMock())
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=321))

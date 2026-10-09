@@ -143,18 +143,22 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
 
 `event_analysis` is the compact always-on significance decision. `event_alert_render` runs only
-after a positive significance decision and returns only four presentation fields:
-`message_body`, `related_news_ids`, `possible_action`, and `urgency`. The backend owns event
-identity, the deterministic market-fact title, `symbol`, `should_alert=true`,
-significance `confidence`, and `reason_for_no_alert=null` before running the existing full
-factual/news validation. Unknown or duplicate render-selected news ids are discarded rather than
-turning presentation noise into a terminal Event Alert failure.
+after a positive significance decision and returns three presentation fields:
+`message_body`, `related_news_ids`, and `possible_action`. The backend controls `urgency`
+(`normal`), event identity, the deterministic market-fact title, `symbol`,
+`should_alert=true`, significance `confidence`, and `reason_for_no_alert=null`
+before running the full factual/news validation. Unknown or duplicate
+render-selected news IDs are discarded.
 
-If all four render LLM attempts are exhausted because of invalid JSON/schema output,
-rate-limit/backoff state, provider failure, or unavailable configuration, the render operation
-fails. No deterministic/non-LLM presentation is generated and no Event Alert is delivered from
-that failed render. Provider-attempt failures remain in `llm_usage_logs`, and the render logical
-operation is recorded as failed for reconciliation.
+When every configured render attempt fails exclusively with invalid JSON or invalid schema,
+and no attempt fails on transport/rate-limit/backoff or is skipped by a circuit breaker,
+the backend may generate a neutral deterministic message from verified market context.
+Recovery is still subject to the factual validator, and flat, news-led contexts
+cannot bypass the news-only safeguard by dropping related_news_ids.
+The logical Render outcome records success with the sanitized reason
+`deterministic_fallback_from_*` while invalid provider attempts remain recorded
+in `llm_usage_logs`. Mixed failure chains, unavailable providers, or an invalid
+deterministic fallback remain terminal. No extra LLM call is made for recovery.
 
 The render operation has its own logical operation id and sanitized terminal outcome. Significance
 and rendering therefore remain separately attributable: Event Analysis uses its normal
