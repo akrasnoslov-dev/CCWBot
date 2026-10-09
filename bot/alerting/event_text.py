@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
+from math import gcd
 
 _PERCENT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?\s*%")
 _MOVE_RE = re.compile(
@@ -471,21 +473,39 @@ def _short_window_pace_context(market_data: dict) -> tuple[str, str] | None:
     # their actual minute offsets rather than assumed to be 30m or 60m.
     if recent_minute != 0 or old_minute >= middle_minute or middle_minute >= recent_minute:
         return None
-    earlier_rate = ((middle_price / old_price) - 1) / (middle_minute - old_minute)
-    latest_rate = ((recent_price / middle_price) - 1) / (recent_minute - middle_minute)
+    earlier_minutes = middle_minute - old_minute
+    latest_minutes = recent_minute - middle_minute
     if (
-        earlier_rate == 0
-        or latest_rate == 0
-        or not ((earlier_rate > 0) == (latest_rate > 0) == (primary > 0))
+        old_minute < -window
+        or earlier_minutes != int(earlier_minutes)
+        or latest_minutes != int(latest_minutes)
     ):
         return None
-    if abs(latest_rate) > abs(earlier_rate):
+    earlier_factor = Fraction(middle_price) / Fraction(old_price)
+    latest_factor = Fraction(recent_price) / Fraction(middle_price)
+    if (
+        earlier_factor == 1
+        or latest_factor == 1
+        or not ((earlier_factor > 1) == (latest_factor > 1) == (primary > 0))
+    ):
+        return None
+    # Compare compounded factors over the *same* duration, exactly. Dividing
+    # ordinary percent changes by elapsed minutes is inaccurate when they compound.
+    divisor = gcd(int(earlier_minutes), int(latest_minutes))
+    earlier_scaled = earlier_factor ** (int(latest_minutes) // divisor)
+    latest_scaled = latest_factor ** (int(earlier_minutes) // divisor)
+    if earlier_scaled == latest_scaled:
+        return None
+    latest_faster = (
+        latest_scaled > earlier_scaled if primary > 0 else latest_scaled < earlier_scaled
+    )
+    if latest_faster:
         return (
             "The latest observed price step is steeper per minute than the preceding "
             "snapshot interval, so the move has picked up pace.",
             "Watch whether the next observed interval maintains that pace or starts to ease.",
         )
-    if abs(latest_rate) < abs(earlier_rate):
+    if not latest_faster:
         return (
             "The latest observed price step is slower per minute than the preceding "
             "snapshot interval, so the move has eased.",
