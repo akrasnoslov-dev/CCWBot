@@ -85,6 +85,8 @@ def test_latest_snapshot_countermove_takes_priority_over_hourly_pace():
         "Rumors of an exchange hack accompany the broader 24-hour alignment.",
         "Following a new listing, the short-term move aligns with the broader 24-hour trend.",
         "Momentum accelerated on rising volume; the move aligns with the broader 24-hour trend.",
+        "BlackRock filed a new trust; the move aligns with the broader 24-hour direction.",
+        "An unnamed central bank intervened while the 24-hour direction remains aligned.",
     ],
 )
 def test_unverified_news_catalysts_and_unverified_market_metrics_never_survive(claim):
