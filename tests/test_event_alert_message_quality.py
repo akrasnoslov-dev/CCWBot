@@ -187,7 +187,8 @@ def test_countermovement_cannot_be_described_as_persistent_direction():
 
 def test_short_term_polarity_cannot_be_borrowed_from_opposite_24h_trend():
     situation = compact_event_alert_situation(
-        "The supplied snapshots show positive short-term movement against the broader 24-hour direction.",
+        "The supplied snapshots show positive short-term movement against the "
+        "broader 24-hour direction.",
         significance_reason=None,
         market_data={
             "chg_window_percent": Decimal("-2"),
