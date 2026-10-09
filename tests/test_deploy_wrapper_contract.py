@@ -248,6 +248,23 @@ esac
         self.assertFalse(self.upcount.exists())
         self.assertFalse((self.state / "last-deploy").exists())
 
+    def test_failed_backup_cleans_staged_record(self):
+        result = self.run_action("deploy", env={"TEST_BACKUP_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.head.read_text(), OLD)
+        self.assertEqual(list(self.state.glob("last-deploy.*")), [])
+
+    def test_symlinked_state_directory_fails_before_backup(self):
+        self.state.rmdir()
+        other = self.base / "state-target"
+        other.mkdir(mode=0o700)
+        self.state.symlink_to(other, target_is_directory=True)
+        result = self.run_action("deploy")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlinked state directory", result.stderr)
+        self.assertEqual(self.head.read_text(), OLD)
+        self.assertFalse(self.upcount.exists())
+
     def test_rollback_failure_restores_current_revision_and_record(self):
         self.head.write_text(NEW)
         record = self.record()
