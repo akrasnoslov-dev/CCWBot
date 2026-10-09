@@ -63,11 +63,15 @@ class ContractTests(unittest.TestCase):
             target = Path(td) / "link"
             target.symlink_to(path)
             command = "fail() { echo \"$*\" >&2; exit 2; }\n" + guard + "\ntrusted_path \"$1\" file"
-            bad_link = subprocess.run(["bash", "-c", command, "bash", str(target)], capture_output=True, text=True)
+            bad_link = subprocess.run(
+                ["bash", "-c", command, "bash", str(target)], capture_output=True, text=True
+            )
             self.assertNotEqual(bad_link.returncode, 0)
             self.assertIn("symlinked", bad_link.stderr)
             path.chmod(0o666)
-            bad_mode = subprocess.run(["bash", "-c", command, "bash", str(path)], capture_output=True, text=True)
+            bad_mode = subprocess.run(
+                ["bash", "-c", command, "bash", str(path)], capture_output=True, text=True
+            )
             self.assertNotEqual(bad_mode.returncode, 0)
             self.assertIn("writable", bad_mode.stderr)
 
@@ -153,10 +157,13 @@ esac
         }.items():
             source = re.sub(rf"(?m)^{key}=.*$", f"{key}={shlex.quote(str(val))}", source, count=1)
         source = source.replace('[ "$(/usr/bin/id -u)" = 0 ]', '[ 0 = 0 ]')
-        source = re.sub(r"(?ms)^trusted_path\(\) \{.*?^\}", "trusted_path() { :; }", source, count=1)
+        source = re.sub(
+            r"(?ms)^trusted_path\(\) \{.*?^\}", "trusted_path() { :; }", source, count=1
+        )
         source = re.sub(
             r"(?ms)^backup\(\) \{.*?^\}",
-            'backup() { [ "$TEST_BACKUP_FAIL" != 1 ] || fail "backup command failed"; echo verified_backup=mock; }',
+            ('backup() { [ "$TEST_BACKUP_FAIL" != 1 ] || fail "backup command failed"; '
+             'echo verified_backup=mock; }'),
             source, count=1,
         )
         source = source.replace("/usr/bin/seq 1 15", "/usr/bin/seq 1 2")
@@ -172,7 +179,9 @@ esac
 
     def set_port(self, port, host="127.0.0.1"):
         self.compose_json.write_text(json.dumps({
-            "services": {"bot": {"ports": [{"host_ip": host, "protocol": "tcp", "published": str(port)}]}}
+            "services": {
+                "bot": {"ports": [{"host_ip": host, "protocol": "tcp", "published": str(port)}]}
+            }
         }))
 
     def run_action(self, *args, env=None):
