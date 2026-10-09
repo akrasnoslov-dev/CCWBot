@@ -164,3 +164,41 @@ def test_full_event_alert_keeps_shared_message_structure_and_disclaimer():
     assert text.count("Not financial advice.") == 1
     situation = text.split("Situation:\n", 1)[1].split("\n\nPossible action:", 1)[0]
     assert "%" not in situation
+
+
+def test_countermovement_cannot_be_described_as_persistent_direction():
+    situation = compact_event_alert_situation(
+        "The supplied snapshots show persistent short-term weakness against the broader direction.",
+        significance_reason=None,
+        market_data={
+            "chg_window_percent": Decimal("-2"),
+            "chg24h_percent": Decimal("2"),
+            "snapshots": [
+                {"m": -180, "p": Decimal("100")},
+                {"m": -90, "p": Decimal("103")},
+                {"m": 0, "p": Decimal("98")},
+            ],
+        },
+        related_news=[],
+    )
+    assert "persistent" not in situation
+    assert "reverses part of the earlier path" in situation
+
+
+def test_short_term_polarity_cannot_be_borrowed_from_opposite_24h_trend():
+    situation = compact_event_alert_situation(
+        "The supplied snapshots show positive short-term movement against the broader 24-hour direction.",
+        significance_reason=None,
+        market_data={
+            "chg_window_percent": Decimal("-2"),
+            "chg24h_percent": Decimal("2"),
+            "snapshots": [
+                {"m": -180, "p": Decimal("100")},
+                {"m": -90, "p": Decimal("99")},
+                {"m": 0, "p": Decimal("98")},
+            ],
+        },
+        related_news=[],
+    )
+    assert "positive short-term" not in situation
+    assert "short-term snapshots" in situation
