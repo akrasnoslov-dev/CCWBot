@@ -661,3 +661,34 @@ def test_safe_error_message_redacts_secret_fragments():
     assert "sk-abcd1234efgh" not in msg
     assert "Bearer zzz9999" not in msg
     assert "[redacted]" in msg
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("first_behavior", "all_invalid"), [
+    (asyncio.TimeoutError(), False),
+    (_result("groq"), True),
+])
+async def test_invalid_output_exhaustion_marks_only_pure_invalid_chains(
+    monkeypatch, first_behavior, all_invalid
+):
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    router = LLMRouter(registry={
+        "groq": FakeProvider("groq", first_behavior),
+        "gemini": FakeProvider("gemini", _result("gemini")),
+    })
+
+    async def reject(_result):
+        raise AISchemaValidationError("untrusted generated market facts")
+
+    with pytest.raises(AISchemaValidationError) as caught:
+        await router.chat_completion(
+            call_type="event_alert_render",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=300,
+            response_format=None,
+            validate_response=reject,
+        )
+
+    assert getattr(
+        caught.value, "_llm_all_exhausted_attempts_invalid_output", False
+    ) is all_invalid

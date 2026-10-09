@@ -108,6 +108,8 @@ async def test_invalid_provider_chain_exhaustion_uses_validated_evidence_fallbac
         "materiality": "material", "novelty": "new", "reason_code": "unusual_move",
     }
     significance_llm = AsyncMock(return_value=("significance-json", significance))
+    # The mocked router exception must represent a fully invalid-output chain.
+    render_error._llm_all_exhausted_attempts_invalid_output = True
     render_llm = AsyncMock(side_effect=render_error)
     render_outcome = AsyncMock()
     save_analysis = AsyncMock(return_value=400)
@@ -183,3 +185,60 @@ async def test_untrusted_deterministic_fallback_cannot_bypass_validation(monkeyp
     assert render_outcome.await_args.kwargs["status"] == "llm_error"
     assert analysis.await_args.kwargs["status"] == "llm_error"
     assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+
+
+@pytest.mark.asyncio
+async def test_mixed_transport_and_invalid_output_does_not_claim_success(monkeypatch):
+    significance = {
+        "symbol": "BTC", "should_alert": True, "confidence": "high",
+        "materiality": "material", "novelty": "new", "reason_code": "unusual_move",
+    }
+    mixed_error = AISchemaValidationError("invalid_json_from_one_provider")
+    mixed_error._llm_all_exhausted_attempts_invalid_output = False
+    monkeypatch.setattr(alerts, "ask_event_significance_raw",
+                        AsyncMock(return_value=("significance", significance)))
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw",
+                        AsyncMock(side_effect=mixed_error))
+    render_outcome = AsyncMock()
+    save_analysis = AsyncMock(return_value=401)
+    delivery_outcome = AsyncMock()
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+    decision, analysis_id = await alerts._create_event_analysis_decision(_payload())
+    assert decision is None and analysis_id is None
+    assert render_outcome.await_args.kwargs["status"] == "llm_error"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+
+
+@pytest.mark.asyncio
+async def test_flat_news_led_input_cannot_be_recovered_as_market_alert(monkeypatch):
+    significance = {
+        "symbol": "BTC", "should_alert": True, "confidence": "high",
+        "materiality": "material", "novelty": "new",
+        "reason_code": "market_news_alignment",
+    }
+    render_error = AISchemaValidationError("invalid_json")
+    render_error._llm_all_exhausted_attempts_invalid_output = True
+    payload = _payload()
+    payload["market"].update({
+        "chg_window_percent": 0.0, "chg_since_msg_percent": 0.0,
+        "snapshots": [{"m": -180, "p": 105.0}, {"m": 0, "p": 105.0}],
+    })
+    payload["news"] = [{"news_id": "n1", "title": "ETF filing", "source": "Example"}]
+    monkeypatch.setattr(alerts, "ask_event_significance_raw",
+                        AsyncMock(return_value=("significance", significance)))
+    monkeypatch.setattr(alerts, "ask_event_alert_render_raw",
+                        AsyncMock(side_effect=render_error))
+    render_outcome = AsyncMock()
+    save_analysis = AsyncMock(return_value=402)
+    delivery_outcome = AsyncMock()
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
+    assert decision is None and analysis_id is None
+    assert render_outcome.await_args.kwargs["status"] != "success"
+    assert delivery_outcome.await_args.kwargs["status"] != alerts.OUTCOME_ALLOWED

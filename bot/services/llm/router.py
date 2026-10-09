@@ -381,9 +381,19 @@ class LLMRouter:
 
         # Choose the exception that matches existing caller handling.
         if invalid_output_error is not None:
-            # Re-raise the last invalid-output error so callers keep their existing
-            # AIInvalidJsonError / AISchemaValidationError terminal handling
-            # (deterministic fallbacks for reports, failed-analysis records for events).
+            # Preserve the existing exception contract for other call types, but expose
+            # whether every attempted provider failed on invalid output. Render may
+            # recover only in this case; mixed transport, rate-limit, backoff, and
+            # open-breaker exhaustion must remain terminal.
+            invalid_output_reasons = {"invalid_json", "schema_validation_failed"}
+            invalid_output_error._llm_all_exhausted_attempts_invalid_output = (
+                bool(failure_categories)
+                and not breaker_skipped
+                and all(
+                    category.rsplit(":", 1)[-1] in invalid_output_reasons
+                    for category in failure_categories
+                )
+            )
             raise invalid_output_error
 
         only_pre_backoff = (
