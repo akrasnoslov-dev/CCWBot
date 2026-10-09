@@ -87,11 +87,13 @@ A mobile alert should answer three questions in this order without becoming a re
    in free-form situation prose.
 2. **Why does this move matter now?** The situation adds **one verified relationship**:
    a consistent snapshot path, a counter-move within that path, divergence/alignment with the
-   24-hour direction, or a faster/slower latest 30-minute pace relative to the same-direction
-   one-hour average. The 30m/1h comparison requires both valid observations, a matching
-   primary-move direction, and an analysed window of at least one hour. These are descriptive
-   comparisons **after** significance; none can create or suppress an alert. If nothing beyond
-   the analysed-window move is confirmed, say so instead of inventing novelty.
+   24-hour direction, or a faster/slower latest *observed snapshot interval* based on
+   actual elapsed minutes, not nominal 30m/1h lookbacks. Pace comparison requires three
+   valid time-ordered snapshots including a current observation, consistent signed
+   consecutive moves and a matching primary-move direction, plus corroborating 30m/1h
+   directional evidence and an analysed window of at least one hour. These relationships
+   describe a previously accepted event; they never create or suppress an alert. If nothing
+   beyond the analysed-window move is confirmed, say so instead of inventing novelty.
 3. **What is worth monitoring?** Name the next observation that could distinguish continuation,
    slowing, or counter-movement. Prefer a specific supplied time frame when justified; otherwise
    use a short, neutral conditional. Never give a trading instruction or generic risk-plan advice.
