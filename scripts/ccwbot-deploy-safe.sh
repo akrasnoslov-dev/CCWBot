@@ -2,7 +2,12 @@
 set -Eeuo pipefail
 umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
-unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT DOCKER_HOST DOCKER_CONTEXT COMPOSE_FILE COMPOSE_PROJECT_NAME CCWBOT_BACKUP_DIR CCWBOT_BACKUP_RETENTION_COUNT
+unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT DOCKER_HOST DOCKER_CONTEXT COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES CCWBOT_BACKUP_DIR CCWBOT_BACKUP_RETENTION_COUNT
+# Never execute repository-controlled Git hooks as root, even after permission drift.
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
+# Pin the existing production Compose project and file, including on failure recovery.
+export COMPOSE_PROJECT_NAME=ccwbot COMPOSE_FILE=/opt/CCWBot/docker-compose.yml
+export COMPOSE_PROFILES=
 ROOT=/opt/CCWBot
 STATE=/var/lib/ccwbot-deploy
 LOCK_DIR=/run/ccwbot-deploy-safe.lock
@@ -143,7 +148,7 @@ restore_after_failure() {
   local target=$1 operation=$2
   echo "ccwbot-deploy-safe: $operation failed; attempting to restore prior checkout" >&2
   "$GIT" reset --hard "$target" || fail "$operation failed; manual checkout recovery required"
-  if "$DOCKER" compose config -q && "$DOCKER" compose up -d --build && health_check; then
+  if "$DOCKER" compose config -q && "$DOCKER" compose up -d --build --remove-orphans && health_check; then
     fail "$operation failed; previous service restored; inspect before retrying"
   fi
   fail "$operation failed; automatic recovery failed; manual service recovery required"
@@ -198,7 +203,7 @@ case "$action" in
     "$GIT" merge-base --is-ancestor "$previous" "$deployed" || fail "rollback target is not ancestor"
     backup
     "$GIT" reset --hard "$previous" || fail "rollback checkout failed; manual recovery required"
-    if ! { "$DOCKER" compose config -q && "$DOCKER" compose up -d --build && health_check; }; then
+    if ! { "$DOCKER" compose config -q && "$DOCKER" compose up -d --build --remove-orphans && health_check; }; then
       restore_after_failure "$deployed" "rollback"
     fi
     /usr/bin/rm -f -- "$STATE/last-deploy"
