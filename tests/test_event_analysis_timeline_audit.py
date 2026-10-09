@@ -57,3 +57,26 @@ def test_audit_rejects_unsanitized_or_incompatible_structure():
         audit({"raw": "data"})
     with pytest.raises(ValueError, match="sanitized schema"):
         audit([{"symbol": "SOL"}])
+
+
+def test_audit_targets_countertrend_and_new_negative_episodes():
+    rows = [
+        _row("GRAM", "2026-10-09T08:00:00Z", True, -2.0, 96),
+        _row("GRAM", "2026-10-09T08:30:00Z", False, 1.8, 86),
+        _row("GRAM", "2026-10-09T09:00:00Z", False, -2.2, 97),
+        _row("ETH", "2026-10-09T08:30:00Z", False, -4.5, 99.9),
+    ]
+    report = audit(rows)
+    gram = report["by_symbol"]["GRAM"]
+    assert gram["countertrend_negative_count"] == 1
+    assert gram["no_recent_positive_negative_count"] == 0
+    assert any(
+        "countertrend_negative" in item["review_reasons"] for item in gram["selected_for_review"]
+    )
+    eth = report["by_symbol"]["ETH"]
+    assert eth["no_recent_positive_negative_count"] == 1
+    assert any(
+        "no_recent_positive_negative" in item["review_reasons"]
+        for item in eth["selected_for_review"]
+    )
+    assert report["false_negative_count"] is None

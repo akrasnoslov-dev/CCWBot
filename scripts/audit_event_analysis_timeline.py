@@ -75,11 +75,50 @@ def audit(rows: list[dict], *, show_refs: bool = False) -> dict:
                 reverse=reverse,
             )[:3]
 
+        def latest_positive_before(row, candidates=positive):
+            earlier = [
+                candidate
+                for candidate in candidates
+                if candidate["analysis_created_at"] < row["analysis_created_at"]
+            ]
+            return earlier[-1] if earlier else None
+
+        def positive_age_minutes(row, previous):
+            if previous is None:
+                return None
+            return (
+                _time(row["analysis_created_at"]) - _time(previous["analysis_created_at"])
+            ).total_seconds() / 60
+
+        countertrend_negatives = []
+        new_episode_negatives = []
+        for negative_row in negative:
+            prior = latest_positive_before(negative_row)
+            age = positive_age_minutes(negative_row, prior)
+            if prior is None or (age is not None and age > 240):
+                new_episode_negatives.append(negative_row)
+            elif (
+                _number(negative_row.get("analysed_window_change_percent")) is not None
+                and _number(prior.get("analysed_window_change_percent")) is not None
+                and _number(negative_row["analysed_window_change_percent"])
+                * _number(prior["analysed_window_change_percent"])
+                < 0
+            ):
+                countertrend_negatives.append(negative_row)
+
         selection = []
-        seen = set()
+        seen = {}
         buckets = (
             ("largest_negative", ranking(negative, "analysed_window_change_percent")),
             ("rarest_negative", ranking(negative, "relative_window_percentile_30d")),
+            (
+                "countertrend_negative",
+                ranking(countertrend_negatives, "relative_window_percentile_30d"),
+            ),
+            (
+                "no_recent_positive_negative",
+                ranking(new_episode_negatives, "relative_window_percentile_30d"),
+            ),
             (
                 "smallest_positive",
                 ranking(positive, "analysed_window_change_percent", reverse=False),
@@ -90,8 +129,8 @@ def audit(rows: list[dict], *, show_refs: bool = False) -> dict:
             for row in candidates:
                 identity = row.get("analysis_ref") or row["analysis_created_at"]
                 if identity in seen:
+                    seen[identity]["review_reasons"].append(kind)
                     continue
-                seen.add(identity)
                 earlier = [
                     r for r in positive if r["analysis_created_at"] < row["analysis_created_at"]
                 ]
@@ -106,6 +145,7 @@ def audit(rows: list[dict], *, show_refs: bool = False) -> dict:
                 )
                 chosen = {
                     "selection_reason": kind,
+                    "review_reasons": [kind],
                     "recorded_should_alert": row["should_alert"],
                     "analysed_window_change_percent": _number(
                         row["analysed_window_change_percent"]
@@ -123,11 +163,14 @@ def audit(rows: list[dict], *, show_refs: bool = False) -> dict:
                 }
                 if show_refs:
                     chosen["bundle_local_analysis_ref"] = row.get("analysis_ref")
+                seen[identity] = chosen
                 selection.append(chosen)
         result["by_symbol"][symbol] = {
             "total": len(coin),
             "positive": len(positive),
             "negative": len(negative),
+            "countertrend_negative_count": len(countertrend_negatives),
+            "no_recent_positive_negative_count": len(new_episode_negatives),
             "selected_for_review": selection,
         }
     result["completed_decisions"] = sum(g["total"] for g in result["by_symbol"].values())
