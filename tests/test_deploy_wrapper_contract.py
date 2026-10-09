@@ -1,15 +1,11 @@
 """Least-privilege deploy contract and isolated, production-free behavior simulations."""
 
-import contextlib
 import http.server
 import json
 import os
 import re
 import shlex
-import shutil
-import socketserver
 import subprocess
-import sys
 import tempfile
 import threading
 import unittest
