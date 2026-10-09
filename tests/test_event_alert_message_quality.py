@@ -252,3 +252,24 @@ def test_short_term_polarity_cannot_be_borrowed_from_opposite_24h_trend():
     )
     assert "positive short-term" not in situation
     assert "short-term snapshots" in situation
+
+
+def test_generic_snapshot_consistency_requires_all_steps_to_agree():
+    market = {
+        "chg_window_percent": Decimal("-10"),
+        "snapshots": [
+            {"m": -180, "p": Decimal("100")},
+            {"m": -120, "p": Decimal("110")},
+            {"m": -60, "p": Decimal("100")},
+            {"m": 0, "p": Decimal("90")},
+        ],
+    }
+    situation = compact_event_alert_situation(
+        "The supplied snapshots show consistent movement in the same direction.",
+        significance_reason=None,
+        market_data=market,
+        related_news=[],
+    )
+    fallback, _ = event_alert_presentation_fallback(market, [])
+    assert situation == fallback
+    assert "consistent movement" not in situation
