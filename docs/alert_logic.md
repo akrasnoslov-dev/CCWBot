@@ -88,7 +88,8 @@ A mobile alert should answer three questions in this order without becoming a re
 2. **Why does this move matter now?** The situation adds **one verified relationship**:
    a consistent snapshot path, a counter-move within that path, divergence/alignment with the
    24-hour direction, or a faster/slower latest *observed snapshot interval* based on
-   actual elapsed minutes, not nominal 30m/1h lookbacks. Pace comparison requires three
+   actual elapsed minutes and exactly comparable compounded rates, not nominal 30m/1h
+   lookbacks. Pace comparison requires three
    valid time-ordered snapshots including a current observation, consistent signed
    consecutive moves and a matching primary-move direction, plus corroborating 30m/1h
    directional evidence and an analysed window of at least one hour. These relationships
