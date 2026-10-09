@@ -458,7 +458,13 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
         row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
     )["delivery_members"]
     assert boundary_members == [
-        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": None, "status": "sent"}
+        {
+            "recipient_id": 900001,
+            "alert_id": 900003,
+            "outcome_id": None,
+            "status": "sent",
+            "sent_delivery_at": params["since"].isoformat(),
+        }
     ]
     await connection.execute(text("""
         INSERT INTO alert_delivery_outcomes (
@@ -474,7 +480,13 @@ async def _assert_malformed_numeric_context_is_safe(connection, params: dict[str
         row for row in boundary_rows if row["event_ai_analysis_id"] == 900003
     )["delivery_members"]
     assert boundary_members == [
-        {"recipient_id": 900001, "alert_id": 900003, "outcome_id": 900005, "status": "delivered"}
+        {
+            "recipient_id": 900001,
+            "alert_id": 900003,
+            "outcome_id": 900005,
+            "status": "delivered",
+            "sent_delivery_at": params["since"].isoformat(),
+        }
     ]
 
 

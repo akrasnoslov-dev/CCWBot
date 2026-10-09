@@ -380,6 +380,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         for row in _list_payload_items(suppression_payload, "suppression_groups")
         if _int(row.get("delivered_inside_cooldown_candidates")) > 0
     ]
+    cooldown_unverified = sum(
+        _int(row.get("unverified_sent_deliveries"))
+        for row in _list_payload_items(suppression_payload, "suppression_groups")
+    )
     repeated_alert_true_groups = [
         row
         for row in similar_alert_groups
@@ -616,11 +620,17 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             "cooldown_effectiveness_gap",
             "medium",
             ["evidence/db/backend_suppression_effectiveness.json"],
-            "triggered" if cooldown_gap_groups else "clear",
-            f"{len(cooldown_gap_groups)} semantic cooldown groups have delivered-inside-cooldown candidates",
+            "triggered" if cooldown_gap_groups
+            else "unknown" if cooldown_unverified else "clear",
+            (
+                f"{len(cooldown_gap_groups)} semantic cooldown groups have "
+                f"same-recipient delivered-inside-cooldown candidates; "
+                f"{cooldown_unverified} sent deliveries lack verified recipient/time evidence"
+            ),
             ["evidence/db/backend_suppression_effectiveness.json"],
             {
                 "groups": len(cooldown_gap_groups),
+                "unverified_sent_deliveries": cooldown_unverified,
                 "candidate_deliveries": sum(
                     _int(row.get("delivered_inside_cooldown_candidates"))
                     for row in cooldown_gap_groups

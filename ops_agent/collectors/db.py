@@ -122,18 +122,25 @@ delivery_candidates AS (
 delivery_rollup AS (
     SELECT
         a.rollup_event_ai_analysis_id,
-        count(*) AS delivery_count,
-        count(*) FILTER (WHERE a.status = 'sent') AS sent_delivery_count,
-        count(*) FILTER (
+        -- A delivery can have multiple decision outcomes: never multiply alerts
+        -- when joining alert_delivery_outcomes to collect semantic metadata.
+        count(DISTINCT a.id) AS delivery_count,
+        count(DISTINCT a.id) FILTER (WHERE a.status = 'sent') AS sent_delivery_count,
+        count(DISTINCT a.id) FILTER (
             WHERE a.status IN ('failed', 'retry_pending') OR a.final_failed_at IS NOT NULL
         ) AS failed_delivery_count,
         count(DISTINCT a.user_id) AS distinct_recipient_count,
+        count(DISTINCT a.user_id) FILTER (WHERE a.status = 'sent')
+            AS sent_distinct_recipient_count,
         min(a.created_at) AS first_delivery_at,
         max(a.created_at) AS last_delivery_at,
         (array_agg(a.alert_type ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_type,
         (array_agg(a.trigger_source ORDER BY a.created_at DESC, a.id DESC))[1] AS trigger_source,
-        (array_agg(a.status ORDER BY a.created_at DESC, a.id DESC))[1] AS status,
-        (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC))[1] AS alert_message,
+        CASE WHEN count(DISTINCT a.status) > 1 THEN 'mixed'
+             ELSE (array_agg(a.status ORDER BY a.created_at DESC, a.id DESC))[1]
+        END AS status,
+        (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC)
+            FILTER (WHERE a.status = 'sent'))[1] AS alert_message,
         (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
             AS alert_numeric_context,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
@@ -151,10 +158,17 @@ membership_candidates AS (
         ado.alert_id,
         ado.id AS outcome_id,
         ado.status,
+        sent_alert.created_at AS sent_delivery_at,
         ado.created_at
     FROM recent_analyses ra
     JOIN alert_delivery_outcomes ado
       ON ado.event_ai_analysis_id = ra.event_ai_analysis_id
+    LEFT JOIN alerts sent_alert
+      ON sent_alert.id = ado.alert_id
+     AND sent_alert.user_id = ado.user_id
+     AND sent_alert.alert_type = 'event_alert'
+     AND sent_alert.status = 'sent'
+     AND sent_alert.created_at >= :since AND sent_alert.created_at < :until
     WHERE ado.created_at >= :since
       AND ado.created_at < :until
       AND ado.alert_type = 'event_alert'
@@ -166,6 +180,7 @@ membership_candidates AS (
         a.id AS alert_id,
         NULL::integer AS outcome_id,
         a.status,
+        CASE WHEN a.status = 'sent' THEN a.created_at END AS sent_delivery_at,
         a.created_at
     FROM delivery_candidates a
     WHERE a.user_id IS NOT NULL
@@ -186,7 +201,8 @@ membership_rollup AS (
             'recipient_id', recipient_id,
             'alert_id', alert_id,
             'outcome_id', outcome_id,
-            'status', status
+            'status', status,
+            'sent_delivery_at', sent_delivery_at
         ) ORDER BY created_at, outcome_id NULLS LAST, alert_id NULLS LAST) AS delivery_members
     FROM membership_candidates
     GROUP BY rollup_event_ai_analysis_id
@@ -227,6 +243,7 @@ SELECT
     coalesce(dr.sent_delivery_count, 0) AS sent_delivery_count,
     coalesce(dr.failed_delivery_count, 0) AS failed_delivery_count,
     coalesce(dr.distinct_recipient_count, 0) AS distinct_recipient_count,
+    coalesce(dr.sent_distinct_recipient_count, 0) AS sent_distinct_recipient_count,
     dr.first_delivery_at,
     dr.last_delivery_at,
     dr.alert_type,
