@@ -30,12 +30,8 @@ RANDOM_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 NA_RE = re.compile(r"(?<![a-z0-9])n/a(?![a-z0-9])", re.IGNORECASE)
-OLD_GENERIC_PRICE_CHANGE_LABEL_RE = re.compile(
-    r"(?im)^\s*(?:[•*\-]\s*)?price change\s*:"
-)
-OLD_GENERIC_MARKET_CHANGE_LABEL_RE = re.compile(
-    r"(?im)^\s*(?:[•*\-]\s*)?(?:btc|market) change\s*:"
-)
+OLD_GENERIC_PRICE_CHANGE_LABEL_RE = re.compile(r"(?im)^\s*(?:[•*\-]\s*)?price change\s*:")
+OLD_GENERIC_MARKET_CHANGE_LABEL_RE = re.compile(r"(?im)^\s*(?:[•*\-]\s*)?(?:btc|market) change\s*:")
 PLACEHOLDER_ISSUE_PATTERNS = (
     (re.compile(r"(?<![a-z0-9])unknown(?![a-z0-9])", re.IGNORECASE), "contains_unknown"),
     (
@@ -213,6 +209,8 @@ def _delivery_members(row: dict[str, Any], hasher: BundleHasher) -> list[dict[st
                 "alert_ref": hasher.ref("alert", alert) if alert is not None else None,
                 "outcome_ref": hasher.ref("outcome", outcome) if outcome is not None else None,
                 "status": status,
+                # Recorded only for a joined, successfully sent alert row.
+                "sent_delivery_at": _iso(item.get("sent_delivery_at")),
             }
         )
     return members
@@ -323,10 +321,14 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     # Quality detectors are assertions about delivered Telegram copy.  ``full_text`` also
     # contains analysis-only fields and remains useful for similarity work, but must never
     # become evidence that a user received an obsolete label.
-    quality_issues = _quality_issues(
-        row,
-        delivered_text=str(row.get("alert_message") or ""),
-        related_news_count=len(related_news),
+    quality_issues = (
+        _quality_issues(
+            row,
+            delivered_text=str(row.get("alert_message") or ""),
+            related_news_count=len(related_news),
+        )
+        if sent_delivery_count > 0
+        else []
     )
     return {
         "symbol": str(row.get("symbol") or row.get("analysis_symbol") or "UNKNOWN").upper(),
@@ -356,6 +358,11 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         "sent_delivery_count": sent_delivery_count,
         "failed_delivery_count": _int(row.get("failed_delivery_count")),
         "distinct_recipient_count": _int(row.get("distinct_recipient_count")),
+        "sent_distinct_recipient_count": _int(
+            row.get("sent_distinct_recipient_count")
+            if row.get("sent_distinct_recipient_count") is not None
+            else row.get("distinct_recipient_count")
+        ),
         "first_delivery_at": first_delivery_at,
         "last_delivery_at": last_delivery_at,
         "analysis_created_at": _iso(row.get("analysis_created_at")),
@@ -367,12 +374,8 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
             else numeric_context.get("analysed_window_change_percent")
         ),
         "last_24h_change": _float(row.get("last_24h_change")),
-        "relative_window_percentile_30d": _float(
-            row.get("relative_window_percentile_30d")
-        ),
-        "relative_24h_percentile_30d": _float(
-            row.get("relative_24h_percentile_30d")
-        ),
+        "relative_window_percentile_30d": _float(row.get("relative_window_percentile_30d")),
+        "relative_24h_percentile_30d": _float(row.get("relative_24h_percentile_30d")),
         "last_7d_change": _float(row.get("last_7d_change")),
         "stable_related_news_ids": [
             str(item)
@@ -395,9 +398,9 @@ def _quality_issues(
     for pattern, issue in PLACEHOLDER_ISSUE_PATTERNS:
         if pattern.search(lowered):
             issues.append(issue)
-    is_event_alert = str(row.get("alert_type") or "") == "event_alert" or row.get(
-        "market_event_id"
-    ) is not None
+    is_event_alert = (
+        str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
+    )
     if is_event_alert and "since last btc alert" in lowered:
         issues.append("old_since_last_btc_alert_label")
     if is_event_alert and "analysed-window change" in lowered:
@@ -472,19 +475,21 @@ def _alert_quality(
     payload = _base_payload(period, warnings)
     groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     total_event_alert_deliveries = 0
+    sampled_event_alert_attempts = 0
     affected_event_alert_deliveries = 0
     severe_affected_event_alert_deliveries = 0
     quality_issue_occurrences = 0
     for row in rows:
         issues = row.get("quality_issues") or []
-        delivery_count = _int(row.get("delivery_count"))
+        sent_count = _int(row.get("sent_delivery_count"))
         if str(row.get("alert_type") or "") == "event_alert":
-            total_event_alert_deliveries += delivery_count
+            sampled_event_alert_attempts += _int(row.get("delivery_count"))
+            total_event_alert_deliveries += sent_count
             if issues:
-                affected_event_alert_deliveries += delivery_count
+                affected_event_alert_deliveries += sent_count
             if SEVERE_QUALITY_ISSUES.intersection(issues):
-                severe_affected_event_alert_deliveries += delivery_count
-        quality_issue_occurrences += delivery_count * len(issues)
+                severe_affected_event_alert_deliveries += sent_count
+        quality_issue_occurrences += sent_count * len(issues)
         for issue in issues:
             key = (
                 str(issue),
@@ -510,9 +515,9 @@ def _alert_quality(
                     "sample_event_refs": [],
                 },
             )
-            group["delivery_count"] += _int(row.get("delivery_count"))
-            group["sent_deliveries"] += _int(row.get("sent_delivery_count"))
-            group["affected_users_estimate"] += _int(row.get("distinct_recipient_count"))
+            group["delivery_count"] += sent_count
+            group["sent_deliveries"] += sent_count
+            group["affected_users_estimate"] += _int(row.get("sent_distinct_recipient_count"))
             if row.get("market_event_ref"):
                 group["market_events"].add(row["market_event_ref"])
                 if len(group["sample_event_refs"]) < 5:
@@ -551,7 +556,14 @@ def _alert_quality(
                 "sample_event_refs": group["sample_event_refs"],
             }
         )
+    # Scoped to the analyses sampled by ALERT_EVIDENCE_SQL, not the complete
+    # period-wide alerts table. The full-period denominator lives in delivery_funnel.
     payload["total_event_alert_deliveries"] = total_event_alert_deliveries
+    payload["sampled_event_alert_attempts"] = sampled_event_alert_attempts
+    payload["sampled_non_sent_event_alerts"] = max(
+        sampled_event_alert_attempts - total_event_alert_deliveries, 0
+    )
+    payload["denominator_scope"] = "sampled_sent_event_alert_deliveries"
     payload["affected_event_alert_deliveries"] = affected_event_alert_deliveries
     payload["severe_affected_event_alert_deliveries"] = severe_affected_event_alert_deliveries
     payload["quality_issue_occurrences"] = quality_issue_occurrences
@@ -596,16 +608,10 @@ def _decision_timeline(
                 "delivery_count": row.get("delivery_count"),
                 "sent_delivery_count": row.get("sent_delivery_count"),
                 "price_change_percent": row.get("price_change_percent"),
-                "analysed_window_change_percent": row.get(
-                    "analysed_window_change_percent"
-                ),
+                "analysed_window_change_percent": row.get("analysed_window_change_percent"),
                 "last_24h_change": row.get("last_24h_change"),
-                "relative_window_percentile_30d": row.get(
-                    "relative_window_percentile_30d"
-                ),
-                "relative_24h_percentile_30d": row.get(
-                    "relative_24h_percentile_30d"
-                ),
+                "relative_window_percentile_30d": row.get("relative_window_percentile_30d"),
+                "relative_24h_percentile_30d": row.get("relative_24h_percentile_30d"),
                 "last_7d_change": row.get("last_7d_change"),
                 "related_news_count": row.get("related_news_count"),
                 "urgency": row.get("urgency"),
@@ -774,10 +780,14 @@ def _suppression_effectiveness(
                 "delivered_events": 0,
                 "likely_suppressed_events": 0,
                 "delivered_inside_cooldown_candidates": 0,
+                "unverified_sent_deliveries": 0,
                 "first_seen_at": None,
                 "last_seen_at": None,
-                "confidence": "medium",
-                "note": "Any same-semantic delivery inside the strict cooldown is a regression.",
+                "confidence": "high",
+                "note": (
+                    "Only two sent deliveries to the same recipient inside the "
+                    "strict cooldown constitute a candidate regression."
+                ),
                 "_delivered_rows": [],
             },
         )
@@ -791,27 +801,57 @@ def _suppression_effectiveness(
         _extend_time_range(group, row.get("last_delivery_at") or row.get("analysis_created_at"))
 
     for group in groups.values():
-        if semantic_cooldown_seconds <= 0:
-            continue
-        delivered_rows = sorted(
-            group.pop("_delivered_rows", []),
-            key=lambda item: str(
-                item.get("first_delivery_at") or item.get("analysis_created_at") or ""
-            ),
-        )
-        previous = None
-        for row in delivered_rows:
-            if previous is not None and _rows_inside_cooldown(
-                previous,
-                row,
-                semantic_cooldown_seconds=semantic_cooldown_seconds,
+        # Per-recipient delivery is the unit of cooldown, not a market event
+        # or an analysis containing deliveries to unrelated subscribers.
+        # HMAC recipient/alert refs are stable only inside this bundle.
+        delivered = []
+        for row in group.pop("_delivered_rows", []):
+            seen_alerts = set()
+            for member in row.get("delivery_members") or []:
+                recipient_ref = member.get("recipient_ref")
+                alert_ref = member.get("alert_ref")
+                sent_at = member.get("sent_delivery_at")
+                if not (recipient_ref and alert_ref and sent_at):
+                    continue
+                try:
+                    at = datetime.fromisoformat(str(sent_at).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    continue
+                if at.tzinfo is None:
+                    continue
+                if alert_ref in seen_alerts:
+                    continue
+                seen_alerts.add(alert_ref)
+                delivered.append((at, recipient_ref, alert_ref))
+            group["unverified_sent_deliveries"] += max(
+                _int(row.get("sent_delivery_count")) - len(seen_alerts), 0
+            )
+
+        previous_per_recipient = {}
+        seen_members = set()
+        for at, recipient_ref, alert_ref in sorted(delivered):
+            if (recipient_ref, alert_ref) in seen_members:
+                continue
+            seen_members.add((recipient_ref, alert_ref))
+            previous_at = previous_per_recipient.get(recipient_ref)
+            if (
+                previous_at is not None
+                and semantic_cooldown_seconds > 0
+                and (at - previous_at).total_seconds() < semantic_cooldown_seconds
             ):
                 group["delivered_inside_cooldown_candidates"] += 1
-            previous = row
+            previous_per_recipient[recipient_ref] = at
+        if group["unverified_sent_deliveries"]:
+            group["confidence"] = "low"
+            group["note"] = (
+                "Some sent deliveries lack verified recipient/timestamp evidence; "
+                "absence of candidates is inconclusive."
+            )
     payload["suppression_groups"] = sorted(
         groups.values(),
         key=lambda item: (
             -item["delivered_inside_cooldown_candidates"],
+            -item["unverified_sent_deliveries"],
             -item["likely_suppressed_events"],
             -item["llm_should_alert_events"],
         ),
@@ -842,33 +882,32 @@ def _event_alert_regression_checks(
         for row in suppression_payload.get("suppression_groups") or []
         if _int(row.get("delivered_inside_cooldown_candidates")) > 0
     ]
+    unverified_sent = sum(
+        _int(row.get("unverified_sent_deliveries"))
+        for row in suppression_payload.get("suppression_groups") or []
+    )
+    incomplete = unverified_sent > 0 or any("row cap" in note for note in warnings)
     critical = bool(placeholder_issues or old_label_issues)
     warning = bool(noisy_repeat_groups)
     payload.update(
         {
-            "status": "critical" if critical else "warning" if warning else "ok",
+            "status": (
+                "critical"
+                if critical
+                else "warning"
+                if warning
+                else "unknown"
+                if incomplete
+                else "ok"
+            ),
             "placeholder_issue_counts": placeholder_issues,
             "old_label_issue_counts": old_label_issues,
             "same_family_repeat_noise_groups": len(noisy_repeat_groups),
+            "unverified_sent_deliveries": unverified_sent,
             "sample_repeat_groups": noisy_repeat_groups[:5],
         }
     )
     return payload
-
-
-def _rows_inside_cooldown(
-    previous: dict[str, Any],
-    current: dict[str, Any],
-    *,
-    semantic_cooldown_seconds: int,
-) -> bool:
-    previous_at = previous.get("first_delivery_at") or previous.get("analysis_created_at")
-    current_at = current.get("first_delivery_at") or current.get("analysis_created_at")
-    minutes = _minutes_between(previous_at, current_at)
-    if minutes is None:
-        return False
-    return minutes * 60 < semantic_cooldown_seconds
-
 
 
 def _event_identity_quality(

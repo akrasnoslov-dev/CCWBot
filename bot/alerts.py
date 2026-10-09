@@ -119,6 +119,7 @@ from bot.reports import generate_daily_report_cache_job, generate_weekly_report_
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
+    AIInvalidJsonError,
     AIProviderRateLimitError,
     AISchemaValidationError,
     LLMRateLimitBackoffActive,
@@ -3424,6 +3425,18 @@ def _as_news_only_rejected_decision(decision: EventAnalysisDecision) -> EventAna
     )
 
 
+def _verified_event_alert_render_fallback(input_payload: dict) -> dict:
+    """Use only backend-derived presentation after invalid LLM output exhausts providers."""
+    market = input_payload.get("market")
+    market = market if isinstance(market, dict) else {}
+    situation, action = event_alert_presentation_fallback(market, [])
+    return {
+        "message_body": situation,
+        "related_news_ids": [],
+        "possible_action": action,
+    }
+
+
 async def _save_event_alert_render_outcome(
     *,
     llm_operation_id: str,
@@ -3716,9 +3729,11 @@ async def _create_event_analysis_decision(
     render_usage_log_id = None
     render_provider = None
     render_model = None
+    render_fallback_reason = None
 
     def _render_schema_check(provider_parsed: dict) -> None:
         try:
+            _validate_event_alert_render_causality(provider_parsed)
             validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
@@ -3758,41 +3773,64 @@ async def _create_event_analysis_decision(
         render_provider = getattr(render_result, "provider", None) or render_provider
         render_model = getattr(render_result, "model", None) or render_model
     except Exception as error:
-        reason = classify_ai_error_reason(error)
-        await _save_event_alert_render_outcome(
-            llm_operation_id=render_operation_id,
-            symbol=expected_symbol,
-            status="llm_error",
-            error_reason=reason,
-            provider=getattr(error, "provider", None) or render_provider,
-            model=getattr(error, "model", None) or render_model,
-        )
-        analysis_id = await _save_event_analysis_attempt(
-            input_payload=input_payload,
-            raw_output_json=decision_raw_output,
-            status="llm_error",
-            parsed_result=decision_parsed,
-            error_message=str(error),
-            error_reason=reason,
-            provider=decision_provider,
-            model=decision_model,
-            llm_operation_id=decision_operation_id,
-        )
-        await _record_alert_delivery_outcome(
-            symbol=expected_symbol,
-            alert_type=EVENT_ALERT_TYPE,
-            status=OUTCOME_FAILED,
-            reason_code=REASON_LLM_INVALID_RESPONSE,
-            event_ai_analysis_id=analysis_id,
-            trigger_source=EVENT_ANALYSIS_TYPE,
-            decision_stage=DECISION_STAGE_LLM,
-            decision_reason=DECISION_REASON_UNKNOWN,
-            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-            context_fingerprint=context_fingerprint,
-            detail=f"event_alert_render_failed:{reason}",
-        )
-        _log_event_analysis_failure(expected_symbol, reason)
-        return None, None
+        # The router already tried all configured providers. Do not call another LLM:
+        # replace only exhausted invalid output with a backend-derived neutral render.
+        if (
+            isinstance(error, (AISchemaValidationError, AIInvalidJsonError))
+            and getattr(error, "_llm_all_exhausted_attempts_invalid_output", False)
+        ):
+            # Invalid-output recovery is presentation only. An otherwise flat
+            # market with available news cannot become an Event Alert merely
+            # because neutral fallback drops related_news_ids, disabling the
+            # downstream news-only rejection.
+            if not (
+                candidate_news_ids
+                and not _has_non_flat_analysed_market_context(input_payload)
+            ):
+                candidate = _verified_event_alert_render_fallback(input_payload)
+                try:
+                    _render_schema_check(candidate)
+                except AISchemaValidationError as fallback_error:
+                    error = fallback_error
+                else:
+                    render_parsed = candidate
+                    render_fallback_reason = classify_ai_error_reason(error)
+        if render_fallback_reason is None:
+            reason = classify_ai_error_reason(error)
+            await _save_event_alert_render_outcome(
+                llm_operation_id=render_operation_id,
+                symbol=expected_symbol,
+                status="llm_error",
+                error_reason=reason,
+                provider=getattr(error, "provider", None) or render_provider,
+                model=getattr(error, "model", None) or render_model,
+            )
+            analysis_id = await _save_event_analysis_attempt(
+                input_payload=input_payload,
+                raw_output_json=decision_raw_output,
+                status="llm_error",
+                parsed_result=decision_parsed,
+                error_message=str(error),
+                error_reason=reason,
+                provider=decision_provider,
+                model=decision_model,
+                llm_operation_id=decision_operation_id,
+            )
+            await _record_alert_delivery_outcome(
+                symbol=expected_symbol,
+                alert_type=EVENT_ALERT_TYPE,
+                status=OUTCOME_FAILED,
+                reason_code=REASON_LLM_INVALID_RESPONSE,
+                event_ai_analysis_id=analysis_id,
+                trigger_source=EVENT_ANALYSIS_TYPE,
+                decision_stage=DECISION_STAGE_LLM,
+                decision_reason=DECISION_REASON_UNKNOWN,
+                previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
+                context_fingerprint=context_fingerprint,
+                detail=f"event_alert_render_failed:{reason}",
+            )
+            _log_event_analysis_failure(expected_symbol, reason)
+            return None, None
 
     normalized_render = _event_alert_render_result_for_validation(
         render_parsed,
@@ -3802,6 +3840,7 @@ async def _create_event_analysis_decision(
         candidate_news_ids=candidate_news_ids,
     )
     try:
+        _validate_event_alert_render_causality(render_parsed)
         decision = validate_event_analysis_output(
             normalized_render,
             expected_symbol=expected_symbol,
@@ -3862,8 +3901,13 @@ async def _create_event_analysis_decision(
     await _save_event_alert_render_outcome(
         llm_operation_id=render_operation_id,
         symbol=expected_symbol,
+        # A validated backend fallback is a successful logical render, not a provider success.
+        # Preserve recovery reason without changing ops-agent terminal success accounting.
         status="success",
-        error_reason=None,
+        error_reason=(
+            f"deterministic_fallback_from_{render_fallback_reason}"
+            if render_fallback_reason else None
+        ),
         provider=render_provider,
         model=render_model,
     )
@@ -3965,10 +4009,25 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
 
 
+def _validate_event_alert_render_causality(result: object) -> None:
+    """No provider may introduce unsupported market/news causality in delivery text."""
+    if not isinstance(result, dict):
+        return
+    for field_name in ("message_body", "possible_action"):
+        text = result.get(field_name)
+        if isinstance(text, str) and re.search(
+            r"\b(?:because|due to|caused by|driven by|triggered by|explains?)\b",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            raise EventAnalysisValidationError("unverified causal claim")
+
+
 def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -> str:
     """Map render validation failures to stable, value-free operational categories."""
     message = str(error).lower()
     mappings = (
+        ("unverified causal claim", "unverified_causal_claim"),
         ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
         ("market claim is unavailable", "market_claim_unavailable"),
         ("market claim direction does not match input", "market_claim_direction_mismatch"),
@@ -4036,7 +4095,8 @@ def _event_alert_render_result_for_validation(
         "message_body": result.get("message_body"),
         "related_news_ids": related_news_ids,
         "possible_action": result.get("possible_action"),
-        "urgency": result.get("urgency"),
+        # Rendering does not decide alert priority; no untrusted urgency is accepted.
+        "urgency": "normal",
         "confidence": confidence,
         "reason_for_no_alert": None,
     }

@@ -61,6 +61,15 @@ def _row(**overrides):
         ),
     }
     base.update(overrides)
+    if "delivery_members" not in overrides and base["sent_delivery_count"] > 0:
+        base["delivery_members"] = [
+            {
+                "recipient_id": 101,
+                "alert_id": base["event_ai_analysis_id"] * 100,
+                "status": "sent",
+                "sent_delivery_at": base["first_delivery_at"],
+            }
+        ]
     return base
 
 
@@ -355,7 +364,7 @@ def test_suppression_effectiveness_flags_inside_cooldown_candidates():
     groups = payloads["evidence/db/backend_suppression_effectiveness.json"]["suppression_groups"]
 
     assert groups[0]["delivered_inside_cooldown_candidates"] == 1
-    assert groups[0]["confidence"] == "medium"
+    assert groups[0]["confidence"] == "high"
 
 
 def test_suppression_effectiveness_flags_urgency_repeat_inside_strict_cooldown():

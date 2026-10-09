@@ -97,6 +97,23 @@ evidence. It covers:
 - old/confusing percentage labels such as `Since last BTC alert`, `Analysed-window change`, and
   generic `Price change`.
 
+Cooldown repetition checks compare **sent deliveries to the same recipient** within the strict
+four-hour window, using only bundle-local HMAC recipient/alert references and delivery timestamps.
+Two global market events from the same semantic family do not establish a violation when their
+recipients are disjoint. Missing sent-recipient/timestamp evidence is **unknown**, not a clean result.
+
+The full-period sent Event Alert count comes from `delivery_funnel.telegram_delivered`
+(`alerts.status = 'sent'`, delivery timestamps inside the period). Alert-quality and repetition
+evidence instead samples analyses created inside the period; its denominator counts **sent
+deliveries within that analysis-scoped sample**, excludes failed/retry/pending deliveries, and
+can be lower than the full-period count if deliveries refer to analyses outside the sample.
+Reports must name both denominators and show the uncovered sent count rather than treating
+a numerical difference as a Telegram delivery failure. A mixed-status per-analysis rollup is
+labeled `mixed`, not as the most recently observed delivery status.
+
+The Docker compact status uses collector fields `is_running`, `running_state`, and `health`.
+`container_status` is display text and must not be treated as a raw `status` or `state`.
+
 Decision-reason detail remains available in sanitized aggregate evidence. Read it only when a
 triggered/unknown finding or investigation question needs that detail; it is intentionally not
 preloaded into the compact decision context.

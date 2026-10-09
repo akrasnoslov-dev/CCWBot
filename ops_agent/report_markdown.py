@@ -514,7 +514,10 @@ def _alert_quality(evidence: dict[str, Any]) -> list[str]:
         )
     lines.append("")
     lines.append(
-        "Limitations: raw Telegram text is not exported; affected-user estimates may double-count users across grouped rows."
+        "Limitations: percentages use the sent Event Alerts in the analysis-scoped "
+        "quality sample, not the full-period Telegram delivery denominator. "
+        "Raw Telegram text is not exported; affected-user estimates may double-count "
+        "users across grouped rows."
     )
     return lines
 

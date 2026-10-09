@@ -140,6 +140,14 @@ _CALL_TYPE_REASONING_EFFORT_ENV = {
     "news_intelligence": "LLM_NEWS_INTELLIGENCE_REASONING_EFFORT",
 }
 REASONING_EFFORT_CHOICES = ("low", "medium", "high")
+_DEFAULT_REASONING_EFFORT = "low"
+_GROQ_EVENT_ANALYSIS_MEDIUM_MAX_TOKENS = 6300
+_DEFAULT_REASONING_EFFORT_BY_CALL_TYPE = {
+    # Production replay showed that low effort systematically over-classified routine
+    # market moves after the significance/render split. Event Analysis needs the extra
+    # reasoning depth; rendering and the other structured call types remain on low by default.
+    "event_analysis": "medium",
+}
 
 # ``reasoning_effort`` is a *model* capability, not a provider one: the same provider serves
 # reasoning and non-reasoning models side by side. Sending the parameter to a non-reasoning
@@ -331,11 +339,20 @@ def effective_max_tokens_for(
     explicit reasoning headroom in addition to the configured answer ceiling. This avoids
     raising plain-model attempts merely because a thinking model exists later in the chain.
     """
-    del provider  # Reserved for future provider-specific constraints without changing callers.
     budget = max_tokens_for(call_type) if requested_max_tokens is None else requested_max_tokens
     if is_thinking_model(model):
         headroom = reasoning_headroom_tokens_for(model=model, call_type=call_type)
-        return min(budget + headroom, _MAX_TOKENS_CEILING)
+        effective = min(budget + headroom, _MAX_TOKENS_CEILING)
+        # Groq Free exposes an 8K TPM limit for GPT-OSS. Keep the shipped medium Event Analysis
+        # request below that ceiling with room for the compact prompt. This is a provider-capacity
+        # guard only; it does not change alert significance or add a market threshold.
+        if (
+            provider.strip().lower() == "groq"
+            and call_type == "event_analysis"
+            and reasoning_effort_for(model, call_type) == "medium"
+        ):
+            return min(effective, _GROQ_EVENT_ANALYSIS_MEDIUM_MAX_TOKENS)
+        return effective
     return budget
 
 
@@ -383,14 +400,18 @@ def reasoning_effort_for(model: str | None, call_type: str) -> str | None:
     if not is_reasoning_model(model):
         return None
     env_name = _CALL_TYPE_REASONING_EFFORT_ENV.get(call_type)
+    shipped_default = _DEFAULT_REASONING_EFFORT_BY_CALL_TYPE.get(
+        call_type, _DEFAULT_REASONING_EFFORT
+    )
     if env_name and os.getenv(env_name) is not None and os.getenv(env_name, "").strip():
         # Do not inherit a different global value after rejecting a call-type override. Use the
         # shipped safe default explicitly so request effort and reserved headroom stay aligned.
-        return get_choice_env(env_name, REASONING_EFFORT_CHOICES) or "low"
+        return get_choice_env(env_name, REASONING_EFFORT_CHOICES) or shipped_default
     configured = get_choice_env("LLM_REASONING_EFFORT", REASONING_EFFORT_CHOICES)
-    # Shipped gpt-oss defaults must not silently use a provider's more expensive reasoning
-    # default. Low is sufficient for the compact structured contracts used by this service.
-    return configured or "low"
+    # Event Analysis is the exception to the low shipped default: production replay of the
+    # significance classifier showed low effort over-classifying routine moves, while medium
+    # correctly rejected the representative false-positive cases. Other call types stay low.
+    return configured or shipped_default
 
 
 def resolved_configuration() -> list[dict]:

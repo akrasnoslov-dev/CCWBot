@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
+from math import gcd
 
 _PERCENT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?\s*%")
 _MOVE_RE = re.compile(
@@ -22,7 +24,37 @@ _UNSUPPORTED_MARKET_CLAIM_RE = re.compile(
     r"whales?|on[ -]?chain)\b"
 )
 _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
-    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after)\b"
+    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after|following|"
+    r"triggered|sparked|attributed to)\b"
+)
+# Unstructured Render prose cannot establish a catalyst, a new piece of news, or
+# acceleration. Such claims are replaced by context derived from market evidence.
+_UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
+    r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
+    r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
+    r"accelerat\w*|decelerat\w*|faster|slower|percentiles?|rare|unprecedented|"
+    r"record|historic|ath)\b"
+)
+# This only applies to unstructured Render prose, not to deterministic fallbacks.
+# A market relationship may be paraphrased, but an extra company, news event,
+# metric, or invented mechanism is not part of the validated evidence contract.
+_SAFE_MARKET_CONTEXT_WORDS = frozenset(
+    """
+    a an the this that these those and or but with within against while of to from
+    in on for as by than into across through toward towards back rather not still
+    is are was were be been being has have had may might can could only
+    supplied available observed latest recent earlier previous current next
+    snapshot snapshots path paths step steps sequence sequences price market
+    move moved moves movement change changes direction directional trend trends
+    trajectory trajectories short term broader hour day window
+    positive negative persistent persistence persist persists consistent
+    aligning alignment align aligns aligned diverge diverges divergent divergence
+    reversal reverses reverse reversing reversed turn turning turned
+    continues continue continuation strength stronger weakness weaker
+    lower higher downward upward up down rising falling rise fall
+    same opposite shows show showing indicates indicate suggesting suggests
+    compared relative part some wider overall remains remained
+    """.split()
 )
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _PERCENT_VALUE_RE = re.compile(
@@ -117,8 +149,10 @@ def compact_event_alert_situation(
     cleaned = " ".join(str(value or "").split()).strip()
     if not cleaned:
         return fallback
-    if _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned) or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(
-        cleaned
+    if (
+        _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
+        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(cleaned)
+        or _UNSUPPORTED_EVENT_CLAIM_RE.search(cleaned)
     ):
         return fallback
     # Free-form LLM copy cannot establish unstructured facts (for example demand, sentiment,
@@ -149,7 +183,10 @@ def _is_safe_llm_situation(
     *,
     market_data: dict,
 ) -> bool:
-    return _is_safe_structured_market_interpretation(value, market_data)
+    words = re.findall(r"[a-z]+", value.lower())
+    return bool(words) and all(
+        word in _SAFE_MARKET_CONTEXT_WORDS for word in words
+    ) and _is_safe_structured_market_interpretation(value, market_data)
 
 
 def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> bool:
@@ -189,10 +226,21 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         )
     ):
         return False
-    if any(term in lowered for term in ("snapshot", "persistent", "persistence")) and not (
-        step_changes and (has_persistence or has_reversal)
-    ):
+    if "snapshot" in lowered and not step_changes:
         return False
+    if any(
+        term in lowered
+        for term in ("persistent", "persistence", "consisten", "throughout", "steady")
+    ) and not has_persistence:
+        return False
+    # An opposite 24h trend cannot license the LLM to describe the current
+    # analysed-window move with the broader trend's sign.
+    for adjective, positive in (("positive", True), ("negative", False)):
+        if re.search(
+            rf"\b{adjective}\s+(?:short[- ]term|current|latest|analysed[- ]window)\b",
+            lowered,
+        ) and not (window_change is not None and (window_change > 0) == positive):
+            return False
     if "reversal" in lowered and not has_reversal:
         return False
     if "diverg" in lowered and not has_divergence:
@@ -340,6 +388,12 @@ def event_alert_presentation_fallback(
             "direction or continue diverging.",
         )
 
+    # Only describe acceleration/slowdown after both reliable overlapping windows
+    # and the primary market move agree in direction. This is explanation, not a gate.
+    pace_context = _short_window_pace_context(market_data)
+    if pace_context is not None:
+        return pace_context
+
     if has_persistence:
         return (
             "The move developed across the supplied snapshots rather than a single observation, "
@@ -381,6 +435,83 @@ def event_alert_presentation_fallback(
         "Watch the next short-term snapshots for continuation or a quick reversal of the "
         "current move.",
     )
+
+
+def _short_window_pace_context(market_data: dict) -> tuple[str, str] | None:
+    """Compare actual snapshot step rates; do not assume nominal 30m/1h timing."""
+    window = _decimal_market_value(market_data.get("analysed_window_minutes"))
+    primary = _decimal_market_value(market_data.get("chg_window_percent"))
+    short_30m = _decimal_market_value(market_data.get("chg30m_percent"))
+    short_1h = _decimal_market_value(market_data.get("chg1h_percent"))
+    if (
+        window is None
+        or window < 60
+        or any(value is None or value == 0 for value in (primary, short_30m, short_1h))
+    ):
+        return None
+    if not ((primary > 0) == (short_30m > 0) == (short_1h > 0)):
+        return None
+
+    snapshots = market_data.get("snapshots")
+    if not isinstance(snapshots, list):
+        return None
+    observations: list[tuple[Decimal, Decimal]] = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and minute <= 0 and price is not None and price > 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    if len(observations) < 3:
+        return None
+    (old_minute, old_price), (middle_minute, middle_price), (
+        recent_minute, recent_price
+    ) = observations[-3:]
+    # The latest observation is now, and the sampled durations are taken from
+    # their actual minute offsets rather than assumed to be 30m or 60m.
+    if recent_minute != 0 or old_minute >= middle_minute or middle_minute >= recent_minute:
+        return None
+    earlier_minutes = middle_minute - old_minute
+    latest_minutes = recent_minute - middle_minute
+    if (
+        old_minute < -window
+        or earlier_minutes != int(earlier_minutes)
+        or latest_minutes != int(latest_minutes)
+    ):
+        return None
+    earlier_factor = Fraction(middle_price) / Fraction(old_price)
+    latest_factor = Fraction(recent_price) / Fraction(middle_price)
+    if (
+        earlier_factor == 1
+        or latest_factor == 1
+        or not ((earlier_factor > 1) == (latest_factor > 1) == (primary > 0))
+    ):
+        return None
+    # Compare compounded factors over the *same* duration, exactly. Dividing
+    # ordinary percent changes by elapsed minutes is inaccurate when they compound.
+    divisor = gcd(int(earlier_minutes), int(latest_minutes))
+    earlier_scaled = earlier_factor ** (int(latest_minutes) // divisor)
+    latest_scaled = latest_factor ** (int(earlier_minutes) // divisor)
+    if earlier_scaled == latest_scaled:
+        return None
+    latest_faster = (
+        latest_scaled > earlier_scaled if primary > 0 else latest_scaled < earlier_scaled
+    )
+    if latest_faster:
+        return (
+            "The latest observed price step is steeper per minute than the preceding "
+            "snapshot interval, so the move has picked up pace.",
+            "Watch whether the next observed interval maintains that pace or starts to ease.",
+        )
+    if not latest_faster:
+        return (
+            "The latest observed price step is slower per minute than the preceding "
+            "snapshot interval, so the move has eased.",
+            "Watch whether the next observed interval slows further or picks up pace again.",
+        )
+    return None
 
 
 def _has_persistent_snapshot_direction(step_changes: list[Decimal]) -> bool:
