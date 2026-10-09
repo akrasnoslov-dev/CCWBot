@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "provenance": "Synthetic hypotheses, NOT measured model answers or production evidence.",
+  "cases": [
+    {
+      "id": "btc_routine_news", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "routine", "expected_should_alert": false,
+      "rationale": "Routine current move despite 24h trend and relevant news",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.116,"chg24h_percent":7.8,"chg30m_percent":0.08,"chg_since_msg_percent":0.08,"chg_window_percent":0.08,"price":120000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":30,"snapshots":[{"m":-60,"p":119784.17266187},{"m":-30,"p":119904.07673861},{"m":0,"p":120000}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"BTC policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"BTC","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "btc_material_new", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "significant", "expected_should_alert": true,
+      "rationale": "Abrupt same-asset move; no recent duplicate",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-6.96,"chg24h_percent":-5.76,"chg30m_percent":-4.8,"chg_since_msg_percent":-4.8,"chg_window_percent":-4.8,"price":120000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":99.4,"snapshots":[{"m":-60,"p":125924.3697479},{"m":-30,"p":126050.42016807},{"m":0,"p":120000}]},"news":[],"recent_event_counts":{"h24":1,"h6":0},"symbol":"BTC","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "btc_repeat", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "repeat", "expected_should_alert": false,
+      "rationale": "Already alerted same material event; no clear new escalation",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-6.96,"chg24h_percent":-5.76,"chg30m_percent":-4.8,"chg_since_msg_percent":-4.8,"chg_window_percent":-4.8,"price":120000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":98,"snapshots":[{"m":-60,"p":125924.3697479},{"m":-30,"p":126050.42016807},{"m":0,"p":120000}]},"news":[],"previous_event_alert":{"age_minutes":25,"analysed_window_move":-4.8,"semantic_family":"price_downtrend"},"recent_event_counts":{"h24":5,"h6":2},"symbol":"BTC","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "btc_ambiguous_reversal", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "ambiguous", "expected_should_alert": null,
+      "rationale": "Countertrend alone insufficient; manual review",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.1856,"chg24h_percent":-12,"chg30m_percent":0.128,"chg_since_msg_percent":0.128,"chg_window_percent":0.128,"price":120000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":41,"snapshots":[{"m":-60,"p":119726.74976031},{"m":-30,"p":119846.59635666},{"m":0,"p":120000}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"BTC policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"BTC","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "eth_routine_news", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "routine", "expected_should_alert": false,
+      "rationale": "Routine current move despite 24h trend and relevant news",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.2465,"chg24h_percent":7.8,"chg30m_percent":0.17,"chg_since_msg_percent":0.17,"chg_window_percent":0.17,"price":4000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":30,"snapshots":[{"m":-60,"p":3989.21832884},{"m":-30,"p":3993.21154038},{"m":0,"p":4000}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"ETH policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"ETH","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "eth_material_new", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "significant", "expected_should_alert": true,
+      "rationale": "Abrupt same-asset move; no recent duplicate",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-8.845,"chg24h_percent":-7.32,"chg30m_percent":-6.1,"chg_since_msg_percent":-6.1,"chg_window_percent":-6.1,"price":4000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":99.4,"snapshots":[{"m":-60,"p":4255.59105431},{"m":-30,"p":4259.85090522},{"m":0,"p":4000}]},"news":[],"recent_event_counts":{"h24":1,"h6":0},"symbol":"ETH","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "eth_repeat", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "repeat", "expected_should_alert": false,
+      "rationale": "Already alerted same material event; no clear new escalation",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-8.845,"chg24h_percent":-7.32,"chg30m_percent":-6.1,"chg_since_msg_percent":-6.1,"chg_window_percent":-6.1,"price":4000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":98,"snapshots":[{"m":-60,"p":4255.59105431},{"m":-30,"p":4259.85090522},{"m":0,"p":4000}]},"news":[],"previous_event_alert":{"age_minutes":25,"analysed_window_move":-6.1,"semantic_family":"price_downtrend"},"recent_event_counts":{"h24":5,"h6":2},"symbol":"ETH","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "eth_ambiguous_reversal", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "ambiguous", "expected_should_alert": null,
+      "rationale": "Countertrend alone insufficient; manual review",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.3944,"chg24h_percent":-12,"chg30m_percent":0.272,"chg_since_msg_percent":0.272,"chg_window_percent":0.272,"price":4000,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":41,"snapshots":[{"m":-60,"p":3985.16036381},{"m":-30,"p":3989.14951332},{"m":0,"p":4000}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"ETH policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"ETH","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "gram_routine_news", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "routine", "expected_should_alert": false,
+      "rationale": "Routine current move despite 24h trend and relevant news",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.4495,"chg24h_percent":7.8,"chg30m_percent":0.31,"chg_since_msg_percent":0.31,"chg_window_percent":0.31,"price":3.2,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":30,"snapshots":[{"m":-60,"p":3.18692055},{"m":-30,"p":3.19011066},{"m":0,"p":3.2}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"GRAM policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"GRAM","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "gram_material_new", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "significant", "expected_should_alert": true,
+      "rationale": "Abrupt same-asset move; no recent duplicate",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-14.79,"chg24h_percent":-12.24,"chg30m_percent":-10.2,"chg_since_msg_percent":-10.2,"chg_window_percent":-10.2,"price":3.2,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":99.4,"snapshots":[{"m":-60,"p":3.55991091},{"m":-30,"p":3.56347439},{"m":0,"p":3.2}]},"news":[],"recent_event_counts":{"h24":1,"h6":0},"symbol":"GRAM","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "gram_repeat", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "repeat", "expected_should_alert": false,
+      "rationale": "Already alerted same material event; no clear new escalation",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-14.79,"chg24h_percent":-12.24,"chg30m_percent":-10.2,"chg_since_msg_percent":-10.2,"chg_window_percent":-10.2,"price":3.2,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":98,"snapshots":[{"m":-60,"p":3.55991091},{"m":-30,"p":3.56347439},{"m":0,"p":3.2}]},"news":[],"previous_event_alert":{"age_minutes":25,"analysed_window_move":-10.2,"semantic_family":"price_downtrend"},"recent_event_counts":{"h24":5,"h6":2},"symbol":"GRAM","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "gram_ambiguous_reversal", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "ambiguous", "expected_should_alert": null,
+      "rationale": "Countertrend alone insufficient; manual review",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.7192,"chg24h_percent":-12,"chg30m_percent":0.496,"chg_since_msg_percent":0.496,"chg_window_percent":0.496,"price":3.2,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":41,"snapshots":[{"m":-60,"p":3.18102213},{"m":-30,"p":3.18420634},{"m":0,"p":3.2}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"GRAM policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"GRAM","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "sol_routine_news", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "routine", "expected_should_alert": false,
+      "rationale": "Routine current move despite 24h trend and relevant news",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.203,"chg24h_percent":7.8,"chg30m_percent":0.14,"chg_since_msg_percent":0.14,"chg_window_percent":0.14,"price":210,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":30,"snapshots":[{"m":-60,"p":209.49670461},{"m":-30,"p":209.70641102},{"m":0,"p":210}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"SOL policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"SOL","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "sol_material_new", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "significant", "expected_should_alert": true,
+      "rationale": "Abrupt same-asset move; no recent duplicate",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-12.615,"chg24h_percent":-10.44,"chg30m_percent":-8.7,"chg_since_msg_percent":-8.7,"chg_window_percent":-8.7,"price":210,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":99.4,"snapshots":[{"m":-60,"p":229.78094195},{"m":-30,"p":230.0109529},{"m":0,"p":210}]},"news":[],"recent_event_counts":{"h24":1,"h6":0},"symbol":"SOL","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "sol_repeat", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "repeat", "expected_should_alert": false,
+      "rationale": "Already alerted same material event; no clear new escalation",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":-12.615,"chg24h_percent":-10.44,"chg30m_percent":-8.7,"chg_since_msg_percent":-8.7,"chg_window_percent":-8.7,"price":210,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":98,"snapshots":[{"m":-60,"p":229.78094195},{"m":-30,"p":230.0109529},{"m":0,"p":210}]},"news":[],"previous_event_alert":{"age_minutes":25,"analysed_window_move":-8.7,"semantic_family":"price_downtrend"},"recent_event_counts":{"h24":5,"h6":2},"symbol":"SOL","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    },
+    {
+      "id": "sol_ambiguous_reversal", "source": "SYNTHETIC_NOT_PRODUCTION",
+      "group": "ambiguous", "expected_should_alert": null,
+      "rationale": "Countertrend alone insufficient; manual review",
+      "input": {"market":{"analysed_window_minutes":30,"chg1h_percent":0.3248,"chg24h_percent":-12,"chg30m_percent":0.224,"chg_since_msg_percent":0.224,"chg_window_percent":0.224,"price":210,"relative_24h_percentile_30d":80,"relative_window_percentile_30d":41,"snapshots":[{"m":-60,"p":209.32112069},{"m":-30,"p":209.53065134},{"m":0,"p":210}]},"news":[{"material":true,"news_id":"synthetic-news","relevance_label":"market_context","source":"Synthetic Wire","time":"2026-10-09T08:45:00+00:00","title":"SOL policy news makes headlines"}],"recent_event_counts":{"h24":1,"h6":0},"symbol":"SOL","timestamp_utc":"2026-10-09T09:00:00+00:00"}
+    }
+  ]
+}
