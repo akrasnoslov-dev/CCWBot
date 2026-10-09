@@ -123,3 +123,44 @@ def test_historical_percentile_without_sample_provenance_not_presented_as_rarity
     assert "99" not in situation
     assert "rare" not in situation.lower()
     assert "unusual" not in situation.lower()
+
+
+def test_full_event_alert_keeps_shared_message_structure_and_disclaimer():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+
+    decision = EventAnalysisDecision(
+        symbol="BTC",
+        should_alert=True,
+        event_key="btc_price_downtrend",
+        title="Backend owned",
+        message_body="Market movement is noteworthy.",
+        related_news_ids=[],
+        possible_action="Review risk plan if the move continues.",
+        urgency="normal",
+        confidence="high",
+        reason_for_no_alert=None,
+    )
+    text = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={
+            "market": {
+                "price": Decimal("65000"),
+                "analysed_window_minutes": 180,
+                "chg_window_percent": Decimal("-3.0"),
+                "chg30m_percent": Decimal("-1.8"),
+                "chg1h_percent": Decimal("-2.2"),
+            }
+        },
+        related_news=[],
+    )["plain_text"]
+    assert "BTC Event Alert" in text
+    assert "BTC down ~3.0% in the last 3 hours" in text
+    assert "Price: $65,000" in text or "Price: $65000" in text
+    assert "3h market move:" in text
+    assert "Situation:\nThe latest 30-minute change is steeper" in text
+    assert "Possible action:\nWatch whether the next 30-minute observation" in text
+    assert text.endswith("Not financial advice.")
+    assert text.count("Not financial advice.") == 1
+    situation = text.split("Situation:\n", 1)[1].split("\n\nPossible action:", 1)[0]
+    assert "%" not in situation
