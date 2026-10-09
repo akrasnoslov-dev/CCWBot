@@ -303,9 +303,9 @@ def test_a_news_only_rejection_clears_the_failure_streak():
 
 
 def test_terminal_significance_and_render_failures_count(caplog):
-    # Active significance backoff remains a non-failure skip. Once significance succeeds,
-    # exhausting the render LLM chain is terminal because non-LLM presentation fallback is
-    # intentionally disabled.
+    # Active significance backoff remains a non-failure skip. Render transport
+    # failures still count; exhausted invalid output recovers only after a validated
+    # deterministic fallback, without incrementing the failure streak.
     import inspect
 
     from bot import alerts
@@ -323,8 +323,9 @@ def test_terminal_significance_and_render_failures_count(caplog):
         "except Exception as error:", 1
     )[1].split("normalized_render =", 1)[0]
     assert "_log_event_analysis_failure(" in render_failure
-    assert "event_alert_render_fallback" not in render_source
-    assert "_deterministic_event_alert_render_result_for_validation" not in source
+    assert "_verified_event_alert_render_fallback" in render_source
+    assert "_render_schema_check(candidate)" in render_failure
+    assert "if render_fallback_reason is None:" in render_failure
 
 
 def test_skipped_delivery_reasons_are_reported_separately():

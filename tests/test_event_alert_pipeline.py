@@ -513,10 +513,6 @@ async def test_event_significance_news_only_true_is_schema_rejected_before_rende
     ("render_error", "expected_reason"),
     (
         (
-            alerts.AISchemaValidationError("render failed"),
-            "schema_validation_failed",
-        ),
-        (
             alerts.AIProviderRateLimitError("render rate limited"),
             "rate_limit",
         ),
@@ -529,7 +525,7 @@ async def test_event_significance_news_only_true_is_schema_rejected_before_rende
         ),
     ),
 )
-async def test_render_failure_is_terminal_without_non_llm_fallback(
+async def test_render_transport_failures_remain_terminal(
     monkeypatch, render_error, expected_reason
 ):
     successes = []
@@ -618,7 +614,7 @@ def test_event_alert_render_materialization_keeps_identity_and_facts_backend_own
 
     assert normalized["event_key"] is None
     assert normalized["title"] == "BTC up ~4.0% in the last 3 hours"
-    assert normalized["urgency"] == "high"
+    assert normalized["urgency"] == "normal"
     assert normalized["related_news_ids"] == ["unrelated-news"]
     assert normalized["message_body"] == "The supplied move warrants attention."
     assert normalized["possible_action"] == "Monitor the next snapshots."
@@ -731,7 +727,7 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_factual_render_validation_failure_does_not_use_non_llm_fallback(monkeypatch):
+async def test_exhausted_factual_render_failure_uses_safe_fallback(monkeypatch):
     payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     monkeypatch.setattr(
         alerts,
@@ -764,8 +760,10 @@ async def test_factual_render_validation_failure_does_not_use_non_llm_fallback(m
 
     decision, analysis_id = await alerts._create_event_analysis_decision(payload)
 
-    assert analysis_id is None
-    assert decision is None
+    assert analysis_id == 321
+    assert decision is not None and decision.should_alert
+    assert decision.urgency == "normal"
+    assert "3.1%" not in decision.message_body
     create_market_event.assert_not_awaited()
 
 
