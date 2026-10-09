@@ -226,7 +226,10 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         return False
     if "snapshot" in lowered and not step_changes:
         return False
-    if any(term in lowered for term in ("persistent", "persistence")) and not has_persistence:
+    if any(
+        term in lowered
+        for term in ("persistent", "persistence", "consisten", "throughout", "steady")
+    ) and not has_persistence:
         return False
     # An opposite 24h trend cannot license the LLM to describe the current
     # analysed-window move with the broader trend's sign.
