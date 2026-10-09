@@ -224,10 +224,18 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         )
     ):
         return False
-    if any(term in lowered for term in ("snapshot", "persistent", "persistence")) and not (
-        step_changes and (has_persistence or has_reversal)
-    ):
+    if "snapshot" in lowered and not step_changes:
         return False
+    if any(term in lowered for term in ("persistent", "persistence")) and not has_persistence:
+        return False
+    # An opposite 24h trend cannot license the LLM to describe the current
+    # analysed-window move with the broader trend's sign.
+    for adjective, positive in (("positive", True), ("negative", False)):
+        if re.search(
+            rf"\b{adjective}\s+(?:short[- ]term|current|latest|analysed[- ]window)\b",
+            lowered,
+        ) and not (window_change is not None and (window_change > 0) == positive):
+            return False
     if "reversal" in lowered and not has_reversal:
         return False
     if "diverg" in lowered and not has_divergence:
