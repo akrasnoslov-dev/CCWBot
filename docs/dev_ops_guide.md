@@ -273,6 +273,8 @@ installation; never assume the live script matches the GitHub PR.
   the installed /usr/local/bin/ccwbot-deploy-safe and its /usr ancestry.
   Keep all ancestors and descendants inaccessible for writes by the deploy user.
   /opt/backups must be root-owned, non-symlinked and not writable by others.
+  Git's core.hooksPath is forced to /dev/null by wrapper-owned environment
+  overrides: a repository post-merge hook must never execute as root.
 - Root-controlled /run and a root-owned 0700 directory
   /run/ccwbot-deploy-safe.lock hold the flock on a directory descriptor.
   No predictable writable /run/lock file is created or truncated.
@@ -287,6 +289,11 @@ installation; never assume the live script matches the GitHub PR.
   ops_agent changes, and verifies a fresh gzip backup before Git advance.
   When HEAD already equals origin/main, it performs only health verification,
   does not backup/rebuild/restart, and preserves the last good rollback record.
+- Compose uses the fixed /opt/CCWBot/docker-compose.yml and project name ccwbot.
+  On failed deploy recovery and rollback, --remove-orphans removes obsolete
+  candidate-only containers; never use this during concurrent ops-agent
+  collection under the same Compose project because its overlay containers
+  could be treated as orphans. Schedule operations separately.
 - After a failed build, Compose configuration, restart or health check,
   the wrapper tries to restore the previous checkout AND service, keeps old
   rollback state, and still exits with failure. Recovery can also fail:
