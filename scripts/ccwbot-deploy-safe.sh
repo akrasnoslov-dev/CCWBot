@@ -158,17 +158,22 @@ case "$action" in
     if [ -n "$("$GIT" diff --name-only "$previous" "$candidate" -- alembic/versions/ ops_agent/)" ]; then
       fail "release includes migrations or ops-agent changes; use the manual deploy runbook"
     fi
+    # Validate and stage the rollback record BEFORE changing the checkout/service.
+    ensure_state_dir
+    if [ -e "$STATE/last-deploy" ] || [ -L "$STATE/last-deploy" ]; then check_state_file; fi
+    pending=$(/usr/bin/mktemp "$STATE/last-deploy.XXXXXXXX") || fail "could not stage rollback record"
+    trap '/usr/bin/rm -f -- "$pending"' EXIT
+    printf '%s\n%s\n' "$previous" "$candidate" > "$pending" || fail "cannot write rollback record"
+    /usr/bin/chmod 600 "$pending"
     backup
     "$GIT" merge --ff-only "$candidate" || fail "fast-forward merge failed"
     if ! { "$DOCKER" compose config -q && "$DOCKER" compose up -d --build && health_check; }; then
       restore_after_failure "$previous" "deploy"
     fi
-    ensure_state_dir
-    if [ -e "$STATE/last-deploy" ] || [ -L "$STATE/last-deploy" ]; then check_state_file; fi
-    tmp=$(/usr/bin/mktemp "$STATE/last-deploy.XXXXXXXX") || fail "could not create rollback record"
-    printf '%s\n%s\n' "$previous" "$candidate" > "$tmp"
-    /usr/bin/chmod 600 "$tmp"
-    /usr/bin/mv -f -- "$tmp" "$STATE/last-deploy"
+    if ! /usr/bin/mv -f -- "$pending" "$STATE/last-deploy"; then
+      restore_after_failure "$previous" "deploy-state"
+    fi
+    trap - EXIT
     echo "deployment_head=$candidate"
     ;;
   rollback)
