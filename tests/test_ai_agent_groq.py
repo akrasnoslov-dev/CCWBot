@@ -83,7 +83,6 @@ def test_event_alert_render_schema_only_contains_model_generated_fields():
         "message_body",
         "related_news_ids",
         "possible_action",
-        "urgency",
     }
     assert set(schema["properties"]) == set(schema["required"])
     prompt = ai_agent_groq.build_event_alert_render_prompt(
@@ -98,7 +97,7 @@ def test_event_alert_render_schema_only_contains_model_generated_fields():
         }
     )
     assert (
-        "Return exactly message_body,related_news_ids,possible_action,urgency."
+        "Return exactly message_body,related_news_ids,possible_action."
         in prompt
     )
     assert "reason_for_no_alert=null" not in prompt

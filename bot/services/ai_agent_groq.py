@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
 
@@ -193,13 +194,11 @@ _EVENT_ALERT_RENDER_JSON_SCHEMA = {
         "message_body": {"type": "string"},
         "related_news_ids": {"type": "array", "items": {"type": "string"}},
         "possible_action": {"type": "string"},
-        "urgency": {"type": "string", "enum": ["low", "normal", "high"]},
     },
     "required": [
         "message_body",
         "related_news_ids",
         "possible_action",
-        "urgency",
     ],
     "additionalProperties": False,
 }
@@ -577,28 +576,59 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
         "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
         "do not re-decide whether to alert.",
-        "Return exactly message_body,related_news_ids,possible_action,urgency. Backend owns event "
-        "identity and title.",
+        "Return exactly message_body,related_news_ids,possible_action. Backend owns event "
+        "identity, title, urgency, and all numeric market facts.",
         "Market first; news is supporting context only and never a claimed cause. Use supplied "
         "facts only. message_body must be concise and must not state prices, percentages, "
         "exact time-window moves, unsupported trajectory claims, or invented market facts. "
         "possible_action is monitor-only, never a trade instruction.",
-        "Input:sym;m={s,w,cw,c24,cl};s=[[min,USD],...],0=now,<0=older;"
-        "cw=% over w;c24=24h%;cl=since alert%;n={i,src,t,x,r,mat,h};sig={c,r}. "
-        ".042=.042%,not 4.2%;news IDs only n.i.",
+        "Input:sym;market_directions={window,24h,since}, each up|down|flat only when "
+        "supported; n={i,src,t,x,r,mat,h};sig={c,r};news IDs only n.i. "
+        "Do not add numerical claims, specific durations, a market direction absent from "
+        "market_directions, urgency, or causal explanations.",
     )
 )
 
 
+def _render_market_direction(value: object) -> str | None:
+    """Return only a supported sign; no rounded or raw market numbers reach Render."""
+    if value is None:
+        return None
+    try:
+        change = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not change.is_finite():
+        return None
+    return "up" if change > 0 else "down" if change < 0 else "flat"
+
+
 def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
-    payload = _event_analysis_prompt_payload(input_payload)
+    # Render must not reinterpret numeric, snapshot, or previous-event evidence.
+    # The backend separately renders verified prices, periods, and percentages.
+    market = input_payload.get("market")
+    market = market if isinstance(market, dict) else {}
+    directions = {}
+    if market.get("analysed_window_minutes") is not None:
+        window = _render_market_direction(market.get("chg_window_percent"))
+        if window is not None:
+            directions["window"] = window
+    day = _render_market_direction(market.get("chg24h_percent"))
+    if day is not None:
+        directions["24h"] = day
+    last_msg = input_payload.get("last_msg")
+    if isinstance(last_msg, dict) and last_msg.get("time") and last_msg.get("price") is not None:
+        since = _render_market_direction(market.get("chg_since_msg_percent"))
+        if since is not None:
+            directions["since"] = since
     significance = input_payload.get("significance_decision")
     significance = significance if isinstance(significance, dict) else {}
-    payload["sig"] = {
-        "c": significance.get("confidence"),
-        "r": significance.get("reason_code"),
+    return {
+        "sym": input_payload.get("symbol"),
+        "market_directions": directions,
+        "n": _event_analysis_prompt_payload(input_payload)["n"],
+        "sig": {"c": significance.get("confidence"), "r": significance.get("reason_code")},
     }
-    return payload
 
 
 def build_event_alert_render_prompt(input_payload: dict) -> str:
