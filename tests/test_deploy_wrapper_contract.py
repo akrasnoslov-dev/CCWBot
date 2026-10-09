@@ -37,6 +37,8 @@ class ContractTests(unittest.TestCase):
         source = WRAPPER.read_text(encoding="utf-8")
         for needle in (
             "set -Eeuo pipefail", "umask 077", "trusted_path /opt dir",
+            "trusted_path /usr/local/bin/ccwbot-deploy-safe file",
+            "trusted_path /opt/backups dir", "[ ! -L /opt/backups ]",
             'trusted_path "$ROOT/.git/config" file',
             'trusted_path "$ROOT/scripts/backup_postgres.sh" file',
             'trusted_path "$ROOT/docker-compose.yml" file',
