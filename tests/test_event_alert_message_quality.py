@@ -273,3 +273,29 @@ def test_generic_snapshot_consistency_requires_all_steps_to_agree():
     fallback, _ = event_alert_presentation_fallback(market, [])
     assert situation == fallback
     assert "consistent movement" not in situation
+
+
+@pytest.mark.parametrize(
+    "prices",
+    [
+        ("100", "105", "115.7625"),
+        ("100", "95", "85.7375"),
+    ],
+)
+def test_equal_compounded_per_minute_rate_does_not_claim_pace_change(prices):
+    market = {
+        "analysed_window_minutes": 180,
+        "chg_window_percent": Decimal("4") if Decimal(prices[2]) > 100 else Decimal("-4"),
+        "chg30m_percent": Decimal("1") if Decimal(prices[2]) > 100 else Decimal("-1"),
+        "chg1h_percent": Decimal("2") if Decimal(prices[2]) > 100 else Decimal("-2"),
+        "snapshots": [
+            {"m": -90, "p": Decimal(prices[0])},
+            {"m": -60, "p": Decimal(prices[1])},
+            {"m": 0, "p": Decimal(prices[2])},
+        ],
+    }
+    # 30m factor 1.05 (or 0.95), 60m factor its exact square.
+    situation, watch = event_alert_presentation_fallback(market, [])
+    assert "picked up pace" not in situation
+    assert "slower per minute" not in situation
+    assert "next observed interval" not in watch
