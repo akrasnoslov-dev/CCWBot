@@ -433,33 +433,60 @@ def event_alert_presentation_fallback(
 
 
 def _short_window_pace_context(market_data: dict) -> tuple[str, str] | None:
-    """Compare the latest 30-minute rate against the one-hour average, never significance."""
+    """Compare actual snapshot step rates; do not assume nominal 30m/1h timing."""
     window = _decimal_market_value(market_data.get("analysed_window_minutes"))
-    change = _decimal_market_value(market_data.get("chg_window_percent"))
-    change_30m = _decimal_market_value(market_data.get("chg30m_percent"))
-    change_1h = _decimal_market_value(market_data.get("chg1h_percent"))
+    primary = _decimal_market_value(market_data.get("chg_window_percent"))
+    short_30m = _decimal_market_value(market_data.get("chg30m_percent"))
+    short_1h = _decimal_market_value(market_data.get("chg1h_percent"))
     if (
         window is None
         or window < 60
-        or any(value is None or value == 0 for value in (change, change_30m, change_1h))
+        or any(value is None or value == 0 for value in (primary, short_30m, short_1h))
     ):
         return None
-    if not ((change > 0) == (change_30m > 0) == (change_1h > 0)):
+    if not ((primary > 0) == (short_30m > 0) == (short_1h > 0)):
         return None
-    latest_rate = abs(change_30m) * 2
-    hour_rate = abs(change_1h)
-    if latest_rate > hour_rate:
+
+    snapshots = market_data.get("snapshots")
+    if not isinstance(snapshots, list):
+        return None
+    observations: list[tuple[Decimal, Decimal]] = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and minute <= 0 and price is not None and price > 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    if len(observations) < 3:
+        return None
+    (old_minute, old_price), (middle_minute, middle_price), (
+        recent_minute, recent_price
+    ) = observations[-3:]
+    # The latest observation is now, and the sampled durations are taken from
+    # their actual minute offsets rather than assumed to be 30m or 60m.
+    if recent_minute != 0 or old_minute >= middle_minute or middle_minute >= recent_minute:
+        return None
+    earlier_rate = ((middle_price / old_price) - 1) / (middle_minute - old_minute)
+    latest_rate = ((recent_price / middle_price) - 1) / (recent_minute - middle_minute)
+    if (
+        earlier_rate == 0
+        or latest_rate == 0
+        or not ((earlier_rate > 0) == (latest_rate > 0) == (primary > 0))
+    ):
+        return None
+    if abs(latest_rate) > abs(earlier_rate):
         return (
-            "The latest 30-minute change is steeper than the one-hour average in the same "
-            "direction, so the move has picked up pace.",
-            "Watch whether the next 30-minute observation keeps that faster pace or eases.",
+            "The latest observed price step is steeper per minute than the preceding "
+            "snapshot interval, so the move has picked up pace.",
+            "Watch whether the next observed interval maintains that pace or starts to ease.",
         )
-    if latest_rate < hour_rate:
+    if abs(latest_rate) < abs(earlier_rate):
         return (
-            "The latest 30-minute change is slower than the one-hour average; "
-            "the pace of the move has eased.",
-            "Watch whether the next 30-minute observation slows further or resumes "
-            "the earlier pace.",
+            "The latest observed price step is slower per minute than the preceding "
+            "snapshot interval, so the move has eased.",
+            "Watch whether the next observed interval slows further or picks up pace again.",
         )
     return None
 
