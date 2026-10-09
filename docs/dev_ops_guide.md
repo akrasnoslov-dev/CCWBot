@@ -253,63 +253,100 @@ start or restart the bot.
 
 ## Non-interactive, least-privilege bot deploys
 
-The production `ccwbot_deploy` account authenticates with its **own dedicated SSH key**
-and is not in the `docker` group. Its private key is kept on the operator's local
-machine, never in Git or on the VPS. The public key lives only in the account's
-`authorized_keys`. Do not remove the passphrase from the operator's personal root key.
+The ccwbot_deploy SSH account uses its own dedicated key and must not belong
+to the Docker group or write to /opt/CCWBot. Its private key stays with the
+operator. The installed root-owned /usr/local/bin/ccwbot-deploy-safe accepts
+exactly four actions: status, backup, deploy, rollback. No extra arguments.
+scripts/ccwbot-deploy.sudoers allowlists only these four exact commands. Never
+grant shell/root sudo, Docker access, repository write access, or NOPASSWD: ALL.
 
-The root-owned wrapper `/usr/local/bin/ccwbot-deploy-safe` implements only
-`status`, `backup`, `deploy` and `rollback`. It rejects extra parameters,
-requires a clean `main` checkout for state-changing commands, verifies the
-fixed repository origin, creates and gzip-verifies a fresh database backup,
-allows fast-forward updates from `origin/main`, and checks `/health`.
-Deploying changes under `ops_agent/` or `alembic/versions/` requires the
-manual operator runbook instead. The wrapper saves the verified previous
-deployment revision for a constrained rollback. It must remain root-owned,
-not editable by the deploy user.
+The tracked scripts/ccwbot-deploy-safe.sh is NOT the installed wrapper.
+Git checkout, merge and ordinary deploy do not replace /usr/local/bin or sudoers.
+Always check installed checksum and provenance before separately approved
+installation; never assume the live script matches the GitHub PR.
 
-Canonical installation inputs:
+### Security contract
 
-- `scripts/ccwbot-deploy-safe.sh`
-- `scripts/ccwbot-deploy.sudoers`
+- Requires root, fixed origin, clean main checkout, and root-owned,
+  non-group/other-writable, non-symlink trusted paths: /opt, repository,
+  .git and its config, scripts/backup_postgres.sh, Dockerfile and Compose.
+  Keep all ancestors and descendants inaccessible for writes by the deploy user.
+- Root-controlled /run and a root-owned 0700 directory
+  /run/ccwbot-deploy-safe.lock hold the flock on a directory descriptor.
+  No predictable writable /run/lock file is created or truncated.
+- /var/lib/ccwbot-deploy is root-owned 0700. The last-deploy record is 0600,
+  rejects symlinks and is atomically updated only after successful health.
+- The effective published port comes from docker compose config --format json.
+  The binding must be exactly 127.0.0.1. The JSON is piped to a parser and
+  must never be logged or printed: it can contain expanded credentials.
+  Only HTTP success AND JSON with top-level status == "ok" pass the health
+  check; HTTP 200 with degraded, malformed JSON or wrong port must fail.
+- Deploy requires origin/main to be a descendant, rejects migrations and
+  ops_agent changes, and verifies a fresh gzip backup before Git advance.
+  When HEAD already equals origin/main, it performs only health verification,
+  does not backup/rebuild/restart, and preserves the last good rollback record.
+- After a failed build, Compose configuration, restart or health check,
+  the wrapper tries to restore the previous checkout AND service, keeps old
+  rollback state, and still exits with failure. Recovery can also fail:
+  stop automated retries and escalate to manual operator recovery.
+- Rollback validates a two-SHA ancestor record, exact current deployed HEAD
+  and fresh backup. It clears the record only after successful service health.
+  On failed rollback recovery, the record remains for manual inspection.
+- Status only reads runtime state; backup/deploy/rollback change production.
+  All state-changing commands require a separate explicit approval.
 
-Install or refresh them **only from a reviewed main release**, using an
-authorized root operator on production (not the deploy account):
+### Installation (requires separate production authorization)
 
-```bash
-cd /opt/CCWBot
-bash -n scripts/ccwbot-deploy-safe.sh
-install -o root -g root -m 755 scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
-install -o root -g root -m 440 scripts/ccwbot-deploy.sudoers /etc/sudoers.d/ccwbot-deploy.tmp
-visudo -cf /etc/sudoers.d/ccwbot-deploy.tmp
-mv /etc/sudoers.d/ccwbot-deploy.tmp /etc/sudoers.d/ccwbot-deploy
-visudo -cf /etc/sudoers.d/ccwbot-deploy
-```
+After the fixed code has reached an approved, reviewed main release,
+an authorized root operator must verify the correct Git HEAD, filesystem
+ownership/modes and installed/source drift before running the following.
+PR #301 does not grant approval to execute these commands.
 
-Then verify over the separate SSH alias with noninteractive authentication:
+    cd /opt/CCWBot
+    git status --short
+    git rev-parse HEAD
+    bash -n scripts/ccwbot-deploy-safe.sh
+    sha256sum scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
+    stat -c '%u %a %n' /opt /opt/CCWBot /opt/CCWBot/.git /opt/CCWBot/.git/config /opt/CCWBot/scripts /opt/CCWBot/scripts/backup_postgres.sh /opt/CCWBot/docker-compose.yml /opt/CCWBot/Dockerfile /run
+    install -o root -g root -m 755 scripts/ccwbot-deploy-safe.sh /usr/local/bin/ccwbot-deploy-safe
+    install -o root -g root -m 440 scripts/ccwbot-deploy.sudoers /etc/sudoers.d/ccwbot-deploy.tmp
+    visudo -cf /etc/sudoers.d/ccwbot-deploy.tmp
+    mv /etc/sudoers.d/ccwbot-deploy.tmp /etc/sudoers.d/ccwbot-deploy
+    visudo -cf /etc/sudoers.d/ccwbot-deploy
 
-```bash
-ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n -l'
-ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
-ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/bin/id'
-```
+Before install: confirm /run is protected and the root-owned checkout is
+not writable by other users. Never overwrite a production .env or modify
+rollback state during installation.
 
-The first two must succeed, and the last **must fail**; additional parameters
-must likewise be denied. Only the wrapper may run as root. Do not grant
-`NOPASSWD: ALL`, write access to the production repository, or Docker-group
-membership to this account.
+### Read-only permission verification
 
-For a vetted main release without migrations or ops-agent modifications:
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n -l'
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sha256sum /usr/local/bin/ccwbot-deploy-safe'
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/bin/id' # MUST FAIL
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy extra' # MUST FAIL
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'id -nG' # MUST NOT include docker
 
-```bash
-ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
-```
+Never test this by triggering backup, deploy or rollback. A failed SSH
+connection is UNKNOWN, not proof that production is least privileged.
 
-This is not evidence of Event Alert quality. After deploying, separately
-verify fresh Event Analysis outcomes and sanitized operational diagnostics
-through the approved read-only investigator and ops-agent paths. If the
-wrapper fails partway through, inspect the exact stage and use the manual
-recovery runbook; never bypass its guards with unrestricted sudo.
+### Future approved deployment and incident recovery
+
+Only for an approved main release with no migrations or ops_agent files:
+
+    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
+
+The command above is a production change; do not run it during diagnostics.
+On failure, inspect branch/HEAD, Docker status, the JSON /health status,
+and backup evidence through approved read-only means. If automatic recovery
+reports success, the attempted deploy STILL FAILED. If it reports recovery
+failure, stop retrying and hand off to a separately authorized manual
+operator recovery. Never force-reset, reinstall, change sudoers, or run
+migrations as part of read-only diagnosis. Rollback also requires approval.
+
+After an authorized release, run a private Telegram smoke test and sanitized
+ops-agent report checks. See docs/release_checklist.md for release gates and
+the distinct ops-agent overlay image/host-wrapper procedure.
 
 ## Dependency updates
 
