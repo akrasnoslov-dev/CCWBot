@@ -39,6 +39,9 @@ class ContractTests(unittest.TestCase):
             "set -Eeuo pipefail", "umask 077", "trusted_path /opt dir",
             "trusted_path /usr/local/bin/ccwbot-deploy-safe file",
             "trusted_path /opt/backups dir", "[ ! -L /opt/backups ]",
+            "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0=/dev/null",
+            "COMPOSE_PROJECT_NAME=ccwbot", "COMPOSE_FILE=/opt/CCWBot/docker-compose.yml",
+            '"$DOCKER" compose up -d --build --remove-orphans',
             'trusted_path "$ROOT/.git/config" file',
             'trusted_path "$ROOT/scripts/backup_postgres.sh" file',
             'trusted_path "$ROOT/docker-compose.yml" file',
@@ -52,6 +55,41 @@ class ContractTests(unittest.TestCase):
             self.assertIn(needle, source)
         self.assertNotIn("/run/lock/", source)
         self.assertNotIn('exec 9>"', source)
+
+    def test_git_hooks_are_disabled_for_privileged_git(self):
+        if os.name == "nt":
+            self.skipTest("POSIX Git hook executable contract runs on Linux")
+        source = WRAPPER.read_text(encoding="utf-8")
+        self.assertIn("GIT_CONFIG_COUNT=1", source)
+        self.assertIn("GIT_CONFIG_KEY_0=core.hooksPath", source)
+        self.assertIn("GIT_CONFIG_VALUE_0=/dev/null", source)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            def git(*args, env=None):
+                return subprocess.run(
+                    ["git", "-C", str(repo), *args],
+                    env=env, capture_output=True, text=True, check=True,
+                )
+            git("init", "-b", "main")
+            git("config", "user.name", "Contract Test")
+            git("config", "user.email", "contract@example.invalid")
+            (repo / "sample").write_text("a")
+            git("add", "sample")
+            git("commit", "-m", "initial")
+            git("checkout", "-b", "release")
+            (repo / "sample").write_text("b")
+            git("commit", "-am", "release")
+            git("checkout", "main")
+            marker = repo / "hook-ran"
+            hook = repo / ".git" / "hooks" / "post-merge"
+            hook.write_text("#!/bin/sh\nprintf ran > " + str(marker) + "\n")
+            hook.chmod(0o755)
+            env = {
+                **os.environ, "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "/dev/null",
+            }
+            git("merge", "--ff-only", "release", env=env)
+            self.assertFalse(marker.exists(), "root-run Git merge must ignore local hooks")
 
     def test_root_path_guard_rejects_symlink_and_writable_file(self):
         if os.name == "nt":
@@ -94,6 +132,7 @@ class SimulatedDeployTests(unittest.TestCase):
         self.head = self.base / "head"
         self.head.write_text(OLD)
         self.upcount = self.base / "upcount"
+        self.orphan_log = self.base / "orphans"
         self.port = 0
         self.requests = []
         self.degrade_when = ""
@@ -140,7 +179,10 @@ esac
 case "$*" in
   "compose config --format json") cat "$TEST_COMPOSE_JSON" ;;
   "compose config -q"|"compose ps") : ;;
-  "compose up -d --build")
+  "compose up -d --build"|"compose up -d --build --remove-orphans")
+    if [ "$*" = "compose up -d --build --remove-orphans" ]; then
+      echo cleaned >> "$TEST_ORPHAN_LOG"
+    fi
     n=0
     [ ! -f "$TEST_UPCOUNT" ] || n=$(cat "$TEST_UPCOUNT")
     n=$((n+1)); echo "$n" > "$TEST_UPCOUNT"
@@ -175,7 +217,8 @@ esac
         self.env = {
             **os.environ, "TEST_HEAD": str(self.head),
             "TEST_CANDIDATE": str(self.candidate), "TEST_COMPOSE_JSON": str(self.compose_json),
-            "TEST_UPCOUNT": str(self.upcount), "TEST_BACKUP_FAIL": "0",
+            "TEST_UPCOUNT": str(self.upcount), "TEST_ORPHAN_LOG": str(self.orphan_log),
+            "TEST_BACKUP_FAIL": "0",
             "TEST_MIGRATION": "0", "TEST_FAIL_FIRST_UP": "0",
         }
 
@@ -219,6 +262,7 @@ esac
         rollback = self.run_action("rollback")
         self.assertEqual(rollback.returncode, 0, rollback.stderr)
         self.assertEqual(self.head.read_text(), OLD)
+        self.assertEqual(self.orphan_log.read_text().strip(), "cleaned")
         self.assertFalse((self.state / "last-deploy").exists())
         self.assertNotEqual(self.run_action("rollback").returncode, 0)
 
@@ -242,6 +286,7 @@ esac
         self.assertEqual(self.head.read_text(), OLD)
         self.assertEqual(record.read_bytes(), before)
         self.assertEqual(self.upcount.read_text().strip(), "2")
+        self.assertEqual(self.orphan_log.read_text().strip(), "cleaned")
 
     def test_failed_backup_does_not_advance_revision(self):
         result = self.run_action("deploy", env={"TEST_BACKUP_FAIL": "1"})
