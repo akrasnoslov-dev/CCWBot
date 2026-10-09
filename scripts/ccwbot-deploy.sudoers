@@ -1,0 +1,2 @@
+Defaults:ccwbot_deploy env_reset, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+ccwbot_deploy ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-deploy-safe status, /usr/local/bin/ccwbot-deploy-safe backup, /usr/local/bin/ccwbot-deploy-safe deploy, /usr/local/bin/ccwbot-deploy-safe rollback
