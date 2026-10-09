@@ -77,6 +77,35 @@ change the significance decision.
 If supported render failures exhaust the provider chain, the backend may build neutral deterministic
 presentation text from the already validated market evidence.
 
+### Event Alert message quality contract
+
+A mobile alert should answer three questions in this order without becoming a report:
+
+1. **What changed?** A deterministic headline and compact metric block show the actual
+   analysed-window move, current price, and movement since the prior delivered alert/message
+   **only when** its reference price and timestamp are available. Never repeat these numbers
+   in free-form situation prose.
+2. **Why does this move matter now?** The situation adds **one verified relationship**:
+   a consistent snapshot path, a counter-move within that path, divergence/alignment with the
+   24-hour direction, or a faster/slower latest 30-minute pace relative to the same-direction
+   one-hour average. The 30m/1h comparison requires both valid observations, a matching
+   primary-move direction, and an analysed window of at least one hour. These are descriptive
+   comparisons **after** significance; none can create or suppress an alert. If nothing beyond
+   the analysed-window move is confirmed, say so instead of inventing novelty.
+3. **What is worth monitoring?** Name the next observation that could distinguish continuation,
+   slowing, or counter-movement. Prefer a specific supplied time frame when justified; otherwise
+   use a short, neutral conditional. Never give a trading instruction or generic risk-plan advice.
+
+Previously delivered alerts and recent-event counts help decide novelty upstream, but **do not
+prove** that the delivered move is unprecedented. The since-last-message metric may establish a
+verified difference in price, not a claim that the event is the first or most important.
+Thirty-day historical percentiles are comparison evidence, not proof of rarity without a
+sufficiently described sample and provenance; the current message contract does not present
+percentile-based rarity claims. Do not add unverified volume, ETF/regulatory actions, causality,
+rumours, or inference about trader intent. Related articles may be shown as coincident context
+but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
+Keep the existing disclaimer and single shared render per event.
+
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.
