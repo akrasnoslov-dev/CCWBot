@@ -93,7 +93,9 @@ It excludes the first and last ten minutes of the rolling window to avoid inflig
 false positives. Historical provider rows without an operation ID are not proof of a terminal
 outcome; they cannot be reconciled by ID and remain a historical coverage limitation.
 Rate-limit errors, backoff skips and circuit skips describe *provider attempts*, not logical
-failures, unless the final operation itself failed. A correlated failed attempt followed by a
+failures, unless the final operation itself failed. Persisted `skipped_due_to_rate_limit`
+and unrecognized logical statuses count as unknown, not terminal failures; only explicitly
+recognized terminal statuses enter the failure count. A correlated failed attempt followed by a
 successful terminal outcome increments `recovered_operations` once per logical operation,
 not the terminal-failure count.
 
