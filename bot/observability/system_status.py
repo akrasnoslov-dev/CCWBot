@@ -21,6 +21,7 @@ from bot.db.database import (
     User,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, display_symbol
+from bot.observability.logical_llm_health import CALL_TYPES, read_logical_llm_health
 from bot.services.llm.telemetry import get_active_llm_rate_limit_backoffs
 from bot.settings import (
     AUTOMATIC_CHECK_SCHEDULER_GRACE_SECONDS,
@@ -395,6 +396,17 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
         .limit(1)
     )
 
+    try:
+        results = await read_logical_llm_health(
+            session, now=now, call_types=("event_analysis",)
+        )
+        logical = results["event_analysis"]
+    except Exception:
+        return ComponentHealth(
+            "AI", ComponentStatus.UNKNOWN, "logical telemetry query failed",
+            summary="logical telemetry unavailable",
+        )
+
     if latest is None:
         return ComponentHealth(
             "AI",
@@ -445,6 +457,21 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
                 problem_reason = safe_detail
             if problem_reason:
                 problem_rows.append(f"Reason: {problem_reason}")
+
+    if logical.state in {"failed", "degraded"}:
+        status = (ComponentStatus.FAIL if logical.state == "failed" else ComponentStatus.WARN)
+        summary = (
+            f"24h logical success {logical.success_rate_percent:.1f}% "
+            f"({logical.successes}/{logical.successes + logical.terminal_failures})"
+        )
+        problem_rows = [f"Terminal failures: {logical.terminal_failures} in 24h"]
+        if logical.problem_symbols:
+            problem_rows.append(f"Affected symbols: {', '.join(logical.problem_symbols)}")
+    elif logical.missing_outcomes or logical.unknown_outcomes:
+        if status == ComponentStatus.OK:
+            status = ComponentStatus.UNKNOWN
+            summary = "logical evidence incomplete"
+        problem_rows.append("Missing/incomplete logical outcome telemetry")
 
     return ComponentHealth(
         "AI",
@@ -590,6 +617,10 @@ async def build_admin_llm_diagnostics_text(
     try:
         async with session_factory() as session:
             rows = await _llm_provider_breakdown_rows(session, now=now)
+            try:
+                logical = await read_logical_llm_health(session, now=now)
+            except Exception:
+                logical = None
     except Exception:
         return "LLM diagnostics\n\nTelemetry query failed."
 
@@ -635,7 +666,31 @@ async def build_admin_llm_diagnostics_text(
         )
         active.append(f"⚠️ {call_types} / {endpoint}{until}")
 
-    lines = ["LLM diagnostics — last 24h"]
+    lines = ["LLM diagnostics — last 24h", "", "Logical operations (final outcomes)"]
+    if logical is None:
+        lines.append("⚠️ Unknown — logical telemetry query failed")
+    else:
+        visible = [logical[name] for name in CALL_TYPES
+                   if logical[name].operations or logical[name].missing_outcomes]
+        if not visible:
+            lines.append("⚠️ Unknown — no logical operations observed")
+        for item in visible:
+            icon = {"ok": "✅", "degraded": "⚠️", "failed": "❌", "unknown": "⚠️"}[item.state]
+            label = _llm_call_type_label(item.call_type)
+            percent = (f"{item.success_rate_percent:.1f}%" if
+                       item.success_rate_percent is not None else "n/a")
+            detail = (
+                f"{item.successes} success, {item.terminal_failures} terminal failed"
+                f" ({item.operations} recorded, {percent})"
+            )
+            if item.recovered_operations:
+                detail += f"; {item.recovered_operations} recovered"
+            if item.missing_outcomes or item.unknown_outcomes:
+                detail += f"; {item.missing_outcomes + item.unknown_outcomes} missing/incomplete"
+            if item.state == "unknown" and not (item.missing_outcomes or item.unknown_outcomes):
+                detail += "; insufficient sample"
+            lines.append(f"{icon} {label} — {item.state}: {detail}")
+    lines.extend(("", "Provider attempts — Summary"))
     if not rows:
         lines.extend(("", "No provider attempts recorded."))
     else:
@@ -644,7 +699,6 @@ async def build_admin_llm_diagnostics_text(
         lines.extend(
             (
                 "",
-                "Summary",
                 f"Total: {total_attempts} {attempt_label}",
                 f"✅ {total_success} successful",
                 f"{failed_icon} {total_failed} failed / limited",
@@ -678,7 +732,7 @@ async def build_admin_llm_diagnostics_text(
 
     if active:
         lines.extend(("", "Active limits", *active))
-    lines.extend(("", "Final feature outcomes: System status."))
+    lines.extend(("", "Provider errors can recover; attempts are not logical failures."))
     return "\n".join(lines)
 
 
