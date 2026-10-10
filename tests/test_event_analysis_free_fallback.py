@@ -167,6 +167,23 @@ async def test_cloudflare_rate_limit_or_unavailable_model_reaches_mistral(
 
 
 @pytest.mark.asyncio
+async def test_cloudflare_json_mode_output_rejection_reaches_mistral(monkeypatch):
+    # Cloudflare documents this provider-side model-output failure verbatim.
+    # It is NOT a malformed client request even when wrapped as HTTP 400.
+    _configure(monkeypatch, ["cloudflare", "mistral"])
+    error = _http_error(400, code="invalid_request_error")
+    error.args = ("JSON Mode couldn't be met",)
+    assert telemetry.classify_ai_error_reason(error) == "provider_json_validate_failed"
+    cloudflare = StubProvider("cloudflare", error)
+    mistral = StubProvider("mistral", None)
+    result = await _event_call(LLMRouter(registry={
+        "cloudflare": cloudflare, "mistral": mistral,
+    }))
+    assert result.provider == "mistral"
+    assert len(cloudflare.calls) == len(mistral.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_cloudflare_credentials_optional_mistral_still_works(monkeypatch):
     _configure(monkeypatch, ["mistral"])
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "cloudflare,mistral")
