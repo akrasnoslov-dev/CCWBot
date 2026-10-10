@@ -272,3 +272,107 @@ async def test_health_reports_unknown_when_rollup_query_fails(monkeypatch):
     assert result["status"] == "ok"
     assert result["event_analysis"]["state"] == "unknown"
     assert "never leak" not in str(result)
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["skipped_due_to_rate_limit", "future_status"])
+async def test_skips_and_unrecognized_outcomes_do_not_count_as_terminal_failures(status):
+    engine, factory = await _db()
+    try:
+        async with factory() as session:
+            for index in range(25):
+                operation = _event(index)
+                operation.status = status
+                session.add(operation)
+            await session.commit()
+            result = (await read_logical_llm_health(session, now=NOW))["event_analysis"]
+        assert result.operations == 25
+        assert result.successes == 0
+        assert result.terminal_failures == 0
+        assert result.unknown_outcomes == 25
+        assert result.success_rate_percent is None
+        assert result.state == "unknown"
+        assert result.problem_symbols == ()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_admin_preserves_latest_failure_if_rolling_query_fails(monkeypatch):
+    from bot.observability import system_status
+
+    engine, factory = await _db()
+    try:
+        async with factory() as session:
+            session.add(_event(1, success=False))
+            await session.commit()
+
+        async def broken_rollup(*args, **kwargs):
+            raise RuntimeError("raw private DB details")
+
+        monkeypatch.setattr(system_status, "read_logical_llm_health", broken_rollup)
+        result = await build_admin_system_status_text(
+            db_enabled=True, session_factory=factory, now=NOW
+        )
+        assert "❌ AI — latest failed: llm_error" in result
+        assert "Rolling logical telemetry unavailable" in result
+        assert "raw private DB details" not in result
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_health_lookup_has_no_leftover_sibling_task(monkeypatch):
+    import asyncio
+    import time
+
+    from bot import health
+    from bot.observability import event_analysis_health
+
+    event_analysis_health.reset()
+    monkeypatch.setattr(health, "DB_ENABLED", False)
+    monkeypatch.setattr(health, "load_state", lambda: {})
+    cancelled = False
+
+    async def fail_latest_success():
+        raise RuntimeError("first DB lookup failed")
+
+    async def stalled_rollup():
+        nonlocal cancelled
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled = True
+
+    monkeypatch.setattr(health, "_read_last_event_analysis_success_at", fail_latest_success)
+    monkeypatch.setattr(health, "_read_event_analysis_logical_health", stalled_rollup)
+    result = await health.health_response(time.monotonic())
+    assert cancelled
+    assert result["status"] == "ok"
+    assert result["event_analysis"]["state"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_health_preserves_success_timestamp_when_rollup_fails(monkeypatch):
+    import time
+
+    from bot import health
+    from bot.observability import event_analysis_health
+
+    event_analysis_health.reset()
+    monkeypatch.setattr(health, "DB_ENABLED", False)
+    monkeypatch.setattr(health, "load_state", lambda: {})
+
+    async def recent_success():
+        return datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    async def failed_rollup():
+        raise RuntimeError("rolling DB query failed")
+
+    monkeypatch.setattr(health, "_read_last_event_analysis_success_at", recent_success)
+    monkeypatch.setattr(health, "_read_event_analysis_logical_health", failed_rollup)
+    result = await health.health_response(time.monotonic())
+    assert result["status"] == "ok"
+    assert result["event_analysis"]["state"] == "unknown"
+    assert result["event_analysis"]["last_success_at"] is not None
