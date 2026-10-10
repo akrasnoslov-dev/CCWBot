@@ -90,6 +90,7 @@ class AllProvidersFailedError(RuntimeError):
         attempts: list[str] | None = None,
         circuit_broken: bool = False,
         mixed_failure: bool = False,
+        operation_budget_exhausted: bool = False,
     ):
         super().__init__(message)
         self.last_error = last_error
@@ -97,3 +98,4 @@ class AllProvidersFailedError(RuntimeError):
         self.attempts = attempts or []
         self.circuit_broken = circuit_broken
         self.mixed_failure = mixed_failure
+        self.operation_budget_exhausted = operation_budget_exhausted

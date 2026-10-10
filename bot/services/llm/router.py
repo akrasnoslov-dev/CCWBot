@@ -35,7 +35,9 @@ Exhaustion mapping preserves the exception contract existing callers already han
 - otherwise (timeouts / 5xx / other transport failures) -> ``AllProvidersFailedError``.
 """
 
+import asyncio
 import logging
+import time
 
 from bot.services.llm import breaker, config
 from bot.services.llm.cloudflare_provider import get_provider as _cloudflare_provider
@@ -61,6 +63,12 @@ from bot.services.llm.telemetry import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _monotonic() -> float:
+    """Clock for a single Event Analysis operation deadline."""
+    return time.monotonic()
+
 
 # Reasons that mean "this provider is unusable right now, try the next one".
 #
@@ -137,25 +145,50 @@ class LLMRouter:
         max_tokens: int,
         response_format: dict | None,
         response_format_overrides: dict[str, dict | None] | None = None,
-        timeout: int = 15,
+        timeout: int | float | None = None,
         symbol: str | None = None,
         model_overrides: dict | None = None,
         validate_response=None,
     ):
         operation_id = current_llm_operation_id() or new_llm_operation_id()
+        budget = (
+            config.event_analysis_operation_budget_seconds()
+            if call_type == "event_analysis"
+            else None
+        )
+        # Covers HTTP, provider usage logging, breaker skips and response validation.
+        # A provider-specific asyncio.wait_for only bounds the HTTP portion.
+        deadline_guard = asyncio.timeout(budget)
         with llm_operation_scope(operation_id):
             try:
-                result = await self._chat_completion(
-                    call_type=call_type,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    response_format=response_format,
-                    response_format_overrides=response_format_overrides,
-                    timeout=timeout,
-                    symbol=symbol,
-                    model_overrides=model_overrides,
-                    validate_response=validate_response,
-                )
+                try:
+                    async with deadline_guard:
+                        result = await self._chat_completion(
+                            call_type=call_type,
+                            messages=messages,
+                            max_tokens=max_tokens,
+                            response_format=response_format,
+                            response_format_overrides=response_format_overrides,
+                            timeout=timeout,
+                            symbol=symbol,
+                            model_overrides=model_overrides,
+                            validate_response=validate_response,
+                        )
+                except TimeoutError as error:
+                    if not deadline_guard.expired():
+                        raise
+                    # A cancelled usage-log write may leave a missing attempt row, but the
+                    # caller still persists the terminal logical operation with this reason.
+                    logger.warning(
+                        "ops_event=llm_chain_exhausted call_type=%s "
+                        "failures=operation:operation_budget_exhausted operation_id=%s",
+                        call_type,
+                        operation_id,
+                    )
+                    raise AllProvidersFailedError(
+                        "Event Analysis operation budget exhausted",
+                        operation_budget_exhausted=True,
+                    ) from error
             except Exception as error:
                 error.operation_id = operation_id
                 raise
@@ -173,7 +206,7 @@ class LLMRouter:
         max_tokens: int,
         response_format: dict | None,
         response_format_overrides: dict[str, dict | None] | None = None,
-        timeout: int = 15,
+        timeout: int | float | None = None,
         symbol: str | None = None,
         model_overrides: dict | None = None,
         validate_response=None,
@@ -207,6 +240,14 @@ class LLMRouter:
         attempted_names: list[str] = []
         failure_categories: list[str] = []
         input_chars = message_input_chars(messages)
+        # One wall-clock allowance for the full Event Analysis chain. No provider is retried;
+        # the 15s + 25s + 15s defaults leave 5s headroom within 60s.
+        deadline = (
+            _monotonic() + config.event_analysis_operation_budget_seconds()
+            if call_type == "event_analysis"
+            else None
+        )
+        operation_budget_exhausted = False
 
         for index, (name, provider, configured_model) in enumerate(attempts):
             model = (model_overrides or {}).get(name) or configured_model
@@ -257,6 +298,18 @@ class LLMRouter:
                     attempt_response_format = response_format_overrides[model_key]
                 elif name in response_format_overrides:
                     attempt_response_format = response_format_overrides[name]
+            request_timeout = config.request_timeout_seconds_for(
+                call_type=call_type, provider=name, requested_timeout=timeout
+            )
+            deadline_capped = False
+            if deadline is not None:
+                remaining = deadline - _monotonic()
+                if remaining < 1:
+                    operation_budget_exhausted = True
+                    failure_categories.append("operation:operation_budget_exhausted")
+                    break
+                deadline_capped = request_timeout > remaining
+                request_timeout = min(request_timeout, remaining)
             attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
@@ -266,7 +319,7 @@ class LLMRouter:
                     messages=messages,
                     max_tokens=attempt_max_tokens,
                     response_format=attempt_response_format,
-                    timeout=timeout,
+                    timeout=request_timeout,
                     reasoning_effort=reasoning_effort,
                 )
             except LLMRateLimitBackoffActive as error:
@@ -300,6 +353,10 @@ class LLMRouter:
                 continue
             except Exception as error:
                 reason = classify_ai_error_reason(error)
+                if reason == "timeout" and deadline_capped:
+                    # Even the last provider may use up the remaining operation budget.
+                    # There may be no next iteration to observe deadline expiry.
+                    operation_budget_exhausted = True
                 breaker.record_failure(
                     call_type=call_type, provider=name, model=model, reason=reason
                 )
@@ -391,6 +448,16 @@ class LLMRouter:
                 ",".join(breaker_skipped) or "none",
                 current_llm_operation_id(),
             )
+
+        # A skipped, never-started request after the deadline is neither a new 429 nor a
+        # provider failure. Preserve this distinct terminal logical-operation outcome.
+        if operation_budget_exhausted:
+            raise AllProvidersFailedError(
+                f"Event Analysis operation budget exhausted for call_type={call_type}",
+                last_error=last_error,
+                attempts=attempted_names,
+                operation_budget_exhausted=True,
+            ) from last_error
 
         # Choose the exception that matches existing caller handling.
         if invalid_output_error is not None:

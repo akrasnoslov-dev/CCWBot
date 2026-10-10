@@ -312,6 +312,28 @@ def provider_attempts(call_type: str) -> list[tuple[str, str]]:
     return [(provider, model_for(provider, call_type)) for provider in provider_priority(call_type)]
 
 
+def request_timeout_seconds_for(
+    *, call_type: str, provider: str, requested_timeout: int | float | None = None
+) -> int | float:
+    """Choose a per-attempt HTTP timeout; explicit caller overrides remain authoritative."""
+    if requested_timeout is not None:
+        return requested_timeout
+    if call_type == "event_analysis" and provider == "gemini":
+        # Gemini reasoning occasionally exceeds the shared 15s limit. Keep this bounded so
+        # the third provider still has a full 15s within the 60s logical-operation budget.
+        return get_int_env(
+            "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", 25, minimum=15, maximum=30
+        )
+    return 15
+
+
+def event_analysis_operation_budget_seconds() -> int:
+    """Bound the complete Event Analysis provider chain, not each provider independently."""
+    return get_int_env(
+        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", 60, minimum=15, maximum=120
+    )
+
+
 def max_tokens_for(call_type: str) -> int:
     """Resolve the completion-token budget for a call type.
 
@@ -444,6 +466,9 @@ def resolved_configuration() -> list[dict]:
                         model=model,
                     ),
                     "reasoning_effort": reasoning_effort_for(model, call_type),
+                    "timeout_seconds": request_timeout_seconds_for(
+                        call_type=call_type, provider=provider
+                    ),
                 }
             )
         resolved.append(
@@ -451,6 +476,11 @@ def resolved_configuration() -> list[dict]:
                 "call_type": call_type,
                 "attempts": attempts,
                 "max_tokens": max_tokens_for(call_type),
+                "operation_budget_seconds": (
+                    event_analysis_operation_budget_seconds()
+                    if call_type == "event_analysis"
+                    else None
+                ),
             }
         )
     return resolved
@@ -508,11 +538,26 @@ def log_resolved_configuration() -> None:
     """
     reset_env_warning_cache()
     for entry in resolved_configuration():
+        timing = ""
+        if entry["call_type"] == "event_analysis":
+            gemini_timeout = next(
+                (
+                    item["timeout_seconds"]
+                    for item in entry["attempts"]
+                    if item["provider"] == "gemini"
+                ),
+                "none",
+            )
+            timing = (
+                f" operation_budget_seconds={entry['operation_budget_seconds']}"
+                f" gemini_timeout_seconds={gemini_timeout}"
+            )
         logger.info(
-            "ops_event=llm_config call_type=%s max_tokens=%s chain=%s",
+            "ops_event=llm_config call_type=%s max_tokens=%s chain=%s%s",
             entry["call_type"],
             entry["max_tokens"],
             _format_chain(entry),
+            timing,
         )
         _warn_undersized_thinking_budgets(entry)
 
