@@ -57,12 +57,15 @@ this is a conservative bounded mitigation for the observed 15-second timeouts, *
 measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
 OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
 would silently cut short Gemini's 25s deadline. The chain has a **60s**
-monotonic-clock request budget. Nominal HTTP ceilings total 55s, leaving 5s for routing and
-telemetry. Before any new HTTP attempt the router checks remaining time, shortens its timeout
-when necessary, and makes no new request when fewer than 1s remain. A chain stopped by that
-deadline gets the sanitized terminal `operation_budget_exhausted` reason, not a false provider
-429 or a successful operation. Every actual attempt and terminal feature outcome keeps the
-same logical `llm_operation_id`.
+monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
+skips and response validation. Nominal HTTP ceilings total 55s, leaving 5s for processing.
+Before any new HTTP attempt the router checks remaining time, shortens its timeout
+when necessary, and makes no new request when fewer than 1s remain. A timeout at the
+remaining deadline, including on the final provider or during logging/validation, gets
+the sanitized terminal `operation_budget_exhausted` reason, not a false provider 429
+or a successful operation. A forced cancellation can leave an individual provider-attempt
+telemetry row missing, but the terminal feature outcome still carries the reason and
+the logical `llm_operation_id`.
 
 Only these Event Analysis settings may adjust the defaults (both validated and logged on
 startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and

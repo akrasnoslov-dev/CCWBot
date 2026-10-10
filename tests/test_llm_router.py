@@ -148,6 +148,72 @@ async def test_event_analysis_budget_stops_chain_before_new_http_request(monkeyp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stall_at", ["provider_telemetry", "output_validation"])
+async def test_event_analysis_deadline_covers_provider_and_validator(monkeypatch, stall_at):
+    """One stalled DB/validation await cannot hold the Event Analysis chain open."""
+    import time
+
+    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+    monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 1.1)
+
+    class SlowProvider(FakeProvider):
+        async def chat_completion(self, **kwargs):
+            self.calls += 1
+            self.operation_ids.append(current_llm_operation_id())
+            if stall_at == "provider_telemetry":
+                # Simulate a provider finishing HTTP but hanging on its usage-log write.
+                await asyncio.sleep(1.7)
+            return _result(self.name)
+
+    gemini = SlowProvider("gemini", None)
+    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"gemini": gemini, "mistral": mistral})
+
+    async def validate(_result_value):
+        if stall_at == "output_validation":
+            # Successful HTTP response followed by a stalled validator telemetry write.
+            await asyncio.sleep(1.7)
+        return _result_value
+
+    started = time.monotonic()
+    with pytest.raises(AllProvidersFailedError) as caught:
+        await router.chat_completion(
+            call_type="event_analysis",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=10,
+            response_format=None,
+            validate_response=validate,
+        )
+
+    assert time.monotonic() - started < 1.45
+    assert caught.value.operation_budget_exhausted is True
+    assert classify_ai_error_reason(caught.value) == "operation_budget_exhausted"
+    assert gemini.calls == 1
+    assert mistral.calls == 0
+    assert gemini.operation_ids == [caught.value.operation_id]
+
+
+@pytest.mark.asyncio
+async def test_final_deadline_capped_timeout_is_recorded_as_budget_exhaustion(monkeypatch):
+    from bot.services.llm import router as router_module
+
+    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    clock = iter((100.0, 100.0, 156.0))
+    monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
+    groq = FakeProvider("groq", _http_error(503))
+    gemini = FakeProvider("gemini", asyncio.TimeoutError())
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini})
+
+    with pytest.raises(AllProvidersFailedError) as caught:
+        await _call(router)
+
+    assert gemini.last_timeout == pytest.approx(4.0)
+    assert caught.value.operation_budget_exhausted is True
+    assert classify_ai_error_reason(caught.value) == "operation_budget_exhausted"
+    assert groq.operation_ids == gemini.operation_ids == [caught.value.operation_id]
+
+
+@pytest.mark.asyncio
 async def test_event_analysis_budget_caps_late_mistral_timeout(monkeypatch):
     from bot.services.llm import router as router_module
 

@@ -35,6 +35,7 @@ Exhaustion mapping preserves the exception contract existing callers already han
 - otherwise (timeouts / 5xx / other transport failures) -> ``AllProvidersFailedError``.
 """
 
+import asyncio
 import logging
 import time
 
@@ -150,19 +151,44 @@ class LLMRouter:
         validate_response=None,
     ):
         operation_id = current_llm_operation_id() or new_llm_operation_id()
+        budget = (
+            config.event_analysis_operation_budget_seconds()
+            if call_type == "event_analysis"
+            else None
+        )
+        # Covers HTTP, provider usage logging, breaker skips and response validation.
+        # A provider-specific asyncio.wait_for only bounds the HTTP portion.
+        deadline_guard = asyncio.timeout(budget)
         with llm_operation_scope(operation_id):
             try:
-                result = await self._chat_completion(
-                    call_type=call_type,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    response_format=response_format,
-                    response_format_overrides=response_format_overrides,
-                    timeout=timeout,
-                    symbol=symbol,
-                    model_overrides=model_overrides,
-                    validate_response=validate_response,
-                )
+                try:
+                    async with deadline_guard:
+                        result = await self._chat_completion(
+                            call_type=call_type,
+                            messages=messages,
+                            max_tokens=max_tokens,
+                            response_format=response_format,
+                            response_format_overrides=response_format_overrides,
+                            timeout=timeout,
+                            symbol=symbol,
+                            model_overrides=model_overrides,
+                            validate_response=validate_response,
+                        )
+                except TimeoutError as error:
+                    if not deadline_guard.expired():
+                        raise
+                    # A cancelled usage-log write may leave a missing attempt row, but the
+                    # caller still persists the terminal logical operation with this reason.
+                    logger.warning(
+                        "ops_event=llm_chain_exhausted call_type=%s "
+                        "failures=operation:operation_budget_exhausted operation_id=%s",
+                        call_type,
+                        operation_id,
+                    )
+                    raise AllProvidersFailedError(
+                        "Event Analysis operation budget exhausted",
+                        operation_budget_exhausted=True,
+                    ) from error
             except Exception as error:
                 error.operation_id = operation_id
                 raise
@@ -275,12 +301,14 @@ class LLMRouter:
             request_timeout = config.request_timeout_seconds_for(
                 call_type=call_type, provider=name, requested_timeout=timeout
             )
+            deadline_capped = False
             if deadline is not None:
                 remaining = deadline - _monotonic()
                 if remaining < 1:
                     operation_budget_exhausted = True
                     failure_categories.append("operation:operation_budget_exhausted")
                     break
+                deadline_capped = request_timeout > remaining
                 request_timeout = min(request_timeout, remaining)
             attempted_names.append(name)
             try:
@@ -325,6 +353,10 @@ class LLMRouter:
                 continue
             except Exception as error:
                 reason = classify_ai_error_reason(error)
+                if reason == "timeout" and deadline_capped:
+                    # Even the last provider may use up the remaining operation budget.
+                    # There may be no next iteration to observe deadline expiry.
+                    operation_budget_exhausted = True
                 breaker.record_failure(
                     call_type=call_type, provider=name, model=model, reason=reason
                 )
