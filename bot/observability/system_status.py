@@ -402,10 +402,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
         )
         logical = results["event_analysis"]
     except Exception:
-        return ComponentHealth(
-            "AI", ComponentStatus.UNKNOWN, "logical telemetry query failed",
-            summary="logical telemetry unavailable",
-        )
+        logical = None  # Preserve independently observed latest failures.
 
     if latest is None:
         return ComponentHealth(
@@ -423,11 +420,15 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
         status = ComponentStatus.WARN
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
         summary = f"latest {latest.status}"
-    else:
+    elif latest.status in {"failed", "llm_error", "timeout"}:
         status = ComponentStatus.FAIL
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
         safe_reason = _safe_detail(latest.error_reason or latest.status, max_chars=60)
         summary = f"latest failed: {safe_reason}"
+    else:
+        status = ComponentStatus.UNKNOWN
+        detail = "unrecognized latest analysis outcome"
+        summary = "latest outcome unknown"
 
     rows = [f"Latest attempt: {latest.status} at {_format_utc(latest.created_at)}"]
     problem_rows: list[str] = []
@@ -458,7 +459,13 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
             if problem_reason:
                 problem_rows.append(f"Reason: {problem_reason}")
 
-    if logical.state in {"failed", "degraded"}:
+    if logical is None:
+        # A query gap must not overwrite a proven terminal failure.
+        if status == ComponentStatus.OK:
+            status = ComponentStatus.UNKNOWN
+            summary = "logical telemetry unavailable"
+        problem_rows.append("Rolling logical telemetry unavailable")
+    elif logical.state in {"failed", "degraded"}:
         status = (ComponentStatus.FAIL if logical.state == "failed" else ComponentStatus.WARN)
         summary = (
             f"24h logical success {logical.success_rate_percent:.1f}% "
