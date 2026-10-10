@@ -128,6 +128,51 @@ at most one extra probe per triple.
 
 Set `LLM_BREAKER_ENABLED=false` to disable it entirely.
 
+## Groq free-tier admission control (Event Analysis)
+
+The Groq pre-call budget guard uses the provider's published free-plan GPT-OSS ceilings
+(8K TPM, 200K TPD, 1K RPD, 30 RPM) as conservative **planning** values. Defaults are
+7,200 tokens/minute, 180,000 tokens/rolling 24 hours, 900 requests/rolling 24 hours,
+and 27 requests/minute **per model**; operators may lower them using
+`GROQ_FREE_TOKEN_BUDGET_MINUTE`, `GROQ_FREE_TOKEN_BUDGET_DAY`,
+`GROQ_FREE_REQUEST_BUDGET_DAY`, and `GROQ_FREE_REQUEST_BUDGET_MINUTE`.
+These estimates are not authoritative for a particular Groq account; organization-level
+traffic outside the bot and provider-side policy remain unknown. The existing `max_tokens`
+ceiling and `reasoning_effort` are **unchanged**.
+
+The guard reserves a conservative estimated token cost under one async lock *before* the
+actual HTTP request, then reconciles with provider-reported `total_tokens`. Groq response
+headers constrain remaining RPD (request headers) and TPM (token headers) until their
+respective advertised resets. The 24h RPD/TPD approximation is rebuilt from existing
+`llm_usage_logs` actual provider-attempt rows when the process starts; skip rows count as
+neither requests nor consumed tokens. If telemetry storage is unavailable, only in-process
+usage plus observed provider headers are available. This gap is logged, not silently treated
+as confirmed quota state.
+
+The four scheduled coin jobs are already staggered; an additional 20% rolling-day token
+allocation for each of BTC, ETH, GRAM, SOL prevents one symbol using all the shared Groq
+Event Analysis budget. The remaining 20% stays available to render/report/other operations.
+No numeric budget gate affects the *market-significance decision*: the guard only decides
+which provider may be asked to make that decision.
+
+A budget refusal makes **zero** HTTP calls, writes an attempted-provider skip with
+`error_reason=rate_limit_budget_exhausted`, and advances the existing provider fallback
+chain. If every configured provider is unavailable, Event Analysis still writes a terminal
+`event_ai_analyses` and `alert_delivery_outcomes` row (`rate_limited`), using the same
+logical `llm_operation_id` as its attempted-provider rows. It never records `no_alert`
+or manufactures significance. A deferred, stale market context is **not** replayed hours
+later; the next scheduled check instead analyzes current data. Available fallback API keys
+must be configured separately; with Groq only, the free TPD budget necessarily limits
+coverage. No provider entry is retried inside the logical operation.
+
+Groq's standard request headers expose RPD, and its token headers expose TPM, **not TPD**.
+A 429 alone cannot distinguish TPD exhaustion, hidden organization policy, input/output
+split quotas, or short bursts. Use the correlated operation IDs, attempt statuses, the
+bounded saved headers, and provider `retry-after` to evaluate actual production causes;
+label uncertain causes as hypotheses. Compare actual HTTP attempts (excluding skips) to
+terminal logical outcomes (`event_ai_analyses`) rather than treating every attempt as an
+independent Event Analysis.
+
 ## Models, token budgets, and reasoning effort
 
 Model identifiers are provider-controlled and do change; a decommissioned model answers
