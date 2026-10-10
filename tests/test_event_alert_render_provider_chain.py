@@ -12,7 +12,9 @@ import bot.alerts as alerts
 from bot.services import ai_agent_groq
 from bot.services.llm.base_provider import ProviderResult
 from bot.services.llm.errors import (
-    AIInvalidJsonError, AISchemaValidationError, AllProvidersFailedError,
+    AIInvalidJsonError,
+    AISchemaValidationError,
+    AllProvidersFailedError,
 )
 from bot.services.llm.router import LLMRouter
 from bot.services.llm.telemetry import classify_ai_error_reason
