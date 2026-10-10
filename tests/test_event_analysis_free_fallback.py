@@ -145,6 +145,28 @@ async def test_unavailable_mistral_model_advances_to_cloudflare(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cloudflare_error",
+    [
+        AIProviderRateLimitError("429", provider="cloudflare"),
+        _http_error(404, code="model_not_found"),
+    ],
+)
+async def test_cloudflare_rate_limit_or_unavailable_model_reaches_mistral(
+    monkeypatch, cloudflare_error,
+):
+    _configure(monkeypatch, ["cloudflare", "mistral"])
+    cloudflare = StubProvider("cloudflare", cloudflare_error)
+    mistral = StubProvider("mistral", None)
+    result = await _event_call(LLMRouter(registry={
+        "cloudflare": cloudflare, "mistral": mistral,
+    }))
+    assert result.provider == "mistral"
+    assert result.model == config.model_for("mistral", "event_analysis")
+    assert len(cloudflare.calls) == len(mistral.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_cloudflare_credentials_optional_mistral_still_works(monkeypatch):
     _configure(monkeypatch, ["mistral"])
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "cloudflare,mistral")
