@@ -306,6 +306,19 @@ class LLMRouter:
                 if reason in _FALLBACK_REASONS:
                     attempted += 1
                     last_error = error
+                    # Provider-side JSON validation can reject generated output before
+                    # the client receives a body. It is invalid model output just like
+                    # the client's JSON/schema checks. Render can recover only if
+                    # *all* exhausted attempts are of these invalid-output kinds.
+                    if (
+                        call_type == "event_alert_render"
+                        and reason == "provider_json_validate_failed"
+                    ):
+                        invalid_output_error = AISchemaValidationError(
+                            "provider_json_validate_failed"
+                        )
+                        invalid_output_error.provider = name
+                        invalid_output_error.model = model
                     if reason == "rate_limit":
                         saw_rate_limit = True
                         if rate_limited_name is None:
@@ -385,7 +398,9 @@ class LLMRouter:
             # whether every attempted provider failed on invalid output. Render may
             # recover only in this case; mixed transport, rate-limit, backoff, and
             # open-breaker exhaustion must remain terminal.
-            invalid_output_reasons = {"invalid_json", "schema_validation_failed"}
+            invalid_output_reasons = {
+                "invalid_json", "schema_validation_failed", "provider_json_validate_failed",
+            }
             invalid_output_error._llm_all_exhausted_attempts_invalid_output = (
                 bool(failure_categories)
                 and not breaker_skipped
