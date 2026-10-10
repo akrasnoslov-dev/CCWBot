@@ -10,6 +10,7 @@ from aiohttp import web
 from bot.alerting.event_analysis import EVENT_ANALYSIS_SUCCESS_STATUSES
 from bot.db.database import get_latest_event_analysis_success_at, get_price_state
 from bot.observability import event_analysis_health
+from bot.observability.logical_llm_health import read_logical_llm_health
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL
 from bot.storage import load_state
 
@@ -52,6 +53,16 @@ async def _read_last_event_analysis_success_at() -> datetime | None:
         )
 
 
+async def _read_event_analysis_logical_health():
+    if not (DB_ENABLED and DB_SESSION_LOCAL):
+        return None
+    async with DB_SESSION_LOCAL() as session:
+        results = await read_logical_llm_health(
+            session, call_types=("event_analysis",)
+        )
+        return results["event_analysis"]
+
+
 async def _event_analysis_block() -> dict[str, Any]:
     """Event Analysis health, as a nested block that never changes the top-level status.
 
@@ -63,24 +74,57 @@ async def _event_analysis_block() -> dict[str, Any]:
     ``status`` is left alone.
     """
     counters = event_analysis_health.snapshot()
+    last_success_at = None
+    logical = None
+    # A shared 2s deadline below Docker's 5s healthcheck timeout.
+    # Sequential reads avoid leaving a sibling DB task running after an early error.
     try:
-        # Bounded well inside the Docker healthcheck's own 5s timeout: a slow or
-        # pool-exhausted database must degrade this block, never stall the endpoint into
-        # looking unhealthy and triggering the restart loop this design avoids.
-        last_success_at = await asyncio.wait_for(
-            _read_last_event_analysis_success_at(), timeout=2
-        )
-    except Exception:
-        last_success_at = None
+        async with asyncio.timeout(2):
+            try:
+                last_success_at = await _read_last_event_analysis_success_at()
+            except Exception:
+                pass
+            try:
+                logical = await _read_event_analysis_logical_health()
+            except Exception:
+                pass
+    except TimeoutError:
+        pass
     state, age_seconds = event_analysis_health.evaluate_state(
         last_success_at=last_success_at,
         consecutive_failures=counters["consecutive_failures"],
     )
+    if logical is not None:
+        if logical.state == "failed":
+            state = "failed"
+        elif logical.state == "degraded":
+            state = "degraded"
+        elif logical.state == "unknown" and state == "ok":
+            state = "unknown"
+        elif (logical.state == "ok" and state == "degraded"
+              and counters["consecutive_failures"] == 0):
+            # Stale success alone is no outage when no recent work was expected.
+            state = "unknown"
+    elif state == "ok":
+        state = "unknown"  # Missing DB telemetry cannot prove logical success.
+    if logical is None or logical.operations == 0:
+        if state == "degraded" and counters["consecutive_failures"] == 0:
+            # No sampled workload: an old last-success timestamp is not proof of failure.
+            state = "unknown"
     return {
         "state": state,
         "last_success_at": _isoformat_timestamp(last_success_at),
         "last_success_age_seconds": age_seconds,
         "consecutive_failures": counters["consecutive_failures"],
+        "logical_24h": {
+            "state": logical.state if logical else "unknown",
+            "operations": logical.operations if logical else 0,
+            "successes": logical.successes if logical else 0,
+            "terminal_failures": logical.terminal_failures if logical else 0,
+            "missing_outcomes": logical.missing_outcomes if logical else 0,
+            "recovered_operations": logical.recovered_operations if logical else 0,
+            "success_rate_percent": logical.success_rate_percent if logical else None,
+        },
     }
 
 
