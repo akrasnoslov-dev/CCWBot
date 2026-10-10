@@ -27,6 +27,7 @@ class FakeProvider(BaseProvider):
         self.calls = 0
         self.last_reasoning_effort = None
         self.last_response_format = None
+        self.last_timeout = None
         self.operation_ids = []
 
     async def chat_completion(
@@ -45,6 +46,7 @@ class FakeProvider(BaseProvider):
         self.operation_ids.append(current_llm_operation_id())
         self.last_reasoning_effort = reasoning_effort
         self.last_response_format = response_format
+        self.last_timeout = timeout
         behavior = self._behavior
         if isinstance(behavior, BaseException):
             raise behavior
@@ -87,6 +89,166 @@ async def _call(router, call_type="event_analysis"):
         max_tokens=10,
         response_format=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_gemini_timeout_keeps_mistral_fallback_and_operation_id(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    for name in (
+        "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS",
+        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    groq = FakeProvider("groq", _http_error(503))
+    gemini = FakeProvider("gemini", asyncio.TimeoutError())
+    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+
+    result = await _call(router)
+
+    assert result.provider == "mistral"
+    assert [groq.last_timeout, gemini.last_timeout, mistral.last_timeout] == [15, 25, 15]
+    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
+    assert groq.operation_ids == gemini.operation_ids == mistral.operation_ids == [
+        result.operation_id
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gemini_5xx_and_quota_fall_through_without_retries(monkeypatch):
+    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+    for failure in (_http_error(503), _http_error(429)):
+        if failure.status_code == 429:
+            failure.body = {"error": {"code": "quota_exceeded"}}
+        gemini = FakeProvider("gemini", failure)
+        mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+        result = await _call(LLMRouter(registry={"gemini": gemini, "mistral": mistral}))
+        assert result.provider == "mistral"
+        assert (gemini.calls, mistral.calls) == (1, 1)
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_budget_stops_chain_before_new_http_request(monkeypatch):
+    from bot.services.llm import router as router_module
+
+    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    clock = iter((100.0, 100.0, 120.0, 161.0))
+    monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
+    groq = FakeProvider("groq", asyncio.TimeoutError())
+    gemini = FakeProvider("gemini", _http_error(503))
+    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+
+    with pytest.raises(AllProvidersFailedError) as raised:
+        await _call(router)
+    assert raised.value.operation_budget_exhausted is True
+    assert classify_ai_error_reason(raised.value) == "operation_budget_exhausted"
+    assert (groq.calls, gemini.calls, mistral.calls) == (1, 1, 0)
+    assert groq.operation_ids == gemini.operation_ids == [raised.value.operation_id]
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_budget_caps_late_mistral_timeout(monkeypatch):
+    from bot.services.llm import router as router_module
+
+    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    clock = iter((100.0, 100.0, 120.0, 154.0))
+    monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
+    groq = FakeProvider("groq", asyncio.TimeoutError())
+    gemini = FakeProvider("gemini", asyncio.TimeoutError())
+    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    result = await _call(LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral}))
+
+    assert result.provider == "mistral"
+    assert mistral.last_timeout == pytest.approx(6.0)
+
+
+@pytest.mark.asyncio
+async def test_gemini_timeout_policy_does_not_change_other_tasks_or_explicit_override(monkeypatch):
+    _configure(monkeypatch, ["gemini"], {"gemini"})
+    gemini = FakeProvider("gemini", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"gemini": gemini})
+
+    await _call(router, "daily_report")
+    assert gemini.last_timeout == 15
+
+    await router.chat_completion(
+        call_type="event_analysis",
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        response_format=None,
+        timeout=7,
+    )
+    assert gemini.last_timeout == 7
+
+
+def test_event_analysis_timeout_configuration_is_bounded_and_logged(monkeypatch, caplog):
+    for name in (
+        "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS",
+        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert config.request_timeout_seconds_for(
+        call_type="event_analysis", provider="gemini"
+    ) == 25
+    assert config.event_analysis_operation_budget_seconds() == 60
+    monkeypatch.setenv("LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", "28")
+    monkeypatch.setenv("LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", "65")
+    assert config.request_timeout_seconds_for(
+        call_type="event_analysis", provider="gemini"
+    ) == 28
+    assert config.event_analysis_operation_budget_seconds() == 65
+    monkeypatch.setenv("LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", "500")
+    monkeypatch.setenv("LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", "-1")
+    assert config.request_timeout_seconds_for(
+        call_type="event_analysis", provider="gemini"
+    ) == 25
+    assert config.event_analysis_operation_budget_seconds() == 60
+    with caplog.at_level(logging.INFO, logger=config.logger.name):
+        config.log_resolved_configuration()
+    assert any(
+        "operation_budget_seconds=60 gemini_timeout_seconds=25" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_groq_backoff_gemini_5xx_mistral_429_exhausts_once(monkeypatch):
+    from datetime import datetime, timezone
+
+    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    groq = FakeProvider(
+        "groq",
+        LLMRateLimitBackoffActive(
+            provider="groq", model="m", limited_until=datetime.now(timezone.utc)
+        ),
+    )
+    gemini = FakeProvider("gemini", _http_error(503))
+    mistral = FakeProvider(
+        "mistral", AIProviderRateLimitError("429", provider="mistral")
+    )
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+
+    with pytest.raises(AllProvidersFailedError) as raised:
+        await _call(router)
+
+    assert raised.value.mixed_failure is True
+    assert classify_ai_error_reason(raised.value) == "mixed_provider_failures"
+    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
+    assert groq.operation_ids == gemini.operation_ids == mistral.operation_ids == [
+        raised.value.operation_id
+    ]
+
+
+@pytest.mark.asyncio
+async def test_gemini_request_defect_does_not_spend_mistral_quota(monkeypatch):
+    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+    gemini = FakeProvider("gemini", _http_error(400))
+    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    with pytest.raises(RuntimeError):
+        await _call(LLMRouter(registry={"gemini": gemini, "mistral": mistral}))
+    assert gemini.calls == 1
+    assert mistral.calls == 0
 
 
 @pytest.mark.asyncio

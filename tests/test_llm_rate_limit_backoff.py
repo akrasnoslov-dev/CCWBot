@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import bot.alerts as alerts
 from bot.db.database import AlertDeliveryOutcome, Base, EventAiAnalysis
 from bot.observability import event_analysis_health
-from bot.services.llm import groq_provider, telemetry
+from bot.services.llm import gemini_provider, groq_provider, mistral_provider, telemetry
 from bot.services.llm.errors import AIGroqRateLimitError, LLMRateLimitBackoffActive
 from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
+from bot.services.llm.router import LLMRouter
 
 # The Groq chat-completion mechanism (and its (provider, model) rate-limit backoff) now lives in
 # bot.services.llm. These tests exercise the GroqProvider directly and the production event-analysis
@@ -54,6 +55,118 @@ def clear_rate_limit_backoffs(monkeypatch):
     yield
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
+
+
+@pytest.mark.asyncio
+async def test_slow_gemini_response_times_out_then_uses_mistral(monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,mistral")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+
+    async def slow_response(**_kwargs):
+        await asyncio.sleep(0.05)
+        raise AssertionError("slow response should have timed out")
+
+    gemini_request = AsyncMock(side_effect=slow_response)
+    mistral_request = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
+        )
+    )
+    gemini = gemini_provider.get_provider()
+    mistral = mistral_provider.get_provider()
+    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(mistral, "_client", _fake_groq_client(mistral_request))
+
+    result = await LLMRouter(registry={"gemini": gemini, "mistral": mistral}).chat_completion(
+        call_type="event_analysis",
+        messages=[{"role": "user", "content": "hello"}],
+        max_tokens=10,
+        response_format=None,
+        timeout=0.005,  # scaled-down transport deadline; no 25-second sleep
+    )
+
+    assert result.provider == "mistral"
+    assert gemini_request.await_count == mistral_request.await_count == 1
+    assert gemini_request.await_args.kwargs["timeout"].read == pytest.approx(0.005)
+    assert telemetry.get_llm_rate_limit_backoff(
+        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_gemini_live_429_skips_next_cycle_without_blocking_mistral(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,mistral")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    failure = RuntimeError("rate limit")
+    failure.status_code = 429
+    gemini_request = AsyncMock(side_effect=failure)
+    mistral_request = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
+        )
+    )
+    gemini = gemini_provider.get_provider()
+    mistral = mistral_provider.get_provider()
+    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(mistral, "_client", _fake_groq_client(mistral_request))
+    router = LLMRouter(registry={"gemini": gemini, "mistral": mistral})
+    args = {
+        "call_type": "event_analysis",
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 10,
+        "response_format": None,
+    }
+
+    first = await router.chat_completion(**args)
+    second = await router.chat_completion(**args)
+
+    assert first.provider == second.provider == "mistral"
+    assert first.operation_id != second.operation_id
+    assert gemini_request.await_count == 1  # next logical cycle skips Gemini pre-call
+    assert mistral_request.await_count == 2
+    assert gemini_request.await_args.kwargs["timeout"].read == pytest.approx(25)
+    assert mistral_request.await_args.kwargs["timeout"].read == pytest.approx(15)
+    assert telemetry.get_llm_rate_limit_backoff(
+        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+    ) is not None
+
+
+@pytest.mark.asyncio
+async def test_gemini_quota_429_falls_back_without_transient_backoff(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,mistral")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    failure = RuntimeError("quota exhausted")
+    failure.status_code = 429
+    failure.body = {"error": {"code": "quota_exceeded"}}
+    gemini_request = AsyncMock(side_effect=failure)
+    mistral_request = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
+        )
+    )
+    gemini = gemini_provider.get_provider()
+    mistral = mistral_provider.get_provider()
+    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(mistral, "_client", _fake_groq_client(mistral_request))
+
+    result = await LLMRouter(registry={"gemini": gemini, "mistral": mistral}).chat_completion(
+        call_type="event_analysis",
+        messages=[{"role": "user", "content": "hello"}],
+        max_tokens=10,
+        response_format=None,
+    )
+
+    assert result.provider == "mistral"
+    assert gemini_request.await_count == 1
+    assert mistral_request.await_count == 1
+    assert telemetry.get_llm_rate_limit_backoff(
+        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+    ) is None
 
 
 def test_event_alert_render_consults_provider_model_backoff():

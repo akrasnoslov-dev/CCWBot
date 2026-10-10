@@ -176,6 +176,10 @@ class OpenAICompatibleProvider(BaseProvider):
             # chain accept it, and Groq treats it as an alias of the newer name, so reasoning
             # models still receive the correct budget. See the PR discussion in docs/llm_usage.md.
             "max_tokens": max_tokens,
+            # Override the client's 20s read timeout for this attempt. Otherwise a 25s
+            # Gemini asyncio deadline is silently cut short by httpx at 20s.
+            # asyncio.wait_for below remains the strict total request deadline.
+            "timeout": httpx.Timeout(float(timeout), connect=min(float(timeout), 10.0)),
         }
         request_kwargs.update(self._sampling_parameters(model=model))
         if response_format is not None:

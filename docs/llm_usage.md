@@ -37,6 +37,42 @@ retain their existing terminal handling after chain exhaustion. Event Alert Rend
 exhausting its four LLM attempts is terminal for that render operation; it does not substitute a
 non-LLM presentation.
 
+### Event Analysis timeout and operation budget
+
+Event Analysis uses **one HTTP request per configured provider/model**, ordered by
+`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> Gemini -> Mistral).
+The OpenAI-compatible SDK has `max_retries=0`; neither HTTP 5xx nor timeout causes a
+same-provider retry. Such failures advance to the next available provider, unless the operation
+budget is exhausted. HTTP 429 activates the existing provider/model backoff; an explicit
+billing/quota code instead falls back without treating quota exhaustion as transient 429.
+Malformed requests remain terminal and never fan out.
+
+The default per-request timeouts for **Event Analysis only** are Groq **15s**, Gemini **25s**,
+and Mistral **15s**. Gemini gets ten additional seconds for variable model/reasoning latency;
+this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
+measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
+OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
+would silently cut short Gemini's 25s deadline. The chain has a **60s**
+monotonic-clock request budget. Nominal HTTP ceilings total 55s, leaving 5s for routing and
+telemetry. Before any new HTTP attempt the router checks remaining time, shortens its timeout
+when necessary, and makes no new request when fewer than 1s remain. A chain stopped by that
+deadline gets the sanitized terminal `operation_budget_exhausted` reason, not a false provider
+429 or a successful operation. Every actual attempt and terminal feature outcome keeps the
+same logical `llm_operation_id`.
+
+Only these Event Analysis settings may adjust the defaults (both validated and logged on
+startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and
+`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 60, allowed 15-120).
+Explicit caller timeouts still override the per-provider default but remain bounded by
+the remaining operation budget. All other call types retain their shared 15s timeout,
+including Event Alert Render. No extra LLM requests are added. These settings do not
+change event significance or delivery logic.
+
+A future production check should use sanitized startup configuration and correlated
+`llm_usage_logs` attempt/final-outcome timestamps to compare successful Gemini latency,
+timeout counts, fallback recovery and active-backoff skips. Neither the supplied before/after
+counts nor default source code proves which timeout is currently set in the deployed environment.
+
 ### Which 4xx responses fall back
 
 A 4xx is not one thing, and treating it as one is what kept the fallback chain from engaging for
@@ -245,6 +281,8 @@ ops_event=llm_config call_type=event_analysis max_tokens=300
   chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-3.8-flash/effort=low/max=1324(no_api_key)
 ```
 
+For `event_analysis`, the same startup line also includes
+`operation_budget_seconds=60 gemini_timeout_seconds=25` with the actual sanitized values.
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
 the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
 default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will
@@ -304,6 +342,7 @@ snake_case safe categories:
 - `invalid_json`
 - `schema_validation_failed`
 - `timeout`
+- `operation_budget_exhausted` (Event Analysis chain deadline; no new provider request)
 - `auth_error`
 - `provider_model_error`
 - `provider_quota_exhausted`

@@ -36,6 +36,7 @@ Exhaustion mapping preserves the exception contract existing callers already han
 """
 
 import logging
+import time
 
 from bot.services.llm import breaker, config
 from bot.services.llm.cloudflare_provider import get_provider as _cloudflare_provider
@@ -61,6 +62,12 @@ from bot.services.llm.telemetry import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _monotonic() -> float:
+    """Clock for a single Event Analysis operation deadline."""
+    return time.monotonic()
+
 
 # Reasons that mean "this provider is unusable right now, try the next one".
 #
@@ -137,7 +144,7 @@ class LLMRouter:
         max_tokens: int,
         response_format: dict | None,
         response_format_overrides: dict[str, dict | None] | None = None,
-        timeout: int = 15,
+        timeout: int | float | None = None,
         symbol: str | None = None,
         model_overrides: dict | None = None,
         validate_response=None,
@@ -173,7 +180,7 @@ class LLMRouter:
         max_tokens: int,
         response_format: dict | None,
         response_format_overrides: dict[str, dict | None] | None = None,
-        timeout: int = 15,
+        timeout: int | float | None = None,
         symbol: str | None = None,
         model_overrides: dict | None = None,
         validate_response=None,
@@ -207,6 +214,14 @@ class LLMRouter:
         attempted_names: list[str] = []
         failure_categories: list[str] = []
         input_chars = message_input_chars(messages)
+        # One wall-clock allowance for the full Event Analysis chain. No provider is retried;
+        # the 15s + 25s + 15s defaults leave 5s headroom within 60s.
+        deadline = (
+            _monotonic() + config.event_analysis_operation_budget_seconds()
+            if call_type == "event_analysis"
+            else None
+        )
+        operation_budget_exhausted = False
 
         for index, (name, provider, configured_model) in enumerate(attempts):
             model = (model_overrides or {}).get(name) or configured_model
@@ -257,6 +272,16 @@ class LLMRouter:
                     attempt_response_format = response_format_overrides[model_key]
                 elif name in response_format_overrides:
                     attempt_response_format = response_format_overrides[name]
+            request_timeout = config.request_timeout_seconds_for(
+                call_type=call_type, provider=name, requested_timeout=timeout
+            )
+            if deadline is not None:
+                remaining = deadline - _monotonic()
+                if remaining < 1:
+                    operation_budget_exhausted = True
+                    failure_categories.append("operation:operation_budget_exhausted")
+                    break
+                request_timeout = min(request_timeout, remaining)
             attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
@@ -266,7 +291,7 @@ class LLMRouter:
                     messages=messages,
                     max_tokens=attempt_max_tokens,
                     response_format=attempt_response_format,
-                    timeout=timeout,
+                    timeout=request_timeout,
                     reasoning_effort=reasoning_effort,
                 )
             except LLMRateLimitBackoffActive as error:
@@ -378,6 +403,16 @@ class LLMRouter:
                 ",".join(breaker_skipped) or "none",
                 current_llm_operation_id(),
             )
+
+        # A skipped, never-started request after the deadline is neither a new 429 nor a
+        # provider failure. Preserve this distinct terminal logical-operation outcome.
+        if operation_budget_exhausted:
+            raise AllProvidersFailedError(
+                f"Event Analysis operation budget exhausted for call_type={call_type}",
+                last_error=last_error,
+                attempts=attempted_names,
+                operation_budget_exhausted=True,
+            ) from last_error
 
         # Choose the exception that matches existing caller handling.
         if invalid_output_error is not None:
