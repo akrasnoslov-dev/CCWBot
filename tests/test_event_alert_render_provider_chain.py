@@ -172,7 +172,7 @@ async def test_bad_request_aborts_without_calling_fallback(
     monkeypatch, render_chain,
 ):
     registry = install(monkeypatch, render_chain, [
-        ProviderError(400, "bad_request"), good_render(), good_render(), good_render()
+        ProviderError(400, "invalid_request_error"), good_render(), good_render(), good_render()
     ])
     with pytest.raises(ProviderError) as caught:
         await call_render()
