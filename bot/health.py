@@ -74,18 +74,22 @@ async def _event_analysis_block() -> dict[str, Any]:
     ``status`` is left alone.
     """
     counters = event_analysis_health.snapshot()
+    last_success_at = None
     logical = None
+    # A shared 2s deadline below Docker's 5s healthcheck timeout.
+    # Sequential reads avoid leaving a sibling DB task running after an early error.
     try:
-        # Both queries share one 2s budget, safely below the Docker 5s healthcheck.
-        last_success_at, logical = await asyncio.wait_for(
-            asyncio.gather(
-                _read_last_event_analysis_success_at(),
-                _read_event_analysis_logical_health(),
-            ),
-            timeout=2,
-        )
-    except Exception:
-        last_success_at = None
+        async with asyncio.timeout(2):
+            try:
+                last_success_at = await _read_last_event_analysis_success_at()
+            except Exception:
+                pass
+            try:
+                logical = await _read_event_analysis_logical_health()
+            except Exception:
+                pass
+    except TimeoutError:
+        pass
     state, age_seconds = event_analysis_health.evaluate_state(
         last_success_at=last_success_at,
         consecutive_failures=counters["consecutive_failures"],
