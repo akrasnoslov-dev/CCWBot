@@ -187,3 +187,77 @@ async def test_no_configured_providers_is_terminal(monkeypatch, render_chain):
     install(monkeypatch, render_chain, [good_render()] * 4)
     with pytest.raises(AllProvidersFailedError):
         await call_render()
+
+
+def patch_significance_and_storage(monkeypatch):
+    significance = {
+        "symbol": "BTC", "should_alert": True, "confidence": "high",
+        "materiality": "material", "novelty": "new", "reason_code": "unusual_move",
+    }
+    significance_call = AsyncMock(return_value=("significance-json", significance))
+    render_outcome = AsyncMock()
+    delivery_outcome = AsyncMock()
+    monkeypatch.setattr(alerts, "ask_event_significance_raw", significance_call)
+    monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", render_outcome)
+    monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=42))
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
+    monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(alerts.event_analysis_health, "record_success", lambda: None)
+    return significance_call, render_outcome, delivery_outcome
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("winner", [0, 1, 2, 3])
+async def test_full_factual_validation_at_each_fallback_before_allowed_outcome(
+    monkeypatch, render_chain, winner,
+):
+    invalid_claim = json.dumps({
+        "message_body": "BTC rose 40% over the last 3 hours.",
+        "related_news_ids": [], "possible_action": "Watch the next move.",
+    })
+    responses = [invalid_claim] * winner + [good_render()] + [
+        AssertionError("provider after winner should not be called")
+    ] * (3 - winner)
+    registry = install(monkeypatch, render_chain, responses)
+    significance_call, render_outcome, delivery_outcome = patch_significance_and_storage(
+        monkeypatch
+    )
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(input_payload())
+
+    assert analysis_id == 42
+    assert decision is not None and decision.should_alert is True
+    assert decision.urgency == "normal"
+    assert "40%" not in decision.message_body
+    assert "{" not in decision.message_body
+    assert render_outcome.await_args.kwargs["status"] == "success"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    significance_call.assert_awaited_once()
+    assert sum(len(provider.calls) for provider in registry.values()) == winner + 1
+
+
+@pytest.mark.asyncio
+async def test_server_side_invalid_only_exhaustion_recovers_through_factual_validator(
+    monkeypatch, render_chain,
+):
+    registry = install(monkeypatch, render_chain, [
+        ProviderError(400, "json_validate_failed") for _ in render_chain
+    ])
+    significance_call, render_outcome, delivery_outcome = patch_significance_and_storage(
+        monkeypatch
+    )
+
+    decision, analysis_id = await alerts._create_event_analysis_decision(input_payload())
+
+    assert analysis_id == 42
+    assert decision is not None and decision.should_alert
+    assert decision.urgency == "normal"
+    assert "40%" not in decision.message_body
+    assert "{" not in decision.message_body
+    assert render_outcome.await_args.kwargs["status"] == "success"
+    assert render_outcome.await_args.kwargs["error_reason"] == (
+        "deterministic_fallback_from_schema_validation_failed"
+    )
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    significance_call.assert_awaited_once()
+    assert sum(len(provider.calls) for provider in registry.values()) == 4
