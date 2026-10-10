@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Ordered default chain for general LLM work. Event Alert rendering has a dedicated
 # model-level chain because it deliberately retries a second Groq model before changing providers.
 DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini", "mistral"]
+# Event Analysis needs one more independent free-tier route when the general priority
+# has not been explicitly set. Cloudflare is optional and skipped without its credentials.
+DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY = ["groq", "gemini", "cloudflare", "mistral"]
 KNOWN_PROVIDERS = frozenset((*DEFAULT_PROVIDER_PRIORITY, "cloudflare"))
 
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
@@ -232,6 +235,11 @@ def provider_priority(call_type: str) -> list[str]:
         parsed = _parse_priority_list(os.getenv(override_env), env_name=override_env)
         if parsed:
             return parsed
+    # Respect an explicit global priority. With no global/event override, insert the
+    # existing Cloudflare adapter before Mistral for Event Analysis only; the router
+    # excludes it automatically when its token or account ID is missing.
+    if call_type == "event_analysis" and not os.getenv("LLM_PROVIDER_PRIORITY"):
+        return list(DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY)
     return global_provider_priority()
 
 

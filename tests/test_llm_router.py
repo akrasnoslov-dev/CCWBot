@@ -562,7 +562,7 @@ def test_retired_provider_is_not_configurable_or_registered(monkeypatch, caplog)
 def test_provider_priority_defaults_when_unset(monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER_PRIORITY", raising=False)
     monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
-    assert config.provider_priority("event_analysis") == ["groq", "gemini", "mistral"]
+    assert config.provider_priority("event_analysis") == ["groq", "gemini", "cloudflare", "mistral"]
 
 
 def test_model_for_resolves_per_provider(monkeypatch):

@@ -354,6 +354,9 @@ def is_json_validation_error(error: Exception) -> bool:
         "json_validate_failed" in haystack
         or "validate json" in haystack
         or "json validation" in haystack
+        # Cloudflare's documented JSON-mode failure is unusable model output, not
+        # a malformed client request. Preserve fallback even when HTTP is 400.
+        or "json mode couldn't be met" in haystack
     )
 
 
