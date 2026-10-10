@@ -39,10 +39,19 @@ Each surface observes a different part of Event Analysis; no single one proves e
   "uptime_seconds": 1234,
   "last_btc_check_at": "2026-08-05T12:00:00+00:00",
   "event_analysis": {
-    "state": "degraded",
-    "last_success_at": "2026-07-17T23:00:01+00:00",
-    "last_success_age_seconds": 1555199,
-    "consecutive_failures": 3396
+    "state": "failed",
+    "last_success_at": "2026-08-05T11:55:01+00:00",
+    "last_success_age_seconds": 299,
+    "consecutive_failures": 0,
+    "logical_24h": {
+      "state": "failed",
+      "operations": 192,
+      "successes": 127,
+      "terminal_failures": 65,
+      "missing_outcomes": 0,
+      "recovered_operations": 0,
+      "success_rate_percent": 66.1
+    }
   }
 }
 ```
@@ -55,8 +64,46 @@ process exit, not to health, and there is no autoheal or orchestrator in this de
 prices, heartbeats and reports. Degradation is reported *inside* the payload instead. `state` is
 `unknown` when there is no evidence to judge on, which per project rule is incomplete, not healthy. Tune with
 `EVENT_ANALYSIS_FAILURE_ESCALATION_THRESHOLD` (default 5) and
-`EVENT_ANALYSIS_HEALTH_MAX_AGE_SECONDS` (default 10800). The payload carries counters and
-timestamps only — no model identifiers, provider names, or environment values.
+`EVENT_ANALYSIS_HEALTH_MAX_AGE_SECONDS` (default 10800). The payload carries sanitized aggregate counts and timestamps only — no model identifiers,
+provider names, operation IDs, or environment values.
+
+**Rolling logical health (24h).** Final operations — not provider attempts — are counted from
+`event_ai_analyses` (Event Analysis), `llm_operation_outcomes` (Event Alert Render and News
+Intelligence), `market_heartbeats`, and `market_reports`. `no_alert` is a valid Event Analysis
+success; a provider error followed by a successful fallback is one successful logical operation.
+System Status uses Event Analysis logical health; LLM Diagnostics lists all six call types and
+shows provider-attempt categories in a separate section. Supported-symbol details appear only
+for symbols with a credible problem sample.
+
+- `ok`: at least 20 completed operations, success rate at least 95%, and no
+  attributable evidence gaps.
+- `degraded`: at least 20 completed operations, at least five terminal failures, and success
+  rate below 95%; also ten terminal failures with 10–19 completed operations.
+- `failed`: at least 20 completed operations, at least ten terminal failures, and success
+  rate below 70%.
+- `unknown`: insufficient completed operations, too few terminal failures to escalate a
+  below-95% rate, missing terminal outcomes, unknown outcome statuses, or failed/unavailable
+  database query, unless proven failures already justify `degraded`/`failed`. Expected
+  inactivity must not create a percentage-based alert.
+
+The success-rate denominator excludes missing/incomplete rows; `operations` includes
+recorded rows, including incomplete ones. To detect telemetry coverage gaps, the
+read-only rollup compares distinct correlated provider-operation IDs with final outcome IDs.
+It excludes the first and last ten minutes of the rolling window to avoid inflight/boundary
+false positives. Historical provider rows without an operation ID are not proof of a terminal
+outcome; they cannot be reconciled by ID and remain a historical coverage limitation.
+Rate-limit errors, backoff skips and circuit skips describe *provider attempts*, not logical
+failures, unless the final operation itself failed. Persisted `skipped_due_to_rate_limit`
+and unrecognized logical statuses count as unknown, not terminal failures; only explicitly
+recognized terminal statuses enter the failure count. A correlated failed attempt followed by a
+successful terminal outcome increments `recovered_operations` once per logical operation,
+not the terminal-failure count.
+
+The top-level `/health.status` contract remains unchanged. Nested Event Analysis may now report
+`failed` as well as `ok`, `degraded`, and `unknown`. `logical_24h` is an additive, sanitized
+nested block. The old in-memory `consecutive_failures` counter remains independent and can
+report degradation even below the rolling sample threshold. Stale last-success time without
+confirmed workload is inconclusive, not a terminal failure.
 
 **Log severity reflects duration.** The repeating per-symbol failure line escalates from WARNING
 to ERROR once consecutive failures reach the threshold, and carries the streak length:
@@ -146,10 +193,12 @@ Signals currently summarized:
 - Database: explicit lightweight PostgreSQL query.
 - Market data: freshness for each active symbol from persisted price telemetry. Automatic market
   check health is folded into this component.
-- AI: latest event-analysis attempt, latest successful attempt, and latest failure from
-  `event_ai_analyses`; failure details are sanitized and redacted if they look like provider
-  payloads, traces, headers, connection strings, or secrets. Old failures resolved by newer
-  success/no-alert rows do not clutter the default dashboard.
+- AI: latest Event Analysis outcome plus its 24-hour logical success health; a meaningful
+  rolling failure rate takes priority over the latest success. Outcome details are sanitized
+  and redacted if they resemble provider payloads, traces, headers, connection strings or
+  secrets. Recent provider failures recovered by the final operation do not count as
+  terminal failures. Incomplete final telemetry is `UNKNOWN`, not `OK`. Low-volume or
+  inactive call types do not generate percentage-based failure alerts.
 - News: cache freshness and usable non-noise/non-duplicate rows in the last 24h. Fresh usable
   news remains OK even when enrichment telemetry has not run yet.
 - Telegram delivery: last-24h counts from `alerts` by `sent`, `pending`, `retry_pending`,
@@ -175,9 +224,10 @@ Overall: ⚠️ Needs attention
 ⚠️ Telegram — no delivery rows in 24h
 ```
 
-Provider attempts, rate limits, backoffs, circuit skips, schema failures, and active limits are
-shown separately under Admin -> LLM diagnostics. The screen starts with 24-hour totals, lists
-degraded call-type/provider groups before healthy groups, and shows only non-zero failure categories
+Admin -> LLM diagnostics starts with 24-hour final logical outcomes by call type
+(success, terminal failure, evidence gaps, and sample confidence), then shows provider attempts,
+rate limits, backoffs, circuit skips, schema failures, and active limits as a separate section. Provider attempts have their own 24-hour totals, list
+degraded call-type/provider groups before healthy groups, and show only non-zero failure categories
 for each degraded group. Event Alert Render is model-aware so the two Groq steps and external
 fallbacks remain distinguishable; model identifiers outside the allowlisted render chain are not
 printed. Fully failed groups use ❌, partially successful groups use ⚠️, and healthy

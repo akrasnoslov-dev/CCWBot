@@ -237,7 +237,11 @@ def _error_haystack(error: Exception) -> str:
 def classify_ai_error_reason(error: Exception) -> str:
     """Return an admin-safe LLM failure reason (stable across all providers)."""
     if isinstance(error, LLMRateLimitBackoffActive):
-        return "rate_limit_backoff_active"
+        return (
+            "rate_limit_budget_exhausted"
+            if getattr(error, "budget_dimension", None)
+            else "rate_limit_backoff_active"
+        )
     if getattr(error, "operation_budget_exhausted", False):
         return "operation_budget_exhausted"
     if getattr(error, "circuit_broken", False):
