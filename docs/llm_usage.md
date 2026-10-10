@@ -51,9 +51,13 @@ efficiency, caching/reuse, and graceful degradation before considering any paid 
 The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid
 validated output. It surfaces a genuine request defect to the caller unchanged. Generic call types
-retain their existing terminal handling after chain exhaustion. Event Alert Render is stricter:
-exhausting its four LLM attempts is terminal for that render operation; it does not substitute a
-non-LLM presentation.
+retain their existing terminal handling after chain exhaustion. Event Alert Render fails closed
+when any exhausted attempt has a transport, rate-limit, backoff, unavailable-model, or
+circuit-breaker failure. Only exhaustion consisting exclusively of invalid model output
+(client-side JSON/schema rejects or provider-side `provider_json_validate_failed`) permits
+backend-derived deterministic presentation, subject to full factual validation below.
+Providers excluded for missing credentials are not attempted; if none is configured, Render is
+terminal. No further LLM calls are made during deterministic recovery.
 
 ### Which 4xx responses fall back
 
