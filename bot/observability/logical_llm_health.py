@@ -46,7 +46,26 @@ SUCCESS_STATUSES = {
     "weekly_report": frozenset({"completed"}),
     "news_intelligence": frozenset({"success"}),
 }
-INCOMPLETE_STATUSES = frozenset({"", "pending", "running", "unknown"})
+# Explicit terminal failures only. Skipped/backoff/in-flight/future statuses are
+# unknown evidence and must not enter the logical success-rate denominator.
+TERMINAL_FAILURE_STATUSES = {
+    "event_analysis": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
+    "event_alert_render": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
+    "market_heartbeat": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
+    "daily_report": frozenset({"failed", "schema_error", "llm_error", "invalid_json"}),
+    "weekly_report": frozenset({"failed", "schema_error", "llm_error", "invalid_json"}),
+    "news_intelligence": frozenset({"failed"}),
+}
+
+
+def _outcome_kind(call_type: str, status: str | None) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized in SUCCESS_STATUSES[call_type]:
+        return "success"
+    if normalized in TERMINAL_FAILURE_STATUSES[call_type]:
+        return "failure"
+    return "unknown"  # Backoff skips, in-flight work and future statuses.
+
 
 
 @dataclass(frozen=True)
@@ -86,13 +105,13 @@ def _summarize(call_type: str, rows: list[tuple[str | None, str | None]],
                gaps: int = 0, recovered: int = 0) -> LogicalHealth:
     successes = failures = unknown = 0
     for status, _symbol in rows:
-        normalized = str(status or "").lower()
-        if normalized in SUCCESS_STATUSES[call_type]:
+        category = _outcome_kind(call_type, status)
+        if category == "success":
             successes += 1
-        elif normalized in INCOMPLETE_STATUSES:
-            unknown += 1
-        else:
+        elif category == "failure":
             failures += 1
+        else:
+            unknown += 1
     completed = successes + failures
     symbols: list[str] = []
     if call_type in {"event_analysis", "event_alert_render", "market_heartbeat"}:
@@ -100,11 +119,12 @@ def _summarize(call_type: str, rows: list[tuple[str | None, str | None]],
                            and s.lower() in SUPPORTED_SYMBOLS}
         for symbol in sorted(symbols_present):
             scoped = [(status, s) for status, s in rows if s == symbol]
-            good = sum(str(status or "").lower() in SUCCESS_STATUSES[call_type]
-                       for status, _ in scoped)
-            bad = sum(str(status or "").lower() not in SUCCESS_STATUSES[call_type]
-                      and str(status or "").lower() not in INCOMPLETE_STATUSES
-                      for status, _ in scoped)
+            good = sum(
+                _outcome_kind(call_type, status) == "success" for status, _ in scoped
+            )
+            bad = sum(
+                _outcome_kind(call_type, status) == "failure" for status, _ in scoped
+            )
             if _state(good, bad, 0, 0) in {"degraded", "failed"}:
                 symbols.append(symbol)
     return LogicalHealth(
