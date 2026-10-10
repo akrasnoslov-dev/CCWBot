@@ -16,6 +16,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from bot.services.llm import config
+from bot.services.llm.budget import GroqBudgetExhausted, groq_budget
 from bot.services.llm.errors import AIProviderRateLimitError, LLMRateLimitBackoffActive
 from bot.services.llm.operation import current_llm_operation_id
 from bot.services.llm.telemetry import (
@@ -169,6 +170,39 @@ class OpenAICompatibleProvider(BaseProvider):
             )
 
         client = self.get_client()
+        lease = None
+        if provider == "groq":
+            try:
+                lease = await groq_budget.reserve(
+                    model=model,
+                    symbol=symbol,
+                    call_type=call_type,
+                    input_chars=input_chars,
+                    max_tokens=max_tokens,
+                )
+            except GroqBudgetExhausted as error:
+                await write_llm_usage_log(
+                    provider=provider,
+                    call_type=call_type,
+                    symbol=symbol,
+                    model=model,
+                    status="skipped_due_to_rate_limit",
+                    input_chars=input_chars,
+                    output_chars=None,
+                    max_tokens=max_tokens,
+                    error_reason="rate_limit_budget_exhausted",
+                )
+                logger.info(
+                    "ops_event=llm_budget_skipped provider=groq model=%s call_type=%s "
+                    "symbol=%s dimension=%s operation_id=%s",
+                    model,
+                    call_type,
+                    symbol,
+                    error.budget_dimension,
+                    current_llm_operation_id(),
+                )
+                raise
+
         request_kwargs = {
             "model": model,
             "messages": messages,
@@ -188,9 +222,7 @@ class OpenAICompatibleProvider(BaseProvider):
             raw_resource = getattr(completions, "with_raw_response", None)
             raw_create = getattr(raw_resource, "create", None)
             if raw_create is not None:
-                raw_response = await asyncio.wait_for(
-                    raw_create(**request_kwargs), timeout=timeout
-                )
+                raw_response = await asyncio.wait_for(raw_create(**request_kwargs), timeout=timeout)
                 headers = getattr(raw_response, "headers", None)
                 response = raw_response.parse()
             else:
@@ -200,6 +232,8 @@ class OpenAICompatibleProvider(BaseProvider):
                 headers = getattr(response, "headers", None)
         except Exception as error:
             headers = headers_from_error(error)
+            if lease is not None:
+                await groq_budget.settle(lease, actual_tokens=None, headers=headers, failed=True)
             status = usage_status_for_error(error)
             await write_llm_usage_log(
                 provider=provider,
@@ -230,6 +264,10 @@ class OpenAICompatibleProvider(BaseProvider):
                     limited_until=limited_until,
                 ) from error
             raise
+        if lease is not None:
+            await groq_budget.settle(
+                lease, actual_tokens=usage_int(response, "total_tokens"), headers=headers
+            )
         logger.debug(
             "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
             "status=success operation_id=%s",
