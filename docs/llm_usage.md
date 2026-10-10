@@ -13,6 +13,24 @@ per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, and
 `LLM_HEARTBEAT_PROVIDERS`. These providers are reached through OpenAI-compatible
 chat-completions APIs.
 
+Event Analysis adds one optional independent route: if neither the event override nor the global
+priority is set, its built-in order is `groq,gemini,cloudflare,mistral`. The checked-in
+`.env.example` sets `LLM_EVENT_PROVIDERS=groq,gemini,cloudflare,mistral` explicitly because
+it also sets a global chain. An explicitly configured global or per-event chain remains
+controlling; existing deployments must opt into this order via `LLM_EVENT_PROVIDERS` if a
+global priority is already configured. Cloudflare is skipped when its token/account ID is absent.
+No provider is called inside recipient loops, and the result is attributed to the actual
+provider/model that answered. This does not change Event Alert significance rules.
+
+Mistral `mistral-small-2603` remains a supported model, but Free mode has plan-, organization-,
+workspace-, and model-specific usage limits. A 429 plus zero successes does not establish whether
+the block is request frequency, token throughput, a consumed monthly allowance, or another account
+restriction. Check the affected account's Mistral Admin Panel > API > Limits and API > Usage
+without disclosing keys or raw responses. Cloudflare Workers AI also has finite free daily neuron
+capacity (10,000 neurons/day as of October 2026); neither route guarantees successful capacity.
+See https://docs.mistral.ai/admin/billing-usage/usage-limits and
+https://developers.cloudflare.com/workers-ai/platform/pricing/ .
+
 `event_alert_render` is intentionally different: it uses a fixed model-level LLM chain so the
 same Groq account can try a second model before changing infrastructure:
 
