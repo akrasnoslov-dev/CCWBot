@@ -26,34 +26,57 @@ def clean_budget(monkeypatch):
 async def test_day_token_limit_reserves_before_request_and_uses_actual_usage(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
-    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "2000")
-    first = await budget.reserve(
-        model="m",
-        symbol="BTC",
-        call_type="daily_report",
-        input_chars=0,
-        max_tokens=6300,
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+    # The report can use only the 20% non-analysis pool; each event symbol
+    # retains its own 20% even when other traffic has already run.
+    report = await budget.reserve(
+        model="m", symbol=None, call_type="daily_report",
+        input_chars=0, max_tokens=6300,
     )
-    await budget.settle(first, actual_tokens=180, headers=None)
-    second = await budget.reserve(
-        model="m",
-        symbol="ETH",
-        call_type="market_heartbeat",
-        input_chars=0,
-        max_tokens=350,
-    )
-    await budget.settle(second, actual_tokens=180, headers=None)
+    await budget.settle(report, actual_tokens=1700, headers=None)
+    for symbol, actual in (("ETH", 1800), ("BTC", 2000), ("GRAM", 2000), ("SOL", 2000)):
+        lease = await budget.reserve(
+            model="m", symbol=symbol, call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=actual, headers=None)
     with pytest.raises(GroqBudgetExhausted, match="rate-limited") as error:
         await budget.reserve(
-            model="m",
-            symbol="SOL",
-            call_type="daily_report",
-            input_chars=0,
-            max_tokens=6300,
+            model="m", symbol="BTC", call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
         )
     assert error.value.budget_dimension == "local_tpd"
-    assert len(budget._history["m"]) == 2
+    assert len(budget._history["m"]) == 5
 
+
+@pytest.mark.asyncio
+async def test_non_analysis_usage_cannot_consume_reserved_event_symbol_capacity(monkeypatch):
+    budget = GroqBudget()
+    budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+
+    lease = await budget.reserve(
+        model="m", symbol=None, call_type="event_alert_render",
+        input_chars=0, max_tokens=6300,
+    )
+    await budget.settle(lease, actual_tokens=1700, headers=None)
+
+    with pytest.raises(GroqBudgetExhausted) as error:
+        await budget.reserve(
+            model="m", symbol=None, call_type="daily_report",
+            input_chars=0, max_tokens=6300,
+        )
+    assert error.value.budget_dimension == "non_analysis_reserve"
+
+    for symbol in ("BTC", "ETH", "GRAM", "SOL"):
+        lease = await budget.reserve(
+            model="m", symbol=symbol, call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=2000, headers=None)
+    assert len(budget._history["m"]) == 5
 
 @pytest.mark.asyncio
 async def test_four_symbols_each_get_a_fair_share_without_extra_provider_calls(monkeypatch):
