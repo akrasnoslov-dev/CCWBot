@@ -12,10 +12,12 @@ alert/report domain logic.
 
 import asyncio
 import logging
+import math
 import os
 import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -203,6 +205,52 @@ def _provider_error_identifiers(error: Exception) -> set[str]:
     return identifiers
 
 
+def _google_error_details(error: Exception) -> list[dict]:
+    """Use structured Google RPC details, never free-text to identify a daily quota."""
+    body = getattr(error, "body", None)
+    # Some Gemini OpenAI-compatible errors arrive as a single-item root array.
+    # Reject ambiguous multi-item arrays instead of guessing a quota type.
+    if isinstance(body, list) and len(body) == 1:
+        body = body[0]
+    if not isinstance(body, dict):
+        return []
+    payload = body.get("error", body)
+    if isinstance(payload, list) and len(payload) == 1:
+        payload = payload[0]
+    if not isinstance(payload, dict):
+        return []
+    details = payload.get("details")
+    if not isinstance(details, list):
+        return []
+    return [entry for entry in details if isinstance(entry, dict)]
+
+
+def is_gemini_daily_quota_exhausted_error(error: Exception) -> bool:
+    """A documented Google QuotaFailure with a per-day quota ID (not a minute 429)."""
+    if _effective_status_code(error) != 429:
+        return False
+    return any(
+        str(violation.get("quotaId", "")).lower().find("perday") >= 0
+        for detail in _google_error_details(error)
+        if str(detail.get("@type", "")).endswith("google.rpc.QuotaFailure")
+        for violation in detail.get("violations", [])
+        if isinstance(violation, dict)
+    )
+
+
+def _google_retry_info_seconds(error: Exception) -> int | None:
+    """Read Google's structured RetryInfo when the compatible API omits headers."""
+    for detail in _google_error_details(error):
+        if not str(detail.get("@type", "")).endswith("google.rpc.RetryInfo"):
+            continue
+        raw = detail.get("retryDelay")
+        if isinstance(raw, str):
+            seconds = _parse_retry_delay_text(f"retry in {raw}")
+            if seconds is not None:
+                return seconds
+    return None
+
+
 def is_provider_quota_exhausted_error(error: Exception) -> bool:
     """True for a provider billing/quota refusal that another provider can serve."""
     candidates = [error]
@@ -212,6 +260,7 @@ def is_provider_quota_exhausted_error(error: Exception) -> bool:
             candidates.append(wrapped)
     return any(
         _effective_status_code(candidate) == 402
+        or is_gemini_daily_quota_exhausted_error(candidate)
         or bool(_provider_error_identifiers(candidate) & _QUOTA_EXHAUSTED_MARKERS)
         for candidate in candidates
     )
@@ -455,7 +504,7 @@ def _parse_retry_after_header(value: str | None, now: datetime) -> int | None:
         return None
     stripped = str(value).strip()
     try:
-        seconds = int(float(stripped))
+        seconds = math.ceil(float(stripped))
     except ValueError:
         seconds = None
     if seconds is not None:
@@ -489,7 +538,7 @@ def _parse_retry_delay_text(value: str | None) -> int | None:
             total += float(raw) * multiplier
     if total <= 0:
         return None
-    return max(int(total), 1)
+    return max(math.ceil(total), 1)
 
 
 def retry_after_seconds_from_rate_limit(error: Exception, headers, *, now: datetime) -> int:
@@ -504,6 +553,9 @@ def retry_after_seconds_from_rate_limit(error: Exception, headers, *, now: datet
         retry_after = _parse_retry_delay_text(header_value(headers, header_name))
         if retry_after is not None:
             return retry_after
+    retry_after = _google_retry_info_seconds(error)
+    if retry_after is not None:
+        return retry_after
     retry_after = _parse_retry_delay_text(str(error))
     if retry_after is not None:
         return retry_after
@@ -581,6 +633,16 @@ def start_llm_rate_limit_backoff(
     now = datetime.now(timezone.utc)
     retry_after_seconds = retry_after_seconds_from_rate_limit(error, headers, now=now)
     limited_until = now + timedelta(seconds=retry_after_seconds)
+    if provider == "gemini" and is_gemini_daily_quota_exhausted_error(error):
+        # Gemini RPD resets at midnight America/Los_Angeles (including DST changes).
+        # RetryInfo can suggest seconds even when QuotaFailure says PerDay: do not
+        # hammer an exhausted free-tier daily quota every few seconds.
+        pacific = ZoneInfo("America/Los_Angeles")
+        next_day = now.astimezone(pacific).date() + timedelta(days=1)
+        reset = datetime.combine(next_day, datetime.min.time(), tzinfo=pacific)
+        reset = reset.astimezone(timezone.utc)
+        limited_until = max(limited_until, reset)
+        retry_after_seconds = max(math.ceil((limited_until - now).total_seconds()), 1)
     key = (provider, model)
     existing = active_rate_limit_backoff(provider=provider, model=model, now=now)
     if existing and existing > limited_until:

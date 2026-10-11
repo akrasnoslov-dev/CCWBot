@@ -416,3 +416,38 @@ async def test_unknown_groq_usage_survives_restart_from_persisted_fields(monkeyp
         assert charges[1].tokens == 0
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_exhausted_120b_fair_share_does_not_restrict_20b_or_qwen(monkeypatch):
+    """Other Groq model budgets remain separate from Event Analysis reservations."""
+    budget = GroqBudget()
+    budget._loaded.update({"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"})
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "10000")
+
+    lease = await budget.reserve(
+        model="openai/gpt-oss-120b", symbol="BTC", call_type="event_analysis",
+        input_chars=0, max_tokens=6300,
+    )
+    await budget.settle(lease, actual_tokens=2000, headers=None)
+
+    with pytest.raises(GroqBudgetExhausted) as exc:
+        await budget.reserve(
+            model="openai/gpt-oss-120b", symbol="BTC", call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
+        )
+    assert exc.value.budget_dimension == "symbol_fair_share"
+
+    for model, call_type in (
+        ("openai/gpt-oss-20b", "daily_report"),
+        ("qwen/qwen3.8-27b", "event_alert_render"),
+    ):
+        other = await budget.reserve(
+            model=model, symbol=None, call_type=call_type,
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(other, actual_tokens=1000, headers=None)
+        assert len(budget._history[model]) == 1
