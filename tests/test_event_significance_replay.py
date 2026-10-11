@@ -169,3 +169,10 @@ def test_replay_non_object_json_is_invalid_output_not_provider_failure():
     assert replay.parse_significance_response('{"should_alert": false}') == {
         "should_alert": False
     }
+
+
+def test_replay_classification_never_masks_sdk_value_errors():
+    assert replay.classify_replay_error(ValueError("request rejected")) == "provider_error"
+    assert replay.classify_replay_error(
+        replay.NonObjectSignificanceError("invalid shape")
+    ) == "schema_error"
