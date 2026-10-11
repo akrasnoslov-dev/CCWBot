@@ -185,7 +185,7 @@ async def test_system_status_uses_real_fresh_telemetry():
         assert "✅ Market data — BTC, ETH, GRAM, SOL fresh" in text
         assert "✅ AI — latest success 5m ago" in text
         assert "LLM rate limit" not in text
-        assert "✅ News — 1 usable items in 24h" in text
+        assert "✅ News — 1 verified fresh items in 24h" in text
         assert "✅ Telegram — sent 1 in 24h" in text
         assert "Event Analysis / groq" not in text
         assert len(text.splitlines()) <= 12
@@ -528,8 +528,8 @@ async def test_system_status_news_cache_stale_and_missing():
             session_factory=session_local,
             now=now,
         )
-        assert "⚠️ News — stale or empty" in text
-        assert "Usable items in 24h: 0" in text
+        assert "⚠️ News — no recently persisted news" in text
+        assert "Usable published items in 24h: 0" in text
         assert "News intelligence" not in text
     finally:
         await engine.dispose()
@@ -547,7 +547,8 @@ async def test_system_status_news_fresh_without_enrichment_stays_ok():
                     title="Fresh news",
                     url="https://example.com/fresh",
                     fetched_at=now - timedelta(minutes=20),
-                    llm_status=None,
+                    llm_status="success",
+                    published_at=now - timedelta(minutes=20),
                     updated_at=now - timedelta(minutes=20),
                 )
             )
@@ -559,11 +560,44 @@ async def test_system_status_news_fresh_without_enrichment_stays_ok():
             now=now,
         )
 
-        assert "✅ News — 1 usable items in 24h" in text
-        assert "News — stale or empty" not in text
+        assert "✅ News — 1 verified fresh items in 24h" in text
+        assert "News — no recently persisted news" not in text
         assert "Latest news cache" not in text
         assert "Recent usable news items" not in text
         assert "News intelligence" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_system_status_rejects_old_article_refetched_today():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add(
+                NewsItem(
+                    news_key="old-content-refetched",
+                    title="Old publication, recent fetch",
+                    source="Example",
+                    url="https://example.com/old-content",
+                    published_at=now - timedelta(days=4),
+                    fetched_at=now - timedelta(minutes=10),
+                    llm_status="success",
+                    primary_symbol="btc",
+                    related_symbols=["btc"],
+                    is_noise=False,
+                    is_duplicate=False,
+                    updated_at=now - timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+        status_text = await build_admin_system_status_text(
+            db_enabled=True, session_factory=session_local, now=now,
+        )
+        assert "News — no verified fresh usable news" in status_text
+        assert "Usable published items in 24h: 0" in status_text
+        assert "persisted: 1" in status_text
     finally:
         await engine.dispose()
 
