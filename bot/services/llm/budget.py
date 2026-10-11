@@ -152,7 +152,7 @@ class GroqBudget:
                 until = min((h.at + DAY for h in history), default=now + DAY)
             elif call_type != "event_analysis" and (
                 sum(h.tokens for h in history if h.call_type != "event_analysis") + expected
-                > max(0, int(daily_tokens * (1 - len(SUPPORTED_SYMBOLS) * EVENT_SYMBOL_SHARE)))
+                > max(0, daily_tokens - len(SUPPORTED_SYMBOLS) * int(daily_tokens * EVENT_SYMBOL_SHARE))
             ):
                 # Non-analysis traffic shares the *unreserved* 20% capacity of this
                 # model. Without this guard, rendering can consume a symbol's
