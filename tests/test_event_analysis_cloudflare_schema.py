@@ -81,7 +81,8 @@ def test_cloudflare_gets_bare_json_schema_not_groq_envelope(monkeypatch):
     assert list(overrides[f"cloudflare:{cloudflare_model}"]["json_schema"]["required"]) == [
         "symbol", "materiality", "novelty", "should_alert", "reason_code", "confidence",
     ]
-    assert overrides[f"cloudflare:{cloudflare_model}"]["json_schema"]["additionalProperties"] is False
+    cloudflare_schema = overrides[f"cloudflare:{cloudflare_model}"]["json_schema"]
+    assert cloudflare_schema["additionalProperties"] is False
     assert overrides[f"groq:{groq_model}"]["json_schema"]["strict"] is True
     assert "gemini" not in overrides
 
@@ -144,12 +145,28 @@ async def test_cloudflare_uses_schema_and_keeps_one_logical_call(monkeypatch):
 # Synthetic categories, not a claim about which categories occurred in production.
 _INVALID_CASES = [
     ("truncated_json", '{"symbol":"BTC"', AIInvalidJsonError),
-    ("missing_decision_field", json.dumps({key: val for key, val in _VALID.items() if key != "should_alert"}), AISchemaValidationError),
-    ("incorrect_boolean_type", json.dumps({**_VALID, "should_alert": "false"}), AISchemaValidationError),
+    (
+        "missing_decision_field",
+        json.dumps({key: val for key, val in _VALID.items() if key != "should_alert"}),
+        AISchemaValidationError,
+    ),
+    (
+        "incorrect_boolean_type",
+        json.dumps({**_VALID, "should_alert": "false"}),
+        AISchemaValidationError,
+    ),
     ("incorrect_enum_type", json.dumps({**_VALID, "confidence": 42}), AISchemaValidationError),
-    ("invalid_enum_value", json.dumps({**_VALID, "novelty": "probably_new"}), AISchemaValidationError),
+    (
+        "invalid_enum_value",
+        json.dumps({**_VALID, "novelty": "probably_new"}),
+        AISchemaValidationError,
+    ),
     ("wrong_symbol", json.dumps({**_VALID, "symbol": "ETH"}), AISchemaValidationError),
-    ("conflicting_polarity", json.dumps({**_VALID, "reason_code": "unusual_move"}), AISchemaValidationError),
+    (
+        "conflicting_polarity",
+        json.dumps({**_VALID, "reason_code": "unusual_move"}),
+        AISchemaValidationError,
+    ),
     ("positive_without_materiality", json.dumps({
         **_VALID, "should_alert": True, "reason_code": "fast_move", "novelty": "new"
     }), AISchemaValidationError),
