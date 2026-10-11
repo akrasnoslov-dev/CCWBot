@@ -92,7 +92,8 @@ class GroqBudget:
                             LlmUsageLog.created_at >= now - DAY,
                         )
                     )
-                    for (at, symbol, call_type, total, status, chars, ceiling, reason) in result.all():
+                    for row in result.all():
+                        (at, symbol, call_type, total, status, chars, ceiling, reason) = row
                         if str(status).startswith("skipped_due_to_"):
                             continue
                         if at.tzinfo is None:
