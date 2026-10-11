@@ -237,7 +237,7 @@ class OpenAICompatibleProvider(BaseProvider):
         except Exception as error:
             headers = headers_from_error(error)
             if lease is not None:
-                await groq_budget.settle(lease, actual_tokens=None, headers=headers, failed=True)
+                await groq_budget.settle(lease, actual_tokens=None, headers=headers)
             status = usage_status_for_error(error)
             await write_llm_usage_log(
                 provider=provider,
