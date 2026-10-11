@@ -6,10 +6,10 @@ from bot.application.alert_processing import (
     schedule_seen_news_cleanup,
 )
 from bot.application.report_processing import schedule_report_cache_generation
+from bot.application.trial_lifecycle import schedule_premium_trial_expiry
 from bot.config import ENABLE_NEWS_INTELLIGENCE
 from bot.news import ingest_news_job
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
-from bot.application.trial_lifecycle import schedule_premium_trial_expiry
 
 
 def schedule_runtime_jobs(app: Application, *, automatic_check_interval_seconds: int) -> None:
