@@ -150,6 +150,18 @@ class GroqBudget:
             if sum(h.tokens for h in history) + expected > daily_tokens:
                 dimension = "local_tpd"
                 until = min((h.at + DAY for h in history), default=now + DAY)
+            elif call_type != "event_analysis" and (
+                sum(h.tokens for h in history if h.call_type != "event_analysis") + expected
+                > max(0, int(daily_tokens * (1 - len(SUPPORTED_SYMBOLS) * EVENT_SYMBOL_SHARE)))
+            ):
+                # Non-analysis traffic shares the *unreserved* 20% capacity of this
+                # model. Without this guard, rendering can consume a symbol's
+                # supposedly reserved tokens and trigger global_tpd for that symbol.
+                dimension = "non_analysis_reserve"
+                until = min(
+                    (h.at + DAY for h in history if h.call_type != "event_analysis"),
+                    default=now + DAY,
+                )
             elif sum(h.request for h in history) >= daily_requests:
                 dimension = "local_rpd"
                 until = min((h.at + DAY for h in history if h.request), default=now + DAY)
