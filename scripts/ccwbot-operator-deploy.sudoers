@@ -1,0 +1,5 @@
+# Opt-in SSH operator consolidation, staged until root-controlled production cutover.
+# Existing ccwbot_ops collector sudoers stays in its own installed file.
+# Only the four argument-exact, root-owned deploy-safe wrapper actions are allowed.
+Defaults:ccwbot_ops env_reset, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+ccwbot_ops ALL=(root) NOPASSWD: /usr/local/bin/ccwbot-deploy-safe status, /usr/local/bin/ccwbot-deploy-safe backup, /usr/local/bin/ccwbot-deploy-safe deploy, /usr/local/bin/ccwbot-deploy-safe rollback
