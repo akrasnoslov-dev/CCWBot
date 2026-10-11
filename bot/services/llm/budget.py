@@ -227,8 +227,9 @@ class GroqBudget:
     ) -> None:
         now = datetime.now(timezone.utc)
         async with self._lock:
-            # Unknown successful usage remains reserved (fail closed); unsuccessful HTTP calls
-            # spend a request but no known output tokens.
+            # Unknown usage after provider errors/timeouts remains reserved (fail closed).
+            # Only a *proven* pre-processing rejection may pass failed=True to
+            # release tokens; the HTTP request count always stays charged.
             if failed:
                 lease.charge.tokens = 0
             elif actual_tokens is not None:
