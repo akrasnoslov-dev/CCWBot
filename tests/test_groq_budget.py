@@ -26,39 +26,68 @@ def clean_budget(monkeypatch):
 async def test_day_token_limit_reserves_before_request_and_uses_actual_usage(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
-    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "2000")
-    first = await budget.reserve(
-        model="m",
-        symbol="BTC",
-        call_type="daily_report",
-        input_chars=0,
-        max_tokens=6300,
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+    # The report can use only the 20% non-analysis pool; each event symbol
+    # retains its own 20% even when other traffic has already run.
+    report = await budget.reserve(
+        model="m", symbol=None, call_type="daily_report",
+        input_chars=0, max_tokens=6300,
     )
-    await budget.settle(first, actual_tokens=180, headers=None)
-    second = await budget.reserve(
-        model="m",
-        symbol="ETH",
-        call_type="market_heartbeat",
-        input_chars=0,
-        max_tokens=350,
-    )
-    await budget.settle(second, actual_tokens=180, headers=None)
+    await budget.settle(report, actual_tokens=1700, headers=None)
+    for symbol, actual in (("ETH", 1800), ("BTC", 2000), ("GRAM", 2000), ("SOL", 2000)):
+        lease = await budget.reserve(
+            model="m", symbol=symbol, call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=actual, headers=None)
     with pytest.raises(GroqBudgetExhausted, match="rate-limited") as error:
         await budget.reserve(
-            model="m",
-            symbol="SOL",
-            call_type="daily_report",
-            input_chars=0,
-            max_tokens=6300,
+            model="m", symbol="BTC", call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
         )
     assert error.value.budget_dimension == "local_tpd"
-    assert len(budget._history["m"]) == 2
+    assert len(budget._history["m"]) == 5
 
+
+@pytest.mark.asyncio
+async def test_non_analysis_usage_cannot_consume_reserved_event_symbol_capacity(monkeypatch):
+    budget = GroqBudget()
+    budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+
+    lease = await budget.reserve(
+        model="m", symbol=None, call_type="event_alert_render",
+        input_chars=0, max_tokens=6300,
+    )
+    await budget.settle(lease, actual_tokens=1700, headers=None)
+
+    with pytest.raises(GroqBudgetExhausted) as error:
+        await budget.reserve(
+            model="m", symbol=None, call_type="daily_report",
+            input_chars=0, max_tokens=6300,
+        )
+    assert error.value.budget_dimension == "non_analysis_reserve"
+
+    for symbol in ("BTC", "ETH", "GRAM", "SOL"):
+        lease = await budget.reserve(
+            model="m", symbol=symbol, call_type="event_analysis",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=2000, headers=None)
+    assert len(budget._history["m"]) == 5
 
 @pytest.mark.asyncio
 async def test_four_symbols_each_get_a_fair_share_without_extra_provider_calls(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "10000")
 
@@ -314,5 +343,76 @@ async def test_budget_failure_is_persisted_as_logical_event_analysis_outcome(mon
         assert attempts[0].status == "skipped_due_to_rate_limit"
         assert attempts[0].error_reason == "rate_limit_budget_exhausted"
         assert attempts[0].llm_operation_id == analysis.llm_operation_id
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_provider_failure_keeps_estimated_token_reservation():
+    budget = GroqBudget()
+    budget._loaded.add("m")
+    lease = await budget.reserve(
+        model="m", symbol="BTC", call_type="event_analysis",
+        input_chars=600, max_tokens=6300,
+    )
+    expected = lease.charge.tokens
+    assert expected > 0
+    # Timeout after submission does not prove the provider spent no tokens.
+    await budget.settle(lease, actual_tokens=None, headers=None)
+    assert budget._history["m"][0].tokens == expected
+    assert budget._history["m"][0].request == 1
+
+
+@pytest.mark.asyncio
+async def test_non_event_groq_model_can_use_its_full_daily_budget(monkeypatch):
+    budget = GroqBudget()
+    model = "openai/gpt-oss-20b"
+    budget._loaded.add(model)
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+    for _ in range(2):
+        lease = await budget.reserve(
+            model=model, symbol=None, call_type="daily_report",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=3000, headers=None)
+    assert sum(h.tokens for h in budget._history[model]) == 6000
+
+
+@pytest.mark.asyncio
+async def test_unknown_groq_usage_survives_restart_from_persisted_fields(monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import bot.runtime as runtime
+    from bot.db.database import Base, LlmUsageLog
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with factory() as session:
+            session.add_all([
+                LlmUsageLog(
+                    provider="groq", model="m", call_type="event_analysis",
+                    symbol="BTC", status="timeout", error_reason="timeout",
+                    input_chars=600, max_tokens=6300, total_tokens=None,
+                ),
+                LlmUsageLog(
+                    provider="groq", model="m", call_type="event_analysis",
+                    symbol="ETH", status="rate_limit", error_reason="rate_limit",
+                    input_chars=600, max_tokens=6300, total_tokens=None,
+                ),
+            ])
+            await session.commit()
+        monkeypatch.setattr(runtime, "DB_ENABLED", True)
+        monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", factory)
+        budget = GroqBudget()
+        await budget._load("m", datetime.now(timezone.utc))
+        charges = budget._history["m"]
+        assert charges[0].tokens == budget._estimate(600, 6300)
+        assert charges[1].tokens == 0
     finally:
         await engine.dispose()

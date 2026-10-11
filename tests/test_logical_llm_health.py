@@ -376,3 +376,33 @@ async def test_health_preserves_success_timestamp_when_rollup_fails(monkeypatch)
     assert result["status"] == "ok"
     assert result["event_analysis"]["state"] == "unknown"
     assert result["event_analysis"]["last_success_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_final_rate_limits_are_failures_but_pre_call_skips_remain_unknown():
+    from bot.observability.logical_llm_health import _outcome_kind
+    from bot.observability.system_status import ComponentStatus, _ai_health
+
+    assert _outcome_kind("event_analysis", "rate_limit") == "failure"
+    assert _outcome_kind("event_analysis", "timeout") == "failure"
+    assert _outcome_kind("event_analysis", "skipped_due_to_rate_limit") == "unknown"
+
+    engine, factory = await _db()
+    try:
+        async with factory() as session:
+            rows = [_event(i) for i in range(24)]
+            for row in rows:
+                row.status = "rate_limit"
+            skipped = _event(99)
+            skipped.status = "skipped_due_to_rate_limit"
+            session.add_all([*rows, skipped])
+            await session.commit()
+            logical = (await read_logical_llm_health(session, now=NOW))["event_analysis"]
+            admin = await _ai_health(session, now=NOW)
+        assert logical.successes == 0
+        assert logical.terminal_failures == 24
+        assert logical.unknown_outcomes == 1
+        assert logical.state == "failed"
+        assert admin.status == ComponentStatus.FAIL
+    finally:
+        await engine.dispose()

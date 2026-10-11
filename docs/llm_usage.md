@@ -74,7 +74,7 @@ and Mistral **15s**. Gemini gets ten additional seconds for variable model/reaso
 this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
 measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
 OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
-would silently cut short Gemini's 25s deadline. The chain has a **60s**
+would silently cut short Gemini's 25s deadline. The four-step chain has a **90s**
 monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
 skips and response validation. Nominal HTTP ceilings total 55s, leaving 5s for processing.
 Before any new HTTP attempt the router checks remaining time, shortens its timeout
@@ -87,7 +87,7 @@ the logical `llm_operation_id`.
 
 Only these Event Analysis settings may adjust the defaults (both validated and logged on
 startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and
-`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 60, allowed 15-120).
+`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 90, allowed 15-120).
 Explicit caller timeouts still override the per-provider default but remain bounded by
 the remaining operation budget. All other call types retain their shared 15s timeout,
 including Event Alert Render. No extra LLM requests are added. These settings do not
@@ -234,6 +234,17 @@ label uncertain causes as hypotheses. Compare actual HTTP attempts (excluding sk
 terminal logical outcomes (`event_ai_analyses`) rather than treating every attempt as an
 independent Event Analysis.
 
+Only the Groq model actually configured for Event Analysis reserves symbol capacity
+(when Groq is in that task's provider chain): BTC, ETH, GRAM and SOL each have a
+protected 20% daily token share. Render/reports/other tasks sharing **that model**
+use its remaining 20%. Other Groq models (including the default 20B report model)
+retain their normal full-model planning budgets; they have no idle event reservations.
+The guard is conservative planning, not proof of live account capacity. Historical
+usage before rollout can exceed the new shares until it ages out. HTTP failures
+with ambiguous token consumption retain a reservation, reconstructed after restart
+from the stored input length and request ceiling when actual usage is unavailable.
+Only confirmed pre-generation rejections release their reserved tokens.
+
 ## Models, token budgets, and reasoning effort
 
 Model identifiers are provider-controlled and do change; a decommissioned model answers
@@ -352,7 +363,7 @@ ops_event=llm_config call_type=event_analysis max_tokens=300
 ```
 
 For `event_analysis`, the same startup line also includes
-`operation_budget_seconds=60 gemini_timeout_seconds=25` with the actual sanitized values.
+`operation_budget_seconds=90 gemini_timeout_seconds=25` with the actual sanitized values.
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
 the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
 default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will

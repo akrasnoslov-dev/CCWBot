@@ -133,3 +133,46 @@ def test_replay_scoring_does_not_conflate_errors_with_negative_decisions():
     assert result["scores"]["medium"]["true_negative"] == 2
     assert result["scores"]["medium"]["accuracy_valid_adjudicated"] == 1
     assert result["scores"]["medium"]["actual_completion_tokens"] == 950
+
+
+def test_replay_schema_is_pinned_when_configured_chain_excludes_groq(monkeypatch):
+    monkeypatch.delenv("GROQ_JSON_MODE", raising=False)
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "custom/not-schema-verified")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,mistral")
+    assert replay.groq_significance_response_format()["type"] == "json_schema"
+
+
+def test_replay_invalid_provider_response_counts_billed_usage():
+    rows = [
+        {
+            "case": "invalid_schema", "expected": True,
+            "low": {"status": "schema_error", "prompt_tokens": 450,
+                    "completion_tokens": 300, "total_tokens": 750},
+            "medium": {"status": "valid", "decision": True, "prompt_tokens": 450,
+                       "completion_tokens": 550, "total_tokens": 1000},
+        }
+    ]
+    result = replay.summarize_rows(rows)
+    assert result["scores"]["low"]["scored"] == 0
+    assert result["scores"]["low"]["actual_total_tokens"] == 750
+    assert result["scores"]["low"]["token_usage_measured_calls"] == 1
+    assert result["scores"]["low"]["mean_total_tokens"] == 750
+    assert result["scores"]["medium"]["actual_total_tokens"] == 1000
+
+
+def test_replay_non_object_json_is_invalid_output_not_provider_failure():
+    import pytest
+
+    for payload in ("null", "[]", "true", "42", '"text"'):
+        with pytest.raises(ValueError, match="JSON object"):
+            replay.parse_significance_response(payload)
+    assert replay.parse_significance_response('{"should_alert": false}') == {
+        "should_alert": False
+    }
+
+
+def test_replay_classification_never_masks_sdk_value_errors():
+    assert replay.classify_replay_error(ValueError("request rejected")) == "provider_error"
+    assert replay.classify_replay_error(
+        replay.NonObjectSignificanceError("invalid shape")
+    ) == "schema_error"

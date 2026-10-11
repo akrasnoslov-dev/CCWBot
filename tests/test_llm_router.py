@@ -132,6 +132,7 @@ async def test_event_analysis_budget_stops_chain_before_new_http_request(monkeyp
     from bot.services.llm import router as router_module
 
     _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 60)
     clock = iter((100.0, 100.0, 120.0, 161.0))
     monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
     groq = FakeProvider("groq", asyncio.TimeoutError())
@@ -198,6 +199,7 @@ async def test_final_deadline_capped_timeout_is_recorded_as_budget_exhaustion(mo
     from bot.services.llm import router as router_module
 
     _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 60)
     clock = iter((100.0, 100.0, 156.0))
     monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
     groq = FakeProvider("groq", _http_error(503))
@@ -218,6 +220,7 @@ async def test_event_analysis_budget_caps_late_mistral_timeout(monkeypatch):
     from bot.services.llm import router as router_module
 
     _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 60)
     clock = iter((100.0, 100.0, 120.0, 154.0))
     monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
     groq = FakeProvider("groq", asyncio.TimeoutError())
@@ -257,7 +260,7 @@ def test_event_analysis_timeout_configuration_is_bounded_and_logged(monkeypatch,
     assert config.request_timeout_seconds_for(
         call_type="event_analysis", provider="gemini"
     ) == 25
-    assert config.event_analysis_operation_budget_seconds() == 60
+    assert config.event_analysis_operation_budget_seconds() == 90
     monkeypatch.setenv("LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", "28")
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", "65")
     assert config.request_timeout_seconds_for(
@@ -269,11 +272,11 @@ def test_event_analysis_timeout_configuration_is_bounded_and_logged(monkeypatch,
     assert config.request_timeout_seconds_for(
         call_type="event_analysis", provider="gemini"
     ) == 25
-    assert config.event_analysis_operation_budget_seconds() == 60
+    assert config.event_analysis_operation_budget_seconds() == 90
     with caplog.at_level(logging.INFO, logger=config.logger.name):
         config.log_resolved_configuration()
     assert any(
-        "operation_budget_seconds=60 gemini_timeout_seconds=25" in rec.getMessage()
+        "operation_budget_seconds=90 gemini_timeout_seconds=25" in rec.getMessage()
         for rec in caplog.records
     )
 
