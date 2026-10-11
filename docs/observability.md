@@ -6,6 +6,78 @@ linkable raw rows unless an incident specifically requires recipient-level traci
 tracing inside the approved read-only session and report only sanitized aggregates or bundle-local
 references.
 
+## RSS News Freshness / Ingestion
+
+News is supporting market/report context only; it must never independently start an Event Alert
+(see `docs/alert_logic.md`). The runtime now schedules an independent hourly, market-wide
+RSS ingestion job (first run about four minutes after startup), in addition to existing report
+refreshes. It runs only when PostgreSQL and News Intelligence are enabled. Each run reuses the
+existing intelligence cache, maximum new-item processing cap, per-run LLM call cap, and hourly
+LLM call cap. It does not send messages or resolve recipients.
+
+Two free RSS sources are currently configured in `bot/services/news_service.py`:
+CoinDesk and Cointelegraph. HTTP requests use a bounded timeout and response size.
+Source results are combined by *publication date* before the final batch limit.
+Known cached analysis rows do not consume the per-run new-work limit. Fresh
+articles are prioritized before older ones, while the existing keyword,
+noise, duplicate, and schema gates remain intact.
+
+Logs have only counters and fixed source indices; no headlines, raw URLs, bodies, provider
+errors, identities, or credentials. Look for:
+
+- `ops_event=news_rss_source` with source_index 0 (CoinDesk) or 1 (Cointelegraph),
+  status, total entries, keyword_pass, published_24h, missing_date, missing_title;
+- `ops_event=news_rss_batch` with candidates, unique, and selected;
+- `ops_event=news_intelligence_batch_completed` with fetched, valid, considered,
+  reused, selected, success, skipped_budget, failed;
+- `ops_event=news_ingestion` for the terminal hourly-job state.
+
+The admin **News** health block uses `news_items.fetched_at` as evidence
+of *persistence*, not evidence of a successful feed request. To count usable
+news it also requires an actual publication timestamp within 24 hours,
+successful intelligence, and neither noise nor duplicate status. A fresh
+retrieval of an old story does **not** mean fresh news. The expanded status
+breaks out recently persisted rows, noise, duplicates, intelligence failures,
+budget skips, missing dates, and fresh supported-symbol coverage. Status
+remains WARN for zero usable items; this is not automatically an ingestion
+failure. RSS fetch attempts are not durably stored; correlate with sanitized
+logs to separate scarcity, upstream outage, and dropped candidates.
+After a restart, missing logs are an evidence gap, not proof of successful
+fetches.
+
+Read-only aggregate query (use the investigator role and the approved
+production access path only; never export titles, links, or user data):
+
+```sql
+SELECT
+    count(*) FILTER (WHERE fetched_at >= now() - interval '24 hours') AS persisted_24h,
+    count(*) FILTER (
+        WHERE fetched_at >= now() - interval '24 hours'
+        AND published_at >= now() - interval '24 hours'
+        AND published_at <= now() + interval '5 minutes'
+        AND llm_status = 'success'
+        AND is_noise = false
+        AND is_duplicate = false
+    ) AS usable_published_24h,
+    count(*) FILTER (
+        WHERE fetched_at >= now() - interval '24 hours' AND is_noise = true
+    ) AS noise_24h,
+    count(*) FILTER (
+        WHERE fetched_at >= now() - interval '24 hours' AND is_duplicate = true
+    ) AS duplicate_24h,
+    count(*) FILTER (
+        WHERE fetched_at >= now() - interval '24 hours' AND llm_status = 'skipped_budget'
+    ) AS budget_skipped_24h,
+    max(fetched_at) AS last_persisted_at
+FROM news_items;
+```
+
+Operational follow-up after a deployment: confirm the hourly job schedules,
+both feeds show successful non-empty fetches over at least one cycle, the
+fresh-published versus processed counts reconcile, and the user-facing status
+matches those counts. A truly quiet period remains WARN with the correct
+explanation. No database migration or paid provider is required.
+
 ## Production Forensic Session
 
 For interactive production investigation, connect through the SSH tunnel with the dedicated

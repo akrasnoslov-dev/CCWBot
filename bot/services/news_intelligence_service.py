@@ -150,11 +150,53 @@ class NewsIntelligenceService:
         normalized_items = [normalize_news_item(item) for item in raw_items]
         compatibility_items = [item.compatibility_dict() for item in normalized_items if item]
         valid_items = [item for item in normalized_items if item]
+        # Fresh news must not be starved by older high-keyword headlines. Cached
+        # results must not occupy the *new work* cap on every scheduled run.
+        now = utc_now()
+        fresh_cutoff = now - timedelta(hours=24)
         prioritized_items = sorted(
-            valid_items, key=_budget_priority_score, reverse=True
+            valid_items,
+            key=lambda item: (
+                bool(
+                    item.published_at
+                    and fresh_cutoff <= item.published_at <= now + timedelta(minutes=5)
+                ),
+                _budget_priority_score(item),
+                item.published_at.timestamp() if item.published_at else 0,
+            ),
+            reverse=True,
         )
-        processable = prioritized_items[: self.max_items_per_run]
+        processable: list[NormalizedNewsItem] = []
+        reused = 0
+        considered = 0
+        seen_keys: set[str] = set()
+        for item in prioritized_items:
+            if len(processable) >= self.max_items_per_run:
+                break
+            if item.news_key in seen_keys:
+                continue
+            seen_keys.add(item.news_key)
+            considered += 1
+            payload = build_llm_payload(item)
+            legacy_hash = _hash_json(payload)
+            cache = await get_cached_news_item_analysis(
+                self.session,
+                news_key=item.news_key,
+                llm_input_hash=_hash_json({"payload": payload, "requested_model": self.model}),
+                legacy_llm_input_hash=legacy_hash,
+                legacy_llm_model=self.model,
+            )
+            if cache is not None:
+                reused += 1
+                continue
+            processable.append(item)
         if not processable:
+            logger.info(
+                "ops_event=news_intelligence_batch_completed fetched=%s valid=%s "
+                "considered=%s reused=%s selected=0 success=0 "
+                "skipped_budget=0 failed=0",
+                len(raw_items), len(valid_items), considered, reused,
+            )
             return compatibility_items
 
         hourly_calls = await count_recent_news_intelligence_llm_calls(
@@ -178,9 +220,14 @@ class NewsIntelligenceService:
                 failed += 1
                 logger.warning("News intelligence item processing failed: %s", _safe_error(error))
         logger.info(
-            "ops_event=news_intelligence_batch_completed fetched=%s success=%s "
+            "ops_event=news_intelligence_batch_completed fetched=%s valid=%s "
+            "considered=%s reused=%s selected=%s success=%s "
             "skipped_budget=%s failed=%s",
             len(raw_items),
+            len(valid_items),
+            considered,
+            reused,
+            len(processable),
             success,
             skipped_budget,
             failed,
