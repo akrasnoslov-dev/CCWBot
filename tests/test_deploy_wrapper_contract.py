@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -59,6 +60,14 @@ class ContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, text)
         self.assertIn("ccwbot_deploy ALL=", SUDOERS.read_text(encoding="utf-8"))
+
+    def test_operator_sudoers_passes_visudo_syntax_when_available(self):
+        if os.name == "nt" or not shutil.which("visudo"):
+            self.skipTest("visudo is only available on provisioned Linux hosts")
+        subprocess.run(
+            ["visudo", "-cf", str(OPERATOR_SUDOERS)],
+            capture_output=True, text=True, check=True,
+        )
 
     def test_operator_cutover_is_documented_as_unapplied(self):
         guide = (ROOT / "docs" / "dev_ops_guide.md").read_text(encoding="utf-8")
