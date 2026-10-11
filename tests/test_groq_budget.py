@@ -26,6 +26,8 @@ def clean_budget(monkeypatch):
 async def test_day_token_limit_reserves_before_request_and_uses_actual_usage(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
     # The report can use only the 20% non-analysis pool; each event symbol
@@ -54,6 +56,8 @@ async def test_day_token_limit_reserves_before_request_and_uses_actual_usage(mon
 async def test_non_analysis_usage_cannot_consume_reserved_event_symbol_capacity(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
 
@@ -82,6 +86,8 @@ async def test_non_analysis_usage_cannot_consume_reserved_event_symbol_capacity(
 async def test_four_symbols_each_get_a_fair_share_without_extra_provider_calls(monkeypatch):
     budget = GroqBudget()
     budget._loaded.add("m")
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "10000")
 
@@ -355,3 +361,57 @@ async def test_ambiguous_provider_failure_keeps_estimated_token_reservation():
     await budget.settle(lease, actual_tokens=None, headers=None)
     assert budget._history["m"][0].tokens == expected
     assert budget._history["m"][0].request == 1
+
+
+@pytest.mark.asyncio
+async def test_non_event_groq_model_can_use_its_full_daily_budget(monkeypatch):
+    budget = GroqBudget()
+    model = "openai/gpt-oss-20b"
+    budget._loaded.add(model)
+    monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
+    monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
+    for _ in range(2):
+        lease = await budget.reserve(
+            model=model, symbol=None, call_type="daily_report",
+            input_chars=0, max_tokens=6300,
+        )
+        await budget.settle(lease, actual_tokens=3000, headers=None)
+    assert sum(h.tokens for h in budget._history[model]) == 6000
+
+
+@pytest.mark.asyncio
+async def test_unknown_groq_usage_survives_restart_from_persisted_fields(monkeypatch):
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    import bot.runtime as runtime
+    from bot.db.database import Base, LlmUsageLog
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with factory() as session:
+            session.add_all([
+                LlmUsageLog(
+                    provider="groq", model="m", call_type="event_analysis",
+                    symbol="BTC", status="timeout", error_reason="timeout",
+                    input_chars=600, max_tokens=6300, total_tokens=None,
+                ),
+                LlmUsageLog(
+                    provider="groq", model="m", call_type="event_analysis",
+                    symbol="ETH", status="rate_limit", error_reason="rate_limit",
+                    input_chars=600, max_tokens=6300, total_tokens=None,
+                ),
+            ])
+            await session.commit()
+        monkeypatch.setattr(runtime, "DB_ENABLED", True)
+        monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", factory)
+        budget = GroqBudget()
+        await budget._load("m", datetime.now(timezone.utc))
+        charges = budget._history["m"]
+        assert charges[0].tokens == budget._estimate(600, 6300)
+        assert charges[1].tokens == 0
+    finally:
+        await engine.dispose()
