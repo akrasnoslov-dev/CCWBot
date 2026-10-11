@@ -627,3 +627,50 @@ def test_single_market_event_fanout_is_not_repeated_logical_alert():
         [row], period=_period(), row_cap=10, semantic_cooldown_seconds=14400
     )
     assert payloads["evidence/db/alert_similarity_groups.json"]["groups"] == []
+
+def test_same_copy_in_multiple_coins_has_distinct_joinable_similarity_groups():
+    shared = {
+        "alert_message": "Movement remains notable over the observed interval.",
+        "analysis_plain_text": "Movement remains notable over the observed interval.",
+        "analysis_title": "Observed market movement",
+        "analysis_message_body": "Movement remains notable over the observed interval.",
+        "analysis_possible_action": "Watch the next observation.",
+    }
+    rows = []
+    for symbol, offset in (("BTC", 0), ("ETH", 2)):
+        for index in range(2):
+            number = offset + index
+            rows.append(
+                _row(
+                    **shared,
+                    symbol=symbol,
+                    analysis_symbol=symbol,
+                    event_key=f"{symbol.lower()}_price_volatility",
+                    analysis_event_key=f"{symbol.lower()}_price_volatility",
+                    market_event_id=10 + number,
+                    event_ai_analysis_id=100 + number,
+                    event_instance_key=f"instance-{number}",
+                    input_hash=f"input-{number}",
+                )
+            )
+    payload = build_alert_evidence_payloads(
+        rows, period=_period(), row_cap=10, semantic_cooldown_seconds=14400
+    )["evidence/db/alert_similarity_groups.json"]
+    assert len(payload["groups"]) == 2
+    group_ids = {group["semantic_group_id"] for group in payload["groups"]}
+    assert len(group_ids) == 2
+    assert {tuple(group["symbols"]) for group in payload["groups"]} == {
+        ("BTC",),
+        ("ETH",),
+    }
+    for group in payload["groups"]:
+        members = [
+            member
+            for member in payload["memberships"]
+            if member["semantic_group_id"] == group["semantic_group_id"]
+        ]
+        assert len(members) == 2
+        assert {member["market_event_ref"] for member in members} == set(
+            group["sample_event_refs"]
+        )
+
