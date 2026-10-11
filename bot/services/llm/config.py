@@ -320,7 +320,7 @@ def request_timeout_seconds_for(
         return requested_timeout
     if call_type == "event_analysis" and provider == "gemini":
         # Gemini reasoning occasionally exceeds the shared 15s limit. Keep this bounded so
-        # the third provider still has a full 15s within the 60s logical-operation budget.
+        # the remaining fallbacks each have time within the 90s operation budget.
         return get_int_env(
             "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", 25, minimum=15, maximum=30
         )
@@ -330,7 +330,7 @@ def request_timeout_seconds_for(
 def event_analysis_operation_budget_seconds() -> int:
     """Bound the complete Event Analysis provider chain, not each provider independently."""
     return get_int_env(
-        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", 60, minimum=15, maximum=120
+        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", 90, minimum=15, maximum=120
     )
 
 
