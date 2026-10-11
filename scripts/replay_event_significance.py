@@ -72,15 +72,29 @@ def offline_report(cases: list[dict]) -> dict:
 
 
 def groq_significance_response_format() -> dict | None:
-    """Use the same strict model-specific response format as production."""
+    """Match strict-schema production for the replay's *pinned* GPT-OSS model."""
     from bot.services import ai_agent_groq
 
-    response_format, overrides = ai_agent_groq._structured_response_formats(
-        call_type="event_analysis",
-        schema_name="event_significance",
-        schema=ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA,
-    )
-    return (overrides or {}).get("groq:openai/gpt-oss-120b", response_format)
+    if not ai_agent_groq._groq_json_mode_enabled():
+        return None
+    # The replay pins GPT-OSS 120B independently of production env overrides.
+    # Do not derive its format from an unrelated configured provider chain.
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "event_significance",
+            "strict": True,
+            "schema": ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA,
+        },
+    }
+
+
+def parse_significance_response(raw_content: str) -> dict:
+    """Malformed or non-object JSON is unusable output, not a provider outage."""
+    result = json.loads(raw_content)
+    if not isinstance(result, dict):
+        raise ValueError("event significance output must be a JSON object")
+    return result
 
 
 def summarize_rows(rows: list[dict]) -> dict:
@@ -92,7 +106,7 @@ def summarize_rows(rows: list[dict]) -> dict:
         positives = [r for r in valid if r["expected"] is True]
         negatives = [r for r in valid if r["expected"] is False]
         all_valid = [r for r in rows if r[effort]["status"] == "valid"]
-        tokens = [r[effort] for r in all_valid]
+        tokens = [r[effort] for r in rows]  # Include billed invalid responses.
         observed = [r for r in tokens if r.get("total_tokens") is not None]
         fp = sum(r[effort]["decision"] is True for r in negatives)
         fn = sum(r[effort]["decision"] is False for r in positives)
@@ -171,6 +185,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                 call_type="event_analysis", provider="groq",
                 model="openai/gpt-oss-120b", requested_max_tokens=300,
             )
+            answer = None
             try:
                 answer = await provider.chat_completion(
                     call_type="event_analysis", symbol=case["input"]["symbol"],
@@ -178,7 +193,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                     max_tokens=budget, response_format=response_format,
                     reasoning_effort=effort,
                 )
-                parsed = json.loads(answer.raw_content)
+                parsed = parse_significance_response(answer.raw_content)
                 decision = validate_event_significance_output(
                     parsed, expected_symbol=case["input"]["symbol"]
                 )
@@ -200,14 +215,22 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                     "invalid_json" if isinstance(exc, json.JSONDecodeError)
                     else "schema_error" if error_type in {
                         "EventAnalysisValidationError", "AISchemaValidationError",
-                        "AIInvalidJsonError",
+                        "AIInvalidJsonError", "ValueError",
                     }
                     else "provider_error"
                 )
-                row[effort] = {
+                failed_answer = {
                     "status": status, "error_type": error_type,
                     "requested_max_tokens": budget,
                 }
+                # Provider answered and billed tokens even if validation failed.
+                if answer is not None:
+                    failed_answer.update({
+                        "prompt_tokens": answer.prompt_tokens,
+                        "completion_tokens": answer.completion_tokens,
+                        "total_tokens": answer.total_tokens,
+                    })
+                row[effort] = failed_answer
         rows.append(row)
 
     report = summarize_rows(rows)
