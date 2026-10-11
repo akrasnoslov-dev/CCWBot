@@ -74,7 +74,7 @@ and Mistral **15s**. Gemini gets ten additional seconds for variable model/reaso
 this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
 measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
 OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
-would silently cut short Gemini's 25s deadline. The chain has a **60s**
+would silently cut short Gemini's 25s deadline. The four-step chain has a **90s**
 monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
 skips and response validation. Nominal HTTP ceilings total 55s, leaving 5s for processing.
 Before any new HTTP attempt the router checks remaining time, shortens its timeout
@@ -87,7 +87,7 @@ the logical `llm_operation_id`.
 
 Only these Event Analysis settings may adjust the defaults (both validated and logged on
 startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and
-`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 60, allowed 15-120).
+`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 90, allowed 15-120).
 Explicit caller timeouts still override the per-provider default but remain bounded by
 the remaining operation budget. All other call types retain their shared 15s timeout,
 including Event Alert Render. No extra LLM requests are added. These settings do not
@@ -359,7 +359,7 @@ ops_event=llm_config call_type=event_analysis max_tokens=300
 ```
 
 For `event_analysis`, the same startup line also includes
-`operation_budget_seconds=60 gemini_timeout_seconds=25` with the actual sanitized values.
+`operation_budget_seconds=90 gemini_timeout_seconds=25` with the actual sanitized values.
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
 the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
 default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will
