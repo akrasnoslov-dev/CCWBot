@@ -36,7 +36,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("env_reset", text)
 
     def test_staged_operator_sudoers_is_exactly_scoped(self):
-        """Operator gets only safe wrapper actions; legacy deploy stays until cutover."""
+        """Operator gets only safe wrapper actions, not unrestricted root privileges."""
         text = OPERATOR_SUDOERS.read_text(encoding="utf-8")
         lines = [
             line for line in text.splitlines()
@@ -69,18 +69,20 @@ class ContractTests(unittest.TestCase):
             capture_output=True, text=True, check=True,
         )
 
-    def test_operator_cutover_is_documented_as_unapplied(self):
+    def test_completed_operator_cutover_is_documented(self):
         guide = (ROOT / "docs" / "dev_ops_guide.md").read_text(encoding="utf-8")
-        self.assertIn("Staged two-login cutover (not yet applied to production)", guide)
+        self.assertIn("Two-login cutover procedure and rollback (completed 2026-10-11)", guide)
         self.assertIn("ccwbot_investigator", guide)
         self.assertIn("ccwbot_ops_reader", guide)
         self.assertIn("ccwbot-operator-deploy.sudoers", guide)
         self.assertIn("sudo -n /usr/bin/docker ps", guide)
         self.assertIn("sudo -n /usr/bin/id", guide)
         self.assertIn("Rollback:", guide)
-        self.assertIn("After cutover:  ccwbot-prod-ops", guide)
+        self.assertIn("two active human-operable SSH logins", guide)
+        self.assertIn("old deploy SSH login", guide)
+        self.assertIn("Current SSH alias: ccwbot-prod-ops", guide)
         self.assertIn("ssh -o BatchMode=yes <deploy-ssh-alias>", guide)
-        self.assertIn("Before cutover: use ccwbot-prod-deploy", guide)
+        self.assertIn("old ccwbot-prod-deploy disabled", guide)
 
     def test_security_guards_present(self):
         source = WRAPPER.read_text(encoding="utf-8")
