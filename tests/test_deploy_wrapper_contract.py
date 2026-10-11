@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -14,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "scripts" / "ccwbot-deploy-safe.sh"
 SUDOERS = ROOT / "scripts" / "ccwbot-deploy.sudoers"
+OPERATOR_SUDOERS = ROOT / "scripts" / "ccwbot-operator-deploy.sudoers"
 OLD = "a" * 40
 NEW = "b" * 40
 
@@ -32,6 +34,53 @@ class ContractTests(unittest.TestCase):
         for action in ("status", "backup", "deploy", "rollback"):
             self.assertIn(f"/usr/local/bin/ccwbot-deploy-safe {action}", text)
         self.assertIn("env_reset", text)
+
+    def test_staged_operator_sudoers_is_exactly_scoped(self):
+        """Operator gets only safe wrapper actions; legacy deploy stays until cutover."""
+        text = OPERATOR_SUDOERS.read_text(encoding="utf-8")
+        lines = [
+            line for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(
+            lines[0],
+            'Defaults:ccwbot_ops env_reset, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"',
+        )
+        self.assertEqual(
+            lines[1],
+            "ccwbot_ops ALL=(root) NOPASSWD: " + ", ".join(
+                f"/usr/local/bin/ccwbot-deploy-safe {action}"
+                for action in ("status", "backup", "deploy", "rollback")
+            ),
+        )
+        for forbidden in (
+            "NOPASSWD: ALL", "/usr/bin/docker", "/bin/bash", "ccwbot_deploy",
+            "SETENV", "ALL=(ALL)", "/usr/local/bin/ccwbot-deploy-safe *",
+        ):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("ccwbot_deploy ALL=", SUDOERS.read_text(encoding="utf-8"))
+
+    def test_operator_sudoers_passes_visudo_syntax_when_available(self):
+        if os.name == "nt" or not shutil.which("visudo"):
+            self.skipTest("visudo is only available on provisioned Linux hosts")
+        subprocess.run(
+            ["visudo", "-cf", str(OPERATOR_SUDOERS)],
+            capture_output=True, text=True, check=True,
+        )
+
+    def test_operator_cutover_is_documented_as_unapplied(self):
+        guide = (ROOT / "docs" / "dev_ops_guide.md").read_text(encoding="utf-8")
+        self.assertIn("Staged two-login cutover (not yet applied to production)", guide)
+        self.assertIn("ccwbot_investigator", guide)
+        self.assertIn("ccwbot_ops_reader", guide)
+        self.assertIn("ccwbot-operator-deploy.sudoers", guide)
+        self.assertIn("sudo -n /usr/bin/docker ps", guide)
+        self.assertIn("sudo -n /usr/bin/id", guide)
+        self.assertIn("Rollback:", guide)
+        self.assertIn("After cutover:  ccwbot-prod-ops", guide)
+        self.assertIn("ssh -o BatchMode=yes <deploy-ssh-alias>", guide)
+        self.assertIn("Before cutover: use ccwbot-prod-deploy", guide)
 
     def test_security_guards_present(self):
         source = WRAPPER.read_text(encoding="utf-8")

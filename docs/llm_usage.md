@@ -13,6 +13,24 @@ per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, and
 `LLM_HEARTBEAT_PROVIDERS`. These providers are reached through OpenAI-compatible
 chat-completions APIs.
 
+Event Analysis adds one optional independent route: if neither the event override nor the global
+priority is set, its built-in order is `groq,gemini,cloudflare,mistral`. The checked-in
+`.env.example` sets `LLM_EVENT_PROVIDERS=groq,gemini,cloudflare,mistral` explicitly because
+it also sets a global chain. An explicitly configured global or per-event chain remains
+controlling; existing deployments must opt into this order via `LLM_EVENT_PROVIDERS` if a
+global priority is already configured. Cloudflare is skipped when its token/account ID is absent.
+No provider is called inside recipient loops, and the result is attributed to the actual
+provider/model that answered. This does not change Event Alert significance rules.
+
+Mistral `mistral-small-2603` remains a supported model, but Free mode has plan-, organization-,
+workspace-, and model-specific usage limits. A 429 plus zero successes does not establish whether
+the block is request frequency, token throughput, a consumed monthly allowance, or another account
+restriction. Check the affected account's Mistral Admin Panel > API > Limits and API > Usage
+without disclosing keys or raw responses. Cloudflare Workers AI also has finite free daily neuron
+capacity (10,000 neurons/day as of October 2026); neither route guarantees successful capacity.
+See https://docs.mistral.ai/admin/billing-usage/usage-limits and
+https://developers.cloudflare.com/workers-ai/platform/pricing/ .
+
 `event_alert_render` is intentionally different: it uses a fixed model-level LLM chain so the
 same Groq account can try a second model before changing infrastructure:
 
@@ -33,9 +51,52 @@ efficiency, caching/reuse, and graceful degradation before considering any paid 
 The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid
 validated output. It surfaces a genuine request defect to the caller unchanged. Generic call types
-retain their existing terminal handling after chain exhaustion. Event Alert Render is stricter:
-exhausting its four LLM attempts is terminal for that render operation; it does not substitute a
-non-LLM presentation.
+retain their existing terminal handling after chain exhaustion. Event Alert Render fails closed
+when any exhausted attempt has a transport, rate-limit, backoff, unavailable-model, or
+circuit-breaker failure. Only exhaustion consisting exclusively of invalid model output
+(client-side JSON/schema rejects or provider-side `provider_json_validate_failed`) permits
+backend-derived deterministic presentation, subject to full factual validation below.
+Providers excluded for missing credentials are not attempted; if none is configured, Render is
+terminal. No further LLM calls are made during deterministic recovery.
+
+### Event Analysis timeout and operation budget
+
+Event Analysis uses **one HTTP request per configured provider/model**, ordered by
+`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> Gemini -> Mistral).
+The OpenAI-compatible SDK has `max_retries=0`; neither HTTP 5xx nor timeout causes a
+same-provider retry. Such failures advance to the next available provider, unless the operation
+budget is exhausted. HTTP 429 activates the existing provider/model backoff; an explicit
+billing/quota code instead falls back without treating quota exhaustion as transient 429.
+Malformed requests remain terminal and never fan out.
+
+The default per-request timeouts for **Event Analysis only** are Groq **15s**, Gemini **25s**,
+and Mistral **15s**. Gemini gets ten additional seconds for variable model/reasoning latency;
+this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
+measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
+OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
+would silently cut short Gemini's 25s deadline. The four-step chain has a **90s**
+monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
+skips and response validation. Nominal HTTP ceilings total 55s, leaving 5s for processing.
+Before any new HTTP attempt the router checks remaining time, shortens its timeout
+when necessary, and makes no new request when fewer than 1s remain. A timeout at the
+remaining deadline, including on the final provider or during logging/validation, gets
+the sanitized terminal `operation_budget_exhausted` reason, not a false provider 429
+or a successful operation. A forced cancellation can leave an individual provider-attempt
+telemetry row missing, but the terminal feature outcome still carries the reason and
+the logical `llm_operation_id`.
+
+Only these Event Analysis settings may adjust the defaults (both validated and logged on
+startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and
+`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 90, allowed 15-120).
+Explicit caller timeouts still override the per-provider default but remain bounded by
+the remaining operation budget. All other call types retain their shared 15s timeout,
+including Event Alert Render. No extra LLM requests are added. These settings do not
+change event significance or delivery logic.
+
+A future production check should use sanitized startup configuration and correlated
+`llm_usage_logs` attempt/final-outcome timestamps to compare successful Gemini latency,
+timeout counts, fallback recovery and active-backoff skips. Neither the supplied before/after
+counts nor default source code proves which timeout is currently set in the deployed environment.
 
 ### Which 4xx responses fall back
 
@@ -127,6 +188,62 @@ Transitions log `ops_event=llm_breaker_opened` (WARNING), `ops_event=llm_breaker
 at most one extra probe per triple.
 
 Set `LLM_BREAKER_ENABLED=false` to disable it entirely.
+
+## Groq free-tier admission control (Event Analysis)
+
+The Groq pre-call budget guard uses the provider's published free-plan GPT-OSS ceilings
+(8K TPM, 200K TPD, 1K RPD, 30 RPM) as conservative **planning** values. Defaults are
+7,200 tokens/minute, 180,000 tokens/rolling 24 hours, 900 requests/rolling 24 hours,
+and 27 requests/minute **per model**; operators may lower them using
+`GROQ_FREE_TOKEN_BUDGET_MINUTE`, `GROQ_FREE_TOKEN_BUDGET_DAY`,
+`GROQ_FREE_REQUEST_BUDGET_DAY`, and `GROQ_FREE_REQUEST_BUDGET_MINUTE`.
+These estimates are not authoritative for a particular Groq account; organization-level
+traffic outside the bot and provider-side policy remain unknown. The existing `max_tokens`
+ceiling and `reasoning_effort` are **unchanged**.
+
+The guard reserves a conservative estimated token cost under one async lock *before* the
+actual HTTP request, then reconciles with provider-reported `total_tokens`. Groq response
+headers constrain remaining RPD (request headers) and TPM (token headers) until their
+respective advertised resets. The 24h RPD/TPD approximation is rebuilt from existing
+`llm_usage_logs` actual provider-attempt rows when the process starts; skip rows count as
+neither requests nor consumed tokens. If telemetry storage is unavailable, only in-process
+usage plus observed provider headers are available. This gap is logged, not silently treated
+as confirmed quota state.
+
+The four scheduled coin jobs are already staggered; an additional 20% rolling-day token
+allocation for each of BTC, ETH, GRAM, SOL prevents one symbol using all the shared Groq
+Event Analysis budget. The remaining 20% stays available to render/report/other operations.
+No numeric budget gate affects the *market-significance decision*: the guard only decides
+which provider may be asked to make that decision.
+
+A budget refusal makes **zero** HTTP calls, writes an attempted-provider skip with
+`error_reason=rate_limit_budget_exhausted`, and advances the existing provider fallback
+chain. If every configured provider is unavailable, Event Analysis still writes a terminal
+`event_ai_analyses` and `alert_delivery_outcomes` row (`rate_limited`), using the same
+logical `llm_operation_id` as its attempted-provider rows. It never records `no_alert`
+or manufactures significance. A deferred, stale market context is **not** replayed hours
+later; the next scheduled check instead analyzes current data. Available fallback API keys
+must be configured separately; with Groq only, the free TPD budget necessarily limits
+coverage. No provider entry is retried inside the logical operation.
+
+Groq's standard request headers expose RPD, and its token headers expose TPM, **not TPD**.
+A 429 alone cannot distinguish TPD exhaustion, hidden organization policy, input/output
+split quotas, or short bursts. Use the correlated operation IDs, attempt statuses, the
+bounded saved headers, and provider `retry-after` to evaluate actual production causes;
+label uncertain causes as hypotheses. Compare actual HTTP attempts (excluding skips) to
+terminal logical outcomes (`event_ai_analyses`) rather than treating every attempt as an
+independent Event Analysis.
+
+Only the Groq model actually configured for Event Analysis reserves symbol capacity
+(when Groq is in that task's provider chain): BTC, ETH, GRAM and SOL each have a
+protected 20% daily token share. Render/reports/other tasks sharing **that model**
+use its remaining 20%. Other Groq models (including the default 20B report model)
+retain their normal full-model planning budgets; they have no idle event reservations.
+The guard is conservative planning, not proof of live account capacity. Historical
+usage before rollout can exceed the new shares until it ages out. HTTP failures
+with ambiguous token consumption retain a reservation, reconstructed after restart
+from the stored input length and request ceiling when actual usage is unavailable.
+Only confirmed pre-generation rejections release their reserved tokens.
 
 ## Models, token budgets, and reasoning effort
 
@@ -245,6 +362,8 @@ ops_event=llm_config call_type=event_analysis max_tokens=300
   chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-3.8-flash/effort=low/max=1324(no_api_key)
 ```
 
+For `event_analysis`, the same startup line also includes
+`operation_budget_seconds=90 gemini_timeout_seconds=25` with the actual sanitized values.
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
 the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
 default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will
@@ -304,6 +423,7 @@ snake_case safe categories:
 - `invalid_json`
 - `schema_validation_failed`
 - `timeout`
+- `operation_budget_exhausted` (Event Analysis chain deadline; no new provider request)
 - `auth_error`
 - `provider_model_error`
 - `provider_quota_exhausted`

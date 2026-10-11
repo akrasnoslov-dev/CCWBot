@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Ordered default chain for general LLM work. Event Alert rendering has a dedicated
 # model-level chain because it deliberately retries a second Groq model before changing providers.
 DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini", "mistral"]
+# Event Analysis needs one more independent free-tier route when the general priority
+# has not been explicitly set. Cloudflare is optional and skipped without its credentials.
+DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY = ["groq", "gemini", "cloudflare", "mistral"]
 KNOWN_PROVIDERS = frozenset((*DEFAULT_PROVIDER_PRIORITY, "cloudflare"))
 
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
@@ -232,6 +235,11 @@ def provider_priority(call_type: str) -> list[str]:
         parsed = _parse_priority_list(os.getenv(override_env), env_name=override_env)
         if parsed:
             return parsed
+    # Respect an explicit global priority. With no global/event override, insert the
+    # existing Cloudflare adapter before Mistral for Event Analysis only; the router
+    # excludes it automatically when its token or account ID is missing.
+    if call_type == "event_analysis" and not os.getenv("LLM_PROVIDER_PRIORITY"):
+        return list(DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY)
     return global_provider_priority()
 
 
@@ -302,6 +310,28 @@ def provider_attempts(call_type: str) -> list[tuple[str, str]]:
             for provider, env_name, default in _EVENT_ALERT_RENDER_ATTEMPTS
         ]
     return [(provider, model_for(provider, call_type)) for provider in provider_priority(call_type)]
+
+
+def request_timeout_seconds_for(
+    *, call_type: str, provider: str, requested_timeout: int | float | None = None
+) -> int | float:
+    """Choose a per-attempt HTTP timeout; explicit caller overrides remain authoritative."""
+    if requested_timeout is not None:
+        return requested_timeout
+    if call_type == "event_analysis" and provider == "gemini":
+        # Gemini reasoning occasionally exceeds the shared 15s limit. Keep this bounded so
+        # the remaining fallbacks each have time within the 90s operation budget.
+        return get_int_env(
+            "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", 25, minimum=15, maximum=30
+        )
+    return 15
+
+
+def event_analysis_operation_budget_seconds() -> int:
+    """Bound the complete Event Analysis provider chain, not each provider independently."""
+    return get_int_env(
+        "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS", 90, minimum=15, maximum=120
+    )
 
 
 def max_tokens_for(call_type: str) -> int:
@@ -436,6 +466,9 @@ def resolved_configuration() -> list[dict]:
                         model=model,
                     ),
                     "reasoning_effort": reasoning_effort_for(model, call_type),
+                    "timeout_seconds": request_timeout_seconds_for(
+                        call_type=call_type, provider=provider
+                    ),
                 }
             )
         resolved.append(
@@ -443,6 +476,11 @@ def resolved_configuration() -> list[dict]:
                 "call_type": call_type,
                 "attempts": attempts,
                 "max_tokens": max_tokens_for(call_type),
+                "operation_budget_seconds": (
+                    event_analysis_operation_budget_seconds()
+                    if call_type == "event_analysis"
+                    else None
+                ),
             }
         )
     return resolved
@@ -500,11 +538,26 @@ def log_resolved_configuration() -> None:
     """
     reset_env_warning_cache()
     for entry in resolved_configuration():
+        timing = ""
+        if entry["call_type"] == "event_analysis":
+            gemini_timeout = next(
+                (
+                    item["timeout_seconds"]
+                    for item in entry["attempts"]
+                    if item["provider"] == "gemini"
+                ),
+                "none",
+            )
+            timing = (
+                f" operation_budget_seconds={entry['operation_budget_seconds']}"
+                f" gemini_timeout_seconds={gemini_timeout}"
+            )
         logger.info(
-            "ops_event=llm_config call_type=%s max_tokens=%s chain=%s",
+            "ops_event=llm_config call_type=%s max_tokens=%s chain=%s%s",
             entry["call_type"],
             entry["max_tokens"],
             _format_chain(entry),
+            timing,
         )
         _warn_undersized_thinking_budgets(entry)
 

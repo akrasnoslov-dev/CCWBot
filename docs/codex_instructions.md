@@ -69,6 +69,7 @@ applicable contract/lint/configuration check.
 - Normal PRs target `dev`.
 - `dev -> main` is only for explicit production releases.
 - Use one normal checkout; do not create worktrees by default.
+- On the primary Windows workstation the canonical checkout is `D:\Projects\CCWBot`; never silently switch to or create a shadow checkout under `C:\Users\Andrei\Documents`. See `docs/development.md`.
 - Do not overwrite uncommitted user work.
 - One implementation writer at a time unless the owner explicitly approves parallel writers.
 - Never commit secrets, logs, generated reports, dumps, caches, or local state.

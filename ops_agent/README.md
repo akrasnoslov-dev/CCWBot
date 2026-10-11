@@ -10,6 +10,16 @@ normal interpolation.
 
 ## Production Read-Only Setup
 
+The operator-facing Linux/SSH access matrix and staged deployment-access
+consolidation are maintained in `docs/dev_ops_guide.md`. The existing
+`ccwbot_ops` collector account is the proposed single daily SSH operator
+after a separately verified root-controlled cutover. Until then, keep
+production `ccwbot_deploy` access and permissions intact. Linux account
+consolidation does **not** change the separate, read-only
+`ccwbot_ops_reader` PostgreSQL service role; never give the collector the
+application database account or raw Docker access.
+
+
 Create or use a dedicated limited VPS account named `ccwbot_ops` for operator collection access:
 
 ```bash

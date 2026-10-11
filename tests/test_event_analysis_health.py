@@ -281,6 +281,13 @@ async def test_health_counts_no_alert_as_a_successful_analysis(monkeypatch):
     monkeypatch.setattr(health, "get_latest_event_analysis_success_at", _fake_query)
     monkeypatch.setattr(health, "get_price_state", _fake_price_state)
 
+    from bot.observability.logical_llm_health import LogicalHealth
+
+    async def _logical_success():
+        return LogicalHealth("event_analysis", "ok", 20, 20, 0, 0, 0, 100.0)
+
+    monkeypatch.setattr(health, "_read_event_analysis_logical_health", _logical_success)
+
     response = await health.health_response(time.monotonic())
 
     assert captured["statuses"] == {"success", "no_alert"}

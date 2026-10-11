@@ -150,6 +150,8 @@ def is_model_unavailable_error(error: Exception) -> bool:
 
 def is_provider_bad_request_error(error: Exception) -> bool:
     """True when the request itself is defective, so every provider would reject it."""
+    if "bad_request" in _provider_error_identifiers(error):
+        return True
     haystack = _error_haystack(error)
     if any(marker in haystack for marker in _BAD_REQUEST_MARKERS):
         return True
@@ -235,7 +237,13 @@ def _error_haystack(error: Exception) -> str:
 def classify_ai_error_reason(error: Exception) -> str:
     """Return an admin-safe LLM failure reason (stable across all providers)."""
     if isinstance(error, LLMRateLimitBackoffActive):
-        return "rate_limit_backoff_active"
+        return (
+            "rate_limit_budget_exhausted"
+            if getattr(error, "budget_dimension", None)
+            else "rate_limit_backoff_active"
+        )
+    if getattr(error, "operation_budget_exhausted", False):
+        return "operation_budget_exhausted"
     if getattr(error, "circuit_broken", False):
         # Every provider was skipped by an open breaker, so nothing was attempted. Keeping
         # this distinct from a fresh failure is what makes "known-bad, waiting to probe"
@@ -346,6 +354,9 @@ def is_json_validation_error(error: Exception) -> bool:
         "json_validate_failed" in haystack
         or "validate json" in haystack
         or "json validation" in haystack
+        # Cloudflare's documented JSON-mode failure is unusable model output, not
+        # a malformed client request. Preserve fallback even when HTTP is 400.
+        or "json mode couldn't be met" in haystack
     )
 
 

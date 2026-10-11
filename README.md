@@ -36,7 +36,8 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
-- Groq is the primary LLM provider, with an optional Gemini/Mistral fallback chain
+- Groq is the primary LLM provider, with Gemini/Mistral fallback and an optional
+  Cloudflare Workers AI route for Event Analysis (plus the dedicated render chain)
   (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
   `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
   `(call type, provider, model)` triple that keeps failing deterministically and retries it on a

@@ -71,6 +71,107 @@ def offline_report(cases: list[dict]) -> dict:
     }
 
 
+def groq_significance_response_format() -> dict | None:
+    """Match strict-schema production for the replay's *pinned* GPT-OSS model."""
+    from bot.services import ai_agent_groq
+
+    if not ai_agent_groq._groq_json_mode_enabled():
+        return None
+    # The replay pins GPT-OSS 120B independently of production env overrides.
+    # Do not derive its format from an unrelated configured provider chain.
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "event_significance",
+            "strict": True,
+            "schema": ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA,
+        },
+    }
+
+
+class NonObjectSignificanceError(ValueError):
+    """Provider returned valid JSON, but not the required object structure."""
+
+
+def parse_significance_response(raw_content: str) -> dict:
+    """Malformed or non-object JSON is unusable output, not a provider outage."""
+    result = json.loads(raw_content)
+    if not isinstance(result, dict):
+        raise NonObjectSignificanceError("event significance output must be a JSON object")
+    return result
+
+
+def classify_replay_error(error: Exception) -> str:
+    """Never report pre-answer SDK errors as invalid model output."""
+    if isinstance(error, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(error, NonObjectSignificanceError) or type(error).__name__ in {
+        "EventAnalysisValidationError", "AISchemaValidationError", "AIInvalidJsonError",
+    }:
+        return "schema_error"
+    return "provider_error"
+
+
+def summarize_rows(rows: list[dict]) -> dict:
+    """Score only adjudicated, validated model answers; never count failures as no-alert."""
+    scores = {}
+    for effort in ("low", "medium"):
+        adjudicated = [r for r in rows if r["expected"] is not None]
+        valid = [r for r in adjudicated if r[effort]["status"] == "valid"]
+        positives = [r for r in valid if r["expected"] is True]
+        negatives = [r for r in valid if r["expected"] is False]
+        all_valid = [r for r in rows if r[effort]["status"] == "valid"]
+        tokens = [r[effort] for r in rows]  # Include billed invalid responses.
+        observed = [r for r in tokens if r.get("total_tokens") is not None]
+        fp = sum(r[effort]["decision"] is True for r in negatives)
+        fn = sum(r[effort]["decision"] is False for r in positives)
+        tp = len(positives) - fn
+        tn = len(negatives) - fp
+        scores[effort] = {
+            "adjudicated": len(adjudicated),
+            "scored": len(valid),
+            "failed_or_invalid": len(adjudicated) - len(valid),
+            "schema_valid_calls": len(all_valid),
+            "schema_invalid_calls": sum(
+                r[effort]["status"] in {"schema_error", "invalid_json"} for r in rows
+            ),
+            "provider_error_calls": sum(
+                r[effort]["status"] == "provider_error" for r in rows
+            ),
+            "true_positive": tp,
+            "true_negative": tn,
+            "false_positive": fp,
+            "false_negative": fn,
+            "positive_recall": tp / len(positives) if positives else None,
+            "negative_specificity": tn / len(negatives) if negatives else None,
+            "accuracy_valid_adjudicated": (tp + tn) / len(valid) if valid else None,
+            "token_usage_measured_calls": len(observed),
+            "actual_total_tokens": sum(r["total_tokens"] for r in observed) if observed else None,
+            "actual_prompt_tokens": sum(
+                r["prompt_tokens"] for r in tokens if r.get("prompt_tokens") is not None
+            ) if any(r.get("prompt_tokens") is not None for r in tokens) else None,
+            "actual_completion_tokens": sum(
+                r["completion_tokens"] for r in tokens
+                if r.get("completion_tokens") is not None
+            ) if any(r.get("completion_tokens") is not None for r in tokens) else None,
+            "mean_total_tokens": (
+                sum(r["total_tokens"] for r in observed) / len(observed) if observed else None
+            ),
+        }
+    paired = [
+        r for r in rows
+        if r["low"]["status"] == "valid" and r["medium"]["status"] == "valid"
+    ]
+    return {
+        "scores": scores,
+        "paired_valid_cases": len(paired),
+        "paired_decision_disagreements": sum(
+            r["low"]["decision"] != r["medium"]["decision"] for r in paired
+        ),
+        "unadjudicated_case_ids": [r["case"] for r in rows if r["expected"] is None],
+    }
+
+
 async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
     from bot.alerting.event_analysis import validate_event_significance_output
     from bot.services import ai_agent_groq
@@ -80,11 +181,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
     if not os.getenv("GROQ_API_KEY"):
         raise RuntimeError("GROQ_API_KEY must be set in the process environment")
     provider = GroqProvider()
-    response_format, _ = ai_agent_groq._structured_response_formats(
-        call_type="event_analysis",
-        schema_name="event_significance",
-        schema=ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA,
-    )
+    response_format = groq_significance_response_format()
     rows = []
     attempted = 0
     for case in cases:
@@ -103,6 +200,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                 call_type="event_analysis", provider="groq",
                 model="openai/gpt-oss-120b", requested_max_tokens=300,
             )
+            answer = None
             try:
                 answer = await provider.chat_completion(
                     call_type="event_analysis", symbol=case["input"]["symbol"],
@@ -110,7 +208,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                     max_tokens=budget, response_format=response_format,
                     reasoning_effort=effort,
                 )
-                parsed = json.loads(answer.raw_content)
+                parsed = parse_significance_response(answer.raw_content)
                 decision = validate_event_significance_output(
                     parsed, expected_symbol=case["input"]["symbol"]
                 )
@@ -127,36 +225,28 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                 }
             except Exception as exc:
                 # Never print provider payloads, prompts, raw LLM output or credentials.
-                row[effort] = {"status": "error", "error_type": type(exc).__name__,
-                               "requested_max_tokens": budget}
+                error_type = type(exc).__name__
+                status = classify_replay_error(exc)
+                failed_answer = {
+                    "status": status, "error_type": error_type,
+                    "requested_max_tokens": budget,
+                }
+                # Provider answered and billed tokens even if validation failed.
+                if answer is not None:
+                    failed_answer.update({
+                        "prompt_tokens": answer.prompt_tokens,
+                        "completion_tokens": answer.completion_tokens,
+                        "total_tokens": answer.total_tokens,
+                    })
+                row[effort] = failed_answer
         rows.append(row)
 
-    scores = {}
-    for effort in ("low", "medium"):
-        adjudicated = [r for r in rows if r["expected"] is not None]
-        valid = [r for r in adjudicated if r[effort]["status"] == "valid"]
-        observed_tokens = [
-            r[effort]["total_tokens"] for r in rows
-            if r[effort]["status"] == "valid" and r[effort]["total_tokens"] is not None
-        ]
-        scores[effort] = {
-            "scored": len(valid),
-            "failed_or_invalid": len(adjudicated) - len(valid),
-            "false_positive": sum(
-                r["expected"] is False and r[effort]["decision"] is True
-                for r in valid
-            ),
-            "false_negative": sum(
-                r["expected"] is True and r[effort]["decision"] is False
-                for r in valid
-            ),
-            "correct": sum(r["expected"] is r[effort]["decision"] for r in valid),
-            "token_usage_measured_calls": len(observed_tokens),
-            "actual_total_tokens": sum(observed_tokens) if observed_tokens else None,
-        }
-    return {"provenance": "SYNTHETIC; live Groq model answers (not production ground truth)",
-            "scores": scores, "rows": rows}
-
+    report = summarize_rows(rows)
+    return {
+        "provenance": "SYNTHETIC; live Groq model answers (not production ground truth)",
+        **report,
+        "rows": rows,
+    }
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
