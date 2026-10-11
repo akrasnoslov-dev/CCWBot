@@ -234,12 +234,16 @@ label uncertain causes as hypotheses. Compare actual HTTP attempts (excluding sk
 terminal logical outcomes (`event_ai_analyses`) rather than treating every attempt as an
 independent Event Analysis.
 
-The Groq daily planning budget is split per model: four Event Analysis symbols each
-have a protected 20% token share; Render/reports/other operations collectively use
-the remaining 20%. Non-analysis attempts are skipped before HTTP when their share
-is depleted, allowing those protected Event Analysis reservations to remain usable.
-The guard is a conservative planning limit, not proof of live account capacity.
-History from before rollout can temporarily exceed these shares until it ages out.
+Only the Groq model actually configured for Event Analysis reserves symbol capacity
+(when Groq is in that task's provider chain): BTC, ETH, GRAM and SOL each have a
+protected 20% daily token share. Render/reports/other tasks sharing **that model**
+use its remaining 20%. Other Groq models (including the default 20B report model)
+retain their normal full-model planning budgets; they have no idle event reservations.
+The guard is conservative planning, not proof of live account capacity. Historical
+usage before rollout can exceed the new shares until it ages out. HTTP failures
+with ambiguous token consumption retain a reservation, reconstructed after restart
+from the stored input length and request ceiling when actual usage is unavailable.
+Only confirmed pre-generation rejections release their reserved tokens.
 
 ## Models, token budgets, and reasoning effort
 
