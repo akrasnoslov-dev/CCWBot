@@ -50,12 +50,13 @@ class ProviderHttpError(RuntimeError):
 
 def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
-    for provider in ("groq", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "cloudflare"):
         env = config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
         else:
             monkeypatch.delenv(env, raising=False)
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 
 
 def _install_router(monkeypatch, registry):
@@ -443,8 +444,8 @@ async def _install_report_inputs(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_production_report_chain_reaches_mistral_and_persists_actual_route(monkeypatch):
-    providers = ("groq", "gemini", "mistral")
+async def test_production_report_chain_reaches_cloudflare_and_persists_actual_route(monkeypatch):
+    providers = ("groq", "gemini", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
@@ -453,7 +454,7 @@ async def test_production_report_chain_reaches_mistral_and_persists_actual_route
             "gemini",
             ProviderHttpError("model route unavailable", status_code=404, code="model_not_found"),
         ),
-        "mistral": ContentProvider("mistral", json.dumps(_valid_report_payload())),
+        "cloudflare": ContentProvider("cloudflare", json.dumps(_valid_report_payload())),
     }
     _install_router(monkeypatch, registry)
     await _install_report_inputs(monkeypatch)
@@ -461,20 +462,20 @@ async def test_production_report_chain_reaches_mistral_and_persists_actual_route
     report = await reports.generate_report_cache("daily")
 
     assert report["status"] == "completed"
-    assert report["provider"] == "mistral"
-    assert report["model"] == config.model_for("mistral", "daily_report")
+    assert report["provider"] == "cloudflare"
+    assert report["model"] == config.model_for("cloudflare", "daily_report")
     assert [registry[name].calls for name in providers] == [1, 1, 1]
 
 
 @pytest.mark.asyncio
 async def test_production_report_chain_can_succeed_before_final_provider(monkeypatch):
-    providers = ("groq", "gemini", "mistral")
+    providers = ("groq", "gemini", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
         "gemini": ContentProvider("gemini", json.dumps(_valid_report_payload())),
-        "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
+        "cloudflare": ContentProvider("cloudflare", RuntimeError("must not be called")),
     }
     _install_router(monkeypatch, registry)
     await _install_report_inputs(monkeypatch)
@@ -488,14 +489,14 @@ async def test_production_report_chain_can_succeed_before_final_provider(monkeyp
 
 @pytest.mark.asyncio
 async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
-    providers = ("groq", "gemini", "mistral")
+    providers = ("groq", "gemini", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     registry = {
         "groq": ContentProvider(
             "groq", ProviderHttpError("malformed request", status_code=400, code="bad_request")
         ),
         "gemini": ContentProvider("gemini", RuntimeError("must not be called")),
-        "mistral": ContentProvider("mistral", RuntimeError("must not be called")),
+        "cloudflare": ContentProvider("cloudflare", RuntimeError("must not be called")),
     }
     _install_router(monkeypatch, registry)
 
@@ -509,7 +510,7 @@ async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_three_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
-    providers = ("groq", "gemini", "mistral")
+    providers = ("groq", "gemini", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {name: ContentProvider(name, schema_invalid) for name in providers}

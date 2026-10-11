@@ -2,7 +2,7 @@
 
 ``BaseProvider`` is the common contract. ``OpenAICompatibleProvider`` holds the chat-completion
 logic generalized out of the old ``_run_groq_chat_completion`` (JSON mode, raw-response header
-capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, Mistral, and Cloudflare
+capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, and Cloudflare
 Workers AI expose compatible chat-completions endpoints, so each concrete provider stays thin and
 reads its endpoint / credentials from :mod:`bot.services.llm.config`.
 """

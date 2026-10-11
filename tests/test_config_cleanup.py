@@ -28,7 +28,6 @@ def test_env_example_keeps_operator_model_switches_explicit():
         "GROQ_NEWS_INTELLIGENCE_MODEL=openai/gpt-oss-20b",
         "GEMINI_MODEL=gemini-3.8-flash",
         "GEMINI_EVENT_RENDER_MODEL=gemini-3.5-flash-lite",
-        "MISTRAL_MODEL=mistral-small-2603",
         "CLOUDFLARE_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast",
         "CLOUDFLARE_EVENT_RENDER_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     )

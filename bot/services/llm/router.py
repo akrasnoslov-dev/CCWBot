@@ -50,7 +50,6 @@ from bot.services.llm.errors import (
 )
 from bot.services.llm.gemini_provider import get_provider as _gemini_provider
 from bot.services.llm.groq_provider import get_provider as _groq_provider
-from bot.services.llm.mistral_provider import get_provider as _mistral_provider
 from bot.services.llm.operation import (
     current_llm_operation_id,
     llm_operation_scope,
@@ -111,7 +110,6 @@ def _default_registry() -> dict:
     return {
         "groq": _groq_provider(),
         "gemini": _gemini_provider(),
-        "mistral": _mistral_provider(),
         "cloudflare": _cloudflare_provider(),
     }
 
