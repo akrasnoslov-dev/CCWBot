@@ -383,8 +383,9 @@ async def test_non_event_groq_model_can_use_its_full_daily_budget(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_unknown_groq_usage_survives_restart_from_persisted_fields(monkeypatch):
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     import bot.runtime as runtime
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     from bot.db.database import Base, LlmUsageLog
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
