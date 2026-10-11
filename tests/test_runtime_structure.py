@@ -31,6 +31,11 @@ def test_runtime_scheduler_delegates_all_startup_jobs(monkeypatch):
     )
     monkeypatch.setattr(
         scheduler,
+        "schedule_news_ingestion",
+        lambda app_arg: calls.append(("news_ingestion", app_arg)),
+    )
+    monkeypatch.setattr(
+        scheduler,
         "schedule_seen_news_cleanup",
         lambda app_arg: calls.append(("seen_news", app_arg)),
     )
@@ -46,6 +51,7 @@ def test_runtime_scheduler_delegates_all_startup_jobs(monkeypatch):
         ("market", app, 300),
         ("heartbeat", app),
         ("reports", app),
+        ("news_ingestion", app),
         ("seen_news", app),
         ("trial_expiry", app),
     ]
