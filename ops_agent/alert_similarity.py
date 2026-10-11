@@ -693,7 +693,10 @@ def _similarity_groups(
         counter = Counter(term for row in cluster for term in row["terms"])
         group_id = hasher.ref(
             "similarity",
-            "|".join(sorted(str(row.get("content_hash")) for row in cluster)),
+            "|".join(
+                [cluster[0]["symbol"]]
+                + sorted(str(row.get("content_hash")) for row in cluster)
+            ),
         )
         group = {
             "semantic_group_id": group_id,
