@@ -770,7 +770,7 @@ def _llm_provider_label(value: str | None) -> str:
         # Retired providers remain labelable so historical telemetry is readable.
         "cerebras": "cerebras",
         "gemini": "gemini",
-        "mistral": "mistral",
+        "mistral": "mistral",  # historical telemetry only; not a runnable provider
         "cloudflare": "cloudflare",
     }.get(normalized, "other provider")
 

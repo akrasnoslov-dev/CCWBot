@@ -84,12 +84,13 @@ def _configure(monkeypatch, priority, keys):
     # developer's .env would otherwise silently reorder the chain under these tests.
     for override in ("LLM_EVENT_PROVIDERS", "LLM_REPORT_PROVIDERS", "LLM_HEARTBEAT_PROVIDERS"):
         monkeypatch.delenv(override, raising=False)
-    for provider in ("groq", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "cloudflare"):
         env = llm_config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
         else:
             monkeypatch.delenv(env, raising=False)
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 
 
 async def _call(router, call_type="event_analysis"):
@@ -224,17 +225,17 @@ async def test_model_not_found_advances_the_chain(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_payment_required_advances_from_gemini_to_mistral(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+async def test_payment_required_advances_from_gemini_to_cloudflare(monkeypatch):
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     groq = FakeProvider("groq", _error(500, "server error"))
     gemini = FakeProvider("gemini", _error(402, "payment required"))
-    mistral = FakeProvider("mistral", _ok)
-    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+    cloudflare = FakeProvider("cloudflare", _ok)
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "cloudflare": cloudflare})
 
     result = await _call(router)
 
-    assert result.provider == "mistral"
-    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
+    assert result.provider == "cloudflare"
+    assert [groq.calls, gemini.calls, cloudflare.calls] == [1, 1, 1]
 
 
 @pytest.mark.asyncio

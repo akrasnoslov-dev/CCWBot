@@ -48,7 +48,6 @@ def two_provider_chain(monkeypatch):
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
     monkeypatch.setattr(gemini_provider.get_provider(), "_client", None)
