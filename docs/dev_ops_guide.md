@@ -105,6 +105,88 @@ WantedBy=timers.target
 Install either cron or systemd on the VPS manually; this repository does not auto-install a backup
 schedule.
 
+## Production access and privileges
+
+The **current** account model below is derived from tracked SSH/sudoers/ops-agent
+configuration; it has **not** been reconciled against the live VPS because SSH access is
+currently unavailable. Do not assume a missing account, installed sudoers entry, or
+database grant based solely on a local configuration file.
+
+| Principal | Realm | Intended current privileges | Target |
+| --- | --- | --- | --- |
+| `root` (SSH alias `ccwbot-prod`) | Linux/SSH | Unrestricted recovery/installation; reads production secrets | Keep as break-glass administrator |
+| `ccwbot_ops` (SSH alias `ccwbot-prod-ops`) | Linux/SSH | Only root-owned ops collection/report wrappers through sudo; reads published bundles and writes report files; **no Docker group, raw Docker, code writes or secrets** | **One daily operator**, additionally allowed the four exact deploy-safe wrapper actions after verified cutover |
+| `ccwbot_deploy` (SSH alias `ccwbot-prod-deploy`) | Linux/SSH | Four argument-exact `ccwbot-deploy-safe` operations (`status`, `backup`, `deploy`, `rollback`); no generic sudo, Docker or repository writes | Retire SSH login *only after* `ccwbot_ops` passes positive and negative access checks |
+| `ccwbot` | PostgreSQL | Bot's runtime database account; production writes; **not** an SSH user | Keep separately; never reuse for diagnostics |
+| `ccwbot_investigator` | PostgreSQL | Human forensic read-only role and explicitly granted evidence tables over a controlled SSH tunnel | Keep separately; verify `current_user` and both read-only settings per session |
+| `ccwbot_ops_reader` | PostgreSQL | Read-only collector service account, `SELECT` on public tables per `ops_agent/sql/create_readonly_role.sql` | Keep separately; scoped to ops-agent credentials |
+
+**Account count:** currently three documented human-operable SSH accounts and three
+distinct PostgreSQL identities. The proposed simplification reduces **SSH login
+accounts to two** (`root` and `ccwbot_ops`); it does not merge a database
+application writer, investigator, or automated collector. Multiple SSH aliases
+are not different access-control roles. The ops-agent itself is a Docker service,
+not another human login. Installed accounts, ACLs, sudoers, database grants,
+cron/units, and SSH authorized keys must be inventoried on the VPS before any
+destructive change.
+
+### Staged two-login cutover (not yet applied to production)
+
+This is an explicit **security tradeoff**: the operator will be able to invoke
+both diagnostics and fixed deploy/rollback commands. Separation between
+diagnostics and deployment is reduced, while per-command sudo, root-owned
+wrappers, no Docker group and no source-write privileges remain mandatory.
+Do **not** replace them with `NOPASSWD: ALL`, unrestricted shell or Docker
+group membership.
+
+1. **Inventory first, under a working root SSH session.** Inspect `getent
+   passwd` for the two limited OS users, `id -nG`, `sudo -l -U`, installed
+   `/etc/sudoers.d/` entries, account shell/authorized-key status, trusted
+   path ownership, installed wrapper hashes, cron jobs and systemd service
+   owners. Verify production backup and root break-glass login before proceeding.
+   Do not display secrets or SSH private keys. Separately inspect PostgreSQL
+   `pg_roles` and read-only grants; do not drop or merge DB accounts.
+2. **Prepare, do not replace the existing deploy path.** After the reviewed
+   source has reached an approved production release, install
+   `scripts/ccwbot-operator-deploy.sudoers` as a root-owned 0440 file in
+   `/etc/sudoers.d/ccwbot-operator-deploy.tmp`; validate it with
+   `visudo -cf`, atomically rename it to
+   `/etc/sudoers.d/ccwbot-operator-deploy`, and run `visudo -c`. Keep
+   the existing `ccwbot_deploy` sudoers and login intact during tests.
+   The existing `/etc/sudoers.d/ccwbot_ops` collector rules remain intact.
+3. **Positive checks as `ccwbot_ops`:** `sudo -n
+   /usr/local/bin/ccwbot-deploy-safe status` and `sudo -n
+   /usr/local/bin/ccwbot-ops-agent-collect --status latest`. Verify
+   corresponding SSH alias login using key-based authentication. Do not test
+   `deploy`, `backup` or `rollback` merely to validate permissions.
+4. **Negative checks as `ccwbot_ops`:** `sudo -n /usr/bin/id`,
+   `sudo -n /usr/bin/docker ps`, and `sudo -n
+   /usr/local/bin/ccwbot-deploy-safe deploy extra` must be rejected;
+   `id -nG` must omit `docker` and unrestricted sudo groups; direct
+   reads of `/opt/CCWBot/.env` and `.ops-agent.env`, writes to trusted
+   repo/wrapper paths, and raw Docker use must all fail. Inspect `sudo -l`
+   for unintended privileges and verify forensic database access remains
+   read-only, as described below.
+5. **Cut over only after all checks pass.** Use `ccwbot-prod-ops` as the
+   normal operator SSH alias and `ccwbot-prod` for root recovery.
+   Confirm no job or external automation still logs in as `ccwbot_deploy`.
+   Then disable that account's SSH/login shell and key access (do not delete
+   its home/keys immediately), retire the old deploy-only sudoers entry and
+   remove the unused `ccwbot-prod-deploy` alias from the operator's local
+   SSH config. Keep documented recovery steps and a root session available.
+6. **Rollback:** use root access to restore the recorded prior deploy user
+   shell, authorized-key access and root-owned original sudoers policy;
+   remove only the new operator-deploy sudoers file, then re-run positive
+   and negative checks. Never treat an SSH connection failure as permission
+   proof; stop rather than guessing.
+
+The separately installed root-owned safe wrappers and sudoers are **not**
+automatically updated by a Git merge or normal Docker deployment. A merged
+PR only stages the *source* for an administrator-controlled server cutover.
+The canonical ops-agent permission model stays in
+`ops_agent/README.md`, and DB investigation rules stay in
+`docs/observability.md`.
+
 ## Read-Only Forensic Database Access
 
 Interactive production investigations by Codex or an operator should use the dedicated
