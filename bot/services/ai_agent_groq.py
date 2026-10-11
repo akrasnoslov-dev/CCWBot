@@ -317,7 +317,7 @@ _MARKET_REPORT_JSON_SCHEMA = {
 def _structured_response_formats(
     *, call_type: str, schema_name: str, schema: dict
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
-    """Return shared JSON mode plus strict overrides for verified Groq model attempts."""
+    """Return JSON mode and provider-specific schemas for verified model attempts."""
     if not _groq_json_mode_enabled():
         return None, None
 
