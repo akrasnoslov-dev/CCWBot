@@ -13,7 +13,7 @@ import bot.runtime.scheduler as scheduler
 import bot.services.news_service as rss
 from bot.db.database import NewsItem
 from bot.services.news_intelligence_service import NewsIntelligenceService
-from tests.test_news_intelligence_service import FakeNewsLlm, _raw_item, build_session
+from test_news_intelligence_service import FakeNewsLlm, _raw_item, build_session
 
 
 def _entry(title: str, link: str, published_at: datetime) -> dict:
