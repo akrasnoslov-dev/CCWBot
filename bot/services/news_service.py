@@ -63,7 +63,10 @@ def _read_rss_feed(feed_url: str):
     """Bound provider latency/response size; parse only successfully fetched bytes."""
     request = Request(
         feed_url,
-        headers={"User-Agent": RSS_USER_AGENT, "Accept": "application/rss+xml, application/xml, text/xml"},
+        headers={
+            "User-Agent": RSS_USER_AGENT,
+            "Accept": "application/rss+xml, application/xml, text/xml",
+        },
     )
     with urlopen(request, timeout=RSS_TIMEOUT_SECONDS) as response:
         payload = response.read(RSS_MAX_BYTES + 1)
