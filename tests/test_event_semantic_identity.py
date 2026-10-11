@@ -106,6 +106,43 @@ def test_nonmaterial_related_news_cannot_supply_ambiguous_event_identity():
     assert canonical.canonical_event_key == "btc_market_event"
 
 
+def test_unlinked_news_language_cannot_create_news_catalyst_identity():
+    for related_news in ([], [{"title": "General market headline", "material": False}]):
+        canonical = canonicalize_event_key(
+            "gram",
+            "gram_news_catalyst",
+            title="GRAM market update",
+            message_body="Monitor the supplied price snapshots.",
+            related_news=related_news,
+        )
+        assert canonical.semantic_family is None
+        assert canonical.canonical_event_key == "gram_market_event"
+        assert canonical.reason == "unsupported_news_identity"
+
+
+def test_unsupported_news_key_keeps_real_price_direction_when_present():
+    canonical = canonicalize_event_key(
+        "gram",
+        "gram_news_catalyst",
+        title="GRAM price slips lower",
+        message_body="Market move, with no verified headline catalyst.",
+        related_news=[],
+    )
+    assert canonical.semantic_family == "price_downtrend"
+    assert canonical.canonical_event_key == "gram_price_downtrend"
+
+
+def test_selected_material_news_can_still_define_news_catalyst_identity():
+    canonical = canonicalize_event_key(
+        "gram",
+        "gram_news_catalyst",
+        title="GRAM market update",
+        related_news=[{"title": "Verified market development", "material": True}],
+    )
+    assert canonical.semantic_family == "news_catalyst"
+    assert canonical.canonical_event_key == "gram_news_catalyst"
+
+
 @pytest.mark.asyncio
 async def test_semantic_cooldown_suppresses_the_corrected_price_family(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
