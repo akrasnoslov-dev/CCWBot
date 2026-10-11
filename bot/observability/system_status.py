@@ -845,7 +845,12 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
         .limit(1)
     )
     persisted_recently = (_as_utc(latest.fetched_at) or now) >= since
-    failed_intelligence = latest_intel is not None and latest_intel.llm_status == "failed"
+    failed_intelligence = bool(
+        latest_intel is not None
+        and latest_intel.llm_status == "failed"
+        and _as_utc(latest_intel.updated_at) is not None
+        and _as_utc(latest_intel.updated_at) >= since
+    )
     status = (
         ComponentStatus.OK
         if persisted_recently and usable_count > 0 and not failed_intelligence
