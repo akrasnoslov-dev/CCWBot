@@ -2,7 +2,7 @@
 
 ``BaseProvider`` is the common contract. ``OpenAICompatibleProvider`` holds the chat-completion
 logic generalized out of the old ``_run_groq_chat_completion`` (JSON mode, raw-response header
-capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, Mistral, and Cloudflare
+capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, and Cloudflare
 Workers AI expose compatible chat-completions endpoints, so each concrete provider stays thin and
 reads its endpoint / credentials from :mod:`bot.services.llm.config`.
 """
@@ -24,6 +24,7 @@ from bot.services.llm.telemetry import (
     active_rate_limit_backoff,
     classify_ai_error_reason,
     headers_from_error,
+    is_gemini_daily_quota_exhausted_error,
     is_provider_quota_exhausted_error,
     is_rate_limit_error,
     message_input_chars,
@@ -262,6 +263,16 @@ class OpenAICompatibleProvider(BaseProvider):
                 error_reason=error_reason,
                 error_message=safe_error_message(error),
             )
+            if provider == "gemini" and is_gemini_daily_quota_exhausted_error(error):
+                # A structured per-day 429 is quota exhaustion, not a transient
+                # retry. Preserve fallback while skipping more calls until reset.
+                start_llm_rate_limit_backoff(
+                    provider=provider,
+                    model=model,
+                    call_type=call_type,
+                    error=error,
+                    headers=headers,
+                )
             if is_rate_limit_error(error) and not is_provider_quota_exhausted_error(error):
                 retry_after_seconds, limited_until = start_llm_rate_limit_backoff(
                     provider=provider,

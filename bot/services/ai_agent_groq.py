@@ -147,6 +147,12 @@ _GROQ_STRICT_SCHEMA_MODELS = frozenset(
         "qwen/qwen3.8-27b",
     }
 )
+# Only the shipped Workers AI model is verified to accept the native, bare JSON
+# Schema shape. Unlike Groq's OpenAI envelope, Cloudflare expects json_schema to
+# be the schema itself (without name/strict/schema wrapping).
+_CLOUDFLARE_JSON_SCHEMA_MODELS = frozenset(
+    {"@cf/meta/llama-3.3-70b-instruct-fp8-fast"}
+)
 
 _EVENT_SIGNIFICANCE_JSON_SCHEMA = {
     "type": "object",
@@ -311,7 +317,7 @@ _MARKET_REPORT_JSON_SCHEMA = {
 def _structured_response_formats(
     *, call_type: str, schema_name: str, schema: dict
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
-    """Return shared JSON mode plus strict overrides for verified Groq model attempts."""
+    """Return JSON mode and provider-specific schemas for verified model attempts."""
     if not _groq_json_mode_enabled():
         return None, None
 
@@ -329,6 +335,17 @@ def _structured_response_formats(
         for provider, model in llm_config.provider_attempts(call_type)
         if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS
     }
+    # Event Analysis has six mandatory fields. Plain json_object protects syntax
+    # but not their shape; ask the supported Cloudflare model to constrain types
+    # and enums before the unchanged backend semantic validator runs. This is
+    # provider-specific: Workers AI requires a *bare* JSON Schema, unlike Groq.
+    if call_type == "event_analysis":
+        for provider, model in llm_config.provider_attempts(call_type):
+            if provider == "cloudflare" and model in _CLOUDFLARE_JSON_SCHEMA_MODELS:
+                overrides[f"{provider}:{model}"] = {
+                    "type": "json_schema",
+                    "json_schema": schema,
+                }
     return json_object, overrides or None
 
 

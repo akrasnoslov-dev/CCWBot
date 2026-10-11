@@ -138,7 +138,7 @@ def test_replay_scoring_does_not_conflate_errors_with_negative_decisions():
 def test_replay_schema_is_pinned_when_configured_chain_excludes_groq(monkeypatch):
     monkeypatch.delenv("GROQ_JSON_MODE", raising=False)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "custom/not-schema-verified")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,mistral")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
     assert replay.groq_significance_response_format()["type"] == "json_schema"
 
 

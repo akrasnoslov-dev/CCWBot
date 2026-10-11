@@ -24,10 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Ordered default chain for general LLM work. Event Alert rendering has a dedicated
 # model-level chain because it deliberately retries a second Groq model before changing providers.
-DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini", "mistral"]
-# Event Analysis needs one more independent free-tier route when the general priority
-# has not been explicitly set. Cloudflare is optional and skipped without its credentials.
-DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY = ["groq", "gemini", "cloudflare", "mistral"]
+DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini"]
+# Event Analysis retains optional Cloudflare after Groq/Gemini. Missing credentials skip it.
+DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY = ["groq", "gemini", "cloudflare"]
 KNOWN_PROVIDERS = frozenset((*DEFAULT_PROVIDER_PRIORITY, "cloudflare"))
 
 # Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
@@ -42,7 +41,6 @@ _CALL_TYPE_PRIORITY_ENV = {
 _PROVIDER_API_KEY_ENV = {
     "groq": "GROQ_API_KEY",
     "gemini": "GEMINI_API_KEY",
-    "mistral": "MISTRAL_API_KEY",
     "cloudflare": "CLOUDFLARE_API_TOKEN",
 }
 
@@ -51,7 +49,6 @@ _PROVIDER_API_KEY_ENV = {
 _PROVIDER_BASE_URL = {
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "mistral": "https://api.mistral.ai/v1",
 }
 
 # Groq keeps per-call-type models. Fallback providers use a single model each, overridable
@@ -70,7 +67,6 @@ _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
     "gemini": ("GEMINI_MODEL", "gemini-3.8-flash"),
-    "mistral": ("MISTRAL_MODEL", "mistral-small-2603"),
     "cloudflare": (
         "CLOUDFLARE_MODEL",
         "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -236,7 +232,7 @@ def provider_priority(call_type: str) -> list[str]:
         if parsed:
             return parsed
     # Respect an explicit global priority. With no global/event override, insert the
-    # existing Cloudflare adapter before Mistral for Event Analysis only; the router
+    # existing Cloudflare adapter for Event Analysis only; the router
     # excludes it automatically when its token or account ID is missing.
     if call_type == "event_analysis" and not os.getenv("LLM_PROVIDER_PRIORITY"):
         return list(DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY)

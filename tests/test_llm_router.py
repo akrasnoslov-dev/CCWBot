@@ -74,12 +74,13 @@ def _cloudflare_error(status_code, *, code, message):
 
 def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
-    for provider in ("groq", "gemini", "mistral"):
+    for provider in ("groq", "gemini", "cloudflare"):
         env = config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
         else:
             monkeypatch.delenv(env, raising=False)
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 
 
 async def _call(router, call_type="event_analysis"):
@@ -92,8 +93,10 @@ async def _call(router, call_type="event_analysis"):
 
 
 @pytest.mark.asyncio
-async def test_event_analysis_gemini_timeout_keeps_mistral_fallback_and_operation_id(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+async def test_event_analysis_gemini_timeout_keeps_cloudflare_fallback_and_operation_id(
+    monkeypatch,
+):
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     for name in (
         "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS",
         "LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS",
@@ -101,50 +104,50 @@ async def test_event_analysis_gemini_timeout_keeps_mistral_fallback_and_operatio
         monkeypatch.delenv(name, raising=False)
     groq = FakeProvider("groq", _http_error(503))
     gemini = FakeProvider("gemini", asyncio.TimeoutError())
-    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
-    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+    cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "cloudflare": cloudflare})
 
     result = await _call(router)
 
-    assert result.provider == "mistral"
-    assert [groq.last_timeout, gemini.last_timeout, mistral.last_timeout] == [15, 25, 15]
-    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
-    assert groq.operation_ids == gemini.operation_ids == mistral.operation_ids == [
+    assert result.provider == "cloudflare"
+    assert [groq.last_timeout, gemini.last_timeout, cloudflare.last_timeout] == [15, 25, 15]
+    assert [groq.calls, gemini.calls, cloudflare.calls] == [1, 1, 1]
+    assert groq.operation_ids == gemini.operation_ids == cloudflare.operation_ids == [
         result.operation_id
     ]
 
 
 @pytest.mark.asyncio
 async def test_gemini_5xx_and_quota_fall_through_without_retries(monkeypatch):
-    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+    _configure(monkeypatch, ["gemini", "cloudflare"], {"gemini", "cloudflare"})
     for failure in (_http_error(503), _http_error(429)):
         if failure.status_code == 429:
             failure.body = {"error": {"code": "quota_exceeded"}}
         gemini = FakeProvider("gemini", failure)
-        mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
-        result = await _call(LLMRouter(registry={"gemini": gemini, "mistral": mistral}))
-        assert result.provider == "mistral"
-        assert (gemini.calls, mistral.calls) == (1, 1)
+        cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
+        result = await _call(LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare}))
+        assert result.provider == "cloudflare"
+        assert (gemini.calls, cloudflare.calls) == (1, 1)
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_budget_stops_chain_before_new_http_request(monkeypatch):
     from bot.services.llm import router as router_module
 
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 60)
     clock = iter((100.0, 100.0, 120.0, 161.0))
     monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
     groq = FakeProvider("groq", asyncio.TimeoutError())
     gemini = FakeProvider("gemini", _http_error(503))
-    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
-    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+    cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "cloudflare": cloudflare})
 
     with pytest.raises(AllProvidersFailedError) as raised:
         await _call(router)
     assert raised.value.operation_budget_exhausted is True
     assert classify_ai_error_reason(raised.value) == "operation_budget_exhausted"
-    assert (groq.calls, gemini.calls, mistral.calls) == (1, 1, 0)
+    assert (groq.calls, gemini.calls, cloudflare.calls) == (1, 1, 0)
     assert groq.operation_ids == gemini.operation_ids == [raised.value.operation_id]
 
 
@@ -154,7 +157,7 @@ async def test_event_analysis_deadline_covers_provider_and_validator(monkeypatch
     """One stalled DB/validation await cannot hold the Event Analysis chain open."""
     import time
 
-    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+    _configure(monkeypatch, ["gemini", "cloudflare"], {"gemini", "cloudflare"})
     monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 1.1)
 
     class SlowProvider(FakeProvider):
@@ -167,8 +170,8 @@ async def test_event_analysis_deadline_covers_provider_and_validator(monkeypatch
             return _result(self.name)
 
     gemini = SlowProvider("gemini", None)
-    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
-    router = LLMRouter(registry={"gemini": gemini, "mistral": mistral})
+    cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
+    router = LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare})
 
     async def validate(_result_value):
         if stall_at == "output_validation":
@@ -190,7 +193,7 @@ async def test_event_analysis_deadline_covers_provider_and_validator(monkeypatch
     assert caught.value.operation_budget_exhausted is True
     assert classify_ai_error_reason(caught.value) == "operation_budget_exhausted"
     assert gemini.calls == 1
-    assert mistral.calls == 0
+    assert cloudflare.calls == 0
     assert gemini.operation_ids == [caught.value.operation_id]
 
 
@@ -216,20 +219,22 @@ async def test_final_deadline_capped_timeout_is_recorded_as_budget_exhaustion(mo
 
 
 @pytest.mark.asyncio
-async def test_event_analysis_budget_caps_late_mistral_timeout(monkeypatch):
+async def test_event_analysis_budget_caps_late_cloudflare_timeout(monkeypatch):
     from bot.services.llm import router as router_module
 
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     monkeypatch.setattr(config, "event_analysis_operation_budget_seconds", lambda: 60)
     clock = iter((100.0, 100.0, 120.0, 154.0))
     monkeypatch.setattr(router_module, "_monotonic", lambda: next(clock))
     groq = FakeProvider("groq", asyncio.TimeoutError())
     gemini = FakeProvider("gemini", asyncio.TimeoutError())
-    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
-    result = await _call(LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral}))
+    cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
+    result = await _call(LLMRouter(registry={
+        "groq": groq, "gemini": gemini, "cloudflare": cloudflare,
+    }))
 
-    assert result.provider == "mistral"
-    assert mistral.last_timeout == pytest.approx(6.0)
+    assert result.provider == "cloudflare"
+    assert cloudflare.last_timeout == pytest.approx(6.0)
 
 
 @pytest.mark.asyncio
@@ -282,10 +287,10 @@ def test_event_analysis_timeout_configuration_is_bounded_and_logged(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_groq_backoff_gemini_5xx_mistral_429_exhausts_once(monkeypatch):
+async def test_groq_backoff_gemini_5xx_cloudflare_429_exhausts_once(monkeypatch):
     from datetime import datetime, timezone
 
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     groq = FakeProvider(
         "groq",
         LLMRateLimitBackoffActive(
@@ -293,35 +298,35 @@ async def test_groq_backoff_gemini_5xx_mistral_429_exhausts_once(monkeypatch):
         ),
     )
     gemini = FakeProvider("gemini", _http_error(503))
-    mistral = FakeProvider(
-        "mistral", AIProviderRateLimitError("429", provider="mistral")
+    cloudflare = FakeProvider(
+        "cloudflare", AIProviderRateLimitError("429", provider="cloudflare")
     )
-    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "mistral": mistral})
+    router = LLMRouter(registry={"groq": groq, "gemini": gemini, "cloudflare": cloudflare})
 
     with pytest.raises(AllProvidersFailedError) as raised:
         await _call(router)
 
     assert raised.value.mixed_failure is True
     assert classify_ai_error_reason(raised.value) == "mixed_provider_failures"
-    assert [groq.calls, gemini.calls, mistral.calls] == [1, 1, 1]
-    assert groq.operation_ids == gemini.operation_ids == mistral.operation_ids == [
+    assert [groq.calls, gemini.calls, cloudflare.calls] == [1, 1, 1]
+    assert groq.operation_ids == gemini.operation_ids == cloudflare.operation_ids == [
         raised.value.operation_id
     ]
 
 
 @pytest.mark.asyncio
-async def test_gemini_request_defect_does_not_spend_mistral_quota(monkeypatch):
-    _configure(monkeypatch, ["gemini", "mistral"], {"gemini", "mistral"})
+async def test_gemini_request_defect_does_not_spend_cloudflare_quota(monkeypatch):
+    _configure(monkeypatch, ["gemini", "cloudflare"], {"gemini", "cloudflare"})
     gemini = FakeProvider("gemini", _http_error(400))
-    mistral = FakeProvider("mistral", lambda name, model: _result(name, model))
+    cloudflare = FakeProvider("cloudflare", lambda name, model: _result(name, model))
     with pytest.raises(RuntimeError):
-        await _call(LLMRouter(registry={"gemini": gemini, "mistral": mistral}))
+        await _call(LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare}))
     assert gemini.calls == 1
-    assert mistral.calls == 0
+    assert cloudflare.calls == 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("provider_name", ["groq", "gemini", "mistral"])
+@pytest.mark.parametrize("provider_name", ["groq", "gemini", "cloudflare"])
 async def test_success_through_each_provider(monkeypatch, provider_name):
     _configure(monkeypatch, [provider_name], {provider_name})
     provider = FakeProvider(provider_name, lambda name, model: _result(name, model))
@@ -536,8 +541,8 @@ async def test_no_configured_providers_raises_all_failed(monkeypatch):
 
 def test_provider_priority_per_call_type_override(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "mistral,groq")
-    assert config.provider_priority("event_analysis") == ["mistral", "groq"]
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "cloudflare,groq")
+    assert config.provider_priority("event_analysis") == ["cloudflare", "groq"]
     # Report/heartbeat with no override fall back to the global priority.
     assert config.provider_priority("daily_report") == ["groq", "gemini"]
 
@@ -552,7 +557,7 @@ def test_retired_provider_is_not_configurable_or_registered(monkeypatch, caplog)
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "cerebras")
 
     with caplog.at_level("WARNING", logger="bot.services.llm.env"):
-        assert config.global_provider_priority() == ["groq", "gemini", "mistral"]
+        assert config.global_provider_priority() == ["groq", "gemini"]
 
     assert config.api_key_env("cerebras") is None
     assert config.api_key("cerebras") is None
@@ -565,16 +570,18 @@ def test_retired_provider_is_not_configurable_or_registered(monkeypatch, caplog)
 def test_provider_priority_defaults_when_unset(monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER_PRIORITY", raising=False)
     monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
-    assert config.provider_priority("event_analysis") == ["groq", "gemini", "cloudflare", "mistral"]
+    assert config.provider_priority("event_analysis") == ["groq", "gemini", "cloudflare"]
 
 
 def test_model_for_resolves_per_provider(monkeypatch):
     monkeypatch.delenv("GROQ_MARKET_HEARTBEAT_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
-    monkeypatch.delenv("MISTRAL_MODEL", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_MODEL", raising=False)
     assert config.model_for("groq", "market_heartbeat") == "openai/gpt-oss-20b"
     assert config.model_for("gemini", "daily_report") == "gemini-3.8-flash"
-    assert config.model_for("mistral", "event_analysis") == "mistral-small-2603"
+    assert config.model_for("cloudflare", "event_analysis") == (
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    )
     monkeypatch.setenv("GEMINI_MODEL", "custom-gemini")
     assert config.model_for("gemini", "event_analysis") == "custom-gemini"
 
@@ -647,12 +654,12 @@ async def test_mixed_prebackoff_and_live_rate_limit_raises_rate_limit(monkeypatc
 async def test_mixed_rate_limit_and_timeout_raises_all_failed(monkeypatch):
     # A 429 from Groq is provider pressure, but does not make the logical call terminally
     # rate-limited after later fallbacks time out.
-    _configure(monkeypatch, ["groq", "gemini", "mistral"], {"groq", "gemini", "mistral"})
+    _configure(monkeypatch, ["groq", "gemini", "cloudflare"], {"groq", "gemini", "cloudflare"})
     router = LLMRouter(
         registry={
             "groq": FakeProvider("groq", AIProviderRateLimitError("429", provider="groq")),
             "gemini": FakeProvider("gemini", asyncio.TimeoutError()),
-            "mistral": FakeProvider("mistral", asyncio.TimeoutError()),
+            "cloudflare": FakeProvider("cloudflare", asyncio.TimeoutError()),
         }
     )
 

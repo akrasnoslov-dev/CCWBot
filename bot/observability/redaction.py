@@ -17,9 +17,9 @@ _PRIVATE_KEY_VALUE_RE = re.compile(
 
 
 def collect_secret_values() -> tuple[str, ...]:
-    # Every provider in the LLM fallback chain, not just Groq: a Gemini/Mistral error
-    # body can echo its own key in a shape the generic pattern above does not match, and that
-    # message is persisted to llm_usage_logs and exportable to an admin.
+    # Guard active provider keys and legacy keys that may still exist in older
+    # deployments or historical diagnostic payloads. Even a retired provider's
+    # key must never be revealed in operator-facing logs.
     secret_names = {
         "TELEGRAM_BOT_TOKEN",
         "GROQ_API_KEY",

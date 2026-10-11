@@ -10,6 +10,19 @@ normal interpolation.
 
 ## Production Read-Only Setup
 
+**Production operator access (verified 2026-10-11):** `ccwbot_ops` is the
+single routine Linux SSH login for both restricted ops-agent collection and the
+four exact `ccwbot-deploy-safe` actions. The old `ccwbot_deploy` SSH
+login and sudoers grant are disabled; root remains break-glass access.
+See the canonical live access-rights table, backup/rollback instructions,
+and restrictions in `docs/dev_ops_guide.md`. The PostgreSQL
+`ccwbot_ops_reader` service identity remains separate and read-only.
+The existing live `/etc/sudoers.d/ccwbot_ops` allows the collection wrapper;
+although the example below also mentions the mark-report-success wrapper,
+that **second command was not present in the verified live sudo allowlist**,
+so do not claim it works until separately installed and checked.
+
+
 Create or use a dedicated limited VPS account named `ccwbot_ops` for operator collection access:
 
 ```bash
