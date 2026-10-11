@@ -22,6 +22,22 @@ global priority is already configured. Cloudflare is skipped when its token/acco
 No provider is called inside recipient loops, and the result is attributed to the actual
 provider/model that answered. This does not change Event Alert significance rules.
 
+For Event Analysis, the pinned Cloudflare Workers AI
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast` model now receives a **bare JSON Schema**
+in `response_format.json_schema` when JSON mode is enabled, not the
+`{name, strict, schema}` envelope used by Groq. This constrains six required
+fields, JSON types and enum values before the existing strict semantic validator.
+Other Cloudflare model overrides retain `json_object` until schema support is
+verified. The Cloudflare endpoint can still reject its own schema-mode output,
+and a schema-compliant response can still be logically contradictory; both
+remain fallback-eligible invalid output, never an implicit `no_alert`.
+Provider order, request count, budget, significance rules and recipient delivery
+are unchanged. Offline tests verify the request contract and reject synthetic
+invalid outputs; they do **not** establish an improvement in live Cloudflare
+success rate, latency, or billable/free-tier inference cost. Check sanitized
+post-release provider-attempt telemetry before claiming a quality improvement.
+
+
 Mistral `mistral-small-2603` remains a supported model, but Free mode has plan-, organization-,
 workspace-, and model-specific usage limits. A 429 plus zero successes does not establish whether
 the block is request frequency, token throughput, a consumed monthly allowance, or another account
