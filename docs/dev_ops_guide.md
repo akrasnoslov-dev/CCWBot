@@ -107,10 +107,22 @@ schedule.
 
 ## Production access and privileges
 
-The **current** account model below is derived from tracked SSH/sudoers/ops-agent
-configuration; it has **not** been reconciled against the live VPS because SSH access is
-currently unavailable. Do not assume a missing account, installed sudoers entry, or
-database grant based solely on a local configuration file.
+The account model below comes from tracked SSH/sudoers/ops-agent configuration.
+**Read-only SSH audit on 2026-10-11:** `ccwbot_ops` and `ccwbot_deploy`
+both authenticated with dedicated keys from the Windows operator workstation.
+Both had the `users` group but no Docker/sudo group, could not read
+`/opt/CCWBot/.env`, could not write the production repository or its `.git`,
+and could not execute `sudo /usr/bin/id`, raw Docker through sudo, or an
+argument-extended deploy wrapper. `sudo -n -l` showed a restricted ops-agent
+collection permission for `ccwbot_ops` and the four expected safe-deploy
+operations for `ccwbot_deploy`; **no broad sudo grants were observed**.
+The report-success wrapper was not present in the parsed operator allowlist;
+check this possible documented/installed drift during root inventory.
+The root SSH alias reached the VPS, but public-key authentication did **not**
+complete using the available workstation credentials, so a privileged server
+inventory and cutover were **not** performed. The live PostgreSQL grants,
+cron/service ownership, and full installed root-level configuration remain
+unverified. Do not infer other user accounts are absent from this limited audit.
 
 | Principal | Realm | Intended current privileges | Target |
 | --- | --- | --- | --- |
