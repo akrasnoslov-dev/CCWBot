@@ -78,6 +78,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn("sudo -n /usr/bin/docker ps", guide)
         self.assertIn("sudo -n /usr/bin/id", guide)
         self.assertIn("Rollback:", guide)
+        self.assertIn("After cutover:  ccwbot-prod-ops", guide)
+        self.assertIn("ssh -o BatchMode=yes <deploy-ssh-alias>", guide)
+        self.assertIn("Before cutover: use ccwbot-prod-deploy", guide)
 
     def test_security_guards_present(self):
         source = WRAPPER.read_text(encoding="utf-8")
