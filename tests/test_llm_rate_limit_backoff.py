@@ -64,7 +64,7 @@ async def test_slow_gemini_response_times_out_then_uses_cloudflare(monkeypatch):
 
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("CLOUDFLARE_API_KEY", "test-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
 
     async def slow_response(**_kwargs):
         await asyncio.sleep(0.05)
@@ -101,7 +101,7 @@ async def test_slow_gemini_response_times_out_then_uses_cloudflare(monkeypatch):
 async def test_gemini_live_429_skips_next_cycle_without_blocking_cloudflare(monkeypatch):
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("CLOUDFLARE_API_KEY", "test-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
     failure = RuntimeError("rate limit")
     failure.status_code = 429
     gemini_request = AsyncMock(side_effect=failure)
@@ -140,7 +140,7 @@ async def test_gemini_live_429_skips_next_cycle_without_blocking_cloudflare(monk
 async def test_gemini_quota_429_falls_back_without_transient_backoff(monkeypatch):
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("CLOUDFLARE_API_KEY", "test-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
     failure = RuntimeError("quota exhausted")
     failure.status_code = 429
     failure.body = {"error": {"code": "quota_exceeded"}}
