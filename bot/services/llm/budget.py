@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS
+from bot.services.llm.config import model_for, provider_priority
 from bot.services.llm.env import get_int_env
 from bot.services.llm.errors import LLMRateLimitBackoffActive
 from bot.services.llm.telemetry import _parse_retry_delay_text, header_value
@@ -82,19 +83,36 @@ class GroqBudget:
                             LlmUsageLog.call_type,
                             LlmUsageLog.total_tokens,
                             LlmUsageLog.status,
+                            LlmUsageLog.input_chars,
+                            LlmUsageLog.max_tokens,
+                            LlmUsageLog.error_reason,
                         ).where(
                             LlmUsageLog.provider == "groq",
                             LlmUsageLog.model == model,
                             LlmUsageLog.created_at >= now - DAY,
                         )
                     )
-                    for at, symbol, call_type, total, status in result.all():
+                    for at, symbol, call_type, total, status, chars, ceiling, reason in result.all():
                         if str(status).startswith("skipped_due_to_"):
                             continue
                         if at.tzinfo is None:
                             at = at.replace(tzinfo=timezone.utc)
+                        # A missing usage field is NOT zero when the provider may
+                        # have processed a request. Rebuild the same soft lease
+                        # reserved before HTTP, including across process restarts.
+                        definitely_rejected = str(status) in {"rate_limit", "auth_error"} or (
+                            str(reason) in {
+                                "provider_bad_request", "provider_model_error",
+                                "provider_quota_exhausted", "config_missing", "auth_error",
+                            }
+                        )
+                        spent = (
+                            max(0, int(total)) if total is not None
+                            else 0 if definitely_rejected
+                            else self._estimate(max(0, int(chars or 0)), max(1, int(ceiling or 1)))
+                        )
                         self._history.setdefault(model, []).append(
-                            _Charge(at, symbol, call_type, max(0, int(total or 0)))
+                            _Charge(at, symbol, call_type, spent)
                         )
         except Exception as error:
             # Provider availability must never depend on diagnostic persistence.
@@ -135,6 +153,10 @@ class GroqBudget:
         max_tokens: int,
     ) -> BudgetLease:
         now = datetime.now(timezone.utc)
+        has_event_reservations = (
+            model == model_for("groq", "event_analysis")
+            and "groq" in provider_priority("event_analysis")
+        )
         async with self._lock:
             await self._load(model, now)
             history = self._history.setdefault(model, [])
@@ -150,7 +172,7 @@ class GroqBudget:
             if sum(h.tokens for h in history) + expected > daily_tokens:
                 dimension = "local_tpd"
                 until = min((h.at + DAY for h in history), default=now + DAY)
-            elif call_type != "event_analysis" and (
+            elif has_event_reservations and call_type != "event_analysis" and (
                 sum(h.tokens for h in history if h.call_type != "event_analysis") + expected
                 > max(0, daily_tokens - len(SUPPORTED_SYMBOLS) * int(daily_tokens * EVENT_SYMBOL_SHARE))
             ):
@@ -166,7 +188,8 @@ class GroqBudget:
                 dimension = "local_rpd"
                 until = min((h.at + DAY for h in history if h.request), default=now + DAY)
             elif (
-                call_type == "event_analysis"
+                has_event_reservations
+                and call_type == "event_analysis"
                 and symbol
                 and symbol.lower() in SUPPORTED_SYMBOLS
                 and sum(
