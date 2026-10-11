@@ -157,7 +157,10 @@ class NewsIntelligenceService:
         prioritized_items = sorted(
             valid_items,
             key=lambda item: (
-                bool(item.published_at and fresh_cutoff <= item.published_at <= now + timedelta(minutes=5)),
+                bool(
+                    item.published_at
+                    and fresh_cutoff <= item.published_at <= now + timedelta(minutes=5)
+                ),
                 _budget_priority_score(item),
                 item.published_at.timestamp() if item.published_at else 0,
             ),
