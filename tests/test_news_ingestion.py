@@ -1,7 +1,6 @@
 """Regression tests for the independent, bounded RSS ingestion path."""
 
 import asyncio
-
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from types import SimpleNamespace
