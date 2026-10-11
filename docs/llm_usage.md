@@ -159,6 +159,29 @@ not user-controlled, so a genuinely bad prompt already fans out across the chain
 client-side path, bounded to one pass. A malformed *request*, by contrast, would fail identically
 everywhere and stays terminal.
 
+### Gemini 429 quota classification and backoff
+
+Google's structured `google.rpc.QuotaFailure` `quotaId` distinguishes a daily
+quota from a per-minute 429. When Gemini explicitly reports a per-day
+quota violation, the router records `provider_quota_exhausted` and advances to the
+existing fallback provider. A concrete provider `Retry-After`/`RetryInfo`
+sets the next eligible probe time without overriding it with a timezone estimate.
+When the provider supplies no usable hint, the model is skipped until the next
+midnight in `America/Los_Angeles` (Google's documented RPD reset).
+The skip makes no HTTP call. The fallback midnight is a safety assumption,
+not evidence that capacity will be available. Production hints can differ
+from the documented reset, so prefer the direct provider signal.
+Other quota/billing identifiers retain their existing treatment. No configured
+provider order changes.
+
+For ordinary transient 429s, the backoff parser follows response-header hints,
+then Google's structured `google.rpc.RetryInfo.retryDelay`, then a text hint or
+the existing safe default. Fractional seconds are rounded **up** rather than
+retrying earlier than the provider's requested delay. HTTP 5xx and timeouts
+do not arm this rate-limit backoff. There are no same-provider retries.
+Actual per-project/model limits still require inspection of the production
+account's AI Studio limits/usage; a 429 alone does not establish them.
+
 ### Circuit breaker
 
 A `(call_type, provider, model)` triple that fails `LLM_BREAKER_FAILURE_THRESHOLD` times in a row
