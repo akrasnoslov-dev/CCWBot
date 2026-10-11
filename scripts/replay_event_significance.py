@@ -101,6 +101,17 @@ def parse_significance_response(raw_content: str) -> dict:
     return result
 
 
+def classify_replay_error(error: Exception) -> str:
+    """Never report pre-answer SDK errors as invalid model output."""
+    if isinstance(error, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(error, NonObjectSignificanceError) or type(error).__name__ in {
+        "EventAnalysisValidationError", "AISchemaValidationError", "AIInvalidJsonError",
+    }:
+        return "schema_error"
+    return "provider_error"
+
+
 def summarize_rows(rows: list[dict]) -> dict:
     """Score only adjudicated, validated model answers; never count failures as no-alert."""
     scores = {}
@@ -215,14 +226,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
             except Exception as exc:
                 # Never print provider payloads, prompts, raw LLM output or credentials.
                 error_type = type(exc).__name__
-                status = (
-                    "invalid_json" if isinstance(exc, json.JSONDecodeError)
-                    else "schema_error" if error_type in {
-                        "EventAnalysisValidationError", "AISchemaValidationError",
-                        "AIInvalidJsonError", "NonObjectSignificanceError",
-                    }
-                    else "provider_error"
-                )
+                status = classify_replay_error(exc)
                 failed_answer = {
                     "status": status, "error_type": error_type,
                     "requested_max_tokens": budget,
