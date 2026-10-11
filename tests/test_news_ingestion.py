@@ -7,13 +7,13 @@ from types import SimpleNamespace
 import feedparser
 import pytest
 from sqlalchemy import select
+from test_news_intelligence_service import FakeNewsLlm, _raw_item, build_session
 
 import bot.news as news
 import bot.runtime.scheduler as scheduler
 import bot.services.news_service as rss
 from bot.db.database import NewsItem
 from bot.services.news_intelligence_service import NewsIntelligenceService
-from test_news_intelligence_service import FakeNewsLlm, _raw_item, build_session
 
 
 def _entry(title: str, link: str, published_at: datetime) -> dict:
@@ -36,8 +36,14 @@ def _feed(entries):
 def test_rss_merges_sources_by_publication_time_before_limit(monkeypatch):
     now = datetime.now(timezone.utc)
     feeds = {
-        "old": _feed([_entry("Bitcoin ETF filing from last week", "https://example.org/old", now - timedelta(days=5))]),
-        "new": _feed([_entry("Ethereum network upgrade today", "https://example.org/new", now - timedelta(minutes=20))]),
+        "old": _feed([
+            _entry("Bitcoin ETF filing from last week", "https://example.org/old",
+                   now - timedelta(days=5))
+        ]),
+        "new": _feed([
+            _entry("Ethereum network upgrade today", "https://example.org/new",
+                   now - timedelta(minutes=20))
+        ]),
     }
     monkeypatch.setattr(rss, "RSS_FEEDS", ["old", "new"])
     monkeypatch.setattr(rss, "_read_rss_feed", feeds.__getitem__)
