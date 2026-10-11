@@ -8,14 +8,14 @@ recorded at the time of the call.
 ## Provider fallback (redundancy)
 
 Groq is the primary LLM provider. General call types use the ordered provider chain configured
-via `LLM_PROVIDER_PRIORITY` (default `groq,gemini,mistral`) with optional
+via `LLM_PROVIDER_PRIORITY` (default `groq,gemini`) with optional
 per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, and
 `LLM_HEARTBEAT_PROVIDERS`. These providers are reached through OpenAI-compatible
 chat-completions APIs.
 
 Event Analysis adds one optional independent route: if neither the event override nor the global
-priority is set, its built-in order is `groq,gemini,cloudflare,mistral`. The checked-in
-`.env.example` sets `LLM_EVENT_PROVIDERS=groq,gemini,cloudflare,mistral` explicitly because
+priority is set, its built-in order is `groq,gemini,cloudflare`. The checked-in
+`.env.example` sets `LLM_EVENT_PROVIDERS=groq,gemini,cloudflare` explicitly because
 it also sets a global chain. An explicitly configured global or per-event chain remains
 controlling; existing deployments must opt into this order via `LLM_EVENT_PROVIDERS` if a
 global priority is already configured. Cloudflare is skipped when its token/account ID is absent.
@@ -37,15 +37,11 @@ invalid outputs; they do **not** establish an improvement in live Cloudflare
 success rate, latency, or billable/free-tier inference cost. Check sanitized
 post-release provider-attempt telemetry before claiming a quality improvement.
 
-
-Mistral `mistral-small-2603` remains a supported model, but Free mode has plan-, organization-,
-workspace-, and model-specific usage limits. A 429 plus zero successes does not establish whether
-the block is request frequency, token throughput, a consumed monthly allowance, or another account
-restriction. Check the affected account's Mistral Admin Panel > API > Limits and API > Usage
-without disclosing keys or raw responses. Cloudflare Workers AI also has finite free daily neuron
-capacity (10,000 neurons/day as of October 2026); neither route guarantees successful capacity.
-See https://docs.mistral.ai/admin/billing-usage/usage-limits and
-https://developers.cloudflare.com/workers-ai/platform/pricing/ .
+Mistral has been retired from the runtime provider registry following persistent HTTP 429
+failures. Even if old deployment env files still list it, the priority parser rejects it;
+existing historical Mistral telemetry is retained. Cloudflare Workers AI has a finite free
+daily neuron quota (10,000 neurons/day as of October 2026); it does not guarantee capacity.
+See https://developers.cloudflare.com/workers-ai/platform/pricing/ .
 
 `event_alert_render` is intentionally different: it uses a fixed model-level LLM chain so the
 same Groq account can try a second model before changing infrastructure:
@@ -55,8 +51,7 @@ same Groq account can try a second model before changing infrastructure:
 
 The first two attempts share `GROQ_API_KEY`. Cloudflare requires both
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; if either is missing, that step is excluded.
-The final render fallback uses the existing `GEMINI_API_KEY`. Generic Gemini/Mistral defaults
-remain `gemini-3.8-flash` and `mistral-small-2603` for call types that use the generic chain.
+The final render fallback uses the existing `GEMINI_API_KEY`. Generic Gemini uses `gemini-3.8-flash`; Cloudflare uses the configured Llama model.
 Model environment variables are intentional overrides, not normal required configuration: leave
 them unset in ordinary deployments so pinned code defaults stay authoritative.
 
@@ -78,7 +73,7 @@ terminal. No further LLM calls are made during deterministic recovery.
 ### Event Analysis timeout and operation budget
 
 Event Analysis uses **one HTTP request per configured provider/model**, ordered by
-`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> Gemini -> Mistral).
+`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> Gemini).
 The OpenAI-compatible SDK has `max_retries=0`; neither HTTP 5xx nor timeout causes a
 same-provider retry. Such failures advance to the next available provider, unless the operation
 budget is exhausted. HTTP 429 activates the existing provider/model backoff; an explicit
@@ -86,13 +81,13 @@ billing/quota code instead falls back without treating quota exhaustion as trans
 Malformed requests remain terminal and never fan out.
 
 The default per-request timeouts for **Event Analysis only** are Groq **15s**, Gemini **25s**,
-and Mistral **15s**. Gemini gets ten additional seconds for variable model/reasoning latency;
+and Cloudflare **15s**. Gemini gets ten additional seconds for variable model/reasoning latency;
 this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
 measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
 OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
-would silently cut short Gemini's 25s deadline. The four-step chain has a **90s**
+would silently cut short Gemini's 25s deadline. The Event Analysis chain has a **90s**
 monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
-skips and response validation. Nominal HTTP ceilings total 55s, leaving 5s for processing.
+skips and response validation. Nominal HTTP ceilings total 55s, leaving 35s for processing.
 Before any new HTTP attempt the router checks remaining time, shortens its timeout
 when necessary, and makes no new request when fewer than 1s remain. A timeout at the
 remaining deadline, including on the final provider or during logging/validation, gets
@@ -334,13 +329,13 @@ thinking models stay outside the effort gate until their endpoint contract is ve
 Gemini 3.x requests intentionally omit explicit sampling parameters such as `temperature`.
 Google's Gemini 3.8 migration guidance deprecates `temperature`, `top_p`, and `top_k` for this
 model family. The shared OpenAI-compatible provider keeps the existing `temperature=0.0` behavior
-for Groq, Mistral, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
+for Groq, Cloudflare, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
 `gemini-3.*` model identifiers.
 
 Groq GPT-OSS and the pinned `qwen/qwen3.8-27b` render fallback support strict JSON Schema
 Structured Outputs. Verified Groq models use `response_format.type=json_schema` with
 `strict=true`; existing application validators still run afterwards for semantic, grounding,
-active-symbol, safety, and non-empty checks. Cloudflare, Gemini, Mistral, and an operator-supplied
+active-symbol, safety, and non-empty checks. Cloudflare, Gemini, and an operator-supplied
 Groq model outside the verified strict-schema allowlist keep JSON Object Mode so one provider's
 strict-schema contract cannot make another provider's request incompatible. For reports, the
 strict provider schema requires every top-level field and every `coin_cards` object field,
