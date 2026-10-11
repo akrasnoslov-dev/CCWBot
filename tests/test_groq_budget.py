@@ -339,3 +339,19 @@ async def test_budget_failure_is_persisted_as_logical_event_analysis_outcome(mon
         assert attempts[0].llm_operation_id == analysis.llm_operation_id
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_provider_failure_keeps_estimated_token_reservation():
+    budget = GroqBudget()
+    budget._loaded.add("m")
+    lease = await budget.reserve(
+        model="m", symbol="BTC", call_type="event_analysis",
+        input_chars=600, max_tokens=6300,
+    )
+    expected = lease.charge.tokens
+    assert expected > 0
+    # Timeout after submission does not prove the provider spent no tokens.
+    await budget.settle(lease, actual_tokens=None, headers=None)
+    assert budget._history["m"][0].tokens == expected
+    assert budget._history["m"][0].request == 1
