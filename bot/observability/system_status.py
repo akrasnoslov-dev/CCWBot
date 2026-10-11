@@ -420,7 +420,7 @@ async def _ai_health(session: AsyncSession, *, now: datetime) -> ComponentHealth
         status = ComponentStatus.WARN
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
         summary = f"latest {latest.status}"
-    elif latest.status in {"failed", "llm_error", "timeout"}:
+    elif latest.status in {"failed", "llm_error", "timeout", "rate_limit"}:
         status = ComponentStatus.FAIL
         detail = f"latest attempt {latest.status} at {_format_utc(latest.created_at)}"
         safe_reason = _safe_detail(latest.error_reason or latest.status, max_chars=60)
