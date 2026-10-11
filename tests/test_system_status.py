@@ -156,6 +156,7 @@ async def test_system_status_uses_real_fresh_telemetry():
                     news_key="news-1",
                     title="BTC news",
                     url="https://example.com/news",
+                    published_at=now - timedelta(minutes=21),
                     fetched_at=now - timedelta(minutes=20),
                     llm_status="success",
                     updated_at=now - timedelta(minutes=19),
