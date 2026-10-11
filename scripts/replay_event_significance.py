@@ -89,11 +89,15 @@ def groq_significance_response_format() -> dict | None:
     }
 
 
+class NonObjectSignificanceError(ValueError):
+    """Provider returned valid JSON, but not the required object structure."""
+
+
 def parse_significance_response(raw_content: str) -> dict:
     """Malformed or non-object JSON is unusable output, not a provider outage."""
     result = json.loads(raw_content)
     if not isinstance(result, dict):
-        raise ValueError("event significance output must be a JSON object")
+        raise NonObjectSignificanceError("event significance output must be a JSON object")
     return result
 
 
@@ -215,7 +219,7 @@ async def live_report(cases: list[dict], *, delay_seconds: int) -> dict:
                     "invalid_json" if isinstance(exc, json.JSONDecodeError)
                     else "schema_error" if error_type in {
                         "EventAnalysisValidationError", "AISchemaValidationError",
-                        "AIInvalidJsonError", "ValueError",
+                        "AIInvalidJsonError", "NonObjectSignificanceError",
                     }
                     else "provider_error"
                 )
