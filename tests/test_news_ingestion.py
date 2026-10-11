@@ -1,5 +1,7 @@
 """Regression tests for the independent, bounded RSS ingestion path."""
 
+import asyncio
+
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from types import SimpleNamespace
@@ -163,3 +165,40 @@ def test_scheduled_ingestion_is_hourly_and_disabled_without_persistence(monkeypa
     monkeypatch.setattr(scheduler, "ENABLE_NEWS_INTELLIGENCE", False)
     scheduler.schedule_news_ingestion(app)
     assert not jobs
+
+
+@pytest.mark.asyncio
+async def test_report_and_hourly_ingestion_share_serial_llm_budget_gate(monkeypatch):
+    active = 0
+    peak_active = 0
+    raw_items = [{"title": "Bitcoin ETF update", "link": "https://example.org/etf"}]
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+
+    class FakeIntelligence:
+        def __init__(self, session):
+            assert isinstance(session, FakeSession)
+        async def analyze_items(self, items):
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return items
+
+    async def not_seen(*args):
+        return False
+
+    monkeypatch.setattr(news, "DB_ENABLED", True)
+    monkeypatch.setattr(news, "DB_SESSION_LOCAL", FakeSession)
+    monkeypatch.setattr(news, "ENABLE_NEWS_INTELLIGENCE", True)
+    monkeypatch.setattr(news, "fetch_crypto_news", lambda limit: raw_items)
+    monkeypatch.setattr(news, "NewsIntelligenceService", FakeIntelligence)
+    monkeypatch.setattr(news, "was_news_seen", not_seen)
+
+    await asyncio.gather(news.ingest_news_job(None), news.fetch_news_context(1))
+    assert peak_active == 1
