@@ -49,7 +49,7 @@ SUCCESS_STATUSES = {
 # Explicit terminal failures only. Skipped/backoff/in-flight/future statuses are
 # unknown evidence and must not enter the logical success-rate denominator.
 TERMINAL_FAILURE_STATUSES = {
-    "event_analysis": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
+    "event_analysis": frozenset({"failed", "llm_error", "schema_error", "invalid_json", "rate_limit", "timeout"}),
     "event_alert_render": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
     "market_heartbeat": frozenset({"failed", "llm_error", "schema_error", "invalid_json"}),
     "daily_report": frozenset({"failed", "schema_error", "llm_error", "invalid_json"}),
