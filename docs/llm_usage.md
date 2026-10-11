@@ -234,6 +234,13 @@ label uncertain causes as hypotheses. Compare actual HTTP attempts (excluding sk
 terminal logical outcomes (`event_ai_analyses`) rather than treating every attempt as an
 independent Event Analysis.
 
+The Groq daily planning budget is split per model: four Event Analysis symbols each
+have a protected 20% token share; Render/reports/other operations collectively use
+the remaining 20%. Non-analysis attempts are skipped before HTTP when their share
+is depleted, allowing those protected Event Analysis reservations to remain usable.
+The guard is a conservative planning limit, not proof of live account capacity.
+History from before rollout can temporarily exceed these shares until it ages out.
+
 ## Models, token budgets, and reasoning effort
 
 Model identifiers are provider-controlled and do change; a decommissioned model answers
