@@ -347,12 +347,18 @@ start or restart the bot.
 
 ## Non-interactive, least-privilege bot deploys
 
-The ccwbot_deploy SSH account uses its own dedicated key and must not belong
-to the Docker group or write to /opt/CCWBot. Its private key stays with the
-operator. The installed root-owned /usr/local/bin/ccwbot-deploy-safe accepts
-exactly four actions: status, backup, deploy, rollback. No extra arguments.
-scripts/ccwbot-deploy.sudoers allowlists only these four exact commands. Never
-grant shell/root sudo, Docker access, repository write access, or NOPASSWD: ALL.
+**Before the verified two-login cutover**, `ccwbot_deploy` is the dedicated
+deploy SSH account with a separate key. **After cutover**, use the existing
+`ccwbot_ops` SSH account for both collection and deploy-wrapper access; the
+`ccwbot_deploy` account should be disabled. Neither limited account may
+join the Docker group or write to `/opt/CCWBot`. The private keys stay with
+the operator. The installed root-owned `/usr/local/bin/ccwbot-deploy-safe`
+accepts exactly four actions: `status`, `backup`, `deploy`, `rollback`.
+No extra arguments. The legacy `scripts/ccwbot-deploy.sudoers` allows only
+the old account; the staged `scripts/ccwbot-operator-deploy.sudoers` allows
+the same four exact actions for `ccwbot_ops` after verified installation.
+Never grant shell/root sudo, Docker access, repository write access, or
+`NOPASSWD: ALL`.
 
 The tracked scripts/ccwbot-deploy-safe.sh is NOT the installed wrapper.
 Git checkout, merge and ordinary deploy do not replace /usr/local/bin or sudoers.
@@ -423,12 +429,19 @@ rollback state during installation.
 
 ### Read-only permission verification
 
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n -l'
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sha256sum /usr/local/bin/ccwbot-deploy-safe'
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/bin/id' # MUST FAIL
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy extra' # MUST FAIL
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'id -nG' # MUST NOT include docker
+Use the old alias **only before** the verified cutover; use the operator alias
+**after** the cutover, when the old login is disabled. The same checks apply
+to each. Replace `<deploy-ssh-alias>` accordingly:
+
+    # Before cutover: ccwbot-prod-deploy
+    # After cutover:  ccwbot-prod-ops
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n -l'
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sha256sum /usr/local/bin/ccwbot-deploy-safe'
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/bin/id' # MUST FAIL
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/bin/docker ps' # MUST FAIL
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy extra' # MUST FAIL
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'id -nG' # MUST NOT include docker
 
 Never test this by triggering backup, deploy or rollback. A failed SSH
 connection is UNKNOWN, not proof that production is least privileged.
@@ -437,7 +450,8 @@ connection is UNKNOWN, not proof that production is least privileged.
 
 Only for an approved main release with no migrations or ops_agent files:
 
-    ssh -o BatchMode=yes ccwbot-prod-deploy 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
+    # Before cutover: use ccwbot-prod-deploy. After cutover: ccwbot-prod-ops.
+    ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
 
 The command above is a production change; do not run it during diagnostics.
 On failure, inspect branch/HEAD, Docker status, the JSON /health status,
