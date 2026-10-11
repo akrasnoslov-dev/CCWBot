@@ -19,7 +19,6 @@ from bot.services.llm.errors import AIInvalidJsonError, AISchemaValidationError
 from bot.services.llm.operation import current_llm_operation_id, llm_operation_scope
 from bot.services.llm.router import LLMRouter
 
-
 _VALID = {
     "symbol": "BTC",
     "materiality": "routine",
