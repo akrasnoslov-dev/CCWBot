@@ -776,6 +776,11 @@ def _llm_provider_label(value: str | None) -> str:
 
 
 async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHealth:
+    """Explain persisted news availability without mistaking it for RSS fetch health.
+
+    A fetched_at timestamp proves a *row was saved*, not that a feed was
+    checked. A 24h-old article re-fetched today is not fresh usable news.
+    """
     latest = await session.scalar(
         select(NewsItem).order_by(NewsItem.fetched_at.desc(), NewsItem.id.desc()).limit(1)
     )
@@ -783,21 +788,52 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
         return ComponentHealth(
             "News",
             ComponentStatus.UNKNOWN,
-            "no news cache telemetry",
+            "no persisted news; source fetch history unavailable from database",
             summary="no cache telemetry",
+            info_rows=("Inspect news_rss_source and news_ingestion logs for fetch outcomes.",),
         )
 
     since = now - timedelta(hours=24)
+    recent, noise, duplicates, failed, budget_skipped, missing_date = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(NewsItem.is_noise.is_(True)),
+                func.count().filter(NewsItem.is_duplicate.is_(True)),
+                func.count().filter(NewsItem.llm_status == "failed"),
+                func.count().filter(NewsItem.llm_status == "skipped_budget"),
+                func.count().filter(NewsItem.published_at.is_(None)),
+            ).where(NewsItem.fetched_at >= since)
+        )
+    ).one()
+    recent = int(recent or 0)
+    usable_filter = (
+        (NewsItem.fetched_at >= since)
+        & (NewsItem.published_at >= since)
+        & (NewsItem.published_at <= now + timedelta(minutes=5))
+        & NewsItem.is_noise.is_(False)
+        & NewsItem.is_duplicate.is_(False)
+        & (NewsItem.llm_status == "success")
+    )
     usable_count = int(
         await session.scalar(
-            select(func.count())
-            .select_from(NewsItem)
-            .where(NewsItem.fetched_at >= since)
-            .where(NewsItem.is_noise.is_(False))
-            .where(NewsItem.is_duplicate.is_(False))
-        )
-        or 0
+            select(func.count()).select_from(NewsItem).where(usable_filter)
+        ) or 0
     )
+    symbol_rows = (
+        await session.execute(
+            select(NewsItem.primary_symbol, NewsItem.related_symbols).where(usable_filter)
+        )
+    ).all()
+    covered_symbols = {
+        str(value).strip().lower()
+        for primary, related in symbol_rows
+        for value in ([primary] if primary else []) + (
+            related if isinstance(related, list) else []
+        )
+        if str(value).strip().lower() in SUPPORTED_SYMBOLS
+    }
+
     latest_intel = await session.scalar(
         select(NewsItem)
         .where(
@@ -808,45 +844,62 @@ async def _news_health(session: AsyncSession, *, now: datetime) -> ComponentHeal
         .order_by(NewsItem.updated_at.desc(), NewsItem.id.desc())
         .limit(1)
     )
-    fresh = (_as_utc(latest.fetched_at) or now) >= since
-    status = ComponentStatus.OK if fresh and usable_count > 0 else ComponentStatus.WARN
-    detail = (
-        f"latest news cache {_format_utc(latest.fetched_at)}; "
-        f"usable items {usable_count} in last 24h"
+    persisted_recently = (_as_utc(latest.fetched_at) or now) >= since
+    failed_intelligence = bool(
+        latest_intel is not None
+        and latest_intel.llm_status == "failed"
+        and _as_utc(latest_intel.updated_at) is not None
+        and _as_utc(latest_intel.updated_at) >= since
     )
+    status = (
+        ComponentStatus.OK
+        if persisted_recently and usable_count > 0 and not failed_intelligence
+        else ComponentStatus.WARN
+    )
+    if not persisted_recently:
+        summary = "no recently persisted news"
+    elif not usable_count:
+        summary = "no verified fresh usable news"
+    elif failed_intelligence:
+        summary = "latest intelligence attempt failed"
+    else:
+        summary = f"{usable_count} verified fresh items in 24h"
+
     rows = [
-        f"Latest news cache: {_format_utc(latest.fetched_at)}",
-        f"Recent usable news items: {usable_count} in last 24h",
+        f"Latest persisted item: {_format_utc(latest.fetched_at)}",
+        f"Items persisted in 24h: {recent}",
+        f"Fresh, analyzed, non-noise, non-duplicate: {usable_count}",
+        f"Rejections in recent persisted rows: noise {noise}, duplicates {duplicates}, "
+        f"LLM failed {failed}, budget skipped {budget_skipped}, undated {missing_date}",
+        "Fresh direct symbol coverage: "
+        + ", ".join(
+            f"{display_symbol(symbol)}={int(symbol in covered_symbols)}"
+            for symbol in SUPPORTED_SYMBOLS
+        ),
+        "RSS fetch successes/failures are not stored in news_items; "
+        "inspect news_rss_source and news_ingestion logs.",
     ]
     if latest_intel is None:
         rows.append("News intelligence: UNKNOWN - no enrichment telemetry")
-    elif latest_intel.llm_status == "failed":
-        rows.append(
-            f"News intelligence: WARN - latest failed at {_format_utc(latest_intel.updated_at)}"
-        )
-        status = ComponentStatus.WARN
     else:
         rows.append(
-            f"News intelligence: OK - latest {latest_intel.llm_status} "
+            f"News intelligence latest: {latest_intel.llm_status} "
             f"at {_format_utc(latest_intel.updated_at)}"
         )
-    if fresh and usable_count > 0:
-        summary = f"{usable_count} usable items in 24h"
-        problem_rows = (
-            ("News intelligence: latest failed",)
-            if latest_intel is not None and latest_intel.llm_status == "failed"
-            else ()
-        )
-    else:
-        summary = "stale or empty"
-        problem_rows = (f"Usable items in 24h: {usable_count}",)
+    problems = []
+    if usable_count == 0:
+        problems.append(f"Usable published items in 24h: 0 (persisted: {recent})")
+    if not persisted_recently:
+        problems.append("No news item persisted in 24h; feed activity unknown")
+    if failed_intelligence:
+        problems.append("News intelligence: latest failed")
+
     return ComponentHealth(
-        "News",
-        status,
-        detail,
+        "News", status,
+        "news_items persistence and article publication age (not RSS fetch telemetry)",
         tuple(rows),
         summary=summary,
-        problem_rows=problem_rows,
+        problem_rows=tuple(problems),
     )
 
 
