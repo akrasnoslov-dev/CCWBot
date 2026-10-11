@@ -92,7 +92,7 @@ class GroqBudget:
                             LlmUsageLog.created_at >= now - DAY,
                         )
                     )
-                    for at, symbol, call_type, total, status, chars, ceiling, reason in result.all():
+                    for (at, symbol, call_type, total, status, chars, ceiling, reason) in result.all():
                         if str(status).startswith("skipped_due_to_"):
                             continue
                         if at.tzinfo is None:
@@ -174,7 +174,11 @@ class GroqBudget:
                 until = min((h.at + DAY for h in history), default=now + DAY)
             elif has_event_reservations and call_type != "event_analysis" and (
                 sum(h.tokens for h in history if h.call_type != "event_analysis") + expected
-                > max(0, daily_tokens - len(SUPPORTED_SYMBOLS) * int(daily_tokens * EVENT_SYMBOL_SHARE))
+                > max(
+                    0,
+                    daily_tokens - len(SUPPORTED_SYMBOLS)
+                    * int(daily_tokens * EVENT_SYMBOL_SHARE),
+                )
             ):
                 # Non-analysis traffic shares the *unreserved* 20% capacity of this
                 # model. Without this guard, rendering can consume a symbol's
