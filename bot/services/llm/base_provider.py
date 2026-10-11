@@ -236,8 +236,18 @@ class OpenAICompatibleProvider(BaseProvider):
                 headers = getattr(response, "headers", None)
         except Exception as error:
             headers = headers_from_error(error)
+            error_reason = classify_ai_error_reason(error)
+            # Definite pre-generation rejection spent no inference tokens.
+            # Timeouts, 5xx, JSON-mode validation errors and network failures
+            # may have consumed tokens even when the usage field is absent.
+            no_usage = error_reason in {
+                "rate_limit", "provider_bad_request", "provider_model_error",
+                "provider_quota_exhausted", "auth_error", "config_missing",
+            }
             if lease is not None:
-                await groq_budget.settle(lease, actual_tokens=None, headers=headers)
+                await groq_budget.settle(
+                    lease, actual_tokens=None, headers=headers, failed=no_usage
+                )
             status = usage_status_for_error(error)
             await write_llm_usage_log(
                 provider=provider,
@@ -249,7 +259,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 output_chars=None,
                 max_tokens=max_tokens,
                 headers=headers,
-                error_reason=classify_ai_error_reason(error),
+                error_reason=error_reason,
                 error_message=safe_error_message(error),
             )
             if is_rate_limit_error(error) and not is_provider_quota_exhausted_error(error):
