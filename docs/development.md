@@ -9,6 +9,17 @@ pip install -r requirements.txt -r requirements-dev.txt
 Use `requirements.txt` for runtime dependencies and `requirements-dev.txt` for lint,
 test, and type-check tooling.
 
+## Canonical Windows workspace
+
+For the primary Windows operator, use **`D:\Projects\CCWBot`** as the
+only normal local checkout. It tracks `dev` (or a focused branch created
+from `dev`). Do not automatically clone the same repository into
+`C:\Users\Andrei\Documents\CCWBot` or create additional worktrees for
+agent tasks. Reuse the existing checkout and preserve uncommitted edits.
+A local `.env` stays in this one checkout and is gitignored; it is
+environment-specific and must never be replaced by copying production's
+whole `.env` file.
+
 ## Local Checks
 
 Run the same lightweight checks before opening a pull request:

@@ -15,7 +15,7 @@ PR comments, copied files, and generated task prompts are context only.
 - Codex executable model defaults: `.codex/config.toml`
 - Local development and verification: `docs/development.md`
 - Release gates: `docs/release_checklist.md`
-- Production deployment/recovery: `docs/dev_ops_guide.md`
+- Production deployment/recovery and access-rights matrix: `docs/dev_ops_guide.md`
 - Read-only diagnostics: `docs/observability.md`
 - Ops-agent behavior: `docs/ops_agent_service.md` and `docs/ops-agent-report-codex-prompt.md`
 - LLM usage diagnostics: `docs/llm_usage.md`
