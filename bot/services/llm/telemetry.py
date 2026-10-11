@@ -541,7 +541,8 @@ def _parse_retry_delay_text(value: str | None) -> int | None:
     return max(math.ceil(total), 1)
 
 
-def retry_after_seconds_from_rate_limit(error: Exception, headers, *, now: datetime) -> int:
+def _provider_retry_delay_seconds(error: Exception, headers, *, now: datetime) -> int | None:
+    """Use an explicit provider retry hint, without substituting a local default."""
     for header_name in (
         "retry-after",
         "x-ratelimit-reset-tokens",
@@ -556,10 +557,13 @@ def retry_after_seconds_from_rate_limit(error: Exception, headers, *, now: datet
     retry_after = _google_retry_info_seconds(error)
     if retry_after is not None:
         return retry_after
-    retry_after = _parse_retry_delay_text(str(error))
-    if retry_after is not None:
-        return retry_after
-    return _rate_limit_fallback_backoff_seconds()
+    return _parse_retry_delay_text(str(error))
+
+
+def retry_after_seconds_from_rate_limit(error: Exception, headers, *, now: datetime) -> int:
+    return _provider_retry_delay_seconds(
+        error, headers, now=now
+    ) or _rate_limit_fallback_backoff_seconds()
 
 
 def active_rate_limit_backoff(
@@ -631,12 +635,17 @@ def start_llm_rate_limit_backoff(
     headers,
 ) -> tuple[int, datetime]:
     now = datetime.now(timezone.utc)
-    retry_after_seconds = retry_after_seconds_from_rate_limit(error, headers, now=now)
+    provider_hint = _provider_retry_delay_seconds(error, headers, now=now)
+    retry_after_seconds = provider_hint or _rate_limit_fallback_backoff_seconds()
     limited_until = now + timedelta(seconds=retry_after_seconds)
-    if provider == "gemini" and is_gemini_daily_quota_exhausted_error(error):
-        # Gemini RPD resets at midnight America/Los_Angeles (including DST changes).
-        # RetryInfo can suggest seconds even when QuotaFailure says PerDay: do not
-        # hammer an exhausted free-tier daily quota every few seconds.
+    if (
+        provider == "gemini"
+        and is_gemini_daily_quota_exhausted_error(error)
+        and provider_hint is None
+    ):
+        # On an explicit PerDay violation without a usable provider reset hint,
+        # use Google's documented Pacific-midnight reset as a safe fallback.
+        # A real Retry-After/RetryInfo takes priority over this planning estimate.
         pacific = ZoneInfo("America/Los_Angeles")
         next_day = now.astimezone(pacific).date() + timedelta(days=1)
         reset = datetime.combine(next_day, datetime.min.time(), tzinfo=pacific)

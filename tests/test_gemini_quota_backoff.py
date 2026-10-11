@@ -29,23 +29,25 @@ def _failed_provider(error):
     return provider, create
 
 
-def _response_error(quota_id, *, retry_delay="2s"):
+def _response_error(quota_id, *, retry_delay=None):
     error = RuntimeError("Gemini rejected request")
     error.status_code = 429
+    details = [
+        {
+            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+            "violations": [{"quotaId": quota_id}],
+        }
+    ]
+    if retry_delay is not None:
+        details.append({
+            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+            "retryDelay": retry_delay,
+        })
     error.body = {
         "error": {
             "code": 429,
             "status": "RESOURCE_EXHAUSTED",
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
-                    "violations": [{"quotaId": quota_id}],
-                },
-                {
-                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
-                    "retryDelay": retry_delay,
-                },
-            ],
+            "details": details,
         },
     }
     return error
@@ -75,6 +77,32 @@ async def test_structured_daily_quota_is_not_treated_as_short_retry():
     with pytest.raises(LLMRateLimitBackoffActive):
         await provider.chat_completion(**args)
     create.assert_awaited_once()  # No HTTP after daily quota is known
+
+
+@pytest.mark.asyncio
+async def test_daily_quota_respects_explicit_provider_reset_instead_of_local_timezone():
+    # Production Gemini retries indicated an explicit 20,699s expiry near UTC midnight;
+    # overriding it with a later Pacific reset would lose recoverable analysis capacity.
+    error = _response_error(
+        "GenerateRequestsPerDayPerProjectPerModel-FreeTier", retry_delay="20699s"
+    )
+    provider, create = _failed_provider(error)
+    args = dict(
+        call_type="event_analysis", symbol="ETH", model="gemini-explicit-reset",
+        messages=[{"role": "user", "content": "test"}],
+        max_tokens=100, response_format=None,
+    )
+    before = datetime.now(timezone.utc)
+    with pytest.raises(RuntimeError):
+        await provider.chat_completion(**args)
+    until = telemetry.get_llm_rate_limit_backoff(
+        provider="gemini", model="gemini-explicit-reset"
+    )
+    assert until is not None
+    assert 20698 <= (until - before).total_seconds() <= 20702
+    with pytest.raises(LLMRateLimitBackoffActive):
+        await provider.chat_completion(**args)
+    create.assert_awaited_once()
 
 
 @pytest.mark.asyncio

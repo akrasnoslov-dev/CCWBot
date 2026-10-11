@@ -163,13 +163,16 @@ everywhere and stays terminal.
 
 Google's structured `google.rpc.QuotaFailure` `quotaId` distinguishes a daily
 quota from a per-minute 429. When Gemini explicitly reports a per-day
-quota violation, the router records `provider_quota_exhausted`, advances to the
-existing fallback provider, and skips that Gemini model until the next
-midnight in `America/Los_Angeles` (the published Gemini RPD reset).
-The skip makes no HTTP call. This is a protective cooldown, **not**
-evidence that the account has capacity after the reset; the next eligible
-scheduled operation rechecks it. Other quota/billing identifiers retain their
-existing treatment. No configured provider order changes.
+quota violation, the router records `provider_quota_exhausted` and advances to the
+existing fallback provider. A concrete provider `Retry-After`/`RetryInfo`
+sets the next eligible probe time without overriding it with a timezone estimate.
+When the provider supplies no usable hint, the model is skipped until the next
+midnight in `America/Los_Angeles` (Google's documented RPD reset).
+The skip makes no HTTP call. The fallback midnight is a safety assumption,
+not evidence that capacity will be available. Production hints can differ
+from the documented reset, so prefer the direct provider signal.
+Other quota/billing identifiers retain their existing treatment. No configured
+provider order changes.
 
 For ordinary transient 429s, the backoff parser follows response-header hints,
 then Google's structured `google.rpc.RetryInfo.retryDelay`, then a text hint or
