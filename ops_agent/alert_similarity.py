@@ -675,6 +675,9 @@ def _similarity_groups(
     for row in source_groups:
         placed = False
         for cluster in clusters:
+            # Similar language across different coins is not a repeated market situation.
+            if row["symbol"] != cluster[0]["symbol"]:
+                continue
             if _jaccard(set(row["terms"]), set(cluster[0]["terms"])) >= 0.45:
                 cluster.append(row)
                 placed = True
