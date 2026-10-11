@@ -584,3 +584,93 @@ def test_similarity_memberships_link_recipients_without_exporting_source_ids():
     for source_id in ("101", "202", "1001", "1002", "2003"):
         assert f'"{source_id}"' not in encoded
     assert "volatility expanded" not in encoded
+
+def test_similarity_does_not_merge_independent_coins_with_generic_wording():
+    # Generic copy can be identical across assets while market events are independent.
+    shared = {
+        "alert_message": (
+            "Momentum is building across the observed interval. Watch the next observation."
+        ),
+        "analysis_plain_text": "Momentum is building across the observed interval.",
+        "analysis_title": "Movement in observed interval",
+        "analysis_message_body": "Momentum is building across the observed interval.",
+        "analysis_possible_action": "Watch the next observation.",
+    }
+    rows = [
+        _row(**shared),
+        _row(
+            **shared,
+            symbol="ETH",
+            analysis_symbol="ETH",
+            event_key="eth_price_volatility",
+            analysis_event_key="eth_price_volatility",
+            market_event_id=11,
+            event_ai_analysis_id=101,
+            event_instance_key="eth-instance",
+            input_hash="eth-input",
+        ),
+    ]
+    payloads = build_alert_evidence_payloads(
+        rows, period=_period(), row_cap=10, semantic_cooldown_seconds=14400
+    )
+    assert payloads["evidence/db/alert_similarity_groups.json"]["groups"] == []
+
+
+def test_single_market_event_fanout_is_not_repeated_logical_alert():
+    row = _row(
+        sent_delivery_count=478,
+        delivery_count=478,
+        distinct_recipient_count=478,
+        sent_distinct_recipient_count=478,
+    )
+    payloads = build_alert_evidence_payloads(
+        [row], period=_period(), row_cap=10, semantic_cooldown_seconds=14400
+    )
+    assert payloads["evidence/db/alert_similarity_groups.json"]["groups"] == []
+
+def test_same_copy_in_multiple_coins_has_distinct_joinable_similarity_groups():
+    shared = {
+        "alert_message": "Movement remains notable over the observed interval.",
+        "analysis_plain_text": "Movement remains notable over the observed interval.",
+        "analysis_title": "Observed market movement",
+        "analysis_message_body": "Movement remains notable over the observed interval.",
+        "analysis_possible_action": "Watch the next observation.",
+    }
+    rows = []
+    for symbol, offset in (("BTC", 0), ("ETH", 2)):
+        for index in range(2):
+            number = offset + index
+            rows.append(
+                _row(
+                    **shared,
+                    symbol=symbol,
+                    analysis_symbol=symbol,
+                    event_key=f"{symbol.lower()}_price_volatility",
+                    analysis_event_key=f"{symbol.lower()}_price_volatility",
+                    market_event_id=10 + number,
+                    event_ai_analysis_id=100 + number,
+                    event_instance_key=f"instance-{number}",
+                    input_hash=f"input-{number}",
+                )
+            )
+    payload = build_alert_evidence_payloads(
+        rows, period=_period(), row_cap=10, semantic_cooldown_seconds=14400
+    )["evidence/db/alert_similarity_groups.json"]
+    assert len(payload["groups"]) == 2
+    group_ids = {group["semantic_group_id"] for group in payload["groups"]}
+    assert len(group_ids) == 2
+    assert {tuple(group["symbols"]) for group in payload["groups"]} == {
+        ("BTC",),
+        ("ETH",),
+    }
+    for group in payload["groups"]:
+        members = [
+            member
+            for member in payload["memberships"]
+            if member["semantic_group_id"] == group["semantic_group_id"]
+        ]
+        assert len(members) == 2
+        assert {member["market_event_ref"] for member in members} == set(
+            group["sample_event_refs"]
+        )
+
