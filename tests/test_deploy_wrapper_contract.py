@@ -79,7 +79,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("sudo -n /usr/bin/id", guide)
         self.assertIn("Rollback:", guide)
         self.assertIn("two active human-operable SSH logins", guide)
-        self.assertIn("legacy_keys_disabled=true", guide) if False else None
+        self.assertIn("old deploy SSH login", guide)
         self.assertIn("Current SSH alias: ccwbot-prod-ops", guide)
         self.assertIn("ssh -o BatchMode=yes <deploy-ssh-alias>", guide)
         self.assertIn("old ccwbot-prod-deploy disabled", guide)
