@@ -17,6 +17,7 @@ from bot.alerting.event_identity import (
     _event_analysis_news_summary,
     _json_dumps,
 )
+from bot.domain.supported_coins import ALL_SUPPORTED_COINS
 from bot.services.llm import config as llm_config
 from bot.services.llm import get_router
 from bot.services.llm.env import get_int_env
@@ -248,6 +249,45 @@ _EVENT_ANALYSIS_JSON_SCHEMA = {
     "additionalProperties": False,
 }
 
+_NEWS_INTELLIGENCE_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "category": {
+            "type": "string",
+            "enum": [
+                "regulation", "exchange", "security", "macro", "etf", "whale",
+                "project", "technical", "market", "noise",
+            ],
+        },
+        "related_symbols": {
+            "type": "array",
+            "items": {"type": "string", "enum": sorted(ALL_SUPPORTED_COINS)},
+        },
+        "primary_symbol": {
+            "type": ["string", "null"],
+            "enum": [None, *sorted(ALL_SUPPORTED_COINS)],
+        },
+        "impact_score": {"type": "integer"},
+        "impact_level": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"],
+        },
+        "relevance_score": {"type": "integer"},
+        "is_noise": {"type": "boolean"},
+        "is_alert_worthy": {"type": "boolean"},
+        "alert_reason": {"type": "string"},
+        "dedup_hint": {"type": "string"},
+    },
+    "required": [
+        "summary", "category", "related_symbols", "primary_symbol",
+        "impact_score", "impact_level", "relevance_score", "is_noise",
+        "is_alert_worthy", "alert_reason", "dedup_hint",
+    ],
+    "additionalProperties": False,
+}
+
+
 _MARKET_HEARTBEAT_JSON_SCHEMA = {
     "type": "object",
     "properties": {
@@ -315,7 +355,8 @@ _MARKET_REPORT_JSON_SCHEMA = {
 
 
 def _structured_response_formats(
-    *, call_type: str, schema_name: str, schema: dict
+    *, call_type: str, schema_name: str, schema: dict,
+    model_overrides: dict[str, str] | None = None,
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
     """Return JSON mode and provider-specific schemas for verified model attempts."""
     if not _groq_json_mode_enabled():
@@ -330,11 +371,11 @@ def _structured_response_formats(
             "schema": schema,
         },
     }
-    overrides = {
-        f"{provider}:{model}": strict_format
-        for provider, model in llm_config.provider_attempts(call_type)
-        if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS
-    }
+    overrides = {}
+    for provider, configured_model in llm_config.provider_attempts(call_type):
+        model = (model_overrides or {}).get(provider) or configured_model
+        if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS:
+            overrides[f"{provider}:{model}"] = strict_format
     # Event Analysis has six mandatory fields. Plain json_object protects syntax
     # but not their shape; ask the supported Cloudflare model to constrain types
     # and enums before the unchanged backend semantic validator runs. This is
@@ -813,14 +854,22 @@ async def ask_news_intelligence_raw(
     max_tokens = (
         max_tokens if max_tokens is not None else llm_config.max_tokens_for("news_intelligence")
     )
+    model_overrides = {"groq": model} if model else None
+    response_format, response_format_overrides = _structured_response_formats(
+        call_type="news_intelligence",
+        schema_name="news_intelligence",
+        schema=_NEWS_INTELLIGENCE_JSON_SCHEMA,
+        model_overrides=model_overrides,
+    )
     return await get_router().chat_completion(
         call_type="news_intelligence",
         messages=messages,
         max_tokens=max_tokens,
-        response_format={"type": "json_object"} if _groq_json_mode_enabled() else None,
+        response_format=response_format,
+        response_format_overrides=response_format_overrides,
         timeout=timeout,
         symbol=None,
-        model_overrides={"groq": model} if model else None,
+        model_overrides=model_overrides,
         validate_response=_json_response_validator(
             call_type="news_intelligence",
             symbol=None,
