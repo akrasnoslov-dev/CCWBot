@@ -416,6 +416,10 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "Only after Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot "
         "make materiality or novelty true.",
         "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. "
+        "If the move is ordinary for the asset and the observed trajectory shows no "
+        "distinctive continuation, turn, or pace, choose routine even if the timestamp "
+        "or headline is new. Percentile alone proves neither materiality nor novelty. "
+        "For repeated similar recent moves, require distinct current-path evidence for new. ",
         "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6 with no "
         "material market evidence=>routine/no alert; cw=.03,c30=.16,c60=.25,pw=7 without other "
         "material market evidence=>routine/no alert.",

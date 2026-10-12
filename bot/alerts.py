@@ -32,6 +32,7 @@ from bot.alerting.event_analysis import (
     EventAnalysisDecision,
     EventAnalysisValidationError,
     EventSignificanceDecision,
+    directional_market_family,
     empirical_absolute_move_percentile,
     validate_event_analysis_output,
     validate_event_significance_output,
@@ -670,6 +671,7 @@ def _previous_event_alert_context(
         "title": _safe_previous_text(getattr(alert, "trigger_reason", None)),
         "canonical_event_key": canonical_event_key or numeric_context.get("event_key"),
         "semantic_family": semantic_family or numeric_context.get("semantic_family"),
+        "analysed_window_minutes": numeric_context.get("analysed_window_minutes"),
         "analysed_window_move": _stable_float(
             _optional_float(numeric_context.get("analysed_window_change_percent")),
             4,
@@ -895,9 +897,8 @@ async def _get_reusable_event_analysis_by_context(
         # whose stored market event predates the core-first identity rule.
         identity_decision, canonical = with_canonical_event_key(
             identity_decision,
-            related_news=_selected_event_analysis_news(
-                input_payload, translated_related_news_ids
-            ),
+            related_news=_selected_event_analysis_news(input_payload, translated_related_news_ids),
+            analysed_window_change=(input_payload.get("market") or {}).get("chg_window_percent"),
         )
         candidates_by_stable_identity: dict[str, list[dict]] = {}
         for item in candidate_news or []:
@@ -1287,9 +1288,13 @@ def _percent_claim_is_untrusted(match: re.Match[str], market_data: dict) -> bool
         if window_minutes is not None
         else _structured_market_claims(market_data)
     )
-    return window_minutes is not None and not market_claims or not any(
-        abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
-        for structured_value in market_claims
+    return (
+        window_minutes is not None
+        and not market_claims
+        or not any(
+            abs(claim_value - structured_value) <= EVENT_TEXT_PERCENT_TOLERANCE
+            for structured_value in market_claims
+        )
     )
 
 
@@ -1304,9 +1309,7 @@ def _contains_untrusted_situation_market_claim(text: str, market_data: dict) -> 
 
 def _is_non_price_causal_percent_claim(text: str, match: re.Match[str]) -> bool:
     delimiters = ".!?;"
-    clause_start = (
-        max(text.rfind(delimiter, 0, match.start()) for delimiter in delimiters) + 1
-    )
+    clause_start = max(text.rfind(delimiter, 0, match.start()) for delimiter in delimiters) + 1
     clause_end_candidates = [
         index
         for index in (text.find(delimiter, match.end()) for delimiter in delimiters)
@@ -1619,9 +1622,7 @@ def _event_alert_presentation_title(
     if change is None or analysed_window_minutes is None or change == 0:
         return f"{symbol} market event"
     magnitude = abs(Decimal(str(analysed_window_change)))
-    rendered_magnitude = (
-        f"{magnitude:.1f}" if magnitude >= Decimal("0.1") else f"{magnitude:.6g}"
-    )
+    rendered_magnitude = f"{magnitude:.1f}" if magnitude >= Decimal("0.1") else f"{magnitude:.6g}"
     minutes = max(1, int(analysed_window_minutes))
     if minutes % 60 == 0:
         amount = minutes // 60
@@ -1654,7 +1655,11 @@ def _build_event_alert_payload(
         empty_text="",
     )
     presentation_situation_fallback, presentation_action_fallback = (
-        event_alert_presentation_fallback(market_data, related_news)
+        event_alert_presentation_fallback(
+            market_data,
+            related_news,
+            previous_event_alert=input_payload.get("previous_event_alert"),
+        )
     )
     message_body = _sanitize_event_text(
         decision.message_body,
@@ -1676,6 +1681,7 @@ def _build_event_alert_payload(
         significance_reason=None,
         market_data=market_data,
         related_news=related_news,
+        previous_event_alert=input_payload.get("previous_event_alert"),
     )
     possible_action = _sanitize_event_text(
         decision.possible_action,
@@ -2369,9 +2375,7 @@ def _build_news_driven_event_input(
     market_payload = {
         "price": source_market.get("price", _stable_float(float(current_price), 2)),
         "snapshots": source_market.get("snapshots", []),
-        "chg24h_percent": source_market.get(
-            "chg24h_percent", _stable_float(float(change_24h), 4)
-        ),
+        "chg24h_percent": source_market.get("chg24h_percent", _stable_float(float(change_24h), 4)),
         "chg_since_msg_percent": source_market.get("chg_since_msg_percent"),
     }
     for key in ("payload_points", "analysed_window_minutes", "chg_window_percent"):
@@ -2949,8 +2953,7 @@ async def _build_event_analysis_input(
                 0,
                 int(
                     (
-                        now.astimezone(timezone.utc)
-                        - previous_at.astimezone(timezone.utc)
+                        now.astimezone(timezone.utc) - previous_at.astimezone(timezone.utc)
                     ).total_seconds()
                     // 60
                 ),
@@ -3368,8 +3371,7 @@ def _has_non_flat_analysed_market_context(input_payload: dict) -> bool:
         prices = [
             _optional_float(snapshot["p"] if "p" in snapshot else snapshot["price_usd"])
             for snapshot in snapshots
-            if isinstance(snapshot, dict)
-            and ("p" in snapshot or "price_usd" in snapshot)
+            if isinstance(snapshot, dict) and ("p" in snapshot or "price_usd" in snapshot)
         ]
         prices = [price for price in prices if price is not None]
         if len(prices) >= 2 and prices[0] != prices[-1]:
@@ -3690,9 +3692,7 @@ async def _create_event_analysis_decision(
         )
         news_only = significance.reason_code == "news_only"
         decision_reason = (
-            DECISION_REASON_NEWS_ONLY_REJECTED
-            if news_only
-            else DECISION_REASON_LLM_NO_ALERT
+            DECISION_REASON_NEWS_ONLY_REJECTED if news_only else DECISION_REASON_LLM_NO_ALERT
         )
         reason_code = REASON_NEWS_ONLY_REJECTED if news_only else REASON_LLM_NO_ALERT
         await _record_alert_delivery_outcome(
@@ -3775,17 +3775,15 @@ async def _create_event_analysis_decision(
     except Exception as error:
         # The router already tried all configured providers. Do not call another LLM:
         # replace only exhausted invalid output with a backend-derived neutral render.
-        if (
-            isinstance(error, (AISchemaValidationError, AIInvalidJsonError))
-            and getattr(error, "_llm_all_exhausted_attempts_invalid_output", False)
+        if isinstance(error, (AISchemaValidationError, AIInvalidJsonError)) and getattr(
+            error, "_llm_all_exhausted_attempts_invalid_output", False
         ):
             # Invalid-output recovery is presentation only. An otherwise flat
             # market with available news cannot become an Event Alert merely
             # because neutral fallback drops related_news_ids, disabling the
             # downstream news-only rejection.
             if not (
-                candidate_news_ids
-                and not _has_non_flat_analysed_market_context(input_payload)
+                candidate_news_ids and not _has_non_flat_analysed_market_context(input_payload)
             ):
                 candidate = _verified_event_alert_render_fallback(input_payload)
                 try:
@@ -3906,7 +3904,8 @@ async def _create_event_analysis_decision(
         status="success",
         error_reason=(
             f"deterministic_fallback_from_{render_fallback_reason}"
-            if render_fallback_reason else None
+            if render_fallback_reason
+            else None
         ),
         provider=render_provider,
         model=render_model,
@@ -3947,6 +3946,7 @@ async def _create_event_analysis_decision(
             input_payload,
             decision.related_news_ids,
         ),
+        analysed_window_change=(input_payload.get("market") or {}).get("chg_window_percent"),
     )
     input_payload["raw_event_key"] = canonical.raw_event_key
     input_payload["canonical_event_key"] = canonical.canonical_event_key
@@ -4001,11 +4001,7 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
     news_items = input_payload.get("news", input_payload.get("candidate_news", []))
     if not isinstance(news_items, list):
         return []
-    by_id = {
-        str(item.get("news_id") or ""): item
-        for item in news_items
-        if isinstance(item, dict)
-    }
+    by_id = {str(item.get("news_id") or ""): item for item in news_items if isinstance(item, dict)}
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
 
 
@@ -4056,7 +4052,6 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
         if fragment in message:
             return reason
     return "validation_failed"
-
 
 
 def _event_alert_render_result_for_validation(
@@ -4235,6 +4230,24 @@ async def _filter_event_recipients_for_cooldown(
                         .lower()
                         or None
                     )
+                    # Some older deliveries lack a stored semantic family; recover a
+                    # directional family from their canonical key before correcting it.
+                    if stored_family is None and previous_event_key in {
+                        f"{normalize_symbol(symbol)}_price_uptrend",
+                        f"{normalize_symbol(symbol)}_price_downtrend",
+                    }:
+                        stored_family = str(previous_event_key).removeprefix(
+                            f"{normalize_symbol(symbol)}_"
+                        )
+                    # Resolve legacy price-family mislabels against their own saved market window.
+                    # Keep the existing strict per-recipient four-hour suppression.
+                    if stored_family in {"price_uptrend", "price_downtrend"}:
+                        stored_family = (
+                            directional_market_family(
+                                previous_context.get("analysed_window_change_percent")
+                            )
+                            or stored_family
+                        )
                     normalized_current_family = str(semantic_family or "").strip().lower() or None
                     exact_identity_match = previous_event_key == canonical_event_key or (
                         normalized_current_family is not None
