@@ -207,12 +207,22 @@ class CanonicalEventKey:
     reason: str
 
 
+def directional_market_family(move: object) -> str | None:
+    """Direction supported by the primary market window; not a significance threshold."""
+    value = _decimal_market_value(move)
+    if value is None or value == 0:
+        return None
+    return "price_uptrend" if value > 0 else "price_downtrend"
+
+
 def canonicalize_event_key(
     symbol: str,
     raw_event_key: str | None,
     title: str | None = None,
     message_body: str | None = None,
     related_news: list[dict[str, Any]] | None = None,
+    *,
+    analysed_window_change: object = None,
 ) -> CanonicalEventKey:
     """Return a stable backend key for semantic event identity."""
     normalized_symbol = normalize_symbol(symbol)
@@ -231,6 +241,26 @@ def canonicalize_event_key(
         message_body=message_body,
         related_news=related_news,
     )
+    # Some render keys encode the percentage inside a bare symbol_down_... or
+    # symbol_up_... identity. Normalize the direction, never the numeric value,
+    # so fresh percentages cannot create fresh semantic families.
+    if re.match(rf"^{re.escape(normalized_symbol)}_down(?:_|$)", canonical):
+        semantic_family = "price_downtrend"
+    elif re.match(rf"^{re.escape(normalized_symbol)}_up(?:_|$)", canonical):
+        semantic_family = "price_uptrend"
+    # Price-event identity follows the analysed movement, not model wording about a
+    # possibly opposite broader trend. This changes only identity, never materiality.
+    actual_price_family = directional_market_family(analysed_window_change)
+    raw_price_family = canonical in {
+        f"{normalized_symbol}_price_uptrend",
+        f"{normalized_symbol}_price_downtrend",
+    }
+    if actual_price_family and (
+        semantic_family in {"price_uptrend", "price_downtrend"} or raw_price_family
+    ):
+        if semantic_family != actual_price_family:
+            reason = "analysed_window_direction"
+        semantic_family = actual_price_family
     # An unsupported model-generated news identity cannot claim a news event.
     # Keep the accepted market decision, but use a neutral identity when the
     # wording has no corroborating selected material news or price family.
@@ -259,7 +289,7 @@ def canonicalize_event_key(
             raw or None,
             semantic_event_key,
             semantic_family,
-            "semantic_family",
+            reason if reason == "analysed_window_direction" else "semantic_family",
         )
     if canonical == raw:
         reason = "unchanged"
@@ -613,6 +643,7 @@ def with_canonical_event_key(
     decision: EventAnalysisDecision,
     *,
     related_news: list[dict[str, Any]] | None = None,
+    analysed_window_change: object = None,
 ) -> tuple[EventAnalysisDecision, CanonicalEventKey]:
     canonical = canonicalize_event_key(
         decision.symbol,
@@ -620,6 +651,7 @@ def with_canonical_event_key(
         title=decision.title,
         message_body=decision.message_body,
         related_news=related_news,
+        analysed_window_change=analysed_window_change,
     )
     if decision.event_key == canonical.canonical_event_key:
         return decision, canonical

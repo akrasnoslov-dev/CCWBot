@@ -57,12 +57,13 @@ _SAFE_MARKET_CONTEXT_WORDS = frozenset(
     """.split()
 )
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
-_PERCENT_VALUE_RE = re.compile(
-    r"(?i)([+-]?\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?(?:\s+points?)?\b)"
+_OBSERVATION_RE = re.compile(
+    r"(?i)\b(?:snapshot|interval|timeframe|time frame|window|30m|1h|24h|"
+    r"hour|minute|trend|direction|pace|path|reversal|reverse|"
+    r"slow\w*|accelera\w*|continuation)\b"
 )
-_MONEY_VALUE_RE = re.compile(
-    r"(?i)(?:\$\s*([+-]?\d+(?:\.\d+)?)|([+-]?\d+(?:\.\d+)?)\s*usd\b)"
-)
+_PERCENT_VALUE_RE = re.compile(r"(?i)([+-]?\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?(?:\s+points?)?\b)")
+_MONEY_VALUE_RE = re.compile(r"(?i)(?:\$\s*([+-]?\d+(?:\.\d+)?)|([+-]?\d+(?:\.\d+)?)\s*usd\b)")
 _ACTION_VERB = (
     r"buy|sell(?:ing)?|close|exit|enter|short|long|add|reduce|tighten|liquidate|"
     r"go\s+(?:long|short)|open(?:ing)?|take\s+profit|hold|dca"
@@ -141,13 +142,22 @@ def compact_event_alert_situation(
     significance_reason: str | None,
     market_data: dict | None = None,
     related_news: list[dict] | None = None,
+    previous_event_alert: dict | None = None,
 ) -> str:
     """Keep Event Alert explanations useful instead of repeating the metric block."""
     fallback, _ = event_alert_presentation_fallback(
-        market_data or {}, related_news or []
+        market_data or {},
+        related_news or [],
+        previous_event_alert=previous_event_alert,
     )
     cleaned = " ".join(str(value or "").split()).strip()
     if not cleaned:
+        return fallback
+    # A verified comparable prior window is more informative than repeated
+    # generic render prose about the same broader trend.
+    if "prior recorded alert's comparable window" in fallback and not re.search(
+        r"(?i)\bprior recorded alert\b", cleaned
+    ):
         return fallback
     if (
         _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
@@ -184,9 +194,11 @@ def _is_safe_llm_situation(
     market_data: dict,
 ) -> bool:
     words = re.findall(r"[a-z]+", value.lower())
-    return bool(words) and all(
-        word in _SAFE_MARKET_CONTEXT_WORDS for word in words
-    ) and _is_safe_structured_market_interpretation(value, market_data)
+    return (
+        bool(words)
+        and all(word in _SAFE_MARKET_CONTEXT_WORDS for word in words)
+        and _is_safe_structured_market_interpretation(value, market_data)
+    )
 
 
 def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> bool:
@@ -228,10 +240,13 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         return False
     if "snapshot" in lowered and not step_changes:
         return False
-    if any(
-        term in lowered
-        for term in ("persistent", "persistence", "consisten", "throughout", "steady")
-    ) and not has_persistence:
+    if (
+        any(
+            term in lowered
+            for term in ("persistent", "persistence", "consisten", "throughout", "steady")
+        )
+        and not has_persistence
+    ):
         return False
     # An opposite 24h trend cannot license the LLM to describe the current
     # analysed-window move with the broader trend's sign.
@@ -267,13 +282,9 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         term in lowered for term in ("higher", "rally", "strength", "stronger", "upward")
     ) and not (current_direction is not None and current_direction > 0):
         return False
-    if "positive" in lowered and not (
-        change_24h is not None and change_24h > 0
-    ):
+    if "positive" in lowered and not (change_24h is not None and change_24h > 0):
         return False
-    if "negative" in lowered and not (
-        change_24h is not None and change_24h < 0
-    ):
+    if "negative" in lowered and not (change_24h is not None and change_24h < 0):
         return False
     return True
 
@@ -344,7 +355,10 @@ def _concise_explanation_clause(value: str, market_data: dict) -> str | None:
 
 
 def event_alert_presentation_fallback(
-    market_data: dict, related_news: list[dict],
+    market_data: dict,
+    related_news: list[dict],
+    *,
+    previous_event_alert: dict | None = None,
 ) -> tuple[str, str]:
     """Return display-only context from supplied evidence, never alert eligibility.
 
@@ -394,6 +408,50 @@ def event_alert_presentation_fallback(
     if pace_context is not None:
         return pace_context
 
+    # Compare a recent alert only if its window is exactly comparable.
+    # This explains the observation; it cannot establish new materiality.
+    previous = previous_event_alert if isinstance(previous_event_alert, dict) else {}
+    previous_move = _decimal_market_value(previous.get("analysed_window_move"))
+    previous_window = _decimal_market_value(previous.get("analysed_window_minutes"))
+    current_window = _decimal_market_value(market_data.get("analysed_window_minutes"))
+    age_minutes = _decimal_market_value(previous.get("age_minutes"))
+    if (
+        window_change is not None
+        and window_change != 0
+        and previous_move is not None
+        and previous_move != 0
+        and previous_window is not None
+        and current_window == previous_window
+        and age_minutes is not None
+        and 0 <= age_minutes <= 1440
+    ):
+        window_label = (
+            f"{int(current_window // 60)}h"
+            if current_window % 60 == 0
+            else f"{int(current_window)}m"
+        )
+        if (window_change > 0) != (previous_move > 0):
+            return (
+                f"The {window_label} move runs opposite to the prior recorded alert's "
+                "comparable window, showing a change in short-term direction.",
+                "Watch the next observed interval for confirmation of the turn "
+                "or a return to the prior direction.",
+            )
+        if abs(window_change) != abs(previous_move):
+            comparison = "larger" if abs(window_change) > abs(previous_move) else "smaller"
+            direction = "rise" if window_change > 0 else "decline"
+            return (
+                f"The current {window_label} {direction} is {comparison} than the "
+                "prior recorded alert's comparable window move.",
+                (
+                    f"Watch whether the next observed interval adds to the {direction} "
+                    "or begins reversing it."
+                    if comparison == "larger"
+                    else f"Watch whether the next observed interval keeps the {direction} "
+                    "smaller or increases it again."
+                ),
+            )
+
     if has_persistence:
         return (
             "The move developed across the supplied snapshots rather than a single observation, "
@@ -430,8 +488,7 @@ def event_alert_presentation_fallback(
         )
 
     return (
-        "The analysed-window price move is the only confirmed signal in the supplied market "
-        "data.",
+        "The analysed-window price move is the only confirmed signal in the supplied market data.",
         "Watch the next short-term snapshots for continuation or a quick reversal of the "
         "current move.",
     )
@@ -466,9 +523,9 @@ def _short_window_pace_context(market_data: dict) -> tuple[str, str] | None:
     observations.sort(key=lambda item: item[0])
     if len(observations) < 3:
         return None
-    (old_minute, old_price), (middle_minute, middle_price), (
-        recent_minute, recent_price
-    ) = observations[-3:]
+    (old_minute, old_price), (middle_minute, middle_price), (recent_minute, recent_price) = (
+        observations[-3:]
+    )
     # The latest observation is now, and the sampled durations are taken from
     # their actual minute offsets rather than assumed to be 30m or 60m.
     if recent_minute != 0 or old_minute >= middle_minute or middle_minute >= recent_minute:
@@ -579,6 +636,7 @@ def compact_event_alert_possible_action(value: str, *, fallback: str | None = No
         len(cleaned.split()) > 20
         or len(re.findall(r"[.!?]", cleaned)) > 1
         or not _CONDITIONAL_ACTION_RE.search(cleaned)
+        or not _OBSERVATION_RE.search(cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."

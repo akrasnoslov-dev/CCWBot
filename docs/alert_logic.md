@@ -95,6 +95,9 @@ A mobile alert should answer three questions in this order without becoming a re
    directional evidence and an analysed window of at least one hour. These relationships
    describe a previously accepted event; they never create or suppress an alert. If nothing
    beyond the analysed-window move is confirmed, say so instead of inventing novelty.
+   A recent previous delivered Event Alert may also supply a factual comparison of the
+   **same-length** analysed windows, when both moves and elapsed age are available. This
+   describes relative direction or size, not significance, rarity, or proven novelty.
 3. **What is worth monitoring?** Name the next observation that could distinguish continuation,
    slowing, or counter-movement. Prefer a specific supplied time frame when justified; otherwise
    use a short, neutral conditional. Never give a trading instruction or generic risk-plan advice.
@@ -122,6 +125,12 @@ requires selected material related news. If an otherwise accepted market alert u
 `{symbol}_news_catalyst` key without that evidence or a clear price family, the backend gives
 it the neutral `{symbol}_market_event` identity. This changes identity classification, not the
 LLM's significance decision or the market-first rule.
+
+For an explicitly directional price family, the sign of the verified analysed-window move
+wins over conflicting model key/title/body wording about a broader trend. A missing or flat
+primary move does not invent direction. During recipient cooldown, an older stored directional
+family is interpreted using its own saved analysed-window move when available, so correcting
+an identity cannot restart the same event-family's strict four-hour window.
 
 Core rule:
 
