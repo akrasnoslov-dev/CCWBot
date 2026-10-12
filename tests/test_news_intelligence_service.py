@@ -164,7 +164,7 @@ def test_llm_json_is_validated_and_sanitized():
         _valid_response(
             category="invalid",
             related_symbols=["BTC", "fake", "eth", "btc"],
-            primary_symbol="fake",
+            primary_symbol="BTC",
             impact_score=120,
             impact_level="not-real",
             relevance_score=-10,
