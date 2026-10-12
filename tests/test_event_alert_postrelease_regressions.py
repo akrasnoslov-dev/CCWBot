@@ -232,3 +232,51 @@ def test_valid_but_repeated_model_situation_uses_comparable_prior_market_evidenc
     assert with_previous != model_text
     assert "larger than the prior recorded alert's comparable window" in with_previous
     assert "24-hour trend" not in with_previous
+
+
+@pytest.mark.parametrize(
+    ("raw_key", "move", "family"),
+    [
+        ("btc_down_0_0240032_in_the_last_3_hours", -0.024, "price_downtrend"),
+        ("btc_down_0_0526873_in_the_last_3_hours", -0.053, "price_downtrend"),
+        ("gram_down_0_0909821_in_the_last_3_hours", -0.091, "price_downtrend"),
+        ("btc_up_0_649_in_the_last_3_hours", 0.649, "price_uptrend"),
+    ],
+)
+def test_production_style_numeric_directional_keys_collapse_to_semantic_family(
+    raw_key, move, family
+):
+    canonical = canonicalize_event_key(
+        raw_key.split("_")[0], raw_key, analysed_window_change=move
+    )
+    assert canonical.semantic_family == family
+    assert canonical.canonical_event_key == f"{raw_key.split('_')[0]}_{family}"
+
+
+@pytest.mark.asyncio
+async def test_legacy_numeric_price_key_cannot_bypass_four_hour_semantic_cooldown(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime(2026, 10, 12, 20, tzinfo=timezone.utc)
+    prior = SimpleNamespace(
+        id=10, user_id=7, created_at=now - timedelta(minutes=30),
+        numeric_context='{"analysed_window_change_percent":-0.024}',
+    )
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_factory)
+    monkeypatch.setattr(alerts, "get_recent_sent_event_alert_contexts", AsyncMock(
+        return_value=[(
+            prior, "btc_down_0_0240032_in_the_last_3_hours", None
+        )]
+    ))
+    recipient = alerts.AlertRecipient(chat_id=10, user_id=7)
+    result = await alerts._filter_event_recipients_for_cooldown(
+        [recipient], symbol="BTC", urgency="normal", cooldown_seconds=60,
+        canonical_event_key="btc_price_downtrend", semantic_family="price_downtrend",
+        now=now, return_summary=True,
+    )
+    assert result.recipients == []
+    assert result.suppression_reason_counts == {alerts.SUPPRESSION_SEMANTIC_COOLDOWN: 1}
+    await engine.dispose()

@@ -241,6 +241,13 @@ def canonicalize_event_key(
         message_body=message_body,
         related_news=related_news,
     )
+    # Some render keys encode the percentage inside a bare symbol_down_... or
+    # symbol_up_... identity. Normalize the direction, never the numeric value,
+    # so fresh percentages cannot create fresh semantic families.
+    if re.match(rf"^{re.escape(normalized_symbol)}_down(?:_|$)", canonical):
+        semantic_family = "price_downtrend"
+    elif re.match(rf"^{re.escape(normalized_symbol)}_up(?:_|$)", canonical):
+        semantic_family = "price_uptrend"
     # Price-event identity follows the analysed movement, not model wording about a
     # possibly opposite broader trend. This changes only identity, never materiality.
     actual_price_family = directional_market_family(analysed_window_change)

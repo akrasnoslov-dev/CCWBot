@@ -32,6 +32,7 @@ from bot.alerting.event_analysis import (
     EventAnalysisDecision,
     EventAnalysisValidationError,
     EventSignificanceDecision,
+    canonicalize_event_key,
     directional_market_family,
     empirical_absolute_move_percentile,
     validate_event_analysis_output,
@@ -4232,13 +4233,14 @@ async def _filter_event_recipients_for_cooldown(
                     )
                     # Some older deliveries lack a stored semantic family; recover a
                     # directional family from their canonical key before correcting it.
-                    if stored_family is None and previous_event_key in {
-                        f"{normalize_symbol(symbol)}_price_uptrend",
-                        f"{normalize_symbol(symbol)}_price_downtrend",
-                    }:
-                        stored_family = str(previous_event_key).removeprefix(
-                            f"{normalize_symbol(symbol)}_"
-                        )
+                    if stored_family is None and previous_event_key:
+                        stored_family = canonicalize_event_key(
+                            symbol,
+                            previous_event_key,
+                            analysed_window_change=previous_context.get(
+                                "analysed_window_change_percent"
+                            ),
+                        ).semantic_family
                     # Resolve legacy price-family mislabels against their own saved market window.
                     # Keep the existing strict per-recipient four-hour suppression.
                     if stored_family in {"price_uptrend", "price_downtrend"}:
