@@ -535,6 +535,10 @@ def build_llm_messages(payload: dict) -> list[dict]:
         'Do not use fractions, percent strings, or labels. Categories: regulation, exchange, '
         'security, macro, etf, whale, project, technical, market, noise. Impact levels: low, '
         'medium, high, critical. '
+        'Use only lowercase allowed_symbols in related_symbols and primary_symbol. '
+        'Use primary_symbol=null when there is no clear single primary coin, including '
+        'equally relevant multi-coin, unknown-symbol, and irrelevant items; never guess '
+        'the first related symbol as primary. '
         'dedup_hint must be a specific story/entity/event phrase for near-duplicate detection; '
         'leave it empty for broad market themes.'
     )
@@ -576,9 +580,12 @@ def validate_llm_output(parsed: dict[str, Any]) -> dict[str, Any]:
         )
         if symbol in ALLOWED_SYMBOLS
     ]
-    primary_symbol = str(parsed.get("primary_symbol") or "").strip().lower() or None
-    if primary_symbol not in ALLOWED_SYMBOLS:
-        primary_symbol = related_symbols[0] if related_symbols else None
+    raw_primary_symbol = parsed.get("primary_symbol")
+    if raw_primary_symbol is not None and not isinstance(raw_primary_symbol, str):
+        raise ValueError("invalid primary_symbol")
+    primary_symbol = (raw_primary_symbol or "").strip().lower() or None
+    if primary_symbol is not None and primary_symbol not in ALLOWED_SYMBOLS:
+        raise ValueError("invalid primary_symbol")
     relevance_score = _parse_score(parsed.get("relevance_score"))
     if relevance_score is None:
         relevance_score = _derive_relevance_score(

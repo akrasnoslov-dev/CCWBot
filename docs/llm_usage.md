@@ -138,6 +138,16 @@ Historical rows remain `NULL`; a telemetry write can still fail open, which is a
 rather than proof of no attempt. The identifier contains no user identity, Telegram ID, prompt,
 output, or secret.
 
+News Intelligence uses a strict JSON Schema for supported Groq models when JSON mode is enabled,
+including an allowlisted nullable `primary_symbol` and all eleven required fields. Other models
+(including Gemini) keep the existing JSON-object request mode. The prompt explicitly uses
+`primary_symbol=null` for no clear single coin, including multi-coin and irrelevant news.
+Backend schema validation remains mandatory for every provider: an unsupported symbol is an
+invalid output, not a silently reassigned primary or a successful intelligence result. Invalid
+output still follows the configured provider fallback; if the chain is unavailable, the news
+operation is recorded as failed. This changes neither provider priority nor request count.
+Offline request-shape tests do not establish live provider compliance or success rates.
+
 The News Intelligence cache hash includes the compact input and configured requested model, while
 served-provider attribution stays in the cached row. This preserves exact cache invalidation on a
 configured model change and permits fallback results to be reused without pretending Groq served
