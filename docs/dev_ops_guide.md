@@ -107,42 +107,48 @@ schedule.
 
 ## Production access and privileges
 
-The account model below comes from tracked SSH/sudoers/ops-agent configuration.
-**Read-only SSH audit on 2026-10-11:** `ccwbot_ops` and `ccwbot_deploy`
-both authenticated with dedicated keys from the Windows operator workstation.
-Both had the `users` group but no Docker/sudo group, could not read
-`/opt/CCWBot/.env`, could not write the production repository or its `.git`,
-and could not execute `sudo /usr/bin/id`, raw Docker through sudo, or an
-argument-extended deploy wrapper. `sudo -n -l` showed a restricted ops-agent
-collection permission for `ccwbot_ops` and the four expected safe-deploy
-operations for `ccwbot_deploy`; **no broad sudo grants were observed**.
-The report-success wrapper was not present in the parsed operator allowlist;
-check this possible documented/installed drift during root inventory.
-The root SSH alias reached the VPS, but public-key authentication did **not**
-complete using the available workstation credentials, so a privileged server
-inventory and cutover were **not** performed. The live PostgreSQL grants,
-cron/service ownership, and full installed root-level configuration remain
-unverified. Do not infer other user accounts are absent from this limited audit.
+**Verified production state as of 2026-10-11.** The operator's Windows workstation
+uses exactly two working SSH aliases: `ccwbot-prod` (root emergency administrator)
+and `ccwbot-prod-ops` (routine operator). The former
+`ccwbot-prod-deploy` alias and login have been disabled.
 
-| Principal | Realm | Intended current privileges | Target |
+| Principal | Realm | Verified current access | Status |
 | --- | --- | --- | --- |
-| `root` (SSH alias `ccwbot-prod`) | Linux/SSH | Unrestricted recovery/installation; reads production secrets | Keep as break-glass administrator |
-| `ccwbot_ops` (SSH alias `ccwbot-prod-ops`) | Linux/SSH | Only root-owned ops collection/report wrappers through sudo; reads published bundles and writes report files; **no Docker group, raw Docker, code writes or secrets** | **One daily operator**, additionally allowed the four exact deploy-safe wrapper actions after verified cutover |
-| `ccwbot_deploy` (SSH alias `ccwbot-prod-deploy`) | Linux/SSH | Four argument-exact `ccwbot-deploy-safe` operations (`status`, `backup`, `deploy`, `rollback`); no generic sudo, Docker or repository writes | Retire SSH login *only after* `ccwbot_ops` passes positive and negative access checks |
-| `ccwbot` | PostgreSQL | Bot's runtime database account; production writes; **not** an SSH user | Keep separately; never reuse for diagnostics |
-| `ccwbot_investigator` | PostgreSQL | Human forensic read-only role and explicitly granted evidence tables over a controlled SSH tunnel | Keep separately; verify `current_user` and both read-only settings per session |
-| `ccwbot_ops_reader` | PostgreSQL | Read-only collector service account, `SELECT` on public tables per `ops_agent/sql/create_readonly_role.sql` | Keep separately; scoped to ops-agent credentials |
+| `root` / `ccwbot-prod` | Linux/SSH | Full server administration and emergency recovery; root SSH key works with the SSH agent | **Active, break-glass only** |
+| `ccwbot_ops` / `ccwbot-prod-ops` | Linux/SSH | Root-owned `ccwbot-ops-agent-collect` and the four exact `ccwbot-deploy-safe` actions: `status`, `backup`, `deploy`, `rollback`. No raw Docker, arbitrary sudo, secret reads or repository writes | **Active, only daily operator** |
+| `ccwbot_deploy` | Linux | Old deployment account: SSH authorized keys removed from its home, login shell `/usr/sbin/nologin`, password locked, old `/etc/sudoers.d/ccwbot-deploy` removed | **Disabled, OS record retained for rollback** |
+| `ccwbot` | PostgreSQL | Runtime DB login, **superuser** in the observed production `pg_roles` metadata; not an SSH account | Active; high privilege deserves a separate DB-hardening review |
+| `ccwbot_investigator` | PostgreSQL | Separate forensic DB login, not superuser, no CREATE ROLE/DB in production role metadata; intended read-only access through a controlled tunnel | Retained; verify session read-only/grants before SQL |
+| `ccwbot_ops_reader` | PostgreSQL | Separate collector DB login, not superuser, no CREATE ROLE/DB in production role metadata | Retained; use only for ops-agent |
 
-**Account count:** currently three documented human-operable SSH accounts and three
-distinct PostgreSQL identities. The proposed simplification reduces **SSH login
-accounts to two** (`root` and `ccwbot_ops`); it does not merge a database
-application writer, investigator, or automated collector. Multiple SSH aliases
-are not different access-control roles. The ops-agent itself is a Docker service,
-not another human login. Installed accounts, ACLs, sudoers, database grants,
-cron/units, and SSH authorized keys must be inventoried on the VPS before any
-destructive change.
+**Account count:** two active human-operable SSH logins (root and
+`ccwbot_ops`), one disabled historical Linux account retained for rollback,
+and three separate PostgreSQL identities. SSH aliases are connection names, not
+additional server roles; the Docker ops-agent service is not a human login.
+The PostgreSQL `rolsuper`, `rolcreatedb` and `rolcreaterole` attributes were
+checked on the VPS, but the complete live SQL grant matrix was **not** audited.
 
-### Staged two-login cutover (not yet applied to production)
+**Completed and verified on 2026-10-11:** root inventory confirmed only root,
+`ccwbot_ops` and `ccwbot_deploy` as local non-system Linux users.
+Root-owned `/etc/sudoers.d/ccwbot-operator-deploy` (mode 0440)
+was installed from the reviewed four-action policy and passed `visudo`
+validation. The existing `ccwbot_ops` collector rule remains.
+The operator's safe status command succeeds; unauthorized `sudo /usr/bin/id`,
+raw Docker sudo and extra deploy arguments fail; `ccwbot_ops` has only
+the ordinary `users` supplementary group. The legacy login and sudo rule
+were disabled only after those positive and negative tests. Follow-up SSH
+probes confirmed root and ops logins succeed, while the old deploy SSH login
+fails. No app image was deployed, no migrations were run, and runtime
+`main` was not changed. Live policy installation was a separately
+owner-authorized access-control change, not a bot-code release.
+
+Rollback artifacts (legacy sudoers, authorized keys, original shell information
+and password-lock state) are stored **only on the VPS under**
+`/root/ccwbot-operator-migration-20261011/` (root-owned 0700), not in
+Git or chat. Do not delete these until the migration has been stable and
+separately reviewed.
+
+### Two-login cutover procedure and rollback (completed 2026-10-11)
 
 This is an explicit **security tradeoff**: the operator will be able to invoke
 both diagnostics and fixed deploy/rollback commands. Separation between
@@ -158,8 +164,9 @@ group membership.
    owners. Verify production backup and root break-glass login before proceeding.
    Do not display secrets or SSH private keys. Separately inspect PostgreSQL
    `pg_roles` and read-only grants; do not drop or merge DB accounts.
-2. **Prepare, do not replace the existing deploy path.** After the reviewed
-   source has reached an approved production release, install
+2. **Prepare, do not replace the existing deploy path.** After separate owner
+   approval for a narrowly scoped access-policy rollout or a reviewed production
+   release, install
    `scripts/ccwbot-operator-deploy.sudoers` as a root-owned 0440 file in
    `/etc/sudoers.d/ccwbot-operator-deploy.tmp`; validate it with
    `visudo -cf`, atomically rename it to
@@ -193,8 +200,10 @@ group membership.
    proof; stop rather than guessing.
 
 The separately installed root-owned safe wrappers and sudoers are **not**
-automatically updated by a Git merge or normal Docker deployment. A merged
-PR only stages the *source* for an administrator-controlled server cutover.
+automatically updated by a Git merge or normal Docker deployment. The
+reviewed operator-deploy sudoers source was installed by a separately authorized
+root administration action on 2026-10-11; future code or sudoers changes
+still require separate installation and verification.
 The canonical ops-agent permission model stays in
 `ops_agent/README.md`, and DB investigation rules stay in
 `docs/observability.md`.
@@ -347,18 +356,15 @@ start or restart the bot.
 
 ## Non-interactive, least-privilege bot deploys
 
-**Before the verified two-login cutover**, `ccwbot_deploy` is the dedicated
-deploy SSH account with a separate key. **After cutover**, use the existing
-`ccwbot_ops` SSH account for both collection and deploy-wrapper access; the
-`ccwbot_deploy` account should be disabled. Neither limited account may
-join the Docker group or write to `/opt/CCWBot`. The private keys stay with
-the operator. The installed root-owned `/usr/local/bin/ccwbot-deploy-safe`
-accepts exactly four actions: `status`, `backup`, `deploy`, `rollback`.
-No extra arguments. The legacy `scripts/ccwbot-deploy.sudoers` allows only
-the old account; the staged `scripts/ccwbot-operator-deploy.sudoers` allows
-the same four exact actions for `ccwbot_ops` after verified installation.
-Never grant shell/root sudo, Docker access, repository write access, or
-`NOPASSWD: ALL`.
+**Current SSH deployment identity:** `ccwbot_ops` through
+`ccwbot-prod-ops`. It can run exactly the four argument-matched, root-owned
+`/usr/local/bin/ccwbot-deploy-safe` actions `status`, `backup`,
+`deploy`, `rollback`, plus the existing ops-agent collection wrapper.
+The live sudoers entries are `/etc/sudoers.d/ccwbot-operator-deploy` and
+`/etc/sudoers.d/ccwbot_ops`. The old `ccwbot_deploy` login and sudoers
+rule have been disabled; `scripts/ccwbot-deploy.sudoers` is retained as a
+**historical rollback reference only**. Never grant unrestricted shell/root
+sudo, Docker access, repository write access or `NOPASSWD: ALL`.
 
 The tracked scripts/ccwbot-deploy-safe.sh is NOT the installed wrapper.
 Git checkout, merge and ordinary deploy do not replace /usr/local/bin or sudoers.
@@ -404,12 +410,16 @@ installation; never assume the live script matches the GitHub PR.
 - Status only reads runtime state; backup/deploy/rollback change production.
   All state-changing commands require a separate explicit approval.
 
-### Installation (requires separate production authorization)
+### Legacy wrapper installation (historical, not routine after operator cutover)
 
-After the fixed code has reached an approved, reviewed main release,
-an authorized root operator must verify the correct Git HEAD, filesystem
-ownership/modes and installed/source drift before running the following.
-PR #301 does not grant approval to execute these commands.
+The commands below document the **old deploy-user** installation, including
+its retired sudoers file. **Do not run this block on current production**:
+it would reinstall permissions for the disabled `ccwbot_deploy` account.
+Only an explicitly approved rollback may restore that legacy rule.
+For future wrapper updates, separately authorize the production release,
+verify the correct Git HEAD and installed/source drift, and install only
+the current `ccwbot_ops` operator policy, using the complete permission
+checks above.
 
     cd /opt/CCWBot
     git status --short
@@ -429,12 +439,12 @@ rollback state during installation.
 
 ### Read-only permission verification
 
-Use the old alias **only before** the verified cutover; use the operator alias
-**after** the cutover, when the old login is disabled. The same checks apply
-to each. Replace `<deploy-ssh-alias>` accordingly:
+The cutover is complete: use **`ccwbot-prod-ops`** for all normal
+permission verification. The old alias appears below only as a pre-cutover
+historical reference. Replace `<deploy-ssh-alias>` with `ccwbot-prod-ops`:
 
-    # Before cutover: ccwbot-prod-deploy
-    # After cutover:  ccwbot-prod-ops
+    # Current: ccwbot-prod-ops
+    # Historical before cutover: ccwbot-prod-deploy
     ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n -l'
     ssh -o BatchMode=yes <deploy-ssh-alias> 'sha256sum /usr/local/bin/ccwbot-deploy-safe'
     ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/local/bin/ccwbot-deploy-safe status'
@@ -450,7 +460,7 @@ connection is UNKNOWN, not proof that production is least privileged.
 
 Only for an approved main release with no migrations or ops_agent files:
 
-    # Before cutover: use ccwbot-prod-deploy. After cutover: ccwbot-prod-ops.
+    # Current SSH alias: ccwbot-prod-ops (old ccwbot-prod-deploy disabled).
     ssh -o BatchMode=yes <deploy-ssh-alias> 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
 
 The command above is a production change; do not run it during diagnostics.

@@ -19,6 +19,8 @@ from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.news_intelligence_service import NewsIntelligenceService
 from bot.services.news_service import fetch_crypto_news
 
+_NEWS_INTELLIGENCE_LOCK = asyncio.Lock()  # Serialize hourly/report budget checks per process.
+
 REPORT_MARKET_NEWS_LIMIT = 2
 REPORT_COIN_NEWS_LIMIT = 2
 REPORT_NEWS_FETCH_LIMIT = 24
@@ -344,8 +346,9 @@ async def fetch_news_context(
     async with DB_SESSION_LOCAL() as session:
         if use_intelligence and ENABLE_NEWS_INTELLIGENCE:
             try:
-                service = NewsIntelligenceService(session)
-                news_items = await service.analyze_items(news_items)
+                async with _NEWS_INTELLIGENCE_LOCK:
+                    service = NewsIntelligenceService(session)
+                    news_items = await service.analyze_items(news_items)
             except Exception:
                 log("News intelligence failed; using RSS news without enrichment.")
 
@@ -474,3 +477,23 @@ async def remember_news_context(news_items: list[dict]) -> None:
     async with DB_SESSION_LOCAL() as session:
         await mark_news_items_seen(session, news_items)
         await cleanup_seen_news(session, keep_latest=200)
+
+
+async def ingest_news_job(_context) -> None:
+    """Hourly market-wide RSS ingestion; never creates alerts or resolves recipients."""
+    if not (DB_ENABLED and DB_SESSION_LOCAL and ENABLE_NEWS_INTELLIGENCE):
+        return
+    try:
+        # Collect more than the per-run analysis cap so incoming news is not
+        # displaced by cached/older headlines from the first provider.
+        raw_items = await asyncio.to_thread(fetch_crypto_news, limit=72)
+        if not raw_items:
+            log("ops_event=news_ingestion status=empty check=news_rss_source")
+            return
+        async with _NEWS_INTELLIGENCE_LOCK:
+            async with DB_SESSION_LOCAL() as session:
+                await NewsIntelligenceService(session).analyze_items(raw_items)
+        log(f"ops_event=news_ingestion status=completed rss_candidates={len(raw_items)}")
+    except Exception:
+        # No provider response, article data, query, or sensitive exception text.
+        log("ops_event=news_ingestion status=failed")

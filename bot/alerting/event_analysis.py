@@ -231,6 +231,12 @@ def canonicalize_event_key(
         message_body=message_body,
         related_news=related_news,
     )
+    # An unsupported model-generated news identity cannot claim a news event.
+    # Keep the accepted market decision, but use a neutral identity when the
+    # wording has no corroborating selected material news or price family.
+    if canonical == f"{normalized_symbol}_news_catalyst" and semantic_family is None:
+        canonical = f"{normalized_symbol}_market_event"
+        reason = "unsupported_news_identity"
     if not canonical:
         return CanonicalEventKey(
             raw or None,
@@ -497,7 +503,10 @@ def normalize_event_semantic_family(
     if tokens.intersection({"volatility", "volatile", "choppy", "whipsaw"}):
         return "volatility"
 
-    if tokens.intersection({"news", "headline", "headlines", "catalyst"}):
+    if tokens.intersection({"news", "headline", "headlines", "catalyst"}) and any(
+        isinstance(item, dict) and item.get("material") is True
+        for item in (related_news or [])
+    ):
         return "news_catalyst"
 
     return _semantic_family_from_material_related_news(normalized_symbol, related_news)

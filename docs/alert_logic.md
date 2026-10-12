@@ -117,6 +117,12 @@ standalone news-only Event Alert is rejected.
 A newly detected event is created once. A reusable positive event keeps its already existing Event
 Analysis and message.
 
+Semantic event identity cannot be classified as `news_catalyst` from model wording alone: it
+requires selected material related news. If an otherwise accepted market alert uses the bare
+`{symbol}_news_catalyst` key without that evidence or a clear price family, the backend gives
+it the neutral `{symbol}_market_event` identity. This changes identity classification, not the
+LLM's significance decision or the market-first rule.
+
 Core rule:
 
 ```text

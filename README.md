@@ -36,7 +36,7 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
-- Groq is the primary LLM provider, with Gemini/Mistral fallback and an optional
+- Groq is the primary LLM provider, with Gemini fallback and an optional
   Cloudflare Workers AI route for Event Analysis (plus the dedicated render chain)
   (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
   `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
@@ -90,13 +90,12 @@ Common configuration:
 - `GROQ_REPORT_MODEL`
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
-- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,gemini,mistral`)
+- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,gemini`)
 - `LLM_EVENT_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
 - `LLM_EVENT_ANALYSIS_MAX_TOKENS` / `LLM_MARKET_HEARTBEAT_MAX_TOKENS` / `LLM_REPORT_MAX_TOKENS` / `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` / `LLM_LEGACY_ALERT_PAYLOAD_MAX_TOKENS` (completion budget per call type)
 - `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (`low` / `medium` / `high`; Event Analysis defaults to `medium`, other reasoning call types to `low`)
 - `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gemini-2.5,gemini-3.`)
 - `GEMINI_API_KEY` / `GEMINI_MODEL`
-- `MISTRAL_API_KEY` / `MISTRAL_MODEL`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
 - `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`

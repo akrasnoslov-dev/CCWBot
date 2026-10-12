@@ -311,12 +311,12 @@ def test_global_reasoning_effort_reaches_only_reasoning_models_in_default_chain(
         "GROQ_REPORT_MODEL",
         "GROQ_NEWS_INTELLIGENCE_MODEL",
         "GEMINI_MODEL",
-        "MISTRAL_MODEL",
+        "CLOUDFLARE_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
     for call_type in llm_config.KNOWN_CALL_TYPES:
-        for provider in ("groq", "gemini", "mistral"):
+        for provider in ("groq", "gemini", "cloudflare"):
             model = llm_config.model_for(provider, call_type)
             expected = "high" if llm_config.is_reasoning_model(model) else None
             assert llm_config.reasoning_effort_for(model, call_type) == expected
@@ -369,14 +369,15 @@ async def test_router_uses_medium_reasoning_effort_for_event_analysis_by_default
 
 @pytest.mark.asyncio
 async def test_router_raises_only_thinking_attempt_budget(monkeypatch):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,mistral")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,cloudflare")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
-    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
-    monkeypatch.setenv("MISTRAL_MODEL", "mistral-small-latest")
+    monkeypatch.setenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
     groq = _RecordingProvider("groq")
-    mistral = _RecordingProvider("mistral")
-    router = LLMRouter(registry={"groq": groq, "mistral": mistral})
+    cloudflare = _RecordingProvider("cloudflare")
+    router = LLMRouter(registry={"groq": groq, "cloudflare": cloudflare})
 
     await router.chat_completion(
         call_type="event_analysis",
@@ -386,7 +387,7 @@ async def test_router_raises_only_thinking_attempt_budget(monkeypatch):
     )
 
     assert groq.seen[0]["max_tokens"] == 6300
-    assert mistral.seen == []
+    assert cloudflare.seen == []
 
 
 @pytest.mark.asyncio
@@ -492,20 +493,20 @@ async def test_request_payload_includes_reasoning_effort_when_set(monkeypatch):
         ("gemini", "gemini-3.8-flash", None),
         ("gemini", "gemini-2.5-flash", 0.0),
         ("groq", "openai/gpt-oss-20b", 0.0),
-        ("mistral", "mistral-small-2603", 0.0),
+        ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", 0.0),
     ],
 )
 async def test_provider_sampling_parameters_are_model_compatible(
     monkeypatch, provider_name, model, expected_temperature
 ):
+    from bot.services.llm.cloudflare_provider import CloudflareProvider
     from bot.services.llm.gemini_provider import GeminiProvider
     from bot.services.llm.groq_provider import GroqProvider
-    from bot.services.llm.mistral_provider import MistralProvider
 
     provider_cls = {
         "gemini": GeminiProvider,
         "groq": GroqProvider,
-        "mistral": MistralProvider,
+        "cloudflare": CloudflareProvider,
     }[provider_name]
     provider = provider_cls()
     client = _CapturingClient()
@@ -576,7 +577,7 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     [
         ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
         ("gemini", "GEMINI_MODEL", "gemini-3.8-flash"),
-        ("mistral", "MISTRAL_MODEL", "mistral-small-2603"),
+        ("cloudflare", "CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
     ],
 )
 def test_empty_model_value_falls_back_and_warns(monkeypatch, caplog, provider, env_name, expected):
