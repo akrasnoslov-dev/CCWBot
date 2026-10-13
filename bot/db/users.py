@@ -130,9 +130,11 @@ async def get_active_users_with_chat_ids(session: AsyncSession) -> list[User]:
     return list(result.all())
 
 
-async def get_active_users_with_alert_preferences(session: AsyncSession) -> list[User]:
+async def get_active_users_with_alert_preferences(
+    session: AsyncSession, *, user_id: int | None = None
+) -> list[User]:
     """Return active users with watchlist and Premium data loaded."""
-    result = await session.scalars(
+    statement = (
         select(User)
         .options(
             selectinload(User.coin_subscriptions),
@@ -144,6 +146,9 @@ async def get_active_users_with_alert_preferences(session: AsyncSession) -> list
         .where(User.bot_blocked.is_(False))
         .order_by(User.id.asc())
     )
+    if user_id is not None:
+        statement = statement.where(User.id == user_id)
+    result = await session.scalars(statement)
     return list(result.all())
 
 

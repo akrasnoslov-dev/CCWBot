@@ -156,7 +156,7 @@ class User(Base):
     alert_frequency_seconds: Mapped[int] = mapped_column(
         Integer,
         default=21600,
-        comment="User's selected Market Heartbeat delivery interval in seconds.",
+        comment="Deprecated heartbeat interval preference; ignored by automatic delivery.",
     )
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -950,6 +950,10 @@ class Alert(Base):
         default=False,
         comment="Whether this delivery used a deterministic fallback instead of AI analysis.",
     )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="When Telegram successfully accepted this delivery, after any retries.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, comment="When this delivery row was created."
     )
@@ -1570,7 +1574,6 @@ _REEXPORTS = {
         "PREMIUM_PAYMENT_PERIOD_DAYS",
         "ensure_default_coin_subscriptions",
         "set_user_coin_subscription",
-        "set_user_alert_frequency",
         "get_user_premium_subscription",
         "get_payment_by_provider_id",
         "_normalize_utc",
@@ -1619,6 +1622,7 @@ _REEXPORTS = {
         "upsert_news_item",
     ),
     "alerts": (
+        "automatic_delivery_lock",
         "save_alert",
         "get_last_sent_alert_at",
         "get_last_sent_event_alert_at_for_event_key",

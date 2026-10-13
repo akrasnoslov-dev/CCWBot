@@ -11,11 +11,9 @@ from bot.db.database import (
     get_user_by_telegram_user_id,
     grant_user_premium,
     revoke_user_premium,
-    set_user_alert_frequency,
     set_user_coin_subscription,
 )
 from bot.domain.premium import (
-    get_effective_market_heartbeat_frequency_seconds,
     get_user_plan,
     get_user_trial,
     has_premium_entitlement,
@@ -24,8 +22,6 @@ from bot.domain.premium import (
     is_user_trial_active,
 )
 from bot.domain.supported_coins import (
-    FREE_ALERT_FREQUENCY_SECONDS,
-    PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_COINS,
     SUPPORTED_SYMBOLS,
     display_symbol,
@@ -48,16 +44,6 @@ def _format_date(value: datetime | None) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).date().isoformat()
-
-
-def _format_frequency(seconds: int) -> str:
-    labels = {
-        3600: "Every 1 hour",
-        FREE_ALERT_FREQUENCY_SECONDS: "Every 6 hours",
-        21600: "Every 6 hours",
-        86400: "Every 24 hours",
-    }
-    return labels.get(seconds, f"Every {seconds} seconds")
 
 
 def _subscription_by_symbol(subscriptions) -> dict[str, bool]:
@@ -110,10 +96,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
     if premium_active:
         lines.append("Select coins for automatic alerts.")
         lines.append("")
-        lines.append(
-            "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
-        )
+        lines.append("A Market Heartbeat may arrive after 24 hours without alerts for that coin.")
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         if is_user_premium_active(plan, now):
@@ -127,7 +110,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append(f"Your Premium expired on: {expired_on}.")
         lines.append("Your premium coin choices are saved, but locked until renewal.")
         lines.append("")
-        lines.append("Heartbeat frequency: Every 6 hours for BTC")
+        lines.append("A Market Heartbeat may arrive after 24 hours without alerts for that coin.")
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to renew.")
@@ -135,10 +118,7 @@ def build_watchlist_message(user, subscriptions, now: datetime | None = None) ->
         lines.append("BTC alerts are free.")
         lines.append(f"Premium unlocks automatic alerts for {premium_symbols_display()}.")
         lines.append("")
-        lines.append(
-            "Heartbeat frequency: "
-            f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}"
-        )
+        lines.append("A Market Heartbeat may arrive after 24 hours without alerts for that coin.")
         lines.append("Event alerts may arrive separately when market events are detected.")
         lines.append("")
         lines.append("Use /subscribe to upgrade.")
@@ -234,8 +214,6 @@ def build_watchlist_render(
         text,
         build_watchlist_keyboard(
             rows=rows,
-            premium_active=has_premium_entitlement(user, now),
-            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -266,12 +244,8 @@ def build_user_settings_message(
         "Alert settings",
         "",
         f"Subscribed coins: {subscribed_text}",
-        "Heartbeat frequency: "
-        f"{_format_frequency(get_effective_market_heartbeat_frequency_seconds(user, now))}",
-        (
-            "How often you receive regular market heartbeat updates. Event alerts may "
-            "arrive separately when significant market events are detected."
-        ),
+        "A Market Heartbeat may arrive after 24 hours without alerts for that coin.",
+        "Event alerts may arrive when significant market events are detected.",
         "",
     ]
     if premium_active:
@@ -316,8 +290,6 @@ def build_user_settings_render(
         text,
         build_watchlist_keyboard(
             rows=rows,
-            premium_active=has_premium_entitlement(user, now),
-            current_frequency_seconds=get_effective_market_heartbeat_frequency_seconds(user, now),
         ),
     )
 
@@ -472,40 +444,6 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 await edit_watchlist_message(query, user, subscriptions)
         return True
 
-    if len(parts) == 3 and parts[:2] == ["watchlist", "frequency"]:
-        try:
-            frequency_seconds = int(parts[2])
-        except ValueError:
-            await query.answer("Unsupported frequency.", show_alert=True)
-            return True
-        if frequency_seconds not in PREMIUM_ALERT_FREQUENCY_SECONDS:
-            await query.answer("Unsupported frequency.", show_alert=True)
-            return True
-        async with DB_SESSION_LOCAL() as session:
-            user = await get_user_by_telegram_user_id(
-                session,
-                query.from_user.id,
-                include_plan=True,
-            )
-            if user is None:
-                return True
-            if not has_premium_entitlement(user, datetime.now(timezone.utc)):
-                await query.answer("Premium required. Use /subscribe.", show_alert=False)
-                return True
-            await set_user_alert_frequency(
-                session,
-                user_id=user.id,
-                frequency_seconds=frequency_seconds,
-            )
-            user = await get_user_by_telegram_user_id(
-                session,
-                query.from_user.id,
-                include_plan=True,
-            )
-            subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await query.answer("Frequency updated.")
-            await edit_watchlist_message(query, user, subscriptions)
-        return True
     return False
 
 

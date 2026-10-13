@@ -24,7 +24,7 @@ LONG_REVISION_MESSAGE = (
     "long ids can break migration execution."
 )
 EVENT_ALERT_POLICY_REVISION = "0030_event_alert_policy_cleanup"
-CURRENT_HEAD_REVISION = "0031_onboarding_customize_event"
+CURRENT_HEAD_REVISION = "0032_alert_sent_at"
 PREVIOUS_EVENT_ALERT_POLICY_REVISION = "0029_llm_operation_outcomes"
 POSTGRES_MIGRATION_TEST_DATABASE_URL = "ALEMBIC_POSTGRES_TEST_DATABASE_URL"
 
@@ -303,7 +303,8 @@ def test_0030_postgresql_downgrade_round_trip_restores_contract() -> None:
         | {("event_ai_analyses", "context_fingerprint")}
     )
 
-    command.upgrade(config, EVENT_ALERT_POLICY_REVISION)
+    command.upgrade(config, "head")
+    command.downgrade(config, EVENT_ALERT_POLICY_REVISION)
     assert asyncio.run(_postgres_revision(database_url)) == EVENT_ALERT_POLICY_REVISION
     upgraded_columns = asyncio.run(_postgres_column_contract(database_url, inspected_keys))
     assert _type_comment_contract(upgraded_columns, set(HEAD_PRICE_COLUMNS)) == HEAD_PRICE_COLUMNS
@@ -364,3 +365,102 @@ def test_0030_postgresql_downgrade_round_trip_restores_contract() -> None:
         True,
         None,
     )
+
+async def _seed_heartbeat_delivery_history(database_url):
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            identifiers = []
+            for status in ("sent", "sent", "pending", "failed"):
+                identifier = await connection.scalar(
+                    sa.text("""
+                    INSERT INTO alerts (symbol, alert_type, message, sent_to_chat_id,
+                                        status, retry_count, created_at)
+                    VALUES ('BTC', 'market_heartbeat', 'migration regression', 1,
+                            :status, 0, CURRENT_TIMESTAMP - INTERVAL '2 days') RETURNING id
+                """),
+                    {"status": status},
+                )
+                identifiers.append(identifier)
+            for hours in (2, 1):
+                await connection.execute(
+                    sa.text("""
+                    INSERT INTO alert_delivery_outcomes
+                        (symbol, alert_type, alert_id, status, reason_code,
+                         recipient_considered, created_at)
+                    VALUES ('BTC', 'market_heartbeat', :alert_id, 'delivered',
+                            'delivered', true, CURRENT_TIMESTAMP - :age * INTERVAL '1 hour')
+                """),
+                    {"alert_id": identifiers[0], "age": hours},
+                )
+            latest = await connection.scalar(
+                sa.text("""
+                SELECT MAX(created_at) FROM alert_delivery_outcomes WHERE alert_id = :identifier
+            """),
+                {"identifier": identifiers[0]},
+            )
+            before = await connection.scalar(sa.text("SELECT CURRENT_TIMESTAMP"))
+            return identifiers, latest, before
+    finally:
+        await engine.dispose()
+
+
+async def _read_heartbeat_delivery_backfill(database_url, identifiers):
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            return dict(
+                (
+                    await connection.execute(
+                        sa.text("""
+                SELECT id, sent_at FROM alerts WHERE id = ANY(:identifiers)
+            """),
+                        {"identifiers": identifiers},
+                    )
+                ).all()
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _clean_heartbeat_delivery_history(database_url, identifiers):
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                sa.text("""
+                DELETE FROM alert_delivery_outcomes WHERE alert_id = ANY(:identifiers)
+            """),
+                {"identifiers": identifiers},
+            )
+            await connection.execute(
+                sa.text("DELETE FROM alerts WHERE id = ANY(:identifiers)"),
+                {"identifiers": identifiers},
+            )
+    finally:
+        await engine.dispose()
+
+
+def test_0032_postgresql_backfills_success_time_and_round_trips():
+    database_url = os.getenv(POSTGRES_MIGRATION_TEST_DATABASE_URL)
+    if not database_url or not database_url.startswith("postgresql+asyncpg://"):
+        pytest.skip(f"set {POSTGRES_MIGRATION_TEST_DATABASE_URL} to a PostgreSQL test database")
+    config = _migration_config(database_url)
+    command.upgrade(config, "head")
+    command.downgrade(config, "0031_onboarding_customize_event")
+    identifiers, latest, before = asyncio.run(_seed_heartbeat_delivery_history(database_url))
+    try:
+        command.upgrade(config, "head")
+        rows = asyncio.run(_read_heartbeat_delivery_backfill(database_url, identifiers))
+        assert rows[identifiers[0]] == latest
+        assert rows[identifiers[1]] >= before
+        assert rows[identifiers[2]] is None
+        assert rows[identifiers[3]] is None
+        command.downgrade(config, "0031_onboarding_customize_event")
+        columns = asyncio.run(_postgres_column_contract(database_url, {("alerts", "sent_at")}))
+        assert ("alerts", "sent_at") not in columns
+        command.upgrade(config, "head")
+        assert asyncio.run(_postgres_revision(database_url)) == CURRENT_HEAD_REVISION
+    finally:
+        asyncio.run(_clean_heartbeat_delivery_history(database_url, identifiers))
+        command.upgrade(config, "head")

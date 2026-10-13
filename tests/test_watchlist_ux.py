@@ -63,7 +63,8 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert "BTC alerts are free." in text
     assert "ETH, GRAM, SOL" in text
     assert "ETH - Premium" not in text
-    assert "Heartbeat frequency: Every 6 hours" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Event alerts may arrive separately when market events are detected." in text
     assert "Use /subscribe to upgrade." in text
     assert ("btc", True, True) in rows
@@ -79,9 +80,9 @@ def test_user_settings_free_user_shows_btc_frequency_and_upgrade_path():
 
     assert text.startswith("Alert settings")
     assert "Subscribed coins: BTC" in text
-    assert "Heartbeat frequency: Every 6 hours" in text
-    assert "regular market heartbeat updates" in text
-    assert "Event alerts may arrive separately" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
+    assert "Event alerts may arrive" in text
     assert "Plan: Free" in text
     assert "Upgrade: /subscribe" in text
     assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "gram", "sol"]
@@ -96,7 +97,8 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
     )
 
     assert "Subscribed coins: BTC, ETH, GRAM, SOL" in text
-    assert "Heartbeat frequency: Every 1 hour" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
     assert "Manage subscription: /myplan" in text
@@ -122,7 +124,8 @@ def test_watchlist_premium_user_sees_enabled_non_btc_and_frequency():
     )
 
     assert "Select coins for automatic alerts." in text
-    assert "Heartbeat frequency: Every 6 hours" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Paid access until: 2026-05-12" in text
     assert ("eth", True, True) in rows
     assert ("sol", False, True) in rows
@@ -138,7 +141,8 @@ def test_watchlist_expired_user_sees_locked_but_saved_choices_are_not_deleted():
 
     assert "Your Premium expired on: 2026-05-10." in text
     assert "Your premium coin choices are saved, but locked until renewal." in text
-    assert "Heartbeat frequency: Every 6 hours for BTC" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert ("eth", True, False) in rows
 
 
@@ -216,9 +220,6 @@ def test_watchlist_buttons_use_icons_and_compact_layout():
         "watchlist:set:eth:false",
         "watchlist:set:gram:true",
         "watchlist:set:sol:true",
-        "watchlist:frequency:3600",
-        "watchlist:frequency:21600",
-        "watchlist:frequency:86400",
     ]
     assert "XRP" not in " ".join(button.text for row in rows for button in row)
     assert all(len(row) <= 3 for row in labels)
@@ -688,8 +689,8 @@ async def test_frequency_callback_for_free_user_does_not_send_new_message(monkey
             "watchlist:frequency:3600",
         )
 
-        assert handled is True
-        assert query.answers == [("Premium required. Use /subscribe.", False)]
+        assert handled is False
+        assert query.answers == []
         assert query.message.replies == []
         assert query.edits == []
     finally:

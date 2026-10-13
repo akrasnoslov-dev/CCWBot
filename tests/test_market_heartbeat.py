@@ -60,11 +60,15 @@ async def create_user(session, *, chat_id=2001, frequency=3600):
         role="user",
         is_active=True,
         alert_frequency_seconds=frequency,
+        created_at=datetime.now(timezone.utc) - timedelta(days=3),
     )
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    await ensure_default_coin_subscriptions(session, user_id=user.id)
+    subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
+    for subscription in subscriptions:
+        subscription.updated_at = datetime.now(timezone.utc) - timedelta(days=3)
+    await session.commit()
     return user
 
 
@@ -436,6 +440,8 @@ async def test_heartbeat_generation_stores_record_without_delivery(monkeypatch):
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await create_user(session)
         monkeypatch.setattr(alerts, "SUPPORTED_SYMBOLS", ("btc",))
         monkeypatch.setattr(
             alerts,
@@ -540,6 +546,8 @@ async def test_heartbeat_generation_uses_active_symbols(monkeypatch):
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        monkeypatch.setattr(alerts, "_get_due_market_heartbeat_recipients",
+                            AsyncMock(return_value=[(alerts.AlertRecipient(chat_id=2001), None)]))
 
         async def fake_market_data(symbols):
             nonlocal requested_symbols
@@ -625,6 +633,7 @@ async def test_heartbeat_delivery_keeps_decimal_prices_with_prior_delivery_conte
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(days=2),
+                    sent_at=now - timedelta(days=2),
                     # Persist as the production canonical JSON numeric literal, not a string.
                     numeric_context=alerts._json_dumps({"current_price": previous_price}),
                 )
@@ -705,6 +714,7 @@ async def test_automatic_llm_no_alert_cycle_delivers_decimal_heartbeat_and_compl
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(days=2),
+                    sent_at=now - timedelta(days=2),
                     numeric_context=json.dumps({"current_price": "100000.00"}),
                 )
             )
@@ -923,7 +933,7 @@ async def test_heartbeat_delivery_unique_index_rejects_duplicate_rows():
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_due(monkeypatch):
+async def test_recent_event_alert_resets_heartbeat_clock(monkeypatch):
     engine, session_local = await build_session_factory()
     app = fake_app()
     now = datetime.now(timezone.utc)
@@ -949,6 +959,7 @@ async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_du
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(hours=25),
+                    sent_at=now - timedelta(hours=25),
                 )
             )
             session.add(
@@ -960,6 +971,7 @@ async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_du
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(minutes=10),
+                    sent_at=now - timedelta(minutes=10),
                 )
             )
             await session.commit()
@@ -972,8 +984,8 @@ async def test_heartbeat_is_sent_when_recent_event_alert_exists_but_heartbeat_du
             now=now,
         )
 
-        assert sent is True
-        app.bot.send_message.assert_awaited_once()
+        assert sent is False
+        app.bot.send_message.assert_not_awaited()
     finally:
         await engine.dispose()
 
@@ -1005,6 +1017,7 @@ async def test_heartbeat_is_not_sent_if_recent_market_heartbeat_exists(monkeypat
                     user_id=user.id,
                     status="sent",
                     created_at=now - timedelta(hours=23),
+                    sent_at=now - timedelta(hours=23),
                 )
             )
             await session.commit()
@@ -1234,6 +1247,8 @@ async def test_market_heartbeat_generation_accepts_advice_like_wording(monkeypat
     try:
         monkeypatch.setattr(alerts, "DB_ENABLED", True)
         monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_local)
+        async with session_local() as session:
+            await create_user(session)
         monkeypatch.setattr(alerts, "SUPPORTED_SYMBOLS", ("btc",))
         monkeypatch.setattr(
             alerts,

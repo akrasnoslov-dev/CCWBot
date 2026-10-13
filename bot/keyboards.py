@@ -1,7 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.domain.supported_coins import (
-    PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_SYMBOLS,
     display_symbol,
 )
@@ -117,8 +116,6 @@ def build_price_keyboard() -> InlineKeyboardMarkup:
 def build_watchlist_keyboard(
     *,
     rows: list[tuple[str, bool, bool]],
-    premium_active: bool,
-    current_frequency_seconds: int,
 ) -> InlineKeyboardMarkup:
     coin_buttons = []
     for symbol, enabled, unlocked in rows:
@@ -134,36 +131,13 @@ def build_watchlist_keyboard(
         )
     keyboard = [coin_buttons[index : index + 3] for index in range(0, len(coin_buttons), 3)]
 
-    if premium_active:
-        frequency_buttons = [
-            InlineKeyboardButton(
-                _frequency_label(
-                    frequency,
-                    selected=frequency == current_frequency_seconds,
-                ),
-                callback_data=f"watchlist:frequency:{frequency}",
-            )
-            for frequency in PREMIUM_ALERT_FREQUENCY_SECONDS
-        ]
-        keyboard.append(frequency_buttons)
     return InlineKeyboardMarkup(keyboard)
-
-
-def _frequency_label(seconds: int, *, selected: bool) -> str:
-    label_by_seconds = {
-        3600: "1h",
-        21600: "6h",
-        86400: "24h",
-    }
-    prefix = "✅ " if selected else "⬜ "
-    return f"{prefix}{label_by_seconds.get(seconds, str(seconds))}"
 
 
 def build_settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Subscribed coins", callback_data="watchlist:open")],
-            [InlineKeyboardButton("Heartbeat frequency", callback_data="watchlist:open")],
         ]
     )
 

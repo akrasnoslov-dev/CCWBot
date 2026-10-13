@@ -47,6 +47,31 @@ Never place provider/LLM calls inside recipient loops.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
 - `/settings` is admin-only. `/userid` works manually but stays hidden from menus/help.
 
+## Market Heartbeat
+
+- A heartbeat is a fallback after **24 consecutive hours of silence**, independently for each
+  user and enabled coin (BTC, ETH, GRAM, SOL). Delivery on the next scheduled check is acceptable;
+  delivery before 24 hours is forbidden.
+- Any successfully delivered automatic alert for that user and coin, including an Event Alert
+  or heartbeat, restarts the clock. Failed, pending, suppressed and generated-only alerts do not.
+  `alerts.sent_at` records completion after retries; `created_at` remains reservation time.
+- With no successful delivery history, the baseline is the latest of persisted user creation,
+  watchlist activation/update and the earliest currently active entitlement update/start time.
+  Entitlement updates can conservatively delay a first non-BTC heartbeat on renewal. Missing
+  activation evidence fails closed. Repeating an unchanged watchlist choice does not reset its
+  activation timestamp. Eligibility and watchlist selection remain required at send time.
+- BTC remains free; non-BTC still requires active Premium/trial and an enabled watchlist choice.
+  Event Alert significance and semantic cooldown are independent of heartbeat timing.
+- No heartbeat frequency setting exists. The deprecated `users.alert_frequency_seconds` column
+  remains for compatibility/data preservation and has no effect on delivery.
+- Hourly generation uses one shared analysis/cache per due coin and skips provider work when no
+  recipient needs a heartbeat. Recipients receive only fresh completed cached heartbeats.
+- Automatic sends are serialized per user and coin across workers with PostgreSQL transaction
+  advisory locks. Heartbeat eligibility is checked again under the lock, which spans retries and
+  successful-delivery persistence. Existing delivery identities still prevent repeat sends.
+  Telegram acceptance followed by a process crash before persistence retains the existing
+  transport limitation: Telegram does not supply an idempotency key for `sendMessage`.
+
 ## Event Alerts
 
 - Detection is global for BTC, ETH, GRAM, and SOL. Recipient eligibility is checked only after a

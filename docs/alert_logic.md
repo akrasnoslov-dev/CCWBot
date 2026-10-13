@@ -150,7 +150,9 @@ Only now the bot checks delivery eligibility:
 - valid Telegram destination;
 - duplicate chat IDs filtered.
 
-Market Heartbeat frequency does not decide Event Alert eligibility.
+The Market Heartbeat silence window does not decide Event Alert eligibility. Successfully
+delivered Event Alerts reset the heartbeat clock for that recipient and coin; see
+`docs/project_context.md`.
 
 ## Step 9 - Block repeats for 4 hours
 For each recipient, the same canonical event key or the same semantic family is blocked for four
