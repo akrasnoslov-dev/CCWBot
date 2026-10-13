@@ -15,6 +15,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from bot.runtime import log
+from .transient import enter_callback, enter_command, exit_request
 
 logger = logging.getLogger("bot.handlers")
 
@@ -91,7 +92,17 @@ def log_request(action_name: str):
             started_at = time.perf_counter()
             try:
                 await handlers_module().sync_user_from_update(update)
-                result = await handler(update, context)
+                session_token = (
+                    await enter_command(update, context, action_name)
+                    if action_name.startswith("/")
+                    else enter_callback(update)
+                    if action_name == "callback"
+                    else None
+                )
+                try:
+                    result = await handler(update, context)
+                finally:
+                    exit_request(session_token)
             except Exception:
                 duration_ms = int((time.perf_counter() - started_at) * 1000)
                 role = await _role_label(update)
