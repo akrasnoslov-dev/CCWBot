@@ -15,6 +15,7 @@ _active = ContextVar("ccwbot_manual_ui", default=None)
 class TransientSessions:
     def __init__(self):
         self._sessions = {}
+        self._origins = {}
         self._sequence = count(1)
         self._retired = set()
         self._retired_order = deque()
@@ -35,13 +36,17 @@ class TransientSessions:
             except Exception as error:
                 logger.debug("Transient deletion failed: %s", type(error).__name__)
 
-    async def begin(self, key, bot):
+    async def begin(self, key, bot, origin=None):
         previous = self._sessions.pop(key, None)
         if previous is not None:
             await self._delete(key[0], previous[1], bot)
         generation = next(self._sequence)
         self._sessions[key] = (generation, set())
+        self._origins[key] = origin
         return generation
+
+    def origin_for(self, chat_id, user_id):
+        return self._origins.get((chat_id, user_id))
 
     def add(self, key, generation, message_id):
         current = self._sessions.get(key)
@@ -65,6 +70,7 @@ class TransientSessions:
         if not self.is_active(chat_id, user_id, message_id):
             return False
         session = self._sessions.pop(key)
+        self._origins.pop(key, None)
         await self._delete(chat_id, session[1], bot)
         return True
 
@@ -132,11 +138,11 @@ def private_key(update):
     return (chat.id, user.id)
 
 
-async def enter_command(update, context):
+async def enter_command(update, context, origin=None):
     key = private_key(update)
     if key is None:
         return None
-    generation = await sessions.begin(key, context.bot)
+    generation = await sessions.begin(key, context.bot, origin=origin)
     return _active.set((key, generation))
 
 
