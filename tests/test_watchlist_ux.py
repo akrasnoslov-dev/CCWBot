@@ -675,24 +675,46 @@ async def test_unlocked_coin_callback_updates_db_and_edits_message(monkeypatch):
         await engine.dispose()
 
 
+@pytest.mark.parametrize("frequency", ("3600", "21600", "86400"))
+@pytest.mark.parametrize("premium", (False, True))
 @pytest.mark.asyncio
-async def test_frequency_callback_for_free_user_does_not_send_new_message(monkeypatch):
+async def test_legacy_frequency_callback_rerenders_current_settings(
+    monkeypatch, frequency, premium
+):
     engine, session = await build_session()
     try:
-        await create_user(session, telegram_user_id=7287293904)
+        user = await create_user(session, telegram_user_id=7287293904)
+        if premium:
+            await grant_user_premium(
+                session,
+                telegram_user_id=user.telegram_user_id,
+                days=30,
+                now=datetime.now(timezone.utc),
+            )
         monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
         monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(session))
-        query = FakeQuery(telegram_user_id=7287293904)
+        query = FakeQuery(telegram_user_id=user.telegram_user_id)
+        query.data = f"watchlist:frequency:{frequency}"
 
-        handled = await handle_watchlist_callback(
-            SimpleNamespace(callback_query=query),
-            "watchlist:frequency:3600",
+        await button_router(
+            SimpleNamespace(callback_query=query, effective_user=query.from_user),
+            SimpleNamespace(user_data={}),
         )
 
-        assert handled is False
-        assert query.answers == []
+        assert query.answers == [("Heartbeat frequency is no longer configurable.", None)]
         assert query.message.replies == []
-        assert query.edits == []
+        assert len(query.edits) == 1
+        text, markup, _ = query.edits[0]
+        assert text.startswith("Alert settings")
+        assert "after 24 hours without alerts for that coin" in text
+        assert "frequency" not in text.lower()
+        assert all(
+            not button.callback_data.startswith("watchlist:frequency:")
+            for row in markup.inline_keyboard
+            for button in row
+        )
+        stored = await session.get(User, user.id)
+        assert stored.alert_frequency_seconds == 21600
     finally:
         await session.close()
         await engine.dispose()
