@@ -77,6 +77,31 @@ change the significance decision.
 If supported render failures exhaust the provider chain, the backend may build neutral deterministic
 presentation text from the already validated market evidence.
 
+### Render evidence and backend guard behavior
+
+Render receives backend-computed, non-numeric relationship labels: analysed-window
+versus 24-hour direction, snapshot path, pace when verified, and comparable prior
+alert. Render stays separate from significance. It runs once per positive event,
+not per recipient. Situation explains a verified relationship, and Possible Action
+names the next market observation that distinguishes possible outcomes.
+
+Backend guards still reject unsupported numbers, directions, trajectories,
+catalysts, causation, and trading instructions. They no longer discard grounded
+natural language based on an exhaustive word allowlist. Invalid presentation
+fields may use an evidence-only fallback; the original render-provider exhaustion
+policy remains unchanged, with no additional provider calls for recovery.
+
+Related headlines are checked again at final assembly: only direct asset coverage
+or explicitly broad crypto-market context remains. No causal claim is inferred.
+An isolated keyword such as Fed, ETF, exchange or hack does not itself make a
+headline broadly relevant. The since-previous-notification line names the actual
+notification type and UTC timestamp, distinct from the analysed market window.
+
+Quality checks inspect the final Telegram message, not only LLM JSON. Sanitized
+event-level replacement/generic/repetition signals are diagnostic only and never
+decide significance. The ops-agent aggregates distinct delivered market events,
+not each recipient or provider draft. See docs/observability.md.
+
 ### Event Alert message quality contract
 
 A mobile alert should answer three questions in this order without becoming a report:
@@ -150,7 +175,9 @@ Only now the bot checks delivery eligibility:
 - valid Telegram destination;
 - duplicate chat IDs filtered.
 
-Market Heartbeat frequency does not decide Event Alert eligibility.
+The Market Heartbeat silence window does not decide Event Alert eligibility. Successfully
+delivered Event Alerts reset the heartbeat clock for that recipient and coin; see
+`docs/project_context.md`.
 
 ## Step 9 - Block repeats for 4 hours
 For each recipient, the same canonical event key or the same semantic family is blocked for four

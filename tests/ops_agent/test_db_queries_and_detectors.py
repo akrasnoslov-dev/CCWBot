@@ -719,6 +719,11 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         assert f"{status}_count" in outcomes.sql
     assert "generic_possible_action_count" in possible_action_quality.sql
     assert "should_alert = true" in possible_action_quality.sql
+    assert "a.message" in possible_action_quality.sql
+    assert "DISTINCT ON (a.market_event_id)" in possible_action_quality.sql
+    for field in ("situation_replaced_count", "action_replaced_count",
+                  "repeated_situation_count", "repeated_action_count"):
+        assert field in possible_action_quality.sql
 
 
 def test_event_alert_render_validation_reason_query_outputs_categories_only():
@@ -2442,3 +2447,52 @@ def test_event_alert_delivered_event_ratio_query_is_registered():
     assert "AS should_alert_true_events" in query.sql
     assert "AS delivered_events" in query.sql
     assert "status = 'sent'" in query.sql
+
+@pytest.mark.parametrize(
+    ("cache_available", "expected_stale", "expected_severity"),
+    [(True, 0, "medium"), (False, 1, "high")],
+)
+def test_failed_report_attempt_is_separate_from_cache_availability(
+    cache_available, expected_stale, expected_severity
+):
+    period = Period(
+        start=datetime(2026, 10, 13, 8, tzinfo=timezone.utc),
+        end=datetime(2026, 10, 13, 16, 40, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_reports_summary": {
+                    "rows": [{"report_type": "daily", "status": "failed", "reports": 1}]
+                },
+                "market_reports_freshness": {
+                    "rows": [{
+                        "report_type": "daily", "latest_status": "failed",
+                        "latest_generated_at": "2026-10-13T16:38:52Z",
+                        "age_seconds": 88, "max_age_seconds": 18000,
+                        "runtime_interval_seconds": 14400,
+                        "cached_generated_at": "2026-10-13T12:53:52Z",
+                        "cached_expires_at": "2026-10-13T16:53:52Z",
+                        "cache_available": cache_available,
+                    }]
+                },
+            }
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["failed_daily_weekly_reports"]
+    assert detector.status == "triggered"
+    assert detector.severity == expected_severity
+    assert detector.metrics["failed_reports"] == 1
+    assert detector.metrics["stale_or_missing_reports"] == expected_stale
+
+
+def test_report_freshness_sql_reads_completed_cache_independent_of_latest_attempt():
+    query = next(q.sql for q in QUERIES if q.name == "market_reports_freshness")
+    assert "WHERE status = 'completed'" in query
+    assert "cached_expires_at" in query
+    assert "cache_available" in query

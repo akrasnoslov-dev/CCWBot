@@ -151,8 +151,18 @@ Offline request-shape tests do not establish live provider compliance or success
 The News Intelligence cache hash includes the compact input and configured requested model, while
 served-provider attribution stays in the cached row. This preserves exact cache invalidation on a
 configured model change and permits fallback results to be reused without pretending Groq served
-them. Pre-migration input hashes remain reusable when their configured model matches. Its hourly
-call budget counts logical `llm_operation_outcomes` across all providers. Migration 0029 creates a
+them. Pre-migration input hashes remain reusable when their configured model matches.
+
+Hourly RSS ingestion also revisits persisted `failed` and `skipped_budget` news
+items from the last 24 hours, after a one-hour per-item cooldown, even if they
+are no longer returned by RSS. At most one recovery item reserves a new-work
+slot when the configured per-run cap is greater than one; all other fresh work
+keeps priority. Recovery uses the existing per-run and hourly logical LLM
+budgets and writes a new, correlated terminal operation only when an LLM is
+actually attempted. Successful cache entries are reused, not reanalyzed.
+Items older than the 24-hour recovery window are not automatically retried.
+
+The News Intelligence hourly call budget counts logical `llm_operation_outcomes` across all providers. Migration 0029 creates a
 non-overlapping legacy budget snapshot for prior successful/failed News rows, so new retries and
 reanalyzes remain additive without a permanent time scan over `news_items`.
 
@@ -320,6 +330,13 @@ The logical Render outcome records success with the sanitized reason
 `deterministic_fallback_from_*` while invalid provider attempts remain recorded
 in `llm_usage_logs`. Mixed failure chains, unavailable providers, or an invalid
 deterministic fallback remain terminal. No extra LLM call is made for recovery.
+
+The Render prompt additionally receives compact verified non-numeric market
+relationship labels. This gives it trajectory evidence without raw market
+prices or snapshots, and does not alter the upstream significance decision.
+Successful provider output and the final Telegram text are tracked separately:
+post-render guard replacement does not count as a provider fallback and is
+not expressed by alerts.fallback_mode. See docs/observability.md.
 
 The render operation has its own logical operation id and sanitized terminal outcome. Significance
 and rendering therefore remain separately attributable: Event Analysis uses its normal

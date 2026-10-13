@@ -15,7 +15,12 @@ from bot.db.database import (
 )
 from bot.domain.supported_coins import ACTIVE_SYMBOLS
 from bot.handlers import button_router, plan, start
-from bot.keyboards import build_plan_keyboard, build_price_keyboard
+from bot.keyboards import (
+    build_plan_keyboard,
+    build_price_keyboard,
+    build_price_result_keyboard,
+    build_watchlist_keyboard,
+)
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
     build_plan_message,
@@ -52,6 +57,27 @@ def make_subscriptions(**enabled_by_symbol):
     return rows
 
 
+def test_price_navigation_and_heartbeat_settings_survive_branch_integration():
+    price_actions = [
+        button.callback_data
+        for row in build_price_result_keyboard().inline_keyboard
+        for button in row
+    ]
+    assert price_actions == ["price:menu", "transient:close"]
+
+    watchlist_actions = [
+        button.callback_data
+        for row in build_watchlist_keyboard(
+            rows=[("btc", True, True), ("eth", False, False)]
+        ).inline_keyboard
+        for button in row
+    ]
+    assert watchlist_actions == [
+        "watchlist:set:btc:false",
+        "watchlist:set:eth:true",
+    ]
+
+
 def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     text, rows = build_watchlist_message(
         make_user(),
@@ -63,7 +89,8 @@ def test_watchlist_free_user_sees_btc_available_and_premium_locked():
     assert "BTC alerts are free." in text
     assert "ETH, GRAM, SOL" in text
     assert "ETH - Premium" not in text
-    assert "Heartbeat frequency: Every 6 hours" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Event alerts may arrive separately when market events are detected." in text
     assert "Use /subscribe to upgrade." in text
     assert ("btc", True, True) in rows
@@ -79,9 +106,9 @@ def test_user_settings_free_user_shows_btc_frequency_and_upgrade_path():
 
     assert text.startswith("Alert settings")
     assert "Subscribed coins: BTC" in text
-    assert "Heartbeat frequency: Every 6 hours" in text
-    assert "regular market heartbeat updates" in text
-    assert "Event alerts may arrive separately" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
+    assert "Event alerts may arrive" in text
     assert "Plan: Free" in text
     assert "Upgrade: /subscribe" in text
     assert [symbol for symbol, _, _ in rows] == ["btc", "eth", "gram", "sol"]
@@ -96,7 +123,8 @@ def test_user_settings_premium_user_shows_plan_and_management_path():
     )
 
     assert "Subscribed coins: BTC, ETH, GRAM, SOL" in text
-    assert "Heartbeat frequency: Every 1 hour" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Plan: Premium" in text
     assert "Paid access until: 2026-05-12" in text
     assert "Manage subscription: /myplan" in text
@@ -122,7 +150,8 @@ def test_watchlist_premium_user_sees_enabled_non_btc_and_frequency():
     )
 
     assert "Select coins for automatic alerts." in text
-    assert "Heartbeat frequency: Every 6 hours" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert "Paid access until: 2026-05-12" in text
     assert ("eth", True, True) in rows
     assert ("sol", False, True) in rows
@@ -138,7 +167,8 @@ def test_watchlist_expired_user_sees_locked_but_saved_choices_are_not_deleted():
 
     assert "Your Premium expired on: 2026-05-10." in text
     assert "Your premium coin choices are saved, but locked until renewal." in text
-    assert "Heartbeat frequency: Every 6 hours for BTC" in text
+    assert "after 24 hours without alerts for that coin" in text
+    assert "frequency" not in text.lower()
     assert ("eth", True, False) in rows
 
 
@@ -216,9 +246,6 @@ def test_watchlist_buttons_use_icons_and_compact_layout():
         "watchlist:set:eth:false",
         "watchlist:set:gram:true",
         "watchlist:set:sol:true",
-        "watchlist:frequency:3600",
-        "watchlist:frequency:21600",
-        "watchlist:frequency:86400",
     ]
     assert "XRP" not in " ".join(button.text for row in rows for button in row)
     assert all(len(row) <= 3 for row in labels)
@@ -674,24 +701,46 @@ async def test_unlocked_coin_callback_updates_db_and_edits_message(monkeypatch):
         await engine.dispose()
 
 
+@pytest.mark.parametrize("frequency", ("3600", "21600", "86400"))
+@pytest.mark.parametrize("premium", (False, True))
 @pytest.mark.asyncio
-async def test_frequency_callback_for_free_user_does_not_send_new_message(monkeypatch):
+async def test_legacy_frequency_callback_rerenders_current_settings(
+    monkeypatch, frequency, premium
+):
     engine, session = await build_session()
     try:
-        await create_user(session, telegram_user_id=7287293904)
+        user = await create_user(session, telegram_user_id=7287293904)
+        if premium:
+            await grant_user_premium(
+                session,
+                telegram_user_id=user.telegram_user_id,
+                days=30,
+                now=datetime.now(timezone.utc),
+            )
         monkeypatch.setattr("bot.watchlist.DB_ENABLED", True)
         monkeypatch.setattr("bot.watchlist.DB_SESSION_LOCAL", lambda: SessionContext(session))
-        query = FakeQuery(telegram_user_id=7287293904)
+        query = FakeQuery(telegram_user_id=user.telegram_user_id)
+        query.data = f"watchlist:frequency:{frequency}"
 
-        handled = await handle_watchlist_callback(
-            SimpleNamespace(callback_query=query),
-            "watchlist:frequency:3600",
+        await button_router(
+            SimpleNamespace(callback_query=query, effective_user=query.from_user),
+            SimpleNamespace(user_data={}),
         )
 
-        assert handled is True
-        assert query.answers == [("Premium required. Use /subscribe.", False)]
+        assert query.answers == [("Heartbeat frequency is no longer configurable.", None)]
         assert query.message.replies == []
-        assert query.edits == []
+        assert len(query.edits) == 1
+        text, markup, _ = query.edits[0]
+        assert text.startswith("Alert settings")
+        assert "after 24 hours without alerts for that coin" in text
+        assert "frequency" not in text.lower()
+        assert all(
+            not button.callback_data.startswith("watchlist:frequency:")
+            for row in markup.inline_keyboard
+            for button in row
+        )
+        stored = await session.get(User, user.id)
+        assert stored.alert_frequency_seconds == 21600
     finally:
         await session.close()
         await engine.dispose()

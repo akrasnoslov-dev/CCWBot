@@ -244,10 +244,9 @@ def classify_news_relevance(symbol: str, news_item: dict) -> str:
     text = _news_search_text(news_item)
     if _matches_symbol_alias(normalized_symbol, text):
         return "direct"
-    if any(term in text for term in MARKET_WIDE_NEWS_TERMS):
-        if normalized_symbol != "btc" and _mentions_btc(text):
-            if not _is_clearly_market_wide_news(text):
-                return "irrelevant"
+    # Broad-market news must explicitly describe the crypto market. Isolated
+    # words like "exchange", "fed", "hack" or "etf" match unrelated stories.
+    if _is_clearly_market_wide_news(text):
         return "market_wide"
     return "irrelevant"
 

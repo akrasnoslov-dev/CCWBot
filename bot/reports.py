@@ -418,12 +418,33 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
         )
 
 
+def _schedule_failed_report_retry(report_type: str, result, context, callback) -> None:
+    """One recovery attempt after a scheduled failure; no recurring retry storm."""
+    status = result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
+    if status != "failed":
+        return
+    queue = getattr(getattr(context, "application", None), "job_queue", None)
+    current_name = getattr(getattr(context, "job", None), "name", "")
+    retry_name = f"market_report_{report_type}_recovery"
+    if queue is None or current_name == retry_name or queue.get_jobs_by_name(retry_name):
+        return
+    queue.run_once(
+        callback,
+        when=REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS + 30,
+        name=retry_name,
+        job_kwargs={"max_instances": 1, "misfire_grace_time": 120},
+    )
+    log(f"ops_event=market_report_recovery_scheduled report_type={report_type}")
+
+
 async def generate_daily_report_cache_job(context=None) -> None:
-    await refresh_report_cache_scheduled("daily")
+    result = await refresh_report_cache_scheduled("daily")
+    _schedule_failed_report_retry("daily", result, context, generate_daily_report_cache_job)
 
 
 async def generate_weekly_report_cache_job(context=None) -> None:
-    await refresh_report_cache_scheduled("weekly")
+    result = await refresh_report_cache_scheduled("weekly")
+    _schedule_failed_report_retry("weekly", result, context, generate_weekly_report_cache_job)
 
 
 async def send_daily_report_message(target) -> None:
@@ -511,7 +532,10 @@ async def _save_or_remember_report(
         "provider": provider,
         "model": model,
     }
-    _memory_report_cache[report_type] = cached
+    # A failed attempt must not evict an otherwise usable global cache.
+    # Return the failed outcome to the caller so the scheduled backoff still applies.
+    if status == "completed" or not _is_fresh_memory_report(_memory_report_cache.get(report_type)):
+        _memory_report_cache[report_type] = cached
     return cached
 
 

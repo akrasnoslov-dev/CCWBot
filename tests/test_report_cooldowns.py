@@ -923,3 +923,34 @@ def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_new
     )
     assert "Monday:" not in message
     assert "{" not in message
+
+@pytest.mark.asyncio
+async def test_failed_newer_db_report_does_not_hide_old_completed_cache(monkeypatch):
+    engine, session_local = await build_session_factory()
+    now = utc_now()
+    try:
+        async with session_local() as session:
+            session.add_all([
+                MarketReport(
+                    report_type="daily", generated_at=now - timedelta(hours=3),
+                    expires_at=now + timedelta(minutes=15), status="completed",
+                    raw_input_json="{}", raw_output_json="{}",
+                    telegram_message="Old completed report. Not financial advice.",
+                ),
+                MarketReport(
+                    report_type="daily", generated_at=now,
+                    expires_at=now + timedelta(hours=4), status="failed",
+                    raw_input_json="{}", raw_output_json=None,
+                    telegram_message=None, error_message="rate_limit_backoff_active",
+                ),
+            ])
+            await session.commit()
+        monkeypatch.setattr(reports, "DB_ENABLED", True)
+        monkeypatch.setattr(reports, "DB_SESSION_LOCAL", session_local)
+        cached = await reports._get_fresh_cached_report("daily")
+        assert cached is not None
+        assert cached.telegram_message.startswith("Old completed")
+        monkeypatch.setattr(reports, "utc_now", lambda: now + timedelta(minutes=16))
+        assert await reports._get_fresh_cached_report("daily") is None
+    finally:
+        await engine.dispose()

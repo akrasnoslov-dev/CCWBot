@@ -6,6 +6,22 @@ linkable raw rows unless an incident specifically requires recipient-level traci
 tracing inside the approved read-only session and report only sanitized aggregates or bundle-local
 references.
 
+## Final delivered Event Alert text quality
+
+On each assembled market event, event_alert_final_text_quality logs sanitized
+symbol, situation_replaced, action_replaced, generic_action,
+missing_situation, repeats_market_numbers, and short final-text hashes.
+It does not log user/chat identifiers, message text, raw provider payloads,
+market JSON, or credentials.
+
+The ops-agent event_alert_possible_action_quality query counts distinct
+delivered market events using alerts.message (final Telegram text). It
+joins the original validated Render fields to count backend substitutions
+and aggregates identical final Situation/Action wording. The collector exports
+counts only, never the underlying strings. These diagnostic metrics are
+not a delivery gate or a numeric significance threshold; check the Render
+operation outcome separately to distinguish provider fallback.
+
 ## RSS News Freshness / Ingestion
 
 News is supporting market/report context only; it must never independently start an Event Alert
@@ -316,6 +332,14 @@ Current limitations:
   Telegram send probe.
 
 ## Ops-agent diagnostics
+
+The ops-agent market-report freshness query records the latest generation
+attempt **separately** from the newest completed, non-empty cached report.
+A failed latest attempt is a terminal failure but is not a stale/missing cache
+while the earlier completed report's expiry is still in the future. A cache
+becomes unavailable at its real expiry, even when a scheduling-grace health
+threshold has not elapsed. Historical bundles collected before this query
+change cannot establish cache availability from the latest-status field alone.
 
 For diagnostic bundle collection, evidence completeness, report writing, and safety boundaries,
 use `ops_agent_service.md` and `ops_agent/README.md`. This document contains direct read-only SQL

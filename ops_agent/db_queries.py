@@ -707,13 +707,31 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "event_alert_possible_action_quality",
         "evidence/db/aggregate_metrics.json",
+        # Unique real delivered market events, not pre-render LLM rows or 970 per-user copies.
+        # Only aggregate counts leave this collector; no message or personal data is exported.
+        "WITH delivered AS (SELECT DISTINCT ON (a.market_event_id) "
+        "a.market_event_id, a.message, e.message_body, e.possible_action "
+        "FROM alerts a JOIN event_ai_analyses e ON e.id = a.event_ai_analysis_id "
+        "WHERE a.created_at >= :since AND a.created_at < :until "
+        "AND a.alert_type = 'event_alert' AND a.status = 'sent' "
+        "AND a.market_event_id IS NOT NULL AND e.should_alert = true "
+        "ORDER BY a.market_event_id, a.created_at, a.id), "
+        "final_text AS (SELECT message_body, possible_action, "
+        "split_part(split_part(message, E'Situation:\\n', 2), E'\\n\\n', 1) AS situation, "
+        "split_part(split_part(message, E'Possible action:\\n', 2), E'\\n\\n', 1) AS action "
+        "FROM delivered) "
         "SELECT count(*) AS event_alert_actions, "
-        "count(*) FILTER (WHERE possible_action ~* "
-        "'^(monitor price movement|monitor market developments|monitor market sentiment|keep watching|monitor risk)\\.?$') "
-        "AS generic_possible_action_count "
-        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
-        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
-        "AND should_alert = true",
+        "count(*) FILTER (WHERE action ~* "
+        "'^(monitor (price|market|risk)|keep watching|review|"
+        "watch (the )?next (few )?short-term snapshots? for (confirmation|continuation|reversal))' "
+        "OR action = '') AS generic_possible_action_count, "
+        "count(*) FILTER (WHERE message_body IS NOT NULL AND "
+        "btrim(message_body) <> btrim(situation)) AS situation_replaced_count, "
+        "count(*) FILTER (WHERE possible_action IS NOT NULL AND "
+        "btrim(possible_action) <> btrim(action)) AS action_replaced_count, "
+        "count(*) - count(DISTINCT lower(situation)) AS repeated_situation_count, "
+        "count(*) - count(DISTINCT lower(action)) AS repeated_action_count "
+        "FROM final_text",
     ),
     DbQuery(
         "market_events_without_delivery_classification",
@@ -898,6 +916,11 @@ QUERIES: tuple[DbQuery, ...] = (
         "), latest AS ("
         "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at "
         "FROM market_reports ORDER BY report_type, generated_at DESC, id DESC"
+        "), cached AS ("
+        "SELECT DISTINCT ON (report_type) report_type, generated_at, expires_at "
+        "FROM market_reports WHERE status = 'completed' "
+        "AND coalesce(telegram_message, '') <> '' "
+        "ORDER BY report_type, generated_at DESC, id DESC"
         "), period_counts AS ("
         "SELECT report_type, count(*) AS reports_in_period, "
         "count(*) FILTER (WHERE status = 'completed') AS completed_in_period, "
@@ -909,12 +932,16 @@ QUERIES: tuple[DbQuery, ...] = (
         "l.status AS latest_status, "
         "l.generated_at AS latest_generated_at, l.expires_at AS latest_expires_at, "
         "extract(epoch FROM (:until - l.generated_at)) AS age_seconds, "
+        "c.generated_at AS cached_generated_at, c.expires_at AS cached_expires_at, "
+        "(c.expires_at > :until) AS cache_available, "
+        "extract(epoch FROM (:until - c.generated_at)) AS cache_age_seconds, "
         "l.generated_at + make_interval(secs => rt.runtime_interval_seconds) "
         "AS expected_next_scheduled_refresh_at, "
         "coalesce(pc.reports_in_period, 0) AS reports_in_period, "
         "coalesce(pc.completed_in_period, 0) AS completed_in_period, "
         "coalesce(pc.failed_in_period, 0) AS failed_in_period "
         "FROM report_types rt LEFT JOIN latest l ON l.report_type = rt.report_type "
+        "LEFT JOIN cached c ON c.report_type = rt.report_type "
         "LEFT JOIN period_counts pc ON pc.report_type = rt.report_type ORDER BY rt.report_type",
     ),
     DbQuery(

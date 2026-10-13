@@ -14,12 +14,10 @@ from bot.db.database import (
     get_user_by_telegram_user_id,
     grant_user_premium,
     revoke_user_premium,
-    set_user_alert_frequency,
     set_user_coin_subscription,
 )
 from bot.db.premium import expire_due_premium_trials, start_user_premium_trial
 from bot.domain.premium import (
-    get_effective_market_heartbeat_frequency_seconds,
     has_premium_entitlement,
     is_coin_unlocked_for_user,
     is_user_premium_active,
@@ -250,21 +248,6 @@ async def test_revoke_makes_premium_inactive_without_disabling_btc():
 
 
 @pytest.mark.asyncio
-async def test_frequency_preference_accepts_only_premium_presets():
-    engine, session = await build_session()
-    try:
-        user = await create_user(session)
-
-        updated = await set_user_alert_frequency(session, user_id=user.id, frequency_seconds=3600)
-        assert updated.alert_frequency_seconds == 3600
-        with pytest.raises(ValueError, match="Unsupported alert frequency"):
-            await set_user_alert_frequency(session, user_id=user.id, frequency_seconds=123)
-    finally:
-        await session.close()
-        await engine.dispose()
-
-
-@pytest.mark.asyncio
 async def test_trial_is_one_time_unlocks_premium_and_expires_once():
     engine, session = await build_session()
     try:
@@ -398,9 +381,6 @@ async def test_revoke_terminates_active_trial_and_preserves_consumed_history():
         )
         assert not has_premium_entitlement(reloaded, now + timedelta(days=2, seconds=1))
         assert not is_coin_unlocked_for_user(reloaded, "eth", now + timedelta(days=2, seconds=1))
-        assert get_effective_market_heartbeat_frequency_seconds(
-            reloaded, now + timedelta(days=2, seconds=1)
-        ) == 21600
         assert reloaded.premium_trial.id == trial.id
         assert reloaded.premium_trial.expired_at.replace(tzinfo=timezone.utc) == now + timedelta(
             days=2

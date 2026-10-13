@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from bot.db.database import get_price_state, update_price_state
 from bot.domain.supported_coins import display_symbol, supported_symbols_display
+from bot.keyboards import build_price_result_keyboard
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.price_service import DEFAULT_SYMBOL, get_coin_price
 from bot.storage import load_state, save_state
@@ -45,9 +46,11 @@ async def send_price_message(target, symbol: str, *, edit: bool = False) -> None
         f"24h change: {change_24h:.2f}%"
     )
     if edit:
-        await target.edit_message_text(text=text)
+        await target.edit_message_text(
+            text=text, reply_markup=build_price_result_keyboard()
+        )
     else:
-        await target.reply_text(text)
+        await target.reply_text(text, reply_markup=build_price_result_keyboard())
 
 
 async def send_manual_rate_limit_message(target, chat_id: int | None) -> None:

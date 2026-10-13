@@ -148,3 +148,17 @@ If a developer manually widened the local `alembic_version.version_num` column a
 long revision locally, treat that as local-dev-only repair work: inspect `alembic_version`, confirm
 the matching migration effects are present, then update the local stamp to the short revision id or
 rerun the migration from a clean local backup. Do not mutate production Alembic state manually.
+
+## Heartbeat delivery timestamp migration
+
+Migration `0032_alert_sent_at` adds nullable `alerts.sent_at` without dropping data or the
+legacy frequency column. Existing sent rows use the latest delivered outcome timestamp when
+available; otherwise migration time starts a conservative 24-hour rollout silence window.
+Pending/failed rows remain null. Downgrade drops only the new column; delivery identities and
+reservation timestamps remain intact. Stop old workers before applying the migration and
+starting the new version, so they cannot write sent rows without completion timestamps or send
+outside the new shared locks. A rollback to old code restores the previous heartbeat behavior.
+
+Advisory lock holders reserve at most half of the connection pool capacity, keeping room for
+delivery/status sessions. Bounded pools must allow at least two connections; runtime defaults
+allow fifteen. PostgreSQL concurrency tests cover a two-connection pool and cancellation.

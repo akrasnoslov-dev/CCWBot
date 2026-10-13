@@ -33,29 +33,12 @@ _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
     r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
     r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
     r"accelerat\w*|decelerat\w*|faster|slower|percentiles?|rare|unprecedented|"
-    r"record|historic|ath)\b"
+    r"record|historic|ath|central[ -]?bank|interven\w*|"
+    r"institutional|blackrock|grayscale|microstrategy)\b"
 )
 # This only applies to unstructured Render prose, not to deterministic fallbacks.
 # A market relationship may be paraphrased, but an extra company, news event,
 # metric, or invented mechanism is not part of the validated evidence contract.
-_SAFE_MARKET_CONTEXT_WORDS = frozenset(
-    """
-    a an the this that these those and or but with within against while of to from
-    in on for as by than into across through toward towards back rather not still
-    is are was were be been being has have had may might can could only
-    supplied available observed latest recent earlier previous current next
-    snapshot snapshots path paths step steps sequence sequences price market
-    move moved moves movement change changes direction directional trend trends
-    trajectory trajectories short term broader hour day window
-    positive negative persistent persistence persist persists consistent
-    aligning alignment align aligns aligned diverge diverges divergent divergence
-    reversal reverses reverse reversing reversed turn turning turned
-    continues continue continuation strength stronger weakness weaker
-    lower higher downward upward up down rising falling rise fall
-    same opposite shows show showing indicates indicate suggesting suggests
-    compared relative part some wider overall remains remained
-    """.split()
-)
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _OBSERVATION_RE = re.compile(
     r"(?i)\b(?:snapshot|interval|timeframe|time frame|window|30m|1h|24h|"
@@ -153,8 +136,9 @@ def compact_event_alert_situation(
     cleaned = " ".join(str(value or "").split()).strip()
     if not cleaned:
         return fallback
-    # A verified comparable prior window is more informative than repeated
-    # generic render prose about the same broader trend.
+    # Prefer a genuinely comparable prior alert to an otherwise generic
+    # 24-hour alignment statement. This is a verified relational correction,
+    # not a rejection based on word choice.
     if "prior recorded alert's comparable window" in fallback and not re.search(
         r"(?i)\bprior recorded alert\b", cleaned
     ):
@@ -193,11 +177,11 @@ def _is_safe_llm_situation(
     *,
     market_data: dict,
 ) -> bool:
-    words = re.findall(r"[a-z]+", value.lower())
-    return (
-        bool(words)
-        and all(word in _SAFE_MARKET_CONTEXT_WORDS for word in words)
-        and _is_safe_structured_market_interpretation(value, market_data)
+    # Validate *claims*, not vocabulary. A word-list silently discarded almost
+    # every useful LLM explanation, while the structured evidence checks below
+    # already reject unsupported trajectory or direction relationships.
+    return bool(value.strip()) and _is_safe_structured_market_interpretation(
+        value, market_data
     )
 
 
@@ -257,6 +241,11 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         ) and not (window_change is not None and (window_change > 0) == positive):
             return False
     if "reversal" in lowered and not has_reversal:
+        return False
+    if (
+        any(word in lowered for word in ("contrast", "opposite", "against the 24-hour"))
+        and not has_divergence
+    ):
         return False
     if "diverg" in lowered and not has_divergence:
         return False
@@ -633,11 +622,14 @@ def compact_event_alert_possible_action(value: str, *, fallback: str | None = No
     """Keep Event Alert actions short, conditional, and non-prescriptive."""
     cleaned = " ".join(str(value or "").split()).strip()
     if (
-        len(cleaned.split()) > 20
+        len(cleaned.split()) > 30
         or len(re.findall(r"[.!?]", cleaned)) > 1
-        or not _CONDITIONAL_ACTION_RE.search(cleaned)
         or not _OBSERVATION_RE.search(cleaned)
+        or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
+        or _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
+        or _UNSUPPORTED_EVENT_CLAIM_RE.search(cleaned)
+        or _DIRECT_FINANCIAL_INSTRUCTION_RE.search(cleaned)
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."
     return cleaned
@@ -675,3 +667,95 @@ def _parse_datetime(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+
+def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
+    """Inspect the actual Telegram-ready message, never only the Render decision.
+
+    Used for sanitized event-level observability and local quality regressions.
+    This is diagnostic only: text-quality heuristics do not decide significance.
+    """
+    situation_match = re.search(
+        r"(?s)Situation:\n(.*?)(?:\n\n(?:Related context|Possible action):|$)",
+        plain_text,
+    )
+    action_match = re.search(
+        r"(?s)Possible action:\n(.*?)(?:\n\nNot financial advice\.|$)",
+        plain_text,
+    )
+    situation = " ".join(situation_match.group(1).split()) if situation_match else ""
+    action = " ".join(action_match.group(1).split()) if action_match else ""
+    generic_action = (
+        not action
+        or bool(re.search(
+            r"(?i)^(?:review|monitor|keep watching|stay informed|consider|"
+            r"watch (?:the )?next (?:few )?(?:short-term )?snapshots? "
+            r"for (?:confirmation|continuation|reversal))\b",
+            action,
+        ))
+        or bool(re.search(
+            r"(?i)^(?:watch|monitor) (?:price|market|risk|developments|sentiment)\b",
+            action,
+        ))
+    )
+    generic_snapshot_action = bool(re.search(
+        r"(?i)^(?:watch|check|monitor) (?:whether )?(?:the )?(?:next|upcoming|few) "
+        r"(?:few )?(?:short-term )?snapshots?\\b",
+        action,
+    )) and not bool(re.search(
+        r"(?i)\\b(?:24-hour|broader|prior|previous|pace|preceding|1h|30m|"
+        r"observed interval|divergen\\w*|countermov\\w*)\\b",
+        action,
+    ))
+    return {
+        "generic_action": bool(generic_action or generic_snapshot_action),
+        "missing_situation": not bool(situation),
+        "repeats_market_numbers": bool(
+            _PERCENT_RE.search(situation) or _MONEY_VALUE_RE.search(situation)
+        ),
+    }
+
+
+
+def verified_event_alert_render_context(
+    market: dict, previous_event_alert: dict | None = None
+) -> dict[str, str]:
+    """Small, backed relationship codes for LLM prose; no raw prices or thresholds."""
+    context: dict[str, str] = {}
+    current = _decimal_market_value(market.get("chg_window_percent"))
+    day = _decimal_market_value(market.get("chg24h_percent"))
+    if current is not None and day is not None and current != 0 and day != 0:
+        context["window_vs_24h"] = (
+            "opposite_direction" if (current > 0) != (day > 0) else "same_direction"
+        )
+    steps = _snapshot_step_changes(market)
+    if len(steps) >= 2:
+        if steps[-1] * steps[-2] < 0:
+            context["snapshot_path"] = "latest_step_countermove"
+        elif _has_persistent_snapshot_direction(steps):
+            context["snapshot_path"] = "consecutive_steps_same_direction"
+    pace = _short_window_pace_context(market)
+    if pace is not None:
+        context["latest_interval_pace"] = (
+            "faster_than_preceding_interval"
+            if "picked up pace" in pace[0] else "slower_than_preceding_interval"
+        )
+    previous = previous_event_alert if isinstance(previous_event_alert, dict) else {}
+    previous_move = _decimal_market_value(previous.get("analysed_window_move"))
+    previous_window = _decimal_market_value(previous.get("analysed_window_minutes"))
+    current_window = _decimal_market_value(market.get("analysed_window_minutes"))
+    age = _decimal_market_value(previous.get("age_minutes"))
+    if (
+        current is not None and current != 0
+        and previous_move is not None and previous_move != 0
+        and previous_window is not None and previous_window == current_window
+        and age is not None and 0 <= age <= 1440
+    ):
+        context["comparable_previous_alert"] = (
+            "opposite_direction" if (current > 0) != (previous_move > 0)
+            else "larger_magnitude" if abs(current) > abs(previous_move)
+            else "smaller_magnitude" if abs(current) < abs(previous_move)
+            else "same_magnitude"
+        )
+    return context
