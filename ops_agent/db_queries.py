@@ -916,6 +916,11 @@ QUERIES: tuple[DbQuery, ...] = (
         "), latest AS ("
         "SELECT DISTINCT ON (report_type) report_type, status, generated_at, expires_at "
         "FROM market_reports ORDER BY report_type, generated_at DESC, id DESC"
+        "), cached AS ("
+        "SELECT DISTINCT ON (report_type) report_type, generated_at, expires_at "
+        "FROM market_reports WHERE status = 'completed' "
+        "AND coalesce(telegram_message, '') <> '' "
+        "ORDER BY report_type, generated_at DESC, id DESC"
         "), period_counts AS ("
         "SELECT report_type, count(*) AS reports_in_period, "
         "count(*) FILTER (WHERE status = 'completed') AS completed_in_period, "
@@ -927,12 +932,16 @@ QUERIES: tuple[DbQuery, ...] = (
         "l.status AS latest_status, "
         "l.generated_at AS latest_generated_at, l.expires_at AS latest_expires_at, "
         "extract(epoch FROM (:until - l.generated_at)) AS age_seconds, "
+        "c.generated_at AS cached_generated_at, c.expires_at AS cached_expires_at, "
+        "(c.expires_at > :until) AS cache_available, "
+        "extract(epoch FROM (:until - c.generated_at)) AS cache_age_seconds, "
         "l.generated_at + make_interval(secs => rt.runtime_interval_seconds) "
         "AS expected_next_scheduled_refresh_at, "
         "coalesce(pc.reports_in_period, 0) AS reports_in_period, "
         "coalesce(pc.completed_in_period, 0) AS completed_in_period, "
         "coalesce(pc.failed_in_period, 0) AS failed_in_period "
         "FROM report_types rt LEFT JOIN latest l ON l.report_type = rt.report_type "
+        "LEFT JOIN cached c ON c.report_type = rt.report_type "
         "LEFT JOIN period_counts pc ON pc.report_type = rt.report_type ORDER BY rt.report_type",
     ),
     DbQuery(

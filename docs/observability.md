@@ -333,6 +333,14 @@ Current limitations:
 
 ## Ops-agent diagnostics
 
+The ops-agent market-report freshness query records the latest generation
+attempt **separately** from the newest completed, non-empty cached report.
+A failed latest attempt is a terminal failure but is not a stale/missing cache
+while the earlier completed report's expiry is still in the future. A cache
+becomes unavailable at its real expiry, even when a scheduling-grace health
+threshold has not elapsed. Historical bundles collected before this query
+change cannot establish cache availability from the latest-status field alone.
+
 For diagnostic bundle collection, evidence completeness, report writing, and safety boundaries,
 use `ops_agent_service.md` and `ops_agent/README.md`. This document contains direct read-only SQL
 only.

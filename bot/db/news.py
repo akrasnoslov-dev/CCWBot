@@ -149,6 +149,38 @@ async def get_cached_news_item_analysis(
 
 
 
+async def get_cooling_failed_news_keys(
+    session: AsyncSession, news_keys: list[str], *, retry_after: datetime
+) -> set[str]:
+    """Prevent immediate retries after LLM failure or a budget skip."""
+    if not news_keys:
+        return set()
+    rows = await session.scalars(
+        select(NewsItem.news_key)
+        .where(NewsItem.news_key.in_(news_keys))
+        .where(NewsItem.llm_status.in_(["failed", "skipped_budget"]))
+        .where(NewsItem.updated_at > retry_after)
+    )
+    return set(rows.all())
+
+
+async def get_retryable_failed_news_items(
+    session: AsyncSession, *, since: datetime, retry_before: datetime, limit: int
+) -> list[NewsItem]:
+    """Bounded recovery of failed, still-recent news even when RSS drops the item."""
+    if limit <= 0:
+        return []
+    rows = await session.scalars(
+        select(NewsItem)
+        .where(NewsItem.llm_status.in_(["failed", "skipped_budget"]))
+        .where(NewsItem.fetched_at >= since)
+        .where(NewsItem.updated_at <= retry_before)
+        .order_by(NewsItem.updated_at.asc(), NewsItem.id.asc())
+        .limit(limit)
+    )
+    return list(rows.all())
+
+
 async def count_recent_news_intelligence_llm_calls(
     session: AsyncSession,
     *,

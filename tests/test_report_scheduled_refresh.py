@@ -135,3 +135,47 @@ async def test_scheduled_refresh_respects_provider_backoff(monkeypatch, caplog):
         and "reason=provider_backoff" in record.getMessage()
         for record in caplog.records
     )
+
+@pytest.mark.asyncio
+async def test_failed_memory_refresh_preserves_still_valid_report(monkeypatch):
+    previous = _cached_report("daily", age_seconds=3 * 3600, remaining_seconds=600)
+    reports._memory_report_cache["daily"] = previous
+    now = utc_now()
+    failed = await reports._save_or_remember_report(
+        report_type="daily", generated_at=now,
+        expires_at=now + timedelta(hours=4), status="failed",
+        raw_input_json=None, raw_output_json=None, telegram_message=None,
+        error_message="rate_limit_backoff_active",
+    )
+    assert failed["status"] == "failed"
+    assert reports._memory_report_cache["daily"] is previous
+    generate = AsyncMock(side_effect=AssertionError("must reuse successful cache"))
+    monkeypatch.setattr(reports, "generate_report_cache", generate)
+    assert await reports.get_or_generate_report("daily") is previous
+    generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_scheduled_job_schedules_one_retry_and_no_retry_storm(monkeypatch):
+    from types import SimpleNamespace
+
+    queue = SimpleNamespace(get_jobs_by_name=lambda name: [], run_once=lambda *a, **kw: None)
+    calls = []
+    queue.run_once = lambda callback, **kwargs: calls.append((callback, kwargs))
+    context = SimpleNamespace(
+        application=SimpleNamespace(job_queue=queue),
+        job=SimpleNamespace(name="daily_market_report_cache"),
+    )
+    monkeypatch.setattr(
+        reports, "refresh_report_cache_scheduled", AsyncMock(return_value={"status": "failed"})
+    )
+    await reports.generate_daily_report_cache_job(context)
+    assert len(calls) == 1
+    callback, kwargs = calls[0]
+    assert kwargs["when"] >= reports.REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS
+    assert kwargs["when"] < reports.REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS + 120
+    retry_context = SimpleNamespace(
+        application=context.application, job=SimpleNamespace(name=kwargs["name"])
+    )
+    await callback(retry_context)
+    assert len(calls) == 1

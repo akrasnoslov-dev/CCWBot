@@ -32,6 +32,7 @@ from bot.db.database import (
     upsert_news_item,
     utc_now,
 )
+from bot.db.news import get_cooling_failed_news_keys, get_retryable_failed_news_items
 from bot.domain.supported_coins import ALL_SUPPORTED_COINS
 from bot.news_titles import clean_news_title
 from bot.services.ai_agent_groq import (
@@ -142,9 +143,11 @@ class NewsIntelligenceService:
         self.timeout_seconds = timeout_seconds
         self._run_llm_calls = 0
 
-    async def analyze_items(self, raw_items: list[dict]) -> list[dict]:
-        """Persist/analyze a bounded subset and return existing-compatible news dicts."""
-        if not raw_items:
+    async def analyze_items(
+        self, raw_items: list[dict], *, include_failed_retries: bool = False
+    ) -> list[dict]:
+        """Analyze bounded RSS work, optionally recovering persisted failed articles."""
+        if not raw_items and not include_failed_retries:
             return []
 
         normalized_items = [normalize_news_item(item) for item in raw_items]
@@ -154,6 +157,10 @@ class NewsIntelligenceService:
         # results must not occupy the *new work* cap on every scheduled run.
         now = utc_now()
         fresh_cutoff = now - timedelta(hours=24)
+        retry_before = now - timedelta(hours=1)
+        cooling_keys = await get_cooling_failed_news_keys(
+            self.session, [item.news_key for item in valid_items], retry_after=retry_before
+        )
         prioritized_items = sorted(
             valid_items,
             key=lambda item: (
@@ -166,6 +173,37 @@ class NewsIntelligenceService:
             ),
             reverse=True,
         )
+        if include_failed_retries:
+            # RSS may drop an article after its first failed classification.
+            # Append oldest eligible failures *after* fresh RSS; both share existing
+            # per-run and per-hour caps, and successful analyses remain immutable cache hits.
+            failed_rows = await get_retryable_failed_news_items(
+                self.session,
+                since=fresh_cutoff,
+                retry_before=retry_before,
+                limit=self.max_items_per_run,
+            )
+            retry_items = []
+            rss_keys = {item.news_key for item in valid_items}
+            for row in failed_rows:
+                retry_item = normalize_news_item({
+                    "title": row.title,
+                    "link": row.url,
+                    "source": row.source,
+                    "summary": row.raw_summary,
+                    "published_at": row.published_at,
+                })
+                if (
+                    retry_item is not None
+                    and retry_item.news_key == row.news_key
+                    and retry_item.news_key not in rss_keys
+                ):
+                    retry_items.append(retry_item)
+            if retry_items and self.max_items_per_run > 1:
+                # Reserve at most one new-work slot so a busy RSS feed cannot
+                # starve persisted failures; fresh RSS retains all other slots.
+                prioritized_items.insert(self.max_items_per_run - 1, retry_items.pop(0))
+            prioritized_items.extend(retry_items)
         processable: list[NormalizedNewsItem] = []
         reused = 0
         considered = 0
@@ -173,7 +211,7 @@ class NewsIntelligenceService:
         for item in prioritized_items:
             if len(processable) >= self.max_items_per_run:
                 break
-            if item.news_key in seen_keys:
+            if item.news_key in seen_keys or item.news_key in cooling_keys:
                 continue
             seen_keys.add(item.news_key)
             considered += 1

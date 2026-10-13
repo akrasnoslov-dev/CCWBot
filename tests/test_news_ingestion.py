@@ -133,7 +133,8 @@ async def test_scheduled_ingestion_persists_only_through_existing_intelligence(m
     class FakeIntelligence:
         def __init__(self, session):
             assert isinstance(session, FakeSession)
-        async def analyze_items(self, items):
+        async def analyze_items(self, items, *, include_failed_retries=False):
+            assert include_failed_retries is True
             analyzed.extend(items)
 
     monkeypatch.setattr(news, "DB_ENABLED", True)

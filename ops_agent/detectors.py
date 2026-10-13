@@ -305,15 +305,28 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 else None
             ),
             "expected_next_scheduled_refresh_at": row.get("expected_next_scheduled_refresh_at"),
+            **({
+                "cached_generated_at": row.get("cached_generated_at"),
+                "cached_expires_at": row.get("cached_expires_at"),
+                "cache_available": row.get("cache_available"),
+            } if "cache_available" in row else {}),
         }
         for row in report_freshness
     ]
     stale_reports = [
         row
         for row in report_freshness
-        if row.get("latest_generated_at") is None
-        or str(row.get("latest_status") or "") != "completed"
-        or _int(row.get("age_seconds")) > _int(row.get("max_age_seconds"))
+        if (
+            # This is *servable* cache freshness, not latest generation-attempt status.
+            # A fresh completed row survives a newer terminal failure until expiry.
+            not row.get("cache_available")
+            if "cache_available" in row
+            else (
+                row.get("latest_generated_at") is None
+                or str(row.get("latest_status") or "") != "completed"
+                or _int(row.get("age_seconds")) > _int(row.get("max_age_seconds"))
+            )
+        )
     ]
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))

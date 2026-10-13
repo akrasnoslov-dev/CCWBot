@@ -489,10 +489,13 @@ async def ingest_news_job(_context) -> None:
         raw_items = await asyncio.to_thread(fetch_crypto_news, limit=72)
         if not raw_items:
             log("ops_event=news_ingestion status=empty check=news_rss_source")
-            return
         async with _NEWS_INTELLIGENCE_LOCK:
             async with DB_SESSION_LOCAL() as session:
-                await NewsIntelligenceService(session).analyze_items(raw_items)
+                # Persisted failed items can be recovered even after RSS drops them.
+                # The service enforces its existing per-run and hourly LLM budgets.
+                await NewsIntelligenceService(session).analyze_items(
+                    raw_items, include_failed_retries=True
+                )
         log(f"ops_event=news_ingestion status=completed rss_candidates={len(raw_items)}")
     except Exception:
         # No provider response, article data, query, or sensitive exception text.

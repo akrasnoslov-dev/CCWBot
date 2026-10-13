@@ -30,6 +30,15 @@ Reports remain available to all users. The cache model stays global: one report
 generation creates one LLM report, then many users can read the cached result.
 Report changes must not add LLM calls inside user or recipient loops.
 
+A failed scheduled generation is recorded as a terminal report attempt, but does not
+replace a still-valid completed cache entry (PostgreSQL or in-memory fallback).
+After a scheduled failure, the existing one-hour report backoff remains in force.
+A single one-shot recovery job runs after that backoff; it does not recursively
+reschedule on failure. The usual daily four-hour and weekly 24-hour schedules stay
+unchanged. An expired cache can leave manual requests temporarily unavailable
+until an eligible generation succeeds; a later provider success alone does not
+prove that requests during that gap succeeded.
+
 The report LLM returns structured JSON only. The bot does not trust an
 LLM-composed `telegram_message` for reports. Telegram text is assembled in code
 from validated fields and selected source-backed news items.

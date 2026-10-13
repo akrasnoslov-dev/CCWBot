@@ -15,6 +15,7 @@ from bot.db.database import (
     make_news_key,
     mark_news_items_seen,
     upsert_news_item,
+    utc_now,
 )
 from bot.db.llm_usage import save_llm_usage_log
 from bot.db.news import count_recent_news_intelligence_llm_calls
@@ -872,6 +873,112 @@ async def test_rss_items_normalize_persist_and_preserve_seen_news_contract():
         await mark_news_items_seen(session, compatibility_items)
         assert await session.scalar(select(func.count()).select_from(SeenNews)) == 1
         assert await session.scalar(select(func.count()).select_from(NewsItem)) == 1
+    finally:
+        await session.close()
+        await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_failed_news_is_retried_from_db_after_cooldown_when_rss_drops_it():
+    engine, session = await build_session()
+    item = _raw_item("Bitcoin ETF inflows rise", "https://example.com/retry-once")
+    try:
+        failed_llm = FakeNewsLlm(error=RuntimeError("provider unavailable"))
+        await NewsIntelligenceService(
+            session, llm_client=failed_llm, model="test-model"
+        ).analyze_items([item])
+        row = await session.scalar(select(NewsItem))
+        assert row.llm_status == "failed"
+
+        recovered_llm = FakeNewsLlm([_valid_response()])
+        await NewsIntelligenceService(
+            session, llm_client=recovered_llm, model="test-model"
+        ).analyze_items([], include_failed_retries=True)
+        assert recovered_llm.calls == 0
+
+        row.updated_at = utc_now() - timedelta(hours=2)
+        await session.commit()
+        await NewsIntelligenceService(
+            session, llm_client=recovered_llm, model="test-model"
+        ).analyze_items([], include_failed_retries=True)
+        await session.refresh(row)
+        assert recovered_llm.calls == 1
+        assert row.llm_status == "success"
+        assert (await session.scalars(
+            select(LlmOperationOutcome).order_by(LlmOperationOutcome.id)
+        )).all()[-1].status == "success"
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_recent_failed_rss_news_is_not_retried_during_provider_cooldown():
+    engine, session = await build_session()
+    item = _raw_item("Ethereum governance update", "https://example.com/retry-cooldown")
+    try:
+        failed_llm = FakeNewsLlm(error=RuntimeError("provider unavailable"))
+        await NewsIntelligenceService(
+            session, llm_client=failed_llm, model="test-model"
+        ).analyze_items([item])
+        recovered_llm = FakeNewsLlm([_valid_response()])
+        await NewsIntelligenceService(
+            session, llm_client=recovered_llm, model="test-model"
+        ).analyze_items([item], include_failed_retries=True)
+        assert recovered_llm.calls == 0
+    finally:
+        await session.close()
+        await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_budget_skipped_news_is_recovered_when_missing_from_next_rss_batch():
+    engine, session = await build_session()
+    item = _raw_item("Solana bridge security update", "https://example.com/budget-retry")
+    try:
+        await NewsIntelligenceService(
+            session, llm_client=FakeNewsLlm(),
+            model="test-model", max_llm_calls_per_hour=0,
+        ).analyze_items([item])
+        row = await session.scalar(select(NewsItem))
+        assert row.llm_status == "skipped_budget"
+        row.updated_at = utc_now() - timedelta(hours=2)
+        await session.commit()
+
+        llm = FakeNewsLlm([_valid_response()])
+        await NewsIntelligenceService(
+            session, llm_client=llm, model="test-model"
+        ).analyze_items([], include_failed_retries=True)
+        await session.refresh(row)
+        assert row.llm_status == "success"
+        assert llm.calls == 1
+    finally:
+        await session.close()
+        await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_busy_rss_reserves_one_bounded_slot_for_old_failed_news():
+    engine, session = await build_session()
+    lost = _raw_item("Bitcoin ETF appeal", "https://example.com/old-failed")
+    try:
+        await NewsIntelligenceService(
+            session, llm_client=FakeNewsLlm(error=RuntimeError("down")), model="test-model"
+        ).analyze_items([lost])
+        row = await session.scalar(select(NewsItem))
+        row.updated_at = utc_now() - timedelta(hours=2)
+        await session.commit()
+
+        llm = FakeNewsLlm([_valid_response(), _valid_response()])
+        fresh = [
+            _raw_item("New Ethereum regulation", "https://example.com/fresh-1"),
+            _raw_item("New Solana regulation", "https://example.com/fresh-2"),
+        ]
+        await NewsIntelligenceService(
+            session, llm_client=llm, model="test-model",
+            max_items_per_run=2, max_llm_calls_per_run=2
+        ).analyze_items(fresh, include_failed_retries=True)
+        await session.refresh(row)
+        assert llm.calls == 2
+        assert row.llm_status == "success"
+        assert (await session.scalar(select(func.count()).select_from(NewsItem))) == 2
     finally:
         await session.close()
         await engine.dispose()
