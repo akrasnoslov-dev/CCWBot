@@ -47,6 +47,24 @@ Never place provider/LLM calls inside recipient loops.
 - `/reports`, `/dailyreport`, and `/weeklyreport` are available to all users.
 - `/settings` is admin-only. `/userid` works manually but stays hidden from menus/help.
 
+## Manual command UX and price lookups
+
+- Manual commands in private Telegram chats produce dismissible, transient bot replies.
+  **Close** dismisses every bot message belonging to that command result, including
+  associated text and document exports. Starting another manual command cleans up the
+  previous result on a best-effort basis; automatic Event Alerts, scheduled reports,
+  payments and proactive messages are never included in that cleanup.
+- Navigating a manual inline menu should edit the current message and preserve
+  **Back** to its actual parent. Direct admin-only `/settings` has a standalone
+  **Close** root, while settings reached from `/admin` return to Admin.
+- Manual `/price` uses the configured 300-second per-symbol CoinGecko cache and
+  must not impose a separate UI cooldown. Concurrent uncached requests for the
+  same coin share one in-flight refresh. The result offers **Change coin** and
+  **Close**. Expired prices must never be shown as current if refresh fails.
+- The supported manual symbols remain BTC, ETH, GRAM and SOL (legacy `ton` maps
+  to GRAM). Price cache and screen behavior never change automatic market-alert
+  precision or eligibility.
+
 ## Market Heartbeat
 
 - A heartbeat is a fallback after **24 consecutive hours of silence**, independently for each

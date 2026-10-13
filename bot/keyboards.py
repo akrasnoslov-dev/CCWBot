@@ -113,6 +113,13 @@ def build_price_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def build_price_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Change coin", callback_data="price:menu")],
+        [InlineKeyboardButton("Close", callback_data="transient:close")],
+    ])
+
+
 def build_watchlist_keyboard(
     *,
     rows: list[tuple[str, bool, bool]],
@@ -172,14 +179,16 @@ def build_admin_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def build_admin_alert_settings_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Current settings", callback_data="admin:current")],
-            [InlineKeyboardButton("Event analysis interval", callback_data="admin:interval_menu")],
-            [InlineKeyboardButton("Back", callback_data="admin:back")],
-        ]
-    )
+def build_admin_alert_settings_keyboard(*, standalone: bool = False) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("Current settings", callback_data="admin:current")],
+        [InlineKeyboardButton("Event analysis interval", callback_data="admin:interval_menu")],
+    ]
+    if standalone:
+        rows.append([InlineKeyboardButton("Close", callback_data="transient:close")])
+    else:
+        rows.append([InlineKeyboardButton("Back", callback_data="admin:back")])
+    return InlineKeyboardMarkup(rows)
 
 
 def build_admin_premium_keyboard() -> InlineKeyboardMarkup:
@@ -203,8 +212,8 @@ def build_admin_logs_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def build_admin_back_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="admin:back")]])
+def build_admin_back_keyboard(parent: str = "admin:back") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data=parent)]])
 
 
 def build_interval_keyboard() -> InlineKeyboardMarkup:
