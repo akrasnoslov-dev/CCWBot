@@ -27,5 +27,5 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(
         _format_admin_alert_settings(alert_settings),
-        reply_markup=build_admin_alert_settings_keyboard(),
+        reply_markup=build_admin_alert_settings_keyboard(standalone=True),
     )
