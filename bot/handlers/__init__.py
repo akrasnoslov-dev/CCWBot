@@ -52,12 +52,7 @@ from .common import (
     log_request,
 )
 from .plans import myplan, plan, subscribe, watchlist
-from .price import (
-    PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS,
-    PRICE_RATE_LIMIT_SECONDS,
-    log_custom_emoji_ids,
-    price,
-)
+from .price import log_custom_emoji_ids, price
 from .reports import daily_report, reports, weekly_report
 from .settings import settings
 from .user import start, user_id
@@ -65,8 +60,6 @@ from .user import start, user_id
 __all__ = [
     "DB_ENABLED",
     "DB_SESSION_LOCAL",
-    "PRICE_RATE_LIMIT_PRUNE_AFTER_SECONDS",
-    "PRICE_RATE_LIMIT_SECONDS",
     "_build_admin_system_status_text",
     "_acquisition_link_usage_text",
     "_build_error_logging_status_text",
