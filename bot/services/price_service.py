@@ -29,6 +29,8 @@ COIN_SYMBOL_TO_ID = {
 DEFAULT_SYMBOL = "btc"
 _PRICE_CACHE: dict[str, tuple[Decimal, Decimal, float]] = {}
 _PRICE_IN_FLIGHT: dict[str, asyncio.Task[tuple[Decimal, Decimal, str]]] = {}
+_PRICE_PROVIDER_BACKOFF_UNTIL: dict[str, float] = {}
+_PRICE_PROVIDER_BACKOFF_SECONDS = 60
 _BTC_MARKET_CACHE: tuple[Decimal, Decimal, Decimal | None, float] | None = None
 logger = logging.getLogger(__name__)
 _COIN_ID_TO_SYMBOL = {coin_id: symbol for symbol, coin_id in COIN_SYMBOL_TO_ID.items()}
@@ -241,6 +243,9 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[Decimal, Decimal
         return cached
 
     # No await between cache check and task registration: one in-flight request per symbol.
+    if time.monotonic() < _PRICE_PROVIDER_BACKOFF_UNTIL.get(normalized_symbol, 0):
+        raise CoinGeckoRateLimitError("Price provider cooldown active")
+
     task = _PRICE_IN_FLIGHT.get(normalized_symbol)
     if task is None or task.done():
         task = asyncio.create_task(_refresh_coin_price(normalized_symbol))
@@ -268,11 +273,18 @@ async def _refresh_coin_price(normalized_symbol: str) -> tuple[Decimal, Decimal,
         "precision": "full",
     }
 
-    async with httpx.AsyncClient() as client:
-        data = await _get_with_retry(
-            client, url, params, parse_decimal_numbers=True,
-            allow_stale_price_fallback=False,
+    try:
+        async with httpx.AsyncClient() as client:
+            data = await _get_with_retry(
+                client, url, params, parse_decimal_numbers=True,
+                allow_stale_price_fallback=False,
+            )
+    except CoinGeckoRateLimitError:
+        _PRICE_PROVIDER_BACKOFF_UNTIL[normalized_symbol] = (
+            time.monotonic() + _PRICE_PROVIDER_BACKOFF_SECONDS
         )
+        raise
+    _PRICE_PROVIDER_BACKOFF_UNTIL.pop(normalized_symbol, None)
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
