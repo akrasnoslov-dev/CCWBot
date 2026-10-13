@@ -299,24 +299,36 @@ status table and rerun after the named collector is fixed.
 Both deployment steps that ops-agent changes require — the explicit image rebuild and the manual
 host-wrapper reinstall — are documented above under **Deploying Ops-Agent Changes**.
 
-For post-deploy Event Alert verification, record the UTC deploy start, run the backup and migration
-before starting the new bot image, explicitly rebuild the `ops-agent` overlay image, and wait for at
-least one fresh News Intelligence operation to finish. Then collect a deploy-scoped no-state bundle:
+For **ordinary Event Alert bot-code releases**, use the minimal release gate in
+`docs/release_checklist.md`: status, valid JSON health, deployed SHA, and a private smoke check
+of the affected Telegram path. Inspect existing sanitized delivery/LLM outcomes only where the
+change makes them relevant. Do not block the release while waiting for a naturally occurring
+News Intelligence operation or a new Event Alert. Do not run migrations or rebuild the ops-agent
+overlay unless those sources actually changed.
+
+For **incident investigation or specifically required deeper Event Alert validation**, record
+the UTC deploy start and, after the deployment finishes, collect one deploy-scoped no-state
+bundle using the already-installed safe ops-agent wrapper:
 
 ```bash
 sudo /usr/local/bin/ccwbot-ops-agent-collect --since <deploy-start-UTC> --until now --no-state-update
 ```
 
-Review only the sanitized report context and detector summary. Confirm `/health` is OK,
-`market_events_without_alert_deliveries` is clear or has only explicit expected skip reasons, no
-new critical/high unexplained Event Alert detector is triggered, Collector Status is complete, and
-LLM reconciliation/coverage evidence is present with correlated operations greater than zero,
-missing operation IDs equal to zero, and reconciliation gaps equal to zero. Confirm basic Telegram
-functionality in a private smoke check without recording user ids or private text. If rollback is
-required, roll back the application while leaving the additive outcome table in place; do not
-downgrade migration 0029 while code may still write to it.
+Review `manifest.json` and `decision_report_context.md` first; open only targeted evidence
+for triggered/unknown findings or the stated investigation goal. Check Collector Status and
+Event Alert delivery/detector outcomes; review LLM reconciliation only if the observed interval
+contains relevant operations. Zero fresh operations means insufficient coverage, not a failed
+deployment or permission to poll indefinitely. A partial bundle is a diagnostic gap, not proof
+that the runtime is unhealthy. Do not repeat collection without a concrete reason. When a
+release includes migration 0029, preserve its rollback compatibility: do not downgrade that
+migration while code may still write to the additive outcome table.
 
-## Production Deploy
+## Manual Production Deploy (exceptional releases only)
+
+**Not the default for ordinary bot-only releases.** Those use the restricted
+`ccwbot-deploy-safe` wrapper below. The following manual sequence is for a separately
+authorized operator handling an incompatible migration, ops-agent change, or other exception.
+Do not repeat its backup, Compose or migration steps after a successful safe-wrapper deploy.
 
 Deploy tracked-file changes only through Git:
 
@@ -471,9 +483,11 @@ failure, stop retrying and hand off to a separately authorized manual
 operator recovery. Never force-reset, reinstall, change sudoers, or run
 migrations as part of read-only diagnosis. Rollback also requires approval.
 
-After an authorized release, run a private Telegram smoke test and sanitized
-ops-agent report checks. See docs/release_checklist.md for release gates and
-the distinct ops-agent overlay image/host-wrapper procedure.
+After an authorized ordinary bot-only release, confirm the deployed SHA, status,
+valid JSON `/health`, and a private Telegram smoke test. Full ops-agent collection/report
+checks are conditional, not a routine follow-up; see `docs/release_checklist.md`.
+For ops-agent/migration changes, use the distinct authorized overlay, wrapper, and migration
+procedure above. Never run the ops-agent collector concurrently with a deploy/rollback.
 
 ## Dependency updates
 
