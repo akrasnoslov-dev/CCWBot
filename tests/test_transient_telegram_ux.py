@@ -107,4 +107,4 @@ async def test_admin_settings_renders_global_alert_controls(monkeypatch):
     markup = reply.await_args.kwargs["reply_markup"]
     callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
     assert "Current alert settings" in text
-    assert callbacks == ["admin:current", "admin:interval_menu", "admin:back"]
+    assert callbacks == ["admin:current", "admin:interval_menu", "transient:close"]
