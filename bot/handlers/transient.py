@@ -1,4 +1,5 @@
 """Manage command-generated Telegram replies without touching passive notifications."""
+import asyncio
 import logging
 from collections import deque
 from contextvars import ContextVar
@@ -89,7 +90,7 @@ def with_close_button(markup):
 
 def _tracking(chat_id, message_id=None):
     active = _active.get()
-    if active is None or active[0][0] != chat_id:
+    if active is None or active[0][0] != chat_id or active[2] is not asyncio.current_task():
         return None
     if message_id is not None and not sessions.is_active(*active[0], message_id):
         return None
@@ -143,7 +144,7 @@ async def enter_command(update, context, origin=None):
     if key is None:
         return None
     generation = await sessions.begin(key, context.bot, origin=origin)
-    return _active.set((key, generation))
+    return _active.set((key, generation, asyncio.current_task()))
 
 
 def enter_callback(update):
@@ -155,7 +156,7 @@ def enter_callback(update):
     generation = sessions.token_for(*key, message_id)
     if generation is None:
         return None
-    return _active.set((key, generation))
+    return _active.set((key, generation, asyncio.current_task()))
 
 
 def exit_request(context_token):
