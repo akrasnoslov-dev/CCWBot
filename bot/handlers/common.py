@@ -15,6 +15,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from bot.runtime import log
+
 from .transient import enter_callback, enter_command, exit_request
 
 logger = logging.getLogger("bot.handlers")
