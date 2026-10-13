@@ -14,6 +14,7 @@ from bot.services.price_service import COIN_SYMBOL_TO_ID, CoinGeckoRateLimitErro
 
 from .common import handlers_module, log_request, logger
 
+
 @log_request("/price")
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
