@@ -15,7 +15,12 @@ from bot.db.database import (
 )
 from bot.domain.supported_coins import ACTIVE_SYMBOLS
 from bot.handlers import button_router, plan, start
-from bot.keyboards import build_plan_keyboard, build_price_keyboard
+from bot.keyboards import (
+    build_plan_keyboard,
+    build_price_keyboard,
+    build_price_result_keyboard,
+    build_watchlist_keyboard,
+)
 from bot.setup import setup_bot_commands
 from bot.watchlist import (
     build_plan_message,
@@ -50,6 +55,27 @@ def make_subscriptions(**enabled_by_symbol):
             )
         )
     return rows
+
+
+def test_price_navigation_and_heartbeat_settings_survive_branch_integration():
+    price_actions = [
+        button.callback_data
+        for row in build_price_result_keyboard().inline_keyboard
+        for button in row
+    ]
+    assert price_actions == ["price:menu", "transient:close"]
+
+    watchlist_actions = [
+        button.callback_data
+        for row in build_watchlist_keyboard(
+            rows=[("btc", True, True), ("eth", False, False)]
+        ).inline_keyboard
+        for button in row
+    ]
+    assert watchlist_actions == [
+        "watchlist:set:btc:false",
+        "watchlist:set:eth:true",
+    ]
 
 
 def test_watchlist_free_user_sees_btc_available_and_premium_locked():
