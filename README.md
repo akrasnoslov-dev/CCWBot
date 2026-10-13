@@ -10,8 +10,8 @@ analysis.
   Legacy `/price ton` and `/price toncoin` are accepted as aliases for GRAM.
 - Automatic Event Alerts use global polling: BTC is free, while enabled non-BTC watchlist
   alerts require active Premium.
-- Market Heartbeat generates cached hourly per-coin monitoring updates and sends them only
-  when the user's last sent heartbeat for that coin is older than their heartbeat frequency.
+- Market Heartbeat is a per-user, per-coin fallback after 24 hours without any successfully
+  delivered automatic alert. Shared monitoring updates are generated only for coins with due users.
 - Daily and weekly reports are cached market-wide LLM reports across all active symbols.
   Daily cache refresh runs every 4 hours; weekly cache refresh runs every 24 hours.
 - One coin market event creates or reuses one AI analysis, then sends it to many recipients.
@@ -130,7 +130,7 @@ and `STRONG_SIGNAL_COOLDOWN_HOURS` are no longer used by active production flow.
 `AUTOMATIC_CHECK_INTERVAL_SECONDS` controls Event Alert LLM analysis cadence per symbol.
 The supported cadence is `1800` seconds (30 minutes); stale custom values from local state
 or app settings are normalized back to 1800 seconds. It does not control Market Heartbeat
-delivery frequency. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
+24-hour silence window. Event Alert jobs are staggered by symbol in the default 30-minute cycle:
 BTC at minute 00/30, ETH at 05/35, GRAM at 10/40, and SOL at 15/45. On startup, the schedule
 log should show `symbol_first_delays=BTC:0s,ETH:300s,GRAM:600s,SOL:900s` at the cycle boundary.
 The first-delay calculation is anchored to the wall-clock cycle, so restarts preserve the same
@@ -190,7 +190,7 @@ running that migration.
 
 The Premium foundation stores:
 
-- `users.alert_frequency_seconds`
+- `users.alert_frequency_seconds` (deprecated; ignored by delivery)
 - `user_coin_subscriptions` with one lowercase symbol row per user and coin
 - `user_premium_subscriptions` for current Premium entitlement state
 - `payments` with one row per processed Telegram Stars payment
@@ -233,11 +233,15 @@ pre-window reference may be used only when it is no more than one Event Alert an
 interval before the window start. Otherwise the first fresh in-window snapshot is used, or
 the analysed-window change is left unknown.
 
-During automatic processing, the bot checks each eligible user and coin. If a sent
-`market_heartbeat` for that user and coin happened within the user's configured heartbeat
-frequency, heartbeat is skipped. Event Alerts do not reset or delay the heartbeat cadence. If
-no recent heartbeat exists, the bot sends the latest completed heartbeat only when it is fresh
-enough, normally up to 2 hours old. Missing or stale heartbeat rows are logged and not sent.
+During automatic processing, a heartbeat is eligible only after 24 consecutive hours without
+any successful automatic alert for the same user and coin. Event Alert and heartbeat success
+reset the clock; pending, failed and suppressed attempts do not. Successful delivery uses
+`alerts.sent_at`, separately from reservation time. Without delivery history, persisted user,
+watchlist activation and active entitlement timestamps provide a conservative activation baseline.
+The next scheduled check may deliver the latest completed heartbeat if it is at most 2 hours old.
+Missing/stale cache rows are not sent. Hourly shared generation skips coins without due recipients.
+There is no user-configurable heartbeat interval; legacy stored choices are ignored.
+See `docs/project_context.md` for the canonical heartbeat contract.
 Event Alert delivery decisions are persisted in `alert_delivery_outcomes` and also logged for
 ops-agent evidence, never shown in Telegram messages. The table records queryable statuses such
 as `delivered`, `filtered`, `suppressed`, `cooldown`, `failed`, `rate_limited`,

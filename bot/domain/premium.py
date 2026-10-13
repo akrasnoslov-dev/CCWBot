@@ -1,4 +1,4 @@
-"""Pure Premium entitlement and delivery-frequency rules."""
+"""Pure Premium entitlement and heartbeat silence rules."""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from bot.domain.supported_coins import (
-    DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS,
-    FREE_ALERT_FREQUENCY_SECONDS,
-    PREMIUM_ALERT_FREQUENCY_SECONDS,
     is_symbol_free,
     normalize_symbol,
 )
@@ -58,14 +55,6 @@ def has_premium_entitlement(user: Any, now: datetime | None = None) -> bool:
     )
 
 
-def get_user_stored_frequency_seconds(user: Any) -> int | None:
-    value = getattr(user, "alert_frequency_seconds", None)
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
 def is_coin_unlocked_for_user(user: Any, symbol: str, now: datetime | None = None) -> bool:
     normalized_symbol = normalize_symbol(symbol)
     if is_symbol_free(normalized_symbol):
@@ -73,14 +62,51 @@ def is_coin_unlocked_for_user(user: Any, symbol: str, now: datetime | None = Non
     return has_premium_entitlement(user, now)
 
 
-def get_effective_market_heartbeat_frequency_seconds(user: Any, now: datetime | None = None) -> int:
-    """Return the user-visible Market Heartbeat interval only."""
-    if not has_premium_entitlement(user, now):
-        return FREE_ALERT_FREQUENCY_SECONDS
-    stored_frequency = get_user_stored_frequency_seconds(user)
-    if stored_frequency in PREMIUM_ALERT_FREQUENCY_SECONDS:
-        return stored_frequency
-    return DEFAULT_PREMIUM_ALERT_FREQUENCY_SECONDS
+HEARTBEAT_SILENCE_SECONDS = 86400
+
+
+def heartbeat_activation_baseline(user: Any, symbol: str, now: datetime) -> datetime | None:
+    """Use persisted onboarding/watchlist/entitlement times; fail closed if absent.
+
+    Entitlement updates are conservative: renewal may postpone a first heartbeat,
+    but can never cause an early one. Existing successful deliveries use their
+    own rolling clock instead.
+    """
+    normalized = normalize_symbol(symbol)
+    subscription = next(
+        (
+            row
+            for row in getattr(user, "coin_subscriptions", [])
+            if normalize_symbol(row.symbol) == normalized
+        ),
+        None,
+    )
+    if subscription is None or not subscription.is_enabled:
+        return None
+    dates = [
+        getattr(user, "created_at", None),
+        getattr(subscription, "updated_at", None) or getattr(subscription, "created_at", None),
+    ]
+    if not is_symbol_free(normalized):
+        active = [
+            plan
+            for plan in (get_user_plan(user), get_user_trial(user))
+            if is_user_premium_active(plan, now)
+        ]
+        starts = [
+            _as_aware_utc(
+                getattr(plan, "updated_at", None)
+                or getattr(plan, "started_at", None)
+                or getattr(plan, "created_at", None)
+            )
+            for plan in active
+        ]
+        if not starts or any(value is None for value in starts):
+            return None
+        # Either active entitlement is sufficient; use the earliest available one.
+        dates.append(min(starts))
+    dates = [_as_aware_utc(value) for value in dates if value is not None]
+    return max(dates) if dates else None
 
 
 def can_deliver_market_heartbeat_now(
@@ -91,17 +117,6 @@ def can_deliver_market_heartbeat_now(
 ) -> bool:
     if not is_coin_unlocked_for_user(user, symbol, now):
         return False
-    if last_sent_at is None:
-        return True
-    last_sent_at = _as_aware_utc(last_sent_at)
     now = _as_aware_utc(now) or datetime.now(timezone.utc)
-    if last_sent_at is None:
-        return True
-    elapsed_seconds = (now - last_sent_at).total_seconds()
-    return elapsed_seconds >= get_effective_market_heartbeat_frequency_seconds(user, now)
-
-
-# Compatibility names for integrations that have not yet adopted the explicit
-# Heartbeat terminology. Event Alert recipient selection must not use them.
-get_effective_frequency_seconds = get_effective_market_heartbeat_frequency_seconds
-can_deliver_now = can_deliver_market_heartbeat_now
+    baseline = _as_aware_utc(last_sent_at) or heartbeat_activation_baseline(user, symbol, now)
+    return baseline is not None and (now - baseline).total_seconds() >= HEARTBEAT_SILENCE_SECONDS

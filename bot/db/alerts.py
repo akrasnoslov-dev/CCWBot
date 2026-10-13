@@ -6,10 +6,14 @@ Does not belong here: LLM provider calls, Telegram send/retry IO, recipient
 eligibility policy, or schema/model declarations.
 """
 
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
+from hashlib import sha256
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
@@ -59,6 +63,7 @@ async def save_alert(
         event_ai_analysis_id=event_ai_analysis_id,
         user_id=user_id,
         status=status,
+        sent_at=utc_now() if status == "sent" else None,
         error_message=error_message,
         trigger_reason=trigger_reason,
         trigger_source=trigger_source,
@@ -81,9 +86,9 @@ async def get_last_sent_alert_at(
     symbol: str,
     alert_type: str | None = None,
 ) -> datetime | None:
-    """Return latest sent delivery time for a user+symbol frequency window."""
+    """Return latest successful delivery time for the user and coin."""
     statement = (
-        select(func.max(Alert.created_at))
+        select(func.max(Alert.sent_at))
         .where(Alert.user_id == user_id)
         .where(Alert.symbol == symbol.upper())
         .where(Alert.status == "sent")
@@ -198,7 +203,7 @@ async def get_last_sent_alert(
         .where(Alert.user_id == user_id)
         .where(Alert.symbol == symbol.upper())
         .where(Alert.status == "sent")
-        .order_by(Alert.created_at.desc(), Alert.id.desc())
+        .order_by(Alert.sent_at.desc().nulls_last(), Alert.id.desc())
         .limit(1)
     )
     if alert_type is not None:
@@ -500,6 +505,7 @@ async def update_alert_delivery_status(
     if last_error is not None:
         alert.last_error = last_error
     if status == "sent":
+        alert.sent_at = alert.sent_at or utc_now()
         alert.error_message = None
         alert.next_retry_at = None
         alert.final_failed_at = None
@@ -1082,3 +1088,53 @@ async def get_recent_market_events(
         statement.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc()).limit(limit)
     )
     return list(result.all())
+
+_delivery_locks: WeakValueDictionary[tuple[int, str], asyncio.Lock] = WeakValueDictionary()
+_lock_pool_slots: WeakKeyDictionary = WeakKeyDictionary()
+
+
+@asynccontextmanager
+async def _lock_connection_slot(session):
+    """Reserve capacity for persistence while an advisory-lock connection is held.
+
+    Limiting lock holders to half the pool prevents them from taking every
+    connection and deadlocking on their own delivery/status sessions.
+    """
+    pool = session.get_bind().pool
+    if not hasattr(pool, "size"):
+        yield  # NullPool has no bounded shared connection capacity.
+        return
+    capacity = pool.size() + max(getattr(pool, "_max_overflow", 0), 0)
+    if capacity < 2:
+        raise ValueError("Automatic delivery requires at least two database pool connections.")
+    slots = _lock_pool_slots.setdefault(pool, asyncio.Semaphore(max(capacity // 2, 1)))
+    async with slots:
+        yield
+
+
+@asynccontextmanager
+async def automatic_delivery_lock(session_factory, *, user_id: int, symbol: str):
+    """Serialize automatic sends across event/heartbeat identities for one coin.
+
+    A dedicated PostgreSQL transaction holds the advisory lock through Telegram
+    retries and status persistence; other persistence sessions may commit freely.
+    Closing/rolling back the transaction releases the lock, including cancellation.
+    SQLite tests use the same process lock without PostgreSQL-specific SQL.
+    """
+    key = (user_id, symbol.lower())
+    lock = _delivery_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        async with session_factory() as session:
+            if session.get_bind().dialect.name == "postgresql":
+                lock_id = int.from_bytes(
+                    sha256(f"ccwbot:automatic:{user_id}:{symbol.lower()}".encode()).digest()[:8],
+                    "big",
+                    signed=True,
+                )
+                async with _lock_connection_slot(session), session.begin():
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id}
+                    )
+                    yield
+            else:
+                yield

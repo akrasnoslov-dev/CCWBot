@@ -83,7 +83,9 @@ def test_database_comments_migration_matches_model_metadata():
             column = table.columns[column_name]
             if table_name == "users" and column_name == "alert_frequency_seconds":
                 assert column_comment == heartbeat_migration.PREVIOUS_ALERT_FREQUENCY_COMMENT
-                assert column.comment == heartbeat_migration.MARKET_HEARTBEAT_FREQUENCY_COMMENT
+                assert column.comment == (
+                    "Deprecated heartbeat interval preference; ignored by automatic delivery."
+                )
                 continue
             if (table_name, column_name) in policy_migration.PRICE_COLUMN_COMMENTS:
                 assert column_comment == policy_migration.PREVIOUS_PRICE_COLUMN_COMMENTS[

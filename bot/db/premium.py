@@ -1,7 +1,7 @@
-"""Premium, watchlist, frequency, and payment persistence.
+"""Premium, watchlist, and payment persistence.
 
 Belongs here: coin subscription rows, Premium grant/revoke/payment activation,
-and user alert frequency preferences.
+and trial lifecycle.
 Does not belong here: Telegram command authorization, payment provider API calls,
 alert delivery rows, or schema/model declarations.
 """
@@ -24,7 +24,6 @@ from bot.db.database import (
 from bot.db.users import get_user_by_telegram_user_id
 from bot.domain.premium import is_user_trial_active
 from bot.domain.supported_coins import (
-    PREMIUM_ALERT_FREQUENCY_SECONDS,
     SUPPORTED_SYMBOLS,
     is_symbol_free,
     normalize_symbol,
@@ -103,7 +102,7 @@ async def set_user_coin_subscription(
             is_enabled=is_enabled,
         )
         session.add(row)
-    else:
+    elif row.is_enabled != is_enabled:
         row.is_enabled = is_enabled
         row.updated_at = utc_now()
     try:
@@ -123,24 +122,6 @@ async def set_user_coin_subscription(
         await session.commit()
     await session.refresh(row)
     return row
-
-
-async def set_user_alert_frequency(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    frequency_seconds: int,
-) -> User:
-    if frequency_seconds not in PREMIUM_ALERT_FREQUENCY_SECONDS:
-        raise ValueError("Unsupported alert frequency.")
-    user = await session.get(User, user_id)
-    if user is None:
-        raise ValueError("User not found.")
-    user.alert_frequency_seconds = int(frequency_seconds)
-    user.updated_at = utc_now()
-    await session.commit()
-    await session.refresh(user)
-    return user
 
 
 async def get_user_premium_subscription(
