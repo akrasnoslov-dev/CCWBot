@@ -28,7 +28,6 @@ def _context(args: list[str]):
 
 @pytest.fixture(autouse=True)
 def clear_manual_price_rate_limits():
-    price_handler._user_last_price_call.clear()
     prices._MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT.clear()
     yield
     price_handler._user_last_price_call.clear()
@@ -75,19 +74,16 @@ async def test_price_rejects_unsupported_symbol_without_provider_call(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_price_rate_limits_each_user_before_provider_call(monkeypatch):
+async def test_price_repeated_calls_are_not_ui_throttled(monkeypatch):
     update = _update()
     send_price = AsyncMock()
     monkeypatch.setattr(price_handler, "send_price_message", send_price)
-    monkeypatch.setattr(price_handler.time, "monotonic", lambda: 100.0)
-    price_handler._user_last_price_call[1001] = 95.0
 
     await price_handler.price(update, _context(["btc"]))
+    await price_handler.price(update, _context(["btc"]))
 
-    send_price.assert_not_awaited()
-    update.message.reply_text.assert_awaited_once_with(
-        "⏳ Please wait a few seconds before requesting again."
-    )
+    assert send_price.await_count == 2
+    update.message.reply_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
