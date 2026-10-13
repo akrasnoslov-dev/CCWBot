@@ -118,13 +118,13 @@ class TransientBot(ExtBot):
         return message
 
     async def edit_message_text(
-        self, text, chat_id=None, message_id=None, inline_message_id=None, *args, **kwargs
+        self, text, chat_id=None, message_id=None, inline_message_id=None, **kwargs
     ):
         if message_id is not None and _tracking(chat_id, message_id):
             kwargs["reply_markup"] = with_close_button(kwargs.get("reply_markup"))
         return await super().edit_message_text(
             text, chat_id=chat_id, message_id=message_id,
-            inline_message_id=inline_message_id, *args, **kwargs
+            inline_message_id=inline_message_id, **kwargs
         )
 
 
