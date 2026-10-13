@@ -4,7 +4,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_market_check
-from bot.keyboards import build_interval_keyboard, build_plan_keyboard
+from bot.keyboards import (
+    build_admin_alert_settings_keyboard,
+    build_interval_keyboard,
+    build_plan_keyboard,
+    build_price_keyboard,
+)
 from bot.prices import send_manual_rate_limit_message, send_price_message
 from bot.reports import send_daily_report_message, send_weekly_report_message
 from bot.services.price_service import CoinGeckoRateLimitError
@@ -25,6 +30,7 @@ from .common import (
     logger,
     safe_edit_callback_message,
 )
+from .transient import CLOSE_DATA, private_key, sessions
 
 
 @log_request("callback")
@@ -33,6 +39,19 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data or ""
 
     try:
+        key = private_key(update)
+        message_id = getattr(query.message, "message_id", None)
+        if data == CLOSE_DATA:
+            await query.answer()
+            if key is not None and message_id is not None:
+                await sessions.close(*key, message_id, context.bot)
+            return
+        if key is not None and message_id is not None and sessions.is_retired(
+            key[0], message_id
+        ):
+            await query.answer("This screen is closed.")
+            return
+
         root = handlers_module()
         is_admin_callback = data.startswith("settings:") or data.startswith("admin:")
         if is_admin_callback and not await root.is_admin_user(
@@ -58,6 +77,11 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         await query.answer()
 
+        if data == "price:menu":
+            await safe_edit_callback_message(
+                query, "Choose a coin symbol:", reply_markup=build_price_keyboard()
+            )
+            return
         if data.startswith("price:"):
             await send_price_message(query, data.split(":", maxsplit=1)[1], edit=True)
             return
@@ -91,6 +115,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Movement thresholds: disabled for automatic Event Alerts\n"
                 "Event Alert analysis interval: "
                 f"{alert_settings['automatic_check_interval_seconds']} seconds",
+                reply_markup=build_admin_alert_settings_keyboard(
+                    standalone=key is not None
+                    and sessions.origin_for(*key) == "/settings"
+                ),
             )
             return
         if data == "settings:interval_menu":

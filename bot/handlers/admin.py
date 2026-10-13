@@ -38,6 +38,7 @@ from bot.settings import (
 from bot.storage import load_state
 
 from .common import _mark_denied, handlers_module, log_request, safe_edit_callback_message
+from .transient import sessions
 
 ACQUISITION_LINK_LIST_LIMIT = 100
 TELEGRAM_REPLY_TEXT_LIMIT = 3500
@@ -368,12 +369,18 @@ async def set_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _standalone_settings_origin(query) -> bool:
+    return sessions.origin_for(query.message.chat_id, query.from_user.id) == "/settings"
+
+
 async def send_admin_callback_response(data: str, query, application) -> bool:
     if data == "admin:alert_settings":
         await safe_edit_callback_message(
             query,
             "Alert settings",
-            reply_markup=build_admin_alert_settings_keyboard(),
+            reply_markup=build_admin_alert_settings_keyboard(
+                standalone=_standalone_settings_origin(query)
+            ),
         )
         return True
     if data == "admin:back":
@@ -400,12 +407,14 @@ async def send_admin_callback_response(data: str, query, application) -> bool:
         return True
     if data == "admin:premium_grant":
         await safe_edit_callback_message(
-            query, _premium_grant_usage_text(), reply_markup=build_admin_back_keyboard()
+            query, _premium_grant_usage_text(),
+            reply_markup=build_admin_back_keyboard("admin:premium_menu")
         )
         return True
     if data == "admin:premium_revoke":
         await safe_edit_callback_message(
-            query, _premium_revoke_usage_text(), reply_markup=build_admin_back_keyboard()
+            query, _premium_revoke_usage_text(),
+            reply_markup=build_admin_back_keyboard("admin:premium_menu")
         )
         return True
     if data == "admin:logs_menu":
@@ -436,7 +445,9 @@ async def send_admin_callback_response(data: str, query, application) -> bool:
         await safe_edit_callback_message(
             query,
             _format_admin_alert_settings(alert_settings),
-            reply_markup=build_admin_alert_settings_keyboard(),
+            reply_markup=build_admin_alert_settings_keyboard(
+                standalone=_standalone_settings_origin(query)
+            ),
         )
         return True
     if data == "admin:interval_menu":
@@ -455,7 +466,9 @@ async def send_admin_callback_response(data: str, query, application) -> bool:
         await safe_edit_callback_message(
             query,
             f"Automatic check interval updated to {interval} seconds. Applied immediately.",
-            reply_markup=build_admin_alert_settings_keyboard(),
+            reply_markup=build_admin_alert_settings_keyboard(
+                standalone=_standalone_settings_origin(query)
+            ),
         )
         return True
     return False
