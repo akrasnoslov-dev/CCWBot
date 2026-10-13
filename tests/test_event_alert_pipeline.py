@@ -884,7 +884,7 @@ def test_event_alert_presentation_removes_repeated_llm_market_facts():
     assert "SOL up ~4.1% in the last 3 hours" in payload
     assert "24 h" not in payload
     assert "Price: $109.79" in payload
-    assert "Since last alert/message (4h ago): +5.54%" in payload
+    assert "Since previous SOL Event Alert (18 Sep 08:00 UTC; 4h ago): +5.54%" in payload
     assert "3h market move: +4.07%" in payload
     assert "broader 24-hour trend" in payload
     assert "$105.49" not in payload
@@ -931,8 +931,11 @@ def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
         related_news=[],
     )["plain_text"]
 
-    assert "Since last alert/message (4h ago): +5.54%" in with_context
-    assert "Since last alert/message" not in without_context
+    assert (
+        "Since previous SOL market notification (18 Sep 08:00 UTC; 4h ago): +5.54%"
+        in with_context
+    )
+    assert "Since previous SOL" not in without_context
 
 
 def test_presentation_fallback_never_invents_an_analysed_window_move():
@@ -1210,8 +1213,8 @@ def test_event_alert_presentation_is_market_first_with_nonmaterial_related_news(
     assert "broader 24-hour direction remained opposite" in situation
     assert "continue in the current direction" in action
     assert "selected context develops" not in action
-    assert "Related context:" in payload
-    assert "US stock perpetual futures activity" in payload
+    assert "Related context:" not in payload
+    assert "US stock perpetual futures activity" not in payload
 
 
 @pytest.mark.parametrize(

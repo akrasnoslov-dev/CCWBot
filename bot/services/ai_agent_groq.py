@@ -460,10 +460,10 @@ _EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
         "If the move is ordinary for the asset and the observed trajectory shows no "
         "distinctive continuation, turn, or pace, choose routine even if the timestamp "
         "or headline is new. Percentile alone proves neither materiality nor novelty. "
-        "For repeated similar recent moves, require distinct current-path evidence for new. ",
-        "Calibration examples are not thresholds: cw=.003,c30=-.045,c60=-.254,pw=.6 with no "
-        "material market evidence=>routine/no alert; cw=.03,c30=.16,c60=.25,pw=7 without other "
-        "material market evidence=>routine/no alert.",
+        "For repeated similar recent moves, require distinct current-path evidence for new. "
+        "Routine BTC and repeated GRAM need distinct fresh path evidence. ",
+        "Calibration examples are not thresholds: ordinary moves without fresh "
+        "material path evidence=>no alert, regardless of headlines.",
         "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
         "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
         "prev={min,f,cw};min=minutes since prev;"
@@ -648,6 +648,13 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "supported; n={i,src,t,x,r,mat,h};sig={c,r};news IDs only n.i. "
         "Do not add numerical claims, specific durations, a market direction absent from "
         "market_directions, urgency, or causal explanations.",
+        "evidence contains only backend-verified relationships: compare window_vs_24h, "
+        "snapshot_path, latest_interval_pace or comparable_previous_alert where present. "
+        "Situation: explain one distinctive confirmed relationship in your own natural "
+        "words, never repeat a price block or invent a catalyst. "
+        "Possible action: name the NEXT observation that could confirm or contradict "
+        "that same relationship; 'whether' is fine. Avoid generic 'monitor market' advice. "
+        "If evidence is empty, disclose that no distinct trajectory is confirmed.",
     )
 )
 
@@ -685,9 +692,14 @@ def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
             directions["since"] = since
     significance = input_payload.get("significance_decision")
     significance = significance if isinstance(significance, dict) else {}
+    from bot.alerting.event_text import verified_event_alert_render_context
+
     return {
         "sym": input_payload.get("symbol"),
         "market_directions": directions,
+        "evidence": verified_event_alert_render_context(
+            market, input_payload.get("previous_event_alert")
+        ),
         "n": _event_analysis_prompt_payload(input_payload)["n"],
         "sig": {"c": significance.get("confidence"), "r": significance.get("reason_code")},
     }
