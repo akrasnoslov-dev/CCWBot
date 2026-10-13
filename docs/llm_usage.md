@@ -321,6 +321,13 @@ The logical Render outcome records success with the sanitized reason
 in `llm_usage_logs`. Mixed failure chains, unavailable providers, or an invalid
 deterministic fallback remain terminal. No extra LLM call is made for recovery.
 
+The Render prompt additionally receives compact verified non-numeric market
+relationship labels. This gives it trajectory evidence without raw market
+prices or snapshots, and does not alter the upstream significance decision.
+Successful provider output and the final Telegram text are tracked separately:
+post-render guard replacement does not count as a provider fallback and is
+not expressed by alerts.fallback_mode. See docs/observability.md.
+
 The render operation has its own logical operation id and sanitized terminal outcome. Significance
 and rendering therefore remain separately attributable: Event Analysis uses its normal
 significance chain, while rendering uses the dedicated model-level chain above.

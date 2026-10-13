@@ -45,6 +45,7 @@ from bot.alerting.event_text import (
     compact_event_alert_possible_action,
     compact_event_alert_situation,
     event_alert_presentation_fallback,
+    final_event_alert_quality_flags,
     is_news_centered_event_action,
     sanitize_financial_instruction,
     soften_possible_action,
@@ -1584,6 +1585,7 @@ def _event_alert_market_context_lines(
     change_since_message: float | None,
     last_message_at: object = None,
     last_message_price: float | None = None,
+    last_message_type: str | None = None,
     current_at: object = None,
     analysed_window_minutes: int | None,
     analysed_window_change: float | None,
@@ -1597,10 +1599,18 @@ def _event_alert_market_context_lines(
         and last_message_price is not None
     ):
         elapsed = compact_elapsed_since(last_message_at, current_at)
-        elapsed_suffix = f" ({elapsed})" if elapsed else ""
+        from bot.alerting.event_text import _parse_datetime
+
+        reference = _parse_datetime(last_message_at)
+        reference_label = reference.strftime("%d %b %H:%M UTC") if reference else "unknown time"
+        kind = {
+            "market_heartbeat": "Market Heartbeat",
+            EVENT_ALERT_TYPE: "Event Alert",
+        }.get(str(last_message_type or ""), "market notification")
+        elapsed_suffix = f"; {elapsed}" if elapsed else ""
         lines.append(
-            "Since last alert/message"
-            f"{elapsed_suffix}: {_format_optional_percent(change_since_message)}"
+            f"Since previous {symbol} {kind} ({reference_label}{elapsed_suffix}): "
+            f"{_format_optional_percent(change_since_message)}"
         )
     if analysed_window_minutes is not None and analysed_window_change is not None:
         analysed_window_label = _format_analysed_window_label(analysed_window_minutes)
@@ -1651,6 +1661,12 @@ def _build_event_alert_payload(
         analysed_window_minutes=market_data.get("analysed_window_minutes"),
         analysed_window_change=analysed_window_change,
     )
+    # Provider-selected IDs are not proof of relevance. Re-check final headlines
+    # against the asset before exposing them in a Telegram message.
+    related_news = [
+        item for item in related_news
+        if _news_context.classify_news_relevance(backend_symbol, item) != "irrelevant"
+    ]
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
         empty_text="",
@@ -1662,6 +1678,8 @@ def _build_event_alert_payload(
             previous_event_alert=input_payload.get("previous_event_alert"),
         )
     )
+    llm_situation = str(decision.message_body or "").strip()
+    llm_action = str(decision.possible_action or "").strip()
     message_body = _sanitize_event_text(
         decision.message_body,
         "Market conditions changed.",
@@ -1711,6 +1729,7 @@ def _build_event_alert_payload(
         change_since_message=change_since_message,
         last_message_at=(input_payload.get("last_msg") or {}).get("time"),
         last_message_price=(input_payload.get("last_msg") or {}).get("price"),
+        last_message_type=(input_payload.get("last_msg") or {}).get("type"),
         current_at=input_payload.get("timestamp_utc"),
         analysed_window_minutes=analysed_window_minutes,
         analysed_window_change=analysed_window_change,
@@ -1731,6 +1750,21 @@ def _build_event_alert_payload(
         "\n\n" if related_section else ""
     ) + f"Possible action:\n{possible_action}\n\nNot financial advice."
     message = f"{before_related}{related_section}{after_related}"
+    final_quality = final_event_alert_quality_flags(message)
+    logger.info(
+        "ops_event=event_alert_final_text_quality symbol=%s "
+        "situation_replaced=%s action_replaced=%s generic_action=%s "
+        "missing_situation=%s repeats_market_numbers=%s "
+        "situation_fingerprint=%s action_fingerprint=%s",
+        backend_symbol.upper(),
+        bool(llm_situation and llm_situation != message_body),
+        bool(llm_action and llm_action != possible_action),
+        final_quality["generic_action"],
+        final_quality["missing_situation"],
+        final_quality["repeats_market_numbers"],
+        sha256(message_body.lower().encode("utf-8")).hexdigest()[:12],
+        sha256(possible_action.lower().encode("utf-8")).hexdigest()[:12],
+    )
     all_entities = list(entities or [])
     related_offset = _utf16_length(before_related)
     for entity in related_link_entities:

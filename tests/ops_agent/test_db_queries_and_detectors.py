@@ -719,6 +719,11 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
         assert f"{status}_count" in outcomes.sql
     assert "generic_possible_action_count" in possible_action_quality.sql
     assert "should_alert = true" in possible_action_quality.sql
+    assert "a.message" in possible_action_quality.sql
+    assert "DISTINCT ON (a.market_event_id)" in possible_action_quality.sql
+    for field in ("situation_replaced_count", "action_replaced_count",
+                  "repeated_situation_count", "repeated_action_count"):
+        assert field in possible_action_quality.sql
 
 
 def test_event_alert_render_validation_reason_query_outputs_categories_only():

@@ -657,6 +657,10 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         _int(row.get("generic_possible_action_count")) for row in quality_rows
     )
     action_total = sum(_int(row.get("event_alert_actions")) for row in quality_rows)
+    situation_replacements = sum(_int(row.get("situation_replaced_count")) for row in quality_rows)
+    action_replacements = sum(_int(row.get("action_replaced_count")) for row in quality_rows)
+    repeated_situations = sum(_int(row.get("repeated_situation_count")) for row in quality_rows)
+    repeated_actions = sum(_int(row.get("repeated_action_count")) for row in quality_rows)
     lines = [
         "| Metric | Count | Notes |",
         "|---|---:|---|",
@@ -674,7 +678,10 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| Pre-LLM Exact Context Reuse | {pre_llm_similar_reused} | Event Analysis calls avoided only for exact semantic input equality. |",
         f"| Delivered rows with decision reason | {delivered_with_reason} | Successful deliveries carrying operator-facing decision reason. |",
         f"| Missing/unknown decision reason | {unknown_reason} | Rows needing older-schema allowance or follow-up. |",
-        f"| Generic possible action quality signals | {generic_actions} / {action_total} | Quality metric only; not a delivery gate. |",
+        f"| Generic possible action quality signals | {generic_actions} / {action_total} | Unique delivered Event Alerts; not provider drafts or recipient copies. |",
+        f"| Situation replaced after LLM | {situation_replacements} / {action_total} | Final text differs from validated Render content. |",
+        f"| Possible action replaced after LLM | {action_replacements} / {action_total} | Final text differs from validated Render content. |",
+        f"| Repeated final Situation / Action | {repeated_situations} / {repeated_actions} | Identical text across unique delivered events. |",
     ]
     if reuse_rows:
         top_reuse = sorted(

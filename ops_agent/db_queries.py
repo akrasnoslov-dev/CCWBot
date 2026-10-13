@@ -707,13 +707,31 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "event_alert_possible_action_quality",
         "evidence/db/aggregate_metrics.json",
+        # Unique real delivered market events, not pre-render LLM rows or 970 per-user copies.
+        # Only aggregate counts leave this collector; no message or personal data is exported.
+        "WITH delivered AS (SELECT DISTINCT ON (a.market_event_id) "
+        "a.market_event_id, a.message, e.message_body, e.possible_action "
+        "FROM alerts a JOIN event_ai_analyses e ON e.id = a.event_ai_analysis_id "
+        "WHERE a.created_at >= :since AND a.created_at < :until "
+        "AND a.alert_type = 'event_alert' AND a.status = 'sent' "
+        "AND a.market_event_id IS NOT NULL AND e.should_alert = true "
+        "ORDER BY a.market_event_id, a.created_at, a.id), "
+        "final_text AS (SELECT message_body, possible_action, "
+        "split_part(split_part(message, E'Situation:\\n', 2), E'\\n\\n', 1) AS situation, "
+        "split_part(split_part(message, E'Possible action:\\n', 2), E'\\n\\n', 1) AS action "
+        "FROM delivered) "
         "SELECT count(*) AS event_alert_actions, "
-        "count(*) FILTER (WHERE possible_action ~* "
-        "'^(monitor price movement|monitor market developments|monitor market sentiment|keep watching|monitor risk)\\.?$') "
-        "AS generic_possible_action_count "
-        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
-        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
-        "AND should_alert = true",
+        "count(*) FILTER (WHERE action ~* "
+        "'^(monitor (price|market|risk)|keep watching|review|"
+        "watch (the )?next (few )?short-term snapshots? for (confirmation|continuation|reversal))' "
+        "OR action = '') AS generic_possible_action_count, "
+        "count(*) FILTER (WHERE message_body IS NOT NULL AND "
+        "btrim(message_body) <> btrim(situation)) AS situation_replaced_count, "
+        "count(*) FILTER (WHERE possible_action IS NOT NULL AND "
+        "btrim(possible_action) <> btrim(action)) AS action_replaced_count, "
+        "count(*) - count(DISTINCT lower(situation)) AS repeated_situation_count, "
+        "count(*) - count(DISTINCT lower(action)) AS repeated_action_count "
+        "FROM final_text",
     ),
     DbQuery(
         "market_events_without_delivery_classification",
