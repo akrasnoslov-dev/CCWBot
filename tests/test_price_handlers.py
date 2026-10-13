@@ -30,7 +30,6 @@ def _context(args: list[str]):
 def clear_manual_price_rate_limits():
     prices._MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT.clear()
     yield
-    price_handler._user_last_price_call.clear()
     prices._MANUAL_RATE_LIMIT_LAST_SENT_AT_BY_CHAT.clear()
 
 
