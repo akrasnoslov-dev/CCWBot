@@ -4194,6 +4194,15 @@ async def _filter_event_recipients_for_cooldown(
             )
         return recipients
 
+    # An already-persisted or reused event can arrive with a numeric directional
+    # key but no semantic_family. Resolve the *current* side too; restoring
+    # only prior families leaves same-direction repeats unsuppressed.
+    normalized_current_family = str(semantic_family or "").strip().lower() or None
+    if normalized_current_family is None and canonical_event_key:
+        inferred_family = canonicalize_event_key(symbol, canonical_event_key).semantic_family
+        if inferred_family in {"price_uptrend", "price_downtrend"}:
+            normalized_current_family = inferred_family
+
     filtered: list[AlertRecipient] = []
     suppressed: list[RecipientOutcome] = []
     suppression_reason_counts: dict[str, int] = {}
@@ -4250,7 +4259,6 @@ async def _filter_event_recipients_for_cooldown(
                             )
                             or stored_family
                         )
-                    normalized_current_family = str(semantic_family or "").strip().lower() or None
                     exact_identity_match = previous_event_key == canonical_event_key or (
                         normalized_current_family is not None
                         and stored_family == normalized_current_family
