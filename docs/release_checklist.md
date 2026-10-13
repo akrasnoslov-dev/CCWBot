@@ -13,9 +13,12 @@ Use this checklist for explicit `dev` -> `main` production release PRs.
 
 ## Required Verification
 
-Run the default verification from `docs/development.md`. Use `.env.example` for Compose validation
-when possible; do not paste expanded Compose output. `docker compose config` is not migration
-verification.
+Run the default verification from `docs/development.md` for changed code. Use `.env.example`
+for Compose validation when possible; never paste expanded Compose output.
+For the release PR, verify green CI against the exact combined `dev` revision; do not rerun
+an unchanged, already-green full local test suite or repeatedly poll completed CI just because
+the same code is being promoted. If verification is missing, stale, or the release payload
+has changed, rerun the applicable checks. `docker compose config` is not migration verification.
 
 For PRs that include Alembic migrations, also confirm:
 
@@ -49,16 +52,49 @@ Follow the PR-readiness and `Self-review / risk check` requirements in
 For sensitive releases, also confirm alert scope, recipient delivery behavior, LLM call
 placement, payment/subscription impact, and no secrets exposed.
 
-## Before Production Deploy
+## Production Release: Minimal Safe Path
 
-1. Confirm CI is green.
-2. Confirm `/opt/backups` has a current backup, or create one with `sudo scripts/backup_postgres.sh`.
-3. Merge `dev` into `main` through the release PR.
-4. Deploy from Git on the VPS; do not edit tracked files manually.
-5. Do not overwrite production `.env`.
-6. Run `docker compose run --rm migrate` only when the release includes migrations.
-7. Start or restart the bot with `docker compose up -d --build`.
-8. After deploy, check containers, logs, health, and basic Telegram behavior.
+Classify the **exact** `main...dev` diff before choosing a deployment path.
+
+- **Ordinary bot-only release:** no Alembic migrations, `ops_agent/` changes, installed
+  wrapper/sudoers changes, or other infrastructure changes requiring manual work. Use the
+  restricted `ccwbot-deploy-safe` path below.
+- **Exception:** migrations, ops-agent, security/access-control, deployment infrastructure,
+  or a confirmed runtime incident. Follow the applicable specialized sections here and in
+  `docs/dev_ops_guide.md` with separate authorization. Do not force these changes through
+  the restricted wrapper or omit their mandatory checks.
+
+For an ordinary bot-only release:
+
+1. Confirm reviewed diff, release PR readiness, and green CI for the exact release SHA.
+   Merge `dev -> main` through the explicit release PR; merging and deploying are separate
+   actions requiring their own authorization.
+2. Read the current production state through the approved `status` command. If the running
+   production revision already equals `origin/main` **and** health is OK, stop: no rebuild,
+   restart, or duplicate backup.
+3. After explicit deploy approval, use the current `ccwbot_ops` SSH identity and the
+   installed restricted wrapper (not raw Docker or root commands):
+
+   ```bash
+   ssh -o BatchMode=yes ccwbot-prod-ops 'sudo -n /usr/local/bin/ccwbot-deploy-safe deploy'
+   ```
+
+   The wrapper enforces clean/fast-forward Git state, backup, build, health, and recovery
+   checks. Do not separately repeat its backup, migration, Compose, or wrapper-permission
+   workflow for a normal bot-only release. Never overwrite production `.env`.
+4. Verify via read-only `status` that production HEAD matches `origin/main`, the bot
+   and database are healthy, and `/health` returns valid JSON `status=ok`. Perform a
+   small private Telegram smoke test of the changed path when possible. Read only targeted,
+   sanitized logs/outcomes if a check fails or the particular changed behavior requires them.
+5. Report the deployed SHA, CI result, health/smoke results, and any unverified checks.
+   Do not infer functional quality from a green health endpoint alone.
+
+**Do not automatically** launch an ops-agent collection, wait for unrelated News Intelligence
+cycles, rebuild the ops-agent overlay, create a full diagnostics report, or poll multiple
+collectors after an ordinary release. Escalate to a **targeted** check, then to a deploy-scoped
+sanitized ops-agent report only when an observed anomaly, high-risk release-specific validation
+requirement, observability change, or explicit owner request justifies it. Keep collection
+separate from deployment to avoid Compose orphan conflicts.
 
 ## Secure deployment-wrapper release gate (PR #301)
 

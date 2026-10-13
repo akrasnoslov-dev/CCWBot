@@ -130,7 +130,9 @@ For an explicitly directional price family, the sign of the verified analysed-wi
 wins over conflicting model key/title/body wording about a broader trend. A missing or flat
 primary move does not invent direction. During recipient cooldown, an older stored directional
 family is interpreted using its own saved analysed-window move when available, so correcting
-an identity cannot restart the same event-family's strict four-hour window.
+an identity cannot restart the same event-family's strict four-hour window. When
+either the current or a prior numeric directional price key lacks a stored semantic family,
+the recipient cooldown derives that price family from the key before comparing identities.
 
 Core rule:
 

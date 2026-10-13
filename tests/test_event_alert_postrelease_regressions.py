@@ -280,3 +280,49 @@ async def test_legacy_numeric_price_key_cannot_bypass_four_hour_semantic_cooldow
     assert result.recipients == []
     assert result.suppression_reason_counts == {alerts.SUPPRESSION_SEMANTIC_COOLDOWN: 1}
     await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("symbol", "prior_key", "current_key", "previous_move"),
+    [
+        ("ETH", "eth_down_1_0_in_the_last_3_hours", "eth_down_2_3_in_the_last_3_hours", -1.015),
+        ("GRAM", "gram_down_1_4_in_the_last_3_hours", "gram_down_2_4_in_the_last_3_hours", -1.412),
+        ("SOL", "sol_down_0_6_in_the_last_3_hours", "sol_down_2_4_in_the_last_3_hours", -0.589),
+    ],
+)
+@pytest.mark.asyncio
+async def test_missing_current_and_prior_price_family_cannot_bypass_cooldown(
+    monkeypatch, symbol, prior_key, current_key, previous_move
+):
+    """The production 2026-10-12/13 numeric-key path omitted both stored families."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime(2026, 10, 13, 0, 10, tzinfo=timezone.utc)
+    prior = SimpleNamespace(
+        id=37,
+        user_id=7,
+        created_at=now - timedelta(minutes=90),
+        numeric_context='{"analysed_window_change_percent":' + str(previous_move) + "}",
+    )
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", session_factory)
+    monkeypatch.setattr(
+        alerts,
+        "get_recent_sent_event_alert_contexts",
+        AsyncMock(return_value=[(prior, prior_key, None)]),
+    )
+    recipient = alerts.AlertRecipient(chat_id=10, user_id=7)
+    kwargs = dict(
+        symbol=symbol, urgency="normal", cooldown_seconds=60,
+        canonical_event_key=current_key, semantic_family=None,
+        now=now, return_summary=True,
+    )
+    blocked = await alerts._filter_event_recipients_for_cooldown([recipient], **kwargs)
+    assert blocked.recipients == []
+    assert blocked.suppression_reason_counts == {alerts.SUPPRESSION_SEMANTIC_COOLDOWN: 1}
+    prior.created_at = now - timedelta(hours=4)
+    allowed = await alerts._filter_event_recipients_for_cooldown([recipient], **kwargs)
+    assert allowed.recipients == [recipient]
+    await engine.dispose()
