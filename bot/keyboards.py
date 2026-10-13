@@ -113,6 +113,12 @@ def build_price_keyboard() -> InlineKeyboardMarkup:
     rows = [buttons[index : index + 2] for index in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(rows)
 
+def build_price_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Change coin", callback_data="price:menu")],
+        [InlineKeyboardButton("Close", callback_data="transient:close")],
+    ])
+
 
 def build_watchlist_keyboard(
     *,
