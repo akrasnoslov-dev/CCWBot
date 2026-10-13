@@ -28,6 +28,7 @@ COIN_SYMBOL_TO_ID = {
 
 DEFAULT_SYMBOL = "btc"
 _PRICE_CACHE: dict[str, tuple[Decimal, Decimal, float]] = {}
+_PRICE_IN_FLIGHT: dict[str, asyncio.Task[tuple[Decimal, Decimal, str]]] = {}
 _BTC_MARKET_CACHE: tuple[Decimal, Decimal, Decimal | None, float] | None = None
 logger = logging.getLogger(__name__)
 _COIN_ID_TO_SYMBOL = {coin_id: symbol for symbol, coin_id in COIN_SYMBOL_TO_ID.items()}
@@ -239,6 +240,24 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[Decimal, Decimal
     if cached:
         return cached
 
+    # No await between cache check and task registration: one in-flight request per symbol.
+    task = _PRICE_IN_FLIGHT.get(normalized_symbol)
+    if task is None or task.done():
+        task = asyncio.create_task(_refresh_coin_price(normalized_symbol))
+        _PRICE_IN_FLIGHT[normalized_symbol] = task
+
+        def _forget(done: asyncio.Task, symbol: str = normalized_symbol) -> None:
+            if _PRICE_IN_FLIGHT.get(symbol) is done:
+                _PRICE_IN_FLIGHT.pop(symbol, None)
+            if not done.cancelled():
+                done.exception()  # consume failures if all waiters were cancelled
+
+        task.add_done_callback(_forget)
+    return await asyncio.shield(task)
+
+
+async def _refresh_coin_price(normalized_symbol: str) -> tuple[Decimal, Decimal, str]:
+    """Refresh a single uncached symbol. Never silently present expired data as current."""
     coin_id = COIN_SYMBOL_TO_ID[normalized_symbol]
     url = "https://api.coingecko.com/api/v3/simple/price"
 
@@ -250,7 +269,10 @@ async def get_coin_price(symbol: str = DEFAULT_SYMBOL) -> tuple[Decimal, Decimal
     }
 
     async with httpx.AsyncClient() as client:
-        data = await _get_with_retry(client, url, params, parse_decimal_numbers=True)
+        data = await _get_with_retry(
+            client, url, params, parse_decimal_numbers=True,
+            allow_stale_price_fallback=False,
+        )
 
     if not isinstance(data, dict):
         raise ValueError("Unexpected CoinGecko response format.")
