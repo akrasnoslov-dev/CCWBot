@@ -348,7 +348,10 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
     if not query.from_user:
         return True
 
-    if data == "watchlist:open":
+    # Previously sent Telegram messages may still contain frequency buttons.
+    # Acknowledge them, but never restore a retired setting or persist its value.
+    legacy_frequency_callback = data.startswith("watchlist:frequency:")
+    if data == "watchlist:open" or legacy_frequency_callback:
         async with DB_SESSION_LOCAL() as session:
             user = await get_user_by_telegram_user_id(
                 session,
@@ -359,7 +362,10 @@ async def handle_watchlist_callback(update: Update, data: str) -> bool:
                 await query.answer("Watchlist is unavailable.", show_alert=True)
                 return True
             subscriptions = await ensure_default_coin_subscriptions(session, user_id=user.id)
-            await query.answer()
+            if legacy_frequency_callback:
+                await query.answer("Heartbeat frequency is no longer configurable.")
+            else:
+                await query.answer()
             await edit_watchlist_message(query, user, subscriptions)
         return True
 
