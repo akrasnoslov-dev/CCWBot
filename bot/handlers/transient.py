@@ -106,7 +106,7 @@ class TransientBot(ExtBot):
             kwargs["reply_markup"] = with_close_button(kwargs.get("reply_markup"))
         message = await super().send_message(chat_id, text, *args, **kwargs)
         if active:
-            sessions.add(*active, message.message_id)
+            sessions.add(active[0], active[1], message.message_id)
         return message
 
     async def send_document(self, chat_id, document, *args, **kwargs):
@@ -115,7 +115,7 @@ class TransientBot(ExtBot):
             kwargs["reply_markup"] = with_close_button(kwargs.get("reply_markup"))
         message = await super().send_document(chat_id, document, *args, **kwargs)
         if active:
-            sessions.add(*active, message.message_id)
+            sessions.add(active[0], active[1], message.message_id)
         return message
 
     async def edit_message_text(
