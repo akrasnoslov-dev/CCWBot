@@ -653,24 +653,30 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         _int(row.get("delivered_with_decision_reason_count")) for row in rows
     )
     unknown_reason = sum(_int(row.get("decision_reason_unknown_count")) for row in rows)
-    generic_actions = sum(
-        _int(row.get("generic_possible_action_count")) for row in quality_rows
+    # Older bundles lack the explicit extraction-gap counters and use legacy
+    # replacement/repetition/generic-action semantics. Do not present their
+    # historical quality counts as if they excluded empty or missing sections.
+    current_quality_schema = bool(quality_rows) and all(
+        row.get("missing_situation_count") is not None
+        and row.get("missing_action_count") is not None
+        for row in quality_rows
     )
     action_total = sum(_int(row.get("event_alert_actions")) for row in quality_rows)
-    situation_replacements = sum(_int(row.get("situation_replaced_count")) for row in quality_rows)
-    action_replacements = sum(_int(row.get("action_replaced_count")) for row in quality_rows)
-    repeated_situations = sum(_int(row.get("repeated_situation_count")) for row in quality_rows)
-    repeated_actions = sum(_int(row.get("repeated_action_count")) for row in quality_rows)
-    missing_situations = (
-        str(sum(_int(row["missing_situation_count"]) for row in quality_rows))
-        if quality_rows and all(row.get("missing_situation_count") is not None for row in quality_rows)
-        else "unknown"
-    )
-    missing_actions = (
-        str(sum(_int(row["missing_action_count"]) for row in quality_rows))
-        if quality_rows and all(row.get("missing_action_count") is not None for row in quality_rows)
-        else "unknown"
-    )
+
+    def quality_count(field: str) -> str:
+        return (
+            str(sum(_int(row.get(field)) for row in quality_rows))
+            if current_quality_schema
+            else "unknown"
+        )
+
+    generic_actions = quality_count("generic_possible_action_count")
+    situation_replacements = quality_count("situation_replaced_count")
+    action_replacements = quality_count("action_replaced_count")
+    repeated_situations = quality_count("repeated_situation_count")
+    repeated_actions = quality_count("repeated_action_count")
+    missing_situations = quality_count("missing_situation_count")
+    missing_actions = quality_count("missing_action_count")
     lines = [
         "| Metric | Count | Notes |",
         "|---|---:|---|",
@@ -694,6 +700,12 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| Repeated final Situation / Action | {repeated_situations} / {repeated_actions} | Identical nonempty text across unique delivered events. |",
         f"| Missing final Situation / Action | {missing_situations} / {missing_actions} | Extraction gaps excluded from replacement and repetition counts. |",
     ]
+    if quality_rows and not current_quality_schema:
+        lines.append(
+            "Legacy alert-copy quality counters: unknown. The bundle predates explicit "
+            "missing-section diagnostics, so rewrite/repetition/generic-action counts "
+            "cannot be interpreted using the new semantics."
+        )
     if reuse_rows:
         top_reuse = sorted(
             reuse_rows,
