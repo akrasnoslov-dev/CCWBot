@@ -761,8 +761,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             "stale_or_failed_market_heartbeats",
             "medium",
             [(aggregate, "market_heartbeats_summary"), (aggregate, "market_heartbeats_freshness")],
-            "triggered" if heartbeat_failures or stale_heartbeats else "clear",
-            f"{heartbeat_failures} failed and {len(stale_heartbeats)} stale/missing heartbeat rows",
+            "triggered" if heartbeat_failures else "unknown" if stale_heartbeats else "clear",
+            (f"{heartbeat_failures} failed and {len(stale_heartbeats)} stale/missing heartbeat rows; "
+             "content is generated on demand, so cache age alone does not prove a missed delivery"),
             ["evidence/db/aggregate_metrics.json"],
             {
                 "failed_heartbeats": heartbeat_failures,
