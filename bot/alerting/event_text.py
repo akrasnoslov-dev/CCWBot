@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from math import gcd
 
+from bot.alerting.event_analysis import market_direction_claims_supported
+
 _PERCENT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?\s*%")
 _MOVE_RE = re.compile(
     r"(?i)\b(move|moved|movement|up|down|higher|lower|rose|fell|gain|drop|decline|rally)\w*\b"
@@ -188,6 +190,7 @@ def _is_safe_llm_situation(
 def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> bool:
     """Allow concise LLM context only when its relationship exists in market input."""
     lowered = value.lower()
+    relationship_text = re.sub(r"\bconsistent\s+with\b", "aligned with", lowered)
     if _PERCENT_RE.search(value) or _MONEY_VALUE_RE.search(value):
         return False
 
@@ -226,7 +229,7 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         return False
     if (
         any(
-            term in lowered
+            term in relationship_text
             for term in ("persistent", "persistence", "consisten", "throughout", "steady")
         )
         and not has_persistence
@@ -249,7 +252,7 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
         return False
     if "diverg" in lowered and not has_divergence:
         return False
-    if "align" in lowered and not has_alignment:
+    if "align" in relationship_text and not has_alignment:
         return False
     if (
         any(
@@ -260,22 +263,7 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     ):
         return False
 
-    current_direction = window_change
-    if current_direction is None and step_changes:
-        current_direction = step_changes[-1]
-    if any(term in lowered for term in ("lower", "declin", "weakness", "weaker", "down")) and not (
-        current_direction is not None and current_direction < 0
-    ):
-        return False
-    if any(
-        term in lowered for term in ("higher", "rally", "strength", "stronger", "upward")
-    ) and not (current_direction is not None and current_direction > 0):
-        return False
-    if "positive" in lowered and not (change_24h is not None and change_24h > 0):
-        return False
-    if "negative" in lowered and not (change_24h is not None and change_24h < 0):
-        return False
-    return True
+    return market_direction_claims_supported(value, market_data)
 
 
 def _repeats_rendered_market_fact(value: str, market_data: dict) -> bool:
@@ -450,9 +438,16 @@ def event_alert_presentation_fallback(
         )
 
     if has_broader_comparison:
+        direction = "rise" if window_change > 0 else "decline"
+        comparison = (
+            "larger in magnitude than" if abs(window_change) > abs(change_24h)
+            else "smaller in magnitude than" if abs(window_change) < abs(change_24h)
+            else "equal in magnitude to"
+        )
+        # Compare supplied net moves only: this establishes neither pace nor materiality.
         return (
-            "The short-term move continues the same direction as the broader 24-hour trend, "
-            "giving the event broader-trend context.",
+            f"The analysed-window {direction} is {comparison} the broader 24-hour "
+            f"trend's net {direction}.",
             "Watch the next short-term snapshots for continuation in the broader-trend "
             "direction or a quick reversal.",
         )
@@ -701,11 +696,11 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
     )
     generic_snapshot_action = bool(re.search(
         r"(?i)^(?:watch|check|monitor) (?:whether )?(?:the )?(?:next|upcoming|few) "
-        r"(?:few )?(?:short-term )?snapshots?\\b",
+        r"(?:few )?(?:short-term )?snapshots?\b",
         action,
     )) and not bool(re.search(
-        r"(?i)\\b(?:24-hour|broader|prior|previous|pace|preceding|1h|30m|"
-        r"observed interval|divergen\\w*|countermov\\w*)\\b",
+        r"(?i)\b(?:24-hour|broader|prior|previous|pace|preceding|1h|30m|"
+        r"observed interval|divergen\w*|countermov\w*)\b",
         action,
     ))
     return {

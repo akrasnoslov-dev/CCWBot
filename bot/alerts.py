@@ -36,6 +36,7 @@ from bot.alerting.event_analysis import (
     canonicalize_event_key,
     directional_market_family,
     empirical_absolute_move_percentile,
+    market_direction_claims_supported,
     validate_event_analysis_output,
     validate_event_significance_output,
     with_canonical_event_key,
@@ -1388,9 +1389,12 @@ def _guard_event_text_against_market_data(
         if field_name == "message_body"
         else _contains_untrusted_percent_claim(value, market_data)
     )
-    if has_untrusted_market_claim or _contains_contradictory_direction(
-        value, _primary_market_direction_value(market_data)
-    ):
+    contradictory_direction = (
+        not market_direction_claims_supported(value, market_data)
+        if field_name == "message_body"
+        else _contains_contradictory_direction(value, _primary_market_direction_value(market_data))
+    )
+    if has_untrusted_market_claim or contradictory_direction:
         return _deterministic_event_text(
             field_name=field_name,
             symbol=symbol,
