@@ -2419,6 +2419,37 @@ def test_heartbeat_cache_age_alone_does_not_prove_failed_on_demand_delivery(fail
     assert detector.metrics["affected_symbols"] == ([] if expected == "clear" else ["BTC", "ETH"])
 
 
+def test_latest_failed_heartbeat_remains_triggered_outside_report_window():
+    # A latest failed generation is confirmed evidence even when the requested
+    # report period contains no heartbeat-generation attempts.
+    period = Period(
+        start=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, 1, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_heartbeats_summary": {"rows": []},
+                "market_heartbeats_freshness": {"rows": [{
+                    "symbol": "ETH",
+                    "latest_status": "failed",
+                    "latest_generated_at": "2026-06-01T23:00:00Z",
+                    "age_seconds": 7200,
+                }]},
+            },
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["stale_or_failed_market_heartbeats"]
+    assert detector.status == "triggered"
+    assert detector.metrics["failed_heartbeats"] == 0
+    assert detector.metrics["latest_failed_heartbeat_symbols"] == ["ETH"]
+
+
 def test_alert_evidence_collector_uses_dedicated_timeout_and_narrower_buckets():
     from ops_agent.collectors.db import _alert_evidence_windows
     from ops_agent.config import OpsAgentLimits, load_config

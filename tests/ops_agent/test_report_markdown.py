@@ -207,7 +207,7 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "| Pre-LLM Exact Context Reuse | 4 |" in markdown
     assert "Top Exact Context Reuse groups: BTC/price_level_range: 4." in markdown
     assert "| Delivered rows with decision reason | 8 |" in markdown
-    assert "| Generic possible action quality signals | 2 / 10 |" in markdown
+    assert "| Generic possible action quality signals | unknown / 10 |" in markdown
     assert "Status: Critical" in markdown
     duplicate_row = (
         "| Affected market events with duplicate attached analyses | 1 | "
@@ -569,3 +569,12 @@ def test_section_extraction_coverage_absent_from_old_bundle_is_unknown():
             collection_status="complete", bundle_id="synthetic",
         )
         assert f"| Missing final Situation / Action | {expected} |" in markdown
+        if not counters:
+            assert "| Generic possible action quality signals | unknown / 5 |" in markdown
+            assert "| Situation replaced after LLM | unknown / 5 |" in markdown
+            assert "| Possible action replaced after LLM | unknown / 5 |" in markdown
+            assert "| Repeated final Situation / Action | unknown / unknown |" in markdown
+            assert "Legacy alert-copy quality counters: unknown." in markdown
+        else:
+            assert "| Generic possible action quality signals | 0 / 5 |" in markdown
+            assert "Legacy alert-copy quality counters: unknown." not in markdown
