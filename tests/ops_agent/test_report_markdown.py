@@ -552,3 +552,20 @@ def test_reliability_metrics_treat_missing_restart_counts_as_unknown_not_healthy
 
     assert "Container restarts | unknown" in markdown
     assert "incomplete, not healthy" in markdown
+
+
+def test_section_extraction_coverage_absent_from_old_bundle_is_unknown():
+    for counters, expected in [({}, "unknown / unknown"), (
+        {"missing_situation_count": 0, "missing_action_count": 0}, "0 / 0"
+    )]:
+        evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+            "alert_delivery_outcome_summary": {"rows": [{"outcomes": 5}]},
+            "event_alert_possible_action_quality": {"rows": [{
+                "event_alert_actions": 5, **counters,
+            }]},
+        }}}
+        markdown = render_decision_report_context(
+            period=_period(), evidence=evidence, detector_results=[],
+            collection_status="complete", bundle_id="synthetic",
+        )
+        assert f"| Missing final Situation / Action | {expected} |" in markdown

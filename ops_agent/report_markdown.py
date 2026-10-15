@@ -661,6 +661,16 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
     action_replacements = sum(_int(row.get("action_replaced_count")) for row in quality_rows)
     repeated_situations = sum(_int(row.get("repeated_situation_count")) for row in quality_rows)
     repeated_actions = sum(_int(row.get("repeated_action_count")) for row in quality_rows)
+    missing_situations = (
+        str(sum(_int(row["missing_situation_count"]) for row in quality_rows))
+        if quality_rows and all(row.get("missing_situation_count") is not None for row in quality_rows)
+        else "unknown"
+    )
+    missing_actions = (
+        str(sum(_int(row["missing_action_count"]) for row in quality_rows))
+        if quality_rows and all(row.get("missing_action_count") is not None for row in quality_rows)
+        else "unknown"
+    )
     lines = [
         "| Metric | Count | Notes |",
         "|---|---:|---|",
@@ -679,9 +689,10 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| Delivered rows with decision reason | {delivered_with_reason} | Successful deliveries carrying operator-facing decision reason. |",
         f"| Missing/unknown decision reason | {unknown_reason} | Rows needing older-schema allowance or follow-up. |",
         f"| Generic possible action quality signals | {generic_actions} / {action_total} | Unique delivered Event Alerts; not provider drafts or recipient copies. |",
-        f"| Situation replaced after LLM | {situation_replacements} / {action_total} | Final text differs from validated Render content. |",
-        f"| Possible action replaced after LLM | {action_replacements} / {action_total} | Final text differs from validated Render content. |",
-        f"| Repeated final Situation / Action | {repeated_situations} / {repeated_actions} | Identical text across unique delivered events. |",
+        f"| Situation replaced after LLM | {situation_replacements} / {action_total} | Text differs; safety edits and whitespace may be intentional. |",
+        f"| Possible action replaced after LLM | {action_replacements} / {action_total} | Text differs; safety edits and whitespace may be intentional. |",
+        f"| Repeated final Situation / Action | {repeated_situations} / {repeated_actions} | Identical nonempty text across unique delivered events. |",
+        f"| Missing final Situation / Action | {missing_situations} / {missing_actions} | Extraction gaps excluded from replacement and repetition counts. |",
     ]
     if reuse_rows:
         top_reuse = sorted(
