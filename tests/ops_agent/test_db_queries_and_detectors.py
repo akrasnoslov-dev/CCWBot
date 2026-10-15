@@ -2379,7 +2379,10 @@ def test_ops_agent_active_symbols_match_runtime_active_symbols():
     assert OPS_AGENT_ACTIVE_SYMBOLS == BOT_ACTIVE_SYMBOLS
 
 
-def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():
+@pytest.mark.parametrize(("failed", "age", "expected"), [
+    (0, 86400, "unknown"), (1, 86400, "triggered"), (0, 60, "clear"),
+])
+def test_heartbeat_cache_age_alone_does_not_prove_failed_on_demand_delivery(failed, age, expected):
     period = Period(
         start=datetime(2026, 6, 1, tzinfo=timezone.utc),
         end=datetime(2026, 6, 2, tzinfo=timezone.utc),
@@ -2388,16 +2391,17 @@ def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():
     evidence = {
         "evidence/db/aggregate_metrics.json": {
             "queries": {
-                "market_heartbeats_summary": {"rows": []},
+                "market_heartbeats_summary": {"rows": [{"status": "failed", "heartbeats": failed}]},
                 "market_heartbeats_freshness": {
                     "rows": [
                         {
                             "symbol": "BTC",
                             "latest_status": "completed",
                             "latest_generated_at": "2026-06-01T00:00:00Z",
-                            "age_seconds": 86400,
+                            "age_seconds": age,
                         },
-                        {"symbol": "ETH", "latest_generated_at": None},
+                        {"symbol": "ETH", "latest_generated_at": "2026-06-01T00:00:00Z",
+                         "latest_status": "completed", "age_seconds": age},
                     ]
                 },
             }
@@ -2409,9 +2413,41 @@ def test_heartbeat_freshness_detector_triggers_for_stale_or_missing_cache():
     results = {result.id: result for result in run_detectors(evidence, period)}
 
     detector = results["stale_or_failed_market_heartbeats"]
+    assert detector.status == expected
+    assert "on demand" in detector.summary
+    assert detector.metrics["stale_or_missing_heartbeats"] == (0 if expected == "clear" else 2)
+    assert detector.metrics["affected_symbols"] == ([] if expected == "clear" else ["BTC", "ETH"])
+
+
+def test_latest_failed_heartbeat_remains_triggered_outside_report_window():
+    # A latest failed generation is confirmed evidence even when the requested
+    # report period contains no heartbeat-generation attempts.
+    period = Period(
+        start=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, 1, tzinfo=timezone.utc),
+        source="test",
+    )
+    evidence = {
+        "evidence/db/aggregate_metrics.json": {
+            "queries": {
+                "market_heartbeats_summary": {"rows": []},
+                "market_heartbeats_freshness": {"rows": [{
+                    "symbol": "ETH",
+                    "latest_status": "failed",
+                    "latest_generated_at": "2026-06-01T23:00:00Z",
+                    "age_seconds": 7200,
+                }]},
+            },
+        },
+        "evidence/logs/pattern_counts.json": {"period_matched_pattern_counts": {}},
+        "evidence/health/health.json": {"status": "ok"},
+    }
+    detector = {
+        result.id: result for result in run_detectors(evidence, period)
+    }["stale_or_failed_market_heartbeats"]
     assert detector.status == "triggered"
-    assert detector.metrics["stale_or_missing_heartbeats"] == 2
-    assert detector.metrics["affected_symbols"] == ["BTC", "ETH"]
+    assert detector.metrics["failed_heartbeats"] == 0
+    assert detector.metrics["latest_failed_heartbeat_symbols"] == ["ETH"]
 
 
 def test_alert_evidence_collector_uses_dedicated_timeout_and_narrower_buckets():

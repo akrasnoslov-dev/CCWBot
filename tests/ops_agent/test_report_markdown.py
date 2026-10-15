@@ -207,7 +207,7 @@ def test_decision_report_context_renders_required_decision_sections():
     assert "| Pre-LLM Exact Context Reuse | 4 |" in markdown
     assert "Top Exact Context Reuse groups: BTC/price_level_range: 4." in markdown
     assert "| Delivered rows with decision reason | 8 |" in markdown
-    assert "| Generic possible action quality signals | 2 / 10 |" in markdown
+    assert "| Generic possible action quality signals | unknown / 10 |" in markdown
     assert "Status: Critical" in markdown
     duplicate_row = (
         "| Affected market events with duplicate attached analyses | 1 | "
@@ -552,3 +552,29 @@ def test_reliability_metrics_treat_missing_restart_counts_as_unknown_not_healthy
 
     assert "Container restarts | unknown" in markdown
     assert "incomplete, not healthy" in markdown
+
+
+def test_section_extraction_coverage_absent_from_old_bundle_is_unknown():
+    for counters, expected in [({}, "unknown / unknown"), (
+        {"missing_situation_count": 0, "missing_action_count": 0}, "0 / 0"
+    )]:
+        evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+            "alert_delivery_outcome_summary": {"rows": [{"outcomes": 5}]},
+            "event_alert_possible_action_quality": {"rows": [{
+                "event_alert_actions": 5, **counters,
+            }]},
+        }}}
+        markdown = render_decision_report_context(
+            period=_period(), evidence=evidence, detector_results=[],
+            collection_status="complete", bundle_id="synthetic",
+        )
+        assert f"| Missing final Situation / Action | {expected} |" in markdown
+        if not counters:
+            assert "| Generic possible action quality signals | unknown / 5 |" in markdown
+            assert "| Situation replaced after LLM | unknown / 5 |" in markdown
+            assert "| Possible action replaced after LLM | unknown / 5 |" in markdown
+            assert "| Repeated final Situation / Action | unknown / unknown |" in markdown
+            assert "Legacy alert-copy quality counters: unknown." in markdown
+        else:
+            assert "| Generic possible action quality signals | 0 / 5 |" in markdown
+            assert "Legacy alert-copy quality counters: unknown." not in markdown
