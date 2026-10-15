@@ -182,7 +182,7 @@ def test_btc_followup_copy_uses_verified_comparable_prior_window():
     )
     assert "3h market move: -0.29%" in first
     assert "3h market move: -0.68%" in second
-    assert "Situation:\nThe short-term move continues" in first
+    assert "Situation:\nThe analysed-window decline is smaller in magnitude" in first
     assert (
         "Situation:\nThe current 3h decline is larger than the prior recorded alert's comparable"
         in second

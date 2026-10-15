@@ -85,6 +85,11 @@ alert. Render stays separate from significance. It runs once per positive event,
 not per recipient. Situation explains a verified relationship, and Possible Action
 names the next market observation that distinguishes possible outcomes.
 
+Direction checks bind each claim to its named market period. Agreement phrased as
+"consistent with" is alignment, not proof of a persistent snapshot path. When only
+24-hour alignment supports a fallback, it names the direction and compares the
+supplied net-move magnitudes without implying pace, novelty or materiality.
+
 Backend guards still reject unsupported numbers, directions, trajectories,
 catalysts, causation, and trading instructions. They no longer discard grounded
 natural language based on an exhaustive word allowlist. Invalid presentation

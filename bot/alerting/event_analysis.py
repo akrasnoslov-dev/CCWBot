@@ -94,10 +94,10 @@ _MOVEMENT_DIRECTION_RE = re.compile(
     re.IGNORECASE,
 )
 _DOWNWARD_CLAIM_RE = re.compile(
-    r"\b(?:down|fell|fall\w*|slipp\w*|dip\w*|drop\w*|declin\w*|lower\w*)\b", re.I
+    r"\b(?:down(?:ward)?|fell|fall\w*|slipp\w*|dip\w*|drop\w*|declin\w*|lower\w*)\b", re.I
 )
 _UPWARD_CLAIM_RE = re.compile(
-    r"\b(?:up|rose|ris\w*|rall\w*|gain\w*|higher\w*|climb\w*)\b", re.I
+    r"\b(?:up(?:ward)?|rose|ris\w*|rall\w*|gain\w*|higher\w*|climb\w*)\b", re.I
 )
 _CLAUSE_BOUNDARY_RE = re.compile(r"(?<!\d)[.!?;,]|\n")
 _FUTURE_CONDITIONAL_RE = re.compile(
@@ -126,6 +126,8 @@ class EventAnalysisValidationError(ValueError):
 
 
 def _has_trajectory_marker(text: str) -> bool:
+    # Agreement with another period is not a claim about every snapshot step.
+    text = re.sub(r"(?i)\bconsistent\s+with\b", "aligned with", text)
     return bool(
         _TRAJECTORY_MARKER_RE.search(text) or _ACROSS_SNAPSHOTS_RE.search(text)
     )
@@ -908,21 +910,7 @@ def _validate_positive_market_claims(
     threshold and does not decide whether a grounded movement merits an Event Alert.
     """
     text = f"{title}\n{message_body}"
-    snapshot_count = sum(
-        1 for item in market_data.get("snapshots", []) if isinstance(item, dict)
-    )
-    if (
-        snapshot_count < 2
-        and _has_trajectory_marker(text)
-        and _MOVEMENT_DIRECTION_RE.search(text)
-    ):
-        raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
-    if (
-        _has_trajectory_marker(text)
-        and _MOVEMENT_DIRECTION_RE.search(text)
-        and not (_supported_snapshot_trajectory(text, market_data))
-    ):
-        raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
+    _validate_snapshot_trajectory_claims(text, market_data)
     _validate_unquantified_time_window_claims(
         text, market_data=market_data, last_msg=last_msg, timestamp_utc=timestamp_utc
     )
@@ -1077,12 +1065,7 @@ def _validate_action_market_claims(
         for clause in _text_clauses(possible_action)
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
-    if (
-        _has_trajectory_marker(historical_action)
-        and _MOVEMENT_DIRECTION_RE.search(historical_action)
-        and not _supported_snapshot_trajectory(possible_action, market_data)
-    ):
-        raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
+    _validate_snapshot_trajectory_claims(historical_action, market_data)
     _validate_unquantified_time_window_claims(
         possible_action,
         market_data=market_data,
@@ -1176,11 +1159,63 @@ def _supported_snapshot_trajectory(text: str, market_data: dict[str, Any]) -> bo
     ]
     if not moves or any(move == 0 for move in moves):
         return False
-    if _DOWNWARD_CLAIM_RE.search(text):
-        return all(move < 0 for move in moves)
-    if _UPWARD_CLAIM_RE.search(text):
-        return all(move > 0 for move in moves)
-    return False
+    directions = [direction for source, direction in _scoped_direction_claims(text)
+                  if source == "window"]
+    if not directions or len(set(directions)) != 1:
+        return False
+    return all(move < 0 for move in moves) if directions[0] == -1 else all(
+        move > 0 for move in moves
+    )
+
+
+def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any]) -> None:
+    # Check only the clause asserting persistence. A separate 24h claim must not
+    # supply the direction of the analysed-window snapshot path.
+    for clause in _text_clauses(text):
+        if (_has_trajectory_marker(clause) and _MOVEMENT_DIRECTION_RE.search(clause)
+                and not _supported_snapshot_trajectory(clause, market_data)):
+            raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
+
+
+def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
+    claims: list[tuple[str, int]] = []
+    labels = re.compile(
+        r"(?i)\b(?P<day>24[- ]hours?|24h|daily|broader)|"
+        r"\b(?P<window>short[- ]term|current|latest|analysed[- ]window|snapshots?|window)\b"
+    )
+    scoped_text = re.sub(
+        r"(?i)\b(?:while|whereas|but|despite|although|contrasts?\s+with|against)\b", ";", text
+    )
+    for clause in _text_clauses(scoped_text):
+        scopes = list(labels.finditer(clause))
+        directions = [(m, -1) for m in _DOWNWARD_CLAIM_RE.finditer(clause)] + [
+            (m, 1) for m in _UPWARD_CLAIM_RE.finditer(clause)
+        ] + [
+            (m, -1 if m.lastgroup == "down" else 1)
+            for m in re.finditer(
+                r"(?i)\b(?:(?P<down>negative|weakness|weaker|weaken\w*|bearish|"
+                r"sell-?off|collaps\w*|crash\w*|plung\w*)|"
+                r"(?P<up>positive|strength|stronger|strengthen\w*|bullish|surg\w*))\b",
+                clause,
+            )
+        ]
+        for match, direction in directions:
+            # Bind each directional phrase to its nearest named market period.
+            scope = min(scopes, key=lambda m: min(abs(m.end() - match.start()),
+                                                abs(match.end() - m.start()))) if scopes else None
+            claims.append(("24h" if scope and scope.lastgroup == "day" else "window", direction))
+    return claims
+
+
+def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
+    """Validate each prose direction against its own supplied period, not the whole message."""
+    for source, direction in _scoped_direction_claims(text):
+        supplied = _decimal_market_value(market_data.get(
+            "chg24h_percent" if source == "24h" else "chg_window_percent"
+        ))
+        if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
+            return False
+    return True
 
 
 def _text_clauses(text: str) -> list[str]:
