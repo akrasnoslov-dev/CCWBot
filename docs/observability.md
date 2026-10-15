@@ -749,3 +749,16 @@ WHERE alert_type = 'market_heartbeat'
 GROUP BY symbol, status
 ORDER BY latest_delivery_at DESC;
 ```
+
+## Event Alert section diagnostics and on-demand heartbeat cache
+
+Final Situation and Possible action counters use distinct delivered market events.
+Missing or empty sections are counted separately and excluded from replacement and
+repetition counts. A textual difference from stored Render fields is a diagnostic
+signal, not proof of harmful rewriting; whitespace, safety guards and compaction can
+legitimately change it. Generic-action matching is heuristic, not a literary review.
+
+Heartbeat content is generated only for due recipients. A cache older than the
+collector's two-hour freshness reference does not establish a missed 24-hour silence
+notification. With no generation failure or due-recipient correlation, the stale-cache
+finding is UNKNOWN; explicit failed generation remains a triggered finding.
