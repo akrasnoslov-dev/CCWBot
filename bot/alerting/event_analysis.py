@@ -1169,11 +1169,15 @@ def _supported_snapshot_trajectory(text: str, market_data: dict[str, Any]) -> bo
 
 
 def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any]) -> None:
-    # Check only the clause asserting persistence. A separate 24h claim must not
-    # supply the direction of the analysed-window snapshot path.
-    for clause in _text_clauses(text):
-        if (_has_trajectory_marker(clause) and _MOVEMENT_DIRECTION_RE.search(clause)
-                and not _supported_snapshot_trajectory(clause, market_data)):
+    # Commas/semicolons can separate a persistence marker from the actual move.
+    # Keep the full sentence together, but scope the direction to the analysed
+    # window, excluding a separately described opposite 24-hour trend.
+    for sentence in re.split(r"(?<!\d)[.!?]|\n", text):
+        if (
+            _has_trajectory_marker(sentence)
+            and _MOVEMENT_DIRECTION_RE.search(sentence)
+            and not _supported_snapshot_trajectory(sentence, market_data)
+        ):
             raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
 
 
@@ -1208,12 +1212,53 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
 
 
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
-    """Validate each prose direction against its own supplied period, not the whole message."""
+    """Check explicit period directions and the direction implied by relationships."""
     for source, direction in _scoped_direction_claims(text):
         supplied = _decimal_market_value(market_data.get(
             "chg24h_percent" if source == "24h" else "chg_window_percent"
         ))
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
+            return False
+
+    # Check the *operands* of agreement claims, not co-occurring labels from
+    # unrelated clauses. "While" / "whereas" introduce a separate comparison.
+    window = _decimal_market_value(market_data.get("chg_window_percent"))
+    day = _decimal_market_value(market_data.get("chg24h_percent"))
+    clauses = re.split(
+        r"(?i)(?<!\d)[.!?;]|\n|\b(?:while|whereas|but|although|despite|even\s+though)\b",
+        text,
+    )
+    relationship = re.compile(
+        r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"
+        r"in\s+(?:line|step)\s+with|direction\s+of)\b"
+    )
+    for clause in clauses:
+        if not (
+            re.search(
+                r"(?i)\b(?:short[- ]term|current|latest|analysed[- ]window|snapshots?|window)\b",
+                clause,
+            )
+            and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", clause)
+        ):
+            continue
+        claim = relationship.search(clause)
+        if claim is None:
+            continue
+        if window is None or day is None or window == 0 or day == 0:
+            return False
+
+        # Negated agreement is a divergence claim, not a positive-alignment
+        # claim. Restrict the negation to the phrase leading into the relation.
+        leading = clause[:claim.start()]
+        negated = bool(
+            re.search(
+                r"(?i)\b(?:not|never|no\s+longer|doesn['’]t|didn['’]t|"
+                r"isn['’]t|aren['’]t)\b.{0,65}$",
+                leading,
+            )
+        )
+        aligned = (window > 0) == (day > 0)
+        if aligned == negated:
             return False
     return True
 
