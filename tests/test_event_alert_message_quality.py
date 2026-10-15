@@ -141,8 +141,8 @@ def test_unverified_news_catalysts_and_unverified_market_metrics_never_survive(c
         related_news=[{"news_id": "n1", "title": "Market-related article"}],
     )
     assert situation == (
-        "The short-term move continues the same direction as the broader 24-hour trend, "
-        "giving the event broader-trend context."
+        "The analysed-window rise is smaller in magnitude than the broader 24-hour "
+        "trend's net rise."
     )
 
 
