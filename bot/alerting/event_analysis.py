@@ -1220,26 +1220,45 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
             return False
 
-    # "Same direction"/"aligned with" refers to BOTH named periods, even when
-    # the only explicit up/down word is next to the broader 24h label.
+    # Check the *operands* of agreement claims, not co-occurring labels from
+    # unrelated clauses. "While" / "whereas" introduce a separate comparison.
     window = _decimal_market_value(market_data.get("chg_window_percent"))
     day = _decimal_market_value(market_data.get("chg24h_percent"))
-    for sentence in re.split(r"(?<!\d)[.!?]|\n", text):
+    clauses = re.split(
+        r"(?i)(?<!\d)[.!?;]|\n|\b(?:while|whereas|but|although|despite|even\s+though)\b",
+        text,
+    )
+    relationship = re.compile(
+        r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"
+        r"in\s+(?:line|step)\s+with|direction\s+of)\b"
+    )
+    for clause in clauses:
         if not (
             re.search(
                 r"(?i)\b(?:short[- ]term|current|latest|analysed[- ]window|snapshots?|window)\b",
-                sentence,
+                clause,
             )
-            and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", sentence)
-            and re.search(
-                r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with)\b",
-                sentence,
-            )
+            and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", clause)
         ):
+            continue
+        claim = relationship.search(clause)
+        if claim is None:
             continue
         if window is None or day is None or window == 0 or day == 0:
             return False
-        if (window > 0) != (day > 0):
+
+        # Negated agreement is a divergence claim, not a positive-alignment
+        # claim. Restrict the negation to the phrase leading into the relation.
+        leading = clause[:claim.start()]
+        negated = bool(
+            re.search(
+                r"(?i)\b(?:not|never|no\s+longer|doesn['’]t|didn['’]t|"
+                r"isn['’]t|aren['’]t)\b.{0,65}$",
+                leading,
+            )
+        )
+        aligned = (window > 0) == (day > 0)
+        if aligned == negated:
             return False
     return True
 

@@ -87,7 +87,9 @@ names the next market observation that distinguishes possible outcomes.
 
 Direction checks bind each claim to its named market period and verify that
 cross-period agreement claims are true for both periods, even when only the
-broader trend has an explicit up/down adjective. "Consistent with" expresses
+broader trend has an explicit up/down adjective. Negated alignment describes
+divergence, and a comparison with the latest snapshot is not automatically a
+comparison with the broader day. "Consistent with" expresses
 alignment, not persistent snapshot motion. Persistence markers stay linked to
 their described direction across punctuation; unsupported paths remain rejected.
 When only 24-hour alignment supports a fallback, it names direction and compares

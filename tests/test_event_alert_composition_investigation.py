@@ -261,3 +261,54 @@ def test_supported_same_direction_alignment_still_passes():
         "The short-term move continues in the same direction as the broader rise.",
         market((100, 101, 102), "2", "3"),
     )
+
+
+@pytest.mark.parametrize(
+    "situation",
+    [
+        "The short-term move continues in the direction of the broader decline.",
+        "The short-term move is in line with the broader decline.",
+    ],
+)
+def test_equivalent_cross_period_agreement_language_must_match_signs(situation):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert not market_direction_claims_supported(
+        situation, market((100, 101, 102), "2", "-3")
+    )
+
+
+@pytest.mark.parametrize(
+    "situation",
+    [
+        "The short-term move does not continue in the same direction as the broader decline.",
+        "The short-term move is not aligned with the broader decline.",
+    ],
+)
+def test_negated_cross_period_agreement_truthfully_describes_divergence(situation):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert market_direction_claims_supported(
+        situation, market((100, 101, 102), "2", "-3")
+    )
+
+
+def test_same_direction_of_current_move_and_snapshot_does_not_claim_day_alignment():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    situation = (
+        "The current rise continues in the same direction as the latest snapshot, "
+        "while the broader 24-hour trend remains lower."
+    )
+    assert market_direction_claims_supported(
+        situation, market((100, 101, 102), "2", "-3")
+    )
+
+
+def test_invalid_negation_on_aligned_periods_rejected():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert not market_direction_claims_supported(
+        "The short-term rise is not aligned with the broader rise.",
+        market((100, 101, 102), "2", "3"),
+    )
