@@ -207,3 +207,57 @@ def test_alignment_fallback_names_direction_and_verified_size_relationship(
     assert comparison in situation
     assert "%" not in situation
     assert "faster" not in situation and "material" not in situation
+
+
+@pytest.mark.parametrize(
+    "situation",
+    [
+        "The short-term move continues in the same direction as the broader decline.",
+        "The short-term move is aligned with the broader decline.",
+    ],
+)
+def test_cross_period_alignment_must_match_both_market_directions(situation):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    data = market((100, 101, 102), "2", "-3")
+    assert not market_direction_claims_supported(situation, data)
+    decision = EventAnalysisDecision(
+        symbol="ETH",
+        should_alert=True,
+        event_key="eth_market_event",
+        title="ignored",
+        message_body=situation,
+        related_news_ids=[],
+        urgency="normal",
+        confidence="medium",
+        possible_action="Watch whether the next observed interval extends the move or turns.",
+        reason_for_no_alert=None,
+    )
+    final_text = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": data}, related_news=[]
+    )["plain_text"]
+    assert situation not in final_text
+
+
+@pytest.mark.parametrize(
+    "situation",
+    [
+        (
+            "The trajectory was persistent, with each of the supplied "
+            "short-term snapshots moving lower."
+        ),
+        "The trajectory was persistent; the supplied short-term snapshots moved lower.",
+    ],
+)
+def test_persistence_marker_and_direction_across_punctuation_cannot_bypass_guard(situation):
+    with pytest.raises(EventAnalysisValidationError, match="trajectory is unsupported"):
+        validate(situation, market((100, 101, 102), "2", "-3"))
+
+
+def test_supported_same_direction_alignment_still_passes():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert market_direction_claims_supported(
+        "The short-term move continues in the same direction as the broader rise.",
+        market((100, 101, 102), "2", "3"),
+    )
