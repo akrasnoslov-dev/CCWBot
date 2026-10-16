@@ -268,12 +268,13 @@ def main() -> None:
     parser.add_argument("--evaluator-one", help="First independent human labels JSON")
     parser.add_argument("--evaluator-two", help="Second independent human labels JSON")
     parser.add_argument("--reconciled", help="Explicit adjudicator labels for disagreements")
+    parser.add_argument("--recorded-run", help="Pinned candidate results JSON; never calls provider")
     args = parser.parse_args()
     if args.benchmark is not None:
         if args.live or args.approve_provider_requests or args.case:
             parser.error("Frozen benchmark mode is offline and separate from synthetic live replay")
         from scripts.event_alert_benchmark import (
-            blind_packet, load_frozen, reconcile, report,
+            blind_packet, compare_recorded_run, load_frozen, reconcile, report,
         )
 
         dataset = load_frozen(args.benchmark)
@@ -291,7 +292,11 @@ def main() -> None:
         labels, agreement = reconcile(
             dataset, args.evaluator_one, args.evaluator_two, args.reconciled,
         )
-        print(json.dumps(report(dataset, labels, agreement), indent=2, sort_keys=True))
+        result = (
+            compare_recorded_run(dataset, args.recorded_run, labels, agreement)
+            if args.recorded_run else report(dataset, labels, agreement)
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
     if args.live and not args.approve_provider_requests:
         parser.error("--live requires --approve-provider-requests")
