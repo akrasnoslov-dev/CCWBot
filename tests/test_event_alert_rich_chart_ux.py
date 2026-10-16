@@ -12,7 +12,6 @@ from bot import alerts
 from bot.alerting.event_chart import prepare_chart_points, render_price_chart
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 
-
 AT = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 
 
