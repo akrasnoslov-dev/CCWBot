@@ -74,6 +74,11 @@ def load_frozen(path: str | Path) -> dict:
             raise ValueError(f"{case_id}: unsupported symbol")
         if case.get("scenario_type") not in SCENARIO_TYPES:
             raise ValueError(f"{case_id}: unsupported scenario type")
+        tags = case.get("tags", [])
+        if not isinstance(tags, list) or len(tags) != len(set(tags)) or any(
+            tag not in SCENARIO_TYPES for tag in tags
+        ):
+            raise ValueError(f"{case_id}: invalid scenario tags")
         if case.get("source_type") not in {"approved_read_only", "public_market_archive"}:
             raise ValueError(f"{case_id}: missing real-market provenance")
         facts = case.get("input")
@@ -248,6 +253,37 @@ def _confusion(cases: list[dict], labels: dict, *, weight_field: str | None = No
     }
 
 
+def _delivered_precision(cases: list[dict], labels: dict) -> dict:
+    deserved = unwanted = ambiguous = unreviewed = 0
+    unmeasured_events = 0
+    for case in cases:
+        observation = case.get("observed", {})
+        if observation.get("should_alert") is not True:
+            continue
+        delivered = observation.get("delivered_count")
+        if delivered is None:
+            unmeasured_events += 1
+            continue
+        label = labels.get(case["id"], {}).get("warrant")
+        if label == "alert":
+            deserved += delivered
+        elif label == "no_alert":
+            unwanted += delivered
+        elif label == "ambiguous":
+            ambiguous += delivered
+        else:
+            unreviewed += delivered
+    return {
+        "reviewed_deliveries": deserved + unwanted,
+        "deserved_deliveries": deserved,
+        "low_value_deliveries": unwanted,
+        "ambiguous_deliveries": ambiguous,
+        "unreviewed_deliveries": unreviewed,
+        "unknown_volume_events": unmeasured_events,
+        "precision": _ratio(deserved, deserved + unwanted),
+    }
+
+
 def _quality(cases: list[dict], labels: dict) -> dict:
     total = useful = factual = error = delivery_total = delivery_useful = 0
     for case in cases:
@@ -300,7 +336,9 @@ def report(dataset: dict, labels: dict | None = None, agreement: dict | None = N
         return {
             "events": len(rows),
             "types": dict(sorted(Counter(c["scenario_type"] for c in rows).items())),
+            "tags": dict(sorted(Counter(tag for c in rows for tag in c.get("tags", [])).items())),
             "event_level": _confusion(rows, labels),
+            "delivered_weighted_precision": _delivered_precision(rows, labels),
             "recipient_eligible_weighted": _confusion(
                 rows, labels, weight_field="eligible_recipients"
             ),
