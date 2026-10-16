@@ -4589,10 +4589,14 @@ async def _send_alert_to_recipient_once(
                     parse_mode=ParseMode.HTML,
                     link_preview_options={"is_disabled": True},
                 )
-            except BadRequest as error:
+            except Exception as error:
                 if is_bot_blocked_error(error):
                     raise
-                logger.info("HTML alert explicitly rejected; using plain fallback")
+                # Legacy non-rich HTML fallback remains available. An uncertain
+                # rich->HTML attempt must not trigger a second plain send.
+                if rich_html and not isinstance(error, BadRequest):
+                    raise
+                logger.info("HTML alert send failed; using plain fallback")
                 kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
                 if entities:
                     kwargs["entities"] = entities
