@@ -1,5 +1,4 @@
 """Event Alert UX, chart evidence and single-send fallback contracts."""
-import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -99,13 +98,21 @@ def test_recipient_last_delivery_replaces_shared_global_metric_in_all_formats():
         alert_type=alerts.EVENT_ALERT_TYPE,
         sent_at=AT - timedelta(hours=6, minutes=29),
     )
-    result = alerts._event_alert_for_recipient(shared, previous_alert=prior, current_price=2482.58, as_of=AT)
+    result = alerts._event_alert_for_recipient(
+        shared, previous_alert=prior, current_price=2482.58, as_of=AT,
+    )
     for key in ("plain_text", "html_text", "rich_html"):
         assert "Since previous alert (6h 29m ago): +3.44%" in result[key]
         assert "1h ago" not in result[key]
         assert "Price (now)" in result[key]
-        assert result[key].index("Price (now)") < result[key].index("Since previous alert") < result[key].index("3h market move")
-    no_reference = alerts._event_alert_for_recipient(shared, previous_alert=None, current_price=2482.58, as_of=AT)
+        assert (
+            result[key].index("Price (now)")
+            < result[key].index("Since previous alert")
+            < result[key].index("3h market move")
+        )
+    no_reference = alerts._event_alert_for_recipient(
+        shared, previous_alert=None, current_price=2482.58, as_of=AT,
+    )
     assert "Since previous" not in no_reference["plain_text"]
     assert "Since previous" not in no_reference["rich_html"]
     assert "Situation" in no_reference["plain_text"]
@@ -124,7 +131,8 @@ def test_rich_sections_order_links_and_disclaimer():
         "__CCWBOT_CHART_BLOCK__", "Situation", "Related context",
         "Possible action", "Not financial advice.",
     ]
-    assert [html.index(label) for label in ordered] == sorted(html.index(label) for label in ordered)
+    locations = [html.index(label) for label in ordered]
+    assert locations == sorted(locations)
     assert '<a href="https://example.org/a">' in html
     assert "<h2>" in html
     assert "<footer>Not financial advice.</footer>" in html
@@ -148,7 +156,10 @@ async def test_chart_prepared_once_and_shared_not_in_recipient_loop(monkeypatch)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", FakeSession)
     monkeypatch.setattr(alerts, "get_price_snapshots_since", query)
     monkeypatch.setattr(alerts, "render_price_chart", render)
-    payload = {"rich_html": "<h2>Alert</h2>__CCWBOT_CHART_BLOCK__<footer>Not financial advice.</footer>"}
+    payload = {
+        "rich_html": "<h2>Alert</h2>__CCWBOT_CHART_BLOCK__"
+        "<footer>Not financial advice.</footer>",
+    }
     await alerts._prepare_event_alert_chart(payload, symbol="ETH", as_of=AT)
     assert calls == {"db": 1, "render": 1}
     assert payload["chart_png"] == b"png"
@@ -216,4 +227,5 @@ async def test_transport_reuses_file_id_and_handles_valid_response(monkeypatch):
         assert returned == "cached-ID"
     assert requests[0]["files"]["chart"][1] == b"data"
     assert requests[1]["files"] is None
-    assert json.loads(requests[1]["data"]["rich_message"])["media"][0]["media"]["media"] == "cached-ID"
+    reused = json.loads(requests[1]["data"]["rich_message"])["media"][0]
+    assert reused["media"]["media"] == "cached-ID"
