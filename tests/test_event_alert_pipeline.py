@@ -881,10 +881,10 @@ def test_event_alert_presentation_removes_repeated_llm_market_facts():
         related_news=[],
     )["plain_text"]
 
-    assert "SOL up ~4.1% in the last 3 hours" in payload
+    assert "SOL Event Alert — +4.07%" in payload
     assert "24 h" not in payload
-    assert "Price: $109.79" in payload
-    assert "Since previous SOL Event Alert (18 Sep 08:00 UTC; 4h ago): +5.54%" in payload
+    assert "Price (now): $109.79" in payload
+    assert "Since previous alert (4h ago): +5.54%" in payload
     assert "3h market move: +4.07%" in payload
     assert "broader 24-hour trend" in payload
     assert "$105.49" not in payload
@@ -932,7 +932,7 @@ def test_event_alert_since_last_metric_requires_prior_price_and_time_context():
     )["plain_text"]
 
     assert (
-        "Since previous SOL market notification (18 Sep 08:00 UTC; 4h ago): +5.54%"
+        "Since previous market notification (4h ago): +5.54%"
         in with_context
     )
     assert "Since previous SOL" not in without_context
@@ -1526,7 +1526,7 @@ async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkey
 
     assert reusable is not None
     rendered = reusable.alert_payload["plain_text"]
-    assert "SOL up ~4.1% in the last 3 hours" in rendered
+    assert "SOL Event Alert — +4.07%" in rendered
     assert "legacy verbose Event Alert payload" not in rendered
     assert "$105.49" not in rendered
 
