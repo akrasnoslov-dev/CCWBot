@@ -87,6 +87,33 @@ def test_paired_score_excludes_incomplete_and_ambiguous_cases():
         assert stats["recall"] == 1.0
 
 
+def test_pairwise_cohort_does_not_require_dropped_third_candidate():
+    dataset, labels = fixture_data()
+    rows = {}
+    for name in live.VARIANTS:
+        rows[name] = []
+        for case in dataset["cases"][:3]:
+            rows[name].append({
+                "id": case["id"], "input_sha256": case["input_sha256"],
+                "status": "valid", "should_alert": case["observed"]["should_alert"],
+            })
+    # The discontinued third candidate has no valid answer on case 1.
+    rows["balanced_novelty"] = rows["balanced_novelty"][:1]
+    state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 7,
+        "runs": rows,
+    }
+    triple = scoring.score(dataset, labels, state)
+    pair = scoring.score(
+        dataset, labels, state,
+        variants=("production", "materiality_first"),
+    )
+    assert triple["paired_unambiguous_cases"] == 1
+    assert pair["paired_unambiguous_cases"] == 3
+    assert set(pair["variants"]) == {"production", "materiality_first"}
+
+
 def test_paired_score_rejects_mismatched_input_hash():
     dataset, a = fixture_data()
     row = {

@@ -21,12 +21,15 @@ from scripts.live_event_significance_benchmark import (  # noqa: E402
 )
 
 
-def score(dataset: dict, a_labels: dict, state: dict) -> dict:
+def score(
+    dataset: dict, a_labels: dict, state: dict,
+    *, variants: tuple[str, ...] = VARIANTS,
+) -> dict:
     by_id = {case["id"]: case for case in dataset["cases"]}
     if state["dataset_sha256"] != dataset["dataset_sha256"]:
         raise ValueError("Mismatching frozen inputs")
     observed = {}
-    for variant in VARIANTS:
+    for variant in variants:
         records = state["runs"].get(variant, [])
         if any(row.get("id") not in by_id for row in records):
             raise ValueError("Unknown case")
@@ -43,11 +46,11 @@ def score(dataset: dict, a_labels: dict, state: dict) -> dict:
         if a_labels[case["id"]] in ("alert", "no_alert")
         and all(
             observed[variant].get(case["id"], {}).get("status") == "valid"
-            for variant in VARIANTS
+            for variant in variants
         )
     ]
     results = {}
-    for variant in VARIANTS:
+    for variant in variants:
         cm = Counter()
         for case in completed:
             pred = observed[variant][case["id"]]["should_alert"]
@@ -107,11 +110,15 @@ def main() -> None:
     p.add_argument("--benchmark", type=Path, required=True)
     p.add_argument("--reviewer-a", type=Path, required=True)
     p.add_argument("--run-state", type=Path, required=True)
+    p.add_argument("--variants", nargs="+", choices=VARIANTS, default=VARIANTS)
     args = p.parse_args()
     dataset = load_frozen(args.benchmark)
     labels = load_reviewer_a(args.reviewer_a, dataset)
     state = json.loads(args.run_state.read_text(encoding="utf-8"))
-    print(json.dumps(score(dataset, labels, state), indent=2))
+    print(json.dumps(
+        score(dataset, labels, state, variants=tuple(dict.fromkeys(args.variants))),
+        indent=2,
+    ))
 
 
 if __name__ == "__main__":

@@ -143,6 +143,8 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
 async def replay(
     dataset: dict, a_labels: dict, out: Path, *,
     max_requests: int, delay: float, max_total_tokens: int,
+    selected_variants: tuple[str, ...] = VARIANTS,
+    skip_ambiguous: bool = False,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -174,7 +176,9 @@ async def replay(
     stopped_reason = "requested_limit"
     try:
         for case in ordering(dataset, a_labels):
-            for variant in VARIANTS:
+            if skip_ambiguous and a_labels[case["id"]] == "ambiguous":
+                continue
+            for variant in selected_variants:
                 if (variant, case["id"]) in already:
                     continue
                 if issued >= max_requests:
@@ -283,6 +287,8 @@ def main() -> None:
     parser.add_argument("--max-requests", type=int, default=12)
     parser.add_argument("--delay-seconds", type=float, default=12)
     parser.add_argument("--max-total-tokens", type=int, default=125000)
+    parser.add_argument("--variants", nargs="+", choices=VARIANTS, default=VARIANTS)
+    parser.add_argument("--skip-ambiguous", action="store_true")
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -299,6 +305,8 @@ def main() -> None:
             dataset, a_labels, args.out,
             max_requests=args.max_requests, delay=args.delay_seconds,
             max_total_tokens=args.max_total_tokens,
+            selected_variants=tuple(dict.fromkeys(args.variants)),
+            skip_ambiguous=args.skip_ambiguous,
         )
     ), indent=2))
 
