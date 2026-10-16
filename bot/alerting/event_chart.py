@@ -47,6 +47,12 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
     duration = points[-1][0] - points[0][0]
     if duration < timedelta(hours=8):
         return unavailable
+    # A long unobserved gap invalidates the otherwise day-wide trajectory.
+    if any(
+        later[0] - earlier[0] > timedelta(minutes=90)
+        for earlier, later in zip(points, points[1:])
+    ):
+        return unavailable
     # A day is only claimed when observations span virtually the full period.
     is_full_day = points[0][0] <= since + timedelta(minutes=20)
     if is_full_day:
