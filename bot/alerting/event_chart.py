@@ -34,7 +34,10 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
             continue
         if stamp is None or not isfinite(price) or price <= 0:
             continue
-        stamp = stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        else:
+            stamp = stamp.astimezone(timezone.utc)
         if since <= stamp <= as_of:
             observations[stamp] = price
     points = tuple(sorted(observations.items()))
@@ -70,8 +73,11 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
     # Explicit price-axis labels make the zoomed vertical scale transparent.
     floor, ceiling = low - scale * 0.12, high + scale * 0.12
     span = max((points[-1][0] - points[0][0]).total_seconds(), 1)
-    x_at = lambda stamp: left + (stamp - points[0][0]).total_seconds() / span * (right - left)
-    y_at = lambda value: bottom - (value - floor) / (ceiling - floor) * (bottom - top)
+    def x_at(stamp: datetime) -> float:
+        return left + (stamp - points[0][0]).total_seconds() / span * (right - left)
+
+    def y_at(value: float) -> float:
+        return bottom - (value - floor) / (ceiling - floor) * (bottom - top)
     up = prices[-1] >= prices[0]
     accent = "#4ee3b0" if up else "#ff8d98"
     draw.text((left, 26), f"{symbol.upper()}  |  {selected.label}", font=f_normal, fill="#ffffff")
@@ -92,7 +98,10 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
         draw.ellipse((previous[1][0] - 5, previous[1][1] - 5,
                       previous[1][0] + 5, previous[1][1] + 5), fill=accent)
     draw.text((left, 291), points[0][0].strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1")
-    draw.text((right, 291), points[-1][0].strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1", anchor="ra")
+    draw.text(
+        (right, 291), points[-1][0].strftime("%d %b %H:%M"),
+        font=f_small, fill="#c0cee1", anchor="ra",
+    )
     draw.text((left, 329), "Price axis: observed range  |  gaps > 90m not connected",
               font=f_small, fill="#a7b6ce")
     buffer = BytesIO()
