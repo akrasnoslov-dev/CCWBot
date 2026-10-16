@@ -268,13 +268,19 @@ def main() -> None:
     parser.add_argument("--evaluator-one", help="First independent human labels JSON")
     parser.add_argument("--evaluator-two", help="Second independent human labels JSON")
     parser.add_argument("--reconciled", help="Explicit adjudicator labels for disagreements")
-    parser.add_argument("--recorded-run", help="Pinned candidate results JSON; never calls provider")
+    parser.add_argument(
+        "--recorded-run", help="Pinned candidate results JSON; never calls provider"
+    )
     args = parser.parse_args()
     if args.benchmark is not None:
         if args.live or args.approve_provider_requests or args.case:
             parser.error("Frozen benchmark mode is offline and separate from synthetic live replay")
         from scripts.event_alert_benchmark import (
-            blind_packet, compare_recorded_run, load_frozen, reconcile, report,
+            blind_packet,
+            compare_recorded_run,
+            load_frozen,
+            reconcile,
+            report,
         )
 
         dataset = load_frozen(args.benchmark)
