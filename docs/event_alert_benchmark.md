@@ -82,6 +82,44 @@ same model twice.** The evaluator files are not included in the repository
 until privacy-approved and reviewed. Disagreements remain unscored until
 explicitly resolved; ambiguous labels remain out of precision/recall.
 
+### Owner-designated reviewer A reference for private v2 (2026-10-16)
+
+For the private `v2-2026-10-16-private-human-review` frozen set (200 real
+BTC/ETH/GRAM/SOL cases; dataset SHA-256
+`ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee`),
+the owner explicitly chose **reviewer A as the reference on all 99
+significance disagreements**. Keep both independent original reviews and the
+unchanged frozen inputs. This is an **owner-designated reference**, not
+agreement by both evaluators or independently established market truth.
+
+The operator keeps the explicit conflict resolution in the private, ignored
+`reports/event-alert-review-20261016/owner_reviewer_A_resolution_private.json`,
+generated from original reviewer A labels. Supply it using `--reconciled`;
+do not commit it or the private cases. All 47 reviewer-A `ambiguous` labels
+remain excluded. The resulting **153 unambiguous** cases are the reference
+scoring set for PR 2 candidates; preserve the former 94-case two-human
+consensus metrics separately for transparency.
+
+| Asset | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| BTC | 2 | 21 | 4 | 20 | 8.7% | 33.3% |
+| ETH | 3 | 13 | 3 | 17 | 18.8% | 50.0% |
+| GRAM | 8 | 11 | 8 | 10 | 42.1% | 50.0% |
+| SOL | 8 | 8 | 5 | 12 | 50.0% | 61.5% |
+| **Total** | **21** | **53** | **20** | **59** | **28.4%** | **51.2%** |
+
+For positive-decision delivery exposure, reviewer A's non-ambiguous labels
+cover 504 deserved versus 6,286 low-value deliveries (**7.4% deserved**);
+513 other deliveries are reviewer-A ambiguous. This is *not* population
+precision or recipient-eligible-weighted recall. Those latter metrics remain
+unmeasured where no-alert recipient eligibility is absent. The owner-supplied
+message-quality summary (1 useful of 72 reviewed final messages) is a
+single-reviewer assessment; independently confirmed factuality and a complete
+two-evaluator final-text audit remain unverified.
+
+No significance candidate replay, provider/token cost comparison or quality
+acceptance gate is made valid merely by choosing the owner-designated labels.
+
 ### Commands (offline by default)
 
 ```bash
