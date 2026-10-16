@@ -222,6 +222,12 @@ hours.
 No bypass exists for a bigger move, urgency, new news, or a direction change inside the same
 semantic event. A genuinely different semantic event can pass.
 
+The four-hour window starts at confirmed successful delivery (`sent_at`), with a legacy
+`created_at` fallback only for stored rows missing completion timestamps. Historical
+price-movement evidence may recover a missing stored price family. A second cooldown
+check under the shared user-and-coin delivery lock closes the gap between bulk
+pre-filtering and an actual send; it does not block distinct semantic families.
+
 ## Step 10 - Send once
 Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression
 outcomes and avoids sending the same event twice to the same recipient.
