@@ -30,7 +30,7 @@ def test_chart_full_day_uses_observed_timestamps_and_png():
     points = _observations()
     result = render_price_chart(points, as_of=AT, symbol="ETH")
     assert result.label == "Last 24 hours"
-    assert result.png is not None and result.png.startswith(b"\\x89PNG\\r\\n")
+    assert result.png is not None and result.png.startswith(b"\x89PNG\r\n")
     assert result.points[0][0] == AT - timedelta(hours=24)
     assert result.points[-1][0] == AT
     assert [price for _, price in result.points] == [row.price for row in points]
@@ -72,18 +72,18 @@ def test_metric_labels_correct_actual_windows_and_notification_type():
 def test_recipient_last_delivery_replaces_shared_global_metric_in_all_formats():
     shared = {
         "plain_text": (
-            "ETH Event Alert — +1.12%\\n\\n"
-            "Price (now): $2,482.58\\n"
-            "Since previous alert (1h ago): +3.00%\\n"
-            "3h market move: +1.12%\\n\\n"
-            "Last 24 hours: chart unavailable in text-only view.\\n\\nSituation:\\nVerified.\\n\\n"
-            "Possible action:\\nObserve.\\n\\nNot financial advice."
+            "ETH Event Alert — +1.12%\n\n"
+            "Price (now): $2,482.58\n"
+            "Since previous alert (1h ago): +3.00%\n"
+            "3h market move: +1.12%\n\n"
+            "Last 24 hours: chart unavailable in text-only view.\n\nSituation:\nVerified.\n\n"
+            "Possible action:\nObserve.\n\nNot financial advice."
         ),
         "html_text": (
-            "<b>ETH Event Alert — +1.12%</b>\\n"
-            "Price (now): $2,482.58\\n"
-            "Since previous alert (1h ago): +3.00%\\n"
-            "3h market move: +1.12%\\n"
+            "<b>ETH Event Alert — +1.12%</b>\n"
+            "Price (now): $2,482.58\n"
+            "Since previous alert (1h ago): +3.00%\n"
+            "3h market move: +1.12%\n"
         ),
         "rich_html": (
             "<h2>ETH Event Alert — +1.12%</h2><p>Price (now): $2,482.58</p>"
