@@ -154,6 +154,46 @@ acceptance result**, even if it is numerically high. Unknown provider spending
 must remain unknown. Never change the model-serving prompt on pilot evidence
 without complete coverage and a validated trade-off.
 
+### Live Groq pilot decision record (2026-10-16, PR 2)
+
+The owner approved up to 600 requests, but this run stopped at **63 attempts** to
+protect the free-tier account's shared operating budget. All **63 returned
+schema-valid decisions**, with **115,148 provider-reported tokens** and no
+observed provider failures. The run saved 24 responses for the unchanged
+production prompt, 23 for `materiality_first`, and 16 for
+`balanced_novelty`. Private case-level records and token receipts remain in
+the ignored `reports/event-alert-review-20261016/live_groq_ab_20261016/`.
+
+The completed, **deliberately error-stratified 23-case paired cohort**, excluding
+reviewer-A ambiguous cases, yields:
+
+| Prompt | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Unchanged current prompt | 1 | 0 | 10 | 12 | 100% | 9.1% |
+| `materiality_first` | 3 | 1 | 8 | 11 | 75% | 27.3% |
+
+These **are not unbiased production quality estimates** and **do not meet**
+the 85%/90% release gates. The former 153-case scored historical reference
+remains 28.4% precision and 51.2% recall; its stored decisions are not a
+matched live-provider comparison. The materiality-first variant recovered
+some missed alerts but also generated an unnecessary positive, so it was
+**not promoted**. The discontinued balanced-novelty variant failed all
+eight positive cases in the first paired pilot and was not tested further.
+The experiment isolates the market-significance prompt; it does not validate
+actual Telegram-copy usefulness or the dollar cost of provider calls.
+
+Separate database checks: a real local PostgreSQL test (in an ephemeral
+database removed afterward) verified that the cooldown honours confirmed
+`sent_at` rather than late/early reservation `created_at`, with a legacy
+fallback when `sent_at` is absent; existing advisory-lock concurrency and
+cancellation tests also passed. This is not production-scale load validation.
+
+**Next release gate:** design and measure a genuinely improved materiality
+prompt on substantially broader unseen scored market inputs, including both
+false-positive and false-negative exposure; do not merge/deploy PR 2 merely
+because the small pilot improved relative recall. Source choices remain
+LLM-owned without numeric backend alert thresholds.
+
 The pinned candidate JSON must include `dataset_sha256`, `model`,
 `config_fingerprint` (hash of provider, model, prompt revision, reasoning,
 sampling and other effective settings, excluding secrets), and `results`.
