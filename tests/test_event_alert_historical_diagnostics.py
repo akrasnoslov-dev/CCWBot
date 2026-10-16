@@ -15,10 +15,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bot import alerts
 from bot.alerting.event_analysis import (
     EventAnalysisDecision,
-    EventAnalysisValidationError,
     canonicalize_event_key,
     validate_event_significance_output,
-    _validate_positive_market_claims,
 )
 from bot.alerting.event_identity import _build_exact_event_context_fingerprint
 from bot.db.database import Base
