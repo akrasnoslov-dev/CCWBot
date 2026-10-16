@@ -90,11 +90,13 @@ def test_versioned_bootstrap_has_no_fabricated_market_events():
 def test_blind_packets_hide_bot_decision_and_delivery_evidence():
     dataset = _dataset(_case("btc-case-001"))
     significance = blind_packet(dataset, "significance")["cases"][0]
+    assert "scenario_type" not in significance
     assert "observed" not in significance
     assert "final_message" not in significance
     assert "should_alert" not in json.dumps(significance)
     message = blind_packet(dataset, "message")["cases"][0]
     assert "Not financial advice." in message["final_message"]
+    assert "scenario_type" not in message
     assert "delivered_count" not in message
     assert "should_alert" not in message
 
