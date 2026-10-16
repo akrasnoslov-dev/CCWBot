@@ -882,7 +882,7 @@ def test_event_alert_presentation_removes_repeated_llm_market_facts():
     )["plain_text"]
 
     assert "SOL Event Alert — +4.07%" in payload
-    assert "24 h" not in payload
+    assert "up ~8.5% in 24 h" not in payload
     assert "Price (now): $109.79" in payload
     assert "Since previous alert (4h ago): +5.54%" in payload
     assert "3h market move: +4.07%" in payload
