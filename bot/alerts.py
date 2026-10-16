@@ -19,6 +19,8 @@ from telegram.ext import Application, ContextTypes
 
 from bot.alerting import event_identity as _event_identity
 from bot.alerting import news_context as _news_context
+from bot.alerting.event_chart import render_price_chart
+from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -1560,17 +1562,44 @@ def _build_event_alert_html_message(
     possible_action: str,
 ) -> str:
     market_section = f"{market_context_html}\n\n" if market_context_html else ""
-    related_block = f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
+    related_block = (
+        f"<b>Related context</b>\n{related_section_html}\n\n"
+        if related_section_html else ""
+    )
     return (
-        f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
-        f"{escape(title)}\n\n"
+        f"{icon_html} <b>{escape(title)}</b>\n\n"
         f"{market_section}"
-        "Situation:\n"
+        "Last 24 hours: chart unavailable in text-only view.\n\n"
+        "<b>Situation</b>\n"
         f"{escape(message_body)}\n\n"
         f"{related_block}"
-        "Possible action:\n"
+        "<b>Possible action</b>\n"
         f"{escape(possible_action)}\n\n"
-        "Not financial advice."
+        "<i>Not financial advice.</i>"
+    )
+
+
+def _build_event_alert_rich_html(
+    *,
+    headline: str,
+    metric_lines: list[str],
+    situation: str,
+    related_section_html: str | None,
+    possible_action: str,
+) -> str:
+    metrics = "".join(f"<p>{escape(line)}</p>" for line in metric_lines)
+    related = (
+        f"<h3>Related context</h3><p>{related_section_html.replace(chr(10), '<br>')}</p>"
+        if related_section_html else ""
+    )
+    return (
+        f"<h2>{escape(headline)}</h2>"
+        f"{metrics}"
+        "__CCWBOT_CHART_BLOCK__"
+        f"<h3>Situation</h3><p>{escape(situation)}</p>"
+        f"{related}"
+        f"<h3>Possible action</h3><p>{escape(possible_action)}</p>"
+        "<footer>Not financial advice.</footer>"
     )
 
 
@@ -1596,24 +1625,20 @@ def _event_alert_market_context_lines(
 ) -> list[str]:
     lines: list[str] = []
     if price is not None:
-        lines.append(f"Price: {_format_optional_price(price)}")
+        lines.append(f"Price (now): {_format_optional_price(price)}")
     if (
         change_since_message is not None
         and last_message_at is not None
         and last_message_price is not None
     ):
         elapsed = compact_elapsed_since(last_message_at, current_at)
-        from bot.alerting.event_text import _parse_datetime
-
-        reference = _parse_datetime(last_message_at)
-        reference_label = reference.strftime("%d %b %H:%M UTC") if reference else "unknown time"
         kind = {
             "market_heartbeat": "Market Heartbeat",
-            EVENT_ALERT_TYPE: "Event Alert",
+            EVENT_ALERT_TYPE: "alert",
         }.get(str(last_message_type or ""), "market notification")
-        elapsed_suffix = f"; {elapsed}" if elapsed else ""
+        elapsed_suffix = f" ({elapsed} ago)" if elapsed else ""
         lines.append(
-            f"Since previous {symbol} {kind} ({reference_label}{elapsed_suffix}): "
+            f"Since previous {kind}{elapsed_suffix}: "
             f"{_format_optional_percent(change_since_message)}"
         )
     if analysed_window_minutes is not None and analysed_window_change is not None:
@@ -1660,11 +1685,11 @@ def _build_event_alert_payload(
     analysed_window_change = market_data.get("chg_window_percent")
     icon, entities = build_coin_icon_prefix(backend_symbol)
     icon_html = build_coin_icon_html(backend_symbol)
-    title = _event_alert_presentation_title(
-        symbol=symbol,
-        analysed_window_minutes=market_data.get("analysed_window_minutes"),
-        analysed_window_change=analysed_window_change,
-    )
+    move = _optional_float(analysed_window_change)
+    headline = f"{symbol} Event Alert"
+    if move is not None:
+        headline += f" — {_format_optional_percent(move)}"
+    title = headline
     # Provider-selected IDs are not proof of relevance. Re-check final headlines
     # against the asset before exposing them in a Telegram message.
     related_news = [
@@ -1744,8 +1769,8 @@ def _build_event_alert_payload(
     related_prefix = "Related context:\n" if related_section else ""
     before_related = (
         f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
-        f"{title}\n\n"
         f"{market_context_block}"
+        "Last 24 hours: chart unavailable in text-only view.\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         f"{related_prefix}"
@@ -1780,18 +1805,28 @@ def _build_event_alert_payload(
                 url=str(entity["url"]),
             )
         )
-    html_message = None
-    if icon_html != icon:
-        html_message = _build_event_alert_html_message(
-            icon_html=icon_html,
-            symbol=symbol,
-            title=title,
-            market_context_html="\n".join(escape(line) for line in market_context_lines),
-            message_body=message_body,
-            related_section_html=related_section_html,
-            possible_action=possible_action,
-        )
-    return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
+    html_message = _build_event_alert_html_message(
+        icon_html=icon_html,
+        symbol=symbol,
+        title=title,
+        market_context_html="\\n".join(escape(line) for line in market_context_lines),
+        message_body=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    rich_html = _build_event_alert_rich_html(
+        headline=headline,
+        metric_lines=market_context_lines,
+        situation=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    return {
+        "plain_text": message,
+        "html_text": html_message,
+        "entities": all_entities or None,
+        "rich_html": rich_html,
+    }
 
 
 def _event_numeric_context(
