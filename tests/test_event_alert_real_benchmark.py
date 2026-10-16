@@ -148,6 +148,8 @@ def test_independent_disagreement_requires_explicit_reconciliation(tmp_path):
     assert scored["event_level"]["precision"] == 0
     assert scored["event_level"]["recall"] == 0
     assert scored["recipient_eligible_weighted"]["fp"] == 12
+    assert scored["delivered_weighted_precision"]["low_value_deliveries"] == 12
+    assert scored["delivered_weighted_precision"]["precision"] == 0
     assert scored["final_text"]["usefulness_rate"] == 0
     assert scored["final_text"]["factual_errors"] == 0
 
