@@ -124,3 +124,20 @@ Feature-specific rules live in their canonical docs:
 - `docs/market_reports.md`
 - `docs/product_analytics.md`
 - `docs/ops_agent_service.md`
+
+## 9. Prompt language policy
+
+**All prompts intended for another AI workflow must be written entirely in English, regardless
+of the language of the conversation.** This includes task assignments for Codex, GitHub
+implementation agents, subagents, other ChatGPT chats, and handoff instructions intended to be
+copied and executed elsewhere.
+
+- Do not infer the prompt language from the user's conversational language.
+- Do not mix Russian and English inside a ready-to-copy prompt. Preserve literal
+  repository paths, identifiers, commands, and quoted source material when needed.
+- Explanations, discussions, progress updates, and reports addressed to the project owner
+  may remain in Russian unless requested otherwise.
+- Apply this policy when drafting and revising prompts, even if the surrounding request is
+  written entirely in Russian.
+- Only an explicit owner request to use a different language for a specific prompt overrides
+  the English-only default.
