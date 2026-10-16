@@ -1636,7 +1636,7 @@ def _event_alert_market_context_lines(
             "market_heartbeat": "Market Heartbeat",
             EVENT_ALERT_TYPE: "alert",
         }.get(str(last_message_type or ""), "market notification")
-        elapsed_suffix = f" ({elapsed} ago)" if elapsed else ""
+        elapsed_suffix = f" ({elapsed})" if elapsed else ""
         lines.append(
             f"Since previous {kind}{elapsed_suffix}: "
             f"{_format_optional_percent(change_since_message)}"
@@ -4793,6 +4793,68 @@ def _sanitize_alert_payload(alert_payload: dict) -> dict:
     return result
 
 
+def _event_alert_for_recipient(
+    payload: dict,
+    *,
+    previous_alert: object | None,
+    current_price: float | None,
+    as_of: datetime,
+) -> dict:
+    """Insert the actual recipient's last delivered notification, never the global one."""
+    result = dict(payload)
+    previous_line = None
+    if previous_alert is not None and current_price is not None:
+        previous_price = _decimal_numeric_context_value(
+            getattr(previous_alert, "numeric_context", None), "current_price"
+        )
+        previous_time = getattr(previous_alert, "sent_at", None)
+        if previous_price is not None and previous_time is not None:
+            try:
+                change = calculate_price_change_percent(previous_price, Decimal(str(current_price)))
+            except (ValueError, TypeError, ZeroDivisionError, ArithmeticError):
+                change = None
+            if change is not None:
+                kind = (
+                    "alert" if getattr(previous_alert, "alert_type", None) == EVENT_ALERT_TYPE
+                    else "Market Heartbeat"
+                    if getattr(previous_alert, "alert_type", None) == MARKET_HEARTBEAT_TYPE
+                    else "market notification"
+                )
+                age = compact_elapsed_since(previous_time, as_of)
+                if age is not None:
+                    previous_line = (
+                        f"Since previous {kind} ({age}): {_format_optional_percent(change)}"
+                    )
+
+    # Remove the market-global comparison captured during shared LLM analysis.
+    for key in ("plain_text", "html_text"):
+        content = result.get(key)
+        if not content:
+            continue
+        content = re.sub(r"(?m)^Since previous [^\\n]*\\n?", "", str(content))
+        if previous_line:
+            insertion = escape(previous_line) if key == "html_text" else previous_line
+            content = re.sub(
+                r"(?m)^(Price \\(now\\):[^\\n]*\\n)",
+                lambda match: match.group(1) + insertion + "\\n",
+                content,
+                count=1,
+            )
+        result[key] = content
+    rich_html = result.get("rich_html")
+    if rich_html:
+        rich_html = re.sub(r"<p>Since previous [^<]*</p>", "", str(rich_html))
+        if previous_line:
+            rich_html = re.sub(
+                r"(<p>Price \\(now\\):[^<]*</p>)",
+                lambda match: match.group(1) + f"<p>{escape(previous_line)}</p>",
+                rich_html,
+                count=1,
+            )
+        result["rich_html"] = rich_html
+    return result
+
+
 async def _prepare_event_alert_chart(
     alert_payload: dict,
     *,
@@ -5110,12 +5172,34 @@ async def _deliver_market_event_alert(
             raw_stored_severity,
             stored_severity,
         )
+    current_event_price = None
+    if event_type == EVENT_ALERT_TYPE and numeric_context:
+        try:
+            current_event_price = _optional_float(
+                json.loads(numeric_context).get("current_price")
+            )
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            pass
     delivered = False
     sent_count = 0
     skipped_count = 0
     skipped_already_delivered = 0
     for recipient in recipients:
         async with _automatic_delivery_lock(recipient, normalized_symbol):
+            recipient_payload = alert_payload
+            if event_type == EVENT_ALERT_TYPE:
+                prior_delivery = None
+                if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None:
+                    async with DB_SESSION_LOCAL() as session:
+                        prior_delivery = await get_last_sent_alert(
+                            session, user_id=recipient.user_id, symbol=normalized_symbol,
+                        )
+                recipient_payload = _event_alert_for_recipient(
+                    alert_payload,
+                    previous_alert=prior_delivery,
+                    current_price=current_event_price,
+                    as_of=chart_as_of or datetime.now(timezone.utc),
+                )
             delivery_decision_reason = (delivery_decision_reasons_by_recipient or {}).get(
                 _recipient_decision_key(recipient), DECISION_REASON_DELIVERED
             )
@@ -5130,7 +5214,7 @@ async def _deliver_market_event_alert(
                         sent_to_chat_id=recipient.chat_id,
                         market_event_id=market_event_id,
                         event_ai_analysis_id=event_ai_analysis_id,
-                        message=plain_text,
+                        message=str(recipient_payload.get("plain_text", "")),
                         trigger_reason=trigger_reason,
                         trigger_source=trigger_source,
                         numeric_context=numeric_context,
@@ -5184,7 +5268,7 @@ async def _deliver_market_event_alert(
             sent, error_message, send_error = await _send_alert_to_recipient_with_retry(
                 app,
                 recipient,
-                alert_payload,
+                recipient_payload,
                 alert_id=alert_id,
             )
             if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
@@ -5231,7 +5315,7 @@ async def _deliver_market_event_alert(
                     symbol=normalized_symbol,
                     alert_type=event_type,
                     recipient=recipient,
-                    plain_text=plain_text,
+                    plain_text=str(recipient_payload.get("plain_text", "")),
                     status="sent" if sent else "failed",
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
