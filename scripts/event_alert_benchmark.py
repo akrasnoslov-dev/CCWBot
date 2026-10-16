@@ -128,7 +128,8 @@ def blind_packet(dataset: dict, phase: str) -> dict:
         card = {
             "id": case["id"],
             "symbol": case["symbol"],
-            "scenario_type": case["scenario_type"],
+            # Cohort names such as "delivered" or "no_alert" reveal the bot decision.
+            # Keep sampling strata only in the private scoring manifest.
             "input": case["input"],
         }
         if phase == "message":
