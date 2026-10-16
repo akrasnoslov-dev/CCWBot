@@ -130,6 +130,28 @@ python scripts/replay_event_significance.py --benchmark path/to/v2.json --evalua
 python scripts/replay_event_significance.py --benchmark path/to/v2.json --evaluator-one /tmp/human-a.json --evaluator-two /tmp/human-b.json --reconciled /tmp/adjudication.json --recorded-run /tmp/candidate.json
 ```
 
+For an explicitly owner-approved Groq replay (never during normal test runs),
+use the bounded, resumable runner and compare only completed paired cases:
+
+```bash
+python scripts/live_event_significance_benchmark.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --out reports/event-alert-review-20261016/live_groq_ab_20261016 --approve-provider-requests --max-requests 12 --delay-seconds 18
+python scripts/score_event_significance_ab.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --run-state reports/event-alert-review-20261016/live_groq_ab_20261016/replay_state.json
+```
+
+This replay sends frozen sanitized market context to Groq, but performs no Telegram
+delivery, no production DB writes, no alert persistence, and no live market
+fetch. The ledger counts an HTTP attempt **before** sending and refuses more
+than 600 attempts in the selected run directory; it retains only validated
+decisions, status, provider token usage, opaque IDs, and input/config hashes.
+It stops on provider auth, cost or rate-limit rejection, rather than bypassing
+account controls. Do not publish anything beneath `reports/`.
+Each candidate inherits production model, system prompt, JSON Schema, reasoning
+effort and token ceiling; the only variable is the added prompt guidance.
+**Partial pilot precision/recall is a paired-subset diagnostic, not a product
+acceptance result**, even if it is numerically high. Unknown provider spending
+must remain unknown. Never change the model-serving prompt on pilot evidence
+without complete coverage and a validated trade-off.
+
 The pinned candidate JSON must include `dataset_sha256`, `model`,
 `config_fingerprint` (hash of provider, model, prompt revision, reasoning,
 sampling and other effective settings, excluding secrets), and `results`.
