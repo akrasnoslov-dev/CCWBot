@@ -34,6 +34,22 @@ CANDIDATE_ADDITIONS = {
         "a reversal. Missing c30/c60 or sparse s never proves rapid motion. "
         "Do not transform these observations into fixed cutoffs."
     ),
+    "trajectory_evidence": (
+        "Calibration: decide market significance using confirmed movement, "
+        "not headlines or raw event counts. Compare the observed full-window "
+        "change cw and the actual sampled path s with the same-asset percentile "
+        "pw. A genuinely substantial current decline, surge or sustained "
+        "acceleration can be material even if the 24h move is older, recent "
+        "notifications exist, or a partial bounce softens the last 30 minutes. "
+        "Do not reject significant full-window evidence merely because c30/c60 "
+        "are absent; do not invent missing path details either. Conversely "
+        "a minor wiggle, a sign flip versus c24, or a news headline is never "
+        "itself a reversal or major event. Require demonstrated size and "
+        "coherent path for reversal or fast_move, considering the asset's "
+        "usual movement. Only after judging materiality consider novelty; "
+        "recent count cnt may reduce novelty but does not erase a fresh, "
+        "separately supported price event. No price, speed, or percentile cutoffs."
+    ),
     "balanced_novelty": (
         "Calibration focus: keep Q1 materiality and Q2 novelty strictly separate. "
         "A demonstrably noteworthy present move may be material even if recent "

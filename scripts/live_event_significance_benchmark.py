@@ -28,7 +28,8 @@ from bot.services.llm import config  # noqa: E402
 from scripts.event_alert_benchmark import load_frozen  # noqa: E402
 from scripts.event_significance_candidates import candidate_prompt  # noqa: E402
 
-VARIANTS = ("production", "materiality_first", "balanced_novelty")
+VARIANTS = ("production", "materiality_first", "balanced_novelty", "trajectory_evidence")
+DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600
 
 
@@ -76,6 +77,20 @@ def ordering(dataset: dict, a_labels: dict) -> list[dict]:
     return sequence
 
 
+def eligible_replay_cases(
+    dataset: dict,
+    labels: dict,
+    *,
+    excluded_case_ids: frozenset[str],
+    skip_ambiguous: bool,
+) -> list[dict]:
+    return [
+        case for case in ordering(dataset, labels)
+        if case["id"] not in excluded_case_ids
+        and not (skip_ambiguous and labels[case["id"]] == "ambiguous")
+    ]
+
+
 def load_reviewer_a(path: Path, dataset: dict) -> dict:
     record = json.loads(path.read_text(encoding="utf-8"))
     if record.get("dataset_sha256") != dataset["dataset_sha256"]:
@@ -92,9 +107,17 @@ def load_reviewer_a(path: Path, dataset: dict) -> dict:
 def load_state(path: Path, dataset_sha: str, model: str, configs: dict) -> dict:
     if path.exists():
         state = json.loads(path.read_text(encoding="utf-8"))
-        if (state.get("dataset_sha256") != dataset_sha or state.get("model") != model
-                or state.get("fingerprints") != configs):
+        previous = state.get("fingerprints", {})
+        if (
+            state.get("dataset_sha256") != dataset_sha
+            or state.get("model") != model
+            or any(configs.get(name) != value for name, value in previous.items())
+        ):
             raise ValueError("Replay run configuration mismatch; refuse to mix results")
+        # Adding a new candidate must not invalidate earlier pinned responses.
+        for name, value in configs.items():
+            state["fingerprints"].setdefault(name, value)
+            state["runs"].setdefault(name, [])
         return state
     return {
         "dataset_sha256": dataset_sha,
@@ -143,8 +166,10 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
 async def replay(
     dataset: dict, a_labels: dict, out: Path, *,
     max_requests: int, delay: float, max_total_tokens: int,
-    selected_variants: tuple[str, ...] = VARIANTS,
+    selected_variants: tuple[str, ...] = DEFAULT_VARIANTS,
     skip_ambiguous: bool = False,
+    excluded_case_ids: frozenset[str] = frozenset(),
+    previous_attempts: int = 0,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -175,15 +200,16 @@ async def replay(
     issued = 0
     stopped_reason = "requested_limit"
     try:
-        for case in ordering(dataset, a_labels):
-            if skip_ambiguous and a_labels[case["id"]] == "ambiguous":
-                continue
+        for case in eligible_replay_cases(
+            dataset, a_labels,
+            excluded_case_ids=excluded_case_ids, skip_ambiguous=skip_ambiguous,
+        ):
             for variant in selected_variants:
                 if (variant, case["id"]) in already:
                     continue
                 if issued >= max_requests:
                     break
-                if state["attempted_requests"] >= MAX_APPROVED_CALLS:
+                if previous_attempts + state["attempted_requests"] >= MAX_APPROVED_CALLS:
                     stopped_reason = "approved_request_ceiling"
                     break
                 if estimated_spent_tokens(state, max_tokens) + max_tokens + 2000 > max_total_tokens:
@@ -254,7 +280,7 @@ async def replay(
                 counts = {v: Counter(x["status"] for x in state["runs"][v])
                           for v in VARIANTS}
                 print(
-                    f"request={n}/{MAX_APPROVED_CALLS} variant={variant} "
+                    f"request={previous_attempts + n}/{MAX_APPROVED_CALLS} variant={variant} "
                     f"symbol={case['symbol']} status={result['status']} "
                     f"tokens={result.get('total_tokens', 'unknown')} "
                     f"valid_counts={[(v, counts[v]['valid']) for v in VARIANTS]}",
@@ -287,8 +313,9 @@ def main() -> None:
     parser.add_argument("--max-requests", type=int, default=12)
     parser.add_argument("--delay-seconds", type=float, default=12)
     parser.add_argument("--max-total-tokens", type=int, default=125000)
-    parser.add_argument("--variants", nargs="+", choices=VARIANTS, default=VARIANTS)
+    parser.add_argument("--variants", nargs="+", choices=VARIANTS, default=DEFAULT_VARIANTS)
     parser.add_argument("--skip-ambiguous", action="store_true")
+    parser.add_argument("--exclude-state", type=Path)
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -300,6 +327,16 @@ def main() -> None:
         parser.error("Total replay token safety limit must be positive")
     dataset = load_frozen(args.benchmark)
     a_labels = load_reviewer_a(args.reviewer_a, dataset)
+    excluded = frozenset()
+    previous_attempts = 0
+    if args.exclude_state:
+        prior = json.loads(args.exclude_state.read_text(encoding="utf-8"))
+        if prior["dataset_sha256"] != dataset["dataset_sha256"]:
+            parser.error("Prior replay has a different frozen dataset")
+        excluded = frozenset(
+            row["id"] for entries in prior["runs"].values() for row in entries
+        )
+        previous_attempts = int(prior["attempted_requests"])
     print(json.dumps(asyncio.run(
         replay(
             dataset, a_labels, args.out,
@@ -307,6 +344,8 @@ def main() -> None:
             max_total_tokens=args.max_total_tokens,
             selected_variants=tuple(dict.fromkeys(args.variants)),
             skip_ambiguous=args.skip_ambiguous,
+            excluded_case_ids=excluded,
+            previous_attempts=previous_attempts,
         )
     ), indent=2))
 

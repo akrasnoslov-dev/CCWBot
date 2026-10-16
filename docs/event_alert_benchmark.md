@@ -194,6 +194,38 @@ false-positive and false-negative exposure; do not merge/deploy PR 2 merely
 because the small pilot improved relative recall. Source choices remain
 LLM-owned without numeric backend alert thresholds.
 
+### Unseen holdout replay after materiality recalibration (2026-10-16)
+
+A new **experimental, non-production** `trajectory_evidence` prompt explicitly
+asks the LLM to distinguish genuinely substantial current trajectories from
+news-driven, minor counter-moves and routine noise, without numeric gates.
+Its input JSON, pinned Groq model, strict response schema and token budget are
+unchanged. A frozen **8-case unseen holdout**, excluding every previously
+replayed event and reviewer-A ambiguities, was tested with matched live model
+responses:
+
+| Prompt | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current production instructions | 0 | 0 | 5 | 3 | Undefined | 0% |
+| `trajectory_evidence` | 3 | 2 | 2 | 1 | 60% | 60% |
+
+All 16 new provider calls returned schema-valid responses; 28,758 tokens were
+measured. Cumulative owner-approved replay activity (this and the previous
+experiment) was **79 requests and 143,906 measured tokens**. The local
+36K-token experiment ceiling prevented further requests; none remains running.
+Results and original reviewer labels are gitignored. The new candidate is
+**not safe to promote**: it increases recall but admits new false positives
+and fails the ≥85% precision and ≥90% recall release gates. Do not interpret
+these deliberately selected subsets as a representative precision estimate.
+
+The 200-case dataset and reviewer A decisions are unchanged. A full,
+representative, paired evaluation on the 153 decisive cases remains
+**uncompleted**: it requires substantially more provider tokens across
+account-budget windows; the repo deliberately does not queue unattended jobs,
+alter production credentials, or consume the operating bot's remaining
+free-tier capacity. Tests only verify input and schema invariants, not model
+quality. No prompt, model, Telegram or production delivery change is released.
+
 The pinned candidate JSON must include `dataset_sha256`, `model`,
 `config_fingerprint` (hash of provider, model, prompt revision, reasoning,
 sampling and other effective settings, excluding secrets), and `results`.

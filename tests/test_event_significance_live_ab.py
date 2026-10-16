@@ -43,6 +43,16 @@ def test_ordering_interleaves_historic_error_types_and_has_no_duplicates():
     assert len({row["id"] for row in arranged}) == len(dataset["cases"])
 
 
+def test_new_holdout_never_reuses_examined_events():
+    dataset, labels = fixture_data()
+    selected = live.eligible_replay_cases(
+        dataset, labels,
+        excluded_case_ids=frozenset({"case_0", "case_2"}),
+        skip_ambiguous=True,
+    )
+    assert [case["id"] for case in selected] == ["case_1"]
+
+
 def test_replay_state_rejects_changed_model_input_or_configuration(tmp_path):
     dataset, _ = fixture_data()
     ledger = tmp_path / "run.json"
@@ -56,6 +66,33 @@ def test_replay_state_rejects_changed_model_input_or_configuration(tmp_path):
     ) == state
     with pytest.raises(ValueError, match="configuration mismatch"):
         live.load_state(ledger, dataset["dataset_sha256"], "another", {})
+
+
+def test_old_pinned_replay_can_add_candidate_without_replaying_existing_answers(tmp_path):
+    dataset, _ = fixture_data()
+    ledger = tmp_path / "old.json"
+    earlier = live.load_state(
+        ledger, dataset["dataset_sha256"], "gpt-oss-test",
+        {"production": "fixed", "materiality_first": "fixed-two"},
+    )
+    earlier["runs"]["production"].append({
+        "id": "case_0", "status": "valid", "should_alert": True,
+    })
+    live.save_state(ledger, earlier)
+    resumed = live.load_state(
+        ledger, dataset["dataset_sha256"], "gpt-oss-test",
+        {
+            "production": "fixed", "materiality_first": "fixed-two",
+            "trajectory_evidence": "new",
+        },
+    )
+    assert resumed["runs"]["production"] == earlier["runs"]["production"]
+    assert resumed["runs"]["trajectory_evidence"] == []
+    with pytest.raises(ValueError, match="configuration mismatch"):
+        live.load_state(
+            ledger, dataset["dataset_sha256"], "gpt-oss-test",
+            {"production": "changed", "materiality_first": "fixed-two"},
+        )
 
 
 def test_paired_score_excludes_incomplete_and_ambiguous_cases():

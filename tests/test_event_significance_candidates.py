@@ -68,11 +68,11 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
     assert output["cases"] == 1
     assert output["by_symbol"] == {"BTC": 1}
     assert set(output["candidates"]) == {
-        "production", "materiality_first", "balanced_novelty"
+        "production", "materiality_first", "balanced_novelty", "trajectory_evidence"
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 3
+    }) == 4
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
