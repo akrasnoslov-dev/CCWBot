@@ -229,6 +229,8 @@ outcomes and avoids sending the same event twice to the same recipient.
 CoinGecko values keep full precision through analysis. Rounding is only for user-facing text.
 
 
+Evaluation harness, documented baseline and reviewer procedure: [event_alert_benchmark.md](event_alert_benchmark.md).
+
 ## Event Alert acceptance criteria (approved 2026-10-16)
 
 These are **product release acceptance criteria**, not runtime significance thresholds.
