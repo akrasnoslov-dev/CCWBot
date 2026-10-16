@@ -147,6 +147,32 @@ rumours, or inference about trader intent. Related articles may be shown as coin
 but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
 Keep the existing disclaimer and single shared render per event.
 
+## Telegram Event Alert presentation (2026-10)
+
+The market significance decision, one shared render per event, cooldowns, eligibility and
+Market Heartbeat are unchanged. The nine display positions are: coin/Event Alert and
+analysed-window percent, `Price (now)`, since *recipient's last successfully delivered*
+notification when comparable price and delivery time are persisted, actual analysed-window
+move, available historical-price chart, Situation, attributed Related context when present,
+conditional Possible action, and `Not financial advice.`
+
+Rich Messages are supported by Telegram Bot API 10.2+ using `sendRichMessage` and
+`InputRichMessage.media` for an inline PNG. The pinned `python-telegram-bot 22.8`
+does not expose the rich-message API, so a small direct HTTPX adapter uses the official
+endpoint. The outgoing message has one Telegram identity (not a chart message plus
+caption). PNG creation reads existing timestamped PostgreSQL price snapshots once per
+market event, never in the recipient loop, and caches the returned Telegram photo
+`file_id` within that dispatch. No new market-data calls are made.
+
+Only proven historical observations are plotted. Missing or stale data shows a chart
+unavailable explanation; shorter valid coverage is explicitly labeled as such.
+Ordinary HTML and plain text remain fallbacks after *definitive* rejection of a richer
+variant. Unknown transport acceptance must not trigger a second send because Telegram
+has no caller-supplied send-idempotency key. Rich-client compatibility cannot be
+reliably detected server-side; clients that do not render Rich Messages may require
+updating Telegram. Any rollback should revert the presentation commit(s) and retain
+existing event/delivery persistence; no schema migration is introduced.
+
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.

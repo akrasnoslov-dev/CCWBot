@@ -204,8 +204,8 @@ def test_full_event_alert_keeps_shared_message_structure_and_disclaimer():
         related_news=[],
     )["plain_text"]
     assert "BTC Event Alert" in text
-    assert "BTC down ~3.0% in the last 3 hours" in text
-    assert "Price: $65,000" in text or "Price: $65000" in text
+    assert "BTC Event Alert — -3.00%" in text
+    assert "Price (now): $65,000" in text or "Price (now): $65000" in text
     assert "3h market move:" in text
     assert "Situation:\nThe latest observed price step is steeper" in text
     assert "Possible action:\nWatch whether the next observed interval" in text
