@@ -105,6 +105,19 @@ def load_state(path: Path, dataset_sha: str, model: str, configs: dict) -> dict:
     }
 
 
+def estimated_spent_tokens(state: dict, max_tokens: int) -> int:
+    """Account for every request, including uncertain transport/usage outcomes."""
+    rows = [row for variant in VARIANTS for row in state["runs"].get(variant, [])]
+    observed = sum(
+        row["total_tokens"]
+        if type(row.get("total_tokens")) is int
+        else max_tokens + 2000
+        for row in rows
+    )
+    lost_attempts = max(0, state["attempted_requests"] - len(rows))
+    return observed + lost_attempts * (max_tokens + 2000)
+
+
 def save_state(path: Path, state: dict) -> None:
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -128,7 +141,8 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
 
 
 async def replay(
-    dataset: dict, a_labels: dict, out: Path, *, max_requests: int, delay: float
+    dataset: dict, a_labels: dict, out: Path, *,
+    max_requests: int, delay: float, max_total_tokens: int,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -163,7 +177,13 @@ async def replay(
             for variant in VARIANTS:
                 if (variant, case["id"]) in already:
                     continue
-                if issued >= max_requests or state["attempted_requests"] >= MAX_APPROVED_CALLS:
+                if issued >= max_requests:
+                    break
+                if state["attempted_requests"] >= MAX_APPROVED_CALLS:
+                    stopped_reason = "approved_request_ceiling"
+                    break
+                if estimated_spent_tokens(state, max_tokens) + max_tokens + 2000 > max_total_tokens:
+                    stopped_reason = "replay_token_safety_limit"
                     break
                 if issued:
                     await asyncio.sleep(delay)
@@ -238,7 +258,7 @@ async def replay(
                 )
                 if stopped_reason.startswith("provider_http_"):
                     break
-            if issued >= max_requests or stopped_reason.startswith("provider_http_"):
+            if issued >= max_requests or stopped_reason != "requested_limit":
                 break
     finally:
         await client.close()
@@ -262,6 +282,7 @@ def main() -> None:
     parser.add_argument("--approve-provider-requests", action="store_true")
     parser.add_argument("--max-requests", type=int, default=12)
     parser.add_argument("--delay-seconds", type=float, default=12)
+    parser.add_argument("--max-total-tokens", type=int, default=125000)
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -269,12 +290,15 @@ def main() -> None:
         parser.error("Maximum approved Groq API calls is 600")
     if args.delay_seconds < 0:
         parser.error("Delay must be nonnegative")
+    if args.max_total_tokens < 1:
+        parser.error("Total replay token safety limit must be positive")
     dataset = load_frozen(args.benchmark)
     a_labels = load_reviewer_a(args.reviewer_a, dataset)
     print(json.dumps(asyncio.run(
         replay(
             dataset, a_labels, args.out,
             max_requests=args.max_requests, delay=args.delay_seconds,
+            max_total_tokens=args.max_total_tokens,
         )
     ), indent=2))
 

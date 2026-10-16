@@ -144,7 +144,9 @@ fetch. The ledger counts an HTTP attempt **before** sending and refuses more
 than 600 attempts in the selected run directory; it retains only validated
 decisions, status, provider token usage, opaque IDs, and input/config hashes.
 It stops on provider auth, cost or rate-limit rejection, rather than bypassing
-account controls. Do not publish anything beneath `reports/`.
+account controls. A separate cumulative 125K-token safety ceiling (including
+estimated unknown-usage attempts) limits this local replay's consumption of
+the shared provider quota; it is not proof of remaining account-wide capacity. Do not publish anything beneath `reports/`.
 Each candidate inherits production model, system prompt, JSON Schema, reasoning
 effort and token ceiling; the only variable is the added prompt guidance.
 **Partial pilot precision/recall is a paired-subset diagnostic, not a product

@@ -136,6 +136,18 @@ def test_records_export_private_decisions_not_raw_prompts(tmp_path):
     assert "messages" not in output
 
 
+def test_token_safety_counts_uncertain_and_interrupted_attempts():
+    state = {
+        "attempted_requests": 3,
+        "runs": {
+            "production": [{"total_tokens": 1800}],
+            "materiality_first": [{"status": "provider_error"}],
+            "balanced_novelty": [],
+        },
+    }
+    assert live.estimated_spent_tokens(state, 6300) == 1800 + 8300 + 8300
+
+
 def test_reference_labels_must_match_original_frozen_dataset(tmp_path):
     dataset, _ = fixture_data()
     path = tmp_path / "reference.json"
