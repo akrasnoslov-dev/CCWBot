@@ -39,6 +39,11 @@ Two cases:
   straight to recipient checks;
 - an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
 
+The exact-context fingerprint preserves the incoming news priority: significance
+reads only the first two valid headlines. Reordering headlines therefore cannot
+reuse an analysis based on a different model-visible set. Invalid non-dictionary
+entries are skipped consistently by both fingerprint and significance prompt.
+
 No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
