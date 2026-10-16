@@ -73,7 +73,7 @@ async def send_rich_event_alert(
                 data=request_data,
                 files=files,
             )
-    except httpx.RequestError as exc:
+    except httpx.RequestError:
         # Never stringify exc: the URL includes the private bot token.
         raise RichDeliveryUncertain("Rich delivery acknowledgement unknown") from None
 
