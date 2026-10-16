@@ -45,6 +45,8 @@ def test_chart_partial_data_is_labeled_and_no_short_day_fabrication():
     too_short = _observations(duration_hours=4)
     assert prepare_chart_points(too_short, as_of=AT).png is None
     assert prepare_chart_points(_observations(duration_hours=24)[:-4], as_of=AT).png is None
+    gap = [point for i, point in enumerate(_observations()) if not 30 <= i <= 45]
+    assert prepare_chart_points(gap, as_of=AT).png is None
 
 
 def test_metric_labels_correct_actual_windows_and_notification_type():
