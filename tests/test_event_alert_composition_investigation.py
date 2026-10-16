@@ -312,3 +312,71 @@ def test_invalid_negation_on_aligned_periods_rejected():
         "The short-term rise is not aligned with the broader rise.",
         market((100, 101, 102), "2", "3"),
     )
+
+
+@pytest.mark.parametrize(
+    ("situation", "window", "day"),
+    [
+        (
+            "The short-term price moved downwards while the broader trend remained positive.",
+            "2", "3",
+        ),
+        (
+            "The short-term price moved upwards while the broader trend remained negative.",
+            "-2", "-3",
+        ),
+        (
+            "Both the short-term and broader 24-hour trends gained ground.",
+            "-2", "3",
+        ),
+        (
+            "The short-term and broader 24-hour trends gained ground.",
+            "-2", "3",
+        ),
+        (
+            "The analysed move continues in the same direction as the broader decline.",
+            "2", "-3",
+        ),
+    ],
+)
+def test_more_implicit_and_coordinated_contradictions_are_not_sent_verbatim(
+    situation, window, day
+):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    data = market((100, 101, 102), window, day)
+    assert not market_direction_claims_supported(situation, data)
+    decision = EventAnalysisDecision(
+        symbol="ETH",
+        should_alert=True,
+        event_key="eth_market_event",
+        title="ignored",
+        message_body=situation,
+        related_news_ids=[],
+        urgency="normal",
+        confidence="medium",
+        possible_action="Watch whether the next observed interval extends or reverses.",
+        reason_for_no_alert=None,
+    )
+    final_text = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": data}, related_news=[]
+    )["plain_text"]
+    assert situation not in final_text
+
+
+def test_supported_coordinated_direction_for_both_periods_is_accepted():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert market_direction_claims_supported(
+        "Both the short-term and broader 24-hour trends gained ground.",
+        market((100, 101, 102), "2", "3"),
+    )
+
+
+def test_independent_period_predicates_are_not_mistaken_for_a_shared_move():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert market_direction_claims_supported(
+        "The short-term move paused and the broader 24-hour trend gained ground.",
+        market((102, 101, 100), "-2", "3"),
+    )
