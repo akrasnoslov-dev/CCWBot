@@ -41,6 +41,7 @@ from bot.alerting.event_analysis import (
     validate_event_significance_output,
     with_canonical_event_key,
 )
+from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
     compact_elapsed_since,
     compact_event_alert_possible_action,
@@ -61,6 +62,7 @@ from bot.alerting.market_heartbeat import (
     validate_market_heartbeat_output,
 )
 from bot.alerting.notification_decision import NotificationType
+from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
 from bot.config import (
     ENABLE_NEWS_DRIVEN_ALERTS,
@@ -1560,17 +1562,44 @@ def _build_event_alert_html_message(
     possible_action: str,
 ) -> str:
     market_section = f"{market_context_html}\n\n" if market_context_html else ""
-    related_block = f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
+    related_block = (
+        f"<b>Related context</b>\n{related_section_html}\n\n"
+        if related_section_html else ""
+    )
     return (
-        f"{icon_html} \u26a0\ufe0f {escape(symbol)} Event Alert\n\n"
-        f"{escape(title)}\n\n"
+        f"{icon_html} <b>{escape(title)}</b>\n\n"
         f"{market_section}"
-        "Situation:\n"
+        "Last 24 hours: chart unavailable in text-only view.\n\n"
+        "<b>Situation</b>\n"
         f"{escape(message_body)}\n\n"
         f"{related_block}"
-        "Possible action:\n"
+        "<b>Possible action</b>\n"
         f"{escape(possible_action)}\n\n"
-        "Not financial advice."
+        "<i>Not financial advice.</i>"
+    )
+
+
+def _build_event_alert_rich_html(
+    *,
+    headline: str,
+    metric_lines: list[str],
+    situation: str,
+    related_section_html: str | None,
+    possible_action: str,
+) -> str:
+    metrics = "".join(f"<p>{escape(line)}</p>" for line in metric_lines)
+    related = (
+        f"<h3>Related context</h3><p>{related_section_html.replace(chr(10), '<br>')}</p>"
+        if related_section_html else ""
+    )
+    return (
+        f"<h2>{escape(headline)}</h2>"
+        f"{metrics}"
+        "__CCWBOT_CHART_BLOCK__"
+        f"<h3>Situation</h3><p>{escape(situation)}</p>"
+        f"{related}"
+        f"<h3>Possible action</h3><p>{escape(possible_action)}</p>"
+        "<footer>Not financial advice.</footer>"
     )
 
 
@@ -1596,24 +1625,20 @@ def _event_alert_market_context_lines(
 ) -> list[str]:
     lines: list[str] = []
     if price is not None:
-        lines.append(f"Price: {_format_optional_price(price)}")
+        lines.append(f"Price (now): {_format_optional_price(price)}")
     if (
         change_since_message is not None
         and last_message_at is not None
         and last_message_price is not None
     ):
         elapsed = compact_elapsed_since(last_message_at, current_at)
-        from bot.alerting.event_text import _parse_datetime
-
-        reference = _parse_datetime(last_message_at)
-        reference_label = reference.strftime("%d %b %H:%M UTC") if reference else "unknown time"
         kind = {
             "market_heartbeat": "Market Heartbeat",
-            EVENT_ALERT_TYPE: "Event Alert",
+            EVENT_ALERT_TYPE: "alert",
         }.get(str(last_message_type or ""), "market notification")
-        elapsed_suffix = f"; {elapsed}" if elapsed else ""
+        elapsed_suffix = f" ({elapsed})" if elapsed else ""
         lines.append(
-            f"Since previous {symbol} {kind} ({reference_label}{elapsed_suffix}): "
+            f"Since previous {kind}{elapsed_suffix}: "
             f"{_format_optional_percent(change_since_message)}"
         )
     if analysed_window_minutes is not None and analysed_window_change is not None:
@@ -1660,11 +1685,11 @@ def _build_event_alert_payload(
     analysed_window_change = market_data.get("chg_window_percent")
     icon, entities = build_coin_icon_prefix(backend_symbol)
     icon_html = build_coin_icon_html(backend_symbol)
-    title = _event_alert_presentation_title(
-        symbol=symbol,
-        analysed_window_minutes=market_data.get("analysed_window_minutes"),
-        analysed_window_change=analysed_window_change,
-    )
+    move = _optional_float(analysed_window_change)
+    headline = f"{symbol} Event Alert"
+    if move is not None:
+        headline += f" — {_format_optional_percent(move)}"
+    title = headline
     # Provider-selected IDs are not proof of relevance. Re-check final headlines
     # against the asset before exposing them in a Telegram message.
     related_news = [
@@ -1743,9 +1768,9 @@ def _build_event_alert_payload(
 
     related_prefix = "Related context:\n" if related_section else ""
     before_related = (
-        f"{icon} \u26a0\ufe0f {symbol} Event Alert\n\n"
-        f"{title}\n\n"
+        f"{icon} \u26a1 {headline}\n\n"
         f"{market_context_block}"
+        "Last 24 hours: chart unavailable in text-only view.\n\n"
         "Situation:\n"
         f"{message_body}\n\n"
         f"{related_prefix}"
@@ -1780,18 +1805,28 @@ def _build_event_alert_payload(
                 url=str(entity["url"]),
             )
         )
-    html_message = None
-    if icon_html != icon:
-        html_message = _build_event_alert_html_message(
-            icon_html=icon_html,
-            symbol=symbol,
-            title=title,
-            market_context_html="\n".join(escape(line) for line in market_context_lines),
-            message_body=message_body,
-            related_section_html=related_section_html,
-            possible_action=possible_action,
-        )
-    return {"plain_text": message, "html_text": html_message, "entities": all_entities or None}
+    html_message = _build_event_alert_html_message(
+        icon_html=icon_html,
+        symbol=symbol,
+        title=title,
+        market_context_html="\n".join(escape(line) for line in market_context_lines),
+        message_body=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    rich_html = _build_event_alert_rich_html(
+        headline=headline,
+        metric_lines=market_context_lines,
+        situation=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    return {
+        "plain_text": message,
+        "html_text": html_message,
+        "entities": all_entities or None,
+        "rich_html": rich_html,
+    }
 
 
 def _event_numeric_context(
@@ -4520,10 +4555,31 @@ async def _send_alert_to_recipient(
 async def _send_alert_to_recipient_once(
     app: Application, recipient: AlertRecipient, alert_payload: dict
 ) -> tuple[bool, str | None, BaseException | None]:
+    """Exactly one confirmed send per attempt. No fallback after uncertain acceptance."""
     logger.debug("alert_delivery_path_used")
     html_text = alert_payload.get("html_text")
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
+    rich_html = alert_payload.get("rich_html")
+    if rich_html:
+        try:
+            file_id = await send_rich_event_alert(
+                bot_token=app.bot.token,
+                chat_id=recipient.chat_id,
+                rich_html=rich_html,
+                chart_png=alert_payload.get("chart_png"),
+                chart_file_id=alert_payload.get("chart_file_id"),
+            )
+        except BadRequest:
+            # Explicit Bot API rejection proves that no rich message was sent.
+            logger.info("Rich event alert rejected; using legacy HTML fallback")
+        except Exception as error:
+            # Unacknowledged rich send must never trigger another attempt.
+            return False, str(error), error
+        else:
+            if file_id:
+                alert_payload["chart_file_id"] = file_id
+            return True, None, None
     try:
         if html_text:
             try:
@@ -4531,15 +4587,20 @@ async def _send_alert_to_recipient_once(
                     chat_id=recipient.chat_id,
                     text=str(html_text),
                     parse_mode=ParseMode.HTML,
+                    link_preview_options={"is_disabled": True},
                 )
             except Exception as error:
                 if is_bot_blocked_error(error):
                     raise
-                log(f"HTML alert send failed; falling back to plain text: {error}")
-                fallback_kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
+                # Legacy non-rich HTML fallback remains available. An uncertain
+                # rich->HTML attempt must not trigger a second plain send.
+                if rich_html and not isinstance(error, BadRequest):
+                    raise
+                logger.info("HTML alert send failed; using plain fallback")
+                kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
                 if entities:
-                    fallback_kwargs["entities"] = entities
-                await app.bot.send_message(**fallback_kwargs)
+                    kwargs["entities"] = entities
+                await app.bot.send_message(**kwargs)
         else:
             kwargs = {"chat_id": recipient.chat_id, "text": plain_text}
             if entities:
@@ -4553,7 +4614,7 @@ async def _send_alert_to_recipient_once(
 def _is_permanent_telegram_delivery_error(error: BaseException | str | None) -> bool:
     if error is None:
         return False
-    if isinstance(error, (BadRequest, Forbidden)):
+    if isinstance(error, (BadRequest, Forbidden, RichDeliveryUncertain)):
         return True
     return is_bot_blocked_error(error)
 
@@ -4723,16 +4784,113 @@ def _preserve_leading_entities_after_sanitize(
 def _sanitize_alert_payload(alert_payload: dict) -> dict:
     plain_text = str(alert_payload.get("plain_text", ""))
     sanitized_plain_text = sanitize_alert_message(plain_text)
-    html_text = alert_payload.get("html_text")
-    entities = alert_payload.get("entities")
+    result = dict(alert_payload)
+    result["plain_text"] = sanitized_plain_text
     if sanitized_plain_text != plain_text:
-        html_text = None
-        entities = _preserve_leading_entities_after_sanitize(
-            entities=entities,
+        result["html_text"] = None
+        result["rich_html"] = None
+        result["entities"] = _preserve_leading_entities_after_sanitize(
+            entities=alert_payload.get("entities"),
             original_text=plain_text,
             sanitized_text=sanitized_plain_text,
         )
-    return {"plain_text": sanitized_plain_text, "html_text": html_text, "entities": entities}
+    return result
+
+
+def _event_alert_for_recipient(
+    payload: dict,
+    *,
+    previous_alert: object | None,
+    current_price: float | None,
+    as_of: datetime,
+) -> dict:
+    """Insert the actual recipient's last delivered notification, never the global one."""
+    result = dict(payload)
+    previous_line = None
+    if previous_alert is not None and current_price is not None:
+        previous_price = _decimal_numeric_context_value(
+            getattr(previous_alert, "numeric_context", None), "current_price"
+        )
+        previous_time = getattr(previous_alert, "sent_at", None)
+        if previous_price is not None and previous_time is not None:
+            try:
+                change = calculate_price_change_percent(previous_price, Decimal(str(current_price)))
+            except (ValueError, TypeError, ZeroDivisionError, ArithmeticError):
+                change = None
+            if change is not None:
+                kind = (
+                    "alert" if getattr(previous_alert, "alert_type", None) == EVENT_ALERT_TYPE
+                    else "Market Heartbeat"
+                    if getattr(previous_alert, "alert_type", None) == MARKET_HEARTBEAT_TYPE
+                    else "market notification"
+                )
+                age = compact_elapsed_since(previous_time, as_of)
+                if age is not None:
+                    previous_line = (
+                        f"Since previous {kind} ({age}): {_format_optional_percent(change)}"
+                    )
+
+    # Remove the market-global comparison captured during shared LLM analysis.
+    for key in ("plain_text", "html_text"):
+        content = result.get(key)
+        if not content:
+            continue
+        content = re.sub(r"(?m)^Since previous [^\n]*\n?", "", str(content))
+        if previous_line:
+            insertion = escape(previous_line) if key == "html_text" else previous_line
+            content = re.sub(
+                r"(?m)^(Price \(now\):[^\n]*\n)",
+                lambda match, insertion=insertion: match.group(1) + insertion + "\n",
+                content,
+                count=1,
+            )
+        result[key] = content
+    rich_html = result.get("rich_html")
+    if rich_html:
+        rich_html = re.sub(r"<p>Since previous [^<]*</p>", "", str(rich_html))
+        if previous_line:
+            rich_html = re.sub(
+                r"(<p>Price \(now\):[^<]*</p>)",
+                lambda match: match.group(1) + f"<p>{escape(previous_line)}</p>",
+                rich_html,
+                count=1,
+            )
+        result["rich_html"] = rich_html
+    return result
+
+
+async def _prepare_event_alert_chart(
+    alert_payload: dict,
+    *,
+    symbol: str,
+    as_of: datetime,
+) -> None:
+    """One DB read and one PNG per shared event, before the recipient loop."""
+    rich_html = alert_payload.get("rich_html")
+    if not rich_html or "__CCWBOT_CHART_BLOCK__" not in rich_html:
+        return
+    chart = None
+    if DB_ENABLED and DB_SESSION_LOCAL:
+        try:
+            async with DB_SESSION_LOCAL() as session:
+                snapshots = await get_price_snapshots_since(
+                    session, symbol=normalize_symbol(symbol), since=as_of - timedelta(hours=24),
+                )
+            chart = render_price_chart(snapshots, as_of=as_of, symbol=symbol)
+        except Exception:
+            logger.warning("Event chart unavailable; using text-only rich fallback")
+    if chart is not None and chart.png is not None:
+        alert_payload["chart_png"] = chart.png
+        chart_block = (
+            f"<h3>{escape(chart.label)}</h3>"
+            '<img src="tg://photo?id=chart"/>'
+        )
+    else:
+        chart_block = (
+            "<h3>Last 24 hours</h3>"
+            "<p>Chart unavailable: insufficient reliable recorded prices.</p>"
+        )
+    alert_payload["rich_html"] = rich_html.replace("__CCWBOT_CHART_BLOCK__", chart_block)
 
 
 async def _record_alert_delivery(
@@ -4956,6 +5114,7 @@ async def _deliver_market_event_alert(
     semantic_family: str | None = None,
     event_instance_key: str | None = None,
     analysed_window_minutes: int | None = None,
+    chart_as_of: datetime | None = None,
     numeric_context: str | None = None,
     context_fingerprint: str | None = None,
     delivery_decision_reasons_by_recipient: dict[tuple[int | None, int], str] | None = None,
@@ -4998,6 +5157,12 @@ async def _deliver_market_event_alert(
         )
         return False
 
+    if event_type == EVENT_ALERT_TYPE:
+        await _prepare_event_alert_chart(
+            alert_payload,
+            symbol=normalized_symbol,
+            as_of=chart_as_of or datetime.now(timezone.utc),
+        )
     plain_text = str(alert_payload.get("plain_text", ""))
     raw_stored_severity = (
         severity.severity.value
@@ -5013,12 +5178,34 @@ async def _deliver_market_event_alert(
             raw_stored_severity,
             stored_severity,
         )
+    current_event_price = None
+    if event_type == EVENT_ALERT_TYPE and numeric_context:
+        try:
+            current_event_price = _optional_float(
+                json.loads(numeric_context).get("current_price")
+            )
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            pass
     delivered = False
     sent_count = 0
     skipped_count = 0
     skipped_already_delivered = 0
     for recipient in recipients:
         async with _automatic_delivery_lock(recipient, normalized_symbol):
+            recipient_payload = alert_payload
+            if event_type == EVENT_ALERT_TYPE:
+                prior_delivery = None
+                if DB_ENABLED and DB_SESSION_LOCAL and recipient.user_id is not None:
+                    async with DB_SESSION_LOCAL() as session:
+                        prior_delivery = await get_last_sent_alert(
+                            session, user_id=recipient.user_id, symbol=normalized_symbol,
+                        )
+                recipient_payload = _event_alert_for_recipient(
+                    alert_payload,
+                    previous_alert=prior_delivery,
+                    current_price=current_event_price,
+                    as_of=chart_as_of or datetime.now(timezone.utc),
+                )
             delivery_decision_reason = (delivery_decision_reasons_by_recipient or {}).get(
                 _recipient_decision_key(recipient), DECISION_REASON_DELIVERED
             )
@@ -5033,7 +5220,7 @@ async def _deliver_market_event_alert(
                         sent_to_chat_id=recipient.chat_id,
                         market_event_id=market_event_id,
                         event_ai_analysis_id=event_ai_analysis_id,
-                        message=plain_text,
+                        message=str(recipient_payload.get("plain_text", "")),
                         trigger_reason=trigger_reason,
                         trigger_source=trigger_source,
                         numeric_context=numeric_context,
@@ -5087,7 +5274,7 @@ async def _deliver_market_event_alert(
             sent, error_message, send_error = await _send_alert_to_recipient_with_retry(
                 app,
                 recipient,
-                alert_payload,
+                recipient_payload,
                 alert_id=alert_id,
             )
             if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
@@ -5134,7 +5321,7 @@ async def _deliver_market_event_alert(
                     symbol=normalized_symbol,
                     alert_type=event_type,
                     recipient=recipient,
-                    plain_text=plain_text,
+                    plain_text=str(recipient_payload.get("plain_text", "")),
                     status="sent" if sent else "failed",
                     market_event_id=market_event_id,
                     event_ai_analysis_id=event_ai_analysis_id,
@@ -6168,6 +6355,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 semantic_family=_semantic_family_from_payload(input_payload),
                 event_instance_key=event_instance_key,
                 analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
+                chart_as_of=now,
                 numeric_context=_event_numeric_context(
                     input_payload,
                     decision,

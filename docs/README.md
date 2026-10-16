@@ -9,6 +9,7 @@ Start with `source_of_truth.md`. It says which document owns each durable rule.
 | Documentation ownership | `source_of_truth.md` |
 | Product/system context | `project_context.md` |
 | Event Alert flow | `alert_logic.md` |
+| Event Alert frozen benchmark / baseline | `event_alert_benchmark.md` |
 | Daily/weekly reports | `market_reports.md` |
 | Growth attribution/funnel | `product_analytics.md` |
 | ChatGPT/bridge/Codex workflow | `codex_instructions.md` |
