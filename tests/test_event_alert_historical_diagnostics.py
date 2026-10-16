@@ -57,7 +57,7 @@ def test_historical_weak_move_requires_model_judgment_not_news_or_daily_delta(
     assert move in prompt
     assert "Q1 materiality" in prompt
     assert "Q2 novelty" in prompt
-    assert "default=>no alert" in prompt
+    assert "default=>no alert" in prompt.lower()
     assert "recent counts never increase materiality" in prompt
     # This only tests evidence passed to the model, never assigns a human verdict.
 
@@ -181,12 +181,17 @@ def test_grounded_render_survives_final_message_without_generic_substitution():
 
 
 def test_contradictory_period_alignment_is_never_delivered_as_factual_claim():
-    with pytest.raises(EventAnalysisValidationError):
-        _validate_positive_market_claims(
-            title="",
-            message_body="The current rise follows the same direction as the 24-hour decline.",
-            possible_action="Watch whether the next observed interval turns.",
-            market_data=_market("2", day="-1"),
-            last_msg={},
-            timestamp_utc=None,
-        )
+    situation = "The short-term move is aligned with the broader decline."
+    decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key="eth_market_event",
+        title="Untrusted", message_body=situation, related_news_ids=[],
+        urgency="normal", confidence="medium",
+        possible_action="Watch whether the next observed interval turns.",
+        reason_for_no_alert=None,
+    )
+    final = alerts._build_event_alert_payload(
+        decision=decision,
+        input_payload={"market": _market("2", day="-1")},
+        related_news=[],
+    )["plain_text"]
+    assert situation not in final
