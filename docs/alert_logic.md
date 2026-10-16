@@ -147,6 +147,32 @@ rumours, or inference about trader intent. Related articles may be shown as coin
 but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
 Keep the existing disclaimer and single shared render per event.
 
+## Telegram Event Alert presentation (2026-10)
+
+The market significance decision, one shared render per event, cooldowns, eligibility and
+Market Heartbeat are unchanged. The nine display positions are: coin/Event Alert and
+analysed-window percent, `Price (now)`, since *recipient's last successfully delivered*
+notification when comparable price and delivery time are persisted, actual analysed-window
+move, available historical-price chart, Situation, attributed Related context when present,
+conditional Possible action, and `Not financial advice.`
+
+Rich Messages are supported by Telegram Bot API 10.2+ using `sendRichMessage` and
+`InputRichMessage.media` for an inline PNG. The pinned `python-telegram-bot 22.8`
+does not expose the rich-message API, so a small direct HTTPX adapter uses the official
+endpoint. The outgoing message has one Telegram identity (not a chart message plus
+caption). PNG creation reads existing timestamped PostgreSQL price snapshots once per
+market event, never in the recipient loop, and caches the returned Telegram photo
+`file_id` within that dispatch. No new market-data calls are made.
+
+Only proven historical observations are plotted. Missing or stale data shows a chart
+unavailable explanation; shorter valid coverage is explicitly labeled as such.
+Ordinary HTML and plain text remain fallbacks after *definitive* rejection of a richer
+variant. Unknown transport acceptance must not trigger a second send because Telegram
+has no caller-supplied send-idempotency key. Rich-client compatibility cannot be
+reliably detected server-side; clients that do not render Rich Messages may require
+updating Telegram. Any rollback should revert the presentation commit(s) and retain
+existing event/delivery persistence; no schema migration is introduced.
+
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.
@@ -201,3 +227,103 @@ Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, a
 outcomes and avoids sending the same event twice to the same recipient.
 
 CoinGecko values keep full precision through analysis. Rounding is only for user-facing text.
+
+
+Evaluation harness, documented baseline and reviewer procedure: [event_alert_benchmark.md](event_alert_benchmark.md).
+
+## Event Alert acceptance criteria (approved 2026-10-16)
+
+These are **product release acceptance criteria**, not runtime significance thresholds.
+They apply to work intended to improve Event Alert usefulness. They do not change
+the market-first policy, LLM significance authority, the four-hour semantic
+cooldown, or the shared-analysis architecture.
+
+### Independent evidence and evaluation
+
+- Build a frozen, versioned, privacy-safe evaluation set drawn from **real**
+  BTC/ETH/GRAM/SOL market contexts, including alerts actually sent and
+  situations for which the bot chose not to alert. Include marginal, repeated,
+  unusual, news-present and news-absent scenarios. Target 150-200 scenarios
+  initially; increase sample size when metric confidence is inadequate.
+- **Two independent evaluators** assess whether each event warrants alerting
+  and whether the final delivered text is informative and factual. They
+  review the evidence without seeing the original bot decision. Record each
+  assessment, disagreements, reconciled labels, and ambiguous cases. Report
+  ambiguous cases separately rather than silently counting them as successes.
+- Replay baseline and candidate logic on **the same frozen cases**, with
+  versioned inputs, model/configuration, and recorded results. Record
+  positive and negative decisions; counting only sent messages cannot
+  establish that important events were not missed.
+- Report both **event-level** and **recipient-delivery-weighted** results,
+  including per-symbol breakdowns. One BTC event reaching hundreds of
+  recipients must not conceal lower-quality ETH/GRAM/SOL decisions.
+- User feedback may be collected **after release** as a separate product
+  outcome, subject to privacy and product approval. It does not replace
+  independent pre-release evaluation.
+
+### Eight mandatory acceptance gates
+
+1. **Relevance / no unnecessary noise:** at least **85%** of reviewed
+   positive Event Alerts are judged useful on independently labelled,
+   unambiguous examples. Report event-level and delivery-weighted rates.
+2. **No significant misses:** detect at least **90%** of independently
+   confirmed significant market events in the same evaluation set.
+   Report false negatives, not just overall alert volume.
+3. **Useful explanation:** at least **90%** of reviewed final Telegram
+   alert messages explain a verified relationship or useful next market
+   observation beyond repeating the price delta. Evaluate the **final
+   delivered text**, including any backend fallback/replacement.
+4. **Factual correctness:** **zero detected factual errors** in the
+   inspected final-message sample. Unsupported catalysts, invented
+   trajectory, false direction/period comparisons and fabricated numeric
+   claims are failures. This is a sample-based gate, not a claim of
+   absolute error-free behavior in all future messages.
+5. **No same-event spam:** **zero verified violations** of the existing
+   four-hour per-recipient same-key/same-semantic-family cooldown.
+   Different genuine semantic events for the same coin may pass;
+   changes of event key or wording must not bypass the same-family
+   suppression.
+6. **Technical reliability:** mandatory repository tests, regression
+   cases and relevant integration checks pass; no newly introduced
+   systemic analysis, deduplication or delivery failures. External
+   failures (e.g. users blocking the Telegram bot) are measured and
+   reported **separately**, not misclassified as application faults.
+7. **Measured net improvement:** against the frozen baseline, reduce
+   low-value alerts and improve explanatory quality **without increasing
+   misses of important events**. The relevance and recall gates must
+   both hold; suppressing nearly all alerts does not count as success.
+8. **No cost increase:** **no increase in monetary operating costs**
+   relative to the current version on equivalent market-monitoring
+   workloads. Include LLM/provider usage and all added external
+   dependencies in the comparison. No new paid service is allowed.
+   Preserve one shared Event Analysis and at most one render per
+   qualifying market event, never per recipient. Also report token,
+   provider-call and rate-limit pressure even where nominal spend is zero.
+
+### Execution and release gates
+
+Implement in independently reviewable stages, based on confirmed evidence:
+
+1. **Diagnose and freeze baseline:** trace market evidence -> analysis ->
+   render -> guards -> event identity -> recipient cooldown -> delivery;
+   identify confirmed root causes; add historic regression cases.
+2. **Build the evaluation harness:** capture sanitized, labelled real
+   events including suppressed decisions; reproduce current baseline.
+3. **Fix significance and duplication:** compare candidate prompts/model
+   settings and context/reuse changes against the same frozen set.
+   Preserve LLM significance authority; do **not** add deterministic
+   numeric decision thresholds.
+4. **Fix final-message utility:** investigate render replacement and
+   generic fallbacks; improve grounded Situation / Possible Action while
+   preserving fact checks and safety.
+5. **Run end-to-end acceptance checks:** compare all eight gates,
+   regression tests, integration behavior, and operating cost before
+   declaring the candidate ready.
+6. **Release separately:** only after explicit approval and the
+   repository release process; assess real post-release outcomes and
+   retain a safe rollback path.
+
+A failed gate blocks claiming completion. If evidence is insufficient,
+report the gap and do not present the target as achieved. Production
+changes, Premium, watchlists, payments and Market Heartbeat remain out
+of scope unless separately approved.

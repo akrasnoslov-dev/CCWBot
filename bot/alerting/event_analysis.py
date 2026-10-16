@@ -94,10 +94,11 @@ _MOVEMENT_DIRECTION_RE = re.compile(
     re.IGNORECASE,
 )
 _DOWNWARD_CLAIM_RE = re.compile(
-    r"\b(?:down(?:ward)?|fell|fall\w*|slipp\w*|dip\w*|drop\w*|declin\w*|lower\w*)\b", re.I
+    r"\b(?:down(?:wards?)?|downtrend|fell|fall\w*|slipp\w*|"
+    r"dip\w*|drop\w*|declin\w*|lower\w*)\b", re.I
 )
 _UPWARD_CLAIM_RE = re.compile(
-    r"\b(?:up(?:ward)?|rose|ris\w*|rall\w*|gain\w*|higher\w*|climb\w*)\b", re.I
+    r"\b(?:up(?:wards?)?|uptrend|rose|ris\w*|rall\w*|gain\w*|higher\w*|climb\w*)\b", re.I
 )
 _CLAUSE_BOUNDARY_RE = re.compile(r"(?<!\d)[.!?;,]|\n")
 _FUTURE_CONDITIONAL_RE = re.compile(
@@ -1185,7 +1186,8 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     claims: list[tuple[str, int]] = []
     labels = re.compile(
         r"(?i)\b(?P<day>24[- ]hours?|24h|daily|broader)|"
-        r"\b(?P<window>short[- ]term|current|latest|analysed[- ]window|snapshots?|window)\b"
+        r"\b(?P<window>short[- ]term|current|latest|"
+        r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b"
     )
     scoped_text = re.sub(
         r"(?i)\b(?:while|whereas|but|despite|although|contrasts?\s+with|against)\b", ";", text
@@ -1203,10 +1205,32 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
                 clause,
             )
         ]
+        # A single direction predicate of a coordinated two-period subject
+        # applies to BOTH periods (e.g. "Both short-term and 24h trends gained").
+        # Do not apply this rule to clauses with separate upward/downward verbs.
+        scope_kinds = {scope.lastgroup for scope in scopes}
+        if (
+            scope_kinds == {"day", "window"}
+            and len(directions) == 1
+            and re.search(
+                r"(?i)\b(?:short[- ]term|24[- ]hours?|24h|broader)"
+                r"(?:\s+(?:price|market|move|momentum|trend|trends))?"
+                r"\s+(?:and|&)\s+(?:the\s+)?"
+                r"(?:short[- ]term|24[- ]hours?|24h|broader)\b",
+                clause,
+            )
+            and all(scope.end() <= directions[0][0].start() for scope in scopes)
+        ):
+            claims.extend([("window", directions[0][1]), ("24h", directions[0][1])])
+            continue
         for match, direction in directions:
             # Bind each directional phrase to its nearest named market period.
-            scope = min(scopes, key=lambda m: min(abs(m.end() - match.start()),
-                                                abs(match.end() - m.start()))) if scopes else None
+            scope = min(
+                scopes,
+                key=lambda m: min(
+                    abs(m.end() - match.start()), abs(match.end() - m.start())
+                ),
+            ) if scopes else None
             claims.append(("24h" if scope and scope.lastgroup == "day" else "window", direction))
     return claims
 
@@ -1235,7 +1259,8 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     for clause in clauses:
         if not (
             re.search(
-                r"(?i)\b(?:short[- ]term|current|latest|analysed[- ]window|snapshots?|window)\b",
+                r"(?i)\b(?:short[- ]term|current|latest|"
+                r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b",
                 clause,
             )
             and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", clause)
