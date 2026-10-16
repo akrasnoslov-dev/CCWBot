@@ -19,8 +19,6 @@ from telegram.ext import Application, ContextTypes
 
 from bot.alerting import event_identity as _event_identity
 from bot.alerting import news_context as _news_context
-from bot.alerting.event_chart import render_price_chart
-from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -43,6 +41,7 @@ from bot.alerting.event_analysis import (
     validate_event_significance_output,
     with_canonical_event_key,
 )
+from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
     compact_elapsed_since,
     compact_event_alert_possible_action,
@@ -63,6 +62,7 @@ from bot.alerting.market_heartbeat import (
     validate_market_heartbeat_output,
 )
 from bot.alerting.notification_decision import NotificationType
+from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.coin_icons import build_coin_icon_html, build_coin_icon_prefix, coin_fallback_emoji
 from bot.config import (
     ENABLE_NEWS_DRIVEN_ALERTS,
@@ -4836,7 +4836,7 @@ def _event_alert_for_recipient(
             insertion = escape(previous_line) if key == "html_text" else previous_line
             content = re.sub(
                 r"(?m)^(Price \(now\):[^\n]*\n)",
-                lambda match: match.group(1) + insertion + "\n",
+                lambda match, insertion=insertion: match.group(1) + insertion + "\n",
                 content,
                 count=1,
             )
@@ -5155,7 +5155,9 @@ async def _deliver_market_event_alert(
 
     if event_type == EVENT_ALERT_TYPE:
         await _prepare_event_alert_chart(
-            alert_payload, symbol=normalized_symbol, as_of=chart_as_of or datetime.now(timezone.utc),
+            alert_payload,
+            symbol=normalized_symbol,
+            as_of=chart_as_of or datetime.now(timezone.utc),
         )
     plain_text = str(alert_payload.get("plain_text", ""))
     raw_stored_severity = (
