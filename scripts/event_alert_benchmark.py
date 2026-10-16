@@ -320,3 +320,66 @@ def report(dataset: dict, labels: dict | None = None, agreement: dict | None = N
             for symbol in sorted(SYMBOLS)
         },
     }
+
+
+def compare_recorded_run(
+    dataset: dict, run_path: str | Path, labels: dict | None = None,
+    agreement: dict | None = None,
+) -> dict:
+    """Compare recorded, already-validated model results without an API call.
+
+    A candidate never inherits baseline deliveries, messages or provider telemetry.
+    A failed provider call is unknown, not an implicit negative prediction.
+    """
+    run = json.loads(Path(run_path).read_text(encoding="utf-8"))
+    if run.get("dataset_sha256") != dataset["dataset_sha256"]:
+        raise ValueError("Candidate run does not match frozen inputs")
+    if not run.get("model") or not run.get("config_fingerprint"):
+        raise ValueError("Candidate run must pin model and configuration")
+    cases_by_id = {case["id"]: case for case in dataset["cases"]}
+    candidate_results = {}
+    for item in run.get("results", []):
+        key = item.get("id")
+        if key not in cases_by_id or key in candidate_results:
+            raise ValueError("Unknown or repeated candidate case ID")
+        if item.get("input_sha256") != cases_by_id[key]["input_sha256"]:
+            raise ValueError("Candidate input changed from frozen benchmark")
+        status = item.get("status")
+        if status not in {"valid", "schema_error", "provider_error", "invalid_json"}:
+            raise ValueError("Invalid replay status")
+        decision = item.get("should_alert")
+        if status == "valid" and type(decision) is not bool:
+            raise ValueError("A valid replay needs a validated boolean decision")
+        if status != "valid" and decision is not None:
+            raise ValueError("A failed replay cannot be scored as a decision")
+        obs = {"should_alert": decision}
+        for key_name in (
+            "llm_calls", "provider_attempts", "total_tokens",
+            "rate_limit_attempts", "operating_cost_usd",
+        ):
+            if key_name in item:
+                obs[key_name] = item[key_name]
+        candidate_results[key] = obs
+    candidates = [
+        {**case, "observed": candidate_results.get(case["id"], {})}
+        for case in dataset["cases"]
+    ]
+    baseline = report(dataset, labels, agreement)
+    candidate = report({**dataset, "cases": candidates}, labels, agreement)
+    paired = [
+        (case["observed"]["should_alert"], candidate_results[case["id"]]["should_alert"])
+        for case in dataset["cases"]
+        if type(case.get("observed", {}).get("should_alert")) is bool
+        and type(candidate_results.get(case["id"], {}).get("should_alert")) is bool
+    ]
+    return {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "run_name": run.get("run_name"),
+        "model": run["model"],
+        "config_fingerprint": run["config_fingerprint"],
+        "recorded_results": len(candidate_results),
+        "paired_valid_decisions": len(paired),
+        "paired_decision_changes": sum(left != right for left, right in paired),
+        "baseline": baseline,
+        "candidate": candidate,
+    }
