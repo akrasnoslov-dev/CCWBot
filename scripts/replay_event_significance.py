@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 CASES_PATH = ROOT / "tests" / "event_significance_replay_cases.json"
+REAL_CASES_PATH = ROOT / "tests" / "fixtures" / "event_alert_benchmark" / "v1.json"
 
 
 def load_cases(case_id: str | None = None) -> list[dict]:
@@ -256,7 +257,42 @@ def main() -> None:
                         help="Required explicit opt-in for external API calls")
     parser.add_argument("--delay-seconds", type=int, default=65,
                         help="Pause between live requests to reduce free-tier pressure")
+    parser.add_argument(
+        "--benchmark", nargs="?", const=str(REAL_CASES_PATH),
+        help="Score frozen real-market evidence; defaults to the versioned v1 manifest",
+    )
+    parser.add_argument("--blind-export", help="Export decision-blind evaluator packet JSON")
+    parser.add_argument(
+        "--review-phase", choices=("significance", "message"), default="significance"
+    )
+    parser.add_argument("--evaluator-one", help="First independent human labels JSON")
+    parser.add_argument("--evaluator-two", help="Second independent human labels JSON")
+    parser.add_argument("--reconciled", help="Explicit adjudicator labels for disagreements")
     args = parser.parse_args()
+    if args.benchmark is not None:
+        if args.live or args.approve_provider_requests or args.case:
+            parser.error("Frozen benchmark mode is offline and separate from synthetic live replay")
+        from scripts.event_alert_benchmark import (
+            blind_packet, load_frozen, reconcile, report,
+        )
+
+        dataset = load_frozen(args.benchmark)
+        if args.blind_export:
+            packet = blind_packet(dataset, args.review_phase)
+            Path(args.blind_export).write_text(
+                json.dumps(packet, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+            )
+            print(json.dumps({
+                "dataset_sha256": dataset["dataset_sha256"],
+                "phase": args.review_phase,
+                "exported_cases": len(packet["cases"]),
+            }, indent=2))
+            return
+        labels, agreement = reconcile(
+            dataset, args.evaluator_one, args.evaluator_two, args.reconciled,
+        )
+        print(json.dumps(report(dataset, labels, agreement), indent=2, sort_keys=True))
+        return
     if args.live and not args.approve_provider_requests:
         parser.error("--live requires --approve-provider-requests")
     if args.delay_seconds < 60:
