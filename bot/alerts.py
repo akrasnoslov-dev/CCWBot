@@ -4831,12 +4831,12 @@ def _event_alert_for_recipient(
         content = result.get(key)
         if not content:
             continue
-        content = re.sub(r"(?m)^Since previous [^\\n]*\\n?", "", str(content))
+        content = re.sub(r"(?m)^Since previous [^\n]*\n?", "", str(content))
         if previous_line:
             insertion = escape(previous_line) if key == "html_text" else previous_line
             content = re.sub(
-                r"(?m)^(Price \\(now\\):[^\\n]*\\n)",
-                lambda match: match.group(1) + insertion + "\\n",
+                r"(?m)^(Price \(now\):[^\n]*\n)",
+                lambda match: match.group(1) + insertion + "\n",
                 content,
                 count=1,
             )
@@ -4846,7 +4846,7 @@ def _event_alert_for_recipient(
         rich_html = re.sub(r"<p>Since previous [^<]*</p>", "", str(rich_html))
         if previous_line:
             rich_html = re.sub(
-                r"(<p>Price \\(now\\):[^<]*</p>)",
+                r"(<p>Price \(now\):[^<]*</p>)",
                 lambda match: match.group(1) + f"<p>{escape(previous_line)}</p>",
                 rich_html,
                 count=1,
