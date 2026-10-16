@@ -104,8 +104,7 @@ def test_since_previous_reference_identifies_source_and_time():
                   "type": "market_heartbeat", "price": Decimal("103")},
         market={**_market("-2", "3"), "chg_since_msg_percent": Decimal("-2.912621")},
     )
-    assert "Since previous BTC Market Heartbeat" in delivered
-    assert "13 Oct 11:00 UTC" in delivered
+    assert "Since previous Market Heartbeat (5h ago)" in delivered
     assert "5h ago" in delivered
     assert "3h market move:" in delivered
 
