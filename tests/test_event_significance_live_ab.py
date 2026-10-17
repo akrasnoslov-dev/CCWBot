@@ -278,6 +278,50 @@ def test_records_export_private_decisions_not_raw_prompts(tmp_path):
     assert "messages" not in output
 
 
+
+def test_explicit_rate_limit_retry_keeps_one_case_and_counts_both_calls():
+    dataset, _ = fixture_data()
+    case = dataset["cases"][0]
+    original = {
+        "id": case["id"], "input_sha256": case["input_sha256"],
+        "status": "provider_error", "http_status": 429,
+    }
+    state = {
+        "attempted_requests": 2,
+        "runs": {"global_prior_safe": [dict(original)]},
+    }
+    assert not live.can_retry_rate_limit(original, approved=False)
+    assert live.can_retry_rate_limit(original, approved=True)
+    success = {
+        "id": case["id"], "input_sha256": case["input_sha256"],
+        "status": "valid", "should_alert": True, "total_tokens": 1760,
+    }
+    live.record_replay_result(state, "global_prior_safe", success, retrying=True)
+    assert state["attempted_requests"] == 2
+    assert len(state["runs"]["global_prior_safe"]) == 1
+    assert state["runs"]["global_prior_safe"][0]["should_alert"] is True
+    # The earlier unknown-usage attempt still conservatively costs a full budget.
+    assert live.estimated_spent_tokens(state, 6300) == 1760 + 8300
+
+
+def test_rate_limit_retry_rejects_non_429_failures_duplicate_and_changed_input():
+    case = fixture_data()[0]["cases"][0]
+    failed = {
+        "id": case["id"], "input_sha256": case["input_sha256"],
+        "status": "provider_error", "http_status": 503,
+    }
+    state = {"attempted_requests": 1, "runs": {"production": [failed]}}
+    assert not live.can_retry_rate_limit(failed, approved=True)
+    with pytest.raises(ValueError, match="rate-limit failure"):
+        live.record_replay_result(state, "production", failed, retrying=True)
+    with pytest.raises(ValueError, match="Duplicate scored response"):
+        live.record_replay_result(state, "production", failed, retrying=False)
+    state["runs"]["production"][0]["http_status"] = 429
+    mismatched = dict(failed, input_sha256="different")
+    with pytest.raises(ValueError, match="frozen input"):
+        live.record_replay_result(state, "production", mismatched, retrying=True)
+
+
 def test_token_safety_counts_uncertain_and_interrupted_attempts():
     state = {
         "attempted_requests": 3,

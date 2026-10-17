@@ -333,9 +333,9 @@ occurred much later. The prompt's previous-alert age also used reservation
 time. It now orders by `coalesce(sent_at, created_at)` and derives age from
 successful `sent_at`, falling back only for legacy sent rows. An isolated
 SQLite DB regression and direct context unit tests pass. The revised real
-PostgreSQL regression remains **unverified on this date** because the local
-Docker daemon/DB was unavailable; the earlier three PostgreSQL tests passed
-before this additional case was added.
+PostgreSQL regression was **not locally verifiable at that point** because the
+Docker daemon/DB was unavailable; it later passed on CI's PostgreSQL service,
+as recorded below.
 
 **Confirmed context contract:** the prior-alert hint is the last *globally*
 delivered alert for a symbol, not the previous delivery for every recipient.
@@ -353,13 +353,87 @@ recall=51.2%. Score live candidate decisions against that real baseline:
 python scripts/score_event_significance_ab.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --run-state reports/event-alert-review-20261016/merged_pilots_private/replay_state.json --historical-baseline --variants historical global_prior_safe
 ```
 
-This saves an entire baseline-provider replay, but the
-`global_prior_safe` candidate currently has only **20/153** decisive cases.
-Its remaining **133 cases** still require real provider inference and
-account-safe replay across quota windows; the old frozen baseline is not
-a same-configuration live provider control. Existing release gates for
-final delivered text, real PostgreSQL integration and costs also remain
-open. Do not merge or deploy PR 2 on these exploratory scores.
+This saves an entire baseline-provider replay. At that stage the
+`global_prior_safe` candidate had **20/153** decisive cases; the
+expanded replay below raises coverage to **42/153**. The remaining cases
+still require real provider inference across quota windows. The historical
+baseline is not a same-configuration live-model control. Release gates for
+final delivered text and measured monetary/provider costs also remain
+open. Do not merge or deploy PR 2 on exploratory scores.
+
+### Expanded Groq significance replay and CI database validation (2026-10-17)
+
+A further **23 Groq API requests** resumed the `global_prior_safe`
+candidate from the merged private ledger: 22 valid strict-schema responses
+and **one HTTP 429 (rate limit)**, at which point the runner stopped.
+Cumulative replay: **166 authorised attempts**, including this one
+rate-limited attempt, and **295,849 provider-reported tokens** for successful
+responses only. A 429 is not an automatic negative market decision.
+
+On the **42 completed reviewer-A-unambiguous cases** for
+`global_prior_safe`: TP=18, FP=3, FN=4, TN=17,
+**precision=85.7% and recall=81.8%**. These deliberately
+error-stratified cases do **not** pass the 90% recall gate, nor do
+they cover all **153** scored cases (111 remain). The
+historical baseline on the *same 42* cases was TP=10, FP=12, FN=12,
+TN=8. The full frozen historical baseline remains TP=21, FP=53,
+FN=20, TN=59. Do not extrapolate the selected-cohort scores.
+
+After the daily/account rate limit resets, a human explicitly
+restarting the runner can include `--retry-rate-limited` with
+`--approve-provider-requests`, `--variants global_prior_safe`
+and the same `--out` merged run. Only the recorded HTTP 429 entry
+is eligible for a new attempt; a successful existing decision is never
+re-requested. The runner updates that single scored row in-place,
+increments its persistent overall request counter *before* HTTP, and
+retains the prior failed attempt through conservative missing-attempt
+token accounting. A renewed 429 stops immediately again. Choose an
+adequate new cumulative `--max-total-tokens` based on actual account
+budget rather than interpreting 600 approved calls as unlimited quota.
+No unattended Groq process was left running.
+
+**PostgreSQL integration gate:** The project's GitHub Actions CI
+provides a PostgreSQL 16 service. The added `test_event_alert_pr2_postgres.py`
+now accepts the existing CI-only `OPS_AGENT_POSTGRES_TEST_DATABASE_URL`
+and flushes rows without committing them. The CI run for commit
+`83b2a3a` **explicitly PASSED** both the new PostgreSQL alert-context
+test and the two PostgreSQL advisory-lock tests. Local Docker is not
+required for this CI gate.
+
+### Rate-limit retry and coarse prior-family hypothesis (2026-10-17)
+
+A short explicitly authorised retry attempt recovered the recorded 429 case
+without re-querying successful decisions. The next distinct market case
+received another HTTP 429, with a **293-second `Retry-After`**. The runner
+stopped immediately. Cumulative **168 attempted calls** (166 successful
+strict-schema decisions and 2 HTTP 429 attempts) and **297,533 measured
+provider tokens**; both failures are counted in the persistent attempt ledger.
+With 43 valid scored `global_prior_safe` cases: TP=19, FP=3,
+FN=4, TN=17, precision **86.4%**, recall **82.6%**;
+**110 reviewer-A-decisive cases remain**. This is still a deliberately
+selected subset and fails the release gates.
+
+A new OFFLINE-only hypothesis `global_prior_no_family` withholds
+`prev.f`, the globally sampled previous alert's coarse directional
+semantic family. The remaining `prev.min` and `prev.cw` facts
+remain unchanged. A shared prior family is **not evidence** that a
+subscriber has seen the same event, and it may cause the model to mistake
+fresh movement in the same direction for a duplicate; however removing
+the field could also increase false-positive repeats. No production
+prompt or backend decision gate changes. The hypothesis has zero measured
+provider results until a new, rate-limit-respecting replay is completed.
+A candidate-specific input-view fingerprint prevents accidentally mixing
+its outputs with older full-payload prompts.
+
+Recorded 429s are retryable **only** with the explicit
+`--retry-rate-limited` opt-in, after the provider-supplied
+`Retry-After` interval. Replacing a failed scored row does not lose
+the failed request: `attempted_requests` still includes all calls and
+the unmetered call is conservatively charged against the local
+safety-token estimate. Provider 429 is not evidence of the exact
+rate-limit type; the organization account's limits govern.
+All regression tests and the PostgreSQL CI gate are separate from
+these market-quality results.
 
 ### Technical baseline, not product-quality scores
 

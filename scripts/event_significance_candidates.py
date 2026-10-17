@@ -133,6 +133,23 @@ CANDIDATE_REPLACEMENTS = {
 # The last sent Event Alert is queried by symbol, across ALL recipients; it is
 # not evidence that any particular recipient already saw this market event.
 # Only the downstream per-recipient cooldown can make that determination.
+CANDIDATE_REPLACEMENTS["global_prior_no_family"] = (
+    CANDIDATE_REPLACEMENTS["rebalanced_core"]
+    + "\nThe previous alert metadata is global to the asset, not proof of "
+    "a repeat for any individual user. The only comparable prior facts "
+    "provided are age and net analysed-window displacement: an old "
+    "directional event-family label is deliberately withheld because "
+    "it cannot identify the present trajectory. Do not invent a shared "
+    "event identity from similar movement signs. A new noteworthy "
+    "current displacement may be significant without being an entirely "
+    "different directional family. Classify continuation only when "
+    "the supplied present market path and compared prior displacement "
+    "genuinely establish the same unchanged movement, not merely the "
+    "previous notification or recent event count. Reject ordinary "
+    "small movements, unsupported reversals and news-only stories. "
+    "User-specific four-hour repeat suppression remains downstream."
+)
+
 CANDIDATE_REPLACEMENTS["global_prior_safe"] = (
     CANDIDATE_REPLACEMENTS["rebalanced_core"]
     + "\nSpecific novelty calibration: prev is the latest sent alert for this "
@@ -154,14 +171,19 @@ def candidate_prompt(input_payload: dict, candidate: str) -> str:
         return build_event_significance_prompt(input_payload)
     if candidate not in CANDIDATE_ADDITIONS and candidate not in CANDIDATE_REPLACEMENTS:
         raise ValueError(f"Unknown candidate: {candidate}")
-    # Preserve production message shape and validation schema, changing only
-    # short materiality/novelty guidance for an isolated counterfactual replay.
+    # Existing candidates preserve the compact production data shape.
+    # One new hypothesis removes the coarse global prior semantic family,
+    # which does not establish whether the present market path is a repeat.
+    # The frozen input and the strict response schema remain unchanged.
     instructions = (
         CANDIDATE_REPLACEMENTS[candidate]
         if candidate in CANDIDATE_REPLACEMENTS
         else _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
     )
-    payload_json = _json_dumps(_event_significance_prompt_payload(input_payload))
+    payload = _event_significance_prompt_payload(input_payload)
+    if candidate == "global_prior_no_family" and isinstance(payload.get("prev"), dict):
+        payload["prev"].pop("f", None)
+    payload_json = _json_dumps(payload)
     return f"{instructions}\nInput JSON:\n{payload_json}"
 
 

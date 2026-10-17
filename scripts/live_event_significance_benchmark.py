@@ -31,7 +31,7 @@ from scripts.event_significance_candidates import candidate_prompt  # noqa: E402
 VARIANTS = (
     "production", "materiality_first", "balanced_novelty",
     "trajectory_evidence", "relative_displacement", "rebalanced_core",
-    "global_prior_safe",
+    "global_prior_safe", "global_prior_no_family",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600
@@ -53,6 +53,8 @@ def fingerprint(variant: str, model: str, max_tokens: int, effort: str | None) -
             else candidate_prompt({"symbol": None}, variant).split("\nInput JSON:\n")[0]
         ),
     }
+    if variant == "global_prior_no_family":
+        context["model_input_view"] = "omit_global_prev_family_v1"
     return hashlib.sha256(json.dumps(context, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -167,6 +169,32 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def can_retry_rate_limit(row: dict | None, *, approved: bool) -> bool:
+    """Only an explicitly approved retry of HTTP 429 may replace a recorded row."""
+    return bool(
+        approved and row is not None and row.get("status") == "provider_error"
+        and row.get("http_status") == 429
+    )
+
+
+def record_replay_result(
+    state: dict, variant: str, result: dict, *, retrying: bool,
+) -> None:
+    """Keep one scored row per case while preserving ALL provider attempts in the counter."""
+    rows = state["runs"][variant]
+    matches = [i for i, row in enumerate(rows) if row["id"] == result["id"]]
+    if retrying:
+        if len(matches) != 1 or not can_retry_rate_limit(rows[matches[0]], approved=True):
+            raise ValueError("Only a recorded rate-limit failure can be retried")
+        if rows[matches[0]]["input_sha256"] != result["input_sha256"]:
+            raise ValueError("Retry must preserve frozen input")
+        rows[matches[0]] = result
+    elif matches:
+        raise ValueError("Duplicate scored response")
+    else:
+        rows.append(result)
+
+
 async def replay(
     dataset: dict, a_labels: dict, out: Path, *,
     max_requests: int, delay: float, max_total_tokens: int,
@@ -174,6 +202,7 @@ async def replay(
     skip_ambiguous: bool = False,
     excluded_case_ids: frozenset[str] = frozenset(),
     previous_attempts: int = 0,
+    retry_rate_limited: bool = False,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -196,7 +225,7 @@ async def replay(
     out.mkdir(parents=True, exist_ok=True)
     ledger = out / "replay_state.json"
     state = load_state(ledger, dataset["dataset_sha256"], model, configs)
-    already = {(variant, item["id"]) for variant, rows in state["runs"].items()
+    already = {(variant, item["id"]): item for variant, rows in state["runs"].items()
                for item in rows}
     client = AsyncOpenAI(
         api_key=key, base_url=config.base_url("groq"), max_retries=0, timeout=30,
@@ -209,7 +238,10 @@ async def replay(
             excluded_case_ids=excluded_case_ids, skip_ambiguous=skip_ambiguous,
         ):
             for variant in selected_variants:
-                if (variant, case["id"]) in already:
+                retrying = can_retry_rate_limit(
+                    already.get((variant, case["id"])), approved=retry_rate_limited,
+                )
+                if (variant, case["id"]) in already and not retrying:
                     continue
                 if issued >= max_requests:
                     break
@@ -275,9 +307,19 @@ async def replay(
                     http_status = getattr(exc, "status_code", None)
                     if http_status is not None:
                         result["http_status"] = int(http_status)
+                    if http_status == 429:
+                        headers = getattr(getattr(exc, "response", None), "headers", None)
+                        retry_after = headers.get("retry-after") if headers else None
+                        try:
+                            if retry_after is not None:
+                                value = float(retry_after)
+                                if 0 <= value <= 86400:
+                                    result["retry_after_seconds"] = value
+                        except (TypeError, ValueError):
+                            pass
                     if http_status in (401, 402, 403, 404, 429):
                         stopped_reason = f"provider_http_{http_status}"
-                state["runs"][variant].append(result)
+                record_replay_result(state, variant, result, retrying=retrying)
                 save_state(ledger, state)
                 export_recorded_runs(out, state)
                 n = state["attempted_requests"]
@@ -320,6 +362,7 @@ def main() -> None:
     parser.add_argument("--variants", nargs="+", choices=VARIANTS, default=DEFAULT_VARIANTS)
     parser.add_argument("--skip-ambiguous", action="store_true")
     parser.add_argument("--exclude-state", type=Path)
+    parser.add_argument("--retry-rate-limited", action="store_true")
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -350,6 +393,7 @@ def main() -> None:
             skip_ambiguous=args.skip_ambiguous,
             excluded_case_ids=excluded,
             previous_attempts=previous_attempts,
+            retry_rate_limited=args.retry_rate_limited,
         )
     ), indent=2))
 

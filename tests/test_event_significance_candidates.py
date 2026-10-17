@@ -53,7 +53,8 @@ def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     candidate = candidates.candidate_prompt(payload, variant)
 
     assert candidate != production
-    assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
+    if variant != "global_prior_no_family":
+        assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
     assert payload == before
     assert "No fixed numeric cutoff" in candidate
     assert "should_alert=true" in candidate
@@ -73,15 +74,40 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
     assert set(output["candidates"]) == {
         "production", "materiality_first", "balanced_novelty",
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
-        "global_prior_safe",
+        "global_prior_safe", "global_prior_no_family",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 7
+    }) == 8
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
         assert stats["provider_requests"] == 0
+
+
+def test_global_prior_no_family_only_omits_unreliable_semantic_family():
+    import json
+
+    payload = deepcopy(_dataset()["cases"][0]["input"])
+    payload["previous_event_alert"] = {
+        "age_minutes": 37,
+        "semantic_family": "price_downtrend",
+        "analysed_window_move": -1.8,
+    }
+    before = deepcopy(payload)
+    baseline = json.loads(
+        candidates.candidate_prompt(payload, "production").split("\nInput JSON:\n")[-1]
+    )
+    candidate = json.loads(
+        candidates.candidate_prompt(payload, "global_prior_no_family")
+        .split("\nInput JSON:\n")[-1]
+    )
+    assert "f" in baseline["prev"] and "f" not in candidate["prev"]
+    assert candidate["prev"]["min"] == 37
+    assert candidate["prev"]["cw"] == -1.8
+    assert baseline["prev"].pop("f") == "price_downtrend"
+    assert baseline == candidate
+    assert payload == before
 
 
 def test_global_prior_candidate_does_not_confuse_shared_previous_with_per_user_delivery():
