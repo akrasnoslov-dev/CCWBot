@@ -154,6 +154,33 @@ acceptance result**, even if it is numerically high. Unknown provider spending
 must remain unknown. Never change the model-serving prompt on pilot evidence
 without complete coverage and a validated trade-off.
 
+### Reuse all paid pilot responses before any new test (PR 2)
+
+The earlier 63-call pilot and disjoint 16-call holdout were saved in **different
+private ledgers**. The two runs must be merged before spending more tokens;
+otherwise full-dataset scoring misses valid existing decisions and needlessly
+repeats provider requests. This local/offline command does **not** contact Groq:
+
+```bash
+python scripts/merge_event_significance_runs.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --states reports/event-alert-review-20261016/live_groq_ab_20261016/replay_state.json reports/event-alert-review-20261016/trajectory_holdout_private/replay_state.json --out reports/event-alert-review-20261016/merged_pilots_private
+```
+
+The merger refuses changed input hashes, different models/prompt fingerprints,
+duplicate variant+case provider attempts, unknown result fields and requests
+exceeding the previously authorised 600-call ceiling. It records all requests
+(including ambiguous outcomes), preserves unknown provider failures without
+turning them into negative decisions, and writes only gitignored local data.
+The new output directory must not exist; source ledgers are not modified.
+
+After merging, a resumed, explicitly approved replay can use
+`--out reports/event-alert-review-20261016/merged_pilots_private` and
+`--variants production trajectory_evidence --skip-ambiguous`. Its
+`attempted_requests` count already includes both earlier runs. The complete
+153-case paired score must be produced from that same merged state, never from
+a handpicked pilot cohort. Do not promote any prompt until all required
+quality/cost gates pass. This merge is **not yet executed** if the owner's
+local workstation is offline.
+
 ### Live Groq pilot decision record (2026-10-16, PR 2)
 
 The owner approved up to 600 requests, but this run stopped at **63 attempts** to
