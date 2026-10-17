@@ -8,18 +8,18 @@ references.
 
 ## Telegram Rich Event Alert chart fallback and diagnostics
 
-For rich Event Alerts, the stored \`alerts.message\` is the plain-text fallback for
+For rich Event Alerts, the stored `alerts.message` is the plain-text fallback for
 compatibility and evidence persistence, **not proof of the exact Rich Message content
 Telegram displayed**. The plain alternative contains the deterministic sentence
-\`Last 24 hours: chart unavailable in text-only view.\` even if Telegram displayed the
+`Last 24 hours: chart unavailable in text-only view.` even if Telegram displayed the
 actual inline chart. The ops-agent placeholder and affected-user SQL must remove
-**only that exact sentence** before scanning for the token \`unavailable\`. Other
+**only that exact sentence** before scanning for the token `unavailable`. Other
 unavailable/unknown/null/N/A content remains actionable. The chart can truly be
 unavailable when reliable observations are insufficient; do not infer successful
 image delivery from stored plain text.
 
 This corrects the 2026-10-17 false-positive diagnosis where 981 successful
-Event Alert deliveries all appeared to contain \`unavailable\`. Recollect a fresh,
+Event Alert deliveries all appeared to contain `unavailable`. Recollect a fresh,
 sanitized ops bundle after specialist ops-agent image deployment. Do not retroactively
 claim old bundles or rendered client UX were corrected, and do not treat corrected
 placeholder counts as independent Event Alert usefulness evidence.
