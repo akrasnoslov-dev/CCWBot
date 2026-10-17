@@ -4899,11 +4899,21 @@ def _event_alert_for_recipient(
         result[key] = content
     rich_html = result.get("rich_html")
     if rich_html:
-        rich_html = re.sub(r"<p>🕒 <b>Since previous [^<]*</b></p>", "", str(rich_html))
+        rich_html = re.sub(
+            r"<p>(?:🕒 <b>)?Since previous [^<]*(?:</b>)?</p>",
+            "",
+            str(rich_html),
+        )
         if previous_line:
+            def _insert_recipient_comparison(match: re.Match[str]) -> str:
+                rendered = escape(previous_line)
+                if "<b>" in match.group(1):
+                    return match.group(1) + f"<p>🕒 <b>{rendered}</b></p>"
+                return match.group(1) + f"<p>{rendered}</p>"
+
             rich_html = re.sub(
-                r"(<p>💰 <b>Price \(now\):[^<]*</b></p>)",
-                lambda match: match.group(1) + f"<p>🕒 <b>{escape(previous_line)}</b></p>",
+                r"(<p>(?:💰 <b>)?Price \(now\):[^<]*(?:</b>)?</p>)",
+                _insert_recipient_comparison,
                 rich_html,
                 count=1,
             )
