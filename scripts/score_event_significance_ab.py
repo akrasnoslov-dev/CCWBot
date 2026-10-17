@@ -21,6 +21,29 @@ from scripts.live_event_significance_benchmark import (  # noqa: E402
 )
 
 
+def with_historical_baseline(dataset: dict, state: dict) -> dict:
+    """Use recorded bot decisions, never fabricate model replay outcomes.
+
+    Historical observations may differ in model/config from current provider
+    controls; compare them as product outcomes, not same-model A/B estimates.
+    """
+    rows = []
+    for case in dataset["cases"]:
+        decision = case.get("observed", {}).get("should_alert")
+        if type(decision) is not bool:
+            continue
+        rows.append({
+            "id": case["id"],
+            "input_sha256": case["input_sha256"],
+            "status": "valid",
+            "should_alert": decision,
+        })
+    return {
+        **state,
+        "runs": {**state["runs"], "historical": rows},
+    }
+
+
 def score(
     dataset: dict, a_labels: dict, state: dict,
     *, variants: tuple[str, ...] = VARIANTS,
@@ -107,7 +130,7 @@ def score(
             and stats["recall"] >= 0.90
         )
         for name, stats in results.items()
-        if name != "production"
+        if name not in ("production", "historical")
     }
     return {
         "decisive_reference_cases": decisive_total,
@@ -130,13 +153,21 @@ def main() -> None:
     p.add_argument("--benchmark", type=Path, required=True)
     p.add_argument("--reviewer-a", type=Path, required=True)
     p.add_argument("--run-state", type=Path, required=True)
-    p.add_argument("--variants", nargs="+", choices=VARIANTS, default=VARIANTS)
+    p.add_argument("--variants", nargs="+", choices=(*VARIANTS, "historical"))
+    p.add_argument("--historical-baseline", action="store_true")
     args = p.parse_args()
     dataset = load_frozen(args.benchmark)
     labels = load_reviewer_a(args.reviewer_a, dataset)
     state = json.loads(args.run_state.read_text(encoding="utf-8"))
+    if args.historical_baseline:
+        state = with_historical_baseline(dataset, state)
+    variants = tuple(dict.fromkeys(args.variants or (
+        ("historical", "rebalanced_core") if args.historical_baseline else VARIANTS
+    )))
+    if "historical" in variants and not args.historical_baseline:
+        p.error("historical requires --historical-baseline")
     print(json.dumps(
-        score(dataset, labels, state, variants=tuple(dict.fromkeys(args.variants))),
+        score(dataset, labels, state, variants=variants),
         indent=2,
     ))
 

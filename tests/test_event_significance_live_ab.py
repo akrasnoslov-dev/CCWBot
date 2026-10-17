@@ -151,6 +151,54 @@ def test_pairwise_cohort_does_not_require_dropped_third_candidate():
     assert set(pair["variants"]) == {"production", "materiality_first"}
 
 
+def test_historical_baseline_reuses_frozen_decisions_without_provider_calls():
+    dataset, labels = fixture_data()
+    recorded = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 3,
+        "runs": {"rebalanced_core": [
+            {
+                "id": case["id"], "input_sha256": case["input_sha256"],
+                "status": "valid", "should_alert": labels[case["id"]] == "alert",
+            }
+            for case in dataset["cases"][:3]
+        ]},
+    }
+    merged = scoring.with_historical_baseline(dataset, recorded)
+    assert "historical" not in recorded["runs"]
+    assert merged["attempted_requests"] == 3
+    result = scoring.score(
+        dataset, labels, merged, variants=("historical", "rebalanced_core"),
+    )
+    assert result["paired_unambiguous_cases"] == 3
+    assert result["variants"]["historical"]["fp"] == 1
+    assert result["variants"]["historical"]["fn"] == 1
+    assert result["variants"]["rebalanced_core"]["tp"] == 2
+    assert result["candidate_significance_gates_met"]["rebalanced_core"]
+
+
+def test_historical_baseline_missing_recorded_decisions_never_padding():
+    dataset, labels = fixture_data()
+    dataset["cases"][0]["observed"].pop("should_alert")
+    original_state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 3,
+        "runs": {"rebalanced_core": [
+            {
+                "id": case["id"], "input_sha256": case["input_sha256"],
+                "status": "valid", "should_alert": True,
+            }
+            for case in dataset["cases"][:3]
+        ]},
+    }
+    state = scoring.with_historical_baseline(dataset, original_state)
+    report = scoring.score(
+        dataset, labels, state, variants=("historical", "rebalanced_core"),
+    )
+    assert report["paired_cases_missing"] == 1
+    assert not report["candidate_significance_gates_met"]["rebalanced_core"]
+
+
 def test_significance_release_gate_requires_complete_paired_reference():
     dataset, labels = fixture_data()
     variants = ("production", "relative_displacement")
