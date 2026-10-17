@@ -173,6 +173,26 @@ reliably detected server-side; clients that do not render Rich Messages may requ
 updating Telegram. Any rollback should revert the presentation commit(s) and retain
 existing event/delivery persistence; no schema migration is introduced.
 
+### Rich notification layout follow-up (2026-10-17)
+
+Event Alerts now use a deterministic coin icon, accented metric lines, clearly identified
+Situation/Related context/Possible action sections and a chart heading in the same native
+rich message. This is presentation only. The existing recipient-specific previous-message
+comparison is recomputed for the final rich delivery; it must never leak another recipient's
+comparison or duplicate its previous-message line.
+
+Market Heartbeat also uses this rich layout with a persisted-price chart and styled HTML/
+plain fallbacks. Its price chart is generated at most once per due symbol dispatch, before
+iterating recipients; returned Telegram media IDs may be reused for that dispatch. No extra
+price-provider or LLM calls are introduced per recipient. Missing chart evidence is stated
+explicitly. Rich transport failures retain the existing definitive-rejection fallback and
+uncertain-acceptance no-duplicate policy.
+
+The 24-hour Heartbeat silence criterion, eligibility, idempotency, existing LLM output,
+market significance decisions, semantic cooldown, recipients and billing are unchanged.
+Production client appearance still needs a private Telegram Desktop/mobile smoke test;
+mock images and CI-only HTML assertions do not prove native client rendering.
+
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.
