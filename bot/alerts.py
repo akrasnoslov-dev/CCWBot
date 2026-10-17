@@ -1536,18 +1536,47 @@ def _build_market_heartbeat_html_message(
     related_section_html: str | None,
     possible_action: str,
 ) -> str:
-    related_block = f"Related context:\n{related_section_html}\n\n" if related_section_html else ""
-    metric_block = "\n".join(escape(line) for line in metric_lines)
+    related_block = (
+        f"<b>📰 Related context</b>\n{related_section_html}\n\n"
+        if related_section_html else ""
+    )
+    metric_block = "\n".join(f"<b>{escape(line)}</b>" for line in metric_lines)
     return (
-        f"{icon_html} \U0001f4e1 {escape(symbol)} Market Heartbeat\n\n"
-        f"{escape(title)}\n\n"
+        f"{icon_html} <b>📡 {escape(symbol)} Market Heartbeat</b>\n\n"
+        f"<i>{escape(title)}</i>\n\n"
         f"{metric_block}\n\n"
-        "Situation:\n"
+        "<b>📌 Situation</b>\n"
         f"{escape(message_body)}\n\n"
         f"{related_block}"
-        "Possible action:\n"
+        "<b>🔎 Possible action</b>\n"
         f"{escape(possible_action)}\n\n"
-        "Not financial advice."
+        "<i>Not financial advice.</i>"
+    )
+
+
+def _build_market_heartbeat_rich_html(
+    *,
+    symbol: str,
+    title: str,
+    metric_lines: list[str],
+    message_body: str,
+    related_section_html: str | None,
+    possible_action: str,
+) -> str:
+    """Presentation only; heartbeat timing and eligibility stay unchanged."""
+    related = (
+        f"<h3>📰 Related context</h3><p>{related_section_html.replace(chr(10), '<br>')}</p>"
+        if related_section_html else ""
+    )
+    return (
+        f"<h2>{coin_fallback_emoji(symbol)} 📡 {escape(symbol)} Market Heartbeat</h2>"
+        f"<p><i>{escape(title)}</i></p>"
+        + "".join(_rich_metric_html(line) for line in metric_lines)
+        + "__CCWBOT_CHART_BLOCK__"
+        + f"<h3>📌 Situation</h3><p>{escape(message_body)}</p>"
+        + related
+        + f"<h3>🔎 Possible action</h3><p>{escape(possible_action)}</p>"
+        + "<footer>Not financial advice.</footer>"
     )
 
 
@@ -1579,6 +1608,17 @@ def _build_event_alert_html_message(
     )
 
 
+def _rich_metric_html(line: str) -> str:
+    """Compact, legible rich-message metrics. Keep labels and values contiguous."""
+    if line.startswith(("Price (now):", "Price:")):
+        icon = "💰"
+    elif line.startswith(("Since previous ", "Since last ")):
+        icon = "🕒"
+    else:
+        icon = "📉" if ": -" in line else "📈"
+    return f"<p>{icon} <b>{escape(line)}</b></p>"
+
+
 def _build_event_alert_rich_html(
     *,
     headline: str,
@@ -1587,18 +1627,19 @@ def _build_event_alert_rich_html(
     related_section_html: str | None,
     possible_action: str,
 ) -> str:
-    metrics = "".join(f"<p>{escape(line)}</p>" for line in metric_lines)
+    metrics = "".join(_rich_metric_html(line) for line in metric_lines)
     related = (
-        f"<h3>Related context</h3><p>{related_section_html.replace(chr(10), '<br>')}</p>"
+        f"<h3>📰 Related context</h3><p>{related_section_html.replace(chr(10), '<br>')}</p>"
         if related_section_html else ""
     )
+    symbol = headline.split(" ", 1)[0]
     return (
-        f"<h2>{escape(headline)}</h2>"
+        f"<h2>{coin_fallback_emoji(symbol)} {escape(headline)}</h2>"
         f"{metrics}"
         "__CCWBOT_CHART_BLOCK__"
-        f"<h3>Situation</h3><p>{escape(situation)}</p>"
+        f"<h3>📌 Situation</h3><p>{escape(situation)}</p>"
         f"{related}"
-        f"<h3>Possible action</h3><p>{escape(possible_action)}</p>"
+        f"<h3>🔎 Possible action</h3><p>{escape(possible_action)}</p>"
         "<footer>Not financial advice.</footer>"
     )
 
@@ -1923,18 +1964,29 @@ def _build_market_heartbeat_payload(
         f"{possible_action}\n\n"
         "Not financial advice."
     )
-    html_message = None
-    if icon_html != icon or related_section_html:
-        html_message = _build_market_heartbeat_html_message(
-            icon_html=icon_html,
-            symbol=symbol,
-            title=title,
-            metric_lines=metric_lines,
-            message_body=message_body,
-            related_section_html=related_section_html,
-            possible_action=possible_action,
-        )
-    return {"plain_text": message, "html_text": html_message, "entities": entities}
+    html_message = _build_market_heartbeat_html_message(
+        icon_html=icon_html,
+        symbol=symbol,
+        title=title,
+        metric_lines=metric_lines,
+        message_body=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    rich_html = _build_market_heartbeat_rich_html(
+        symbol=symbol,
+        title=title,
+        metric_lines=metric_lines,
+        message_body=message_body,
+        related_section_html=related_section_html,
+        possible_action=possible_action,
+    )
+    return {
+        "plain_text": message,
+        "html_text": html_message,
+        "entities": entities,
+        "rich_html": rich_html,
+    }
 
 
 def _heartbeat_related_news(heartbeat) -> list[dict]:
@@ -4561,10 +4613,11 @@ async def _send_alert_to_recipient_once(
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
     rich_html = alert_payload.get("rich_html")
-    if rich_html:
+    bot_token = getattr(app.bot, "token", None)
+    if rich_html and isinstance(bot_token, str) and bot_token:
         try:
             file_id = await send_rich_event_alert(
-                bot_token=app.bot.token,
+                bot_token=bot_token,
                 chat_id=recipient.chat_id,
                 rich_html=rich_html,
                 chart_png=alert_payload.get("chart_png"),
@@ -4847,11 +4900,21 @@ def _event_alert_for_recipient(
         result[key] = content
     rich_html = result.get("rich_html")
     if rich_html:
-        rich_html = re.sub(r"<p>Since previous [^<]*</p>", "", str(rich_html))
+        rich_html = re.sub(
+            r"<p>(?:🕒 <b>)?Since previous [^<]*(?:</b>)?</p>",
+            "",
+            str(rich_html),
+        )
         if previous_line:
+            def _insert_recipient_comparison(match: re.Match[str]) -> str:
+                rendered = escape(previous_line)
+                if "<b>" in match.group(1):
+                    return match.group(1) + f"<p>🕒 <b>{rendered}</b></p>"
+                return match.group(1) + f"<p>{rendered}</p>"
+
             rich_html = re.sub(
-                r"(<p>Price \(now\):[^<]*</p>)",
-                lambda match: match.group(1) + f"<p>{escape(previous_line)}</p>",
+                r"(<p>(?:💰 <b>)?Price \(now\):[^<]*(?:</b>)?</p>)",
+                _insert_recipient_comparison,
                 rich_html,
                 count=1,
             )
@@ -4882,12 +4945,12 @@ async def _prepare_event_alert_chart(
     if chart is not None and chart.png is not None:
         alert_payload["chart_png"] = chart.png
         chart_block = (
-            f"<h3>{escape(chart.label)}</h3>"
+            f"<h3>📈 {escape(chart.label)}</h3>"
             '<img src="tg://photo?id=chart"/>'
         )
     else:
         chart_block = (
-            "<h3>Last 24 hours</h3>"
+            "<h3>📈 Last 24 hours</h3>"
             "<p>Chart unavailable: insufficient reliable recorded prices.</p>"
         )
     alert_payload["rich_html"] = rich_html.replace("__CCWBOT_CHART_BLOCK__", chart_block)
@@ -5495,6 +5558,11 @@ async def _deliver_market_heartbeat(
         return False
 
     related_news = _heartbeat_related_news(heartbeat)
+    # Shared chart evidence for this coin's heartbeat fanout, not per recipient.
+    shared_chart: dict = {"rich_html": "__CCWBOT_CHART_BLOCK__"}
+    await _prepare_event_alert_chart(
+        shared_chart, symbol=normalized_symbol, as_of=now,
+    )
     delivered = False
     sent_count = 0
     for recipient, last_message_price in due_recipients:
@@ -5522,6 +5590,12 @@ async def _deliver_market_heartbeat(
                     related_news=related_news,
                 )
             )
+            if alert_payload.get("rich_html"):
+                alert_payload["rich_html"] = alert_payload["rich_html"].replace(
+                    "__CCWBOT_CHART_BLOCK__", shared_chart["rich_html"]
+                )
+                alert_payload["chart_png"] = shared_chart.get("chart_png")
+                alert_payload["chart_file_id"] = shared_chart.get("chart_file_id")
             plain_text = str(alert_payload.get("plain_text", ""))
             numeric_context = _heartbeat_numeric_context(
                 symbol=normalized_symbol,
@@ -5557,6 +5631,8 @@ async def _deliver_market_heartbeat(
                 alert_payload,
                 alert_id=alert_id,
             )
+            if sent and alert_payload.get("chart_file_id"):
+                shared_chart["chart_file_id"] = alert_payload["chart_file_id"]
             if alert_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await update_alert_delivery_status(

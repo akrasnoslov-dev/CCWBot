@@ -44,6 +44,22 @@ from ops_agent.schemas import Period
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+
+
+def test_event_alert_quality_ignores_only_system_owned_text_chart_fallback():
+    """The stored plain alternative must not make every successful rich alert 'critical'."""
+    queries = {query.name: query.sql for query in QUERIES}
+    fallback = "'Last 24 hours: chart unavailable in text-only view.'"
+    impact = queries["user_impact_summary"]
+    summary = queries["alert_quality_summary"]
+    for sql in (impact, summary):
+        assert fallback in sql
+        assert "replace(coalesce(" in sql
+        # Other unavailable claims (e.g. in Situation) must still be counted.
+        assert "~* '(^|[^a-z0-9])unavailable([^a-z0-9]|$)'" in sql
+    assert "AS contains_unavailable" in summary
+    assert "AS users_affected_by_content_quality_issues" in impact
+
 def test_all_db_queries_are_read_only_and_parameterized():
     assert validate_read_only_queries() == []
     assert all(query.sql.strip().lower().startswith(("select", "with")) for query in QUERIES)
