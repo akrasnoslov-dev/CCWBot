@@ -18,7 +18,8 @@ from bot.db.database import (
 
 
 def postgres_url():
-    url = os.getenv("ALEMBIC_POSTGRES_TEST_DATABASE_URL")
+    url = (os.getenv("ALEMBIC_POSTGRES_TEST_DATABASE_URL")
+           or os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL"))
     if not url or not url.startswith("postgresql+asyncpg://"):
         pytest.skip("Requires a disposable PostgreSQL URL")
     return url
@@ -56,7 +57,8 @@ async def test_real_postgres_cooldown_uses_delivery_time_with_legacy_fallback():
                     sent_at=None,
                 ),
             ])
-            await session.commit()
+            # Keep test rows in an uncommitted transaction; no CI DB pollution.
+            await session.flush()
             rows = await get_recent_sent_event_alert_contexts(
                 session, user_ids=[7101, 7102, 7103],
                 symbol="BTC", alert_type="event_alert",
