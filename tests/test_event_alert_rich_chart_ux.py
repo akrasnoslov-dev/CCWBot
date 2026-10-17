@@ -336,3 +336,62 @@ async def test_heartbeat_uses_existing_shared_price_snapshot_chart(monkeypatch):
     assert payload["chart_png"].startswith(b"\x89PNG")
     assert "📈 Last 24 hours" in payload["rich_html"]
     assert "tg://photo?id=chart" in payload["rich_html"]
+
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_falls_back_to_styled_html_if_rich_adapter_has_no_token():
+    bot = SimpleNamespace(send_message=AsyncMock())
+    heartbeat = SimpleNamespace(
+        symbol="BTC", title="Calm monitoring",
+        message_body="No marked change.", possible_action="Watch the next interval.",
+    )
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat, current_price=100000.0,
+        change_since_last_message=None, change_24h=0.5, related_news=[],
+    )
+    sent, error, _ = await alerts._send_alert_to_recipient_once(
+        SimpleNamespace(bot=bot),
+        alerts.AlertRecipient(chat_id=123),
+        payload,
+    )
+    assert sent and error is None
+    bot.send_message.assert_awaited_once()
+    assert "<b>📡 BTC Market Heartbeat</b>" in bot.send_message.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Forbidden: bot was blocked by the user", True),
+        ("Forbidden: user is deactivated", True),
+        ("Forbidden: chat not found", True),
+        ("Forbidden: cannot send rich message", False),
+    ],
+)
+async def test_rich_403_preserves_safe_blocked_classification_without_raw_errors(
+    monkeypatch, description, expected,
+):
+    from telegram.error import Forbidden
+    from bot.telegram_errors import is_bot_blocked_error
+
+    class FakeResponse:
+        def json(self):
+            return {"ok": False, "error_code": 403, "description": description}
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def post(self, url, **kwargs):
+            return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    with pytest.raises(Forbidden) as caught:
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<p>Hello</p>", chart_png=None,
+        )
+    assert is_bot_blocked_error(caught.value) is expected
+    assert str(caught.value) != description
