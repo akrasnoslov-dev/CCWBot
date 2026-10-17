@@ -134,7 +134,9 @@ CANDIDATE_REPLACEMENTS = {
 # not evidence that any particular recipient already saw this market event.
 # Only the downstream per-recipient cooldown can make that determination.
 CANDIDATE_REPLACEMENTS["global_prior_no_family"] = (
-    CANDIDATE_REPLACEMENTS["rebalanced_core"]
+    CANDIDATE_REPLACEMENTS["rebalanced_core"].replace(
+        "prev={min,f,cw}", "prev={min,cw}",
+    )
     + "\nThe previous alert metadata is global to the asset, not proof of "
     "a repeat for any individual user. The only comparable prior facts "
     "provided are age and net analysed-window displacement: an old "

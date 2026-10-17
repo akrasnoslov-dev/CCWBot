@@ -110,17 +110,30 @@ def load_reviewer_a(path: Path, dataset: dict) -> dict:
     return labels
 
 
-def load_state(path: Path, dataset_sha: str, model: str, configs: dict) -> dict:
+def load_state(
+    path: Path, dataset_sha: str, model: str, configs: dict,
+    *, refresh_unused_config: bool = False,
+) -> dict:
     if path.exists():
         state = json.loads(path.read_text(encoding="utf-8"))
-        previous = state.get("fingerprints", {})
         if (
             state.get("dataset_sha256") != dataset_sha
             or state.get("model") != model
-            or any(configs.get(name) != value for name, value in previous.items())
         ):
             raise ValueError("Replay run configuration mismatch; refuse to mix results")
-        # Adding a new candidate must not invalidate earlier pinned responses.
+        # Existing recorded answers always pin their exact configuration.
+        # Explicitly refreshing an unused candidate is safe only when it has
+        # zero provider responses; never rewrite a measured variant fingerprint.
+        for name, old_fingerprint in state.get("fingerprints", {}).items():
+            if configs.get(name) == old_fingerprint:
+                continue
+            if (
+                not refresh_unused_config
+                or name not in configs
+                or state["runs"].get(name)
+            ):
+                raise ValueError("Replay run configuration mismatch; refuse to mix results")
+            state["fingerprints"][name] = configs[name]
         for name, value in configs.items():
             state["fingerprints"].setdefault(name, value)
             state["runs"].setdefault(name, [])
@@ -203,6 +216,7 @@ async def replay(
     excluded_case_ids: frozenset[str] = frozenset(),
     previous_attempts: int = 0,
     retry_rate_limited: bool = False,
+    refresh_unused_config: bool = False,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -224,7 +238,10 @@ async def replay(
     configs = {v: fingerprint(v, model, max_tokens, effort) for v in VARIANTS}
     out.mkdir(parents=True, exist_ok=True)
     ledger = out / "replay_state.json"
-    state = load_state(ledger, dataset["dataset_sha256"], model, configs)
+    state = load_state(
+        ledger, dataset["dataset_sha256"], model, configs,
+        refresh_unused_config=refresh_unused_config,
+    )
     already = {(variant, item["id"]): item for variant, rows in state["runs"].items()
                for item in rows}
     client = AsyncOpenAI(
@@ -363,6 +380,7 @@ def main() -> None:
     parser.add_argument("--skip-ambiguous", action="store_true")
     parser.add_argument("--exclude-state", type=Path)
     parser.add_argument("--retry-rate-limited", action="store_true")
+    parser.add_argument("--refresh-unused-candidate-config", action="store_true")
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -394,6 +412,7 @@ def main() -> None:
             excluded_case_ids=excluded,
             previous_attempts=previous_attempts,
             retry_rate_limited=args.retry_rate_limited,
+            refresh_unused_config=args.refresh_unused_candidate_config,
         )
     ), indent=2))
 

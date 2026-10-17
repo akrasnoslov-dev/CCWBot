@@ -103,6 +103,9 @@ def test_global_prior_no_family_only_omits_unreliable_semantic_family():
         .split("\nInput JSON:\n")[-1]
     )
     assert "f" in baseline["prev"] and "f" not in candidate["prev"]
+    instructions = candidates.candidate_prompt(payload, "global_prior_no_family")
+    assert "prev={min,cw}" in instructions
+    assert "prev={min,f,cw}" not in instructions
     assert candidate["prev"]["min"] == 37
     assert candidate["prev"]["cw"] == -1.8
     assert baseline["prev"].pop("f") == "price_downtrend"

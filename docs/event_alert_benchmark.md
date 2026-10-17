@@ -435,6 +435,29 @@ rate-limit type; the organization account's limits govern.
 All regression tests and the PostgreSQL CI gate are separate from
 these market-quality results.
 
+### Further provider-limit evidence and safe candidate refresh (2026-10-17)
+
+After obeying the 293-second `Retry-After`, Groq completed one
+`global_prior_no_family` call, then returned another HTTP 429
+with `Retry-After: 340 seconds`. The experiment immediately stopped.
+Across the full private merged ledger the counter is now
+**170 provider attempts**, with **167 valid recorded decisions**,
+**two currently recorded 429 rows** and **one previously retried 429**
+preserved in the cumulative request count; provider-reported measured
+tokens are **299,324**. `global_prior_safe` retains 43 valid
+decisive results (86.4% precision, 82.6% recall on this selected cohort).
+The new no-family candidate has **one valid result only** and cannot yet
+be assessed; no change to production prompt or eligibility is justified.
+
+The replay accepts `--refresh-unused-candidate-config` to explicitly
+revise the fingerprint for a candidate with **zero recorded responses**
+in an existing ledger, while strictly refusing any changed fingerprint
+for a candidate with actual observations. This avoids mixing a
+hypothesis that was revised before its first provider call with any
+older measured answers. A separate opt-in `--retry-rate-limited`
+is still required for recorded HTTP 429 cases. The latest 340-second
+backoff must be respected; do not continuously retry until accepted.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |

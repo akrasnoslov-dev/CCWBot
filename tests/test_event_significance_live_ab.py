@@ -95,6 +95,36 @@ def test_old_pinned_replay_can_add_candidate_without_replaying_existing_answers(
         )
 
 
+def test_unused_candidate_fingerprint_may_be_refreshed_only_explicitly(tmp_path):
+    dataset, _ = fixture_data()
+    path = tmp_path / "old.json"
+    original = live.load_state(
+        path, dataset["dataset_sha256"], "model",
+        {"production": "original", "global_prior_no_family": "draft-v1"},
+    )
+    original["runs"]["production"].append({
+        "id": "case_0", "input_sha256": dataset["cases"][0]["input_sha256"],
+        "status": "valid", "should_alert": False,
+    })
+    live.save_state(path, original)
+    new_config = {"production": "original", "global_prior_no_family": "draft-v2"}
+    with pytest.raises(ValueError, match="configuration mismatch"):
+        live.load_state(path, dataset["dataset_sha256"], "model", new_config)
+    resumed = live.load_state(
+        path, dataset["dataset_sha256"], "model", new_config,
+        refresh_unused_config=True,
+    )
+    assert resumed["fingerprints"]["global_prior_no_family"] == "draft-v2"
+    assert len(resumed["runs"]["production"]) == 1
+    assert original["fingerprints"]["global_prior_no_family"] == "draft-v1"
+    with pytest.raises(ValueError, match="configuration mismatch"):
+        live.load_state(
+            path, dataset["dataset_sha256"], "model",
+            {"production": "changed", "global_prior_no_family": "draft-v2"},
+            refresh_unused_config=True,
+        )
+
+
 def test_paired_score_excludes_incomplete_and_ambiguous_cases():
     dataset, a = fixture_data()
     state = {
