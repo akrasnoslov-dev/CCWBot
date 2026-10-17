@@ -4613,10 +4613,11 @@ async def _send_alert_to_recipient_once(
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
     rich_html = alert_payload.get("rich_html")
-    if rich_html:
+    bot_token = getattr(app.bot, "token", None)
+    if rich_html and isinstance(bot_token, str) and bot_token:
         try:
             file_id = await send_rich_event_alert(
-                bot_token=app.bot.token,
+                bot_token=bot_token,
                 chat_id=recipient.chat_id,
                 rich_html=rich_html,
                 chart_png=alert_payload.get("chart_png"),
