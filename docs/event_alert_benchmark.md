@@ -82,6 +82,44 @@ same model twice.** The evaluator files are not included in the repository
 until privacy-approved and reviewed. Disagreements remain unscored until
 explicitly resolved; ambiguous labels remain out of precision/recall.
 
+### Owner-designated reviewer A reference for private v2 (2026-10-16)
+
+For the private `v2-2026-10-16-private-human-review` frozen set (200 real
+BTC/ETH/GRAM/SOL cases; dataset SHA-256
+`ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee`),
+the owner explicitly chose **reviewer A as the reference on all 99
+significance disagreements**. Keep both independent original reviews and the
+unchanged frozen inputs. This is an **owner-designated reference**, not
+agreement by both evaluators or independently established market truth.
+
+The operator keeps the explicit conflict resolution in the private, ignored
+`reports/event-alert-review-20261016/owner_reviewer_A_resolution_private.json`,
+generated from original reviewer A labels. Supply it using `--reconciled`;
+do not commit it or the private cases. All 47 reviewer-A `ambiguous` labels
+remain excluded. The resulting **153 unambiguous** cases are the reference
+scoring set for PR 2 candidates; preserve the former 94-case two-human
+consensus metrics separately for transparency.
+
+| Asset | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| BTC | 2 | 21 | 4 | 20 | 8.7% | 33.3% |
+| ETH | 3 | 13 | 3 | 17 | 18.8% | 50.0% |
+| GRAM | 8 | 11 | 8 | 10 | 42.1% | 50.0% |
+| SOL | 8 | 8 | 5 | 12 | 50.0% | 61.5% |
+| **Total** | **21** | **53** | **20** | **59** | **28.4%** | **51.2%** |
+
+For positive-decision delivery exposure, reviewer A's non-ambiguous labels
+cover 504 deserved versus 6,286 low-value deliveries (**7.4% deserved**);
+513 other deliveries are reviewer-A ambiguous. This is *not* population
+precision or recipient-eligible-weighted recall. Those latter metrics remain
+unmeasured where no-alert recipient eligibility is absent. The owner-supplied
+message-quality summary (1 useful of 72 reviewed final messages) is a
+single-reviewer assessment; independently confirmed factuality and a complete
+two-evaluator final-text audit remain unverified.
+
+No significance candidate replay, provider/token cost comparison or quality
+acceptance gate is made valid merely by choosing the owner-designated labels.
+
 ### Commands (offline by default)
 
 ```bash
@@ -91,6 +129,129 @@ python scripts/replay_event_significance.py --benchmark path/to/v2.json --review
 python scripts/replay_event_significance.py --benchmark path/to/v2.json --evaluator-one /tmp/human-a.json --evaluator-two /tmp/human-b.json --reconciled /tmp/adjudication.json
 python scripts/replay_event_significance.py --benchmark path/to/v2.json --evaluator-one /tmp/human-a.json --evaluator-two /tmp/human-b.json --reconciled /tmp/adjudication.json --recorded-run /tmp/candidate.json
 ```
+
+For an explicitly owner-approved Groq replay (never during normal test runs),
+use the bounded, resumable runner and compare only completed paired cases:
+
+```bash
+python scripts/live_event_significance_benchmark.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --out reports/event-alert-review-20261016/live_groq_ab_20261016 --approve-provider-requests --max-requests 12 --delay-seconds 18
+python scripts/score_event_significance_ab.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --run-state reports/event-alert-review-20261016/live_groq_ab_20261016/replay_state.json
+```
+
+This replay sends frozen sanitized market context to Groq, but performs no Telegram
+delivery, no production DB writes, no alert persistence, and no live market
+fetch. The ledger counts an HTTP attempt **before** sending and refuses more
+than 600 attempts in the selected run directory; it retains only validated
+decisions, status, provider token usage, opaque IDs, and input/config hashes.
+It stops on provider auth, cost or rate-limit rejection, rather than bypassing
+account controls. A separate cumulative 125K-token safety ceiling (including
+estimated unknown-usage attempts) limits this local replay's consumption of
+the shared provider quota; it is not proof of remaining account-wide capacity. Do not publish anything beneath `reports/`.
+Each candidate inherits production model, system prompt, JSON Schema, reasoning
+effort and token ceiling; the only variable is the added prompt guidance.
+**Partial pilot precision/recall is a paired-subset diagnostic, not a product
+acceptance result**, even if it is numerically high. Unknown provider spending
+must remain unknown. Never change the model-serving prompt on pilot evidence
+without complete coverage and a validated trade-off.
+
+### Reuse all paid pilot responses before any new test (PR 2)
+
+The earlier 63-call pilot and disjoint 16-call holdout were saved in **different
+private ledgers**. The two runs must be merged before spending more tokens;
+otherwise full-dataset scoring misses valid existing decisions and needlessly
+repeats provider requests. This local/offline command does **not** contact Groq:
+
+```bash
+python scripts/merge_event_significance_runs.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --states reports/event-alert-review-20261016/live_groq_ab_20261016/replay_state.json reports/event-alert-review-20261016/trajectory_holdout_private/replay_state.json --out reports/event-alert-review-20261016/merged_pilots_private
+```
+
+The merger refuses changed input hashes, different models/prompt fingerprints,
+duplicate variant+case provider attempts, unknown result fields and requests
+exceeding the previously authorised 600-call ceiling. It records all requests
+(including ambiguous outcomes), preserves unknown provider failures without
+turning them into negative decisions, and writes only gitignored local data.
+The new output directory must not exist; source ledgers are not modified.
+
+After merging, a resumed, explicitly approved replay can use
+`--out reports/event-alert-review-20261016/merged_pilots_private` and
+`--variants production trajectory_evidence --skip-ambiguous`. Its
+`attempted_requests` count already includes both earlier runs. The complete
+153-case paired score must be produced from that same merged state, never from
+a handpicked pilot cohort. Do not promote any prompt until all required
+quality/cost gates pass. This merge is **not yet executed** if the owner's
+local workstation is offline.
+
+### Live Groq pilot decision record (2026-10-16, PR 2)
+
+The owner approved up to 600 requests, but this run stopped at **63 attempts** to
+protect the free-tier account's shared operating budget. All **63 returned
+schema-valid decisions**, with **115,148 provider-reported tokens** and no
+observed provider failures. The run saved 24 responses for the unchanged
+production prompt, 23 for `materiality_first`, and 16 for
+`balanced_novelty`. Private case-level records and token receipts remain in
+the ignored `reports/event-alert-review-20261016/live_groq_ab_20261016/`.
+
+The completed, **deliberately error-stratified 23-case paired cohort**, excluding
+reviewer-A ambiguous cases, yields:
+
+| Prompt | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Unchanged current prompt | 1 | 0 | 10 | 12 | 100% | 9.1% |
+| `materiality_first` | 3 | 1 | 8 | 11 | 75% | 27.3% |
+
+These **are not unbiased production quality estimates** and **do not meet**
+the 85%/90% release gates. The former 153-case scored historical reference
+remains 28.4% precision and 51.2% recall; its stored decisions are not a
+matched live-provider comparison. The materiality-first variant recovered
+some missed alerts but also generated an unnecessary positive, so it was
+**not promoted**. The discontinued balanced-novelty variant failed all
+eight positive cases in the first paired pilot and was not tested further.
+The experiment isolates the market-significance prompt; it does not validate
+actual Telegram-copy usefulness or the dollar cost of provider calls.
+
+Separate database checks: a real local PostgreSQL test (in an ephemeral
+database removed afterward) verified that the cooldown honours confirmed
+`sent_at` rather than late/early reservation `created_at`, with a legacy
+fallback when `sent_at` is absent; existing advisory-lock concurrency and
+cancellation tests also passed. This is not production-scale load validation.
+
+**Next release gate:** design and measure a genuinely improved materiality
+prompt on substantially broader unseen scored market inputs, including both
+false-positive and false-negative exposure; do not merge/deploy PR 2 merely
+because the small pilot improved relative recall. Source choices remain
+LLM-owned without numeric backend alert thresholds.
+
+### Unseen holdout replay after materiality recalibration (2026-10-16)
+
+A new **experimental, non-production** `trajectory_evidence` prompt explicitly
+asks the LLM to distinguish genuinely substantial current trajectories from
+news-driven, minor counter-moves and routine noise, without numeric gates.
+Its input JSON, pinned Groq model, strict response schema and token budget are
+unchanged. A frozen **8-case unseen holdout**, excluding every previously
+replayed event and reviewer-A ambiguities, was tested with matched live model
+responses:
+
+| Prompt | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current production instructions | 0 | 0 | 5 | 3 | Undefined | 0% |
+| `trajectory_evidence` | 3 | 2 | 2 | 1 | 60% | 60% |
+
+All 16 new provider calls returned schema-valid responses; 28,758 tokens were
+measured. Cumulative owner-approved replay activity (this and the previous
+experiment) was **79 requests and 143,906 measured tokens**. The local
+36K-token experiment ceiling prevented further requests; none remains running.
+Results and original reviewer labels are gitignored. The new candidate is
+**not safe to promote**: it increases recall but admits new false positives
+and fails the ≥85% precision and ≥90% recall release gates. Do not interpret
+these deliberately selected subsets as a representative precision estimate.
+
+The 200-case dataset and reviewer A decisions are unchanged. A full,
+representative, paired evaluation on the 153 decisive cases remains
+**uncompleted**: it requires substantially more provider tokens across
+account-budget windows; the repo deliberately does not queue unattended jobs,
+alter production credentials, or consume the operating bot's remaining
+free-tier capacity. Tests only verify input and schema invariants, not model
+quality. No prompt, model, Telegram or production delivery change is released.
 
 The pinned candidate JSON must include `dataset_sha256`, `model`,
 `config_fingerprint` (hash of provider, model, prompt revision, reasoning,
