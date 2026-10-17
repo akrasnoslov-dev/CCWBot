@@ -303,6 +303,64 @@ code and the privacy-sanitized operator report for the UTC period
 | Contradictory cross-period/persistence statements could bypass earlier validators. | **CONFIRMED** code defects in history; **UNKNOWN** actual bad deliveries | PR #340 added regression guards; the PR explicitly had no evidence these exact sentences were sent. |
 | Exact context reuse is keyed to canonical market/snapshot/news/prior-alert input without numerical buckets. | **CONFIRMED** current implementation contract | `bot/alerting/event_identity.py` and existing exact-context tests; actual production reuse error rate is **UNKNOWN** without matched diagnostic outcomes. |
 
+### Additional calibration and previous-delivery fix (2026-10-17)
+
+A resumed private replay merged the 63-call pilot and 16-call disjoint holdout,
+then used **64 further Groq calls**, with no provider/schema failures. Cumulative
+owner-approved usage is **143/600 Groq calls** and **257,427 provider-reported
+tokens** across the two dates. The new replay remains gitignored and contains
+only opaque case hashes, validated decisions and usage.
+
+The latest prompt-only candidates were **not deployed**. The following use
+**different deliberately error-stratified scored subsets** of the same real
+frozen corpus; percentages are *not* unbiased production-quality estimates:
+
+| Prompt | Decisive scored | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `relative_displacement` | 19 | 5 | 2 | 3 | 9 | 71.4% | 62.5% |
+| `rebalanced_core` | 25 | 8 | 0 | 5 | 12 | 100% | 61.5% |
+| `global_prior_safe` | 20 | 6 | 1 | 2 | 11 | 85.7% | 75.0% |
+
+On the **same 20 cases** that have all three historical/core/global decisions,
+the original bot had TP=4, FP=8, FN=4, TN=4; `rebalanced_core` had
+TP=5, FP=0, FN=3, TN=12; and `global_prior_safe` had
+TP=6, FP=1, FN=2, TN=11. No candidate meets the 90% recall requirement;
+the complete 153-case evidence gate is **not satisfied**.
+
+**Confirmed implementation fault found:** `get_latest_sent_event_alert_context_for_symbol`
+previously sorted by reservation `created_at`, even when successful delivery
+occurred much later. The prompt's previous-alert age also used reservation
+time. It now orders by `coalesce(sent_at, created_at)` and derives age from
+successful `sent_at`, falling back only for legacy sent rows. An isolated
+SQLite DB regression and direct context unit tests pass. The revised real
+PostgreSQL regression remains **unverified on this date** because the local
+Docker daemon/DB was unavailable; the earlier three PostgreSQL tests passed
+before this additional case was added.
+
+**Confirmed context contract:** the prior-alert hint is the last *globally*
+delivered alert for a symbol, not the previous delivery for every recipient.
+Matching global `prev.f` does not prove that the current subscriber was
+notified; actual four-hour cooldown uses that user's own successful delivery
+records. `global_prior_safe` explicitly calibrates that distinction without
+changing the recipient cooldown or adding a deterministic price gate.
+
+The full historical baseline can now be scored **without re-calling Groq**:
+all 153 owner-reviewer-A-decisive cases are present in the frozen observed
+bot outcomes: TP=21, FP=53, FN=20, TN=59; precision=28.4%,
+recall=51.2%. Score live candidate decisions against that real baseline:
+
+```bash
+python scripts/score_event_significance_ab.py --benchmark reports/event-alert-review-20261016/v2_private_sanitized.json --reviewer-a reports/event-alert-review-20261016/reviewer_A_significance_for_pr1.json --run-state reports/event-alert-review-20261016/merged_pilots_private/replay_state.json --historical-baseline --variants historical global_prior_safe
+```
+
+This saves an entire baseline-provider replay, but the
+`global_prior_safe` candidate currently has only **20/153** decisive cases.
+Its remaining **133 cases** still require real provider inference and
+account-safe replay across quota windows; the old frozen baseline is not
+a same-configuration live provider control. Existing release gates for
+final delivered text, real PostgreSQL integration and costs also remain
+open. Do not merge or deploy PR 2 on these exploratory scores.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |

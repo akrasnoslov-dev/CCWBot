@@ -31,6 +31,7 @@ from scripts.event_significance_candidates import candidate_prompt  # noqa: E402
 VARIANTS = (
     "production", "materiality_first", "balanced_novelty",
     "trajectory_evidence", "relative_displacement", "rebalanced_core",
+    "global_prior_safe",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600

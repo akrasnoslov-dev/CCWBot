@@ -671,7 +671,8 @@ def _previous_event_alert_context(
     semantic_family: str | None,
 ) -> dict:
     numeric_context = _numeric_context_payload(getattr(alert, "numeric_context", None))
-    created_at = alert.created_at
+    # Model novelty compares successful delivery, not the earlier reservation.
+    created_at = getattr(alert, "sent_at", None) or alert.created_at
     return {
         "title": _safe_previous_text(getattr(alert, "trigger_reason", None)),
         "canonical_event_key": canonical_event_key or numeric_context.get("event_key"),

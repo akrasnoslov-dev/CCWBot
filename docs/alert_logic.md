@@ -59,8 +59,13 @@ The model must judge these in order:
 
 The 24h move, news, previous alerts, and recent-event counts are context. They do not make an
 otherwise routine current move material. Previous alerts and recent-event counts can reduce novelty
-but cannot increase materiality. A small counter-move against a larger 24h trend is not, by itself,
-a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
+but cannot increase materiality. The `prev` prompt hint comes from the latest sent
+Event Alert for the symbol **across recipients**, not a recipient's personal history.
+It must not be interpreted as proof that every subscriber already received the prior
+move; only the later per-recipient delivery check determines that. The prior
+hint is ordered and aged by successful delivery time (`sent_at`), using
+`created_at` only for legacy sent rows without that timestamp. A small
+counter-move against a larger 24h trend is not, by itself, a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
 faster than another; the current move itself must be materially noteworthy for the asset.
 
 There is still no deterministic numeric threshold in the backend. Percentages and historical

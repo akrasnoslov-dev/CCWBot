@@ -255,7 +255,11 @@ async def get_latest_sent_event_alert_context_for_symbol(
         .where(Alert.symbol == symbol.upper())
         .where(Alert.alert_type == alert_type)
         .where(Alert.status == "sent")
-        .order_by(Alert.created_at.desc(), Alert.id.desc(), AlertDeliveryOutcome.id.desc())
+        .order_by(
+            func.coalesce(Alert.sent_at, Alert.created_at).desc(),
+            Alert.id.desc(),
+            AlertDeliveryOutcome.id.desc(),
+        )
         .limit(1)
     )
     row = (await session.execute(statement)).first()

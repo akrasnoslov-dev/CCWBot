@@ -73,14 +73,27 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
     assert set(output["candidates"]) == {
         "production", "materiality_first", "balanced_novelty",
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
+        "global_prior_safe",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 6
+    }) == 7
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
         assert stats["provider_requests"] == 0
+
+
+def test_global_prior_candidate_does_not_confuse_shared_previous_with_per_user_delivery():
+    payload = _dataset()["cases"][0]["input"]
+    prompt = candidates.candidate_prompt(payload, "global_prior_safe")
+    assert "ANY recipient" in prompt
+    assert "four-hour per-user" in prompt
+    assert "Matching prev.f" in prompt
+    assert "No fixed numeric cutoff" in prompt
+    assert candidates.candidate_prompt(payload, "production") == (
+        ai_agent_groq.build_event_significance_prompt(payload)
+    )
 
 
 def test_missing_or_mutated_input_hash_fails_closed():

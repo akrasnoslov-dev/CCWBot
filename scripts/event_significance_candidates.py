@@ -130,6 +130,24 @@ CANDIDATE_REPLACEMENTS = {
     )),
 }
 
+# The last sent Event Alert is queried by symbol, across ALL recipients; it is
+# not evidence that any particular recipient already saw this market event.
+# Only the downstream per-recipient cooldown can make that determination.
+CANDIDATE_REPLACEMENTS["global_prior_safe"] = (
+    CANDIDATE_REPLACEMENTS["rebalanced_core"]
+    + "\nSpecific novelty calibration: prev is the latest sent alert for this "
+    "asset across ANY recipient, not a recipient-specific notification "
+    "history or a proof of duplicate market analysis. Matching prev.f or "
+    "the direction alone is insufficient to claim repetition. A substantial "
+    "fresh movement of this coin can count as new even when it shares the "
+    "direction or broad semantic family of the earlier alert, as long as "
+    "the present observed market displacement is independently noteworthy "
+    "rather than merely the same unchanged path. The backend, not this "
+    "global snapshot, enforces the strict four-hour per-user event-family "
+    "cooldown. This does not excuse small routine moves or unsupported "
+    "reversal claims. Never invent missing evidence or numerical cutoffs."
+)
+
 
 def candidate_prompt(input_payload: dict, candidate: str) -> str:
     if candidate == "production":

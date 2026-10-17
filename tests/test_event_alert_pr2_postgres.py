@@ -9,7 +9,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from bot.db.database import Alert, Base, get_recent_sent_event_alert_contexts
+from bot.db.database import (
+    Alert,
+    Base,
+    get_latest_sent_event_alert_context_for_symbol,
+    get_recent_sent_event_alert_contexts,
+)
 
 
 def postgres_url():
@@ -59,5 +64,11 @@ async def test_real_postgres_cooldown_uses_delivery_time_with_legacy_fallback():
             )
             assert {alert.user_id for alert, _, _ in rows} == {7101, 7103}
             assert rows[0][0].user_id == 7101
+            latest = await get_latest_sent_event_alert_context_for_symbol(
+                session, symbol="BTC", alert_type="event_alert",
+            )
+            assert latest is not None
+            # Latest delivered, not latest reserved; user context is global.
+            assert latest[0].user_id == 7101
     finally:
         await engine.dispose()
