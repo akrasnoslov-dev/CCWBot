@@ -388,19 +388,30 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     }
 
 
+# Exact application-owned sentence present only in the persisted plain fallback.
+# A successful Rich Message can contain a real chart while storing this alternative.
+# Keep all other "unavailable" claims actionable.
+RICH_ALERT_CHART_TEXT_FALLBACK = "Last 24 hours: chart unavailable in text-only view."
+
+
 def _quality_issues(
     row: dict[str, Any], *, delivered_text: str, related_news_count: int
 ) -> list[str]:
-    lowered = delivered_text.lower()
+    is_event_alert = (
+        str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
+    )
+    observed_text = (
+        delivered_text.replace(RICH_ALERT_CHART_TEXT_FALLBACK, "")
+        if is_event_alert
+        else delivered_text
+    )
+    lowered = observed_text.lower()
     issues: list[str] = []
     if NA_RE.search(lowered):
         issues.append("contains_n_a")
     for pattern, issue in PLACEHOLDER_ISSUE_PATTERNS:
         if pattern.search(lowered):
             issues.append(issue)
-    is_event_alert = (
-        str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
-    )
     if is_event_alert and "since last btc alert" in lowered:
         issues.append("old_since_last_btc_alert_label")
     if is_event_alert and "analysed-window change" in lowered:
