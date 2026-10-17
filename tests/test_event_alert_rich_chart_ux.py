@@ -374,6 +374,7 @@ async def test_rich_403_preserves_safe_blocked_classification_without_raw_errors
     monkeypatch, description, expected,
 ):
     from telegram.error import Forbidden
+
     from bot.telegram_errors import is_bot_blocked_error
 
     class FakeResponse:
