@@ -98,6 +98,15 @@ async def send_rich_event_alert(
             delay = 1
         raise RetryAfter(delay)
     if code == 403:
+        # Preserve only known safe 403 classifications, never raw Telegram text,
+        # IDs, or token-bearing request details in stored delivery diagnostics.
+        description = str(payload.get("description") or "").lower()
+        if "bot was blocked by the user" in description:
+            raise Forbidden("Telegram bot was blocked by the user")
+        if "user is deactivated" in description:
+            raise Forbidden("Telegram user is deactivated")
+        if "chat not found" in description:
+            raise Forbidden("Telegram chat not found")
         raise Forbidden("Telegram destination rejected rich message")
     if isinstance(code, int) and 400 <= code < 500:
         raise BadRequest("Telegram explicitly rejected rich message")
