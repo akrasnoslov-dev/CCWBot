@@ -28,7 +28,10 @@ from bot.services.llm import config  # noqa: E402
 from scripts.event_alert_benchmark import load_frozen  # noqa: E402
 from scripts.event_significance_candidates import candidate_prompt  # noqa: E402
 
-VARIANTS = ("production", "materiality_first", "balanced_novelty", "trajectory_evidence")
+VARIANTS = (
+    "production", "materiality_first", "balanced_novelty",
+    "trajectory_evidence", "relative_displacement", "rebalanced_core",
+)
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600
 

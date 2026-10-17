@@ -151,6 +151,36 @@ def test_pairwise_cohort_does_not_require_dropped_third_candidate():
     assert set(pair["variants"]) == {"production", "materiality_first"}
 
 
+def test_significance_release_gate_requires_complete_paired_reference():
+    dataset, labels = fixture_data()
+    variants = ("production", "relative_displacement")
+    runs = {
+        name: [
+            {
+                "id": case["id"],
+                "input_sha256": case["input_sha256"],
+                "status": "valid",
+                "should_alert": labels[case["id"]] == "alert",
+            }
+            for case in dataset["cases"][:3]
+        ]
+        for name in variants
+    }
+    state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 6,
+        "runs": runs,
+    }
+    complete = scoring.score(dataset, labels, state, variants=variants)
+    assert complete["decisive_reference_cases"] == 3
+    assert complete["paired_cases_missing"] == 0
+    assert complete["candidate_significance_gates_met"]["relative_displacement"]
+    runs["relative_displacement"].pop()
+    incomplete = scoring.score(dataset, labels, state, variants=variants)
+    assert incomplete["paired_cases_missing"] == 1
+    assert not incomplete["candidate_significance_gates_met"]["relative_displacement"]
+
+
 def test_paired_score_rejects_mismatched_input_hash():
     dataset, a = fixture_data()
     row = {

@@ -42,7 +42,10 @@ def test_production_prompt_is_byte_identical_to_live_production_builder():
     )
 
 
-@pytest.mark.parametrize("variant", candidates.CANDIDATE_ADDITIONS)
+@pytest.mark.parametrize(
+    "variant",
+    (*candidates.CANDIDATE_ADDITIONS, *candidates.CANDIDATE_REPLACEMENTS),
+)
 def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     payload = _dataset()["cases"][0]["input"]
     before = deepcopy(payload)
@@ -68,11 +71,12 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
     assert output["cases"] == 1
     assert output["by_symbol"] == {"BTC": 1}
     assert set(output["candidates"]) == {
-        "production", "materiality_first", "balanced_novelty", "trajectory_evidence"
+        "production", "materiality_first", "balanced_novelty",
+        "trajectory_evidence", "relative_displacement", "rebalanced_core",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 4
+    }) == 6
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None

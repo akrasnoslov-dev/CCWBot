@@ -50,6 +50,27 @@ CANDIDATE_ADDITIONS = {
         "recent count cnt may reduce novelty but does not erase a fresh, "
         "separately supported price event. No price, speed, or percentile cutoffs."
     ),
+    "relative_displacement": (
+        "Calibration protocol: begin with observed cw over w and pw, assessing "
+        "the CURRENT displacement relative to normal moves for this coin. "
+        "Do not demand an extraordinary headline, an invented catalyst or "
+        "continuous directional motion when the supplied current displacement "
+        "is itself clearly notable for this asset. A strong same-asset "
+        "percentile with a coherent sampled path supports materiality; the "
+        "direction of c24 cannot cancel it. Equally, an unremarkable tiny "
+        "current displacement cannot become material merely because c24 "
+        "points the other way, a short segment moves faster, or news arrived. "
+        "Examine actual s timestamps/prices before claiming a reversal, "
+        "speed-up or persistence; absent short-window measures do not "
+        "establish those patterns. Q2 novelty: prev may describe a specific "
+        "comparable earlier move; cnt only counts past events and does not "
+        "prove this move repeats them. Do not infer repetition from counts "
+        "alone. Accept new when the current material displacement is "
+        "distinct from any evidenced prior event; reject a mere extension "
+        "or replay of the same evidenced move. Lack of evidence for novelty "
+        "is not proof of new. Choose the reason only after these judgments. "
+        "No numeric cutoffs, automatic percentile gates or headline triggers."
+    ),
     "balanced_novelty": (
         "Calibration focus: keep Q1 materiality and Q2 novelty strictly separate. "
         "A demonstrably noteworthy present move may be material even if recent "
@@ -61,16 +82,66 @@ CANDIDATE_ADDITIONS = {
     ),
 }
 
+# Unlike additive pilots, this is a full, shorter replacement of the
+# over-conservative significance instructions. Still OFFLINE; never live.
+CANDIDATE_REPLACEMENTS = {
+    "rebalanced_core": "\n".join((
+        "Decide if the CURRENT price event deserves an interruption now. "
+        "Produce exactly one JSON object. Assess meaningful moves positively "
+        "when their evidence is strong; do not default to rejecting everything. "
+        "No fixed numeric cutoff or automatic percentile threshold.",
+        "Step 1 materiality: start from CURRENT cw over w and same-asset "
+        "30-day absolute-move percentile pw. Ask whether this net displacement "
+        "is genuinely noteworthy for this particular asset. A clearly unusual "
+        "current movement with a grounded sampled path can be material without "
+        "fresh news, proven acceleration, or perfect directional persistence. "
+        "Do not discard current-window evidence because c24 is old, c30/c60 "
+        "are missing or a partial bounce follows. Conversely, a small ordinary "
+        "cw stays routine even if the price direction flips against c24, "
+        "a headline is new, or a snapshot interval looks fast.",
+        "Step 2 novelty: if Q1 is material, compare the present path/move with "
+        "prev when comparable. cnt merely counts previous events, not their "
+        "contents: it cannot prove the current move is a duplicate. Label new "
+        "when a separately meaningful current displacement or demonstrated "
+        "change is not merely an evidenced continuation of the previous "
+        "event. If the same evidenced market path simply persists with no "
+        "new substantive development, label continuation/repeated. Unknown "
+        "prior evidence does not justify asserting a specific repetition. "
+        "If Q1 is not material, set novelty=unclear.",
+        "Step 3 should_alert=true only when materiality=material AND novelty=new. Choose "
+        "reason_code AFTER the decision. Positive reasons: unusual_move, "
+        "fast_move, reversal, trend_acceleration, market_news_alignment. "
+        "Negative reasons: routine_move, news_only, unclear. A news headline "
+        "cannot by itself trigger an alert or prove causality. No invented "
+        "speed, reversal, duration, price trend or market catalyst.",
+        "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};"
+        "s=[[min,USD],...],0=now,<0=older;cw=% over w;"
+        "pw,p24=30d same-asset abs-move percentiles,context not thresholds;"
+        "prev={min,f,cw};cnt={h6,h24};n<=2 {t,r,mat,h};"
+        ".042=.042%,not 4.2%; null=unknown.",
+        "Return exactly symbol,materiality,novelty,should_alert,"
+        "reason_code,confidence. symbol=sym. "
+        "materiality=material|routine|unclear;"
+        "novelty=new|continuation|repeated|unclear;"
+        "confidence=low|medium|high. "
+        "For true use material+new and a positive reason; for false "
+        "use routine/unclear or continuation/repeated and a negative reason. "
+        "sole-news=>false+news_only.",
+    )),
+}
+
 
 def candidate_prompt(input_payload: dict, candidate: str) -> str:
     if candidate == "production":
         return build_event_significance_prompt(input_payload)
-    if candidate not in CANDIDATE_ADDITIONS:
+    if candidate not in CANDIDATE_ADDITIONS and candidate not in CANDIDATE_REPLACEMENTS:
         raise ValueError(f"Unknown candidate: {candidate}")
     # Preserve production message shape and validation schema, changing only
     # short materiality/novelty guidance for an isolated counterfactual replay.
     instructions = (
-        _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
+        CANDIDATE_REPLACEMENTS[candidate]
+        if candidate in CANDIDATE_REPLACEMENTS
+        else _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
     )
     payload_json = _json_dumps(_event_significance_prompt_payload(input_payload))
     return f"{instructions}\nInput JSON:\n{payload_json}"
@@ -80,7 +151,7 @@ def offline_inventory(dataset: dict) -> dict:
     from scripts.event_alert_benchmark import digest
 
     cases = dataset["cases"]
-    variants = ("production", *CANDIDATE_ADDITIONS)
+    variants = ("production", *CANDIDATE_ADDITIONS, *CANDIDATE_REPLACEMENTS)
     results = {}
     for variant in variants:
         size = []

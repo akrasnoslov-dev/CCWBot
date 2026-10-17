@@ -93,7 +93,27 @@ def score(
                 "n": len(cases), "tp": sub["tp"], "fp": sub["fp"],
                 "fn": sub["fn"], "tn": sub["tn"],
             }
+    decisive_total = sum(
+        a_labels[case["id"]] in ("alert", "no_alert")
+        for case in dataset["cases"]
+    )
+    complete_reference = len(completed) == decisive_total
+    candidate_gates = {
+        name: (
+            complete_reference
+            and stats["precision"] is not None
+            and stats["precision"] >= 0.85
+            and stats["recall"] is not None
+            and stats["recall"] >= 0.90
+        )
+        for name, stats in results.items()
+        if name != "production"
+    }
     return {
+        "decisive_reference_cases": decisive_total,
+        "paired_cases_missing": decisive_total - len(completed),
+        "complete_paired_reference": complete_reference,
+        "candidate_significance_gates_met": candidate_gates,
         "frozen_cases": len(dataset["cases"]),
         "reference": "reviewer_A_owner_designated",
         "benchmark_sha256": dataset["dataset_sha256"],
