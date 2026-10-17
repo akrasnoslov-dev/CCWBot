@@ -230,3 +230,109 @@ async def test_transport_reuses_file_id_and_handles_valid_response(monkeypatch):
     assert requests[1]["files"] is None
     reused = json.loads(requests[1]["data"]["rich_message"])["media"][0]
     assert reused["media"]["media"] == "cached-ID"
+
+
+
+def test_event_alert_rich_layout_matches_mobile_preview_hierarchy():
+    html = alerts._build_event_alert_rich_html(
+        headline="BTC Event Alert — -0.25%",
+        metric_lines=[
+            "Price (now): $81,378.00",
+            "Since previous alert (6h ago): -0.40%",
+            "3h market move: -0.25%",
+        ],
+        situation="The move matches the 24-hour direction.",
+        related_section_html='<a href="https://example.org">Related source</a>',
+        possible_action="Observe the next snapshot.",
+    )
+    assert "<h2>🟠 BTC Event Alert — -0.25%</h2>" in html
+    assert "<p>💰 <b>Price (now): $81,378.00</b></p>" in html
+    assert "<p>🕒 <b>Since previous alert (6h ago): -0.40%</b></p>" in html
+    assert "<p>📉 <b>3h market move: -0.25%</b></p>" in html
+    assert "<h3>📌 Situation</h3>" in html
+    assert "<h3>📰 Related context</h3>" in html
+    assert "<h3>🔎 Possible action</h3>" in html
+    assert html.endswith("<footer>Not financial advice.</footer>")
+
+
+def test_rich_recipient_metric_is_replaced_not_duplicated_with_emoji_formatting():
+    payload = {
+        "plain_text": "SOL Event Alert — -0.19%\nPrice (now): $103.87\n"
+        "Since previous alert (1h ago): +3.00%\n3h market move: -0.19%",
+        "rich_html": alerts._build_event_alert_rich_html(
+            headline="SOL Event Alert — -0.19%",
+            metric_lines=[
+                "Price (now): $103.87",
+                "Since previous alert (1h ago): +3.00%",
+                "3h market move: -0.19%",
+            ],
+            situation="Observed short-term movement.",
+            related_section_html=None,
+            possible_action="Watch the next observed interval.",
+        ),
+    }
+    prior = SimpleNamespace(
+        numeric_context=json.dumps({"current_price": 100}),
+        alert_type=alerts.EVENT_ALERT_TYPE,
+        sent_at=AT - timedelta(hours=6),
+    )
+    actual = alerts._event_alert_for_recipient(
+        payload, previous_alert=prior, current_price=103.87, as_of=AT,
+    )["rich_html"]
+    assert "Since previous alert (6h ago): +3.87%" in actual
+    assert "Since previous alert (1h ago)" not in actual
+    assert actual.count("Since previous alert") == 1
+    assert "🕒" in actual
+    no_prior = alerts._event_alert_for_recipient(
+        payload, previous_alert=None, current_price=103.87, as_of=AT,
+    )["rich_html"]
+    assert "Since previous alert" not in no_prior
+
+
+def test_heartbeat_uses_one_rich_message_template_and_styled_html_fallback():
+    heartbeat = SimpleNamespace(
+        symbol="SOL",
+        title="Calm market update",
+        message_body="Price remains near the observed range.",
+        possible_action="Monitor the next short interval.",
+    )
+    payload = alerts._build_market_heartbeat_payload(
+        heartbeat=heartbeat,
+        current_price=103.87,
+        change_since_last_message=0.54,
+        change_24h=-0.8,
+        related_news=[],
+    )
+    html = payload["rich_html"]
+    assert "<h2>🟣 📡 SOL Market Heartbeat</h2>" in html
+    assert "<p>💰 <b>Price: $103.87</b></p>" in html
+    assert "<p>🕒 <b>Since last SOL message: +0.54%</b></p>" in html
+    assert "<p>📉 <b>24h change: -0.80%</b></p>" in html
+    assert "__CCWBOT_CHART_BLOCK__" in html
+    assert "<h3>📌 Situation</h3>" in html
+    assert "<h3>🔎 Possible action</h3>" in html
+    assert html.endswith("<footer>Not financial advice.</footer>")
+    assert "<b>📡 SOL Market Heartbeat</b>" in payload["html_text"]
+    assert "Not financial advice." in payload["plain_text"]
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_uses_existing_shared_price_snapshot_chart(monkeypatch):
+    calls = {"db": 0}
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+    async def read_snapshots(*args, **kwargs):
+        calls["db"] += 1
+        return _observations()
+    monkeypatch.setattr(alerts, "DB_ENABLED", True)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", FakeSession)
+    monkeypatch.setattr(alerts, "get_price_snapshots_since", read_snapshots)
+    payload = {"rich_html": "__CCWBOT_CHART_BLOCK__"}
+    await alerts._prepare_event_alert_chart(payload, symbol="SOL", as_of=AT)
+    assert calls["db"] == 1
+    assert payload["chart_png"].startswith(b"\x89PNG")
+    assert "📈 Last 24 hours" in payload["rich_html"]
+    assert "tg://photo?id=chart" in payload["rich_html"]
