@@ -404,6 +404,54 @@ def test_records_export_private_decisions_not_raw_prompts(tmp_path):
 
 
 
+def test_rate_limit_dimension_only_records_safe_classification():
+    from types import SimpleNamespace
+
+    example = SimpleNamespace(body={
+        "error": {"message": (
+            "Rate limit reached for model in organization org_example "
+            "on tokens per day (TPD): Limit 200000, Used 200000."
+        )}
+    })
+    assert live.classified_rate_limit_dimension(example) == "tokens_per_day"
+    for phrase, expected in (
+        ("output tokens per minute (OTPM)", "output_tokens_per_minute"),
+        ("input tokens per minute (ITPM)", "input_tokens_per_minute"),
+        ("tokens per minute (TPM)", "tokens_per_minute"),
+        ("requests per day (RPD)", "requests_per_day"),
+        ("requests per minute (RPM)", "requests_per_minute"),
+    ):
+        assert live.classified_rate_limit_dimension(
+            SimpleNamespace(body={"message": "limit on " + phrase})
+        ) == expected
+    assert live.classified_rate_limit_dimension(
+        SimpleNamespace(body={"message": "organization org_private api_key"})
+    ) is None
+
+
+def test_rate_limit_quota_counters_are_strictly_allowlisted():
+    source = {
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-limit-tokens": "8000",
+        "x-ratelimit-remaining-tokens": "491",
+        "authorization": "hidden-value",
+        "x-ratelimit-reset-tokens": "9s",
+    }
+    result = live.numeric_rate_limit_headers(source)
+    assert result == {
+        "rate_limit_daily_requests": 1000,
+        "rate_limit_remaining_requests": 0,
+        "rate_limit_minute_tokens": 8000,
+        "rate_limit_remaining_tokens": 491,
+    }
+    assert live.numeric_rate_limit_headers({
+        "x-ratelimit-remaining-tokens": "-1",
+        "x-ratelimit-limit-requests": "9" * 24,
+    }) == {}
+    assert live.numeric_rate_limit_headers(None) == {}
+
+
 def test_explicit_rate_limit_retry_keeps_one_case_and_counts_both_calls():
     dataset, _ = fixture_data()
     case = dataset["cases"][0]

@@ -566,6 +566,50 @@ restarts; it does not force a new request while the provider's time
 window remains active. No replay is run by this documentation.
 PR2 remains Draft, with no merge/deploy.
 
+### Rate-limit diagnostic improvement (2026-10-18 late)
+
+A fresh explicitly approved replay of `market_signal_path` after the
+previous 598-second backoff returned **HTTP 429 immediately**:
+**224/600** cumulative attempts, **no additional validated decision**.
+The new backoff was **257 seconds**. The corresponding strict-schema
+candidate still has **4/153** decisive results. No quality claim is made.
+
+Groq's official rate-limit documentation specifies distinct request
+counts per day and token counts per minute. The benchmark now records
+ONLY allowlisted numeric quota headers, when the provider supplies them:
+`rate_limit_daily_requests`, `rate_limit_remaining_requests`,
+`rate_limit_minute_tokens`, and `rate_limit_remaining_tokens`.
+This can distinguish exhausted daily-request capacity from per-minute
+token pressure in **future** failures without saving arbitrary
+headers, response bodies, tokens or account identifiers. Previous
+HTTP 429 records do not have these headers; their exact limiting
+dimension remains unknown. Continue to respect `Retry-After` and
+never force rapid retries into the production-shared free-tier quota.
+
+### Follow-up rate-limit evidence and safe classification (2026-10-18)
+
+The next explicitly approved replay after the provider-specified wait
+produced one schema-valid `market_signal_path` positive (BTC,
+correctly identified against reviewer A), then HTTP 429 again.
+The merged ledger reached **226/600** requests, with five valid
+`market_signal_path` responses (TP=1, FP=0, FN=0, TN=4) on the
+deliberately selected prefix; **148 decisive cases remain**, so
+the significance quality gate is still open.
+
+The 429 included `Retry-After: 541 seconds`. Groq's numeric
+rate-limit headers reported 999/1000 daily requests remaining and
+8000/8000 minute tokens remaining. Therefore those two reported
+counters were not exhausted; they do **not** reveal which *other*
+provider limit caused the 429. The offline runner now also safely
+classifies the provider's structured error message into one of the
+allowlisted rate-limit dimensions (TPD, TPM, RPD, RPM, ITPM, OTPM),
+when explicitly present. Raw error messages, organization IDs and
+provider headers are never persisted. The new classification
+will only apply to subsequent attempts; existing stored errors
+cannot be retroactively diagnosed. Do not force another request
+before the recorded retry interval or assume this account is
+eligible for paid service tiers.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |

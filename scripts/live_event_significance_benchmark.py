@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -228,6 +229,51 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def classified_rate_limit_dimension(exc: Exception) -> str | None:
+    """Classify the 429 body without ever persisting raw messages or organization IDs."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        detail = body.get("error", body)
+        message = detail.get("message", "") if isinstance(detail, dict) else ""
+    else:
+        message = ""
+    if not isinstance(message, str):
+        return None
+    patterns = (
+        ("output_tokens_per_minute", r"\b(?:OTPM|output tokens per minute)\b"),
+        ("input_tokens_per_minute", r"\b(?:ITPM|input tokens per minute)\b"),
+        ("tokens_per_day", r"\b(?:TPD|tokens per day)\b"),
+        ("tokens_per_minute", r"\b(?:TPM|tokens per minute)\b"),
+        ("requests_per_day", r"\b(?:RPD|requests per day)\b"),
+        ("requests_per_minute", r"\b(?:RPM|requests per minute)\b"),
+    )
+    for dimension, pattern in patterns:
+        if re.search(pattern, message, flags=re.IGNORECASE):
+            return dimension
+    return None
+
+
+def numeric_rate_limit_headers(headers: object) -> dict:
+    """Only allowlisted quota counters; never store arbitrary provider headers."""
+    if headers is None or not hasattr(headers, "get"):
+        return {}
+    mapping = {
+        "x-ratelimit-limit-requests": "rate_limit_daily_requests",
+        "x-ratelimit-remaining-requests": "rate_limit_remaining_requests",
+        "x-ratelimit-limit-tokens": "rate_limit_minute_tokens",
+        "x-ratelimit-remaining-tokens": "rate_limit_remaining_tokens",
+    }
+    counters = {}
+    for http_name, field_name in mapping.items():
+        raw = headers.get(http_name)
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value.isascii() and value.isdecimal() and len(value) <= 12:
+            counters[field_name] = int(value)
+    return counters
+
+
 def remaining_rate_limit_backoff(
     state: dict, *, now: datetime | None = None,
 ) -> float:
@@ -421,6 +467,10 @@ async def replay(
                     if http_status == 429:
                         result["rate_limit_at_utc"] = datetime.now(timezone.utc).isoformat()
                         headers = getattr(getattr(exc, "response", None), "headers", None)
+                        result.update(numeric_rate_limit_headers(headers))
+                        dimension = classified_rate_limit_dimension(exc)
+                        if dimension:
+                            result["rate_limit_dimension"] = dimension
                         retry_after = headers.get("retry-after") if headers else None
                         try:
                             if retry_after is not None:
