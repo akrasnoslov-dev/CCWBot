@@ -509,7 +509,11 @@ async def _send_report_message(target, report_type: str) -> None:
             except RuntimeError:
                 bot = None
         token = getattr(bot, "token", None)
-        if chat_id is not None and isinstance(token, str) and token:
+        if not token or chat_id is None:
+            # Preserve the legacy behavior for unbound/test targets.
+            await target.reply_text(str(message))
+            return
+        if isinstance(token, str) and token:
             # Imported at send time to avoid a reports/handlers import cycle.
             from bot.handlers.transient import register_rich_reply, rich_reply_markup
 
