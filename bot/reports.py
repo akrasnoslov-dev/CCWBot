@@ -618,7 +618,12 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
     market_data = await get_report_market_data_batch(symbols)
     if not _has_usable_market_data(market_data):
         raise MarketReportDataUnavailable("market data unavailable")
-    news_payload, news_items = await fetch_report_news_context(symbols, prefer_unseen=True)
+    news_payload, news_items = await fetch_report_news_context(
+        symbols,
+        prefer_unseen=True,
+        max_age_hours=168 if report_type == "weekly" else 24,
+        now=generated_at,
+    )
     market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
     coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
     news_fallback = news_payload.get("fallback") if isinstance(news_payload, dict) else ""
