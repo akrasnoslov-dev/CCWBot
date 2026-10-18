@@ -7,11 +7,20 @@ import time
 from datetime import timedelta
 from typing import Any
 
+from telegram.constants import ParseMode
+from telegram.error import BadRequest
+
 from bot.alerting.market_report import (
     MarketReportDecision,
     MarketReportValidationError,
     validate_market_report_output,
 )
+from bot.alerting.market_report_rich import (
+    format_html_market_report,
+    format_rich_market_report,
+    market_report_change_chart,
+)
+from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.db.database import (
     MarketReport,
     get_latest_market_report,
@@ -481,7 +490,59 @@ async def _send_report_message(target, report_type: str) -> None:
     if isinstance(report, dict):
         message = report.get("telegram_message")
     if message:
-        await target.reply_text(str(message))
+        # The cache stays the canonical sanitized content. Presentation uses
+        # only that content and its persisted input, with no external lookups.
+        input_json = (
+            report.get("raw_input_json")
+            if isinstance(report, dict)
+            else getattr(report, "raw_input_json", None)
+        )
+        chart_png = market_report_change_chart(input_json, report_type=report_type)
+        rich_html = format_rich_market_report(
+            str(message), report_type=report_type, chart_available=chart_png is not None,
+        )
+        bot = None
+        get_bot = getattr(target, "get_bot", None)
+        if callable(get_bot):
+            try:
+                bot = get_bot()
+            except RuntimeError:
+                bot = None
+        token = getattr(bot, "token", None)
+        if not token or chat_id is None:
+            # Preserve the legacy behavior for unbound/test targets.
+            await target.reply_text(str(message))
+            return
+        if isinstance(token, str) and token:
+            # Imported at send time to avoid a reports/handlers import cycle.
+            from bot.handlers.transient import register_rich_reply, rich_reply_markup
+
+            try:
+                await send_rich_event_alert(
+                    bot_token=token,
+                    chat_id=chat_id,
+                    rich_html=rich_html,
+                    chart_png=chart_png,
+                    reply_markup=rich_reply_markup(chat_id),
+                    on_message_id=lambda mid: register_rich_reply(chat_id, mid),
+                )
+                return
+            except BadRequest:
+                # Only an explicit Telegram rejection permits a different send.
+                pass
+            except RichDeliveryUncertain:
+                # The message may already exist. Never send a duplicate.
+                logger.warning(
+                    "ops_event=market_report_rich_ack_unknown report_type=%s",
+                    report_type,
+                )
+                return
+
+        html = format_html_market_report(str(message), report_type=report_type)
+        try:
+            await target.reply_text(html, parse_mode=ParseMode.HTML)
+        except BadRequest:
+            await target.reply_text(str(message))
         return
 
     await target.reply_text(REPORT_UNAVAILABLE_MESSAGES[report_type])

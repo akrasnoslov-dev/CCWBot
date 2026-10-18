@@ -341,10 +341,14 @@ failed requests, and skipped decisions separately. Event Alert Render stays
 model-aware; provider model IDs outside its allowlist remain hidden.
 Full-provider failures use ❌, partially successful real requests use ⚠️,
 no-request backoff groups use ⏭️, and healthy groups use ✅. Sample-limited
-logical `unknown` with no failures or evidence gaps may use a neutral
-informational icon, but remains `unknown` (not `ok`). This is a display
-distinction only; active-limit details, underlying final outcomes and
-System Status eligibility are unchanged.
+logical `unknown` with no failures or evidence gaps is displayed as
+`all observed successful (limited evidence)`; any observed terminal failure is
+displayed as `observed failures (limited evidence)` regardless of sample size.
+High-frequency operations show samples against the 20-operation confidence gate;
+weekly reports explicitly state that the 24-hour window is low-frequency.
+The internal state stays `unknown` until the existing evidence gate is met;
+there is no false `ok`, no hidden terminal failure, and no change to System Status
+eligibility or active-limit reporting.
 
 Current limitations:
 
