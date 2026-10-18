@@ -333,12 +333,18 @@ Overall: ⚠️ Needs attention
 Admin -> LLM diagnostics starts with 24-hour final logical outcomes by call type
 (success, terminal failure, evidence gaps, and sample confidence), then shows provider attempts,
 rate limits, backoffs, circuit skips, schema failures, and active limits as a separate section. Provider attempts have their own 24-hour totals, list
-degraded call-type/provider groups before healthy groups, and show only non-zero failure categories
-for each degraded group. Event Alert Render is model-aware so the two Groq steps and external
-fallbacks remain distinguishable; model identifiers outside the allowlisted render chain are not
-printed. Fully failed groups use ❌, partially successful groups use ⚠️, and healthy
-groups use ✅. Mutually exclusive aggregate categories reconcile to total attempts and do not
-degrade System Status after a successful final feature outcome.
+actual provider failures before skipped/backoff-only groups, and show only non-zero
+failure categories in those rows. A logged backoff/circuit decision does not send a
+provider request and must never appear as a failed network request or as a red
+zero-success provider. Summary reports logged records, successful requests,
+failed requests, and skipped decisions separately. Event Alert Render stays
+model-aware; provider model IDs outside its allowlist remain hidden.
+Full-provider failures use ❌, partially successful real requests use ⚠️,
+no-request backoff groups use ⏭️, and healthy groups use ✅. Sample-limited
+logical `unknown` with no failures or evidence gaps may use a neutral
+informational icon, but remains `unknown` (not `ok`). This is a display
+distinction only; active-limit details, underlying final outcomes and
+System Status eligibility are unchanged.
 
 Current limitations:
 

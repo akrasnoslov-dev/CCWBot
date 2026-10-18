@@ -39,6 +39,16 @@ unchanged. An expired cache can leave manual requests temporarily unavailable
 until an eligible generation succeeds; a later provider success alone does not
 prove that requests during that gap succeeded.
 
+When every configured LLM report provider is exhausted by rate limits, backoff,
+timeouts, transport failures, or other router-recognized provider failures after
+usable source market data has been acquired, the same existing deterministic
+data-only report fallback used for invalid JSON is returned and cached. It is
+clearly attributed to the deterministic provider; no additional provider call
+or per-user work is made. Market-data collection failures, persistence failures,
+and unexpected program errors must still remain terminal failures rather than
+pretending success. A fallback is factual and intentionally less analytical than
+a normal validated LLM report.
+
 The report LLM returns structured JSON only. The bot does not trust an
 LLM-composed `telegram_message` for reports. Telegram text is assembled in code
 from validated fields and selected source-backed news items.

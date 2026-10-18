@@ -11,6 +11,7 @@ from telegram.error import BadRequest
 from bot import alerts
 from bot.alerting.event_chart import prepare_chart_points, render_price_chart
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
+from bot.coin_icons import build_coin_icon_html
 
 AT = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 
@@ -47,6 +48,39 @@ def test_chart_partial_data_is_labeled_and_no_short_day_fabrication():
     assert prepare_chart_points(_observations(duration_hours=24)[:-4], as_of=AT).png is None
     gap = [point for i, point in enumerate(_observations()) if not 30 <= i <= 45]
     assert prepare_chart_points(gap, as_of=AT).png is None
+
+
+
+def test_half_hour_persisted_samples_use_true_24h_axis_without_fabrication():
+    # Production persists samples approximately every 30m; the edge samples
+    # may lie inside the query window despite complete expected coverage.
+    points = [
+        SimpleNamespace(
+            checked_at=AT - timedelta(hours=24) + timedelta(minutes=30*i),
+            price=2400 + i * 0.1,
+        )
+        for i in range(1, 48)
+    ]
+    result = render_price_chart(points, as_of=AT, symbol="ETH")
+    assert result.label == "Last 24 hours"
+    assert result.png and result.png.startswith(b"\x89PNG")
+    assert result.points[0][0] == AT - timedelta(hours=23, minutes=30)
+    assert result.points[-1][0] == AT - timedelta(minutes=30)
+    # No synthetic boundary samples were inserted.
+    assert len(result.points) == 47
+
+
+def test_incomplete_24h_coverage_stays_labeled_partial():
+    points = [
+        SimpleNamespace(
+            checked_at=AT - timedelta(hours=23) + timedelta(minutes=30*i),
+            price=2400 + i * 0.1,
+        )
+        for i in range(46)
+    ]
+    result = prepare_chart_points(points, as_of=AT)
+    assert "available history" in result.label
+    assert result.label != "Last 24 hours"
 
 
 def test_metric_labels_correct_actual_windows_and_notification_type():
@@ -245,7 +279,8 @@ def test_event_alert_rich_layout_matches_mobile_preview_hierarchy():
         related_section_html='<a href="https://example.org">Related source</a>',
         possible_action="Observe the next snapshot.",
     )
-    assert "<h2>🟠 BTC Event Alert — -0.25%</h2>" in html
+    assert f"<h2>{build_coin_icon_html('BTC')} BTC Event Alert — -0.25%</h2>" in html
+    assert 'tg-emoji emoji-id=' in html
     assert "<p>💰 <b>Price (now): $81,378.00</b></p>" in html
     assert "<p>🕒 <b>Since previous alert (6h ago): -0.40%</b></p>" in html
     assert "<p>📉 <b>3h market move: -0.25%</b></p>" in html
@@ -304,7 +339,8 @@ def test_heartbeat_uses_one_rich_message_template_and_styled_html_fallback():
         related_news=[],
     )
     html = payload["rich_html"]
-    assert "<h2>🟣 📡 SOL Market Heartbeat</h2>" in html
+    assert f"<h2>{build_coin_icon_html('SOL')} 📡 SOL Market Heartbeat</h2>" in html
+    assert 'tg-emoji emoji-id=' in html
     assert "<p>💰 <b>Price: $103.87</b></p>" in html
     assert "<p>🕒 <b>Since last SOL message: +0.54%</b></p>" in html
     assert "<p>📉 <b>24h change: -0.80%</b></p>" in html

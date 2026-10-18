@@ -28,7 +28,10 @@ from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_REPORT_MODEL,
     AIInvalidJsonError,
+    AIProviderRateLimitError,
     AISchemaValidationError,
+    AllProvidersFailedError,
+    LLMRateLimitBackoffActive,
     ask_market_report_raw,
     classify_ai_error_reason,
     mark_llm_usage_log_status,
@@ -302,7 +305,17 @@ async def generate_report_cache(report_type: str) -> MarketReport | dict[str, An
             model=report_model,
             llm_operation_id=llm_operation_id,
         )
-    except (AIInvalidJsonError, AISchemaValidationError, MarketReportValidationError) as error:
+    except (
+        AIInvalidJsonError,
+        AISchemaValidationError,
+        MarketReportValidationError,
+        AIProviderRateLimitError,
+        LLMRateLimitBackoffActive,
+        AllProvidersFailedError,
+    ) as error:
+        # Market data and verified news have already been acquired. Reuse the
+        # existing data-only recovery for exhausted providers, not just bad JSON.
+        # Do not intercept data-provider, database, or unexpected program errors.
         if isinstance(error, (AISchemaValidationError, MarketReportValidationError)):
             # detail carries the sanitized validation reason (field names and kinds only,
             # never payload content) so recurring schema_error events stay diagnosable.
@@ -747,7 +760,7 @@ def _build_deterministic_report_decision(
         )
         themes = [
             "Tracked assets were reviewed from available price and news data.",
-            "Fallback report used deterministic market data because model output was malformed.",
+            "Fallback report used verified market data because AI analysis was unavailable.",
         ]
         return MarketReportDecision(
             report_type="weekly",
@@ -756,7 +769,7 @@ def _build_deterministic_report_decision(
             dashboard=dashboard or ["Tracked market data is temporarily limited."],
             coin_cards=coin_cards,
             market_catalysts=[],
-            why_it_matters="A data-only fallback avoids relying on malformed model output.",
+            why_it_matters="A data-only fallback avoids unsupported AI claims.",
             watch_next="Monitor whether next week's data confirms the current direction.",
             week_timeline=timeline or ["No strong tracked weekly catalyst in selected news"],
             themes=themes,
@@ -769,7 +782,7 @@ def _build_deterministic_report_decision(
         dashboard=dashboard or ["Tracked market data is temporarily limited."],
         coin_cards=coin_cards,
         market_catalysts=[],
-        why_it_matters="A data-only fallback avoids relying on malformed model output.",
+        why_it_matters="A data-only fallback avoids unsupported AI claims.",
         watch_next="Monitor whether the next update confirms or fades the current move.",
         week_timeline=[],
         themes=[],

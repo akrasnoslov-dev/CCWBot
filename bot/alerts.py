@@ -1569,7 +1569,7 @@ def _build_market_heartbeat_rich_html(
         if related_section_html else ""
     )
     return (
-        f"<h2>{coin_fallback_emoji(symbol)} 📡 {escape(symbol)} Market Heartbeat</h2>"
+        f"<h2>{build_coin_icon_html(symbol)} 📡 {escape(symbol)} Market Heartbeat</h2>"
         f"<p><i>{escape(title)}</i></p>"
         + "".join(_rich_metric_html(line) for line in metric_lines)
         + "__CCWBOT_CHART_BLOCK__"
@@ -1634,7 +1634,7 @@ def _build_event_alert_rich_html(
     )
     symbol = headline.split(" ", 1)[0]
     return (
-        f"<h2>{coin_fallback_emoji(symbol)} {escape(headline)}</h2>"
+        f"<h2>{build_coin_icon_html(symbol)} {escape(headline)}</h2>"
         f"{metrics}"
         "__CCWBOT_CHART_BLOCK__"
         f"<h3>📌 Situation</h3><p>{escape(situation)}</p>"
