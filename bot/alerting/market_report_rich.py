@@ -61,6 +61,8 @@ def compact_report_for_display(plain_text: str, *, report_type: str) -> str:
     """Preserve unique facts/URLs while filtering redundant legacy sections."""
     if report_type not in _DISPLAY_SECTIONS:
         raise ValueError("Unsupported market report type")
+    if not plain_text.strip().startswith(_TITLES[report_type]):
+        return plain_text
     output: list[str] = []
     seen_urls: set[str] = set()
     for chunk in plain_text.split("\n\n"):
