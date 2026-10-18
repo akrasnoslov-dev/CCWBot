@@ -287,10 +287,12 @@ def _source_path(value) -> list[int]:
     return [_SPARK_BUCKETS.index(glyph) for glyph in glyphs]
 
 
-def _draw_daily_chart(draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]) -> None:
-    width, height = 1040, 510
-    title, row_font = _font(39), _font(28)
-    small, axis_font, number_font = _font(20), _font(18), _font(29)
+def _draw_daily_chart(
+    draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]
+) -> None:
+    width = 1040
+    title, row_font = _font(43), _font(30)
+    small, axis_font, number_font = _font(21), _font(19), _font(30)
     draw.text((36, 22), "24h Performance", font=title, fill=_CHART_TEXT)
     draw.text((37, 78), "Verified price changes  |  Four tracked assets  |  USD market data",
               font=small, fill=_CHART_MUTED)
@@ -298,7 +300,7 @@ def _draw_daily_chart(draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | N
     values = [(symbol, value) for symbol, value, _ in rows if value is not None]
     top = max(values, key=lambda item: item[1])[0] if len(values) > 1 else None
     bottom = min(values, key=lambda item: item[1])[0] if len(values) > 1 else None
-    if values and values[0][1] == max(value for _, value in values) == min(value for _, value in values):
+    if values and max(value for _, value in values) == min(value for _, value in values):
         top = bottom = None
 
     left, zero, right = 278, 566, 854
@@ -340,11 +342,13 @@ def _draw_daily_chart(draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | N
         bbox = draw.textbbox((0, 0), text, font=axis_font)
         draw.text((position - (bbox[2] - bbox[0]) / 2, 430), text,
                   font=axis_font, fill=_CHART_MUTED)
-    draw.text((37, 474), "Bar length = percentage change from 0%  ·  Missing returns are not plotted",
+    draw.text((37, 474), "Bar length = change from 0%  ·  Missing returns are not plotted",
               font=small, fill=_CHART_MUTED)
 
 
-def _draw_weekly_chart(draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]) -> None:
+def _draw_weekly_chart(
+    draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]
+) -> None:
     width = 1040
     draw.text((36, 20), "7d Performance", font=_font(39), fill=_CHART_TEXT)
     draw.text((38, 77), "Weekly returns and source-backed relative paths",
@@ -360,14 +364,14 @@ def _draw_weekly_chart(draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | 
         )
         draw.rounded_rectangle((26, y, width - 26, y + 91), radius=16, fill=_CHART_PANEL)
         draw.rounded_rectangle((37, y + 20, 43, y + 71), radius=3, fill=color)
-        draw.text((56, y + 17), symbol, font=_font(31), fill=_CHART_TEXT)
+        draw.text((56, y + 15), symbol, font=_font(34), fill=_CHART_TEXT)
         draw.text((56, y + 60), _COIN_NAMES[symbol], font=_font(17), fill=_CHART_MUTED)
         if change is None:
             draw.text((277, y + 22), "No verified return", font=_font(22), fill=_CHART_MUTED)
             draw.text((590, y + 38), "7d path unavailable", font=_font(19), fill=_CHART_MUTED)
             continue
         draw.text((277, y + 13), _percent_label(change),
-                  font=_font(33) if len(_percent_label(change)) <= 8 else _font(24),
+                  font=_font(38) if len(_percent_label(change)) <= 8 else _font(25),
                   fill=color)
         range_text = _range_label(coin.get("range_position"))
         if range_text:
