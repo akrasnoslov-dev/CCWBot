@@ -1274,3 +1274,40 @@ async def test_legacy_persisted_cadence_is_normalized_for_status_freshness():
         assert health.status == system_status.ComponentStatus.OK
     finally:
         await engine.dispose()
+
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown():
+    from bot.db.database import MarketReport
+
+    now = _now()
+    engine, factory = await build_session_factory()
+    try:
+        async with factory() as session:
+            session.add(_event_analysis(
+                status="success", created_at=now - timedelta(minutes=5),
+                analysis_id="small-success",
+            ))
+            session.add_all([
+                MarketReport(
+                    report_type="weekly", status=status,
+                    generated_at=now - timedelta(minutes=10 + i),
+                    created_at=now - timedelta(minutes=10 + i),
+                    expires_at=now + timedelta(hours=1),
+                    telegram_message="Report" if status == "completed" else None,
+                )
+                for i, status in enumerate(("completed", "failed"))
+            ])
+            await session.commit()
+        rendered = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=factory, now=now,
+        )
+        assert "Event Analysis — all observed successful (limited evidence):" in rendered
+        assert "1/20 samples for reliability assessment" in rendered
+        assert "Weekly report — observed failures (limited evidence):" in rendered
+        assert "1 success, 1 terminal failed" in rendered
+        assert "low-frequency schedule, confidence not established" in rendered
+        assert "Weekly report — ok:" not in rendered
+    finally:
+        await engine.dispose()

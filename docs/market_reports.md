@@ -94,6 +94,25 @@ Next week in focus
 Not financial advice.
 ```
 
+Native Telegram Rich presentation of either report is built **only** from the
+cached, already-sanitized report text and `raw_input_json`. It preserves the
+distinct Daily and Weekly sections above, using headings, Custom Emoji for coin
+rows, clickable verified source links, and **one inline comparative PNG**.
+The Daily chart shows the per-coin **24h percentage change** and Weekly shows
+**7d percentage change**, using existing verified market inputs. These are
+comparative bars, not invented time-series paths. Missing data stays omitted;
+if no changes are available, a short chart-unavailable explanation replaces
+the image. No new provider/LLM/news calls are made on report requests.
+
+Native `sendRichMessage` returns one message receipt. Manual command and
+callback replies must remain registered in the existing transient-session
+Close/next-command cleanup; normal PTB HTML (then plain text) is the fallback
+only after a **definite Rich rejection**. Uncertain Rich acceptance must not
+trigger a duplicate message. Cache data, scheduled generation, freshness,
+premium access, legacy plaintext and report JSON semantics are unchanged.
+Telegram Desktop/iOS/Android appearance requires a private smoke test; CI
+verifies only the transport formatting contract.
+
 The LLM supplies concise structured fields such as `market_pulse`,
 `dashboard`, `coin_cards`, `market_catalysts`, `week_timeline`, `themes`, and
 `next_week_focus`. `week_timeline` and `themes` are short string lists. Price

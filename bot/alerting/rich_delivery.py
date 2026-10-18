@@ -7,6 +7,7 @@ Telegram has no per-send idempotency key.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import httpx
 from telegram.error import BadRequest, Forbidden, RetryAfter
@@ -46,6 +47,8 @@ async def send_rich_event_alert(
     rich_html: str,
     chart_png: bytes | None,
     chart_file_id: str | None = None,
+    reply_markup: dict | None = None,
+    on_message_id: Callable[[int], None] | None = None,
 ) -> str | None:
     """Send one rich message; reuse Telegram photo file_id when the API returns one.
 
@@ -66,6 +69,8 @@ async def send_rich_event_alert(
         "chat_id": str(chat_id),
         "rich_message": json.dumps(content, ensure_ascii=False),
     }
+    if reply_markup is not None:
+        request_data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
@@ -87,6 +92,12 @@ async def send_rich_event_alert(
         # A valid Telegram success response is proof of completion.
         if not isinstance(payload.get("result"), dict):
             raise RichDeliveryUncertain("Rich delivery response lacks receipt")
+        if on_message_id is not None:
+            message_id = payload["result"].get("message_id")
+            if not isinstance(message_id, int):
+                # Telegram may have sent it; never retry a missing receipt.
+                raise RichDeliveryUncertain("Rich delivery lacks message identity")
+            on_message_id(message_id)
         return _returned_photo_file_id(payload["result"]) or chart_file_id
 
     code = payload.get("error_code")

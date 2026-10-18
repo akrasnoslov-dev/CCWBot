@@ -97,6 +97,18 @@ def _tracking(chat_id, message_id=None):
     return active
 
 
+def rich_reply_markup(chat_id) -> dict | None:
+    """Manual rich sends bypass PTB's normal send_message override."""
+    return with_close_button(None).to_dict() if _tracking(chat_id) else None
+
+
+def register_rich_reply(chat_id, message_id: int) -> None:
+    """Track acknowledged rich output for Close and next-command cleanup."""
+    active = _tracking(chat_id)
+    if active:
+        sessions.add(active[0], active[1], message_id)
+
+
 class TransientBot(ExtBot):
     """Intercept only messages sent in the scope of a manual command/callback."""
 
