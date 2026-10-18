@@ -633,9 +633,15 @@ async def build_admin_llm_diagnostics_text(
 
     issues = [row for row in rows if row[3]["success"] < row[3]["attempts"]]
     healthy = [row for row in rows if row[3]["success"] == row[3]["attempts"]]
+    # A backoff/circuit skip never sent a provider request. Put actual errors
+    # first; repeated skips are supporting availability context, not outages.
     issues.sort(
         key=lambda row: (
-            row[3]["success"] / max(row[3]["attempts"], 1),
+            (row[3]["attempts"] - row[3]["backoff"] - row[3]["circuit"])
+            == row[3]["success"],
+            row[3]["success"] / max(
+                row[3]["attempts"] - row[3]["backoff"] - row[3]["circuit"], 1
+            ),
             row[0],
             row[1],
             row[2],
@@ -650,7 +656,8 @@ async def build_admin_llm_diagnostics_text(
 
     total_attempts = sum(row[3]["attempts"] for row in rows)
     total_success = sum(row[3]["success"] for row in rows)
-    total_failed = total_attempts - total_success
+    total_skipped = sum(row[3]["backoff"] + row[3]["circuit"] for row in rows)
+    total_failed = total_attempts - total_success - total_skipped
 
     active = []
     for backoff in get_active_llm_rate_limit_backoffs(now=now):
@@ -683,6 +690,13 @@ async def build_admin_llm_diagnostics_text(
             lines.append("⚠️ Unknown — no logical operations observed")
         for item in visible:
             icon = {"ok": "✅", "degraded": "⚠️", "failed": "❌", "unknown": "⚠️"}[item.state]
+            if (
+                item.state == "unknown"
+                and item.terminal_failures == 0
+                and item.missing_outcomes == 0
+                and item.unknown_outcomes == 0
+            ):
+                icon = "ℹ️"  # Low sample, not a confirmed failure.
             label = _llm_call_type_label(item.call_type)
             percent = (f"{item.success_rate_percent:.1f}%" if
                        item.success_rate_percent is not None else "n/a")
@@ -701,26 +715,30 @@ async def build_admin_llm_diagnostics_text(
     if not rows:
         lines.extend(("", "No provider attempts recorded."))
     else:
-        attempt_label = "attempt" if total_attempts == 1 else "attempts"
-        failed_icon = "⚠️" if total_failed else "✅"
+        record_unit = "record" if total_attempts == 1 else "records"
+        success_unit = "request" if total_success == 1 else "requests"
+        failure_unit = "request" if total_failed == 1 else "requests"
         lines.extend(
             (
                 "",
-                f"Total: {total_attempts} {attempt_label}",
-                f"✅ {total_success} successful",
-                f"{failed_icon} {total_failed} failed / limited",
+                f"Total: {total_attempts} provider {record_unit}",
+                f"✅ {total_success} successful {success_unit}",
+                f"{'⚠️' if total_failed else '✅'} {total_failed} failed {failure_unit}",
+                f"⏭️ {total_skipped} skipped without request (backoff/circuit)",
             )
         )
 
         if visible_issues:
             lines.extend(("", "Issues"))
             for call_type, provider, model, counters in visible_issues:
-                icon = "❌" if counters["success"] == 0 else "⚠️"
+                requested = counters["attempts"] - counters["backoff"] - counters["circuit"]
+                icon = "⏭️" if requested == 0 else ("❌" if counters["success"] == 0 else "⚠️")
                 endpoint = f"{provider} · {model}" if model else provider
-                lines.append(
-                    f"{icon} {call_type} / {endpoint} — "
-                    f"{counters['success']}/{counters['attempts']} success"
+                outcome = (
+                    f"{counters['success']}/{requested} requests succeeded"
+                    if requested else "no request sent"
                 )
+                lines.append(f"{icon} {call_type} / {endpoint} — {outcome}")
                 detail = _llm_failure_summary(counters)
                 if detail:
                     lines.append(f"   {detail}")
@@ -739,7 +757,10 @@ async def build_admin_llm_diagnostics_text(
 
     if active:
         lines.extend(("", "Active limits", *active))
-    lines.extend(("", "Provider errors can recover; attempts are not logical failures."))
+    lines.extend((
+        "",
+        "Skips are not provider requests; a failed request may recover via fallback.",
+    ))
     return "\n".join(lines)
 
 

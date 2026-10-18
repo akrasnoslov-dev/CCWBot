@@ -493,7 +493,7 @@ async def test_system_status_rate_limit_recent_telemetry_without_backoff():
             now=now,
         )
 
-        assert "❌ Event Analysis / groq — 0/1 success" in text
+        assert "❌ Event Analysis / groq — 0/1 requests succeeded" in text
         assert "1 rate-limit" in text
     finally:
         await engine.dispose()
@@ -971,11 +971,12 @@ async def test_system_status_shows_per_call_type_provider_llm_breakdown():
         )
 
         assert "Summary" in text
-        assert "Total: 8 attempts" in text
-        assert "✅ 3 successful" in text
-        assert "⚠️ 5 failed / limited" in text
+        assert "Total: 8 provider records" in text
+        assert "✅ 3 successful requests" in text
+        assert "⚠️ 3 failed requests" in text
+        assert "⏭️ 2 skipped without request" in text
         assert "Issues" in text
-        assert "⚠️ Event Analysis / groq — 2/7 success" in text
+        assert "⚠️ Event Analysis / groq — 2/5 requests succeeded" in text
         assert "1 rate-limit, 1 backoff, 1 circuit, 1 schema/JSON, 1 provider/network" in text
         assert "Healthy" in text
         assert text.index("Issues") < text.index("Healthy")
@@ -987,6 +988,35 @@ async def test_system_status_shows_per_call_type_provider_llm_breakdown():
         assert "0 provider/network" not in text
         # Provider with only stale (>24h) usage is not surfaced.
         assert "/ mistral" not in text
+    finally:
+        await engine.dispose()
+
+
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            session.add(
+                LlmUsageLog(
+                    provider="gemini", model="quota-exhausted",
+                    call_type="weekly_report", status="skipped_due_to_rate_limit",
+                    error_reason="rate_limit_backoff_active",
+                    created_at=now - timedelta(minutes=2),
+                )
+            )
+            await session.commit()
+        text = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=session_local, now=now,
+        )
+        assert "Total: 1 provider record" in text
+        assert "✅ 0 failed requests" in text
+        assert "⏭️ 1 skipped without request" in text
+        assert "⏭️ Weekly report / gemini — no request sent" in text
+        assert "❌ Weekly report / gemini" not in text
     finally:
         await engine.dispose()
 
@@ -1027,7 +1057,7 @@ async def test_llm_diagnostics_separates_event_render_models():
             now=now,
         )
 
-        assert "Event Alert Render / groq · GPT-OSS 120B — 0/1 success" in text
+        assert "Event Alert Render / groq · GPT-OSS 120B — 0/1 requests succeeded" in text
         assert "Event Alert Render / groq · Qwen 3.8 27B — 1/1" in text
         assert "Event Alert Render / cloudflare · Llama 3.3 70B — 1/1" in text
         assert "Other LLM" not in text
@@ -1062,7 +1092,7 @@ async def test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaki
             now=now,
         )
 
-        assert "Event Alert Render / groq · custom model 1 — 0/1 success" in text
+        assert "Event Alert Render / groq · custom model 1 — 0/1 requests succeeded" in text
         assert "Event Alert Render / groq · custom model 2 — 1/1" in text
         assert "alpha-secret-model" not in text
         assert "beta-secret-model" not in text
@@ -1134,7 +1164,7 @@ async def test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details(
             db_enabled=True, session_factory=session_local, now=now
         )
 
-        assert "6 attempts" in text
+        assert "6 provider records" in text
         assert "1 success" in text
         assert "1 rate-limit" in text
         assert "1 backoff" in text
