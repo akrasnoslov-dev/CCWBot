@@ -387,7 +387,7 @@ async def test_daily_report_accepts_strategy_wording(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
+async def test_weekly_report_backend_has_one_7d_scoreboard_without_sparkline_text(monkeypatch):
     engine, session_local = await build_session_factory()
     try:
         monkeypatch.setattr(reports, "DB_ENABLED", True)
@@ -421,18 +421,17 @@ async def test_weekly_report_backend_coin_rows_include_7d_and_24h(monkeypatch):
         report = await reports.get_or_generate_report("weekly")
 
         assert report.status == "completed"
-        assert "• BTC: $77,361, 7d -3.2%, 24h -0.4%" in report.telegram_message
-        assert "mid weekly range" in report.telegram_message
-        assert "• ETH: $2,127.86, 7d unavailable from provider, 24h -0.2%" in (
-            report.telegram_message
-        )
-        assert "• GRAM: $3.12, 7d +1.4%, 24h not enough data yet" in report.telegram_message
-        assert "• SOL: $142.35, 7d -4.6%, 24h +0.7%" in report.telegram_message
+        assert "• BTC: $77,361, 7d -3.2%" in report.telegram_message
+        assert "• ETH: $2,127.86, 7d unavailable from provider" in report.telegram_message
+        assert "• GRAM: $3.12, 7d +1.4%" in report.telegram_message
+        assert "• SOL: $142.35, 7d -4.6%" in report.telegram_message
         assert "Market breadth:" in report.telegram_message
         assert "1/3 tracked assets are positive over 7d" in report.telegram_message
-        assert "Week timeline:" in report.telegram_message
-        assert "BTC: week opened near $76,000" in report.telegram_message
-        assert "ETH: 7d path unavailable from provider" in report.telegram_message
+        assert "Week timeline:" not in report.telegram_message
+        assert "Themes of the week:" not in report.telegram_message
+        assert "Coin-specific recap:" not in report.telegram_message
+        assert "▆" not in report.telegram_message
+        assert "24h " not in report.telegram_message
         assert report.telegram_message.endswith("Not financial advice.")
     finally:
         await engine.dispose()
@@ -750,26 +749,20 @@ def test_daily_report_message_exact_render_includes_catalysts_and_news_links():
 
     assert message == (
         "📊 Daily Market Report\n\n"
-        "Market pulse:\n"
-        "Tracked assets are mixed.\n\n"
-        "Dashboard:\n"
-        "• BTC is steady.\n"
-        "• ETH is mixed.\n\n"
+        "Market pulse:\nTracked assets are mixed.\n\n"
         "Tracked assets:\n"
         "• BTC: $77,361, 24h -0.4%\n"
         "• ETH: $2,127.86, 24h not enough data yet\n\n"
-        "What moved today:\n"
-        "• BTC is steady.\n"
-        "• ETH is mixed.\n"
-        "• BTC 24h volume stayed elevated.\n"
-        "• Confirmation matters more than speed.\n\n"
         "Coin-specific news:\n"
         "• Crypto market liquidity improves (CoinDesk) https://example.com/market\n"
-        "• ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth\n\n"
-        "What to watch next:\n"
-        "Watch whether BTC holds its current range.\n\n"
+        "• ETH: Ethereum ETF inflows accelerate (Cointelegraph) "
+        "https://example.com/eth\n\n"
+        "What to watch next:\nWatch whether BTC holds its current range.\n\n"
         "Not financial advice."
     )
+    assert "Dashboard:" not in message
+    assert "What moved today:" not in message
+    assert "BTC 24h volume stayed elevated." not in message
 
 
 def test_daily_report_message_exact_render_uses_no_news_fallback():
@@ -799,19 +792,10 @@ def test_daily_report_message_exact_render_uses_no_news_fallback():
 
     assert message == (
         "📊 Daily Market Report\n\n"
-        "Market pulse:\n"
-        "Tracked assets are quiet.\n\n"
-        "Dashboard:\n"
-        "• BTC is steady.\n\n"
-        "Tracked assets:\n"
-        "• BTC: $77,361, 24h -0.4%\n\n"
-        "What moved today:\n"
-        "• BTC is steady.\n"
-        "• Quiet conditions can still change quickly.\n\n"
-        "Coin-specific news:\n"
-        "No clearly relevant fresh news found for tracked coins\n\n"
-        "What to watch next:\n"
-        "Watch whether volume expands.\n\n"
+        "Market pulse:\nTracked assets are quiet.\n\n"
+        "Tracked assets:\n• BTC: $77,361, 24h -0.4%\n\n"
+        "Coin-specific news:\nNo verified relevant news selected for the last 24 hours.\n\n"
+        "What to watch next:\nWatch whether volume expands.\n\n"
         "Not financial advice."
     )
 
@@ -892,40 +876,29 @@ def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_new
 
     assert message == (
         f"{chart} Weekly Market Report\n\n"
-        "Week in one line:\n"
-        "BTC led a mixed tracked basket.\n\n"
+        "Week in one line:\nBTC led a mixed tracked basket.\n\n"
         "Weekly scoreboard:\n"
-        f"{bullet} BTC: $77,361, 7d -3.2%, 24h -0.4%, {sparkline} mid weekly range\n"
-        f"{bullet} ETH: $2,127.86, 7d unavailable from provider, 24h -0.2%\n\n"
+        f"{bullet} BTC: $77,361, 7d -3.2%\n"
+        f"{bullet} ETH: $2,127.86, 7d unavailable from provider\n\n"
         "Market breadth:\n"
         f"{bullet} 1/3 tracked assets are positive over 7d; "
         "leaders: GRAM, BTC; laggards: BTC, SOL\n\n"
-        "Themes of the week:\n"
-        f"{bullet} BTC leadership stayed visible.\n"
-        f"{bullet} BTC held its range.\n"
-        f"{bullet} ETH lacked follow-through.\n"
-        f"{bullet} BTC range position stayed mid-weekly range.\n"
-        f"{bullet} Participation was narrow across tracked assets.\n\n"
-        "Week timeline:\n"
-        f"{bullet} BTC: week opened near $76,000, midweek near $78,000, now near $77,361\n"
-        f"{bullet} ETH: 7d path unavailable from provider\n\n"
-        "Coin-specific recap:\n"
-        f"{bullet} BTC: BTC is steady. Watch: Watch the range.\n"
-        f"{bullet} ETH: ETH is mixed. Watch: Watch ETF flow news.\n"
-        f"{bullet} GRAM: GRAM is steady. Watch: Watch liquidity.\n"
-        f"{bullet} SOL: SOL is steady. Watch: Watch network news.\n\n"
         "Top catalysts of the week:\n"
         f"{bullet} Crypto market liquidity improves (CoinDesk) https://example.com/market\n"
-        f"{bullet} ETH: Ethereum ETF inflows accelerate (Cointelegraph) https://example.com/eth\n\n"
-        "Next week in focus:\n"
-        "Watch whether BTC leadership broadens to ETH and SOL.\n\n"
+        f"{bullet} ETH: Ethereum ETF inflows accelerate (Cointelegraph) "
+        "https://example.com/eth\n\n"
+        "Next week in focus:\nWatch whether BTC leadership broadens to ETH and SOL.\n\n"
         "Not financial advice."
     )
+    assert "Week timeline:" not in message
+    assert "Themes of the week:" not in message
+    assert "Coin-specific recap:" not in message
+    assert sparkline not in message
     assert "Monday:" not in message
     assert "{" not in message
 
-@pytest.mark.asyncio
-async def test_failed_newer_db_report_does_not_hide_old_completed_cache(monkeypatch):
+
+def test_failed_newer_db_report_does_not_hide_old_completed_cache(monkeypatch):
     engine, session_local = await build_session_factory()
     now = utc_now()
     try:
