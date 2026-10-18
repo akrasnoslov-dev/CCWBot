@@ -310,6 +310,35 @@ def test_best_case_gate_can_pass_with_unseen_positive_examples():
     assert not report["candidate_significance_gates_met"]["global_prior_no_family"]
 
 
+def test_feasibility_uses_all_valid_candidate_rows_not_only_paired_intersection():
+    dataset, labels = fixture_data()
+    first, missed = dataset["cases"][0], dataset["cases"][1]
+    state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 2,
+        "runs": {
+            "production": [{
+                "id": first["id"], "input_sha256": first["input_sha256"],
+                "status": "valid", "should_alert": False,
+            }],
+            "market_signal_path": [{
+                "id": missed["id"], "input_sha256": missed["input_sha256"],
+                "status": "valid", "should_alert": False,
+            }],
+        },
+    }
+    report = scoring.score(
+        dataset, labels, state, variants=("production", "market_signal_path"),
+    )
+    assert report["paired_unambiguous_cases"] == 0
+    feasibility = report["candidate_best_case_feasibility"]["market_signal_path"]
+    assert feasibility["observed_decisive_cases"] == 1
+    assert feasibility["observed_false_negatives"] == 1
+    assert feasibility["remaining_positives"] == 1
+    assert feasibility["best_possible_recall"] == 0.5
+    assert not feasibility["can_still_meet_gates"]
+
+
 def test_paired_score_rejects_mismatched_input_hash():
     dataset, a = fixture_data()
     row = {

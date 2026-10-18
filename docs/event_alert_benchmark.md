@@ -530,9 +530,14 @@ tests remain separate from proof of product-quality improvement.
 The user approved continuing the remaining evaluation over subsequent
 quota windows. Work must not blindly consume all 600 requests: the
 mathematical bound in the replay/score tools retires an unachievable
-candidate early. The private frozen benchmark and reply records must
-remain gitignored; PR 2 stays Draft and unmerged until all quality and
-release checks pass.
+candidate early. The offline scorer's feasibility bound uses **all valid
+reviewer-A-decisive responses for each candidate**, even when other variants
+have not completed those cases. Paired confusion matrices remain restricted
+to the common cases for fair A/B comparisons. Otherwise a multi-variant
+report with a tiny overlap could incorrectly report a 100% best-case recall
+while ignoring known false negatives from the rest of a candidate's ledger.
+The private frozen benchmark and reply records must remain gitignored;
+PR 2 stays Draft and unmerged until all quality and release checks pass.
 
 ### Technical baseline, not product-quality scores
 

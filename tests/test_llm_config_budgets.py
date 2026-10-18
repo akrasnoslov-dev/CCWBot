@@ -729,6 +729,7 @@ def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, ca
 
 def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch, caplog):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
     monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_MAX_TOKENS", "4000")

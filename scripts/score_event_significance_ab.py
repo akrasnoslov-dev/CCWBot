@@ -127,22 +127,39 @@ def score(
     # This hard upper bound lets us retire a hopeless prompt without burning
     # the provider's finite free-tier quota on the rest of the corpus.
     candidate_feasibility = {}
-    for name, stats in results.items():
+    for name in results:
         if name in ("production", "historical"):
             continue
-        best_tp = positive_total - stats["fn"]
+        # Use all valid candidate cases, not only the paired A/B intersection.
+        evidence = Counter()
+        for case_id, row in observed[name].items():
+            label = a_labels[case_id]
+            if label == "ambiguous" or row.get("status") != "valid":
+                continue
+            prediction = row.get("should_alert")
+            if type(prediction) is not bool:
+                raise ValueError("Invalid purportedly valid boolean response")
+            evidence[
+                "tp" if prediction and label == "alert" else
+                "fp" if prediction else "fn" if label == "alert" else "tn"
+            ] += 1
+        best_tp = positive_total - evidence["fn"]
         best_precision = (
-            best_tp / (best_tp + stats["fp"]) if best_tp + stats["fp"] else None
+            best_tp / (best_tp + evidence["fp"])
+            if best_tp + evidence["fp"] else None
         )
         best_recall = best_tp / positive_total if positive_total else None
         candidate_feasibility[name] = {
+            "observed_decisive_cases": evidence.total(),
+            "observed_false_negatives": evidence["fn"],
+            "observed_false_positives": evidence["fp"],
             "best_possible_precision": best_precision,
             "best_possible_recall": best_recall,
             "can_still_meet_gates": (
                 best_precision is not None and best_precision >= 0.85
                 and best_recall is not None and best_recall >= 0.90
             ),
-            "remaining_positives": positive_total - stats["tp"] - stats["fn"],
+            "remaining_positives": positive_total - evidence["tp"] - evidence["fn"],
         }
     candidate_gates = {
         name: (
