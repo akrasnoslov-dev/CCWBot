@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from datetime import timedelta
 from typing import Any
@@ -885,26 +886,26 @@ def _deterministic_coin_summary(coin: dict, *, weekly: bool) -> str:
     price = _format_price(coin.get("price"))
     change_label = "7d" if weekly else "24h"
     change = _format_percent(_report_change_percent(coin, "7d" if weekly else "24h"))
-    return f"{symbol} is near {price}, with {change_label} change at {change}."
-
-
-def _build_daily_report_message(
+    return f"{symbol} is near {price}, with {change_label} change at {chdef _build_daily_report_message(
     *,
     decision: MarketReportDecision,
     coin_rows: list[str],
     news_context_text: str,
 ) -> str:
-    """Each datum has one owner: one coin table, one narrative, one news list."""
+    """One price/change table, plus model watchpoints with no repeated quotes."""
+    focus = _format_report_coin_watchpoints(decision.coin_cards, limit=3)
     return (
         "📊 Daily Market Report\n\n"
         "Market pulse:\n"
-        f"{_short_report_summary(decision.market_pulse)}\n\n"
+        f"{_short_report_summary(decision.market_pulse, max_chars=220)}\n\n"
         "Tracked assets:\n"
         f"{chr(10).join(coin_rows)}\n\n"
+        "What to monitor:\n"
+        f"{focus}\n\n"
         "Coin-specific news:\n"
         f"{news_context_text}\n\n"
         "What to watch next:\n"
-        f"{_short_report_summary(decision.watch_next)}\n\n"
+        f"{_short_report_summary(decision.watch_next, max_chars=230)}\n\n"
         "Not financial advice."
     )
 
@@ -916,21 +917,50 @@ def _build_weekly_report_message(
     news_context_text: str,
     weekly_context,
 ) -> str:
-    """The chart owns weekly price paths; do not repeat them in prose."""
+    """Non-repeated per-coin watchpoints carry useful weekly analysis."""
     breadth_text = _format_weekly_breadth(weekly_context)
+    focus = _format_report_coin_watchpoints(decision.coin_cards, limit=4)
     return (
         "📊 Weekly Market Report\n\n"
         "Week in one line:\n"
-        f"{_short_report_summary(decision.market_pulse)}\n\n"
+        f"{_short_report_summary(decision.market_pulse, max_chars=220)}\n\n"
         "Weekly scoreboard:\n"
         f"{chr(10).join(coin_rows)}\n\n"
         "Market breadth:\n"
         f"{breadth_text}\n\n"
+        "Coin watchpoints:\n"
+        f"{focus}\n\n"
         "Top catalysts of the week:\n"
         f"{news_context_text}\n\n"
         "Next week in focus:\n"
-        f"{_short_report_summary(decision.next_week_focus or decision.watch_next)}\n\n"
+        f"{_short_report_summary(decision.next_week_focus or decision.watch_next, max_chars=230)}\n\n"
         "Not financial advice."
+    )
+
+
+def _format_report_coin_watchpoints(cards: list[dict], *, limit: int) -> str:
+    """Scenario/level watchpoints only; do not echo summaries/price changes."""
+    seen: set[str] = set()
+    output: list[str] = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        symbol = str(card.get("symbol") or "").upper().strip()
+        watch = _short_report_summary(str(card.get("watch") or ""), max_chars=155)
+        if symbol not in {"BTC", "ETH", "GRAM", "SOL"} or not watch:
+            continue
+        watch = re.sub(r"(?i)^watch\s*:\s*", "", watch)
+        signature = watch.casefold()
+        if signature in seen:
+            continue
+        seen.add(signature)
+        output.append(f"• {symbol}: {watch}")
+        if len(output) >= limit:
+            break
+    return "\n".join(output) or "No distinct coin-specific signals to highlight."
+
+
+"
     )
 
 
