@@ -53,7 +53,7 @@ def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     candidate = candidates.candidate_prompt(payload, variant)
 
     assert candidate != production
-    if variant not in ("global_prior_no_family", "path_facts"):
+    if variant not in ("global_prior_no_family", "path_facts", "market_signal_path"):
         assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
     assert payload == before
     assert "No fixed numeric cutoff" in candidate
@@ -75,23 +75,46 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
         "production", "materiality_first", "balanced_novelty",
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
         "global_prior_safe", "global_prior_no_family", "path_facts",
+        "market_signal_path",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 9
+    }) == 10
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
         assert stats["provider_requests"] == 0
 
 
+def test_market_signal_path_never_treats_global_alert_counts_as_own_history():
+    import json
+
+    payload = deepcopy(_dataset()["cases"][0]["input"])
+    payload["previous_event_alert"] = {
+        "semantic_family": "price_downtrend", "age_minutes": 30,
+    }
+    before = deepcopy(payload)
+    body = candidates.candidate_prompt(payload, "market_signal_path")
+    compact = json.loads(body.split("\nInput JSON:\n")[-1])
+    assert "prev" not in compact and "cnt" not in compact
+    assert "path" in compact
+    assert "independently noteworthy" in body
+    assert "per-recipient semantic cooldown" in body
+    assert payload == before
+
+
 def test_path_facts_are_grounded_in_sampled_prices_without_changing_input():
     import json
 
     payload = deepcopy(_dataset()["cases"][0]["input"])
+    payload["previous_event_alert"] = {
+        "semantic_family": "price_downtrend", "age_minutes": 30,
+        "analysed_window_move": -1.0,
+    }
     before = deepcopy(payload)
     result = candidates.candidate_prompt(payload, "path_facts")
     actual = json.loads(result.split("\nInput JSON:\n")[-1])
+    assert "f" not in actual["prev"]
     assert actual["path"]["eff"] == 1.0
     assert actual["path"]["up"] > 0
     assert actual["path"]["down"] == 0

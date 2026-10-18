@@ -458,6 +458,45 @@ older measured answers. A separate opt-in `--retry-rate-limited`
 is still required for recorded HTTP 429 cases. The latest 340-second
 backoff must be respected; do not continuously retry until accepted.
 
+### Significance evidence and adaptive stopping (2026-10-18)
+
+The new `global_prior_no_family` experimental prompt strips the globally
+sampled previous alert's coarse semantic family, preserving its age/move.
+It was replayed on **45 reviewer-A-decisive events**: TP=19, FP=2,
+FN=4, TN=20 (**90.5% precision, 82.6% recall**) on the deliberately
+error-stratified cohort. The best possible complete-recall outcome now is
+**37/41 = 90.24%**, and this would require correctly identifying every
+one of the 18 as-yet-untested positives. It is NOT accepted. **108**
+decisive cases remain for this candidate. The replay stopped at the next
+HTTP 429 with provider `Retry-After: 190 seconds`; the request was counted.
+Across all historical experiments, the cumulative approved ledger now
+records **215/600 requests** and **375,799 provider-reported successful
+tokens**. Do not treat the allowed call ceiling as account quota.
+
+The benchmark tools now compute a mathematical **best-possible**
+precision/recall bound against all 41 positive and 112 negative reviewer-A
+labels. With `--stop-on-impossible-gates`, the live replay stops as soon
+as existing false negatives/positives make **85% precision + 90% recall
+mathematically unattainable** even if all remaining labels are perfect.
+Invalid/provider-error rows do not count as negative decisions. This
+protects the Groq quota and is only an evaluation tool, not a runtime
+numeric alert cutoff.
+
+Offline diagnosis of the **200 real frozen sampled paths** supports the
+next hypothesis: reviewer-A-positive cases had median observed path
+efficiency **0.756** versus **0.345** for negatives, and median largest
+sampled-step magnitude about **1.039%** versus **0.373%**. This is
+descriptive evidence only, not an alert threshold, trained classifier
+or an unbiased out-of-sample quality score. All 200 have computable
+path facts. The new `path_facts` and `market_signal_path` candidates
+include transparent, backend-computed path efficiency, adjacent-step
+movements and current distance from sampled extrema. In particular,
+`market_signal_path` removes the global previous-alert and recent-count
+hints from significance entirely, making the model evaluate the current
+noteworthy market window; user-specific semantic cooldown still decides
+whether a subscriber receives a repeat. This is an **unverified offline
+hypothesis** and requires a real Groq replay before any product-rule change.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |

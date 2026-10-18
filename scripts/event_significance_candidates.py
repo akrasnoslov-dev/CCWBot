@@ -169,7 +169,7 @@ CANDIDATE_REPLACEMENTS["global_prior_safe"] = (
 )
 
 CANDIDATE_REPLACEMENTS["path_facts"] = (
-    CANDIDATE_REPLACEMENTS["global_prior_safe"]
+    CANDIDATE_REPLACEMENTS["global_prior_no_family"]
     + "\nAdditional observed path evidence path={eff,up,down,from_hi,from_lo}: "
     "eff is abs sampled net displacement divided by total abs travel (0 to 1), "
     "up is largest positive sampled adjacent-interval % change, down is "
@@ -182,6 +182,49 @@ CANDIDATE_REPLACEMENTS["path_facts"] = (
     "by itself enough for a material market event. If path is absent, "
     "do not pretend these statistics are known."
 )
+
+# Test a structural alternative: evaluate the market event independently,
+# leaving subscriber-specific repeat suppression to the delivery backend.
+CANDIDATE_REPLACEMENTS["market_signal_path"] = "\n".join((
+    "Decide whether the CURRENT asset price event is worthy of an alert. "
+    "No fixed numeric cutoff or deterministic percentile threshold.",
+    "Q1 materiality: judge actual current cw over w, same-asset pw, "
+    "sampled price path s, and verified path evidence. "
+    "path={eff,up,down,from_hi,from_lo}; eff is absolute net displacement "
+    "over total abs sampled travel, up/down are the largest positive/negative "
+    "adjacent sampled-interval percentage changes, from_hi/from_lo give "
+    "current distance from sample extrema. This evidence is descriptive, "
+    "not an automatic threshold or a guarantee of any trajectory. "
+    "A substantial fresh downswing/upswing can be material without news. "
+    "For a low net move, look for a genuine substantial intra-window "
+    "swing before calling it material; a small wobble is still routine. "
+    "A mere change against c24 or one fast sample is not a reversal.",
+    "Q2 novelty: whether THIS current observed window contains an "
+    "independently noteworthy movement or meaningful intra-window shift, "
+    "not whether some other recipient previously received an alert. "
+    "Previous delivered alerts and event counts are deliberately absent: "
+    "they are global snapshots and cannot prove a specific recipient "
+    "has already been informed. The backend separately enforces strict "
+    "per-recipient semantic cooldown. When Q1 is material and this "
+    "observed market window supports a noteworthy current event, "
+    "set novelty=new; a verified insignificant wobble or merely stale "
+    "context does not qualify. Do not infer prior alert identity.",
+    "Q3 should_alert=true only when materiality=material AND novelty=new. "
+    "Choose the positive reason AFTER Q1/Q2; use unusual_move,fast_move,"
+    "reversal,trend_acceleration,market_news_alignment. If false use "
+    "routine_move,news_only,unclear; sole-news cannot create materiality.",
+    "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};"
+    "s=[[min,USD],...],0=now,<0=older;cw=% over w;"
+    "pw,p24=30d same-asset abs-move percentiles; null=unknown;"
+    "n<=2 {t,r,mat,h};path={eff,up,down,from_hi,from_lo};"
+    ".042=.042%,not 4.2%. No prev or cnt.",
+    "Return exactly symbol,materiality,novelty,should_alert,reason_code,"
+    "confidence. symbol=sym; materiality=material|routine|unclear;"
+    "novelty=new|continuation|repeated|unclear;"
+    "confidence=low|medium|high. "
+    "true requires material+new; false requires routine/unclear "
+    "or continuation/repeated and a negative reason_code.",
+))
 
 
 def verified_path_facts(compact_market: dict) -> dict:
@@ -231,9 +274,13 @@ def candidate_prompt(input_payload: dict, candidate: str) -> str:
         else _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
     )
     payload = _event_significance_prompt_payload(input_payload)
-    if candidate == "global_prior_no_family" and isinstance(payload.get("prev"), dict):
-        payload["prev"].pop("f", None)
-    if candidate == "path_facts":
+    if candidate in ("global_prior_no_family", "path_facts"):
+        if isinstance(payload.get("prev"), dict):
+            payload["prev"].pop("f", None)
+    if candidate == "market_signal_path":
+        payload.pop("prev", None)
+        payload.pop("cnt", None)
+    if candidate in ("path_facts", "market_signal_path"):
         facts = verified_path_facts(payload["m"])
         if facts:
             payload["path"] = facts

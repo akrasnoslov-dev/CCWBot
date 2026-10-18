@@ -32,6 +32,7 @@ VARIANTS = (
     "production", "materiality_first", "balanced_novelty",
     "trajectory_evidence", "relative_displacement", "rebalanced_core",
     "global_prior_safe", "global_prior_no_family", "path_facts",
+    "market_signal_path",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600
@@ -57,6 +58,8 @@ def fingerprint(variant: str, model: str, max_tokens: int, effort: str | None) -
         context["model_input_view"] = "omit_global_prev_family_v1"
     if variant == "path_facts":
         context["model_input_view"] = "verified_sampled_path_v1"
+    if variant == "market_signal_path":
+        context["model_input_view"] = "sampled_path_no_global_prior_or_counts_v1"
     return hashlib.sha256(json.dumps(context, sort_keys=True).encode("utf-8")).hexdigest()
 
 
