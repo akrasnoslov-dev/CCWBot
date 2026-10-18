@@ -14,6 +14,7 @@ import json
 import os
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -221,6 +222,30 @@ def export_recorded_runs(directory: Path, state: dict) -> None:
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def remaining_rate_limit_backoff(
+    state: dict, *, now: datetime | None = None,
+) -> float:
+    """Wait for the strictest recorded HTTP 429 backoff before any provider call."""
+    current = now or datetime.now(timezone.utc)
+    remaining = 0.0
+    for rows in state["runs"].values():
+        for row in rows:
+            if row.get("http_status") != 429:
+                continue
+            when = row.get("rate_limit_at_utc")
+            interval = row.get("retry_after_seconds")
+            if not when or not isinstance(interval, (int, float)) or interval < 0:
+                continue
+            try:
+                observed = datetime.fromisoformat(when)
+            except (TypeError, ValueError):
+                continue
+            if observed.tzinfo is None:
+                continue
+            remaining = max(remaining, (observed - current).total_seconds() + interval)
+    return max(0.0, remaining)
+
+
 def can_retry_rate_limit(row: dict | None, *, approved: bool) -> bool:
     """Only an explicitly approved retry of HTTP 429 may replace a recorded row."""
     return bool(
@@ -282,6 +307,18 @@ async def replay(
         ledger, dataset["dataset_sha256"], model, configs,
         refresh_unused_config=refresh_unused_config,
     )
+    backoff_remaining = remaining_rate_limit_backoff(state)
+    if backoff_remaining > 0:
+        return {
+            "attempts_this_invocation": 0,
+            "attempts_total": state["attempted_requests"],
+            "stop": "recorded_provider_http_429_backoff",
+            "retry_after_seconds": round(backoff_remaining),
+            "variant_statuses": {
+                name: dict(Counter(row["status"] for row in rows))
+                for name, rows in state["runs"].items()
+            },
+        }
     already = {(variant, item["id"]): item for variant, rows in state["runs"].items()
                for item in rows}
     client = AsyncOpenAI(
@@ -374,6 +411,7 @@ async def replay(
                     if http_status is not None:
                         result["http_status"] = int(http_status)
                     if http_status == 429:
+                        result["rate_limit_at_utc"] = datetime.now(timezone.utc).isoformat()
                         headers = getattr(getattr(exc, "response", None), "headers", None)
                         retry_after = headers.get("retry-after") if headers else None
                         try:

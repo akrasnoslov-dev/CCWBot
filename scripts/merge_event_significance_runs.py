@@ -25,7 +25,7 @@ _ALLOWED_FIELDS = frozenset({
     "id", "input_sha256", "status", "should_alert", "materiality",
     "novelty", "reason_code", "provider_attempts", "total_tokens",
     "prompt_tokens", "completion_tokens", "http_status", "error_type",
-    "retry_after_seconds",
+    "retry_after_seconds", "rate_limit_at_utc",
 })
 _VALID_STATUSES = frozenset({"valid", "schema_error", "invalid_json", "provider_error"})
 
