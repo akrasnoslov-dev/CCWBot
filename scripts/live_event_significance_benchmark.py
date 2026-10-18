@@ -95,12 +95,18 @@ def eligible_replay_cases(
     *,
     excluded_case_ids: frozenset[str],
     skip_ambiguous: bool,
+    screen_positives_first: bool = False,
 ) -> list[dict]:
-    return [
+    cases = [
         case for case in ordering(dataset, labels)
         if case["id"] not in excluded_case_ids
         and not (skip_ambiguous and labels[case["id"]] == "ambiguous")
     ]
+    if screen_positives_first:
+        # Screening only. The score still uses real, full-cohort reference
+        # labels; a positive-only prefix is never an unbiased precision test.
+        cases.sort(key=lambda case: labels[case["id"]] != "alert")
+    return cases
 
 
 def load_reviewer_a(path: Path, dataset: dict) -> dict:
@@ -282,6 +288,7 @@ async def replay(
     retry_rate_limited: bool = False,
     refresh_unused_config: bool = False,
     stop_on_impossible_gates: bool = False,
+    screen_positives_first: bool = False,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -330,6 +337,7 @@ async def replay(
         for case in eligible_replay_cases(
             dataset, a_labels,
             excluded_case_ids=excluded_case_ids, skip_ambiguous=skip_ambiguous,
+            screen_positives_first=screen_positives_first,
         ):
             for variant in selected_variants:
                 retrying = can_retry_rate_limit(
@@ -469,6 +477,7 @@ def main() -> None:
     parser.add_argument("--retry-rate-limited", action="store_true")
     parser.add_argument("--refresh-unused-candidate-config", action="store_true")
     parser.add_argument("--stop-on-impossible-gates", action="store_true")
+    parser.add_argument("--screen-positives-first", action="store_true")
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -502,6 +511,7 @@ def main() -> None:
             retry_rate_limited=args.retry_rate_limited,
             refresh_unused_config=args.refresh_unused_candidate_config,
             stop_on_impossible_gates=args.stop_on_impossible_gates,
+            screen_positives_first=args.screen_positives_first,
         )
     ), indent=2))
 

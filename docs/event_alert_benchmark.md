@@ -539,6 +539,33 @@ while ignoring known false negatives from the rest of a candidate's ledger.
 The private frozen benchmark and reply records must remain gitignored;
 PR 2 stays Draft and unmerged until all quality and release checks pass.
 
+### 18 October evening: rate-limit replay and early recall screening
+
+After the 505-second recorded backoff, Groq accepted one more bounded
+`market_signal_path` case, then returned HTTP 429 with a fresh
+`Retry-After: 598 seconds`. The merged private ledger contains **223/600
+approved requests** and **four valid** `market_signal_path` decisions,
+all correctly negative on four original-bot false positives. **This says
+nothing about recall yet:** the candidate has not seen an owner-labelled
+positive in its replay; **149 decisive cases remain**, and the full gates
+cannot be passed on this tiny selected prefix.
+
+The optional `--screen-positives-first` replay flag now stably orders
+the existing **41 owner-labelled positive** cases before negatives,
+preserving the ordinary ordering *within* each label. Its sole purpose
+is to stop spending the shared free-tier provider quota on an
+ultimately hopeless prompt once more than four false negatives have
+been observed: at least 37/41 owner-labelled positives are needed for
+90% recall. It never changes the frozen cases, reference labels, input
+hashes, alert policy or model, and all 112 negatives still require
+completion before precision can be accepted. **Positive-screen
+precision is not a population or paired quality estimate.**
+
+The replay enforces the saved HTTP 429 `Retry-After` across manual
+restarts; it does not force a new request while the provider's time
+window remains active. No replay is run by this documentation.
+PR2 remains Draft, with no merge/deploy.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |

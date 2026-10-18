@@ -53,6 +53,21 @@ def test_new_holdout_never_reuses_examined_events():
     assert [case["id"] for case in selected] == ["case_1"]
 
 
+def test_positive_screen_is_stable_and_keeps_all_decisive_cases():
+    dataset, labels = fixture_data()
+    default = live.eligible_replay_cases(
+        dataset, labels, excluded_case_ids=frozenset(), skip_ambiguous=True,
+    )
+    screened = live.eligible_replay_cases(
+        dataset, labels, excluded_case_ids=frozenset(), skip_ambiguous=True,
+        screen_positives_first=True,
+    )
+    assert [case["id"] for case in default] == ["case_0", "case_1", "case_2"]
+    assert [case["id"] for case in screened] == ["case_1", "case_2", "case_0"]
+    assert {case["id"] for case in default} == {case["id"] for case in screened}
+    assert len(screened) == len({case["id"] for case in screened})
+
+
 def test_replay_state_rejects_changed_model_input_or_configuration(tmp_path):
     dataset, _ = fixture_data()
     ledger = tmp_path / "run.json"
