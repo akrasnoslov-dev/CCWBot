@@ -236,10 +236,101 @@ def test_weekly_chart_includes_normalized_mini_lines_only_if_provider_supplied()
     )
     assert chart is not None
     image = Image.open(BytesIO(chart))
-    assert image.size == (1080, 465)
+    assert image.size == (1040, 610)
     # Cached data is unchanged; only a real normalized series draws a mini-line.
     without_trends["coins"][0]["sparkline_7d"] = ""
     plain = market_report_change_chart(
         json.dumps(without_trends), report_type="weekly",
     )
     assert plain is not None and chart != plain
+
+
+@pytest.mark.parametrize(
+    ("report_type", "expected_size"),
+    [("daily", (1040, 510)), ("weekly", (1040, 610))],
+)
+def test_telegram_infographic_size_and_missing_values(report_type, expected_size):
+    from io import BytesIO
+
+    from PIL import Image
+
+    raw = _input_json(report_type)
+    image = Image.open(BytesIO(market_report_change_chart(raw, report_type=report_type)))
+    assert image.size == expected_size
+    assert image.mode == "RGB"
+    # The thumbnail matches the inline Telegram width used for visual review.
+    thumbnail = image.resize((360, round(360 * image.height / image.width)))
+    assert thumbnail.width == 360
+
+    missing = {
+        "report_type": report_type,
+        "coins": [
+            {"symbol": "BTC", "change_24h_percent": None, "change_7d_percent": None},
+            {"symbol": "ETH", "change_24h_percent": "nan", "change_7d_percent": "inf"},
+        ],
+    }
+    assert market_report_change_chart(json.dumps(missing), report_type=report_type) is None
+
+
+def test_daily_bars_use_real_signs_not_missing_as_zero():
+    from io import BytesIO
+
+    from PIL import Image
+
+    raw = json.dumps({
+        "report_type": "daily",
+        "coins": [
+            {"symbol": "BTC", "change_24h_percent": 2.0},
+            {"symbol": "ETH", "change_24h_percent": -2.0},
+            {"symbol": "GRAM", "change_24h_percent": None},
+            {"symbol": "SOL", "change_24h_percent": 0.0},
+        ],
+    })
+    img = Image.open(BytesIO(market_report_change_chart(raw, report_type="daily")))
+    assert img.getpixel((680, 155)) == (59, 211, 179)  # verified positive
+    assert img.getpixel((450, 227)) == (255, 136, 135)  # verified negative
+    assert img.getpixel((680, 299)) != (59, 211, 179)  # missing is not zero
+    assert img.getpixel((680, 299)) != (255, 136, 135)
+
+
+def test_weekly_source_path_and_range_are_strict_and_never_inferred():
+    from bot.alerting.market_report_rich import _chart_source_rows, _range_label, _source_path
+
+    assert _source_path("▁▂▃▄▅▆▇█") == list(range(8))
+    assert _source_path("▁▂x▄") == []
+    assert _source_path("▁") == []
+    assert _source_path("▁" * 13) == []
+    assert _range_label(0.1) == "NEAR WEEKLY LOW"
+    assert _range_label(0.5) == "MID-WEEK RANGE"
+    assert _range_label(0.9) == "NEAR WEEKLY HIGH"
+    assert _range_label(None) is None
+    assert _range_label("nan") is None
+    assert _range_label(1.25) is None
+    rows = _chart_source_rows([
+        {"symbol": "BTC", "change_7d_percent": -3.14, "sparkline_7d": "▁▂"},
+        {"symbol": "BTC", "change_7d_percent": 99, "sparkline_7d": "█▁"},
+        {"symbol": "ETH", "change_7d_percent": None, "sparkline_7d": "▁█"},
+    ], "7d")
+    assert rows[0][0:2] == ("BTC", -3.14)
+    assert rows[0][2]["sparkline_7d"] == "▁▂"
+    assert rows[1][1] is None
+
+
+def test_weekly_only_source_glyphs_change_drawn_path():
+    from io import BytesIO
+
+    from PIL import Image
+
+    source = {
+        "report_type": "weekly",
+        "coins": [
+            {"symbol": "BTC", "change_7d_percent": -2.4, "range_position": None},
+        ],
+    }
+    no_path = market_report_change_chart(json.dumps(source), report_type="weekly")
+    source["coins"][0]["sparkline_7d"] = "▁▂▃▄▅▆▇█"
+    with_path = market_report_change_chart(json.dumps(source), report_type="weekly")
+    assert no_path != with_path
+    assert Image.open(BytesIO(with_path)).size == (1040, 610)
+    source["coins"][0]["sparkline_7d"] = "invalid series"
+    assert market_report_change_chart(json.dumps(source), report_type="weekly") == no_path
