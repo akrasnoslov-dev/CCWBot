@@ -9,9 +9,9 @@ import pytest
 from telegram.error import BadRequest
 
 from bot import alerts
-from bot.coin_icons import build_coin_icon_html
 from bot.alerting.event_chart import prepare_chart_points, render_price_chart
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
+from bot.coin_icons import build_coin_icon_html
 
 AT = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 
