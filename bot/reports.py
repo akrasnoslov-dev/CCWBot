@@ -886,7 +886,10 @@ def _deterministic_coin_summary(coin: dict, *, weekly: bool) -> str:
     price = _format_price(coin.get("price"))
     change_label = "7d" if weekly else "24h"
     change = _format_percent(_report_change_percent(coin, "7d" if weekly else "24h"))
-    return f"{symbol} is near {price}, with {change_label} change at {chdef _build_daily_report_message(
+    return f"{symbol} is near {price}, with {change_label} change at {change}."
+
+
+def _build_daily_report_message(
     *,
     decision: MarketReportDecision,
     coin_rows: list[str],
@@ -958,10 +961,6 @@ def _format_report_coin_watchpoints(cards: list[dict], *, limit: int) -> str:
         if len(output) >= limit:
             break
     return "\n".join(output) or "No distinct coin-specific signals to highlight."
-
-
-"
-    )
 
 
 def _short_report_summary(text: str, *, max_chars: int = 260) -> str:
