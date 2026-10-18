@@ -10,17 +10,17 @@ from typing import Any
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
 
+from bot.alerting.market_report import (
+    MarketReportDecision,
+    MarketReportValidationError,
+    validate_market_report_output,
+)
 from bot.alerting.market_report_rich import (
     format_html_market_report,
     format_rich_market_report,
     market_report_change_chart,
 )
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
-from bot.alerting.market_report import (
-    MarketReportDecision,
-    MarketReportValidationError,
-    validate_market_report_output,
-)
 from bot.db.database import (
     MarketReport,
     get_latest_market_report,
@@ -532,7 +532,10 @@ async def _send_report_message(target, report_type: str) -> None:
                 pass
             except RichDeliveryUncertain:
                 # The message may already exist. Never send a duplicate.
-                logger.warning("ops_event=market_report_rich_ack_unknown report_type=%s", report_type)
+                logger.warning(
+                    "ops_event=market_report_rich_ack_unknown report_type=%s",
+                    report_type,
+                )
                 return
 
         html = format_html_market_report(str(message), report_type=report_type)
