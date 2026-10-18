@@ -159,7 +159,10 @@ def market_report_change_chart(raw_input_json: str | None, *, report_type: str) 
     canvas = Image.new("RGB", (980, 465), "#121d30")
     draw = ImageDraw.Draw(canvas)
     title_font, row_font, note_font = _font(31), _font(25), _font(18)
-    draw.text((42, 30), f"Tracked coins | verified {period} changes", fill="#f1f5fb", font=title_font)
+    draw.text(
+        (42, 30), f"Tracked coins | verified {period} changes",
+        fill="#f1f5fb", font=title_font,
+    )
     zero, scale = 480, 370 / max(0.2, *(abs(x) for x in selected.values()))
     draw.line((zero, 101, zero, 380), fill="#7c90ab", width=2)
     for index, symbol in enumerate(("BTC", "ETH", "GRAM", "SOL")):
