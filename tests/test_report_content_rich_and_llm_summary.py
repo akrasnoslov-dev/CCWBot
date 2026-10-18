@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import bot.reports as reports
 from bot.alerting.market_report import MarketReportDecision
 from bot.alerting.market_report_rich import (
-    compact_report_for_display, format_html_market_report, format_rich_market_report,
+    format_html_market_report,
+    format_rich_market_report,
 )
 from bot.db.database import Base, LlmUsageLog, MarketReport, utc_now
 from bot.handlers.admin import _llm_diagnostics_menu
