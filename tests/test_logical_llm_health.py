@@ -202,7 +202,7 @@ async def test_admin_surfaces_terminal_failures_without_double_counting_attempts
         assert "Terminal failures: 65 in 24h" in system
         assert "Event Analysis — failed: 127 success, 65 terminal failed" in diagnostics
         assert "Provider attempts — Summary" in diagnostics
-        assert "Total: 1 attempt" in diagnostics
+        assert "Total: 1 provider record" in diagnostics
         assert "sensitive-model" not in system + diagnostics
     finally:
         await engine.dispose()
