@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw, ImageFont
 
-from bot.coin_icons import build_coin_icon_html
+from bot.coin_icons import coin_fallback_emoji
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol
 
 _TITLES = {
@@ -59,7 +59,7 @@ def _safe_rich_line(line: str) -> str:
         text = escape(line)
     match = _COIN_ROW.match(line)
     if match:
-        return f"{build_coin_icon_html(match.group(1))} {text}"
+        return f"{coin_fallback_emoji(match.group(1))} {text}"
     return text
 
 
@@ -156,36 +156,72 @@ def market_report_change_chart(raw_input_json: str | None, *, report_type: str) 
         return None
     # Absolute percentage-point scale, always centered at zero. Missing coins
     # are not drawn and missing bars are never represented as 0% changes.
-    canvas = Image.new("RGB", (980, 465), "#121d30")
+    # Bars show the actual verified percentage returns. Weekly mini-lines
+    # use only the source's pre-existing normalized 12-step sparkline buckets;
+    # they are a visual trend, not invented high-resolution price samples.
+    chart_width = 1080 if report_type == "weekly" else 980
+    canvas = Image.new("RGB", (chart_width, 465), "#121d30")
     draw = ImageDraw.Draw(canvas)
-    title_font, row_font, note_font = _font(31), _font(25), _font(18)
+    title_font, row_font, note_font = _font(29), _font(24), _font(17)
     draw.text(
-        (42, 30), f"Tracked coins | verified {period} changes",
+        (40, 26), f"Tracked coins | verified {period} changes",
         fill="#f1f5fb", font=title_font,
     )
-    zero, scale = 480, 370 / max(0.2, *(abs(x) for x in selected.values()))
-    draw.line((zero, 101, zero, 380), fill="#7c90ab", width=2)
+    bar_zero = 350 if report_type == "weekly" else 480
+    bar_half_width = 225 if report_type == "weekly" else 370
+    scale = bar_half_width / max(0.2, *(abs(x) for x in selected.values()))
+    draw.line((bar_zero, 96, bar_zero, 388), fill="#7c90ab", width=2)
+    sparkline_by_symbol = {}
+    if report_type == "weekly":
+        for coin in coins:
+            if isinstance(coin, dict):
+                symbol = str(coin.get("symbol") or "").upper()
+                sparkline_by_symbol[symbol] = str(coin.get("sparkline_7d") or "")
+        draw.text((668, 95), "7d mini-trend", fill="#a5b3c6", font=note_font)
     for index, symbol in enumerate(("BTC", "ETH", "GRAM", "SOL")):
-        y = 114 + index * 65
-        draw.text((45, y), symbol, fill="#e0e9f6", font=row_font)
+        y = 122 + index * 65
+        draw.text((39, y), symbol, fill="#e0e9f6", font=row_font)
         if symbol not in selected:
-            draw.text((600, y), "No verified data", fill="#a5b3c6", font=note_font)
+            draw.text((145, y), "No verified return", fill="#a5b3c6", font=note_font)
             continue
         value = selected[symbol]
-        end = max(100, min(860, zero + value * scale))
-        if abs(end - zero) < 2:
-            end = zero + (2 if value >= 0 else -2)
+        end = max(
+            bar_zero - bar_half_width,
+            min(bar_zero + bar_half_width, bar_zero + value * scale),
+        )
+        if abs(end - bar_zero) < 2:
+            end = bar_zero + (2 if value >= 0 else -2)
         color = "#38bfa8" if value >= 0 else "#ee938d"
         draw.rounded_rectangle(
-            (min(zero, end), y, max(zero, end), y + 33),
+            (min(bar_zero, end), y, max(bar_zero, end), y + 30),
             radius=5, fill=color,
         )
-        draw.text((868, y + 3), f"{value:+.2f}%", fill="#f1f5fb", font=note_font)
-    draw.text(
-        (42, 420),
-        "Percent move, not a price-history curve. Missing values are omitted.",
-        fill="#9daec6", font=note_font,
+        if report_type == "weekly":
+            buckets = "▁▂▃▄▅▆▇█"
+            glyphs = [
+                buckets.index(ch) for ch in sparkline_by_symbol.get(symbol, "")
+                if ch in buckets
+            ]
+            if len(glyphs) >= 2:
+                x_start, x_end = 665, 876
+                polyline = [
+                    (
+                        x_start + i * (x_end - x_start) / (len(glyphs) - 1),
+                        y + 30 - glyph * 29 / 7,
+                    )
+                    for i, glyph in enumerate(glyphs)
+                ]
+                draw.line(polyline, fill="#83bce9", width=3, joint="curve")
+            else:
+                draw.text((670, y + 5), "No 7d path", fill="#a5b3c6", font=note_font)
+        value_x = 925 if report_type == "weekly" else 866
+        draw.text((value_x, y + 4), f"{value:+.2f}%", fill="#f1f5fb", font=note_font)
+    footer = (
+        "Bars: verified 7d changes. Mini-lines: normalized source 7d paths."
+        if report_type == "weekly"
+        else "Bars: verified 24h changes. Missing values are omitted."
     )
+    draw.text((40, 418), footer, fill="#9daec6", font=note_font)
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
