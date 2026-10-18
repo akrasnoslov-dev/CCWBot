@@ -790,3 +790,13 @@ Heartbeat content is generated only for due recipients. A cache older than the
 collector's two-hour freshness reference does not establish a missed 24-hour silence
 notification. With no generation failure or due-recipient correlation, the stale-cache
 finding is UNKNOWN; explicit failed generation remains a triggered finding.
+
+## Compact admin LLM overview
+
+Admin -> LLM diagnostics opens a compact HTML monospace summary with six
+logical-operation rows (successes, terminal failures, and observed status),
+real provider-request totals, and backoff/circuit skips separately.
+`Low N` denotes insufficient reliability evidence, not an observed failure.
+The **Provider details** button retains the original, sanitized detailed
+breakdown, and **Summary** returns. This presentation change does not alter
+health eligibility, DB evidence, LLM calls or provider routing.
