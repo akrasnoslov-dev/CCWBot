@@ -16,6 +16,7 @@ from bot.alerting.market_report import (
     validate_market_report_output,
 )
 from bot.alerting.market_report_rich import (
+    compact_report_for_display,
     format_html_market_report,
     format_rich_market_report,
     market_report_change_chart,
@@ -498,8 +499,9 @@ async def _send_report_message(target, report_type: str) -> None:
             else getattr(report, "raw_input_json", None)
         )
         chart_png = market_report_change_chart(input_json, report_type=report_type)
+        display_text = compact_report_for_display(str(message), report_type=report_type)
         rich_html = format_rich_market_report(
-            str(message), report_type=report_type, chart_available=chart_png is not None,
+            display_text, report_type=report_type, chart_available=chart_png is not None,
         )
         bot = None
         get_bot = getattr(target, "get_bot", None)
@@ -538,11 +540,11 @@ async def _send_report_message(target, report_type: str) -> None:
                 )
                 return
 
-        html = format_html_market_report(str(message), report_type=report_type)
+        html = format_html_market_report(display_text, report_type=report_type)
         try:
             await target.reply_text(html, parse_mode=ParseMode.HTML)
         except BadRequest:
-            await target.reply_text(str(message))
+            await target.reply_text(display_text)
         return
 
     await target.reply_text(REPORT_UNAVAILABLE_MESSAGES[report_type])
