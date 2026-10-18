@@ -708,9 +708,22 @@ async def build_admin_llm_diagnostics_text(
                 detail += f"; {item.recovered_operations} recovered"
             if item.missing_outcomes or item.unknown_outcomes:
                 detail += f"; {item.missing_outcomes + item.unknown_outcomes} missing/incomplete"
-            if item.state == "unknown" and not (item.missing_outcomes or item.unknown_outcomes):
-                detail += "; insufficient sample"
-            lines.append(f"{icon} {label} — {item.state}: {detail}")
+            status_label = item.state
+            if item.state == "unknown" and not (
+                item.missing_outcomes or item.unknown_outcomes
+            ):
+                # Reliability is unproven, but observed outcomes are still facts.
+                # Sparse report jobs cannot reach the generic 20-in-24h gate.
+                completed = item.successes + item.terminal_failures
+                if item.terminal_failures:
+                    status_label = "observed failures (limited evidence)"
+                else:
+                    status_label = "all observed successful (limited evidence)"
+                if item.call_type == "weekly_report":
+                    detail += "; low-frequency schedule, confidence not established"
+                else:
+                    detail += f"; {completed}/20 samples for reliability assessment"
+            lines.append(f"{icon} {label} — {status_label}: {detail}")
     lines.extend(("", "Provider attempts — Summary"))
     if not rows:
         lines.extend(("", "No provider attempts recorded."))
