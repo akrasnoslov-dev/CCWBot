@@ -898,7 +898,8 @@ def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_new
     assert "{" not in message
 
 
-def test_failed_newer_db_report_does_not_hide_old_completed_cache(monkeypatch):
+@pytest.mark.asyncio
+async def test_failed_newer_db_report_does_not_hide_old_completed_cache(monkeypatch):
     engine, session_local = await build_session_factory()
     now = utc_now()
     try:
