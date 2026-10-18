@@ -63,7 +63,7 @@ def test_half_hour_persisted_samples_use_true_24h_axis_without_fabrication():
     ]
     result = render_price_chart(points, as_of=AT, symbol="ETH")
     assert result.label == "Last 24 hours"
-    assert result.png and result.png.startswith(b"\\x89PNG")
+    assert result.png and result.png.startswith(b"\x89PNG")
     assert result.points[0][0] == AT - timedelta(hours=23, minutes=30)
     assert result.points[-1][0] == AT - timedelta(minutes=30)
     # No synthetic boundary samples were inserted.
@@ -81,6 +81,7 @@ def test_incomplete_24h_coverage_stays_labeled_partial():
     result = prepare_chart_points(points, as_of=AT)
     assert "available history" in result.label
     assert result.label != "Last 24 hours"
+
 
 def test_metric_labels_correct_actual_windows_and_notification_type():
     metrics = alerts._event_alert_market_context_lines(
