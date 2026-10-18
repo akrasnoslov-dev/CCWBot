@@ -715,12 +715,15 @@ async def build_admin_llm_diagnostics_text(
     if not rows:
         lines.extend(("", "No provider attempts recorded."))
     else:
+        record_unit = "record" if total_attempts == 1 else "records"
+        success_unit = "request" if total_success == 1 else "requests"
+        failure_unit = "request" if total_failed == 1 else "requests"
         lines.extend(
             (
                 "",
-                f"Total: {total_attempts} provider records",
-                f"✅ {total_success} successful requests",
-                f"{'⚠️' if total_failed else '✅'} {total_failed} failed requests",
+                f"Total: {total_attempts} provider {record_unit}",
+                f"✅ {total_success} successful {success_unit}",
+                f"{'⚠️' if total_failed else '✅'} {total_failed} failed {failure_unit}",
                 f"⏭️ {total_skipped} skipped without request (backoff/circuit)",
             )
         )
