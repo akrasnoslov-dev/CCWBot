@@ -41,6 +41,75 @@ _COIN_ROW = re.compile(r"^•\s+(BTC|ETH|GRAM|SOL):")
 _URL = re.compile(r"https?://\S+")
 
 
+# Cached reports generated before this release keep their canonical evidence.
+# Compact only their *display*, so manual requests improve immediately without
+# silently overwriting historical market-report rows or forcing a new LLM run.
+_DISPLAY_SECTIONS = {
+    "daily": {
+        "Market pulse:", "Tracked assets:", "Coin-specific news:",
+        "What to watch next:",
+    },
+    "weekly": {
+        "Week in one line:", "Weekly scoreboard:", "Market breadth:",
+        "Top catalysts of the week:", "Next week in focus:",
+    },
+}
+_WEEKLY_LEGACY_ROW_SUFFIX = re.compile(r",\s*24h\s+[^,\n]*(?:,\s*[▁▂▃▄▅▆▇█]+[^\n]*)?$")
+
+
+def compact_report_for_display(plain_text: str, *, report_type: str) -> str:
+    """Preserve unique facts/URLs while filtering redundant legacy sections."""
+    if report_type not in _DISPLAY_SECTIONS:
+        raise ValueError("Unsupported market report type")
+    output: list[str] = []
+    seen_urls: set[str] = set()
+    for chunk in plain_text.split("\n\n"):
+        lines = [value.strip() for value in chunk.splitlines() if value.strip()]
+        if not lines:
+            continue
+        heading = lines[0]
+        if heading not in _DISPLAY_SECTIONS[report_type] and heading not in {
+            _TITLES[report_type], "Not financial advice.",
+        }:
+            continue
+        if heading == "Not financial advice.":
+            output.append(heading)
+            continue
+        if heading == _TITLES[report_type]:
+            output.append(heading)
+            continue
+        is_news = heading in {"Coin-specific news:", "Top catalysts of the week:"}
+        kept: list[str] = []
+        for line in lines[1:]:
+            if heading == "Weekly scoreboard:":
+                line = _WEEKLY_LEGACY_ROW_SUFFIX.sub("", line)
+            if is_news:
+                found = _URL.search(line)
+                if found:
+                    key = found.group(0).rstrip(".,)")
+                    if key in seen_urls:
+                        continue
+                    seen_urls.add(key)
+                if len(kept) >= 4:
+                    break
+                if line == "No clearly relevant fresh news found for tracked coins":
+                    period = "seven days" if report_type == "weekly" else "24 hours"
+                    line = f"No verified relevant news selected for the last {period}."
+            kept.append(line)
+        if heading in {"Market pulse:", "Week in one line:", "What to watch next:",
+                       "Next week in focus:"} and kept:
+            # Keep a short natural sentence instead of model verbosity.
+            text = " ".join(kept)
+            if len(text) > 280:
+                last_end = text.rfind(". ", 0, 280)
+                text = text[:last_end + 1] if last_end > 60 else text[:279] + "…"
+            kept = [text]
+        output.append(heading + ("\n" + "\n".join(kept) if kept else ""))
+    if output and output[-1] != "Not financial advice.":
+        output.append("Not financial advice.")
+    return "\n\n".join(output)
+
+
 def _safe_rich_line(line: str) -> str:
     """Escape all model/news wording; only safely link explicit HTTP(S) sources."""
     found = _URL.search(line)
