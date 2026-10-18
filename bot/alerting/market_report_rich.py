@@ -305,7 +305,10 @@ def _draw_daily_chart(
 
     left, zero, right = 278, 566, 854
     max_abs = max((abs(value) for _, value in values), default=0.0)
-    limit = max(0.1, max_abs * 1.08)
+    # Round bounds to readable, symmetric percentage-point ticks.
+    reference = max(0.02, max_abs)
+    step = 10 ** math.floor(math.log10(reference / 2))
+    limit = 2 * step * math.ceil(reference * 1.08 / (2 * step))
     for idx, (symbol, change, _) in enumerate(rows):
         y = 140 + idx * 72
         draw.rounded_rectangle((27, y - 10, width - 27, y + 55), 14, fill=_CHART_PANEL)
@@ -338,7 +341,8 @@ def _draw_daily_chart(
                   fill="#90a3ba" if factor == 0 else _CHART_GRID,
                   width=3 if factor == 0 else 1)
         tick = factor * limit
-        text = "0%" if factor == 0 else f"{tick:+.1f}%" if limit >= 1 else f"{tick:+.2f}%"
+        digits = 1 if limit >= 1 else 2 if limit >= 0.1 else 3 if limit >= 0.01 else 4
+        text = "0%" if factor == 0 else f"{tick:+.{digits}f}%"
         bbox = draw.textbbox((0, 0), text, font=axis_font)
         draw.text((position - (bbox[2] - bbox[0]) / 2, 430), text,
                   font=axis_font, fill=_CHART_MUTED)
