@@ -98,4 +98,4 @@ async def test_unexpected_report_programming_error_does_not_become_fake_success(
     result = await reports.generate_report_cache("daily")
     assert result["status"] == "failed"
     assert result["telegram_message"] is None
-    assert result["provider"] != reports.DETERMINISTIC_REPORT_PROVIDER
+    assert result.get("provider") != reports.DETERMINISTIC_REPORT_PROVIDER
