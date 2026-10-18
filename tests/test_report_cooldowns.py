@@ -794,8 +794,6 @@ def test_daily_report_message_exact_render_uses_no_news_fallback():
 
 
 def test_weekly_report_message_exact_render_uses_breadth_timeline_and_linked_news():
-    chart = "\U0001F4CA"
-    bullet = "\u2022"
     sparkline = "\u2581\u2588\u2586"
     decision = validate_market_report_output(
         _llm_report_payload(
