@@ -1293,6 +1293,7 @@ async def test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_un
                 MarketReport(
                     report_type="weekly", status=status,
                     generated_at=now - timedelta(minutes=10 + i),
+                    created_at=now - timedelta(minutes=10 + i),
                     expires_at=now + timedelta(hours=1),
                     telegram_message="Report" if status == "completed" else None,
                 )
