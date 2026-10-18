@@ -31,7 +31,7 @@ from scripts.event_significance_candidates import candidate_prompt  # noqa: E402
 VARIANTS = (
     "production", "materiality_first", "balanced_novelty",
     "trajectory_evidence", "relative_displacement", "rebalanced_core",
-    "global_prior_safe", "global_prior_no_family",
+    "global_prior_safe", "global_prior_no_family", "path_facts",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 600
@@ -55,6 +55,8 @@ def fingerprint(variant: str, model: str, max_tokens: int, effort: str | None) -
     }
     if variant == "global_prior_no_family":
         context["model_input_view"] = "omit_global_prev_family_v1"
+    if variant == "path_facts":
+        context["model_input_view"] = "verified_sampled_path_v1"
     return hashlib.sha256(json.dumps(context, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -160,6 +162,40 @@ def estimated_spent_tokens(state: dict, max_tokens: int) -> int:
     return observed + lost_attempts * (max_tokens + 2000)
 
 
+def maximum_possible_quality(
+    dataset: dict, labels: dict, state: dict, variant: str,
+) -> dict:
+    """Mathematical best case for the *complete* decisive frozen reference.
+
+    Treat provider errors and untested cases as unknown, never no-alert.
+    """
+    truth = {case["id"]: labels[case["id"]] for case in dataset["cases"]}
+    positive_total = sum(label == "alert" for label in truth.values())
+    false_negative = 0
+    false_positive = 0
+    for row in state["runs"].get(variant, []):
+        if row.get("status") != "valid" or truth.get(row["id"]) == "ambiguous":
+            continue
+        actual = truth[row["id"]]
+        if actual == "alert" and row["should_alert"] is False:
+            false_negative += 1
+        elif actual == "no_alert" and row["should_alert"] is True:
+            false_positive += 1
+    max_tp = positive_total - false_negative
+    max_precision = max_tp / (max_tp + false_positive) if max_tp + false_positive else None
+    max_recall = max_tp / positive_total if positive_total else None
+    return {
+        "false_negative": false_negative,
+        "false_positive": false_positive,
+        "max_precision": max_precision,
+        "max_recall": max_recall,
+        "can_meet_target": (
+            max_precision is not None and max_precision >= 0.85
+            and max_recall is not None and max_recall >= 0.90
+        ),
+    }
+
+
 def save_state(path: Path, state: dict) -> None:
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -217,6 +253,7 @@ async def replay(
     previous_attempts: int = 0,
     retry_rate_limited: bool = False,
     refresh_unused_config: bool = False,
+    stop_on_impossible_gates: bool = False,
 ) -> dict:
     load_dotenv(ROOT / ".env")
     key = os.getenv("GROQ_API_KEY")
@@ -260,6 +297,15 @@ async def replay(
                 )
                 if (variant, case["id"]) in already and not retrying:
                     continue
+                if (
+                    stop_on_impossible_gates
+                    and variant != "production"
+                    and not maximum_possible_quality(
+                        dataset, a_labels, state, variant,
+                    )["can_meet_target"]
+                ):
+                    stopped_reason = "candidate_cannot_reach_quality_gates"
+                    break
                 if issued >= max_requests:
                     break
                 if previous_attempts + state["attempted_requests"] >= MAX_APPROVED_CALLS:
@@ -381,6 +427,7 @@ def main() -> None:
     parser.add_argument("--exclude-state", type=Path)
     parser.add_argument("--retry-rate-limited", action="store_true")
     parser.add_argument("--refresh-unused-candidate-config", action="store_true")
+    parser.add_argument("--stop-on-impossible-gates", action="store_true")
     args = parser.parse_args()
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
@@ -413,6 +460,7 @@ def main() -> None:
             previous_attempts=previous_attempts,
             retry_rate_limited=args.retry_rate_limited,
             refresh_unused_config=args.refresh_unused_candidate_config,
+            stop_on_impossible_gates=args.stop_on_impossible_gates,
         )
     ), indent=2))
 

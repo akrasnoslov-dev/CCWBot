@@ -259,6 +259,57 @@ def test_significance_release_gate_requires_complete_paired_reference():
     assert not incomplete["candidate_significance_gates_met"]["relative_displacement"]
 
 
+def test_best_case_gate_fails_as_soon_as_existing_false_negatives_make_recall_impossible():
+    dataset, labels = fixture_data()
+    rows = {
+        "production": [],
+        "global_prior_no_family": [],
+    }
+    for case in dataset["cases"]:
+        if labels[case["id"]] == "ambiguous":
+            continue
+        prediction = False  # two missed positives; best recall is now zero
+        row = {
+            "id": case["id"], "input_sha256": case["input_sha256"],
+            "status": "valid", "should_alert": prediction,
+        }
+        for variant in rows:
+            rows[variant].append(dict(row))
+    state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 6, "runs": rows,
+    }
+    report = scoring.score(
+        dataset, labels, state, variants=("production", "global_prior_no_family"),
+    )
+    info = report["candidate_best_case_feasibility"]["global_prior_no_family"]
+    assert report["paired_cases_missing"] == 0
+    assert info["best_possible_recall"] == 0
+    assert not info["can_still_meet_gates"]
+
+
+def test_best_case_gate_can_pass_with_unseen_positive_examples():
+    dataset, labels = fixture_data()
+    case = dataset["cases"][0]
+    state = {
+        "dataset_sha256": dataset["dataset_sha256"],
+        "attempted_requests": 1,
+        "runs": {"global_prior_no_family": [{
+            "id": case["id"], "input_sha256": case["input_sha256"],
+            "status": "valid", "should_alert": False,
+        }]},
+    }
+    report = scoring.score(
+        dataset, labels, state, variants=("global_prior_no_family",),
+    )
+    info = report["candidate_best_case_feasibility"]["global_prior_no_family"]
+    assert info["best_possible_recall"] == 1.0
+    assert info["best_possible_precision"] == 1.0
+    assert info["remaining_positives"] == 2
+    assert info["can_still_meet_gates"]
+    assert not report["candidate_significance_gates_met"]["global_prior_no_family"]
+
+
 def test_paired_score_rejects_mismatched_input_hash():
     dataset, a = fixture_data()
     row = {
@@ -350,6 +401,34 @@ def test_rate_limit_retry_rejects_non_429_failures_duplicate_and_changed_input()
     mismatched = dict(failed, input_sha256="different")
     with pytest.raises(ValueError, match="frozen input"):
         live.record_replay_result(state, "production", mismatched, retrying=True)
+
+
+
+def test_live_best_case_bound_matches_complete_reference_and_ignores_errors():
+    dataset, labels = fixture_data()
+    rows = [{
+        "id": dataset["cases"][i]["id"],
+        "status": "valid",
+        "should_alert": False,
+    } for i in (0, 1)]
+    rows.append({
+        "id": dataset["cases"][2]["id"], "status": "provider_error",
+        "http_status": 429,
+    })
+    state = {"runs": {"global_prior_no_family": rows}}
+    result = live.maximum_possible_quality(
+        dataset, labels, state, "global_prior_no_family",
+    )
+    assert result["false_negative"] == 1
+    assert result["false_positive"] == 0
+    assert result["max_recall"] == 0.5
+    assert not result["can_meet_target"]
+    rows[1]["should_alert"] = True
+    recovered = live.maximum_possible_quality(
+        dataset, labels, state, "global_prior_no_family",
+    )
+    assert recovered["can_meet_target"]
+    assert recovered["max_recall"] == 1.0
 
 
 def test_token_safety_counts_uncertain_and_interrupted_attempts():

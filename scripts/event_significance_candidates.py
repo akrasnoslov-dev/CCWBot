@@ -10,6 +10,7 @@ import hashlib
 import json
 import sys
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -167,6 +168,53 @@ CANDIDATE_REPLACEMENTS["global_prior_safe"] = (
     "reversal claims. Never invent missing evidence or numerical cutoffs."
 )
 
+CANDIDATE_REPLACEMENTS["path_facts"] = (
+    CANDIDATE_REPLACEMENTS["global_prior_safe"]
+    + "\nAdditional observed path evidence path={eff,up,down,from_hi,from_lo}: "
+    "eff is abs sampled net displacement divided by total abs travel (0 to 1), "
+    "up is largest positive sampled adjacent-interval % change, down is "
+    "largest negative, from_hi/from_lo are current price percent from "
+    "the largest/smallest sampled price. These are verified descriptors, "
+    "not extra alert thresholds. Judge the FULL current path and asset "
+    "percentile first, checking whether the sampled trend is persistent "
+    "or whipsawing and whether a true reversal or fresh move exists. "
+    "A change in direction versus c24 or one fast segment is not "
+    "by itself enough for a material market event. If path is absent, "
+    "do not pretend these statistics are known."
+)
+
+
+def verified_path_facts(compact_market: dict) -> dict:
+    """Independent price-path descriptors; no significance policy or cutoffs."""
+    snapshots = compact_market.get("s")
+    if not isinstance(snapshots, list) or len(snapshots) < 2:
+        return {}
+    try:
+        values = [Decimal(str(item[1])) for item in snapshots]
+    except (ValueError, TypeError, IndexError, InvalidOperation):
+        return {}
+    if any(not value.is_finite() or value <= 0 for value in values):
+        return {}
+    deltas = [
+        (values[i] / values[i - 1] - 1) * Decimal("100")
+        for i in range(1, len(values))
+    ]
+    distance = sum(
+        (abs(values[i] - values[i - 1]) for i in range(1, len(values))),
+        Decimal(0),
+    )
+    efficiency = (
+        abs(values[-1] - values[0]) / distance if distance else Decimal(0)
+    )
+    high, low = max(values), min(values)
+    return {
+        "eff": round(float(efficiency), 4),
+        "up": round(float(max([Decimal(0), *deltas])), 4),
+        "down": round(float(min([Decimal(0), *deltas])), 4),
+        "from_hi": round(float((values[-1] / high - 1) * 100), 4),
+        "from_lo": round(float((values[-1] / low - 1) * 100), 4),
+    }
+
 
 def candidate_prompt(input_payload: dict, candidate: str) -> str:
     if candidate == "production":
@@ -185,6 +233,10 @@ def candidate_prompt(input_payload: dict, candidate: str) -> str:
     payload = _event_significance_prompt_payload(input_payload)
     if candidate == "global_prior_no_family" and isinstance(payload.get("prev"), dict):
         payload["prev"].pop("f", None)
+    if candidate == "path_facts":
+        facts = verified_path_facts(payload["m"])
+        if facts:
+            payload["path"] = facts
     payload_json = _json_dumps(payload)
     return f"{instructions}\nInput JSON:\n{payload_json}"
 

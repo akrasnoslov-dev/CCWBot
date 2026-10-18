@@ -121,6 +121,29 @@ def score(
         for case in dataset["cases"]
     )
     complete_reference = len(completed) == decisive_total
+    positive_total = sum(a_labels[case["id"]] == "alert" for case in dataset["cases"])
+    # Even if every still-untested positive is recovered and every remaining
+    # negative rejected, already observed FN/FP constrain final quality.
+    # This hard upper bound lets us retire a hopeless prompt without burning
+    # the provider's finite free-tier quota on the rest of the corpus.
+    candidate_feasibility = {}
+    for name, stats in results.items():
+        if name in ("production", "historical"):
+            continue
+        best_tp = positive_total - stats["fn"]
+        best_precision = (
+            best_tp / (best_tp + stats["fp"]) if best_tp + stats["fp"] else None
+        )
+        best_recall = best_tp / positive_total if positive_total else None
+        candidate_feasibility[name] = {
+            "best_possible_precision": best_precision,
+            "best_possible_recall": best_recall,
+            "can_still_meet_gates": (
+                best_precision is not None and best_precision >= 0.85
+                and best_recall is not None and best_recall >= 0.90
+            ),
+            "remaining_positives": positive_total - stats["tp"] - stats["fn"],
+        }
     candidate_gates = {
         name: (
             complete_reference
@@ -137,6 +160,7 @@ def score(
         "paired_cases_missing": decisive_total - len(completed),
         "complete_paired_reference": complete_reference,
         "candidate_significance_gates_met": candidate_gates,
+        "candidate_best_case_feasibility": candidate_feasibility,
         "frozen_cases": len(dataset["cases"]),
         "reference": "reviewer_A_owner_designated",
         "benchmark_sha256": dataset["dataset_sha256"],

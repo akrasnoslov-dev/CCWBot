@@ -53,7 +53,7 @@ def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     candidate = candidates.candidate_prompt(payload, variant)
 
     assert candidate != production
-    if variant != "global_prior_no_family":
+    if variant not in ("global_prior_no_family", "path_facts"):
         assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
     assert payload == before
     assert "No fixed numeric cutoff" in candidate
@@ -74,15 +74,47 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
     assert set(output["candidates"]) == {
         "production", "materiality_first", "balanced_novelty",
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
-        "global_prior_safe", "global_prior_no_family",
+        "global_prior_safe", "global_prior_no_family", "path_facts",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 8
+    }) == 9
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
         assert stats["provider_requests"] == 0
+
+
+def test_path_facts_are_grounded_in_sampled_prices_without_changing_input():
+    import json
+
+    payload = deepcopy(_dataset()["cases"][0]["input"])
+    before = deepcopy(payload)
+    result = candidates.candidate_prompt(payload, "path_facts")
+    actual = json.loads(result.split("\nInput JSON:\n")[-1])
+    assert actual["path"]["eff"] == 1.0
+    assert actual["path"]["up"] > 0
+    assert actual["path"]["down"] == 0
+    assert actual["path"]["from_hi"] == 0
+    assert actual["path"]["from_lo"] > 0
+    assert "No fixed numeric cutoff" in result
+    assert payload == before
+    assert "path" not in json.loads(
+        candidates.candidate_prompt(payload, "production")
+        .split("\nInput JSON:\n")[-1]
+    )
+
+
+def test_verified_path_facts_reversal_is_not_mistaken_for_trending_motion():
+    facts = candidates.verified_path_facts({
+        "s": [[-120, 100], [-60, 95], [0, 100]],
+    })
+    assert facts["eff"] == 0.0
+    assert facts["up"] > 0
+    assert facts["down"] == -5
+    assert facts["from_lo"] > 0
+    assert candidates.verified_path_facts({"s": [[0, 0], [1, 100]]}) == {}
+    assert candidates.verified_path_facts({"s": [[0, 100]]}) == {}
 
 
 def test_global_prior_no_family_only_omits_unreliable_semantic_family():
