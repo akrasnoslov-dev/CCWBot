@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from telegram.error import BadRequest
 
 import bot.reports as reports
 from bot.alerting.market_report_rich import (
@@ -13,7 +14,6 @@ from bot.alerting.market_report_rich import (
     market_report_change_chart,
 )
 from bot.handlers import transient
-from telegram.error import BadRequest
 
 
 def _sample_text(report_type="daily"):
