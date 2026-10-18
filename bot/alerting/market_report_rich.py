@@ -217,8 +217,192 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
+_CHART_BG = "#101c2e"
+_CHART_PANEL = "#19293d"
+_CHART_TEXT = "#f4f7fd"
+_CHART_MUTED = "#acbfd3"
+_CHART_GRID = "#40556c"
+_CHART_GREEN = "#3bd3b3"
+_CHART_RED = "#ff8887"
+_CHART_BLUE = "#8ec8f8"
+_COIN_NAMES = {"BTC": "Bitcoin", "ETH": "Ethereum", "GRAM": "Gram", "SOL": "Solana"}
+_SPARK_BUCKETS = "▁▂▃▄▅▆▇█"
+
+
+def _percent_label(value: float) -> str:
+    return f"{value:+.2f}%"
+
+
+def _chart_source_rows(coins: list, period: str) -> list[tuple[str, float | None, dict]]:
+    """Use the first evidence record for each tracked symbol, never fabricated zeros."""
+    valid_symbols = {display_symbol(symbol) for symbol in SUPPORTED_SYMBOLS}
+    evidence: dict[str, tuple[float | None, dict]] = {}
+    for coin in coins:
+        if not isinstance(coin, dict):
+            continue
+        symbol = str(coin.get("symbol") or "").upper()
+        if symbol not in valid_symbols or symbol in evidence:
+            continue
+        value = coin.get(f"change_{period}_percent")
+        if value is None:
+            value = coin.get(f"change_{period}")  # historical cached reports
+        try:
+            move = float(value) if value is not None and not isinstance(value, bool) else None
+        except (TypeError, ValueError, OverflowError):
+            move = None
+        if move is not None and not math.isfinite(move):
+            move = None
+        evidence[symbol] = (move, coin)
+    return [
+        (symbol, *evidence.get(symbol, (None, {})))
+        for symbol in ("BTC", "ETH", "GRAM", "SOL")
+        if symbol in valid_symbols
+    ]
+
+
+def _range_label(value) -> str | None:
+    """Only use a provider-derived range_position, never infer it from glyphs."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        position = float(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if not math.isfinite(position) or not 0 <= position <= 1:
+        return None
+    if position <= 0.25:
+        return "NEAR WEEKLY LOW"
+    if position >= 0.75:
+        return "NEAR WEEKLY HIGH"
+    return "MID-WEEK RANGE"
+
+
+def _source_path(value) -> list[int]:
+    """Accept only recorded normalized buckets; never synthesize missing steps."""
+    if not isinstance(value, str):
+        return []
+    glyphs = value.strip()
+    if not 2 <= len(glyphs) <= 12 or any(glyph not in _SPARK_BUCKETS for glyph in glyphs):
+        return []
+    return [_SPARK_BUCKETS.index(glyph) for glyph in glyphs]
+
+
+def _draw_daily_chart(
+    draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]
+) -> None:
+    width = 1040
+    title, row_font = _font(43), _font(30)
+    small, axis_font, number_font = _font(21), _font(19), _font(30)
+    draw.text((36, 22), "24h Performance", font=title, fill=_CHART_TEXT)
+    draw.text((37, 78), "Verified price changes  |  Four tracked assets  |  USD market data",
+              font=small, fill=_CHART_MUTED)
+
+    values = [(symbol, value) for symbol, value, _ in rows if value is not None]
+    top = max(values, key=lambda item: item[1])[0] if len(values) > 1 else None
+    bottom = min(values, key=lambda item: item[1])[0] if len(values) > 1 else None
+    if values and max(value for _, value in values) == min(value for _, value in values):
+        top = bottom = None
+
+    left, zero, right = 278, 566, 854
+    max_abs = max((abs(value) for _, value in values), default=0.0)
+    # Round bounds to readable, symmetric percentage-point ticks.
+    reference = max(0.02, max_abs)
+    step = 10 ** math.floor(math.log10(reference / 2))
+    limit = 2 * step * math.ceil(reference * 1.08 / (2 * step))
+    for idx, (symbol, change, _) in enumerate(rows):
+        y = 140 + idx * 72
+        draw.rounded_rectangle((27, y - 10, width - 27, y + 55), 14, fill=_CHART_PANEL)
+        draw.text((48, y + 4), symbol, font=row_font, fill=_CHART_TEXT)
+        badge = "BEST" if symbol == top else "LOWEST" if symbol == bottom else ""
+        if badge:
+            badge_color = _CHART_GREEN if symbol == top else _CHART_RED
+            draw.text((152, y + 13), badge, font=_font(16), fill=badge_color)
+        if change is None:
+            draw.text((298, y + 12), "No verified 24h return", font=small, fill=_CHART_MUTED)
+            continue
+        length = abs(change) / limit * (right - zero)
+        color = _CHART_GREEN if change >= 0 else _CHART_RED
+        if change == 0:
+            draw.ellipse((zero - 5, y + 12, zero + 5, y + 22), fill=_CHART_MUTED)
+        else:
+            endpoint = zero + (length if change > 0 else -length)
+            draw.rounded_rectangle(
+                (min(zero, endpoint), y + 9, max(zero, endpoint), y + 27),
+                radius=8, fill=color,
+            )
+        label = _percent_label(change)
+        draw.text((890, y + 5), label, font=number_font if len(label) <= 8 else small,
+                  fill=color)
+
+    # Draw axis over row cards for a clearly shared zero reference.
+    for position, factor in ((left, -1), ((left + zero) / 2, -0.5),
+                             (zero, 0), ((zero + right) / 2, 0.5), (right, 1)):
+        draw.line((position, 122, position, 419),
+                  fill="#90a3ba" if factor == 0 else _CHART_GRID,
+                  width=3 if factor == 0 else 1)
+        tick = factor * limit
+        digits = 1 if limit >= 1 else 2 if limit >= 0.1 else 3 if limit >= 0.01 else 4
+        text = "0%" if factor == 0 else f"{tick:+.{digits}f}%"
+        bbox = draw.textbbox((0, 0), text, font=axis_font)
+        draw.text((position - (bbox[2] - bbox[0]) / 2, 430), text,
+                  font=axis_font, fill=_CHART_MUTED)
+    draw.text((37, 474), "Bar length = change from 0%  ·  Missing returns are not plotted",
+              font=small, fill=_CHART_MUTED)
+
+
+def _draw_weekly_chart(
+    draw: ImageDraw.ImageDraw, rows: list[tuple[str, float | None, dict]]
+) -> None:
+    width = 1040
+    draw.text((36, 20), "7d Performance", font=_font(39), fill=_CHART_TEXT)
+    draw.text((38, 77), "Weekly returns and source-backed relative paths",
+              font=_font(21), fill=_CHART_MUTED)
+    header_font = _font(18)
+    draw.text((52, 117), "ASSET", font=header_font, fill=_CHART_MUTED)
+    draw.text((275, 117), "7D CHANGE", font=header_font, fill=_CHART_MUTED)
+    draw.text((585, 117), "NORMALIZED 7D PATH", font=header_font, fill=_CHART_MUTED)
+    for index, (symbol, change, coin) in enumerate(rows):
+        y = 149 + index * 101
+        color = _CHART_GREEN if change is not None and change >= 0 else (
+            _CHART_RED if change is not None else _CHART_MUTED
+        )
+        draw.rounded_rectangle((26, y, width - 26, y + 91), radius=16, fill=_CHART_PANEL)
+        draw.rounded_rectangle((37, y + 20, 43, y + 71), radius=3, fill=color)
+        draw.text((56, y + 15), symbol, font=_font(34), fill=_CHART_TEXT)
+        draw.text((56, y + 60), _COIN_NAMES[symbol], font=_font(17), fill=_CHART_MUTED)
+        if change is None:
+            draw.text((277, y + 22), "No verified return", font=_font(22), fill=_CHART_MUTED)
+            draw.text((590, y + 38), "7d path unavailable", font=_font(19), fill=_CHART_MUTED)
+            continue
+        draw.text((277, y + 13), _percent_label(change),
+                  font=_font(38) if len(_percent_label(change)) <= 8 else _font(25),
+                  fill=color)
+        range_text = _range_label(coin.get("range_position"))
+        if range_text:
+            draw.text((279, y + 62), range_text, font=_font(17), fill=_CHART_MUTED)
+        path = _source_path(coin.get("sparkline_7d"))
+        if not path:
+            draw.text((590, y + 38), "7d path unavailable", font=_font(19), fill=_CHART_MUTED)
+            continue
+        x0, x1 = 592, 975
+        y0, y1 = y + 18, y + 74
+        draw.line((x0, (y0 + y1) / 2, x1, (y0 + y1) / 2),
+                  fill=_CHART_GRID, width=1)
+        points = [
+            (x0 + idx * (x1 - x0) / (len(path) - 1),
+             y1 - bucket * (y1 - y0) / 7)
+            for idx, bucket in enumerate(path)
+        ]
+        draw.line(points, fill=color, width=5, joint="curve")
+        x, p_y = points[-1]
+        draw.ellipse((x - 5, p_y - 5, x + 5, p_y + 5), fill=_CHART_TEXT)
+    draw.text((35, 573),
+              "Returns: verified 7d %  |  Paths: normalized source samples, not historical prices",
+              font=_font(19), fill=_CHART_MUTED)
+
+
 def market_report_change_chart(raw_input_json: str | None, *, report_type: str) -> bytes | None:
-    """Plot real, already-cached relative moves; no invented intraday/weekly paths."""
+    """Create compact Telegram infographics solely from persisted market evidence."""
     if report_type not in _TITLES or not raw_input_json:
         return None
     try:
@@ -230,93 +414,18 @@ def market_report_change_chart(raw_input_json: str | None, *, report_type: str) 
     coins = payload.get("coins")
     if not isinstance(coins, list):
         return None
-    selected: dict[str, float] = {}
+
     period = "24h" if report_type == "daily" else "7d"
-    for coin in coins:
-        if not isinstance(coin, dict):
-            continue
-        symbol = str(coin.get("symbol") or "").upper()
-        if symbol not in {display_symbol(s) for s in SUPPORTED_SYMBOLS} or symbol in selected:
-            continue
-        value = coin.get(f"change_{period}_percent")
-        if value is None:
-            value = coin.get(f"change_{period}")  # historical report inputs
-        try:
-            move = float(value) if value is not None else math.nan
-        except (TypeError, ValueError, OverflowError):
-            continue
-        if math.isfinite(move):
-            selected[symbol] = move
-    if not selected:
+    rows = _chart_source_rows(coins, period)
+    if not any(change is not None for _, change, _ in rows):
         return None
-    # Absolute percentage-point scale, always centered at zero. Missing coins
-    # are not drawn and missing bars are never represented as 0% changes.
-    # Bars show the actual verified percentage returns. Weekly mini-lines
-    # use only the source's pre-existing normalized 12-step sparkline buckets;
-    # they are a visual trend, not invented high-resolution price samples.
-    chart_width = 1080 if report_type == "weekly" else 980
-    canvas = Image.new("RGB", (chart_width, 465), "#121d30")
+    size = (1040, 510) if report_type == "daily" else (1040, 610)
+    canvas = Image.new("RGB", size, _CHART_BG)
     draw = ImageDraw.Draw(canvas)
-    title_font, row_font, note_font = _font(29), _font(24), _font(17)
-    draw.text(
-        (40, 26), f"Tracked coins | verified {period} changes",
-        fill="#f1f5fb", font=title_font,
-    )
-    bar_zero = 350 if report_type == "weekly" else 480
-    bar_half_width = 225 if report_type == "weekly" else 370
-    scale = bar_half_width / max(0.2, *(abs(x) for x in selected.values()))
-    draw.line((bar_zero, 96, bar_zero, 388), fill="#7c90ab", width=2)
-    sparkline_by_symbol = {}
-    if report_type == "weekly":
-        for coin in coins:
-            if isinstance(coin, dict):
-                symbol = str(coin.get("symbol") or "").upper()
-                sparkline_by_symbol[symbol] = str(coin.get("sparkline_7d") or "")
-        draw.text((668, 95), "7d mini-trend", fill="#a5b3c6", font=note_font)
-    for index, symbol in enumerate(("BTC", "ETH", "GRAM", "SOL")):
-        y = 122 + index * 65
-        draw.text((39, y), symbol, fill="#e0e9f6", font=row_font)
-        if symbol not in selected:
-            draw.text((145, y), "No verified return", fill="#a5b3c6", font=note_font)
-            continue
-        value = selected[symbol]
-        end = max(
-            bar_zero - bar_half_width,
-            min(bar_zero + bar_half_width, bar_zero + value * scale),
-        )
-        if abs(end - bar_zero) < 2:
-            end = bar_zero + (2 if value >= 0 else -2)
-        color = "#38bfa8" if value >= 0 else "#ee938d"
-        draw.rounded_rectangle(
-            (min(bar_zero, end), y, max(bar_zero, end), y + 30),
-            radius=5, fill=color,
-        )
-        if report_type == "weekly":
-            buckets = "▁▂▃▄▅▆▇█"
-            glyphs = [
-                buckets.index(ch) for ch in sparkline_by_symbol.get(symbol, "")
-                if ch in buckets
-            ]
-            if len(glyphs) >= 2:
-                x_start, x_end = 665, 876
-                polyline = [
-                    (
-                        x_start + i * (x_end - x_start) / (len(glyphs) - 1),
-                        y + 30 - glyph * 29 / 7,
-                    )
-                    for i, glyph in enumerate(glyphs)
-                ]
-                draw.line(polyline, fill="#83bce9", width=3, joint="curve")
-            else:
-                draw.text((670, y + 5), "No 7d path", fill="#a5b3c6", font=note_font)
-        value_x = 925 if report_type == "weekly" else 866
-        draw.text((value_x, y + 4), f"{value:+.2f}%", fill="#f1f5fb", font=note_font)
-    footer = (
-        "Bars: verified 7d changes. Mini-lines: normalized source 7d paths."
-        if report_type == "weekly"
-        else "Bars: verified 24h changes. Missing values are omitted."
-    )
-    draw.text((40, 418), footer, fill="#9daec6", font=note_font)
+    if report_type == "daily":
+        _draw_daily_chart(draw, rows)
+    else:
+        _draw_weekly_chart(draw, rows)
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
