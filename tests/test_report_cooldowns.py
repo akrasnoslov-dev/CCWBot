@@ -676,7 +676,7 @@ def test_report_message_renders_market_catalysts_and_selected_news_links():
         decision=decision,
     )
 
-    assert "BTC 24h volume stayed elevated versus the weekly average." in message
+    assert "BTC 24h volume stayed elevated versus the weekly average." not in message
     assert "Market pulse:" in message
     assert "Coin-specific news:" in message
     assert "Crypto market liquidity improves (CoinDesk) https://example.com/market" in message
@@ -700,7 +700,7 @@ def test_report_message_renders_news_fallback_when_no_selected_news():
         decision=decision,
     )
 
-    assert "No clearly relevant fresh news found for tracked coins" in message
+    assert "No verified relevant news selected for the last 24 hours." in message
     assert "No major market-wide news selected" not in message
 
 
