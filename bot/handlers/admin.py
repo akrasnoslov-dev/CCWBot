@@ -83,7 +83,9 @@ def _llm_diagnostics_menu(*, detailed: bool) -> InlineKeyboardMarkup:
         ]
     else:
         buttons = [
-            [InlineKeyboardButton("Provider details", callback_data="admin:llm_diagnostics_detail")],
+            [InlineKeyboardButton(
+                "Provider details", callback_data="admin:llm_diagnostics_detail",
+            )],
             [InlineKeyboardButton("Back to Admin", callback_data="admin:back")],
         ]
     return InlineKeyboardMarkup(buttons)
