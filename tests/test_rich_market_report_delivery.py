@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from telegram.error import BadRequest
 
 import bot.reports as reports
 from bot.alerting.market_report_rich import (
@@ -14,6 +13,7 @@ from bot.alerting.market_report_rich import (
     market_report_change_chart,
 )
 from bot.handlers import transient
+from telegram.error import BadRequest
 
 
 def _sample_text(report_type="daily"):
@@ -222,9 +222,8 @@ def test_rich_legacy_cached_weekly_report_is_compact_without_mutating_cache():
 def test_weekly_chart_includes_normalized_mini_lines_only_if_provider_supplied():
     from io import BytesIO
 
-    from PIL import Image
-
     from bot.alerting.market_report_rich import market_report_change_chart
+    from PIL import Image
 
     with_trends = _input_json("weekly")
     without_trends = json.loads(with_trends)
