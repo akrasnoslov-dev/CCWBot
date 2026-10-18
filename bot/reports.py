@@ -66,6 +66,9 @@ REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS = 60 * 60
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
 DETERMINISTIC_REPORT_PROVIDER = "deterministic"
 DETERMINISTIC_REPORT_MODEL = "deterministic-market-report-v1"
+REPORT_CONTENT_VERSION = 3  # Rich content with source-backed news + coin watchpoints.
+_REPORT_UPGRADE_RETRY_SECONDS = 3600
+_report_upgrade_retry_until: dict[str, float] = {}
 # The scheduled cache-refresh jobs fire at exactly the cache expiry interval (daily 4h,
 # weekly 24h), so at fire time the previous cache is always fresh by only a few seconds.
 # Without this grace the job skips, the cache expires right after, and the effective
@@ -236,27 +239,59 @@ async def refresh_report_cache_scheduled(report_type: str) -> MarketReport | dic
         return result
 
 
+def _report_requires_content_upgrade(report: MarketReport | dict[str, Any]) -> bool:
+    """Only full persisted report inputs qualify; preserve test/minimal caches."""
+    raw = report.get("raw_input_json") if isinstance(report, dict) else report.raw_input_json
+    if not isinstance(raw, str):
+        return False
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return False
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("coins"), list)
+        and payload.get("report_type") in REPORT_FRESHNESS_SECONDS
+        and payload.get("report_content_version", 0) < REPORT_CONTENT_VERSION
+    )
+
+
+def _is_completed_report(report: MarketReport | dict[str, Any] | None) -> bool:
+    return bool(
+        report and (
+            report.get("status") if isinstance(report, dict) else report.status
+        ) == "completed"
+    )
+
+
 async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, Any] | None:
-    """Return a fresh cached report, generating one global report if needed."""
+    """One shared refresh on old content; never fan out LLM/RSS per recipient."""
     report_type = _validate_report_type(report_type)
     cached = await _get_fresh_cached_report(report_type)
-    if cached is not None:
+    outdated = cached is not None and _report_requires_content_upgrade(cached)
+    if cached is not None and not outdated:
         return cached
     if _is_report_provider_backoff_active(report_type):
-        log(f"ops_event=market_report_skipped report_type={report_type} reason=provider_backoff")
-        return None
+        return cached
+    if outdated and time.monotonic() < _report_upgrade_retry_until.get(report_type, 0):
+        return cached
 
     async with _report_generation_locks[report_type]:
         cached = await _get_fresh_cached_report(report_type)
-        if cached is not None:
+        outdated = cached is not None and _report_requires_content_upgrade(cached)
+        if cached is not None and not outdated:
             return cached
         if _is_report_provider_backoff_active(report_type):
-            log(
-                "ops_event=market_report_skipped "
-                f"report_type={report_type} reason=provider_backoff"
+            return cached
+        if outdated and time.monotonic() < _report_upgrade_retry_until.get(report_type, 0):
+            return cached
+        result = await generate_report_cache(report_type)
+        if outdated and not _is_completed_report(result):
+            _report_upgrade_retry_until[report_type] = (
+                time.monotonic() + _REPORT_UPGRADE_RETRY_SECONDS
             )
-            return None
-        return await generate_report_cache(report_type)
+            return cached  # Never replace a valid older report with failure.
+        return result
 
 
 async def generate_report_cache(report_type: str) -> MarketReport | dict[str, Any] | None:
@@ -633,6 +668,7 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
     return (
         {
             "report_type": report_type,
+            "report_content_version": REPORT_CONTENT_VERSION,
             "generated_at": generated_at.isoformat(),
             "active_symbols": [display_symbol(symbol) for symbol in symbols],
             "coins": [
