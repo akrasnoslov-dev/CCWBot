@@ -66,41 +66,47 @@ not affected by report-specific data enrichment.
 
 ## Telegram Templates
 
-Daily reports use this deterministic section model:
+Daily reports present **one** price/24h-change scoreboard with no repeated
+Dashboard or What moved today metrics:
 
 ```text
 Daily Market Report
 Market pulse
-Dashboard
 Tracked assets
-What moved today
 Coin-specific news
 What to watch next
 Not financial advice.
 ```
 
-Weekly reports use a different section model:
+Weekly reports present **one** 7d scoreboard; 24h data and textual sparkline
+blocks do not appear repeatedly in other sections:
 
 ```text
 Weekly Market Report
 Week in one line
 Weekly scoreboard
 Market breadth
-Themes of the week
-Week timeline
-Coin-specific recap
 Top catalysts of the week
 Next week in focus
 Not financial advice.
 ```
 
+Removed weekly Theme/Timeline/Coin-specific recap prose repeated the same
+returns, ranges and unverified model narratives. The original validated model
+fields remain available for compatibility; they do not create duplicate
+user-facing sections. Already cached legacy report rows remain immutable, but
+manual Rich/HTML rendering compacts their historical text without LLM calls.
+
 Native Telegram Rich presentation of either report is built **only** from the
 cached, already-sanitized report text and `raw_input_json`. It preserves the
-distinct Daily and Weekly sections above, using headings, Custom Emoji for coin
-rows, clickable verified source links, and **one inline comparative PNG**.
-The Daily chart shows the per-coin **24h percentage change** and Weekly shows
-**7d percentage change**, using existing verified market inputs. These are
-comparative bars, not invented time-series paths. Missing data stays omitted;
+distinct Daily and Weekly sections above, using headings, neutral coin identifiers, clickable verified source links,
+and **one inline comparative PNG**. Because some custom emoji IDs appear as
+unrelated symbols on Telegram clients, report rows use stable neutral icons
+until those IDs can be validated privately. Event Alert icons are unchanged.
+Daily shows per-coin **24h percentage change**; Weekly combines 7d change
+bars with miniature normalized 7d source paths from the existing 12-step
+sparkline evidence. These are truthful schematic trends, not invented prices,
+high-resolution time series or interpolated missing history. Missing data stays omitted;
 if no changes are available, a short chart-unavailable explanation replaces
 the image. No new provider/LLM/news calls are made on report requests.
 
@@ -136,20 +142,24 @@ weekly story.
 Report news uses the existing RSS/news-intelligence boundary. It does not add a
 separate news provider abstraction.
 
-The report input is split into:
+Report news uses **distinct periods**: 24 hours for Daily and 168 hours
+for Weekly, based on real publication timestamps (undated and expired
+articles are excluded). The existing RSS fetch runs once per report generation,
+then joins read-only with previously analysed and **successful, non-noise,
+non-duplicate** News Intelligence records already stored in PostgreSQL.
+Weekly reports must not infer that an entire week was news-free from a short
+rolling RSS feed page. No additional provider/LLM calls are made.
+Links require real titles, source and HTTP(S) URL. Explicit per-coin matches
+rank within coin buckets; a BTC-only headline must not appear as an ETH story.
+The data sent to the LLM remains capped at two broad-market and two direct
+items per tracked coin. The final user-facing news list contains up to **four
+unique source URLs**, including article titles and publishers, without repeats
+across coin buckets. News is not a presumed cause of price movement unless
+its source supports that claim; generic AI catalyst claims are no longer
+rendered as unverified explanations.
 
-- `market_news`: a small market-wide list for broad crypto catalysts;
-- `coin_news`: direct news buckets for BTC, ETH, GRAM, and SOL.
+If none qualifies, the report says **No verified relevant news selected for
+the last 24 hours** or **last seven days**. That statement describes the
+selection result, not a claim that no relevant news occurred.
 
-Only items with a real title, source, and link are eligible. Direct coin matches
-rank above market-wide items for coin buckets, and fresher/higher-scored items
-rank first. BTC-only news must not be shown as ETH, SOL, or GRAM news unless it
-is clearly market-wide.
-
-The LLM payload stays bounded to at most two market-wide items and two direct
-items per tracked coin. If no clearly relevant fresh news is found, reports use
-the explicit fallback:
-
-```text
-No clearly relevant fresh news found for tracked coins
-```
+Log only selection counts/periods, never titles or raw article payloads.
