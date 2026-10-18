@@ -972,7 +972,7 @@ def _build_weekly_report_message(
         "Top catalysts of the week:\n"
         f"{news_context_text}\n\n"
         "Next week in focus:\n"
-        f"{_short_report_summary(decision.next_week_focus or decision.watch_next, max_chars=230)}\n\n"
+        f"{_short_report_summary(decision.next_week_focus or decision.watch_next)}\n\n"
         "Not financial advice."
     )
 
