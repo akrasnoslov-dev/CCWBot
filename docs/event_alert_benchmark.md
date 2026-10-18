@@ -497,6 +497,43 @@ noteworthy market window; user-specific semantic cooldown still decides
 whether a subscriber receives a repeat. This is an **unverified offline
 hypothesis** and requires a real Groq replay before any product-rule change.
 
+### Global novelty follow-up and quota-respecting continuation (2026-10-18)
+
+The `global_prior_no_family` prompt now has **45 valid scored cases**:
+TP=19, FP=2, FN=4, TN=20, **precision 90.5%, recall 82.6%**
+on the deliberately error-stratified cohort. In the complete 153-case
+reference it can at best reach **37/41 = 90.24% recall**, and
+only if no further alert-worthy event is missed. No promotion is justified.
+The next call returned Groq HTTP 429 with `Retry-After: 190 seconds`,
+so that batch stopped automatically.
+
+Offline path diagnostics computed for all 200 real frozen trajectories
+show that the model can miss substantial intra-window movement when the
+net change is modest. A new, **unproven** `market_signal_path`
+candidate removes the global previous-alert and recent-count hints,
+supplements the sampled price path with verified efficiency, maximum
+adjacent sampled-interval steps and distance from extrema, and evaluates
+the current noteworthy market displacement. The backend's separate
+per-recipient semantic cooldown is unchanged. The first candidate
+call was valid; the second received another HTTP 429 with
+`Retry-After: 524 seconds` and the runner stopped.
+
+Cumulative authorised live benchmark activity is **217/600 requests**
+with **377,645 provider-reported measured tokens** from successful
+responses. Rate-limited requests count against the call ceiling and
+conservative token budget even without provider usage receipts.
+`market_signal_path` has only **1 valid case**, nowhere near the
+153-case completeness gate. No production LLM instructions or
+delivery logic were changed in this calibration step. CI and local
+tests remain separate from proof of product-quality improvement.
+
+The user approved continuing the remaining evaluation over subsequent
+quota windows. Work must not blindly consume all 600 requests: the
+mathematical bound in the replay/score tools retires an unachievable
+candidate early. The private frozen benchmark and reply records must
+remain gitignored; PR 2 stays Draft and unmerged until all quality and
+release checks pass.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |
