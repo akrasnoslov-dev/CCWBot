@@ -86,8 +86,11 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
     floor, ceiling = low - scale * 0.12, high + scale * 0.12
     # For a day-wide window, use its true UTC boundaries on the time axis.
     # The curve still starts/ends only at observed samples, with empty edges.
-    axis_start = as_of.astimezone(timezone.utc) - timedelta(hours=24) if selected.label == "Last 24 hours" else points[0][0]
-    axis_end = as_of.astimezone(timezone.utc) if selected.label == "Last 24 hours" else points[-1][0]
+    if selected.label == "Last 24 hours":
+        axis_start = as_of.astimezone(timezone.utc) - timedelta(hours=24)
+        axis_end = as_of.astimezone(timezone.utc)
+    else:
+        axis_start, axis_end = points[0][0], points[-1][0]
     span = max((axis_end - axis_start).total_seconds(), 1)
     def x_at(stamp: datetime) -> float:
         return left + (stamp - axis_start).total_seconds() / span * (right - left)
