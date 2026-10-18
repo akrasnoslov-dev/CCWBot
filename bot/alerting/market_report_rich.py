@@ -25,11 +25,13 @@ _SECTIONS = {
     "Market pulse:": "🌍 Market pulse",
     "Dashboard:": "📊 Dashboard",
     "Tracked assets:": "💹 Tracked assets",
+    "What to monitor:": "🔎 What to monitor",
     "What moved today:": "📌 What moved today",
     "Coin-specific news:": "📰 Coin-specific news",
     "What to watch next:": "🔎 What to watch next",
     "Week in one line:": "🌍 Week in one line",
     "Weekly scoreboard:": "💹 Weekly scoreboard",
+    "Coin watchpoints:": "🔎 Coin watchpoints",
     "Market breadth:": "📊 Market breadth",
     "Themes of the week:": "📌 Themes of the week",
     "Week timeline:": "🗓️ Week timeline",
@@ -65,11 +67,12 @@ _URL = re.compile(r"https?://\S+")
 # silently overwriting historical market-report rows or forcing a new LLM run.
 _DISPLAY_SECTIONS = {
     "daily": {
-        "Market pulse:", "Tracked assets:", "Coin-specific news:",
+        "Market pulse:", "Tracked assets:", "What to monitor:", "Coin-specific news:",
         "What to watch next:",
     },
     "weekly": {
         "Week in one line:", "Weekly scoreboard:", "Market breadth:",
+        "Coin watchpoints:",
         "Top catalysts of the week:", "Next week in focus:",
     },
 }
