@@ -364,7 +364,7 @@ async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
 
     monkeypatch.setattr(reports, "get_report_market_data_batch", fake_market_data)
 
-    async def fake_news(symbols, prefer_unseen=True):
+    async def fake_news(symbols, prefer_unseen=True, **kwargs):
         return _empty_report_news_context()
 
     monkeypatch.setattr(reports, "fetch_report_news_context", fake_news)
@@ -400,7 +400,7 @@ async def test_report_all_providers_schema_invalid_uses_deterministic_fallback(
 
     monkeypatch.setattr(reports, "get_report_market_data_batch", fake_market_data)
 
-    async def fake_news(symbols, prefer_unseen=True):
+    async def fake_news(symbols, prefer_unseen=True, **kwargs):
         return _empty_report_news_context()
 
     monkeypatch.setattr(reports, "fetch_report_news_context", fake_news)
@@ -432,7 +432,7 @@ async def _install_report_inputs(monkeypatch):
     async def fake_market_data(symbols):
         return _market_data()
 
-    async def fake_news(symbols, prefer_unseen=True):
+    async def fake_news(symbols, prefer_unseen=True, **kwargs):
         return _empty_report_news_context()
 
     async def fake_remember(news_items):
