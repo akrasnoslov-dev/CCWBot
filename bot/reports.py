@@ -16,6 +16,7 @@ from bot.alerting.market_report import (
     validate_market_report_output,
 )
 from bot.alerting.market_report_rich import (
+    compact_report_for_display,
     format_html_market_report,
     format_rich_market_report,
     market_report_change_chart,
@@ -498,8 +499,9 @@ async def _send_report_message(target, report_type: str) -> None:
             else getattr(report, "raw_input_json", None)
         )
         chart_png = market_report_change_chart(input_json, report_type=report_type)
+        display_text = compact_report_for_display(str(message), report_type=report_type)
         rich_html = format_rich_market_report(
-            str(message), report_type=report_type, chart_available=chart_png is not None,
+            display_text, report_type=report_type, chart_available=chart_png is not None,
         )
         bot = None
         get_bot = getattr(target, "get_bot", None)
@@ -538,11 +540,11 @@ async def _send_report_message(target, report_type: str) -> None:
                 )
                 return
 
-        html = format_html_market_report(str(message), report_type=report_type)
+        html = format_html_market_report(display_text, report_type=report_type)
         try:
             await target.reply_text(html, parse_mode=ParseMode.HTML)
         except BadRequest:
-            await target.reply_text(str(message))
+            await target.reply_text(display_text)
         return
 
     await target.reply_text(REPORT_UNAVAILABLE_MESSAGES[report_type])
@@ -618,7 +620,12 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
     market_data = await get_report_market_data_batch(symbols)
     if not _has_usable_market_data(market_data):
         raise MarketReportDataUnavailable("market data unavailable")
-    news_payload, news_items = await fetch_report_news_context(symbols, prefer_unseen=True)
+    news_payload, news_items = await fetch_report_news_context(
+        symbols,
+        prefer_unseen=True,
+        max_age_hours=168 if report_type == "weekly" else 24,
+        now=generated_at,
+    )
     market_news = news_payload.get("market_news") if isinstance(news_payload, dict) else []
     coin_news = news_payload.get("coin_news") if isinstance(news_payload, dict) else {}
     news_fallback = news_payload.get("fallback") if isinstance(news_payload, dict) else ""
@@ -887,27 +894,19 @@ def _build_daily_report_message(
     coin_rows: list[str],
     news_context_text: str,
 ) -> str:
-    moved_today = _format_report_section_items(
-        [*decision.dashboard, *decision.market_catalysts, decision.why_it_matters],
-        fallback=decision.why_it_matters,
-    )
-    message = (
+    """Each datum has one owner: one coin table, one narrative, one news list."""
+    return (
         "📊 Daily Market Report\n\n"
         "Market pulse:\n"
-        f"{decision.market_pulse}\n\n"
-        "Dashboard:\n"
-        f"{_format_report_section_items(decision.dashboard)}\n\n"
+        f"{_short_report_summary(decision.market_pulse)}\n\n"
         "Tracked assets:\n"
         f"{chr(10).join(coin_rows)}\n\n"
-        "What moved today:\n"
-        f"{moved_today}\n\n"
         "Coin-specific news:\n"
         f"{news_context_text}\n\n"
         "What to watch next:\n"
-        f"{decision.watch_next}\n\n"
+        f"{_short_report_summary(decision.watch_next)}\n\n"
         "Not financial advice."
     )
-    return message
 
 
 def _build_weekly_report_message(
@@ -917,35 +916,34 @@ def _build_weekly_report_message(
     news_context_text: str,
     weekly_context,
 ) -> str:
-    themes = [
-        *decision.themes,
-        *decision.dashboard,
-        *decision.market_catalysts,
-        decision.why_it_matters,
-    ]
+    """The chart owns weekly price paths; do not repeat them in prose."""
     breadth_text = _format_weekly_breadth(weekly_context)
-    timeline_text = _format_weekly_timeline(weekly_context)
-    message = (
+    return (
         "📊 Weekly Market Report\n\n"
         "Week in one line:\n"
-        f"{decision.market_pulse}\n\n"
+        f"{_short_report_summary(decision.market_pulse)}\n\n"
         "Weekly scoreboard:\n"
         f"{chr(10).join(coin_rows)}\n\n"
         "Market breadth:\n"
         f"{breadth_text}\n\n"
-        "Themes of the week:\n"
-        f"{_format_report_section_items(themes, fallback=decision.why_it_matters)}\n\n"
-        "Week timeline:\n"
-        f"{timeline_text}\n\n"
-        "Coin-specific recap:\n"
-        f"{_format_coin_cards(decision.coin_cards)}\n\n"
         "Top catalysts of the week:\n"
         f"{news_context_text}\n\n"
         "Next week in focus:\n"
-        f"{decision.next_week_focus or decision.watch_next}\n\n"
+        f"{_short_report_summary(decision.next_week_focus or decision.watch_next)}\n\n"
         "Not financial advice."
     )
-    return message
+
+
+def _short_report_summary(text: str, *, max_chars: int = 260) -> str:
+    """Bound LLM verbosity without replacing or manufacturing market claims."""
+    value = " ".join(str(text or "").split())
+    if len(value) <= max_chars:
+        return value
+    # Prefer an existing sentence boundary to avoid a truncated assertion.
+    end = max(value.rfind(". ", 0, max_chars), value.rfind("! ", 0, max_chars))
+    if end >= 70:
+        return value[: end + 1]
+    return value[: max_chars - 1].rstrip(" ,;:") + "…"
 
 
 def _format_report_section_items(items: list[str], *, fallback: str | None = None) -> str:
@@ -990,35 +988,37 @@ def _format_weekly_timeline(weekly_context) -> str:
 
 
 def _format_report_news_context(input_payload: dict) -> str:
+    """Up to four unique sourced headlines, never the same URL in two buckets."""
     rows: list[str] = []
+    seen_links: set[str] = set()
     market_news = input_payload.get("market_news")
-    if isinstance(market_news, list):
-        for item in market_news:
-            if not isinstance(item, dict):
-                continue
-            formatted = _format_report_news_item(item)
-            if formatted:
-                rows.append(formatted)
-
     coin_news = input_payload.get("coin_news")
+    candidates: list[tuple[str | None, dict]] = []
+    if isinstance(market_news, list):
+        candidates.extend((None, item) for item in market_news if isinstance(item, dict))
     if isinstance(coin_news, dict):
         for symbol in input_payload.get("active_symbols", []):
             symbol_text = str(symbol or "").strip().upper()
             items = coin_news.get(symbol_text)
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                formatted = _format_report_news_item(item, prefix=symbol_text)
-                if formatted:
-                    rows.append(formatted)
-
+            if isinstance(items, list):
+                candidates.extend(
+                    (symbol_text, item) for item in items if isinstance(item, dict)
+                )
+    for symbol, item in candidates:
+        link = str(item.get("link") or "").strip()
+        if not link or link in seen_links:
+            continue
+        formatted = _format_report_news_item(item, prefix=symbol)
+        if formatted:
+            rows.append(formatted)
+            seen_links.add(link)
+        if len(rows) >= 4:
+            break
     if rows:
         return "\n".join(rows)
-
-    fallback = str(input_payload.get("news_fallback") or "").strip()
-    return fallback or "No clearly relevant fresh news found for tracked coins"
+    report_type = str(input_payload.get("report_type") or "daily")
+    period = "seven days" if report_type == "weekly" else "24 hours"
+    return f"No verified relevant news selected for the last {period}."
 
 
 def _format_report_news_item(item: dict, *, prefix: str | None = None) -> str:
@@ -1040,11 +1040,9 @@ def _format_coin_row(coin: dict, *, weekly: bool) -> str:
             _report_change_percent(coin, "7d"),
             unavailable_text="unavailable from provider",
         )
-        sparkline = str(coin.get("sparkline_7d") or "").strip()
-        range_text = _format_range_position(coin.get("range_position"))
-        suffix_parts = [part for part in (sparkline, range_text) if part]
-        suffix = f", {' '.join(suffix_parts)}" if suffix_parts else ""
-        return f"• {symbol}: {price}, 7d {change_7d}, 24h {change_24h}{suffix}"
+        # Sparklines and 24h changes are chart-level context in Weekly, not
+        # four extra inline values per coin competing with the 7d scoreboard.
+        return f"• {symbol}: {price}, 7d {change_7d}"
     return f"• {symbol}: {price}, 24h {change_24h}"
 
 

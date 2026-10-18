@@ -371,6 +371,8 @@ async def fetch_report_news_context(
     prefer_unseen: bool = True,
     market_limit: int = REPORT_MARKET_NEWS_LIMIT,
     per_symbol_limit: int = REPORT_COIN_NEWS_LIMIT,
+    max_age_hours: int | None = None,
+    now: datetime | None = None,
 ) -> tuple[dict[str, object], list[dict]]:
     """Return bounded market-wide and per-coin news context for reports.
 
@@ -386,8 +388,48 @@ async def fetch_report_news_context(
         market_limit + per_symbol_limit * len(normalized_symbols) * 3,
     )
     raw_items = await fetch_news_context(limit=fetch_limit, prefer_unseen=prefer_unseen)
+    # Weekly reporting needs its full 7-day published history. RSS feed pages
+    # are a rolling recent subset and cannot prove that a week had no stories.
+    # Use already-verified News Intelligence rows before supplementing with RSS.
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    cutoff = (
+        current_time.astimezone(timezone.utc) - timedelta(hours=max_age_hours)
+        if max_age_hours is not None else None
+    )
+    persisted_items: list[dict] = []
+    if cutoff is not None and DB_ENABLED and DB_SESSION_LOCAL:
+        async with DB_SESSION_LOCAL() as session:
+            result = await session.scalars(
+                select(NewsItem)
+                .where(NewsItem.llm_status == "success")
+                .where(NewsItem.is_noise.is_(False))
+                .where(NewsItem.is_duplicate.is_(False))
+                .where(NewsItem.published_at.isnot(None))
+                .where(NewsItem.published_at >= cutoff)
+                .where(NewsItem.published_at <= current_time + timedelta(minutes=5))
+                .order_by(NewsItem.published_at.desc(), NewsItem.id.desc())
+                .limit(240)
+            )
+            persisted_items = [
+                _news_row_to_compat_dict(row) for row in result.all()
+            ]
+    def within_window(item: dict) -> bool:
+        if cutoff is None:
+            return True
+        published = _item_published_at(item)
+        return published is not None and cutoff <= published <= current_time + timedelta(
+            minutes=5
+        )
+
     candidates = _dedupe_report_news(
-        [item for item in raw_items if _has_report_news_identity(item)]
+        [
+            item for item in (persisted_items + raw_items)
+            if _has_report_news_identity(item)
+            and within_window(item)
+            and _item_link(item).lower().startswith(("https://", "http://"))
+        ]
     )
 
     coin_items_by_symbol: dict[str, list[dict]] = {symbol: [] for symbol in normalized_symbols}
@@ -454,6 +496,13 @@ async def fetch_report_news_context(
     selected_coin_items = [
         item for symbol_items in coin_items_by_symbol.values() for item in symbol_items
     ]
+    log(
+        "ops_event=report_news_selection "
+        f"window_hours={max_age_hours or 0} "
+        f"rss_count={len(raw_items)} persisted_count={len(persisted_items)} "
+        f"candidate_count={len(candidates)} market_count={len(selected_market_items)} "
+        f"direct_count={len(_dedupe_report_news(selected_coin_items))}"
+    )
 
     return (
         {

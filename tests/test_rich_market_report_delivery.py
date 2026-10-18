@@ -58,7 +58,8 @@ def test_rich_report_retains_sections_custom_coin_icons_and_single_chart(report_
     html = format_rich_market_report(plain, report_type=report_type, chart_available=True)
     assert f"<h2>📊 {report_type.title()} Market Report</h2>" in html
     assert html.count('<img src="tg://photo?id=chart"/>') == 1
-    assert 'tg-emoji emoji-id="5220072735815802195"' in html
+    assert "🟠 • BTC:" in html
+    assert "tg-emoji" not in html  # Neutral fallback until emoji pack verified
     assert '<footer>Not financial advice.</footer>' in html
     assert "BTC outperformed." in html
     if report_type == "daily":
@@ -184,3 +185,62 @@ async def test_manual_rich_report_close_and_next_command_cleanup_are_preserved()
         transient._active.reset(token)
         transient.sessions._sessions.pop(key, None)
         transient.sessions._origins.pop(key, None)
+
+
+
+def test_rich_legacy_cached_weekly_report_is_compact_without_mutating_cache():
+    from bot.alerting.market_report_rich import compact_report_for_display
+
+    raw = (
+        "📊 Weekly Market Report\n\n"
+        "Week in one line:\nMarket slipped over the week.\n\n"
+        "Weekly scoreboard:\n"
+        "• BTC: $80,000, 7d -1.7%, 24h +0.0%, ▆▆▇▅▇▆▄▂▄▄▃▃ mid weekly range\n"
+        "• ETH: $2,400, 7d -3.7%, 24h +0.4%, ▆▆▄▁▄▄ mid weekly range\n\n"
+        "Market breadth:\n• 0/4 assets positive.\n\n"
+        "Themes of the week:\n• BTC declined 1.7%.\n"
+        "• ETH dropped 3.7%.\n\n"
+        "Week timeline:\n• BTC opened at $83,000 and now near $80,000.\n\n"
+        "Coin-specific recap:\n• BTC fell 1.7% in the week.\n\n"
+        "Top catalysts of the week:\n"
+        "• BTC: Verified BTC story (Source) https://example.org/btc\n"
+        "• ETH: Same report (Source) https://example.org/btc\n\n"
+        "Next week in focus:\nWatch weekly ranges.\n\n"
+        "Not financial advice."
+    )
+    result = compact_report_for_display(raw, report_type="weekly")
+    assert result.count("-1.7%") == 1
+    assert result.count("-3.7%") == 1
+    assert "▆▆" not in result
+    assert "24h " not in result
+    assert "Themes of the week:" not in result
+    assert "Week timeline:" not in result
+    assert "Coin-specific recap:" not in result
+    assert result.count("https://example.org/btc") == 1
+    assert raw.startswith("📊 Weekly Market Report")
+
+
+def test_weekly_chart_includes_normalized_mini_lines_only_if_provider_supplied():
+    from io import BytesIO
+
+    from PIL import Image
+
+    from bot.alerting.market_report_rich import market_report_change_chart
+
+    with_trends = _input_json("weekly")
+    without_trends = json.loads(with_trends)
+    for item in without_trends["coins"]:
+        if item["symbol"] == "BTC":
+            item["sparkline_7d"] = "▁▂▃▄▅▆▇█"
+    chart = market_report_change_chart(
+        json.dumps(without_trends), report_type="weekly",
+    )
+    assert chart is not None
+    image = Image.open(BytesIO(chart))
+    assert image.size == (1080, 465)
+    # Cached data is unchanged; only a real normalized series draws a mini-line.
+    without_trends["coins"][0]["sparkline_7d"] = ""
+    plain = market_report_change_chart(
+        json.dumps(without_trends), report_type="weekly",
+    )
+    assert plain is not None and chart != plain
