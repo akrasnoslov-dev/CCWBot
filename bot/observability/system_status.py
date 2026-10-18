@@ -754,7 +754,10 @@ async def build_admin_llm_diagnostics_text(
 
     if active:
         lines.extend(("", "Active limits", *active))
-    lines.extend(("", "Skips are not provider requests; a failed request may recover via fallback."))
+    lines.extend((
+        "",
+        "Skips are not provider requests; a failed request may recover via fallback.",
+    ))
     return "\n".join(lines)
 
 
