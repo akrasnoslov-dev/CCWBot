@@ -611,6 +611,68 @@ def _llm_outcome_category(status: str | None, error_reason: str | None) -> str:
     return "failure"
 
 
+async def build_admin_llm_summary_html(
+    *, db_enabled: bool, session_factory, now: datetime | None = None,
+) -> str:
+    """Compact admin-only snapshot; the complete provider breakdown is one tap away."""
+    now = _as_utc(now) or _utc_now()
+    if not db_enabled or not session_factory:
+        return "<b>LLM · last 24h</b>\n\nTelemetry unavailable."
+    try:
+        async with session_factory() as session:
+            rows = await _llm_provider_breakdown_rows(session, now=now)
+            logical = await read_logical_llm_health(session, now=now)
+    except Exception:
+        return "<b>LLM · last 24h</b>\n\nTelemetry query failed."
+
+    names = {
+        "event_analysis": "Events",
+        "event_alert_render": "Alert render",
+        "market_heartbeat": "Heartbeat",
+        "daily_report": "Daily",
+        "weekly_report": "Weekly",
+        "news_intelligence": "News",
+    }
+    table_lines = ["Feature        OK  Fail Status"]
+    for call_type, label in names.items():
+        item = logical[call_type]
+        if not item.operations and not item.missing_outcomes:
+            continue
+        if item.missing_outcomes or item.unknown_outcomes:
+            state = "Incomplete"
+        elif item.terminal_failures:
+            state = "Failures"
+        elif item.state == "unknown":
+            state = "Low N"
+        elif item.state == "ok":
+            state = "OK"
+        else:
+            state = item.state.capitalize()
+        table_lines.append(
+            f"{label:<13} {item.successes:>3} {item.terminal_failures:>5} {state}"
+        )
+    if len(table_lines) == 1:
+        table_lines.append("No observed operations")
+    total = sum(x[3]["attempts"] for x in rows)
+    success = sum(x[3]["success"] for x in rows)
+    skipped = sum(x[3]["backoff"] + x[3]["circuit"] for x in rows)
+    failed = max(total - success - skipped, 0)
+    provider_summary = (
+        f"Provider requests: <b>{success} succeeded · {failed} failed</b>\n"
+        f"Skipped without request: <b>{skipped}</b>"
+    )
+    limits = get_active_llm_rate_limit_backoffs(now=now)
+    if limits:
+        provider_summary += f"\nActive limits: <b>{len(limits)}</b>"
+    return (
+        "<b>LLM diagnostics · last 24h</b>\n"
+        "<pre>" + "\n".join(table_lines) + "</pre>\n"
+        + provider_summary
+        + "\n\nLow N = fewer than 20 observations; not a failure."
+        + "\nSelect Details for per-provider errors, backoffs and recovery."
+    )
+
+
 async def build_admin_llm_diagnostics_text(
     *,
     db_enabled: bool,
