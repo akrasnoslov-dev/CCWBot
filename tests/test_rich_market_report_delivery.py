@@ -58,8 +58,7 @@ def test_rich_report_retains_sections_custom_coin_icons_and_single_chart(report_
     html = format_rich_market_report(plain, report_type=report_type, chart_available=True)
     assert f"<h2>📊 {report_type.title()} Market Report</h2>" in html
     assert html.count('<img src="tg://photo?id=chart"/>') == 1
-    assert "🟠 • BTC:" in html
-    assert "tg-emoji" not in html  # Neutral fallback until emoji pack verified
+    assert '<tg-emoji emoji-id="5220072735815802195">🖕</tg-emoji>' in html
     assert '<footer>Not financial advice.</footer>' in html
     assert "BTC outperformed." in html
     if report_type == "daily":
