@@ -166,6 +166,13 @@ market event, never in the recipient loop, and caches the returned Telegram phot
 
 Only proven historical observations are plotted. Missing or stale data shows a chart
 unavailable explanation; shorter valid coverage is explicitly labeled as such.
+For the standard 30-minute snapshot cadence, edge samples up to 45 minutes from
+either boundary of a 24-hour query window count as normal sampling coverage when
+all internal gaps remain acceptable. Chart axes show the actual rolling 24-hour
+window with blank unsampled edges, never invented prices. Materially incomplete
+history still shows its observed duration instead of claiming a whole day.
+Rich Event Alert and Heartbeat headings must reuse the configured Telegram
+Custom Emoji for each coin, not the colored fallback placeholders.
 Ordinary HTML and plain text remain fallbacks after *definitive* rejection of a richer
 variant. Unknown transport acceptance must not trigger a second send because Telegram
 has no caller-supplied send-idempotency key. Rich-client compatibility cannot be

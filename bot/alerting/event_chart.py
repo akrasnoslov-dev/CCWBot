@@ -53,8 +53,14 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
         for earlier, later in zip(points, points[1:], strict=False)
     ):
         return unavailable
-    # A day is only claimed when observations span virtually the full period.
-    is_full_day = points[0][0] <= since + timedelta(minutes=20)
+    # Observations are persisted on a 30-minute schedule. The first and last
+    # actual samples can both be ~30m inside a complete 24-hour query window.
+    # Describe the queried window, not the distance between its sample endpoints.
+    # Never claim a full window if either edge has >45m of missing coverage.
+    is_full_day = (
+        points[0][0] <= since + timedelta(minutes=45)
+        and points[-1][0] >= as_of - timedelta(minutes=45)
+    )
     if is_full_day:
         label = "Last 24 hours"
     else:
@@ -78,9 +84,16 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
     scale = max(high - low, high * 0.0005)
     # Explicit price-axis labels make the zoomed vertical scale transparent.
     floor, ceiling = low - scale * 0.12, high + scale * 0.12
-    span = max((points[-1][0] - points[0][0]).total_seconds(), 1)
+    # For a day-wide window, use its true UTC boundaries on the time axis.
+    # The curve still starts/ends only at observed samples, with empty edges.
+    if selected.label == "Last 24 hours":
+        axis_start = as_of.astimezone(timezone.utc) - timedelta(hours=24)
+        axis_end = as_of.astimezone(timezone.utc)
+    else:
+        axis_start, axis_end = points[0][0], points[-1][0]
+    span = max((axis_end - axis_start).total_seconds(), 1)
     def x_at(stamp: datetime) -> float:
-        return left + (stamp - points[0][0]).total_seconds() / span * (right - left)
+        return left + (stamp - axis_start).total_seconds() / span * (right - left)
 
     def y_at(value: float) -> float:
         return bottom - (value - floor) / (ceiling - floor) * (bottom - top)
@@ -103,9 +116,9 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
     if previous:
         draw.ellipse((previous[1][0] - 5, previous[1][1] - 5,
                       previous[1][0] + 5, previous[1][1] + 5), fill=accent)
-    draw.text((left, 291), points[0][0].strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1")
+    draw.text((left, 291), axis_start.strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1")
     draw.text(
-        (right, 291), points[-1][0].strftime("%d %b %H:%M"),
+        (right, 291), axis_end.strftime("%d %b %H:%M"),
         font=f_small, fill="#c0cee1", anchor="ra",
     )
     draw.text((left, 329), "Price axis: observed range  |  gaps > 90m not connected",
