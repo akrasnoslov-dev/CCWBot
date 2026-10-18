@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw, ImageFont
 
-from bot.coin_icons import coin_fallback_emoji
+from bot.coin_icons import coin_custom_emoji_id, coin_fallback_emoji
 from bot.domain.supported_coins import SUPPORTED_SYMBOLS, display_symbol
 
 _TITLES = {
@@ -25,11 +25,13 @@ _SECTIONS = {
     "Market pulse:": "🌍 Market pulse",
     "Dashboard:": "📊 Dashboard",
     "Tracked assets:": "💹 Tracked assets",
+    "What to monitor:": "🔎 What to monitor",
     "What moved today:": "📌 What moved today",
     "Coin-specific news:": "📰 Coin-specific news",
     "What to watch next:": "🔎 What to watch next",
     "Week in one line:": "🌍 Week in one line",
     "Weekly scoreboard:": "💹 Weekly scoreboard",
+    "Coin watchpoints:": "🔎 Coin watchpoints",
     "Market breadth:": "📊 Market breadth",
     "Themes of the week:": "📌 Themes of the week",
     "Week timeline:": "🗓️ Week timeline",
@@ -37,6 +39,25 @@ _SECTIONS = {
     "Top catalysts of the week:": "📰 Top catalysts of the week",
     "Next week in focus:": "🔎 Next week in focus",
 }
+# Exact Unicode alts returned by Telegram getCustomEmojiStickers for the
+# CCWBotIcons pack on 2026-10-18. A mismatched alt causes Telegram clients
+# to show a generic fallback rather than the intended coin image.
+_REPORT_CUSTOM_EMOJI_ALTS = {
+    "BTC": "🖕",
+    "ETH": "👨‍⚕️",
+    "GRAM": "✌️",
+    "SOL": "👩‍🚀",
+}
+
+
+def _report_coin_icon_html(symbol: str) -> str:
+    emoji_id = coin_custom_emoji_id(symbol)
+    alt = _REPORT_CUSTOM_EMOJI_ALTS.get(symbol)
+    if emoji_id and alt:
+        return f'<tg-emoji emoji-id="{escape(emoji_id, quote=True)}">{alt}</tg-emoji>'
+    return coin_fallback_emoji(symbol)
+
+
 _COIN_ROW = re.compile(r"^•\s+(BTC|ETH|GRAM|SOL):")
 _URL = re.compile(r"https?://\S+")
 
@@ -46,11 +67,12 @@ _URL = re.compile(r"https?://\S+")
 # silently overwriting historical market-report rows or forcing a new LLM run.
 _DISPLAY_SECTIONS = {
     "daily": {
-        "Market pulse:", "Tracked assets:", "Coin-specific news:",
+        "Market pulse:", "Tracked assets:", "What to monitor:", "Coin-specific news:",
         "What to watch next:",
     },
     "weekly": {
         "Week in one line:", "Weekly scoreboard:", "Market breadth:",
+        "Coin watchpoints:",
         "Top catalysts of the week:", "Next week in focus:",
     },
 }
@@ -112,7 +134,7 @@ def compact_report_for_display(plain_text: str, *, report_type: str) -> str:
     return "\n\n".join(output)
 
 
-def _safe_rich_line(line: str) -> str:
+def _safe_rich_line(line: str, *, rich: bool = False) -> str:
     """Escape all model/news wording; only safely link explicit HTTP(S) sources."""
     found = _URL.search(line)
     if found:
@@ -130,7 +152,9 @@ def _safe_rich_line(line: str) -> str:
         text = escape(line)
     match = _COIN_ROW.match(line)
     if match:
-        return f"{coin_fallback_emoji(match.group(1))} {text}"
+        symbol = match.group(1)
+        icon = _report_coin_icon_html(symbol) if rich else coin_fallback_emoji(symbol)
+        return f"{icon} {text}"
     return text
 
 
@@ -153,7 +177,7 @@ def format_rich_market_report(
             blocks.append(f"<h3>{escape(_SECTIONS[header])}</h3>")
             lines = lines[1:]
         for line in lines:
-            blocks.append(f"<p>{_safe_rich_line(line)}</p>")
+            blocks.append(f"<p>{_safe_rich_line(line, rich=True)}</p>")
         if header in {"Tracked assets:", "Weekly scoreboard:"}:
             label = "24h" if report_type == "daily" else "7d"
             blocks.append(f"<h3>📈 Verified {label} coin performance</h3>")

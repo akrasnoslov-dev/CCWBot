@@ -7,7 +7,8 @@ non-admin commands belong in their domain modules.
 
 from io import BytesIO
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from bot.alerts import schedule_automatic_market_check
@@ -27,6 +28,7 @@ from bot.keyboards import (
 )
 from bot.observability.system_status import (
     build_admin_llm_diagnostics_text,
+    build_admin_llm_summary_html,
     build_admin_system_status_text,
 )
 from bot.settings import (
@@ -71,6 +73,22 @@ async def _build_admin_llm_diagnostics_text() -> str:
         db_enabled=root.DB_ENABLED,
         session_factory=root.DB_SESSION_LOCAL,
     )
+
+
+def _llm_diagnostics_menu(*, detailed: bool) -> InlineKeyboardMarkup:
+    if detailed:
+        buttons = [
+            [InlineKeyboardButton("Summary", callback_data="admin:llm_diagnostics")],
+            [InlineKeyboardButton("Back to Admin", callback_data="admin:back")],
+        ]
+    else:
+        buttons = [
+            [InlineKeyboardButton(
+                "Provider details", callback_data="admin:llm_diagnostics_detail",
+            )],
+            [InlineKeyboardButton("Back to Admin", callback_data="admin:back")],
+        ]
+    return InlineKeyboardMarkup(buttons)
 
 
 def _premium_grant_usage_text() -> str:
@@ -394,10 +412,22 @@ async def send_admin_callback_response(data: str, query, application) -> bool:
         )
         return True
     if data == "admin:llm_diagnostics":
+        root = handlers_module()
+        await safe_edit_callback_message(
+            query,
+            await build_admin_llm_summary_html(
+                db_enabled=root.DB_ENABLED,
+                session_factory=root.DB_SESSION_LOCAL,
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_llm_diagnostics_menu(detailed=False),
+        )
+        return True
+    if data == "admin:llm_diagnostics_detail":
         await safe_edit_callback_message(
             query,
             await _build_admin_llm_diagnostics_text(),
-            reply_markup=build_admin_back_keyboard(),
+            reply_markup=_llm_diagnostics_menu(detailed=True),
         )
         return True
     if data == "admin:premium_menu":

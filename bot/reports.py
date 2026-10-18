@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from datetime import timedelta
 from typing import Any
@@ -65,6 +66,9 @@ REPORT_SCHEDULED_FAILURE_BACKOFF_SECONDS = 60 * 60
 REPORT_FRESHNESS_SECONDS = {"daily": 4 * 3600, "weekly": 24 * 3600}
 DETERMINISTIC_REPORT_PROVIDER = "deterministic"
 DETERMINISTIC_REPORT_MODEL = "deterministic-market-report-v1"
+REPORT_CONTENT_VERSION = 3  # Rich content with source-backed news + coin watchpoints.
+_REPORT_UPGRADE_RETRY_SECONDS = 3600
+_report_upgrade_retry_until: dict[str, float] = {}
 # The scheduled cache-refresh jobs fire at exactly the cache expiry interval (daily 4h,
 # weekly 24h), so at fire time the previous cache is always fresh by only a few seconds.
 # Without this grace the job skips, the cache expires right after, and the effective
@@ -235,27 +239,59 @@ async def refresh_report_cache_scheduled(report_type: str) -> MarketReport | dic
         return result
 
 
+def _report_requires_content_upgrade(report: MarketReport | dict[str, Any]) -> bool:
+    """Only full persisted report inputs qualify; preserve test/minimal caches."""
+    raw = report.get("raw_input_json") if isinstance(report, dict) else report.raw_input_json
+    if not isinstance(raw, str):
+        return False
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return False
+    return (
+        isinstance(payload, dict)
+        and isinstance(payload.get("coins"), list)
+        and payload.get("report_type") in REPORT_FRESHNESS_SECONDS
+        and payload.get("report_content_version", 0) < REPORT_CONTENT_VERSION
+    )
+
+
+def _is_completed_report(report: MarketReport | dict[str, Any] | None) -> bool:
+    return bool(
+        report and (
+            report.get("status") if isinstance(report, dict) else report.status
+        ) == "completed"
+    )
+
+
 async def get_or_generate_report(report_type: str) -> MarketReport | dict[str, Any] | None:
-    """Return a fresh cached report, generating one global report if needed."""
+    """One shared refresh on old content; never fan out LLM/RSS per recipient."""
     report_type = _validate_report_type(report_type)
     cached = await _get_fresh_cached_report(report_type)
-    if cached is not None:
+    outdated = cached is not None and _report_requires_content_upgrade(cached)
+    if cached is not None and not outdated:
         return cached
     if _is_report_provider_backoff_active(report_type):
-        log(f"ops_event=market_report_skipped report_type={report_type} reason=provider_backoff")
-        return None
+        return cached
+    if outdated and time.monotonic() < _report_upgrade_retry_until.get(report_type, 0):
+        return cached
 
     async with _report_generation_locks[report_type]:
         cached = await _get_fresh_cached_report(report_type)
-        if cached is not None:
+        outdated = cached is not None and _report_requires_content_upgrade(cached)
+        if cached is not None and not outdated:
             return cached
         if _is_report_provider_backoff_active(report_type):
-            log(
-                "ops_event=market_report_skipped "
-                f"report_type={report_type} reason=provider_backoff"
+            return cached
+        if outdated and time.monotonic() < _report_upgrade_retry_until.get(report_type, 0):
+            return cached
+        result = await generate_report_cache(report_type)
+        if outdated and not _is_completed_report(result):
+            _report_upgrade_retry_until[report_type] = (
+                time.monotonic() + _REPORT_UPGRADE_RETRY_SECONDS
             )
-            return None
-        return await generate_report_cache(report_type)
+            return cached  # Never replace a valid older report with failure.
+        return result
 
 
 async def generate_report_cache(report_type: str) -> MarketReport | dict[str, Any] | None:
@@ -632,6 +668,7 @@ async def _build_market_report_input(report_type: str, generated_at) -> tuple[di
     return (
         {
             "report_type": report_type,
+            "report_content_version": REPORT_CONTENT_VERSION,
             "generated_at": generated_at.isoformat(),
             "active_symbols": [display_symbol(symbol) for symbol in symbols],
             "coins": [
@@ -894,17 +931,20 @@ def _build_daily_report_message(
     coin_rows: list[str],
     news_context_text: str,
 ) -> str:
-    """Each datum has one owner: one coin table, one narrative, one news list."""
+    """One price/change table, plus model watchpoints with no repeated quotes."""
+    focus = _format_report_coin_watchpoints(decision.coin_cards, limit=3)
     return (
         "📊 Daily Market Report\n\n"
         "Market pulse:\n"
-        f"{_short_report_summary(decision.market_pulse)}\n\n"
+        f"{_short_report_summary(decision.market_pulse, max_chars=220)}\n\n"
         "Tracked assets:\n"
         f"{chr(10).join(coin_rows)}\n\n"
+        "What to monitor:\n"
+        f"{focus}\n\n"
         "Coin-specific news:\n"
         f"{news_context_text}\n\n"
         "What to watch next:\n"
-        f"{_short_report_summary(decision.watch_next)}\n\n"
+        f"{_short_report_summary(decision.watch_next, max_chars=230)}\n\n"
         "Not financial advice."
     )
 
@@ -916,22 +956,47 @@ def _build_weekly_report_message(
     news_context_text: str,
     weekly_context,
 ) -> str:
-    """The chart owns weekly price paths; do not repeat them in prose."""
+    """Non-repeated per-coin watchpoints carry useful weekly analysis."""
     breadth_text = _format_weekly_breadth(weekly_context)
+    focus = _format_report_coin_watchpoints(decision.coin_cards, limit=4)
     return (
         "📊 Weekly Market Report\n\n"
         "Week in one line:\n"
-        f"{_short_report_summary(decision.market_pulse)}\n\n"
+        f"{_short_report_summary(decision.market_pulse, max_chars=220)}\n\n"
         "Weekly scoreboard:\n"
         f"{chr(10).join(coin_rows)}\n\n"
         "Market breadth:\n"
         f"{breadth_text}\n\n"
+        "Coin watchpoints:\n"
+        f"{focus}\n\n"
         "Top catalysts of the week:\n"
         f"{news_context_text}\n\n"
         "Next week in focus:\n"
         f"{_short_report_summary(decision.next_week_focus or decision.watch_next)}\n\n"
         "Not financial advice."
     )
+
+
+def _format_report_coin_watchpoints(cards: list[dict], *, limit: int) -> str:
+    """Scenario/level watchpoints only; do not echo summaries/price changes."""
+    seen: set[str] = set()
+    output: list[str] = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        symbol = str(card.get("symbol") or "").upper().strip()
+        watch = _short_report_summary(str(card.get("watch") or ""), max_chars=155)
+        if symbol not in {"BTC", "ETH", "GRAM", "SOL"} or not watch:
+            continue
+        watch = re.sub(r"(?i)^watch\s*:\s*", "", watch)
+        signature = watch.casefold()
+        if signature in seen:
+            continue
+        seen.add(signature)
+        output.append(f"• {symbol}: {watch}")
+        if len(output) >= limit:
+            break
+    return "\n".join(output) or "No distinct coin-specific signals to highlight."
 
 
 def _short_report_summary(text: str, *, max_chars: int = 260) -> str:

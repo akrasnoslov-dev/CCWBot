@@ -73,6 +73,7 @@ Dashboard or What moved today metrics:
 Daily Market Report
 Market pulse
 Tracked assets
+What to monitor
 Coin-specific news
 What to watch next
 Not financial advice.
@@ -86,6 +87,7 @@ Weekly Market Report
 Week in one line
 Weekly scoreboard
 Market breadth
+Coin watchpoints
 Top catalysts of the week
 Next week in focus
 Not financial advice.
@@ -98,11 +100,10 @@ user-facing sections. Already cached legacy report rows remain immutable, but
 manual Rich/HTML rendering compacts their historical text without LLM calls.
 
 Native Telegram Rich presentation of either report is built **only** from the
-cached, already-sanitized report text and `raw_input_json`. It preserves the
-distinct Daily and Weekly sections above, using headings, neutral coin identifiers, clickable verified source links,
-and **one inline comparative PNG**. Because some custom emoji IDs appear as
-unrelated symbols on Telegram clients, report rows use stable neutral icons
-until those IDs can be validated privately. Event Alert icons are unchanged.
+cached, already-sanitized report text and `raw_input_json`. It uses Rich section headings and restores the owner's CCWBotIcons by
+using Telegram-verified sticker Unicode alternate text for each `tg-emoji`
+entity. The ordinary HTML/plain fallback uses neutral symbols if Custom Emoji
+are unavailable. Source-linked articles and a single inline PNG are preserved.
 Daily shows per-coin **24h percentage change**; Weekly combines 7d change
 bars with miniature normalized 7d source paths from the existing 12-step
 sparkline evidence. These are truthful schematic trends, not invented prices,
@@ -163,3 +164,19 @@ the last 24 hours** or **last seven days**. That statement describes the
 selection result, not a claim that no relevant news occurred.
 
 Log only selection counts/periods, never titles or raw article payloads.
+
+## Restored analysis and cache content revision
+
+Daily includes up to three distinct coin-specific scenario/watchpoints and
+Weekly includes up to four, from the already validated coin-card fields.
+These are additive observations rather than duplicate 24h/7d percentage
+rows, and model-only generic causal claims are not presented as real news.
+
+When existing persisted report input predates this content revision, the
+next manual request attempts **one globally shared** content refresh while
+holding the per-report generation lock. If the refresh fails, the prior
+still-valid completed cache is retained and one-hour retry suppression
+prevents repeated manual views from exhausting provider quotas. A successful
+report includes current source-selected news and one content version marker.
+No new per-recipient LLM/RSS calls are introduced; schedules and report
+eligibility remain unchanged.
