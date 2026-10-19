@@ -299,3 +299,42 @@ def test_equal_compounded_per_minute_rate_does_not_claim_pace_change(prices):
     assert "picked up pace" not in situation
     assert "slower per minute" not in situation
     assert "next observed interval" not in watch
+
+
+
+def test_mismatched_snapshot_path_cannot_claim_persistent_primary_move():
+    market = {
+        "chg_window_percent": Decimal("-3"),
+        "chg24h_percent": Decimal("-4"),
+        "snapshots": [
+            {"m": -120, "p": Decimal("100")},
+            {"m": -60, "p": Decimal("102")},
+            {"m": 0, "p": Decimal("104")},
+        ],
+    }
+    situation, _ = event_alert_presentation_fallback(market, [])
+    assert "persistent" not in situation.lower()
+    assert "24-hour" in situation
+
+    llm_text = compact_event_alert_situation(
+        "The supplied snapshots show persistent short-term weakness "
+        "aligned with the broader 24-hour direction.",
+        significance_reason=None, market_data=market, related_news=[],
+    )
+    assert "persistent" not in llm_text.lower()
+
+
+def test_latest_reversal_aligned_with_primary_does_not_claim_move_fading():
+    market = {
+        "chg_window_percent": Decimal("-2"),
+        "chg24h_percent": Decimal("-4"),
+        "snapshots": [
+            {"m": -120, "p": Decimal("100")},
+            {"m": -60, "p": Decimal("105")},
+            {"m": 0, "p": Decimal("101")},
+        ],
+    }
+    situation, _ = event_alert_presentation_fallback(market, [])
+    assert "reverses part of the earlier path" in situation
+    assert "fading" not in situation
+    assert "aligns with the analysed-window direction" in situation
