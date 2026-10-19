@@ -36,7 +36,7 @@ WINDOW = timedelta(hours=24)
 # Free-tier gpt-oss-120b publicly lists 200K TPD, shared with production.
 # Cap this offline benchmark below half of that for any rolling 24h window.
 MAX_24H_REQUESTS = 8
-MAX_24H_RESERVED_TOKENS = 70_000
+MAX_24H_RESERVED_TOKENS = 60_000
 RESERVATION_TOKENS = 8_300
 MAX_TOTAL_SAFETY_TOKENS = 5_100_000
 MAX_CONSECUTIVE_429 = 3
