@@ -39,6 +39,38 @@ VARIANT = "path_facts"
 PROVIDERS = ("gemini", "cloudflare")
 
 
+# Current public Workers AI free allocation is 10,000 neurons/day; these
+# local benchmark ledgers may use at most 6,000 aggregate neurons to reserve
+# capacity for production. Account-level spend must still be verified.
+MAX_CLOUDFLARE_BENCHMARK_NEURONS = 6_000.0
+CLOUDFLARE_INPUT_NEURONS_PER_M = 26_668
+CLOUDFLARE_OUTPUT_NEURONS_PER_M = 204_805
+CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE = 200.0
+
+
+def recorded_cloudflare_neurons(directory: Path) -> float:
+    """Conservatively account across ALL frozen Cloudflare candidate ledgers."""
+    neurons = 0.0
+    for path in directory.glob("fallback_cloudflare_*/replay_state.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        rows = [r for group in data["runs"].values() for r in group]
+        for record in rows:
+            prompt = record.get("prompt_tokens")
+            completion = record.get("completion_tokens")
+            if type(prompt) is int and type(completion) is int:
+                neurons += (
+                    prompt * CLOUDFLARE_INPUT_NEURONS_PER_M
+                    + completion * CLOUDFLARE_OUTPUT_NEURONS_PER_M
+                ) / 1_000_000
+            else:
+                neurons += CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE
+        # Retries replace scored rows, but each prior attempt still counts.
+        neurons += max(0, data["attempted_requests"] - len(rows)) * (
+            CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE
+        )
+    return neurons
+
+
 def response_format(provider: str, model: str) -> dict:
     schema = ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA
     if provider == "cloudflare" and model == "@cf/meta/llama-3.3-70b-instruct-fp8-fast":
@@ -151,6 +183,17 @@ async def run(provider: str, *, max_requests: int, delay: float,
                 break
             if total >= max_requests:
                 break
+            if provider == "cloudflare":
+                if cfg["model"] != "@cf/meta/llama-3.3-70b-instruct-fp8-fast":
+                    stop = "cloudflare_model_neuron_cost_not_verified"
+                    break
+                committed = recorded_cloudflare_neurons(
+                    PRIVATE / "merged_pilots_private"
+                )
+                if (committed + CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE
+                        > MAX_CLOUDFLARE_BENCHMARK_NEURONS):
+                    stop = "cloudflare_replay_free_allocation_reserve"
+                    break
             if total:
                 await asyncio.sleep(delay)
             item = {"id": case["id"], "input_sha256": case["input_sha256"]}

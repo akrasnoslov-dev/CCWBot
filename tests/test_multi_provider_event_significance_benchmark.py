@@ -109,3 +109,32 @@ def test_worker_protects_production_groq_quota(tmp_path, monkeypatch):
         json.dumps({"stop_groq_at_utc": "2020-01-01T00:00:00+00:00"}))
     assert worker.production_reserved("groq")
     assert not worker.production_reserved("cloudflare")
+
+def test_cloudflare_neuron_accounting_is_aggregate_and_conservative(tmp_path):
+    import json
+
+    first = tmp_path / "fallback_cloudflare_one" / "replay_state.json"
+    first.parent.mkdir()
+    first.write_text(json.dumps({
+        "attempted_requests": 3,
+        "runs": {"one": [
+            {"status": "valid", "prompt_tokens": 1000,
+             "completion_tokens": 500},
+            {"status": "provider_error"},
+        ]},
+    }))
+    second = tmp_path / "fallback_cloudflare_two" / "replay_state.json"
+    second.parent.mkdir()
+    second.write_text(json.dumps({
+        "attempted_requests": 1,
+        "runs": {"two": [
+            {"status": "valid", "prompt_tokens": 2000,
+             "completion_tokens": 1000},
+        ]},
+    }))
+    computed = benchmark.recorded_cloudflare_neurons(tmp_path)
+    known = (
+        (3000 * benchmark.CLOUDFLARE_INPUT_NEURONS_PER_M)
+        + (1500 * benchmark.CLOUDFLARE_OUTPUT_NEURONS_PER_M)
+    ) / 1_000_000
+    assert abs(computed - known - 400) < 0.00001
