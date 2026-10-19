@@ -35,12 +35,14 @@ LABELS = PRIVATE / "reviewer_A_significance_for_pr1.json"
 # The order is exploratory, not an assertion that any variant works.
 CANDIDATES = {
     "cloudflare": (
-        "market_event_evidence", "balanced_novelty", "global_prior_safe", "relative_displacement",
+        "contextual_materiality", "market_event_evidence",
+        "balanced_novelty", "global_prior_safe", "relative_displacement",
         "trajectory_evidence", "rebalanced_core", "production",
         "global_prior_no_family",
     ),
     "gemini": (
-        "market_event_evidence", "production", "balanced_novelty", "relative_displacement",
+        "contextual_materiality", "market_event_evidence",
+        "production", "balanced_novelty", "relative_displacement",
         "trajectory_evidence", "rebalanced_core", "path_facts",
         "global_prior_no_family",
     ),

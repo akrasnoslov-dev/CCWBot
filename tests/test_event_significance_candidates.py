@@ -56,6 +56,7 @@ def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     if variant not in (
         "global_prior_no_family", "path_facts", "market_signal_path",
         "market_event_evidence",
+        "contextual_materiality",
     ):
         assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
     assert payload == before
@@ -79,10 +80,11 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
         "global_prior_safe", "global_prior_no_family", "path_facts",
         "market_signal_path", "market_event_evidence",
+        "contextual_materiality",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 11
+    }) == 12
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None

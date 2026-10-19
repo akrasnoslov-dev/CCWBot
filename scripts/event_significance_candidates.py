@@ -235,6 +235,29 @@ CANDIDATE_REPLACEMENTS["market_event_evidence"] = "\n".join((
 ))
 
 
+# Test whether requiring a specific affirmative materiality argument suppresses
+# routine-move false positives without hiding genuinely noteworthy paths.
+CANDIDATE_REPLACEMENTS["contextual_materiality"] = (
+    CANDIDATE_REPLACEMENTS["market_event_evidence"]
+    + "\nDecision calibration: before selecting material, actively test the "
+    "ordinary-market explanation. If the analysed-window displacement is "
+    "typical for this asset in its supplied 30-day same-window context "
+    "AND sampled prices show no independently substantial excursion, "
+    "choose routine, even when there are headlines, a short reversal, "
+    "or a new timestamp. Ordinary relative displacement is NOT a positive "
+    "reason by itself. If the net movement looks ordinary but sampled "
+    "path independently shows a genuinely major swing or strong turn, "
+    "assess that evidence rather than suppressing it mechanically. "
+    "Conversely a material, independently new full-window displacement "
+    "remains material after a small partial bounce or a previous alert "
+    "to another recipient. Explicitly distinguish a large path swing "
+    "from a small noisy zigzag. Use the whole verified window and the "
+    "asset's own context, never a universal number or hard percentile "
+    "cutoff. If the evidence does not establish an interrupt-worthy "
+    "market event, choose should_alert=false with routine_move or unclear."
+)
+
+
 # Test a structural alternative: evaluate the market event independently,
 # leaving subscriber-specific repeat suppression to the delivery backend.
 CANDIDATE_REPLACEMENTS["market_signal_path"] = "\n".join((
@@ -326,13 +349,15 @@ def candidate_prompt(input_payload: dict, candidate: str) -> str:
         else _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
     )
     payload = _event_significance_prompt_payload(input_payload)
-    if candidate in ("global_prior_no_family", "path_facts", "market_event_evidence"):
+    if candidate in ("global_prior_no_family", "path_facts", "market_event_evidence",
+                      "contextual_materiality"):
         if isinstance(payload.get("prev"), dict):
             payload["prev"].pop("f", None)
     if candidate == "market_signal_path":
         payload.pop("prev", None)
         payload.pop("cnt", None)
-    if candidate in ("path_facts", "market_signal_path", "market_event_evidence"):
+    if candidate in ("path_facts", "market_signal_path", "market_event_evidence",
+                      "contextual_materiality"):
         facts = verified_path_facts(payload["m"])
         if facts:
             payload["path"] = facts
