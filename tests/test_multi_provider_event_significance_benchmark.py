@@ -163,3 +163,27 @@ def test_provider_wide_retry_after_covers_other_prompt_variants(tmp_path):
     assert benchmark.provider_backoff_remaining(
         tmp_path, "cloudflare", now=now + timedelta(seconds=504)
     ) == 0
+
+
+def test_scheduler_parses_jsonl_provider_summary():
+    transcript = (
+        '{"provider":"cloudflare","request":1,"status":"valid"}\n'
+        '{"provider":"cloudflare","stop":"requested_limit",'
+        '"attempted_requests":1,"valid":1}\n'
+    )
+    assert worker.parse_benchmark_summary(transcript) == {
+        "provider": "cloudflare", "stop": "requested_limit",
+        "attempted_requests": 1, "valid": 1,
+    }
+
+
+def test_scheduler_parses_groq_pretty_json_after_progress():
+    transcript = (
+        "request=260 variant=path_facts status=valid\n"
+        '{\n  "attempts_total": 260,\n'
+        '  "stop": "recorded_provider_http_429_backoff"\n}\n'
+    )
+    assert worker.parse_benchmark_summary(transcript) == {
+        "attempts_total": 260,
+        "stop": "recorded_provider_http_429_backoff",
+    }

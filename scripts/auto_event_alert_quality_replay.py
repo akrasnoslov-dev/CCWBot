@@ -116,6 +116,39 @@ def production_reserved(provider: str) -> bool:
     return datetime.now(timezone.utc) >= deadline
 
 
+def parse_benchmark_summary(output: str) -> dict:
+    """Parse either JSON-lines fallbacks or Groq's final multiline JSON.
+
+    Preserve only summary fields; never persist raw market inputs or errors.
+    """
+    stripped = output.strip()
+    if not stripped:
+        return {}
+    try:
+        candidate = json.loads(stripped)
+        return candidate if isinstance(candidate, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(stripped.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and (
+            "stop" in candidate or "status" in candidate
+        ):
+            return candidate
+    # Groq prints a JSON object across multiple lines after progress logs.
+    marker = stripped.rfind("\n{\n")
+    if marker >= 0:
+        try:
+            candidate = json.loads(stripped[marker + 1:])
+            return candidate if isinstance(candidate, dict) else {}
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
 def run_once(*, dry_run: bool = False) -> dict:
     if not FROZEN.is_file() or not LABELS.is_file():
         return {"status": "private_dataset_missing"}
@@ -135,15 +168,7 @@ def run_once(*, dry_run: bool = False) -> dict:
                 timeout=540, check=False,
             )
             # No credentials, raw errors or input payloads enter status logs.
-            out = completed.stdout.strip()
-            try:
-                parsed = json.loads(out)
-            except json.JSONDecodeError:
-                start = out.find("\n{\n")
-                try:
-                    parsed = json.loads(out[start + 1:]) if start >= 0 else {}
-                except json.JSONDecodeError:
-                    parsed = {}
+            parsed = parse_benchmark_summary(completed.stdout)
             results[provider] = {
                 "exit_code": completed.returncode,
                 "stop": parsed.get("stop", parsed.get("status", "unknown")),
