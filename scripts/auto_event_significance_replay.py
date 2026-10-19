@@ -125,7 +125,10 @@ def compute_next_eligible(
     history = recent_reservations(state.get("history", []), now)
     if len(history) >= MAX_24H_REQUESTS:
         return False, "rolling_24h_request_reserve"
-    if sum(row["reserved_tokens"] for row in history) + RESERVATION_TOKENS > MAX_24H_RESERVED_TOKENS:
+    if (
+        sum(row["reserved_tokens"] for row in history) + RESERVATION_TOKENS
+        > MAX_24H_RESERVED_TOKENS
+    ):
         return False, "rolling_24h_token_reserve"
     return True, "eligible"
 
