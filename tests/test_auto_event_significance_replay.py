@@ -42,6 +42,23 @@ def test_rolling_window_conservatively_reserves_for_running_bot(now, empty_ledge
     assert auto.compute_next_eligible(private, empty_ledger, now=now)[0]
 
 
+def test_scheduler_early_retrigger_never_spends_second_request(now, empty_ledger):
+    private = {
+        "history": [{
+            "at": (now - timedelta(minutes=5)).isoformat(),
+            "reserved_tokens": auto.RESERVATION_TOKENS,
+        }],
+        "rate_limit_streak": 0,
+        "not_before": None,
+    }
+    allowed, reason = auto.compute_next_eligible(private, empty_ledger, now=now)
+    assert not allowed and reason == "minimum_hourly_interval"
+    allowed, reason = auto.compute_next_eligible(
+        private, empty_ledger, now=now + timedelta(hours=1),
+    )
+    assert allowed and reason == "eligible"
+
+
 def test_retry_after_and_extra_backoff_survive_worker_restarts(now, empty_ledger):
     empty_ledger["runs"]["market_signal_path"] = [{
         "id": "frozen",

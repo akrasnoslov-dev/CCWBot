@@ -128,6 +128,11 @@ def compute_next_eligible(
     if state.get("rate_limit_streak", 0) >= MAX_CONSECUTIVE_429:
         return False, "repeated_429_manual_review_required"
     history = recent_reservations(state.get("history", []), now)
+    if history and any(
+        now - datetime.fromisoformat(row["at"]) < timedelta(hours=1)
+        for row in history
+    ):
+        return False, "minimum_hourly_interval"
     if len(history) >= MAX_24H_REQUESTS:
         return False, "rolling_24h_request_reserve"
     if (

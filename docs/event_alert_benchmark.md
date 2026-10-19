@@ -610,6 +610,53 @@ cannot be retroactively diagnosed. Do not force another request
 before the recorded retry interval or assume this account is
 eligible for paid service tiers.
 
+### Autonomous local PR2 replay (2026-10-19)
+
+The approved benchmark may run unattended on the **authorised Windows
+workstation only**. The worker `scripts/auto_event_significance_replay.py`
+uses the existing ignored `reports/event-alert-review-20261016/` dataset
+and merged replay ledger; it cannot run from GitHub Actions or leak those
+private files. It makes at most **one Groq request per invocation**, with
+a strictly enforced minimum hour between requests, and reserves a
+conservative **8,300 tokens per attempt**. Limits are **8 requests and
+60,000 reserved tokens in any rolling 24 hours**, capped by the original
+**600 approved calls** overall and a separate cumulative token safety
+ceiling. This reserves the majority of the published 200K free-tier TPD
+for the live bot. These limits are intentionally stricter than Groq's
+public model quotas and are not a guarantee of free capacity.
+
+The worker respects provider `Retry-After` across restarts, applies
+additional exponential backoff on repeated 429s, pauses for a full day
+when TPD/RPD is positively identified, and **stops for manual review
+after three consecutive rate-limit failures**. It also stops automatically
+when either full-cohort significance gate becomes unattainable or all
+153 decisive events have been scored. A completed 153-case score still
+requires technical, delivery-quality and cost gate review before release.
+It never changes the production prompt, bot delivery logic or Telegram.
+
+Installation is explicitly operator-initiated on the local Windows machine:
+
+```powershell
+powershell -NoProfile -File .\scripts\install_event_significance_replay_task.ps1 -Install
+Get-ScheduledTaskInfo -TaskName 'CCWBot-PR349-EventSignificanceReplay'
+Get-Content .\reports\event-alert-review-20261016\merged_pilots_private\hourly_replay_status.json
+```
+
+Remove the scheduler, preserving all benchmark data, with:
+
+```powershell
+powershell -NoProfile -File .\scripts\install_event_significance_replay_task.ps1 -Uninstall
+```
+
+On 19 October the owner-approved task was installed and a real manual
+trigger via Windows Task Scheduler succeeded with `LastTaskResult=0`:
+**request 227/600** returned schema-valid, raising
+`market_signal_path` coverage to **6/153** (TP=2, FP=0,
+FN=0, TN=4 on the selected pilot). The full quality gate remains open.
+The scheduler works only with the machine powered on and the authorized
+user signed in; it cannot run during sleep or shutdown. ChatGPT/Desktop
+Commander connectivity is not required for the local Windows task.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |
