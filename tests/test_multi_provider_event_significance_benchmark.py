@@ -138,3 +138,28 @@ def test_cloudflare_neuron_accounting_is_aggregate_and_conservative(tmp_path):
         + (1500 * benchmark.CLOUDFLARE_OUTPUT_NEURONS_PER_M)
     ) / 1_000_000
     assert abs(computed - known - 400) < 0.00001
+
+
+def test_provider_wide_retry_after_covers_other_prompt_variants(tmp_path):
+    import json
+
+    now = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+    path = tmp_path / "fallback_cloudflare_old" / "replay_state.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({
+        "runs": {"old": [{
+            "status": "provider_error",
+            "http_status": 429,
+            "error_at_utc": (now - timedelta(seconds=30)).isoformat(),
+            "retry_after_seconds": 503,
+        }]},
+    }))
+    assert benchmark.provider_backoff_remaining(
+        tmp_path, "cloudflare", now=now
+    ) == 473
+    assert benchmark.provider_backoff_remaining(
+        tmp_path, "gemini", now=now
+    ) == 0
+    assert benchmark.provider_backoff_remaining(
+        tmp_path, "cloudflare", now=now + timedelta(seconds=504)
+    ) == 0

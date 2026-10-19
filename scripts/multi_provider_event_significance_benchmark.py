@@ -71,6 +71,33 @@ def recorded_cloudflare_neurons(directory: Path) -> float:
     return neurons
 
 
+def provider_backoff_remaining(directory: Path, provider: str,
+                               now: datetime | None = None) -> float:
+    """One provider-wide 429 window; changing prompts cannot bypass it."""
+    current = now or datetime.now(timezone.utc)
+    remaining = 0.0
+    for path in directory.glob(f"fallback_{provider}_*/replay_state.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for rows in data["runs"].values():
+            for row in rows:
+                if row.get("http_status") != 429:
+                    continue
+                observed = row.get("error_at_utc") or row.get("rate_limit_at_utc")
+                if not observed:
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(observed)
+                    if stamp.tzinfo is None:
+                        continue
+                    delay = max(60.0, float(row.get("retry_after_seconds", 3600)))
+                    remaining = max(
+                        remaining, (stamp - current).total_seconds() + delay
+                    )
+                except (TypeError, ValueError):
+                    continue
+    return max(0.0, remaining)
+
+
 def response_format(provider: str, model: str) -> dict:
     schema = ai_agent_groq._EVENT_SIGNIFICANCE_JSON_SCHEMA
     if provider == "cloudflare" and model == "@cf/meta/llama-3.3-70b-instruct-fp8-fast":
@@ -149,6 +176,12 @@ async def run(provider: str, *, max_requests: int, delay: float,
     )
     directory.mkdir(parents=True, exist_ok=True)
     state_path = directory / "replay_state.json"
+    provider_backoff = provider_backoff_remaining(
+        PRIVATE / "merged_pilots_private", provider
+    )
+    if provider_backoff > 0:
+        return {"provider": provider, "stop": "provider_wide_429_backoff",
+                "retry_after_seconds": round(provider_backoff)}
     expected = new_state(dataset, cfg, variant)
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else expected
     for key_name in ("dataset_sha256", "fingerprint", "provider", "model"):
