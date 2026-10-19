@@ -35,12 +35,12 @@ LABELS = PRIVATE / "reviewer_A_significance_for_pr1.json"
 # The order is exploratory, not an assertion that any variant works.
 CANDIDATES = {
     "cloudflare": (
-        "balanced_novelty", "global_prior_safe", "relative_displacement",
+        "market_event_evidence", "balanced_novelty", "global_prior_safe", "relative_displacement",
         "trajectory_evidence", "rebalanced_core", "production",
         "global_prior_no_family",
     ),
     "gemini": (
-        "production", "balanced_novelty", "relative_displacement",
+        "market_event_evidence", "production", "balanced_novelty", "relative_displacement",
         "trajectory_evidence", "rebalanced_core", "path_facts",
         "global_prior_no_family",
     ),
@@ -84,7 +84,7 @@ def make_commands(dataset: dict, labels: dict) -> tuple[list[tuple[str, list[str
         cmd = [
             str(sys.executable), str(PROVIDER_SCRIPT),
             "--provider", provider, "--variant", variant,
-            "--max-requests", "16" if provider == "cloudflare" else "4",
+            "--max-requests", "32" if provider == "cloudflare" else "8",
             "--delay-seconds", "5" if provider == "cloudflare" else "10",
             "--approve-provider-requests",
         ]

@@ -53,7 +53,10 @@ def test_candidate_changes_only_instructions_not_input_or_schema(variant):
     candidate = candidates.candidate_prompt(payload, variant)
 
     assert candidate != production
-    if variant not in ("global_prior_no_family", "path_facts", "market_signal_path"):
+    if variant not in (
+        "global_prior_no_family", "path_facts", "market_signal_path",
+        "market_event_evidence",
+    ):
         assert candidate.split("\nInput JSON:\n")[-1] == production.split("\nInput JSON:\n")[-1]
     assert payload == before
     assert "No fixed numeric cutoff" in candidate
@@ -75,11 +78,11 @@ def test_offline_inventory_never_infers_accuracy_or_provider_spend(monkeypatch):
         "production", "materiality_first", "balanced_novelty",
         "trajectory_evidence", "relative_displacement", "rebalanced_core",
         "global_prior_safe", "global_prior_no_family", "path_facts",
-        "market_signal_path",
+        "market_signal_path", "market_event_evidence",
     }
     assert len({
         value["aggregate_prompt_fingerprint"] for value in output["candidates"].values()
-    }) == 10
+    }) == 11
     for stats in output["candidates"].values():
         assert stats["measured_significance_precision"] is None
         assert stats["measured_significance_recall"] is None
@@ -190,3 +193,24 @@ def test_missing_or_mutated_input_hash_fails_closed():
 def test_unknown_candidate_is_rejected():
     with pytest.raises(ValueError, match="Unknown candidate"):
         candidates.candidate_prompt(_dataset()["cases"][0]["input"], "not_a_candidate")
+
+
+def test_market_event_evidence_preserves_observed_path_without_global_family():
+    import json
+
+    payload = deepcopy(_dataset()["cases"][0]["input"])
+    payload["previous_event_alert"] = {
+        "age_minutes": 35, "semantic_family": "price_uptrend",
+        "analysed_window_move": 0.4,
+    }
+    original = deepcopy(payload)
+    prompt = candidates.candidate_prompt(payload, "market_event_evidence")
+    compact = json.loads(prompt.split("\nInput JSON:\n")[-1])
+    assert compact["sym"] == "BTC"
+    assert compact["prev"]["min"] == 35
+    assert "f" not in compact["prev"]
+    assert compact["path"]["eff"] == 1.0
+    assert "cnt" in compact
+    assert "partial" in prompt
+    assert "No fixed numeric cutoff" in prompt
+    assert payload == original

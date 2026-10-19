@@ -35,7 +35,7 @@ VARIANTS = (
     "production", "materiality_first", "balanced_novelty",
     "trajectory_evidence", "relative_displacement", "rebalanced_core",
     "global_prior_safe", "global_prior_no_family", "path_facts",
-    "market_signal_path",
+    "market_signal_path", "market_event_evidence",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
 MAX_APPROVED_CALLS = 5_000  # Technical safety ceiling, not an approval quota.

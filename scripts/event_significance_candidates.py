@@ -183,6 +183,58 @@ CANDIDATE_REPLACEMENTS["path_facts"] = (
     "do not pretend these statistics are known."
 )
 
+# New hypothesis: the earlier pilots alternated between calling medium-sized
+# movements "unusual" and suppressing large moves because of partial bounces or
+# cross-recipient prior notifications. Evaluate evidence in that order, without
+# ever turning sampled percentiles into hard numeric alert gates.
+CANDIDATE_REPLACEMENTS["market_event_evidence"] = "\n".join((
+    "Judge whether this exact current price movement is genuinely alert-worthy "
+    "for this asset. Do not default to silence or to treating every directional "
+    "change as important. No fixed numeric cutoff or automatic percentile gate.",
+    "FIRST: examine the observed current analysed window cw, its magnitude "
+    "relative to this coin's own 30-day move distribution pw, and the actual "
+    "timestamped sample path s. pw is supporting context, not an alarm rule. "
+    "For a modest ordinary displacement, require separately demonstrated "
+    "substantial intra-window movement; a routine drift, a change of sign "
+    "versus c24, or a brief wiggle is NOT a significant event. A meaningful "
+    "displacement that is clearly exceptional in this asset's historical "
+    "context IS material even without news or monotonically directional "
+    "snapshots. If latest 30/60min movement partially counters a major "
+    "full-window displacement, do not misclassify the major net movement "
+    "as routine solely because of that small bounce.",
+    "For trajectory descriptions, path={eff,up,down,from_hi,from_lo} "
+    "is factual sampled evidence, NOT automatic cutoffs; eff measures net "
+    "travel relative to all sampled travel; up/down are the greatest "
+    "adjacent percentage moves; from_hi/from_lo the final distance from "
+    "sample extremes. Consider whether the path independently corroborates "
+    "movement rather than inventing reversal, speed or persistence.",
+    "SECOND: evaluate novelty only after materiality. A global previous alert "
+    "prev and aggregate counts cnt can provide evidence of a continuing "
+    "unchanged event, but do not tell whether THIS subscriber was notified. "
+    "Previous direction family, matching sign or recent high counts alone "
+    "cannot veto a new independently material market event. Do not inflate "
+    "routine moves to new just because earlier alert data are absent. "
+    "Subscriber-specific four-hour cooldown occurs downstream.",
+    "THIRD: should_alert=true only when materiality=material AND novelty=new. "
+    "News headlines and 24h context never substitute for a noteworthy "
+    "current-window price event. For true select unusual_move,fast_move,"
+    "reversal,trend_acceleration or market_news_alignment ONLY when proven. "
+    "For false choose routine_move,news_only or unclear. No invented cause.",
+    "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24}; "
+    "s=[[min,USD],...],0=now,<0=older; cw=% over w; "
+    "pw,p24=30d same-asset abs-move percentiles; "
+    "prev={min,cw};cnt={h6,h24};n<=2 {t,r,mat,h};"
+    "path={eff,up,down,from_hi,from_lo};null=unknown;"
+    ".042=.042%,not 4.2%. This is evidence, not a fixed policy.",
+    "Output JSON exactly: symbol,materiality,novelty,should_alert,"
+    "reason_code,confidence. symbol=sym;"
+    "materiality=material|routine|unclear;"
+    "novelty=new|continuation|repeated|unclear;"
+    "confidence=low|medium|high. Positive must be material+new and "
+    "positive reason. Negative must have compatible negative reason.",
+))
+
+
 # Test a structural alternative: evaluate the market event independently,
 # leaving subscriber-specific repeat suppression to the delivery backend.
 CANDIDATE_REPLACEMENTS["market_signal_path"] = "\n".join((
@@ -274,13 +326,13 @@ def candidate_prompt(input_payload: dict, candidate: str) -> str:
         else _EVENT_SIGNIFICANCE_INSTRUCTIONS + "\n" + CANDIDATE_ADDITIONS[candidate]
     )
     payload = _event_significance_prompt_payload(input_payload)
-    if candidate in ("global_prior_no_family", "path_facts"):
+    if candidate in ("global_prior_no_family", "path_facts", "market_event_evidence"):
         if isinstance(payload.get("prev"), dict):
             payload["prev"].pop("f", None)
     if candidate == "market_signal_path":
         payload.pop("prev", None)
         payload.pop("cnt", None)
-    if candidate in ("path_facts", "market_signal_path"):
+    if candidate in ("path_facts", "market_signal_path", "market_event_evidence"):
         facts = verified_path_facts(payload["m"])
         if facts:
             payload["path"] = facts
