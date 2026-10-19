@@ -187,3 +187,59 @@ def test_scheduler_parses_groq_pretty_json_after_progress():
         "attempts_total": 260,
         "stop": "recorded_provider_http_429_backoff",
     }
+
+
+def test_cloudflare_legacy_neurons_release_only_after_full_24h(tmp_path):
+    import json
+
+    t0 = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+    ledger = tmp_path / "fallback_cloudflare_old" / "replay_state.json"
+    ledger.parent.mkdir()
+    ledger.write_text(json.dumps({
+        "attempted_requests": 1,
+        "runs": {"old": [{"status": "valid", "prompt_tokens": 1000,
+                           "completion_tokens": 100}]},
+    }))
+    initial = benchmark.recorded_cloudflare_neurons(tmp_path)
+    assert benchmark.recent_cloudflare_neurons(tmp_path, t0) == initial
+    assert benchmark.recent_cloudflare_neurons(
+        tmp_path, t0 + timedelta(hours=23, minutes=59)
+    ) == initial
+    assert benchmark.recent_cloudflare_neurons(
+        tmp_path, t0 + timedelta(hours=24, seconds=1)
+    ) == 0
+
+
+def test_cloudflare_attempt_reservation_is_crash_safe_and_expires(tmp_path):
+    t0 = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+    first = benchmark.reserve_cloudflare_attempt(tmp_path, t0)
+    assert first == 0
+    assert benchmark.recent_cloudflare_neurons(tmp_path, t0) == 200
+    # Unknown provider result retains the full conservative reserve.
+    benchmark.reconcile_cloudflare_attempt(tmp_path, first, {})
+    assert benchmark.recent_cloudflare_neurons(tmp_path, t0) == 200
+    # A known response replaces the reserve with measured neurons.
+    benchmark.reconcile_cloudflare_attempt(
+        tmp_path, first, {"prompt_tokens": 1000, "completion_tokens": 100}
+    )
+    expected = (
+        1000 * benchmark.CLOUDFLARE_INPUT_NEURONS_PER_M
+        + 100 * benchmark.CLOUDFLARE_OUTPUT_NEURONS_PER_M
+    ) / 1_000_000
+    assert abs(benchmark.recent_cloudflare_neurons(tmp_path, t0) - expected) < 1e-9
+    assert benchmark.recent_cloudflare_neurons(
+        tmp_path, t0 + timedelta(hours=24, seconds=1)
+    ) == 0
+
+
+def test_cloudflare_reservation_refuses_over_budget_without_new_attempt(tmp_path):
+    import json
+
+    t0 = datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)
+    (tmp_path / "cloudflare_replay_usage_journal.json").write_text(json.dumps({
+        "version": 1, "legacy_at_utc": t0.isoformat(),
+        "legacy_neurons": benchmark.MAX_CLOUDFLARE_BENCHMARK_NEURONS - 199,
+        "attempts": [],
+    }))
+    assert benchmark.reserve_cloudflare_attempt(tmp_path, t0) is None
+    assert benchmark._cloudflare_usage_journal(tmp_path, t0)["attempts"] == []

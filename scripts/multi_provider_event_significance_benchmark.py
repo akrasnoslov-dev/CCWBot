@@ -71,6 +71,80 @@ def recorded_cloudflare_neurons(directory: Path) -> float:
     return neurons
 
 
+def _cloudflare_usage_journal(directory: Path, now: datetime) -> dict:
+    """Conservatively migrate undated historical usage to a 24h reserve.
+
+    The existing ledgers have no timestamps for successful requests. Treat
+    ALL their usage as if incurred at migration time; only release it after
+    a full rolling 24h. New attempts get individual timestamps.
+    """
+    path = directory / "cloudflare_replay_usage_journal.json"
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("version") != 1:
+            raise ValueError("Unsupported Cloudflare usage journal version")
+        return data
+    data = {
+        "version": 1,
+        "legacy_at_utc": now.isoformat(),
+        "legacy_neurons": recorded_cloudflare_neurons(directory),
+        "attempts": [],
+    }
+    _save_cloudflare_usage_journal(directory, data)
+    return data
+
+
+def _save_cloudflare_usage_journal(directory: Path, data: dict) -> None:
+    path = directory / "cloudflare_replay_usage_journal.json"
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def recent_cloudflare_neurons(directory: Path, now: datetime | None = None) -> float:
+    """Rolling 24h cap is stricter than the provider's daily free allocation."""
+    current = now or datetime.now(timezone.utc)
+    data = _cloudflare_usage_journal(directory, current)
+    from datetime import timedelta
+    cutoff = current - timedelta(hours=24)
+    legacy_time = datetime.fromisoformat(data["legacy_at_utc"])
+    used = float(data["legacy_neurons"]) if legacy_time > cutoff else 0.0
+    for row in data["attempts"]:
+        if datetime.fromisoformat(row["at_utc"]) > cutoff:
+            used += float(row["neurons"])
+    return used
+
+
+def reserve_cloudflare_attempt(directory: Path, now: datetime | None = None) -> int | None:
+    """Reserve worst-case before network I/O; crash cannot erase the charge."""
+    current = now or datetime.now(timezone.utc)
+    if (recent_cloudflare_neurons(directory, current)
+            + CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE
+            > MAX_CLOUDFLARE_BENCHMARK_NEURONS):
+        return None
+    data = _cloudflare_usage_journal(directory, current)
+    data["attempts"].append({
+        "at_utc": current.isoformat(),
+        "neurons": CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE,
+    })
+    _save_cloudflare_usage_journal(directory, data)
+    return len(data["attempts"]) - 1
+
+
+def reconcile_cloudflare_attempt(directory: Path, index: int, item: dict) -> None:
+    """Replace the reserve only if both token counts are verified."""
+    prompt, completion = item.get("prompt_tokens"), item.get("completion_tokens")
+    if type(prompt) is not int or type(completion) is not int:
+        return
+    measured = (
+        prompt * CLOUDFLARE_INPUT_NEURONS_PER_M
+        + completion * CLOUDFLARE_OUTPUT_NEURONS_PER_M
+    ) / 1_000_000
+    data = _cloudflare_usage_journal(directory, datetime.now(timezone.utc))
+    data["attempts"][index]["neurons"] = max(0.0, measured)
+    _save_cloudflare_usage_journal(directory, data)
+
+
 def provider_backoff_remaining(directory: Path, provider: str,
                                now: datetime | None = None) -> float:
     """One provider-wide 429 window; changing prompts cannot bypass it."""
@@ -216,19 +290,20 @@ async def run(provider: str, *, max_requests: int, delay: float,
                 break
             if total >= max_requests:
                 break
-            if provider == "cloudflare":
-                if cfg["model"] != "@cf/meta/llama-3.3-70b-instruct-fp8-fast":
-                    stop = "cloudflare_model_neuron_cost_not_verified"
-                    break
-                committed = recorded_cloudflare_neurons(
-                    PRIVATE / "merged_pilots_private"
-                )
-                if (committed + CLOUDFLARE_UNKNOWN_ATTEMPT_RESERVE
-                        > MAX_CLOUDFLARE_BENCHMARK_NEURONS):
-                    stop = "cloudflare_replay_free_allocation_reserve"
-                    break
+            if provider == "cloudflare" and (
+                    cfg["model"] != "@cf/meta/llama-3.3-70b-instruct-fp8-fast"):
+                stop = "cloudflare_model_neuron_cost_not_verified"
+                break
             if total:
                 await asyncio.sleep(delay)
+            reservation = None
+            if provider == "cloudflare":
+                reservation = reserve_cloudflare_attempt(
+                    PRIVATE / "merged_pilots_private"
+                )
+                if reservation is None:
+                    stop = "cloudflare_replay_free_allocation_reserve"
+                    break
             item = {"id": case["id"], "input_sha256": case["input_sha256"]}
             state["attempted_requests"] += 1
             total += 1
@@ -291,6 +366,10 @@ async def run(provider: str, *, max_requests: int, delay: float,
                 state["runs"][variant].append(item)
             already[case["id"]] = item
             save_state(state_path, state)
+            if reservation is not None:
+                reconcile_cloudflare_attempt(
+                    PRIVATE / "merged_pilots_private", reservation, item
+                )
             counts = Counter(r["status"] for r in state["runs"][variant])
             print(json.dumps({"provider": provider, "request": state["attempted_requests"],
                               "symbol": case["symbol"], "status": item["status"],
