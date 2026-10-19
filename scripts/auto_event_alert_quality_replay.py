@@ -168,6 +168,8 @@ def run_once(*, dry_run: bool = False) -> dict:
             completed = subprocess.run(
                 command, cwd=ROOT, capture_output=True, text=True,
                 timeout=540, check=False,
+                **({"creationflags": subprocess.CREATE_NO_WINDOW}
+                   if sys.platform == "win32" else {}),
             )
             # No credentials, raw errors or input payloads enter status logs.
             parsed = parse_benchmark_summary(completed.stdout)
