@@ -657,6 +657,93 @@ The scheduler works only with the machine powered on and the authorized
 user signed in; it cannot run during sleep or shutdown. ChatGPT/Desktop
 Commander connectivity is not required for the local Windows task.
 
+### One-shot Groq Batch acceptance replay (2026-10-19)
+
+The previous one-request-per-hour Windows scheduler was unsuitable for
+finishing a frozen 153-case reference promptly and requires a powered-on
+computer. It is now **DISABLED** on the canonical development machine
+until the one-shot alternative has been evaluated. Do not re-enable it
+while a batch is prepared or submitted: concurrent writes would
+invalidate the frozen request manifest and potentially double-bill.
+
+The official Groq Batch API allows the same `openai/gpt-oss-120b`
+model to process an entire set of individual chat completions as one
+asynchronous job, **without consuming ordinary synchronous model rate
+limits**. It can continue after the client machine switches off. The
+provider offers a **24-hour to 7-day completion window**, so this is
+*one submission*, **not guaranteed instant completion**. A separate
+Developer plan grants Batch access; upgrading changes provider billing.
+The Batch API uses a 50% discount on published per-token pricing.
+Source: https://console.groq.com/docs/batch and
+https://console.groq.com/docs/billing-faqs.
+
+An authenticated **read-only access test** on the currently configured
+account returned `403 not_available_for_plan`. This is a **confirmed
+account-plan blocker**, not an unstable 429 provider retry. We must
+not submit a paid batch or upgrade the plan without explicit owner
+approval.
+
+An offline dry run of
+`scripts/groq_batch_event_significance.py --prepare` has already
+prepared exactly **147 still-unscored reviewer-A-decisive events**,
+preserving all **6 validated** `market_signal_path` decisions. The
+ledger remains at **227/600 allowed synchronous attempts**.
+Each request uses the **same model, pinned prompt, temperature,
+reasoning effort, max tokens, strict schema and frozen input** as
+the original single-event runner. Inputs, opaque ID mapping, and
+replay state stay under the existing ignored private directory.
+The script refuses duplicate successful cases, unknown outputs, changed
+prompt fingerprints, missing 600-call approval capacity, a stale
+prepared ledger, and a second submission after one was attempted.
+It durably reserves all submitted cases against the 600-call budget
+*before the provider's create request*, conservatively accounting for
+uncertain network outcomes.
+
+To keep provider billing separate from production, optionally configure
+a **dedicated Developer-organization API key** under the ignored
+`GROQ_BENCHMARK_BATCH_API_KEY` local environment variable. Otherwise
+the script uses the existing `GROQ_API_KEY`; upgrading the shared
+organization may affect all production Groq usage charges. This is
+**not** approval to create a paid account or install any new secrets.
+
+```powershell
+# Preparation only: NO network, NO bill
+.\.venv\Scripts\python.exe scripts/groq_batch_event_significance.py --prepare
+
+# Read-only access check (currently 403 on Free plan)
+.\.venv\Scripts\python.exe scripts/groq_batch_event_significance.py --check-access
+
+# Only after the owner expressly approves billable batch execution
+.\.venv\Scripts\python.exe scripts/groq_batch_event_significance.py --submit --approve-billed-batch
+
+# After returning to the computer, perhaps a day later
+.\.venv\Scripts\python.exe scripts/groq_batch_event_significance.py --status
+.\.venv\Scripts\python.exe scripts/groq_batch_event_significance.py --collect
+```
+
+The collector maps out-of-order provider output using hashed opaque
+`custom_id`, rejects unexpected/duplicated IDs, validates **each**
+response against the original Event Alert schema, and stores only
+sanitized decisions and token usage in the existing private ledger.
+It reports final precision and recall **only after every decisive case
+is valid and the frozen historical reference is fully paired**.
+Provider failures, missing outputs or expired requests do not count as
+no-alert and cannot silently pass the gate. A second PR/product
+review is still required to assess render/delivery quality, model
+cost and any runtime change. The batch does NOT deploy or send
+Telegram alerts. The provider may retain batch inputs/results for up
+to 30 days under its retention policy.
+
+Cost planning, not an invoice: the first six successful candidate
+calls averaged about **1,025 input + 940 output tokens**. At the
+published **$0.15/M input** and **$0.60/M output** and **50% Batch
+discount**, the corresponding rough estimate is **$0.053 for 147
+cases**. Actual tokens can differ, and the request output cap of
+6,300 tokens means the output-only worst-case arithmetic would be
+about **$0.278**, plus input tokens. These are *not account spend
+limits* and do not include production usage if the organization is
+upgraded. Groq Developer supports optional organization spend limits.
+
 ### Technical baseline, not product-quality scores
 
 | Signal | Observed baseline (Oct 15–16 UTC) |
