@@ -100,11 +100,11 @@ def test_failed_provider_attempt_remains_unknown_not_negative():
     assert combined["attempted_requests"] == 2
 
 
-def test_incomplete_attempt_counter_cannot_bypass_approval_limit():
+def test_incomplete_attempt_counter_cannot_bypass_replay_safety_ceiling():
     dataset = sample_dataset()
     first = state(dataset, case_ids=["case-0"])
     second = state(dataset, case_ids=["case-1"])
-    first["attempted_requests"] = 420
+    first["attempted_requests"] = merging.MAX_APPROVED_CALLS - 180
     second["attempted_requests"] = 181
-    with pytest.raises(ValueError, match="approved request ceiling"):
+    with pytest.raises(ValueError, match="replay safety ceiling"):
         merging.combine_states(dataset, [first, second])

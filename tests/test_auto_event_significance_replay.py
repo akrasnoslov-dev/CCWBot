@@ -84,9 +84,9 @@ def test_retry_after_and_extra_backoff_survive_worker_restarts(now, empty_ledger
 
 def test_never_exceeds_approved_calls_or_token_safety(now, empty_ledger):
     state = {"history": [], "rate_limit_streak": 0, "not_before": None}
-    empty_ledger["attempted_requests"] = 600
+    empty_ledger["attempted_requests"] = auto.MAX_APPROVED_CALLS
     assert auto.compute_next_eligible(state, empty_ledger, now=now)[1] == (
-        "approved_600_call_ceiling"
+        "replay_call_safety_ceiling"
     )
     empty_ledger["attempted_requests"] = 100
     empty_ledger["runs"]["production"] = [

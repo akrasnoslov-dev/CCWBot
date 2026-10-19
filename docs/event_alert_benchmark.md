@@ -781,3 +781,38 @@ not be won by suppressing all alerts.
 PR 1 only supplies the harness, historical defect tests, observations and
 guardrails. It **does not meet** any unmeasured October 16 acceptance gate,
 does not prove the baseline useful and **changes no runtime behavior**.
+
+
+## PR #349: opt-in multi-provider significance discovery (October 2026)
+
+The PR2 quality screen can replay the **same frozen, sanitized** market inputs
+against configured Gemini and Cloudflare fallback models, as independent
+provider/model/prompt candidates. Provider input contains **no reviewer labels**;
+the reviewer A decisions remain local. Do not pool predictions from different
+providers or models into one candidate's precision or recall.
+
+Use `scripts/multi_provider_event_significance_benchmark.py` with
+`--provider gemini|cloudflare --variant <candidate> --max-requests N
+--approve-provider-requests`. On Gemini, `--model-override
+gemini-3.5-flash-lite` allows a separate, fingerprinted candidate if the
+configured model is unavailable. Free-tier quotas, provider Retry-After, and
+provider-side billing arrangements must be respected; this tooling cannot
+guarantee that any account is on a free billing tier.
+
+`scripts/auto_event_alert_quality_replay.py --once` is a **local, opt-in**
+worker. It uses an OS file lock and private, gitignored result ledgers, skips
+candidates once their best possible full-cohort precision/recall is below the
+acceptance floor, and screens the next prompt separately. A Windows Task
+Scheduler job may run it periodically **only while the authorized machine is
+running**. When a temporary production pause is in effect, the private
+`quality_worker_policy.json` defines a UTC cutoff to reserve Groq capacity
+for the scheduled production restart. Neither replay script sends Telegram
+messages, modifies production, merges a PR, or proves final rendered message
+usefulness.
+
+These repeated development screens are **candidate discovery**, not an
+independent held-out quality certification. PR2 acceptance still requires
+full 153/153 decisive frozen-case coverage for one unchanged candidate,
+correct per-symbol/delivery-weighted metrics, independent final-message
+review, semantic cooldown and delivery checks, provider reliability and
+account-level cost evidence. Missing or failed cases are not true negatives.

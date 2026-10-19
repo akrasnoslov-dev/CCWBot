@@ -1,6 +1,7 @@
 """Explicitly approved Groq A/B replay of frozen events (never sends alerts).
 
-Requires --approve-provider-requests; bounded by max 600 calls across this run directory.
+Requires --approve-provider-requests; uses a technical 5000-attempt safety ceiling.
+Provider rate limits and local token budgets govern actual allowed volume.
 Writes only opaque case IDs, response decisions, statuses, usage, and hashes to ignored reports/.
 The external Groq provider receives the same sanitized frozen market input as the bot.
 This script deliberately avoids bot telemetry/DB state, the LLM router, and fallbacks.
@@ -37,7 +38,7 @@ VARIANTS = (
     "market_signal_path",
 )
 DEFAULT_VARIANTS = ("production", "materiality_first", "balanced_novelty")
-MAX_APPROVED_CALLS = 600
+MAX_APPROVED_CALLS = 5_000  # Technical safety ceiling, not an approval quota.
 
 
 def fingerprint(variant: str, model: str, max_tokens: int, effort: str | None) -> str:
@@ -532,7 +533,7 @@ def main() -> None:
     if not args.approve_provider_requests:
         parser.error("Groq replay requires explicit --approve-provider-requests")
     if args.max_requests < 1 or args.max_requests > MAX_APPROVED_CALLS:
-        parser.error("Maximum approved Groq API calls is 600")
+        parser.error("Maximum request count exceeds technical replay safety ceiling")
     if args.delay_seconds < 0:
         parser.error("Delay must be nonnegative")
     if args.max_total_tokens < 1:

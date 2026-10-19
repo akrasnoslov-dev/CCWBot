@@ -117,7 +117,7 @@ def compute_next_eligible(
     state: dict, replay_state: dict, *, now: datetime,
 ) -> tuple[bool, str]:
     if replay_state["attempted_requests"] >= MAX_APPROVED_CALLS:
-        return False, "approved_600_call_ceiling"
+        return False, "replay_call_safety_ceiling"
     if estimated_spent_tokens(replay_state, 6300) + RESERVATION_TOKENS > MAX_TOTAL_SAFETY_TOKENS:
         return False, "total_token_safety_ceiling"
     if remaining_rate_limit_backoff(replay_state, now=now) > 0:

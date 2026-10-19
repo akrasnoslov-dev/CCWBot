@@ -98,7 +98,7 @@ def combine_states(dataset: dict, states: list[dict]) -> dict:
             raise ValueError("Attempt counter smaller than recorded responses")
         merged["attempted_requests"] += attempts
     if merged["attempted_requests"] > MAX_APPROVED_CALLS:
-        raise ValueError("Cumulative approved request ceiling exceeded")
+        raise ValueError("Cumulative replay safety ceiling exceeded")
     return merged
 
 
