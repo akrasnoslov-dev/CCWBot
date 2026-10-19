@@ -48,7 +48,7 @@ if ($Install) {
         -Trigger $trigger -Principal $principal -Settings $settings `
         -Description 'Local capped PR349 Event Alert quality benchmark; no Telegram sends' `
         -Force | Out-Null
-    Write-Host "Installed $taskName: one safe attempt/hour when signed in, with rolling 24h caps."
+    Write-Host "Installed ${taskName}: one safe attempt/hour when signed in, with rolling 24h caps."
     Write-Host 'View private results at reports/event-alert-review-20261016/merged_pilots_private/hourly_replay_status.json'
     exit 0
 }

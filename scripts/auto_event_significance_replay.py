@@ -48,7 +48,12 @@ def exclusive_worker_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as stream:
         stream.seek(0)
-        if not stream.read(1):
+        try:
+            existing = stream.read(1)
+        except PermissionError as exc:
+            # Windows may deny reads of the byte locked by another process.
+            raise RuntimeError("Benchmark worker already running") from exc
+        if not existing:
             stream.seek(0)
             stream.write(b"0")
             stream.flush()
