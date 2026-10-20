@@ -39,6 +39,11 @@ Two cases:
   straight to recipient checks;
 - an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
 
+The exact-context fingerprint preserves the incoming news priority: significance
+reads only the first two valid headlines. Reordering headlines therefore cannot
+reuse an analysis based on a different model-visible set. Invalid non-dictionary
+entries are skipped consistently by both fingerprint and significance prompt.
+
 No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
@@ -54,8 +59,13 @@ The model must judge these in order:
 
 The 24h move, news, previous alerts, and recent-event counts are context. They do not make an
 otherwise routine current move material. Previous alerts and recent-event counts can reduce novelty
-but cannot increase materiality. A small counter-move against a larger 24h trend is not, by itself,
-a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
+but cannot increase materiality. The `prev` prompt hint comes from the latest sent
+Event Alert for the symbol **across recipients**, not a recipient's personal history.
+It must not be interpreted as proof that every subscriber already received the prior
+move; only the later per-recipient delivery check determines that. The prior
+hint is ordered and aged by successful delivery time (`sent_at`), using
+`created_at` only for legacy sent rows without that timestamp. A small
+counter-move against a larger 24h trend is not, by itself, a meaningful reversal. Likewise, a move is not a `fast_move` merely because one short window is
 faster than another; the current move itself must be materially noteworthy for the asset.
 
 There is still no deterministic numeric threshold in the backend. Percentages and historical
@@ -254,6 +264,12 @@ hours.
 
 No bypass exists for a bigger move, urgency, new news, or a direction change inside the same
 semantic event. A genuinely different semantic event can pass.
+
+The four-hour window starts at confirmed successful delivery (`sent_at`), with a legacy
+`created_at` fallback only for stored rows missing completion timestamps. Historical
+price-movement evidence may recover a missing stored price family. A second cooldown
+check under the shared user-and-coin delivery lock closes the gap between bulk
+pre-filtering and an actual send; it does not block distinct semantic families.
 
 ## Step 10 - Send once
 Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression

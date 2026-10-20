@@ -198,7 +198,16 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     window_change = _decimal_market_value(market_data.get("chg_window_percent"))
     change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
     has_reversal = len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
     has_broader_comparison = (
         window_change is not None
         and change_24h is not None
@@ -353,9 +362,29 @@ def event_alert_presentation_fallback(
         and change_24h != 0
     )
     has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
 
     if len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0:
+        if (
+            window_change is not None
+            and window_change != 0
+            and (step_changes[-1] > 0) == (window_change > 0)
+        ):
+            return (
+                "The most recent supplied snapshot reverses part of the earlier path, "
+                "but the latest step aligns with the analysed-window direction.",
+                "Watch the next short-term snapshots for continuation in that direction "
+                "versus another counter-move.",
+            )
         return (
             "The most recent supplied snapshot reverses part of the earlier path, so the "
             "current move may be fading rather than extending.",

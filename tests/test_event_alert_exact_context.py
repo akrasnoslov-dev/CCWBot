@@ -110,6 +110,63 @@ def test_exact_context_tracks_news_age_bucket_not_raw_analysis_timestamp():
     ) != _build_exact_event_context_fingerprint(changed_age_bucket)
 
 
+def test_exact_context_does_not_reuse_when_model_visible_news_priority_changes():
+    original = _payload()
+    original["news"].append({
+        **original["news"][0],
+        "news_id": "n2",
+        "title": "Second headline",
+    })
+    reordered = _payload()
+    reordered["news"] = list(reversed(original["news"]))
+
+    from bot.services.ai_agent_groq import build_event_significance_prompt
+
+    assert build_event_significance_prompt(original) != build_event_significance_prompt(
+        reordered
+    )
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(reordered)
+
+
+def test_exact_context_tracks_priority_when_third_news_becomes_first():
+    original = _payload()
+    original["news"] += [
+        {**original["news"][0], "news_id": "n2", "title": "Second headline"},
+        {**original["news"][0], "news_id": "n3", "title": "Third headline"},
+    ]
+    prioritized = _payload()
+    prioritized["news"] = [original["news"][2], *original["news"][:2]]
+
+    from bot.services.ai_agent_groq import build_event_significance_prompt
+
+    assert build_event_significance_prompt(original) != build_event_significance_prompt(
+        prioritized
+    )
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) != _build_exact_event_context_fingerprint(prioritized)
+
+
+def test_significance_skips_invalid_news_before_selecting_top_two():
+    from bot.services.ai_agent_groq import build_event_significance_prompt
+
+    original = _payload()
+    original["news"].append({
+        **original["news"][0], "news_id": "n2", "title": "Second headline"
+    })
+    with_invalid = _payload()
+    with_invalid["news"] = [None, *original["news"]]
+
+    assert _build_exact_event_context_fingerprint(
+        original
+    ) == _build_exact_event_context_fingerprint(with_invalid)
+    assert build_event_significance_prompt(original) == build_event_significance_prompt(
+        with_invalid
+    )
+
+
 def test_exact_context_invalidates_any_real_market_or_news_change():
     original = _payload()
     changed_market = _payload()

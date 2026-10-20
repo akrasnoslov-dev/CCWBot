@@ -177,14 +177,18 @@ async def get_recent_sent_event_alert_contexts(
     )
     statement = (
         select(Alert, MarketEvent.event_key, delivered_family.label("semantic_family"))
-        .options(load_only(Alert.id, Alert.user_id, Alert.created_at, Alert.numeric_context))
+        .options(load_only(
+            Alert.id, Alert.user_id, Alert.created_at, Alert.sent_at, Alert.numeric_context
+        ))
         .outerjoin(MarketEvent, Alert.market_event_id == MarketEvent.id)
         .where(Alert.user_id.in_(sorted(set(user_ids))))
         .where(Alert.symbol == symbol.upper())
         .where(Alert.alert_type == alert_type)
         .where(Alert.status == "sent")
-        .where(Alert.created_at >= since)
-        .order_by(Alert.created_at.desc(), Alert.id.desc())
+        # Cooldown starts at successful delivery, not the initial reservation.
+        # Old rows with no sent_at retain their legacy created_at reference.
+        .where(func.coalesce(Alert.sent_at, Alert.created_at) >= since)
+        .order_by(func.coalesce(Alert.sent_at, Alert.created_at).desc(), Alert.id.desc())
     )
     return [tuple(row) for row in (await session.execute(statement)).all()]
 
@@ -251,7 +255,11 @@ async def get_latest_sent_event_alert_context_for_symbol(
         .where(Alert.symbol == symbol.upper())
         .where(Alert.alert_type == alert_type)
         .where(Alert.status == "sent")
-        .order_by(Alert.created_at.desc(), Alert.id.desc(), AlertDeliveryOutcome.id.desc())
+        .order_by(
+            func.coalesce(Alert.sent_at, Alert.created_at).desc(),
+            Alert.id.desc(),
+            AlertDeliveryOutcome.id.desc(),
+        )
         .limit(1)
     )
     row = (await session.execute(statement)).first()

@@ -309,7 +309,8 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             if age_hours is not None:
                 compact_news["age_hours"] = age_hours
             news.append(compact_news)
-    news.sort(key=_json_dumps)
+    # Preserve headline priority: significance sees only the first two news items.
+    # Sorting here could reuse a decision made from a different model-visible pair.
     last_msg = input_payload.get("last_msg")
     last_msg = last_msg if isinstance(last_msg, dict) else {}
     previous_event_alert = input_payload.get("previous_event_alert")

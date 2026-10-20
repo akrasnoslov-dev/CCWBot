@@ -52,6 +52,7 @@ def clear_rate_limit_backoffs(monkeypatch):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     # Keep the fallback chain single-provider so these unit tests are deterministic.
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq")
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
     yield
     telemetry.reset_llm_rate_limit_backoffs()
