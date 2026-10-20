@@ -57,30 +57,32 @@ class RecordedProvider(BaseProvider):
         )
 
 
-def _router(monkeypatch, groq_response, gemini_response):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
+def _router(monkeypatch, groq_response, openai_response):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
     monkeypatch.setenv("GROQ_API_KEY", "synthetic-test-key")
-    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
     groq = RecordedProvider("groq", groq_response)
-    gemini = RecordedProvider("gemini", gemini_response)
+    openai = RecordedProvider("openai", openai_response)
     monkeypatch.setattr(agent, "get_router", lambda: LLMRouter(
-        registry={"groq": groq, "gemini": gemini},
+        registry={"groq": groq, "openai": openai},
     ))
-    return groq, gemini
+    return groq, openai
 
 
 @pytest.mark.asyncio
-async def test_groq_news_uses_strict_schema_and_gemini_keeps_json_mode(monkeypatch):
-    groq, gemini = _router(monkeypatch, _valid(primary_symbol="not-supported"), _valid())
+async def test_groq_and_openai_news_use_strict_schema(monkeypatch):
+    groq, openai = _router(monkeypatch, _valid(primary_symbol="not-supported"), _valid())
     result = await _default_llm_client(
         [{"role": "user", "content": "Synthetic classification"}],
         config.model_for("groq", "news_intelligence"),
         15,
     )
-    assert result.provider == "gemini"
-    assert len(groq.calls) == len(gemini.calls) == 1
-    assert gemini.calls[0]["response_format"] == {"type": "json_object"}
+    assert result.provider == "openai"
+    assert len(groq.calls) == len(openai.calls) == 1
+    assert openai.calls[0]["response_format"]["type"] == "json_schema"
+    assert openai.calls[0]["response_format"]["json_schema"]["strict"] is True
     fmt = groq.calls[0]["response_format"]
     assert fmt["type"] == "json_schema"
     assert fmt["json_schema"]["strict"] is True
@@ -134,12 +136,12 @@ def test_irrelevant_news_without_symbol_remains_noise():
 
 
 @pytest.mark.asyncio
-async def test_invalid_primary_and_gemini_backoff_stay_failed_not_cached_success(monkeypatch):
+async def test_invalid_primary_and_openai_backoff_stay_failed_not_cached_success(monkeypatch):
     backoff = LLMRateLimitBackoffActive(
-        provider="gemini", model=config.model_for("gemini", "news_intelligence"),
+        provider="openai", model=config.model_for("openai", "news_intelligence"),
         limited_until=datetime.now(timezone.utc) + timedelta(minutes=30),
     )
-    groq, gemini = _router(
+    groq, openai = _router(
         monkeypatch, _valid(primary_symbol="doge", is_alert_worthy=True), backoff,
     )
     engine, session = await build_session()
@@ -150,7 +152,7 @@ async def test_invalid_primary_and_gemini_backoff_stay_failed_not_cached_success
         assert row.llm_status == "failed"
         assert row.primary_symbol is None
         assert row.is_alert_worthy is False
-        assert len(groq.calls) == len(gemini.calls) == 1
+        assert len(groq.calls) == len(openai.calls) == 1
         outcomes = (await session.execute(select(LlmOperationOutcome))).scalars().all()
         assert len(outcomes) == 1
         assert outcomes[0].status == "failed"
@@ -162,7 +164,7 @@ async def test_invalid_primary_and_gemini_backoff_stay_failed_not_cached_success
 
 @pytest.mark.asyncio
 async def test_all_invalid_symbols_remain_schema_error(monkeypatch):
-    groq, gemini = _router(
+    groq, openai = _router(
         monkeypatch, _valid(primary_symbol="doge"), _valid(primary_symbol="xrp"),
     )
     with pytest.raises(AISchemaValidationError, match="invalid primary_symbol"):
@@ -170,4 +172,4 @@ async def test_all_invalid_symbols_remain_schema_error(monkeypatch):
             [{"role": "user", "content": "Synthetic classification"}],
             config.model_for("groq", "news_intelligence"), 15,
         )
-    assert len(groq.calls) == len(gemini.calls) == 1
+    assert len(groq.calls) == len(openai.calls) == 1

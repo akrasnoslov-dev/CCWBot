@@ -145,7 +145,6 @@ _GROQ_STRICT_SCHEMA_MODELS = frozenset(
     {
         "openai/gpt-oss-20b",
         "openai/gpt-oss-120b",
-        "qwen/qwen3.8-27b",
     }
 )
 # Only the shipped Workers AI model is verified to accept the native, bare JSON
@@ -359,10 +358,8 @@ def _structured_response_formats(
     model_overrides: dict[str, str] | None = None,
 ) -> tuple[dict | None, dict[str, dict | None] | None]:
     """Return JSON mode and provider-specific schemas for verified model attempts."""
-    if not _groq_json_mode_enabled():
-        return None, None
-
-    json_object = {"type": "json_object"}
+    groq_json_mode = _groq_json_mode_enabled()
+    json_object = {"type": "json_object"} if groq_json_mode else None
     strict_format = {
         "type": "json_schema",
         "json_schema": {
@@ -373,8 +370,17 @@ def _structured_response_formats(
     }
     overrides = {}
     for provider, configured_model in llm_config.provider_attempts(call_type):
-        model = (model_overrides or {}).get(provider) or configured_model
-        if provider == "groq" and model in _GROQ_STRICT_SCHEMA_MODELS:
+        override = (model_overrides or {}).get(provider)
+        model = (
+            llm_config.resolve_model_override(override, default=configured_model)
+            if override
+            else configured_model
+        )
+        if provider == "groq" and groq_json_mode and model in _GROQ_STRICT_SCHEMA_MODELS:
+            overrides[f"{provider}:{model}"] = strict_format
+        elif provider == "openai":
+            # OpenAI Structured Outputs uses the same named strict-schema envelope. The
+            # application validator still runs after provider acceptance for every feature.
             overrides[f"{provider}:{model}"] = strict_format
     # Event Analysis has six mandatory fields. Plain json_object protects syntax
     # but not their shape; ask the supported Cloudflare model to constrain types

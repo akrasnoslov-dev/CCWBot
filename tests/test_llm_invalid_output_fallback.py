@@ -50,7 +50,8 @@ class ProviderHttpError(RuntimeError):
 
 def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", ",".join(priority))
-    for provider in ("groq", "gemini", "cloudflare"):
+    monkeypatch.setenv("OPENAI_ENABLED", "true" if "openai" in keys else "false")
+    for provider in ("groq", "openai", "cloudflare"):
         env = config.api_key_env(provider)
         if provider in keys:
             monkeypatch.setenv(env, f"{provider}-key")
@@ -181,11 +182,11 @@ def _clear_report_caches():
 
 @pytest.mark.asyncio
 async def test_event_analysis_invalid_json_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     valid = _valid_no_alert_analysis()
     groq = ContentProvider("groq", "not json at all")
-    gemini = ContentProvider("gemini", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     result = await ai_agent_groq.ask_event_analysis_raw(
         {"symbol": "BTC", "analysis_id": "a1", "news": [], "market": {}}
@@ -193,18 +194,18 @@ async def test_event_analysis_invalid_json_falls_back_to_next_provider(monkeypat
 
     raw_content, parsed = result
     assert parsed == valid
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     # One analysis, one pass over providers: each provider was called exactly once.
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_all_providers_invalid_json_keeps_terminal_error(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     groq = ContentProvider("groq", "not json")
-    gemini = ContentProvider("gemini", "still not json")
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", "still not json")
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     with pytest.raises(AIInvalidJsonError):
         await ai_agent_groq.ask_event_analysis_raw(
@@ -212,18 +213,18 @@ async def test_event_analysis_all_providers_invalid_json_keeps_terminal_error(mo
         )
 
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     valid = _valid_no_alert_analysis()
     schema_invalid = dict(valid)
     schema_invalid.pop("reason_for_no_alert")
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    gemini = ContentProvider("gemini", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     def schema_check(parsed):
         if "reason_for_no_alert" not in parsed:
@@ -234,39 +235,39 @@ async def test_event_analysis_schema_failure_falls_back_to_next_provider(monkeyp
         schema_check=schema_check,
     )
 
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_unsupported_window_claim_falls_back_to_grounded_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     groq = ContentProvider(
         "groq", json.dumps(_grounded_alert("BTC down ~3.6% over the last 3 hours"))
     )
-    gemini = ContentProvider(
-        "gemini", json.dumps(_grounded_alert("BTC down ~3.1% over the last 3 hours"))
+    openai = ContentProvider(
+        "openai", json.dumps(_grounded_alert("BTC down ~3.1% over the last 3 hours"))
     )
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     result = await ai_agent_groq.ask_event_analysis_raw(
         {"symbol": "BTC", "news": [], "market": _grounding_market()},
         schema_check=_grounding_schema_check,
     )
 
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_event_analysis_all_unsupported_window_claims_remain_terminal_invalid(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     invalid = json.dumps(_grounded_alert("BTC down ~3.6% over the last 3 hours"))
     groq = ContentProvider("groq", invalid)
-    gemini = ContentProvider("gemini", invalid)
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", invalid)
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     with pytest.raises(AISchemaValidationError):
         await ai_agent_groq.ask_event_analysis_raw(
@@ -275,12 +276,12 @@ async def test_event_analysis_all_unsupported_window_claims_remain_terminal_inva
         )
 
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     invalid = {
         "symbol": "ETH",
         "title": "Wrong symbol",
@@ -291,8 +292,8 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
     }
     valid = dict(invalid, symbol="BTC", title="BTC heartbeat")
     groq = ContentProvider("groq", json.dumps(invalid))
-    gemini = ContentProvider("gemini", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     def schema_check(parsed):
         if parsed.get("symbol") != "BTC":
@@ -302,10 +303,10 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
         {"symbol": "BTC", "candidate_news": []}, schema_check=schema_check
     )
 
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     assert result[1] == valid
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
@@ -313,7 +314,7 @@ async def test_market_heartbeat_schema_failure_falls_back_to_next_provider(monke
 async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
     monkeypatch, call_path
 ):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     valid_news = {
         "summary": "Routine market update.",
         "category": "market",
@@ -329,8 +330,8 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
     }
     valid = valid_news
     groq = ContentProvider("groq", '{"ok": true}')
-    gemini = ContentProvider("gemini", json.dumps(valid))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(valid))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     if call_path == "news_intelligence":
         from bot.services.news_intelligence_service import validate_news_intelligence_schema
@@ -348,16 +349,16 @@ async def test_other_structured_call_paths_fall_back_on_schema_invalid_json(
 
     assert parsed == valid
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     schema_invalid = {"report_type": "daily", "title": "Daily Market Report"}
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    gemini = ContentProvider("gemini", json.dumps(_valid_report_payload()))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(_valid_report_payload()))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     async def fake_market_data(symbols):
         return _market_data()
@@ -380,20 +381,20 @@ async def test_report_schema_failure_falls_back_to_next_provider(monkeypatch):
     # The fallback provider answered, so this is a real LLM report, not the
     # deterministic fallback.
     assert report["error_message"] is None
-    assert report["provider"] == "gemini"
+    assert report["provider"] == "openai"
     assert groq.calls == 1
-    assert gemini.calls == 1
+    assert openai.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_report_all_providers_schema_invalid_uses_deterministic_fallback(
     monkeypatch, caplog
 ):
-    _configure(monkeypatch, ["groq", "gemini"], {"groq", "gemini"})
+    _configure(monkeypatch, ["groq", "openai"], {"groq", "openai"})
     schema_invalid = {"report_type": "daily", "title": "Daily Market Report"}
     groq = ContentProvider("groq", json.dumps(schema_invalid))
-    gemini = ContentProvider("gemini", json.dumps(schema_invalid))
-    _install_router(monkeypatch, {"groq": groq, "gemini": gemini})
+    openai = ContentProvider("openai", json.dumps(schema_invalid))
+    _install_router(monkeypatch, {"groq": groq, "openai": openai})
 
     async def fake_market_data(symbols):
         return _market_data()
@@ -445,13 +446,13 @@ async def _install_report_inputs(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_production_report_chain_reaches_cloudflare_and_persists_actual_route(monkeypatch):
-    providers = ("groq", "gemini", "cloudflare")
+    providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
-        "gemini": ContentProvider(
-            "gemini",
+        "openai": ContentProvider(
+            "openai",
             ProviderHttpError("model route unavailable", status_code=404, code="model_not_found"),
         ),
         "cloudflare": ContentProvider("cloudflare", json.dumps(_valid_report_payload())),
@@ -469,12 +470,12 @@ async def test_production_report_chain_reaches_cloudflare_and_persists_actual_ro
 
 @pytest.mark.asyncio
 async def test_production_report_chain_can_succeed_before_final_provider(monkeypatch):
-    providers = ("groq", "gemini", "cloudflare")
+    providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
-        "gemini": ContentProvider("gemini", json.dumps(_valid_report_payload())),
+        "openai": ContentProvider("openai", json.dumps(_valid_report_payload())),
         "cloudflare": ContentProvider("cloudflare", RuntimeError("must not be called")),
     }
     _install_router(monkeypatch, registry)
@@ -482,20 +483,20 @@ async def test_production_report_chain_can_succeed_before_final_provider(monkeyp
 
     report = await reports.generate_report_cache("daily")
 
-    assert report["provider"] == "gemini"
-    assert report["model"] == config.model_for("gemini", "daily_report")
+    assert report["provider"] == "openai"
+    assert report["model"] == config.model_for("openai", "daily_report")
     assert [registry[name].calls for name in providers] == [1, 1, 0]
 
 
 @pytest.mark.asyncio
 async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
-    providers = ("groq", "gemini", "cloudflare")
+    providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     registry = {
         "groq": ContentProvider(
             "groq", ProviderHttpError("malformed request", status_code=400, code="bad_request")
         ),
-        "gemini": ContentProvider("gemini", RuntimeError("must not be called")),
+        "openai": ContentProvider("openai", RuntimeError("must not be called")),
         "cloudflare": ContentProvider("cloudflare", RuntimeError("must not be called")),
     }
     _install_router(monkeypatch, registry)
@@ -510,7 +511,7 @@ async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_three_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
-    providers = ("groq", "gemini", "cloudflare")
+    providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {name: ContentProvider(name, schema_invalid) for name in providers}

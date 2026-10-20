@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import bot.alerts as alerts
 from bot.db.database import AlertDeliveryOutcome, Base, EventAiAnalysis
 from bot.observability import event_analysis_health
-from bot.services.llm import cloudflare_provider, gemini_provider, groq_provider, telemetry
+from bot.services.llm import cloudflare_provider, groq_provider, openai_provider, telemetry
 from bot.services.llm.errors import AIGroqRateLimitError, LLMRateLimitBackoffActive
 from bot.services.llm.operation import llm_operation_scope, new_llm_operation_id
 from bot.services.llm.router import LLMRouter
@@ -47,41 +47,52 @@ def _set_groq_client(monkeypatch, client):
 
 @pytest.fixture(autouse=True)
 def clear_rate_limit_backoffs(monkeypatch):
+    from bot.services.llm.openai_budget import openai_budget
+
+    async def reserve(**_kwargs):
+        return object()
+
+    async def settle(*_args, **_kwargs):
+        return None
+
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     # Keep the fallback chain single-provider so these unit tests are deterministic.
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq")
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
+    monkeypatch.setattr(openai_budget, "reserve", reserve)
+    monkeypatch.setattr(openai_budget, "settle", settle)
     yield
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
 
 
 @pytest.mark.asyncio
-async def test_slow_gemini_response_times_out_then_uses_cloudflare(monkeypatch):
+async def test_slow_openai_response_times_out_then_uses_cloudflare(monkeypatch):
     import asyncio
 
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "openai,cloudflare")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
 
     async def slow_response(**_kwargs):
         await asyncio.sleep(0.05)
         raise AssertionError("slow response should have timed out")
 
-    gemini_request = AsyncMock(side_effect=slow_response)
+    openai_request = AsyncMock(side_effect=slow_response)
     cloudflare_request = AsyncMock(
         return_value=SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
         )
     )
-    gemini = gemini_provider.get_provider()
+    openai = openai_provider.get_provider()
     cloudflare = cloudflare_provider.get_provider()
-    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(openai, "_client", _fake_groq_client(openai_request))
     monkeypatch.setattr(cloudflare, "_client", _fake_groq_client(cloudflare_request))
 
-    result = await LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare}).chat_completion(
+    result = await LLMRouter(registry={"openai": openai, "cloudflare": cloudflare}).chat_completion(
         call_type="event_analysis",
         messages=[{"role": "user", "content": "hello"}],
         max_tokens=10,
@@ -90,31 +101,31 @@ async def test_slow_gemini_response_times_out_then_uses_cloudflare(monkeypatch):
     )
 
     assert result.provider == "cloudflare"
-    assert gemini_request.await_count == cloudflare_request.await_count == 1
-    assert gemini_request.await_args.kwargs["timeout"].read == pytest.approx(0.005)
+    assert openai_request.await_count == cloudflare_request.await_count == 1
+    assert openai_request.await_args.kwargs["timeout"].read == pytest.approx(0.005)
     assert telemetry.get_llm_rate_limit_backoff(
-        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+        provider="openai", model=openai_request.await_args.kwargs["model"]
     ) is None
 
 
 @pytest.mark.asyncio
-async def test_gemini_live_429_skips_next_cycle_without_blocking_cloudflare(monkeypatch):
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+async def test_openai_live_429_skips_next_cycle_without_blocking_cloudflare(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "openai,cloudflare")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
     failure = RuntimeError("rate limit")
     failure.status_code = 429
-    gemini_request = AsyncMock(side_effect=failure)
+    openai_request = AsyncMock(side_effect=failure)
     cloudflare_request = AsyncMock(
         return_value=SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
         )
     )
-    gemini = gemini_provider.get_provider()
+    openai = openai_provider.get_provider()
     cloudflare = cloudflare_provider.get_provider()
-    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(openai, "_client", _fake_groq_client(openai_request))
     monkeypatch.setattr(cloudflare, "_client", _fake_groq_client(cloudflare_request))
-    router = LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare})
+    router = LLMRouter(registry={"openai": openai, "cloudflare": cloudflare})
     args = {
         "call_type": "event_analysis",
         "messages": [{"role": "user", "content": "hello"}],
@@ -127,35 +138,35 @@ async def test_gemini_live_429_skips_next_cycle_without_blocking_cloudflare(monk
 
     assert first.provider == second.provider == "cloudflare"
     assert first.operation_id != second.operation_id
-    assert gemini_request.await_count == 1  # next logical cycle skips Gemini pre-call
+    assert openai_request.await_count == 1  # next logical cycle skips OpenAI pre-call
     assert cloudflare_request.await_count == 2
-    assert gemini_request.await_args.kwargs["timeout"].read == pytest.approx(25)
+    assert openai_request.await_args.kwargs["timeout"].read == pytest.approx(15)
     assert cloudflare_request.await_args.kwargs["timeout"].read == pytest.approx(15)
     assert telemetry.get_llm_rate_limit_backoff(
-        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+        provider="openai", model=openai_request.await_args.kwargs["model"]
     ) is not None
 
 
 @pytest.mark.asyncio
-async def test_gemini_quota_429_falls_back_without_transient_backoff(monkeypatch):
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "gemini,cloudflare")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+async def test_openai_quota_429_falls_back_without_transient_backoff(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "openai,cloudflare")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "test-key")
     failure = RuntimeError("quota exhausted")
     failure.status_code = 429
     failure.body = {"error": {"code": "quota_exceeded"}}
-    gemini_request = AsyncMock(side_effect=failure)
+    openai_request = AsyncMock(side_effect=failure)
     cloudflare_request = AsyncMock(
         return_value=SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
         )
     )
-    gemini = gemini_provider.get_provider()
+    openai = openai_provider.get_provider()
     cloudflare = cloudflare_provider.get_provider()
-    monkeypatch.setattr(gemini, "_client", _fake_groq_client(gemini_request))
+    monkeypatch.setattr(openai, "_client", _fake_groq_client(openai_request))
     monkeypatch.setattr(cloudflare, "_client", _fake_groq_client(cloudflare_request))
 
-    result = await LLMRouter(registry={"gemini": gemini, "cloudflare": cloudflare}).chat_completion(
+    result = await LLMRouter(registry={"openai": openai, "cloudflare": cloudflare}).chat_completion(
         call_type="event_analysis",
         messages=[{"role": "user", "content": "hello"}],
         max_tokens=10,
@@ -163,10 +174,10 @@ async def test_gemini_quota_429_falls_back_without_transient_backoff(monkeypatch
     )
 
     assert result.provider == "cloudflare"
-    assert gemini_request.await_count == 1
+    assert openai_request.await_count == 1
     assert cloudflare_request.await_count == 1
     assert telemetry.get_llm_rate_limit_backoff(
-        provider="gemini", model=gemini_request.await_args.kwargs["model"]
+        provider="openai", model=openai_request.await_args.kwargs["model"]
     ) is None
 
 

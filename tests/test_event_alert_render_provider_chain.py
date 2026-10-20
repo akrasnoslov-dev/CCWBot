@@ -48,18 +48,16 @@ def render_chain(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "fake")
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "fake")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "fake")
-    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
     monkeypatch.setenv("LLM_BREAKER_ENABLED", "false")
     for key in (
-        "GROQ_EVENT_ANALYSIS_MODEL", "GROQ_EVENT_RENDER_FALLBACK_MODEL",
-        "CLOUDFLARE_EVENT_RENDER_MODEL", "GEMINI_EVENT_RENDER_MODEL",
+        "GROQ_EVENT_RENDER_MODEL", "CLOUDFLARE_EVENT_RENDER_MODEL", "OPENAI_MODEL",
     ):
         monkeypatch.delenv(key, raising=False)
     from bot.services.llm.config import provider_attempts
     entries = provider_attempts("event_alert_render")
-    assert [provider for provider, _ in entries] == [
-        "groq", "groq", "cloudflare", "gemini"
-    ]
+    assert [provider for provider, _ in entries] == ["groq", "openai", "cloudflare"]
     return entries
 
 
@@ -69,7 +67,7 @@ def install(monkeypatch, entries, answers):
             model: answers[index]
             for index, (provider, model) in enumerate(entries) if provider == name
         })
-        for name in ("groq", "cloudflare", "gemini")
+        for name in ("groq", "openai", "cloudflare")
     }
     monkeypatch.setattr(ai_agent_groq, "get_router", lambda: LLMRouter(registry=registry))
     return registry
@@ -110,21 +108,19 @@ async def call_render():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("winner", [0, 1, 2, 3])
+@pytest.mark.parametrize("winner", [0, 1, 2])
 async def test_success_after_each_model_and_no_later_calls(
     monkeypatch, render_chain, winner,
 ):
     answers = ["not json"] * winner + [good_render()] + [
         AssertionError("later provider must not be called")
-    ] * (3 - winner)
+    ] * (2 - winner)
     registry = install(monkeypatch, render_chain, answers)
     result = await call_render()
     assert result[1]["message_body"] == json.loads(good_render())["message_body"]
     assert result.provider == render_chain[winner][0]
     assert result.model == render_chain[winner][1]
     assert sum(len(provider.calls) for provider in registry.values()) == winner + 1
-    if winner > 0:
-        assert registry["groq"].calls[1][1]["type"] == "json_schema"
 
 
 @pytest.mark.asyncio
@@ -139,7 +135,7 @@ async def test_provider_side_json_validation_only_is_recoverable(
     with pytest.raises(AISchemaValidationError) as caught:
         await call_render()
     assert caught.value._llm_all_exhausted_attempts_invalid_output is True
-    assert [len(registry[name].calls) for name in ("groq", "cloudflare", "gemini")] == [2, 1, 1]
+    assert [len(registry[name].calls) for name in ("groq", "openai", "cloudflare")] == [1, 1, 1]
 
 
 @pytest.mark.asyncio
@@ -150,7 +146,7 @@ async def test_provider_side_json_validation_only_is_recoverable(
 async def test_mixed_provider_failures_never_enable_deterministic_recovery(
     monkeypatch, render_chain, other_failure,
 ):
-    answers = ["not json", "still not json", other_failure, "not json either"]
+    answers = ["not json", other_failure, "not json either"]
     install(monkeypatch, render_chain, answers)
     with pytest.raises(AIInvalidJsonError) as caught:
         await call_render()
@@ -163,7 +159,7 @@ async def test_pure_client_schema_failures_allow_recovery_marker(
 ):
     install(monkeypatch, render_chain, [
         '{"message_body": 4, "related_news_ids": [], "possible_action": false}'
-    ] * 4)
+    ] * 3)
     with pytest.raises(AISchemaValidationError) as caught:
         await call_render()
     assert caught.value._llm_all_exhausted_attempts_invalid_output is True
@@ -174,19 +170,20 @@ async def test_bad_request_aborts_without_calling_fallback(
     monkeypatch, render_chain,
 ):
     registry = install(monkeypatch, render_chain, [
-        ProviderError(400, "invalid_request_error"), good_render(), good_render(), good_render()
+        ProviderError(400, "invalid_request_error"), good_render(), good_render()
     ])
     with pytest.raises(ProviderError) as caught:
         await call_render()
     assert classify_ai_error_reason(caught.value) == "provider_bad_request"
-    assert [len(registry[name].calls) for name in ("groq", "cloudflare", "gemini")] == [1, 0, 0]
+    assert [len(registry[name].calls) for name in ("groq", "openai", "cloudflare")] == [1, 0, 0]
 
 
 @pytest.mark.asyncio
 async def test_no_configured_providers_is_terminal(monkeypatch, render_chain):
-    for key in ("GROQ_API_KEY", "CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY"):
+    for key in ("GROQ_API_KEY", "CLOUDFLARE_API_TOKEN", "OPENAI_API_KEY"):
         monkeypatch.delenv(key, raising=False)
-    install(monkeypatch, render_chain, [good_render()] * 4)
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    install(monkeypatch, render_chain, [good_render()] * 3)
     with pytest.raises(AllProvidersFailedError):
         await call_render()
 
@@ -209,7 +206,7 @@ def patch_significance_and_storage(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("winner", [0, 1, 2, 3])
+@pytest.mark.parametrize("winner", [0, 1, 2])
 async def test_full_factual_validation_at_each_fallback_before_allowed_outcome(
     monkeypatch, render_chain, winner,
 ):
@@ -219,7 +216,7 @@ async def test_full_factual_validation_at_each_fallback_before_allowed_outcome(
     })
     responses = [invalid_claim] * winner + [good_render()] + [
         AssertionError("provider after winner should not be called")
-    ] * (3 - winner)
+    ] * (2 - winner)
     registry = install(monkeypatch, render_chain, responses)
     significance_call, render_outcome, delivery_outcome = patch_significance_and_storage(
         monkeypatch
@@ -262,4 +259,4 @@ async def test_server_side_invalid_only_exhaustion_recovers_through_factual_vali
     )
     assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
     significance_call.assert_awaited_once()
-    assert sum(len(provider.calls) for provider in registry.values()) == 4
+    assert sum(len(provider.calls) for provider in registry.values()) == 3

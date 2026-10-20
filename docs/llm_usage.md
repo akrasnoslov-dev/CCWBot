@@ -7,18 +7,16 @@ recorded at the time of the call.
 
 ## Provider fallback (redundancy)
 
-Groq is the primary LLM provider. General call types use the ordered provider chain configured
-via `LLM_PROVIDER_PRIORITY` (default `groq,gemini`) with optional
-per-task-type overrides `LLM_EVENT_PROVIDERS`, `LLM_REPORT_PROVIDERS`, and
-`LLM_HEARTBEAT_PROVIDERS`. These providers are reached through OpenAI-compatible
-chat-completions APIs.
+Groq is the primary LLM provider. The built-in general chain is
+`groq,openai,cloudflare`; Daily/Weekly Reports and the legacy `market_report` alias deliberately
+use `groq,openai` and then their verified data-only fallback. Per-feature overrides are
+`LLM_EVENT_PROVIDERS`, `LLM_EVENT_RENDER_PROVIDERS`, `LLM_NEWS_INTELLIGENCE_PROVIDERS`,
+`LLM_HEARTBEAT_PROVIDERS`, and `LLM_REPORT_PROVIDERS`.
 
-Event Analysis adds one optional independent route: if neither the event override nor the global
-priority is set, its built-in order is `groq,gemini,cloudflare`. The checked-in
-`.env.example` sets `LLM_EVENT_PROVIDERS=groq,gemini,cloudflare` explicitly because
-it also sets a global chain. An explicitly configured global or per-event chain remains
-controlling; existing deployments must opt into this order via `LLM_EVENT_PROVIDERS` if a
-global priority is already configured. Cloudflare is skipped when its token/account ID is absent.
+OpenAI is excluded before client construction unless `OPENAI_ENABLED=true`; an API key alone does
+not enable it. Therefore the shipped free-only chains are Groq -> Cloudflare for Event Analysis,
+Render, News Intelligence and Heartbeat, and Groq -> data-only for reports. Cloudflare is skipped
+when its token/account ID is absent.
 No provider is called inside recipient loops, and the result is attributed to the actual
 provider/model that answered. This does not change Event Alert significance rules.
 
@@ -37,27 +35,38 @@ invalid outputs; they do **not** establish an improvement in live Cloudflare
 success rate, latency, or billable/free-tier inference cost. Check sanitized
 post-release provider-attempt telemetry before claiming a quality improvement.
 
-Mistral has been retired from the runtime provider registry following persistent HTTP 429
-failures. Even if old deployment env files still list it, the priority parser rejects it;
-existing historical Mistral telemetry is retained. Cloudflare Workers AI has a finite free
+Gemini, Qwen Preview, and Mistral have been retired from active routing. Stale provider-priority
+entries are rejected with sanitized warnings; historical usage telemetry is retained. Cloudflare Workers AI has a finite free
 daily neuron quota (10,000 neurons/day as of October 2026); it does not guarantee capacity.
 See https://developers.cloudflare.com/workers-ai/platform/pricing/ .
 
-`event_alert_render` is intentionally different: it uses a fixed model-level LLM chain so the
-same Groq account can try a second model before changing infrastructure:
-
-`Groq openai/gpt-oss-120b -> Groq qwen/qwen3.8-27b -> Cloudflare
-@cf/meta/llama-3.3-70b-instruct-fp8-fast -> Gemini gemini-3.5-flash-lite`.
-
-The first two attempts share `GROQ_API_KEY`. Cloudflare requires both
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; if either is missing, that step is excluded.
-The final render fallback uses the existing `GEMINI_API_KEY`. Generic Gemini uses `gemini-3.8-flash`; Cloudflare uses the configured Llama model.
+`event_alert_render` uses `Groq openai/gpt-oss-20b -> optional OpenAI gpt-6-luna ->
+Cloudflare @cf/meta/llama-3.3-70b-instruct-fp8-fast`. Its Groq model is independently
+configurable with `GROQ_EVENT_RENDER_MODEL`; it no longer shares the 120B Event Analysis slot.
+Cloudflare requires both `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 Model environment variables are intentional overrides, not normal required configuration: leave
 them unset in ordinary deployments so pinned code defaults stay authoritative.
 
 The project-wide zero-cost/free-tier service policy is owned by `docs/project_context.md`.
 For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
 efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
+
+### Optional OpenAI activation and spend cap
+
+OpenAI ships disabled. Enabling it requires all of `OPENAI_ENABLED=true`, `OPENAI_API_KEY`, an
+`OPENAI_PRICED_MODEL` exactly matching `OPENAI_MODEL`, the verified `OPENAI_MAX_INPUT_TOKENS`, and
+activation-time verified positive `OPENAI_INPUT_USD_PER_1M_TOKENS` /
+`OPENAI_OUTPUT_USD_PER_1M_TOKENS`. The single global UTC-calendar-month hard maximum is
+`OPENAI_MONTHLY_BUDGET_USD=2.50`. Missing database state, malformed cap, unknown prices, or an
+exhausted cap skips OpenAI before HTTP and advances to Cloudflare/data-only.
+
+Before each request, `openai_budget_reservations` atomically reserves the verified full model input
+ceiling plus maximum completion/reasoning cost. This deliberately covers Unicode, provider chat
+framing, and response schemas without relying on a token estimate. PostgreSQL advisory locking serializes authorization across
+workers; the ledger survives restarts. Known token usage reconciles the reservation, while timeout,
+5xx, missing usage, or failed reconciliation retains the conservative amount. This is a CCWBot-side
+guard, not an OpenAI organization-wide invoice guarantee. Live API compatibility, exact model ID,
+and current price verification remain part of the separately approved paid-activation gate.
 
 The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid
@@ -73,21 +82,16 @@ terminal. No further LLM calls are made during deterministic recovery.
 ### Event Analysis timeout and operation budget
 
 Event Analysis uses **one HTTP request per configured provider/model**, ordered by
-`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> Gemini).
+`LLM_EVENT_PROVIDERS` or the generic provider priority (default Groq -> optional OpenAI -> Cloudflare).
 The OpenAI-compatible SDK has `max_retries=0`; neither HTTP 5xx nor timeout causes a
 same-provider retry. Such failures advance to the next available provider, unless the operation
 budget is exhausted. HTTP 429 activates the existing provider/model backoff; an explicit
 billing/quota code instead falls back without treating quota exhaustion as transient 429.
 Malformed requests remain terminal and never fan out.
 
-The default per-request timeouts for **Event Analysis only** are Groq **15s**, Gemini **25s**,
-and Cloudflare **15s**. Gemini gets ten additional seconds for variable model/reasoning latency;
-this is a conservative bounded mitigation for the observed 15-second timeouts, **not** a
-measured latency percentile or a fix for HTTP 5xx/quota errors. The per-request
-OpenAI/httpx timeout is overridden as well: otherwise the shared client's 20s read timeout
-would silently cut short Gemini's 25s deadline. The Event Analysis chain has a **90s**
+Each provider attempt defaults to a 15-second timeout. The Event Analysis chain has a **90s**
 monotonic-clock budget covering HTTP requests, provider telemetry writes, rate-limit/breaker
-skips and response validation. Nominal HTTP ceilings total 55s, leaving 35s for processing.
+skips and response validation. Nominal HTTP ceilings total 45s, leaving 45s for processing.
 Before any new HTTP attempt the router checks remaining time, shortens its timeout
 when necessary, and makes no new request when fewer than 1s remain. A timeout at the
 remaining deadline, including on the final provider or during logging/validation, gets
@@ -96,18 +100,15 @@ or a successful operation. A forced cancellation can leave an individual provide
 telemetry row missing, but the terminal feature outcome still carries the reason and
 the logical `llm_operation_id`.
 
-Only these Event Analysis settings may adjust the defaults (both validated and logged on
-startup): `LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS` (default 25, allowed 15-30) and
-`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` (default 90, allowed 15-120).
+`LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` adjusts the total budget (default 90, allowed 15-120).
 Explicit caller timeouts still override the per-provider default but remain bounded by
 the remaining operation budget. All other call types retain their shared 15s timeout,
 including Event Alert Render. No extra LLM requests are added. These settings do not
 change event significance or delivery logic.
 
-A future production check should use sanitized startup configuration and correlated
-`llm_usage_logs` attempt/final-outcome timestamps to compare successful Gemini latency,
-timeout counts, fallback recovery and active-backoff skips. Neither the supplied before/after
-counts nor default source code proves which timeout is currently set in the deployed environment.
+A production check should use sanitized startup configuration and correlated `llm_usage_logs`
+attempt/final-outcome timestamps to compare timeout counts, fallback recovery, and active-backoff
+skips.
 
 ### Which 4xx responses fall back
 
@@ -138,9 +139,9 @@ Historical rows remain `NULL`; a telemetry write can still fail open, which is a
 rather than proof of no attempt. The identifier contains no user identity, Telegram ID, prompt,
 output, or secret.
 
-News Intelligence uses a strict JSON Schema for supported Groq models when JSON mode is enabled,
-including an allowlisted nullable `primary_symbol` and all eleven required fields. Other models
-(including Gemini) keep the existing JSON-object request mode. The prompt explicitly uses
+News Intelligence uses a strict JSON Schema for supported Groq models when JSON mode is enabled and
+for the optional OpenAI attempt, including an allowlisted nullable `primary_symbol` and all eleven
+required fields. Other active models keep their provider-compatible response format. The prompt explicitly uses
 `primary_symbol=null` for no clear single coin, including multi-coin and irrelevant news.
 Backend schema validation remains mandatory for every provider: an unsupported symbol is an
 invalid output, not a silently reassigned primary or a successful intelligence result. Invalid
@@ -179,9 +180,11 @@ not user-controlled, so a genuinely bad prompt already fans out across the chain
 client-side path, bounded to one pass. A malformed *request*, by contrast, would fail identically
 everywhere and stays terminal.
 
-### Gemini 429 quota classification and backoff
+### Historical Gemini 429 quota classification and backoff
 
-Google's structured `google.rpc.QuotaFailure` `quotaId` distinguishes a daily
+This retained telemetry behavior applies only to historical Gemini records and direct compatibility
+tests; Gemini is not in the runnable provider registry. Google's structured
+`google.rpc.QuotaFailure` `quotaId` distinguishes a daily
 quota from a per-minute 429. When Gemini explicitly reports a per-day
 quota violation, the router records `provider_quota_exhausted` and advances to the
 existing fallback provider. A concrete provider `Retry-After`/`RetryInfo`
@@ -308,7 +311,7 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` (default `medium`) |
-| `event_alert_render` | dedicated 4-step chain (GPT-OSS 120B -> Qwen 3.8 27B -> Cloudflare Llama 3.3 70B -> Gemini 3.5 Flash-Lite) | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | model-dependent |
+| `event_alert_render` | Groq GPT-OSS 20B -> optional OpenAI Luna -> Cloudflare Llama 3.3 70B | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | model-dependent |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
@@ -365,12 +368,14 @@ The gate for sending the parameter is the resolved **model identifier**, not the
 provider serves reasoning and non-reasoning models side by side, and sending `reasoning_effort` to
 a non-reasoning model is a 400 that the router treats as deterministic and does not fall back on.
 A model counts as reasoning-capable when its identifier contains one of
-`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gemini-2.5,gemini-3.`). In a chain that mixes
+`LLM_REASONING_MODEL_MARKERS` (default `gpt-oss,gpt-6,gemini-2.5,gemini-3.`; Gemini markers are
+retained for historical compatibility). In a chain that mixes
 plain and reasoning models, a global `LLM_REASONING_EFFORT=low` reaches only the compatible
 attempts.
 
 Only extend `LLM_REASONING_MODEL_MARKERS` for models whose provider actually accepts the
-`reasoning_effort` request field. Gemini 2.5 and Gemini 3 support it through Google's
+`reasoning_effort` request field. The retained historical Gemini compatibility notes are that
+Gemini 2.5 and Gemini 3 support it through Google's
 OpenAI-compatible endpoint. Gemini 2.5 maps effort to fixed thinking budgets; Gemini 3 maps effort
 to thinking levels and uses dynamic thought-token allocation. The existing headroom remains a
 bounded client-side safety allowance rather than a provider-guaranteed Gemini 3 thinking budget. Other
@@ -382,15 +387,16 @@ model family. The shared OpenAI-compatible provider keeps the existing `temperat
 for Groq, Cloudflare, and pre-Gemini-3 models; the Gemini adapter removes it only for resolved
 `gemini-3.*` model identifiers.
 
-Groq GPT-OSS and the pinned `qwen/qwen3.8-27b` render fallback support strict JSON Schema
-Structured Outputs. Verified Groq models use `response_format.type=json_schema` with
+Groq GPT-OSS and optional OpenAI support strict JSON Schema Structured Outputs. Verified Groq
+models use `response_format.type=json_schema` with
 `strict=true`; existing application validators still run afterwards for semantic, grounding,
-active-symbol, safety, and non-empty checks. Cloudflare, Gemini, and an operator-supplied
-Groq model outside the verified strict-schema allowlist keep JSON Object Mode so one provider's
+active-symbol, safety, and non-empty checks. Cloudflare uses its supported bare JSON Schema for
+Event Analysis; an operator-supplied Groq model outside the verified strict-schema allowlist keeps JSON Object Mode so one provider's
 strict-schema contract cannot make another provider's request incompatible. For reports, the
 strict provider schema requires every top-level field and every `coin_cards` object field,
 preventing the missing-field payload that caused the 2026-09-29 Daily Report fallback incident.
-`GROQ_JSON_MODE=false` disables both response-format modes while preserving application parsing
+`GROQ_JSON_MODE=false` disables Groq/default response-format modes while preserving the OpenAI and
+supported Cloudflare provider-specific schemas and application parsing
 and fallback behavior.
 
 Groq GPT-OSS does **not** accept `reasoning_format`. Do not add that parameter to these requests;

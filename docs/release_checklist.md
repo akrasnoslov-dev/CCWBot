@@ -113,6 +113,24 @@ separate from deployment to avoid Compose orphan conflicts.
 
 ## Future release-specific checklist
 
+### LLM routing v2 free-only rollout
+
+- This release includes migration `0033_openai_budget`; take the required backup and verify the
+  PostgreSQL migration before bot startup.
+- Require separate production approval. Deploy with `OPENAI_ENABLED=false`; a stray key must not
+  activate paid calls. Do not set pricing or purchase credits as part of the free-only rollout.
+- Inspect sanitized `ops_event=llm_config` output for Event Analysis (Groq 120B -> disabled OpenAI
+  -> Cloudflare), Render/News/Heartbeat (Groq 20B -> disabled OpenAI -> Cloudflare), and Reports
+  (Groq 20B -> disabled OpenAI -> data-only). Reject stale Gemini/Qwen overrides.
+- Smoke all six feature families, confirm provider/model attribution and application validators,
+  and confirm zero OpenAI attempt rows. Observe timeout/rate-limit/budget skips for the agreed
+  window; do not infer delivery success from provider HTTP success.
+- Roll back application code and migration together if required. The immediate configuration kill
+  switch for any later paid activation is `OPENAI_ENABLED=false`; free routes remain available.
+- For a separately approved paid activation, verify the exact model identifier, prices, and maximum
+  input-token limit together; set the matching `OPENAI_PRICED_MODEL`, `OPENAI_MAX_INPUT_TOKENS`, and
+  price variables, then confirm Admin -> LLM diagnostics shows enabled state and remaining cap.
+
 ### PR #296: Event Analysis medium reasoning
 
 - Confirm PR SHA/base/CI and reasoning/default/override tests.

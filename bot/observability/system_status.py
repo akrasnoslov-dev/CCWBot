@@ -17,11 +17,18 @@ from bot.db.database import (
     EventAiAnalysis,
     LlmUsageLog,
     NewsItem,
+    OpenAIBudgetReservation,
     PriceState,
     User,
 )
 from bot.domain.supported_coins import SUPPORTED_COINS, SUPPORTED_SYMBOLS, display_symbol
 from bot.observability.logical_llm_health import CALL_TYPES, read_logical_llm_health
+from bot.services.llm import config as llm_config
+from bot.services.llm.openai_budget import (
+    monthly_budget_usd,
+    pricing_usd_per_million,
+    verified_input_token_ceiling,
+)
 from bot.services.llm.telemetry import get_active_llm_rate_limit_backoffs
 from bot.settings import (
     AUTOMATIC_CHECK_SCHEDULER_GRACE_SECONDS,
@@ -622,6 +629,7 @@ async def build_admin_llm_summary_html(
         async with session_factory() as session:
             rows = await _llm_provider_breakdown_rows(session, now=now)
             logical = await read_logical_llm_health(session, now=now)
+            paid_budget = await _openai_budget_status_line(session, now=now)
     except Exception:
         return "<b>LLM · last 24h</b>\n\nTelemetry query failed."
 
@@ -668,6 +676,7 @@ async def build_admin_llm_summary_html(
         "<b>LLM diagnostics · last 24h</b>\n"
         "<pre>" + "\n".join(table_lines) + "</pre>\n"
         + provider_summary
+        + "\n" + paid_budget
         + "\n\nLow N = fewer than 20 observations; not a failure."
         + "\nSelect Details for per-provider errors, backoffs and recovery."
     )
@@ -686,6 +695,7 @@ async def build_admin_llm_diagnostics_text(
     try:
         async with session_factory() as session:
             rows = await _llm_provider_breakdown_rows(session, now=now)
+            paid_budget = await _openai_budget_status_line(session, now=now)
             try:
                 logical = await read_logical_llm_health(session, now=now)
             except Exception:
@@ -742,7 +752,13 @@ async def build_admin_llm_diagnostics_text(
         )
         active.append(f"⚠️ {call_types} / {endpoint}{until}")
 
-    lines = ["LLM diagnostics — last 24h", "", "Logical operations (final outcomes)"]
+    lines = [
+        "LLM diagnostics — last 24h",
+        "",
+        paid_budget,
+        "",
+        "Logical operations (final outcomes)",
+    ]
     if logical is None:
         lines.append("⚠️ Unknown — logical telemetry query failed")
     else:
@@ -839,6 +855,54 @@ async def build_admin_llm_diagnostics_text(
     return "\n".join(lines)
 
 
+async def _openai_budget_status_line(session: AsyncSession, *, now: datetime) -> str:
+    """Return an admin-safe current UTC-month paid-provider budget summary."""
+    cap = monthly_budget_usd()
+    enabled = llm_config.openai_enabled()
+    switch = "enabled" if enabled else "disabled"
+    model = llm_config.model_for("openai", "event_analysis")
+    contract_ready = bool(
+        enabled
+        and llm_config.provider_is_configured("openai")
+        and pricing_usd_per_million() is not None
+        and verified_input_token_ceiling(model) is not None
+    )
+    if cap is None:
+        return f"Paid OpenAI: switch {switch} · readiness blocked · invalid cap"
+    month_start = now.date().replace(day=1)
+    try:
+        used, last_used, invariant_breaches = (
+            await session.execute(
+                select(
+                    func.coalesce(
+                        func.sum(
+                            func.coalesce(
+                                OpenAIBudgetReservation.actual_usd,
+                                OpenAIBudgetReservation.reserved_usd,
+                            )
+                        ),
+                        0,
+                    ),
+                    func.max(OpenAIBudgetReservation.created_at),
+                    func.count().filter(OpenAIBudgetReservation.status == "cap_breach"),
+                ).where(OpenAIBudgetReservation.month_start == month_start)
+            )
+        ).one()
+    except Exception:
+        return (
+            f"Paid OpenAI: switch {switch} · readiness blocked · budget telemetry unavailable"
+        )
+    used = max(used, 0)
+    remaining = max(cap - used, 0)
+    contract_ready = contract_ready and not invariant_breaches
+    return (
+        f"Paid OpenAI: switch {switch} · readiness "
+        f"{'ready' if contract_ready else 'blocked'} · UTC month "
+        f"${used:.4f} used / ${cap:.2f} cap · ${remaining:.4f} remaining · "
+        f"last reservation {_format_utc(last_used)}"
+    )
+
+
 def _llm_call_type_label(value: str | None) -> str:
     return {
         "event_analysis": "Event Analysis",
@@ -853,6 +917,8 @@ def _llm_call_type_label(value: str | None) -> str:
 def _llm_model_label(value: str | None) -> str:
     return {
         "openai/gpt-oss-120b": "GPT-OSS 120B",
+        "openai/gpt-oss-20b": "GPT-OSS 20B",
+        "gpt-6-luna": "GPT-6 Luna",
         "qwen/qwen3.8-27b": "Qwen 3.8 27B",
         "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "Llama 3.3 70B",
         "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
@@ -868,6 +934,7 @@ def _llm_provider_label(value: str | None) -> str:
         "gemini": "gemini",
         "mistral": "mistral",  # historical telemetry only; not a runnable provider
         "cloudflare": "cloudflare",
+        "openai": "openai",
     }.get(normalized, "other provider")
 
 
