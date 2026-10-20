@@ -43,11 +43,80 @@ def test_chart_partial_data_is_labeled_and_no_short_day_fabrication():
     assert "14h" in result.label
     assert result.label != "Last 24 hours"
     assert render_price_chart(short, as_of=AT, symbol="ETH").png is not None
-    too_short = _observations(duration_hours=4)
+
+    # A truthful short chart is better than an unnecessary unavailable message.
+    four_hours = _observations(duration_hours=4, step_minutes=30)
+    assert render_price_chart(four_hours, as_of=AT, symbol="ETH").png is not None
+    too_short = _observations(duration_hours=1, step_minutes=30)
     assert prepare_chart_points(too_short, as_of=AT).png is None
+
+    # A recent point must exist, not merely historical coverage.
     assert prepare_chart_points(_observations(duration_hours=24)[:-4], as_of=AT).png is None
-    gap = [point for i, point in enumerate(_observations()) if not 30 <= i <= 45]
-    assert prepare_chart_points(gap, as_of=AT).png is None
+
+
+def test_chart_downtime_selects_latest_gap_free_run_without_inventing_prices():
+    snapshots = _observations(step_minutes=30)
+    # 2.5h downtime in the middle of a day should not suppress 9h of good data.
+    gap_start = AT - timedelta(hours=12)
+    gap_end = AT - timedelta(hours=9)
+    snapshots = [
+        row for row in snapshots
+        if not gap_start <= row.checked_at <= gap_end
+    ]
+    result = render_price_chart(snapshots, as_of=AT, symbol="BTC")
+    assert result.png is not None
+    assert result.points[0][0] == gap_end + timedelta(minutes=30)
+    assert result.points[-1][0] == AT
+    assert "available history" in result.label
+    assert "24 hours" not in result.label
+    assert len(result.points) < len(snapshots)
+    assert all(
+        later[0] - earlier[0] <= timedelta(minutes=45)
+        for earlier, later in zip(result.points, result.points[1:], strict=False)
+    )
+
+
+def test_chart_accepts_normal_30_minute_scheduler_jitter_but_rejects_stale():
+    # Render starts before the ongoing check's price snapshot is saved.
+    snapshots = [
+        SimpleNamespace(
+            checked_at=AT - timedelta(minutes=32) - timedelta(minutes=30*i),
+            price=2000 + i,
+        )
+        for i in range(48)
+    ]
+    result = render_price_chart(snapshots, as_of=AT, symbol="ETH")
+    assert result.png is not None
+    assert result.label == "Last 24 hours"
+    assert result.points[-1][0] == AT - timedelta(minutes=32)
+
+    stale = [
+        SimpleNamespace(checked_at=row.checked_at - timedelta(minutes=20), price=row.price)
+        for row in snapshots
+    ]
+    assert prepare_chart_points(stale, as_of=AT).png is None
+
+
+def test_chart_needs_two_hours_of_recent_verified_observations():
+    sufficient = _observations(duration_hours=2, step_minutes=30)
+    result = render_price_chart(sufficient, as_of=AT, symbol="SOL")
+    assert result.png is not None
+    assert "2h" in result.label
+    assert len(result.points) == 5
+    assert prepare_chart_points(sufficient[1:], as_of=AT).png is None
+
+
+def test_chart_ignores_invalid_price_or_timestamp_without_fabricating_points():
+    good = _observations(duration_hours=3, step_minutes=30)
+    bad = [
+        SimpleNamespace(checked_at=AT, price=float("nan")),
+        SimpleNamespace(checked_at=AT, price=0),
+        SimpleNamespace(checked_at="invalid", price=2100),
+        SimpleNamespace(checked_at=AT + timedelta(hours=1), price=2200),
+    ]
+    result = render_price_chart(good + bad, as_of=AT, symbol="GRAM")
+    assert result.png is not None
+    assert result.points == tuple((row.checked_at, float(row.price)) for row in good)
 
 
 

@@ -32,7 +32,7 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
             price = float(getattr(row, "price", None))
         except (TypeError, ValueError, OverflowError):
             continue
-        if stamp is None or not isfinite(price) or price <= 0:
+        if not isinstance(stamp, datetime) or not isfinite(price) or price <= 0:
             continue
         if stamp.tzinfo is None:
             stamp = stamp.replace(tzinfo=timezone.utc)
@@ -40,23 +40,29 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
             stamp = stamp.astimezone(timezone.utc)
         if since <= stamp <= as_of:
             observations[stamp] = price
-    points = tuple(sorted(observations.items()))
+
+    # Prefer the most recent continuous run of persisted 30-minute samples.
+    # A missing sample (about a 60m gap) starts a new run: never connect
+    # prices across a shutdown or interpolate an unseen market trajectory.
+    all_points = tuple(sorted(observations.items()))
+    start = 0
+    for index in range(1, len(all_points)):
+        if all_points[index][0] - all_points[index - 1][0] > timedelta(minutes=45):
+            start = index
+    points = all_points[start:]
     unavailable = ChartResult("Last 24 hours", None, points)
-    if len(points) < 12 or as_of - points[-1][0] > timedelta(minutes=30):
+
+    # A chart needs at least five real observations spanning two hours.
+    # Render runs before the current check saves its snapshot, so tolerate
+    # up to 15m scheduling jitter beyond the normal 30m sampling interval.
+    if len(points) < 5 or as_of - points[-1][0] > timedelta(minutes=45):
         return unavailable
     duration = points[-1][0] - points[0][0]
-    if duration < timedelta(hours=8):
+    if duration < timedelta(hours=2):
         return unavailable
-    # A long unobserved gap invalidates the otherwise day-wide trajectory.
-    if any(
-        later[0] - earlier[0] > timedelta(minutes=90)
-        for earlier, later in zip(points, points[1:], strict=False)
-    ):
-        return unavailable
-    # Observations are persisted on a 30-minute schedule. The first and last
-    # actual samples can both be ~30m inside a complete 24-hour query window.
-    # Describe the queried window, not the distance between its sample endpoints.
-    # Never claim a full window if either edge has >45m of missing coverage.
+
+    # Reserve the 24-hour label for near-complete, gap-free source coverage.
+    # No synthetic samples are added at either axis edge.
     is_full_day = (
         points[0][0] <= since + timedelta(minutes=45)
         and points[-1][0] >= as_of - timedelta(minutes=45)
@@ -65,7 +71,7 @@ def prepare_chart_points(snapshots: list, *, as_of: datetime) -> ChartResult:
         label = "Last 24 hours"
     else:
         minutes = int(duration.total_seconds() // 60)
-        label = f"Last {minutes // 60}h {minutes % 60}m (available history)"
+        label = f"Observed {minutes // 60}h {minutes % 60}m (available history)"
     return ChartResult(label, b"", points)
 
 
@@ -106,11 +112,11 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
         draw.line((left, y, right, y), fill="#334258", width=1)
         value = ceiling - (ceiling - floor) * proportion
         draw.text((left - 8, y), f"${value:,.2f}", font=f_small, fill="#c0cee1", anchor="rm")
-    # Gaps are shown as breaks rather than invented trajectories.
+    # Every segment joins consecutive observed samples of the selected run.
     previous = None
     for stamp, price in points:
         xy = (round(x_at(stamp)), round(y_at(price)))
-        if previous is not None and stamp - previous[0] <= timedelta(minutes=90):
+        if previous is not None:
             draw.line((*previous[1], *xy), fill=accent, width=4, joint="curve")
         previous = (stamp, xy)
     if previous:
@@ -121,7 +127,7 @@ def render_price_chart(snapshots: list, *, as_of: datetime, symbol: str) -> Char
         (right, 291), axis_end.strftime("%d %b %H:%M"),
         font=f_small, fill="#c0cee1", anchor="ra",
     )
-    draw.text((left, 329), "Price axis: observed range  |  gaps > 90m not connected",
+    draw.text((left, 329), "Price axis: observed range  |  persisted samples only",
               font=f_small, fill="#a7b6ce")
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
