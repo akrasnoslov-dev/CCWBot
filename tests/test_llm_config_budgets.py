@@ -12,6 +12,20 @@ from bot.services.llm import env as llm_env
 from bot.services.llm.base_provider import BaseProvider, ProviderResult
 from bot.services.llm.router import LLMRouter
 
+
+def _mock_openai_admission(monkeypatch):
+    from bot.services.llm.openai_budget import openai_budget
+
+    async def reserve(**_kwargs):
+        return object()
+
+    async def settle(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(openai_budget, "reserve", reserve)
+    monkeypatch.setattr(openai_budget, "settle", settle)
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+
 _BUDGET_ENV_VARS = (
     "LLM_EVENT_ANALYSIS_MAX_TOKENS",
     "LLM_MARKET_HEARTBEAT_MAX_TOKENS",
@@ -183,10 +197,10 @@ def test_invalid_reasoning_effort_falls_back_and_warns(monkeypatch, caplog):
 def test_unknown_provider_name_in_a_chain_warns(monkeypatch, caplog):
     # A typo here silently shortens the fallback chain, which is the same class of invisible
     # misconfiguration as a bad token budget.
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "grok,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "grok,openai")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
-        assert llm_config.provider_priority("event_analysis") == ["gemini"]
+        assert llm_config.provider_priority("event_analysis") == ["openai"]
 
     assert any("LLM_EVENT_PROVIDERS" in r.getMessage() for r in caplog.records)
 
@@ -208,18 +222,18 @@ def test_reasoning_effort_uses_medium_only_for_event_analysis_by_default():
         ("daily_report", "low", 1824),
     ],
 )
-def test_gemini_38_structured_call_types_use_call_type_effort_with_headroom(
+def test_openai_38_structured_call_types_use_call_type_effort_with_headroom(
     monkeypatch, call_type, expected_effort, expected_max_tokens
 ):
-    monkeypatch.delenv("GEMINI_MODEL", raising=False)
-    model = llm_config.model_for("gemini", call_type)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    model = llm_config.model_for("openai", call_type)
 
-    assert model == "gemini-3.8-flash"
+    assert model == "gpt-6-luna"
     assert llm_config.reasoning_effort_for(model, call_type) == expected_effort
     assert (
         llm_config.effective_max_tokens_for(
             call_type=call_type,
-            provider="gemini",
+            provider="openai",
             model=model,
         )
         == expected_max_tokens
@@ -238,7 +252,7 @@ def test_event_analysis_medium_default_reserves_matching_reasoning_headroom():
     assert llm_config.reasoning_effort_for(model, "event_alert_render") == "low"
     assert (
         llm_config.effective_max_tokens_for(
-            call_type="event_analysis", provider="gemini", model=model
+            call_type="event_analysis", provider="openai", model=model
         )
         == 8492
     )
@@ -260,8 +274,8 @@ def test_reasoning_effort_only_reaches_reasoning_models(monkeypatch):
     assert llm_config.reasoning_effort_for("openai/gpt-oss-120b", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for("gpt-oss-20b", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for("llama-3.3-70b-versatile", "event_analysis") is None
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "medium"
-    assert llm_config.reasoning_effort_for("gemini-3.8-flash", "event_analysis") == "medium"
+    assert llm_config.reasoning_effort_for("gpt-6-luna", "event_analysis") == "medium"
+    assert llm_config.reasoning_effort_for("gpt-6-luna", "event_analysis") == "medium"
     assert llm_config.reasoning_effort_for(None, "event_analysis") is None
 
 
@@ -310,13 +324,13 @@ def test_global_reasoning_effort_reaches_only_reasoning_models_in_default_chain(
         "GROQ_MARKET_HEARTBEAT_MODEL",
         "GROQ_REPORT_MODEL",
         "GROQ_NEWS_INTELLIGENCE_MODEL",
-        "GEMINI_MODEL",
+        "OPENAI_MODEL",
         "CLOUDFLARE_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
     for call_type in llm_config.KNOWN_CALL_TYPES:
-        for provider in ("groq", "gemini", "cloudflare"):
+        for provider in ("groq", "openai", "cloudflare"):
             model = llm_config.model_for(provider, call_type)
             expected = "high" if llm_config.is_reasoning_model(model) else None
             assert llm_config.reasoning_effort_for(model, call_type) == expected
@@ -490,8 +504,7 @@ async def test_request_payload_includes_reasoning_effort_when_set(monkeypatch):
 @pytest.mark.parametrize(
     ("provider_name", "model", "expected_temperature"),
     [
-        ("gemini", "gemini-3.8-flash", None),
-        ("gemini", "gemini-2.5-flash", 0.0),
+        ("openai", "gpt-6-luna", None),
         ("groq", "openai/gpt-oss-20b", 0.0),
         ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", 0.0),
     ],
@@ -500,17 +513,19 @@ async def test_provider_sampling_parameters_are_model_compatible(
     monkeypatch, provider_name, model, expected_temperature
 ):
     from bot.services.llm.cloudflare_provider import CloudflareProvider
-    from bot.services.llm.gemini_provider import GeminiProvider
     from bot.services.llm.groq_provider import GroqProvider
+    from bot.services.llm.openai_provider import OpenAIProvider
 
     provider_cls = {
-        "gemini": GeminiProvider,
+        "openai": OpenAIProvider,
         "groq": GroqProvider,
         "cloudflare": CloudflareProvider,
     }[provider_name]
     provider = provider_cls()
     client = _CapturingClient()
     monkeypatch.setattr(provider, "get_client", lambda: client)
+    if provider_name == "openai":
+        _mock_openai_admission(monkeypatch)
 
     await provider.chat_completion(
         call_type="event_analysis",
@@ -532,16 +547,17 @@ async def test_provider_sampling_parameters_are_model_compatible(
 
 
 @pytest.mark.asyncio
-async def test_gemini_adapter_uses_verified_openai_compatible_reasoning_contract(monkeypatch):
-    from bot.services.llm.gemini_provider import GeminiProvider
+async def test_openai_adapter_uses_verified_openai_compatible_reasoning_contract(monkeypatch):
+    from bot.services.llm.openai_provider import OpenAIProvider
 
-    provider = GeminiProvider()
+    provider = OpenAIProvider()
     client = _CapturingClient()
     monkeypatch.setattr(provider, "get_client", lambda: client)
-    model = "gemini-3.8-flash"
+    _mock_openai_admission(monkeypatch)
+    model = "gpt-6-luna"
     max_tokens = llm_config.effective_max_tokens_for(
         call_type="daily_report",
-        provider="gemini",
+        provider="openai",
         model=model,
         requested_max_tokens=800,
     )
@@ -556,8 +572,34 @@ async def test_gemini_adapter_uses_verified_openai_compatible_reasoning_contract
     )
 
     assert client.completions.kwargs["reasoning_effort"] == "low"
-    assert client.completions.kwargs["max_tokens"] == 1824
+    assert client.completions.kwargs["max_completion_tokens"] == 1824
     assert client.completions.kwargs["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_kill_switch_blocks_before_client_or_http(monkeypatch):
+    from bot.services.llm.openai_provider import OpenAIProvider
+
+    provider = OpenAIProvider()
+    monkeypatch.setenv("OPENAI_ENABLED", "false")
+    client_requested = False
+
+    def get_client():
+        nonlocal client_requested
+        client_requested = True
+        raise AssertionError("client must not be constructed while OpenAI is disabled")
+
+    monkeypatch.setattr(provider, "get_client", get_client)
+    with pytest.raises(Exception, match="disabled"):
+        await provider.chat_completion(
+            call_type="daily_report",
+            symbol=None,
+            model="gpt-6-luna",
+            messages=[{"role": "user", "content": "Return JSON."}],
+            max_tokens=100,
+            response_format={"type": "json_object"},
+        )
+    assert client_requested is False
 
 
 def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
@@ -576,7 +618,7 @@ def test_out_of_range_high_budget_falls_back_and_warns(monkeypatch, caplog):
     ("provider", "env_name", "expected"),
     [
         ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
-        ("gemini", "GEMINI_MODEL", "gemini-3.8-flash"),
+        ("openai", "OPENAI_MODEL", "gpt-6-luna"),
         ("cloudflare", "CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
     ],
 )
@@ -596,33 +638,131 @@ def test_model_value_is_stripped(monkeypatch):
     assert llm_config.model_for("groq", "event_analysis") == "llama-3.1-8b-instant"
 
 
+@pytest.mark.parametrize(
+    ("provider", "call_type", "env_name", "stale_model", "expected"),
+    [
+        (
+            "groq",
+            "event_analysis",
+            "GROQ_EVENT_ANALYSIS_MODEL",
+            "gemini-3.5-flash-lite",
+            "openai/gpt-oss-120b",
+        ),
+        (
+            "groq",
+            "daily_report",
+            "GROQ_REPORT_MODEL",
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
+        ),
+        ("openai", "event_analysis", "OPENAI_MODEL", "gemini-3.5", "gpt-6-luna"),
+        (
+            "cloudflare",
+            "event_analysis",
+            "CLOUDFLARE_MODEL",
+            "qwen-preview",
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        ),
+    ],
+)
+def test_retired_model_overrides_fall_back_and_warn(
+    monkeypatch, caplog, provider, call_type, env_name, stale_model, expected
+):
+    monkeypatch.setenv(env_name, stale_model)
+
+    with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
+        assert llm_config.model_for(provider, call_type) == expected
+
+    assert any(
+        env_name in record.getMessage() and "retired_model_identifier" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.parametrize(
+    ("env_name", "stale_model", "provider", "expected"),
+    [
+        ("GROQ_EVENT_RENDER_MODEL", "qwen/qwen3.8-27b", "groq", "openai/gpt-oss-20b"),
+        ("OPENAI_MODEL", "gemini-3.5", "openai", "gpt-6-luna"),
+        (
+            "CLOUDFLARE_EVENT_RENDER_MODEL",
+            "qwen-preview",
+            "cloudflare",
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        ),
+    ],
+)
+def test_render_chain_rejects_retired_model_overrides(
+    monkeypatch, caplog, env_name, stale_model, provider, expected
+):
+    monkeypatch.delenv("LLM_EVENT_RENDER_PROVIDERS", raising=False)
+    monkeypatch.setenv(env_name, stale_model)
+
+    with caplog.at_level(logging.WARNING, logger="bot.services.llm.env"):
+        attempts = dict(llm_config.provider_attempts("event_alert_render"))
+
+    assert attempts[provider] == expected
+    assert any(
+        env_name in record.getMessage() and "retired_model_identifier" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 def test_event_alert_render_uses_dedicated_model_level_chain(monkeypatch):
     for name in (
-        "GROQ_EVENT_ANALYSIS_MODEL",
-        "GROQ_EVENT_RENDER_FALLBACK_MODEL",
+        "GROQ_EVENT_RENDER_MODEL",
         "CLOUDFLARE_EVENT_RENDER_MODEL",
-        "GEMINI_EVENT_RENDER_MODEL",
+        "OPENAI_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
     assert llm_config.provider_attempts("event_alert_render") == [
-        ("groq", "openai/gpt-oss-120b"),
-        ("groq", "qwen/qwen3.8-27b"),
+        ("groq", "openai/gpt-oss-20b"),
+        ("openai", "gpt-6-luna"),
         ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
-        ("gemini", "gemini-3.5-flash-lite"),
     ]
 
 
 def test_event_alert_render_model_overrides_are_independent(monkeypatch):
-    monkeypatch.setenv("GROQ_EVENT_RENDER_FALLBACK_MODEL", "qwen/custom")
+    monkeypatch.setenv("GROQ_EVENT_RENDER_MODEL", "openai/gpt-oss-custom")
     monkeypatch.setenv("CLOUDFLARE_EVENT_RENDER_MODEL", "@cf/custom")
-    monkeypatch.setenv("GEMINI_EVENT_RENDER_MODEL", "gemini-custom")
+    monkeypatch.setenv("OPENAI_MODEL", "openai-custom")
 
-    assert llm_config.provider_attempts("event_alert_render")[1:] == [
-        ("groq", "qwen/custom"),
+    assert llm_config.provider_attempts("event_alert_render") == [
+        ("groq", "openai/gpt-oss-custom"),
+        ("openai", "openai-custom"),
         ("cloudflare", "@cf/custom"),
-        ("gemini", "gemini-custom"),
     ]
+
+
+@pytest.mark.parametrize(
+    "call_type",
+    [
+        "event_analysis",
+        "event_alert_render",
+        "news_intelligence",
+        "market_heartbeat",
+        "daily_report",
+        "weekly_report",
+    ],
+)
+def test_openai_uses_strict_json_schema_for_every_feature(call_type):
+    from bot.services.ai_agent_groq import _structured_response_formats
+
+    _default, overrides = _structured_response_formats(
+        call_type=call_type,
+        schema_name=f"{call_type}_contract",
+        schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+    )
+    openai_formats = [value for key, value in overrides.items() if key.startswith("openai:")]
+    assert len(openai_formats) == 1
+    assert openai_formats[0]["type"] == "json_schema"
+    assert openai_formats[0]["json_schema"]["strict"] is True
 
 
 def test_cloudflare_requires_token_and_account_id(monkeypatch):
@@ -643,11 +783,11 @@ def test_cloudflare_requires_token_and_account_id(monkeypatch):
 
 
 def _startup_log_messages(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
     monkeypatch.setenv("GROQ_API_KEY", "groq-secret-key-value")
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-oss-120b")
     for name in ("LLM_EVENT_PROVIDERS", "LLM_REPORT_PROVIDERS", "LLM_HEARTBEAT_PROVIDERS"):
         monkeypatch.delenv(name, raising=False)
 
@@ -663,7 +803,7 @@ def test_startup_log_reports_every_call_type_with_models_and_budgets(monkeypatch
     for call_type in llm_config.KNOWN_CALL_TYPES:
         assert f"call_type={call_type}" in joined
     assert "groq:llama-3.3-70b-versatile" in joined
-    assert "gemini:gpt-oss-120b" in joined
+    assert "openai:gpt-oss-120b" in joined
     assert "max_tokens=300" in joined
 
 
@@ -679,47 +819,66 @@ def test_startup_log_marks_providers_without_an_api_key(monkeypatch, caplog):
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
-    assert "gemini:gpt-oss-120b/effort=medium/max=8492(no_api_key)" in joined
+    assert "openai:gpt-oss-120b/effort=medium/max=8492(disabled)" in joined
     assert "groq:llama-3.3-70b-versatile(no_api_key)" not in joined
 
 
 def test_startup_log_contains_no_environment_values_or_credentials(monkeypatch, caplog):
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_REASONING_EFFORT", "low")
-    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-oss-120b")
     messages = _startup_log_messages(monkeypatch, caplog)
     joined = "\n".join(messages)
 
     assert "groq-secret-key-value" not in joined
     # Credential variable *names* must not appear either, so no line can be mistaken for one.
-    for name in ("GROQ_API_KEY", "GEMINI_API_KEY", "TELEGRAM_BOT_TOKEN", "DATABASE_URL"):
+    for name in ("GROQ_API_KEY", "OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "DATABASE_URL"):
         assert name not in joined
     # Model identifiers and the resolved effort are explicitly allowed in operational logs.
     assert "effort=low" in joined
 
 
+def test_startup_log_marks_enabled_openai_with_unverified_budget_contract(monkeypatch, caplog):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "openai")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    for name in (
+        "OPENAI_PRICED_MODEL",
+        "OPENAI_MAX_INPUT_TOKENS",
+        "OPENAI_INPUT_USD_PER_1M_TOKENS",
+        "OPENAI_OUTPUT_USD_PER_1M_TOKENS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with caplog.at_level(logging.INFO, logger="bot.services.llm.config"):
+        llm_config.log_resolved_configuration()
+    assert "openai:gpt-6-luna" in caplog.text
+    assert "(budget_blocked)" in caplog.text
+
+
 def test_startup_log_reports_safe_effective_budget_for_thinking_model(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-oss-120b")
 
     with caplog.at_level(logging.INFO, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
 
     joined = "\n".join(record.getMessage() for record in caplog.records)
-    assert "gemini:gpt-oss-120b/effort=medium/max=8492" in joined
+    assert "openai:gpt-oss-120b/effort=medium/max=8492" in joined
     assert "llm_config_budget_risk" not in joined
 
 
 def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, caplog):
     # A provider without a key is excluded from the chain, so warning about its budget is
     # noise on every start of a Groq-only deployment.
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
-    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-oss-120b")
 
     with caplog.at_level(logging.WARNING, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
@@ -728,9 +887,9 @@ def test_budget_warning_is_silent_for_a_provider_with_no_api_key(monkeypatch, ca
 
 
 def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch, caplog):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "gemini")
-    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-    monkeypatch.setenv("GEMINI_MODEL", "gpt-oss-120b")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-oss-120b")
     monkeypatch.setenv("LLM_EVENT_ANALYSIS_MAX_TOKENS", "4000")
     monkeypatch.setenv("LLM_MARKET_HEARTBEAT_MAX_TOKENS", "4000")
     monkeypatch.setenv("LLM_REPORT_MAX_TOKENS", "4000")
@@ -743,9 +902,9 @@ def test_startup_log_budget_warning_clears_once_the_budget_is_raised(monkeypatch
     assert not [r for r in caplog.records if "llm_config_budget_risk" in r.getMessage()]
 
 
-def test_gemini_thinking_model_uses_event_analysis_medium_reasoning_effort(monkeypatch):
-    assert llm_config.is_thinking_model("gemini-2.5-flash") is True
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "event_analysis") == "medium"
+def test_openai_thinking_model_uses_event_analysis_medium_reasoning_effort(monkeypatch):
+    assert llm_config.is_thinking_model("gpt-6-luna") is True
+    assert llm_config.reasoning_effort_for("gpt-6-luna", "event_analysis") == "medium"
 
 
 @pytest.mark.parametrize(
@@ -777,14 +936,14 @@ def test_thinking_budget_preserves_call_type_answer_ceiling(
     ("effort", "effective_budget"),
     [("low", 1824), ("medium", 8992), ("high", 25376)],
 )
-def test_gemini_budget_tracks_configured_reasoning_effort(monkeypatch, effort, effective_budget):
+def test_openai_budget_tracks_configured_reasoning_effort(monkeypatch, effort, effective_budget):
     monkeypatch.setenv("LLM_REPORT_REASONING_EFFORT", effort)
 
     assert (
         llm_config.effective_max_tokens_for(
             call_type="daily_report",
-            provider="gemini",
-            model="gemini-2.5-flash",
+            provider="openai",
+            model="gpt-6-luna",
             requested_max_tokens=800,
         )
         == effective_budget
@@ -794,7 +953,7 @@ def test_gemini_budget_tracks_configured_reasoning_effort(monkeypatch, effort, e
 def test_builtin_reasoning_markers_survive_legacy_extension_value(monkeypatch):
     monkeypatch.setenv("LLM_REASONING_MODEL_MARKERS", "gpt-oss")
 
-    assert llm_config.reasoning_effort_for("gemini-2.5-flash", "daily_report") == "low"
+    assert llm_config.reasoning_effort_for("gpt-6-luna", "daily_report") == "low"
 
 
 def test_startup_log_cannot_be_forged_by_a_newline_in_a_model_value(monkeypatch, caplog):

@@ -164,13 +164,19 @@ caption). PNG creation reads existing timestamped PostgreSQL price snapshots onc
 market event, never in the recipient loop, and caches the returned Telegram photo
 `file_id` within that dispatch. No new market-data calls are made.
 
-Only proven historical observations are plotted. Missing or stale data shows a chart
-unavailable explanation; shorter valid coverage is explicitly labeled as such.
-For the standard 30-minute snapshot cadence, edge samples up to 45 minutes from
-either boundary of a 24-hour query window count as normal sampling coverage when
-all internal gaps remain acceptable. Chart axes show the actual rolling 24-hour
-window with blank unsampled edges, never invented prices. Materially incomplete
-history still shows its observed duration instead of claiming a whole day.
+Only proven historical observations are plotted. Prefer the latest contiguous
+run within the available 24 hours: at the standard 30-minute snapshot cadence,
+a gap over 45 minutes starts a new run. Draw a connected line only within that
+run, never across unobserved gaps or with invented/extrapolated prices. A
+partial run with at least five observed points spanning two hours is a valid
+shorter chart, labeled with its **actual observed duration** rather than "24h".
+The latest point must be no older than 45 minutes (30m cadence plus 15m
+scheduler/processing grace); older or insufficient data shows an explicit
+unavailable explanation. The "Last 24 hours" label requires the selected run
+to cover both rolling-window edges within 45 minutes. Full-day chart axes
+show the true rolling 24-hour boundaries with blank unsampled edges; shorter
+charts use first/last observed timestamps. This requires no new market-data
+requests and preserves one shared chart per event or heartbeat.
 Rich Event Alert and Heartbeat headings must reuse the configured Telegram
 Custom Emoji for each coin, not the colored fallback placeholders.
 Ordinary HTML and plain text remain fallbacks after *definitive* rejection of a richer

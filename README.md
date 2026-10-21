@@ -36,10 +36,12 @@ Alert and report text is informational and keeps `Not financial advice.` guidanc
 - Automatic Event Alerts are single-coin LLM calls. Batch all-coin analysis is not exposed yet.
 - Telegram Stars refunds/chargebacks and explicit cancellation updates are not automated yet;
   entitlement naturally expires when `active_until <= now`.
-- Groq is the primary LLM provider, with Gemini fallback and an optional
-  Cloudflare Workers AI route for Event Analysis (plus the dedicated render chain)
-  (`LLM_PROVIDER_PRIORITY`, plus static per-task overrides `LLM_EVENT_PROVIDERS` /
-  `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
+- Groq is the primary LLM provider. Optional OpenAI fallback is disabled by default and guarded
+  by a durable monthly cap; Cloudflare Workers AI is the final free-tier fallback for Event
+  Analysis, alert rendering, News Intelligence, and Market Heartbeat. Reports fall back to their
+  verified data-only renderer (`LLM_PROVIDER_PRIORITY`, plus the per-task overrides
+  `LLM_EVENT_PROVIDERS`, `LLM_EVENT_RENDER_PROVIDERS`, `LLM_NEWS_INTELLIGENCE_PROVIDERS`,
+  `LLM_REPORT_PROVIDERS`, and `LLM_HEARTBEAT_PROVIDERS`). A circuit breaker skips a
   `(call type, provider, model)` triple that keeps failing deterministically and retries it on a
   widening interval. Automatic load balancing (routing before a rate limit is hit) is not built
   yet.
@@ -90,12 +92,14 @@ Common configuration:
 - `GROQ_REPORT_MODEL`
 - `GROQ_NEWS_INTELLIGENCE_MODEL`
 - `GROQ_JSON_MODE`
-- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,gemini`)
-- `LLM_EVENT_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
+- `LLM_PROVIDER_PRIORITY` (fallback chain; default `groq,openai,cloudflare`)
+- `LLM_EVENT_PROVIDERS` / `LLM_EVENT_RENDER_PROVIDERS` / `LLM_NEWS_INTELLIGENCE_PROVIDERS` / `LLM_REPORT_PROVIDERS` / `LLM_HEARTBEAT_PROVIDERS` (optional per-task overrides)
 - `LLM_EVENT_ANALYSIS_MAX_TOKENS` / `LLM_MARKET_HEARTBEAT_MAX_TOKENS` / `LLM_REPORT_MAX_TOKENS` / `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` / `LLM_LEGACY_ALERT_PAYLOAD_MAX_TOKENS` (completion budget per call type)
 - `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (`low` / `medium` / `high`; Event Analysis defaults to `medium`, other reasoning call types to `low`)
-- `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gemini-2.5,gemini-3.`)
-- `GEMINI_API_KEY` / `GEMINI_MODEL`
+- `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gpt-6,gemini-2.5,gemini-3.`; Gemini markers are retained for historical compatibility)
+- `OPENAI_ENABLED` / `OPENAI_API_KEY` / `OPENAI_MODEL` (paid fallback; disabled by default)
+- `OPENAI_MONTHLY_BUDGET_USD` / `OPENAI_PRICED_MODEL` / `OPENAI_MAX_INPUT_TOKENS` / `OPENAI_INPUT_USD_PER_1M_TOKENS` / `OPENAI_OUTPUT_USD_PER_1M_TOKENS` (separately approved activation contract and global UTC-month cap)
+- `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`
 - `EVENT_ALERT_SEMANTIC_COOLDOWN_SECONDS`
@@ -501,7 +505,8 @@ row exists. Failure details are sanitized/redacted.
 Admin -> LLM diagnostics separately summarizes provider/call-type attempts, rate limits, backoffs,
 circuit skips, schema failures, other failures, and active limits from `llm_usage_logs`. Categories
 are aggregate and mutually exclusive; raw prompts, responses, errors, identifiers, and secrets are
-never rendered.
+never rendered. It also reports the paid OpenAI switch and readiness separately, current UTC-month
+spend, remaining cap, and the latest paid reservation time.
 
 ## Testing And Linting
 

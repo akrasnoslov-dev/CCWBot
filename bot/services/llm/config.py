@@ -22,16 +22,19 @@ from bot.services.llm.env import (
 
 logger = logging.getLogger(__name__)
 
-# Ordered default chain for general LLM work. Event Alert rendering has a dedicated
-# model-level chain because it deliberately retries a second Groq model before changing providers.
-DEFAULT_PROVIDER_PRIORITY = ["groq", "gemini"]
-# Event Analysis retains optional Cloudflare after Groq/Gemini. Missing credentials skip it.
-DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY = ["groq", "gemini", "cloudflare"]
-KNOWN_PROVIDERS = frozenset((*DEFAULT_PROVIDER_PRIORITY, "cloudflare"))
+# Free-first routing is the shipped behavior. OpenAI is present in the resolved chain but is
+# excluded before provider construction unless the explicit kill switch is enabled. Gemini is
+# deliberately absent: stale env entries are rejected loudly and historical telemetry is kept.
+DEFAULT_PROVIDER_PRIORITY = ["groq", "openai", "cloudflare"]
+DEFAULT_REPORT_PROVIDER_PRIORITY = ["groq", "openai"]
+KNOWN_PROVIDERS = frozenset(DEFAULT_PROVIDER_PRIORITY)
 
-# Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
+# Per-call-type priority override env vars. Report calls keep their dedicated safe default when
+# unset; other call types fall back to LLM_PROVIDER_PRIORITY.
 _CALL_TYPE_PRIORITY_ENV = {
     "event_analysis": "LLM_EVENT_PROVIDERS",
+    "event_alert_render": "LLM_EVENT_RENDER_PROVIDERS",
+    "news_intelligence": "LLM_NEWS_INTELLIGENCE_PROVIDERS",
     "market_heartbeat": "LLM_HEARTBEAT_PROVIDERS",
     "daily_report": "LLM_REPORT_PROVIDERS",
     "weekly_report": "LLM_REPORT_PROVIDERS",
@@ -40,7 +43,7 @@ _CALL_TYPE_PRIORITY_ENV = {
 
 _PROVIDER_API_KEY_ENV = {
     "groq": "GROQ_API_KEY",
-    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
     "cloudflare": "CLOUDFLARE_API_TOKEN",
 }
 
@@ -48,7 +51,7 @@ _PROVIDER_API_KEY_ENV = {
 # base URL is account-scoped and therefore resolved dynamically in base_url().
 _PROVIDER_BASE_URL = {
     "groq": "https://api.groq.com/openai/v1",
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "openai": "https://api.openai.com/v1",
 }
 
 # Groq keeps per-call-type models. Fallback providers use a single model each, overridable
@@ -56,7 +59,7 @@ _PROVIDER_BASE_URL = {
 # point at a model the provider has decommissioned.
 _GROQ_MODEL_ENV_BY_CALL_TYPE = {
     "event_analysis": ("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
-    "event_alert_render": ("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
+    "event_alert_render": ("GROQ_EVENT_RENDER_MODEL", "openai/gpt-oss-20b"),
     "market_heartbeat": ("GROQ_MARKET_HEARTBEAT_MODEL", "openai/gpt-oss-20b"),
     "daily_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
     "weekly_report": ("GROQ_REPORT_MODEL", "openai/gpt-oss-20b"),
@@ -66,25 +69,25 @@ _GROQ_MODEL_ENV_BY_CALL_TYPE = {
 _GROQ_DEFAULT_MODEL = ("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _FALLBACK_MODEL_ENV = {
-    "gemini": ("GEMINI_MODEL", "gemini-3.8-flash"),
+    "openai": ("OPENAI_MODEL", "gpt-6-luna"),
     "cloudflare": (
         "CLOUDFLARE_MODEL",
         "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     ),
 }
 
-# Event Alert rendering intentionally uses a model-level chain rather than the generic
-# provider-only chain. The second step reuses Groq with a different model, so this cannot be
-# represented by a de-duplicated provider priority list.
+# These model families remain labelable in historical telemetry, but owner-approved
+# routing v2 must not let a stale model override reactivate either runtime path.
+_RETIRED_ACTIVE_MODEL_MARKERS = ("gemini", "qwen")
+
 _EVENT_ALERT_RENDER_ATTEMPTS = (
-    ("groq", "GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b"),
-    ("groq", "GROQ_EVENT_RENDER_FALLBACK_MODEL", "qwen/qwen3.8-27b"),
+    ("groq", "GROQ_EVENT_RENDER_MODEL", "openai/gpt-oss-20b"),
+    ("openai", "OPENAI_MODEL", "gpt-6-luna"),
     (
         "cloudflare",
         "CLOUDFLARE_EVENT_RENDER_MODEL",
         "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     ),
-    ("gemini", "GEMINI_EVENT_RENDER_MODEL", "gemini-3.5-flash-lite"),
 )
 
 # Every call type that reaches a provider, in a stable order for the startup configuration log.
@@ -153,7 +156,7 @@ _DEFAULT_REASONING_EFFORT_BY_CALL_TYPE = {
 # model is a 400, which the router treats as deterministic and does not fall back on — the
 # exact failure shape this work exists to remove. So the parameter is gated on the resolved
 # model identifier, matched against these substrings, and never on the provider name.
-_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5", "gemini-3.")
+_DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gpt-6", "gemini-2.5", "gemini-3.")
 
 # Models whose internal reasoning/thinking is billed against the *completion* budget, so a
 # budget sized for a plain chat model leaves nothing for the answer. Gemini 2.5 and Gemini 3
@@ -162,6 +165,7 @@ _DEFAULT_REASONING_MODEL_MARKERS = ("gpt-oss", "gemini-2.5", "gemini-3.")
 # the reasoning and thinking capability sets.
 _THINKING_MODEL_MARKERS = (
     "gpt-oss",
+    "gpt-6",
     "gemini-2.5",
     "gemini-3.",
     "magistral",
@@ -223,19 +227,18 @@ def global_provider_priority() -> list[str]:
 def provider_priority(call_type: str) -> list[str]:
     """Resolve the ordered provider chain for a call type.
 
-    Per-call-type override env wins when set and non-empty; otherwise the global
-    priority; otherwise the built-in default.
+    Per-call-type override env wins when set and non-empty. Reports otherwise keep
+    their built-in Groq/OpenAI chain so a global Cloudflare route cannot silently
+    replace the approved deterministic data-only fallback. Other call types inherit
+    the global priority.
     """
     override_env = _CALL_TYPE_PRIORITY_ENV.get(call_type)
     if override_env:
         parsed = _parse_priority_list(os.getenv(override_env), env_name=override_env)
         if parsed:
             return parsed
-    # Respect an explicit global priority. With no global/event override, insert the
-    # existing Cloudflare adapter for Event Analysis only; the router
-    # excludes it automatically when its token or account ID is missing.
-    if call_type == "event_analysis" and not os.getenv("LLM_PROVIDER_PRIORITY"):
-        return list(DEFAULT_EVENT_ANALYSIS_PROVIDER_PRIORITY)
+    if call_type in {"daily_report", "weekly_report", "market_report"}:
+        return list(DEFAULT_REPORT_PROVIDER_PRIORITY)
     return global_provider_priority()
 
 
@@ -249,11 +252,23 @@ def api_key(provider: str) -> str | None:
 
 def provider_is_configured(provider: str) -> bool:
     """True when all non-secret configuration required by a provider is present."""
+    if provider == "openai" and not openai_enabled():
+        return False
     if api_key(provider) is None:
         return False
     if provider == "cloudflare":
         return bool(str(os.getenv("CLOUDFLARE_ACCOUNT_ID") or "").strip())
     return True
+
+
+def openai_enabled() -> bool:
+    """Return the explicit OpenAI paid-provider kill switch (fail closed)."""
+    raw = str(os.getenv("OPENAI_ENABLED") or "").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw not in {"", "0", "false", "no", "off"}:
+        warn_rejected_value("OPENAI_ENABLED", raw, "invalid_boolean", "false")
+    return False
 
 
 def base_url(provider: str) -> str | None:
@@ -269,8 +284,20 @@ def api_key_env(provider: str) -> str | None:
     return _PROVIDER_API_KEY_ENV.get(provider)
 
 
+def _validated_model_identifier(raw: str, *, source_name: str, default: str) -> str:
+    """Reject blank or retired identifiers from env and internal override paths."""
+    stripped = raw.strip()
+    if not stripped:
+        warn_rejected_value(source_name, raw, "empty_model_identifier", default)
+        return default
+    if any(marker in stripped.lower() for marker in _RETIRED_ACTIVE_MODEL_MARKERS):
+        warn_rejected_value(source_name, raw, "retired_model_identifier", default)
+        return default
+    return stripped
+
+
 def _model_from_env(env_name: str, default: str) -> str:
-    """Resolve a model identifier, treating a present-but-empty value as unset.
+    """Resolve a model identifier, treating invalid overrides as unset.
 
     ``os.getenv(name, default)`` only falls back when the variable is *absent*, so
     An empty model override would otherwise resolve to ``""`` and be sent as the model — a 400 the
@@ -280,11 +307,14 @@ def _model_from_env(env_name: str, default: str) -> str:
     raw = os.getenv(env_name)
     if raw is None:
         return default
-    stripped = raw.strip()
-    if not stripped:
-        warn_rejected_value(env_name, raw, "empty_model_identifier", default)
-        return default
-    return stripped
+    return _validated_model_identifier(raw, source_name=env_name, default=default)
+
+
+def resolve_model_override(raw: str, *, default: str) -> str:
+    """Validate a non-environment runtime override against retired model policy."""
+    return _validated_model_identifier(
+        raw, source_name="LLM_RUNTIME_MODEL_OVERRIDE", default=default
+    )
 
 
 def model_for(provider: str, call_type: str) -> str:
@@ -300,7 +330,7 @@ def model_for(provider: str, call_type: str) -> str:
 
 def provider_attempts(call_type: str) -> list[tuple[str, str]]:
     """Return the ordered concrete provider/model attempts for one logical LLM operation."""
-    if call_type == "event_alert_render":
+    if call_type == "event_alert_render" and not os.getenv("LLM_EVENT_RENDER_PROVIDERS"):
         return [
             (provider, _model_from_env(env_name, default))
             for provider, env_name, default in _EVENT_ALERT_RENDER_ATTEMPTS
@@ -314,12 +344,6 @@ def request_timeout_seconds_for(
     """Choose a per-attempt HTTP timeout; explicit caller overrides remain authoritative."""
     if requested_timeout is not None:
         return requested_timeout
-    if call_type == "event_analysis" and provider == "gemini":
-        # Gemini reasoning occasionally exceeds the shared 15s limit. Keep this bounded so
-        # the remaining fallbacks each have time within the 90s operation budget.
-        return get_int_env(
-            "LLM_GEMINI_EVENT_ANALYSIS_TIMEOUT_SECONDS", 25, minimum=15, maximum=30
-        )
     return 15
 
 
@@ -451,11 +475,25 @@ def resolved_configuration() -> list[dict]:
     for call_type in KNOWN_CALL_TYPES:
         attempts = []
         for provider, model in provider_attempts(call_type):
+            paid_admission_ready = None
+            if provider == "openai" and openai_enabled():
+                from bot.services.llm.openai_budget import (
+                    monthly_budget_usd,
+                    pricing_usd_per_million,
+                    verified_input_token_ceiling,
+                )
+
+                paid_admission_ready = bool(
+                    monthly_budget_usd() is not None
+                    and pricing_usd_per_million() is not None
+                    and verified_input_token_ceiling(model) is not None
+                )
             attempts.append(
                 {
                     "provider": provider,
                     "model": model,
                     "configured": provider_is_configured(provider),
+                    "paid_admission_ready": paid_admission_ready,
                     "effective_max_tokens": effective_max_tokens_for(
                         call_type=call_type,
                         provider=provider,
@@ -513,8 +551,12 @@ def _format_chain(entry: dict) -> str:
                 effort=f"/effort={effort}" if effort else "",
                 effective_budget=attempt["effective_max_tokens"],
                 unconfigured=(
-                    ""
+                    "(budget_blocked)"
+                    if attempt["configured"] and attempt["paid_admission_ready"] is False
+                    else ""
                     if attempt["configured"]
+                    else "(disabled)"
+                    if attempt["provider"] == "openai" and not openai_enabled()
                     else "(no_api_key)"
                     if api_key(attempt["provider"]) is None
                     else "(missing_config)"
@@ -536,18 +578,7 @@ def log_resolved_configuration() -> None:
     for entry in resolved_configuration():
         timing = ""
         if entry["call_type"] == "event_analysis":
-            gemini_timeout = next(
-                (
-                    item["timeout_seconds"]
-                    for item in entry["attempts"]
-                    if item["provider"] == "gemini"
-                ),
-                "none",
-            )
-            timing = (
-                f" operation_budget_seconds={entry['operation_budget_seconds']}"
-                f" gemini_timeout_seconds={gemini_timeout}"
-            )
+            timing = f" operation_budget_seconds={entry['operation_budget_seconds']}"
         logger.info(
             "ops_event=llm_config call_type=%s max_tokens=%s chain=%s%s",
             entry["call_type"],

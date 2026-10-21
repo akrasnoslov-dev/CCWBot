@@ -2,7 +2,7 @@
 
 ``BaseProvider`` is the common contract. ``OpenAICompatibleProvider`` holds the chat-completion
 logic generalized out of the old ``_run_groq_chat_completion`` (JSON mode, raw-response header
-capture, rate-limit backoff parsing, and usage logging). Groq, Gemini, and Cloudflare
+capture, rate-limit backoff parsing, and usage logging). Groq, OpenAI, and Cloudflare
 Workers AI expose compatible chat-completions endpoints, so each concrete provider stays thin and
 reads its endpoint / credentials from :mod:`bot.services.llm.config`.
 """
@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 from bot.services.llm import config
 from bot.services.llm.budget import GroqBudgetExhausted, groq_budget
 from bot.services.llm.errors import AIProviderRateLimitError, LLMRateLimitBackoffActive
+from bot.services.llm.openai_budget import OpenAIBudgetExhausted, openai_budget
 from bot.services.llm.operation import current_llm_operation_id
 from bot.services.llm.telemetry import (
     RATE_LIMIT_BACKOFF_CALL_TYPES,
@@ -123,6 +124,9 @@ class OpenAICompatibleProvider(BaseProvider):
         """Sampling parameters supported by this provider/model pair."""
         return {"temperature": 0.0}
 
+    def _max_tokens_parameters(self, *, max_tokens: int) -> dict[str, int]:
+        return {"max_tokens": max_tokens}
+
     async def chat_completion(
         self,
         *,
@@ -170,7 +174,6 @@ class OpenAICompatibleProvider(BaseProvider):
                 limited_until=limited_until,
             )
 
-        client = self.get_client()
         lease = None
         if provider == "groq":
             try:
@@ -203,19 +206,48 @@ class OpenAICompatibleProvider(BaseProvider):
                     current_llm_operation_id(),
                 )
                 raise
+        elif provider == "openai":
+            try:
+                if not config.openai_enabled():
+                    raise OpenAIBudgetExhausted("disabled")
+                lease = await openai_budget.reserve(
+                    model=model,
+                    call_type=call_type,
+                    input_chars=input_chars,
+                    max_tokens=max_tokens,
+                )
+            except OpenAIBudgetExhausted as error:
+                await write_llm_usage_log(
+                    provider=provider,
+                    call_type=call_type,
+                    symbol=symbol,
+                    model=model,
+                    status="skipped_due_to_budget",
+                    input_chars=input_chars,
+                    output_chars=None,
+                    max_tokens=max_tokens,
+                    error_reason=f"openai_budget_{error.reason}",
+                )
+                logger.info(
+                    "ops_event=llm_budget_skipped provider=openai model=%s call_type=%s "
+                    "reason=%s operation_id=%s",
+                    model,
+                    call_type,
+                    error.reason,
+                    current_llm_operation_id(),
+                )
+                raise
+
+        client = self.get_client()
 
         request_kwargs = {
             "model": model,
             "messages": messages,
-            # ``max_tokens`` rather than ``max_completion_tokens``: all providers in the
-            # chain accept it, and Groq treats it as an alias of the newer name, so reasoning
-            # models still receive the correct budget. See the PR discussion in docs/llm_usage.md.
-            "max_tokens": max_tokens,
-            # Override the client's 20s read timeout for this attempt. Otherwise a 25s
-            # Gemini asyncio deadline is silently cut short by httpx at 20s.
+            # Override the client's 20s read timeout for this attempt. Otherwise,
             # asyncio.wait_for below remains the strict total request deadline.
             "timeout": httpx.Timeout(float(timeout), connect=min(float(timeout), 10.0)),
         }
+        request_kwargs.update(self._max_tokens_parameters(max_tokens=max_tokens))
         request_kwargs.update(self._sampling_parameters(model=model))
         if response_format is not None:
             request_kwargs["response_format"] = response_format
@@ -246,9 +278,14 @@ class OpenAICompatibleProvider(BaseProvider):
                 "provider_quota_exhausted", "auth_error", "config_missing",
             }
             if lease is not None:
-                await groq_budget.settle(
-                    lease, actual_tokens=None, headers=headers, failed=no_usage
-                )
+                if provider == "groq":
+                    await groq_budget.settle(
+                        lease, actual_tokens=None, headers=headers, failed=no_usage
+                    )
+                else:
+                    await openai_budget.settle(
+                        lease, prompt_tokens=None, completion_tokens=None
+                    )
             status = usage_status_for_error(error)
             await write_llm_usage_log(
                 provider=provider,
@@ -290,9 +327,16 @@ class OpenAICompatibleProvider(BaseProvider):
                 ) from error
             raise
         if lease is not None:
-            await groq_budget.settle(
-                lease, actual_tokens=usage_int(response, "total_tokens"), headers=headers
-            )
+            if provider == "groq":
+                await groq_budget.settle(
+                    lease, actual_tokens=usage_int(response, "total_tokens"), headers=headers
+                )
+            else:
+                await openai_budget.settle(
+                    lease,
+                    prompt_tokens=usage_int(response, "prompt_tokens"),
+                    completion_tokens=usage_int(response, "completion_tokens"),
+                )
         logger.debug(
             "ops_event=llm_call_completed provider=%s model=%s call_type=%s "
             "status=success operation_id=%s",

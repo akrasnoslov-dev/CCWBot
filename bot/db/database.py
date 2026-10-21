@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -1473,6 +1474,59 @@ class LlmUsageLog(Base):
     )
     error_message: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Sanitized provider or parser error message."
+    )
+
+
+class OpenAIBudgetReservation(Base):
+    """Durable pre-request reservation for the single global OpenAI monthly cap."""
+
+    __tablename__ = "openai_budget_reservations"
+    __table_args__ = (
+        Index("ix_openai_budget_month_created", "month_start", "created_at"),
+        CheckConstraint("reserved_usd >= 0", name="ck_openai_budget_reserved_nonnegative"),
+        CheckConstraint(
+            "actual_usd IS NULL OR actual_usd >= 0",
+            name="ck_openai_budget_actual_nonnegative",
+        ),
+        {
+            "comment": (
+                "Durable conservative reservations and reconciled charges for CCWBot OpenAI calls."
+            )
+        },
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, comment="Opaque reservation identifier."
+    )
+    month_start: Mapped[date] = mapped_column(
+        Date, nullable=False, comment="UTC calendar month owning this charge."
+    )
+    model: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="OpenAI model authorized for this reservation."
+    )
+    call_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="Feature family requesting the paid fallback."
+    )
+    reserved_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 10), nullable=False, comment="Conservative maximum authorized before HTTP."
+    )
+    input_rate_usd_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(18, 10), nullable=False, comment="Verified input-token price used for admission."
+    )
+    output_rate_usd_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(18, 10), nullable=False, comment="Verified output-token price used for admission."
+    )
+    actual_usd: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 10), nullable=True, comment="Provider-usage charge when safely known."
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, comment="reserved, settled, conservative, or cap_breach."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, comment="When the reservation was authorized."
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="When known usage was reconciled."
     )
 
 

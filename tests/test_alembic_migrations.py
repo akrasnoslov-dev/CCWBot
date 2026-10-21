@@ -24,7 +24,7 @@ LONG_REVISION_MESSAGE = (
     "long ids can break migration execution."
 )
 EVENT_ALERT_POLICY_REVISION = "0030_event_alert_policy_cleanup"
-CURRENT_HEAD_REVISION = "0032_alert_sent_at"
+CURRENT_HEAD_REVISION = "0033_openai_budget"
 PREVIOUS_EVENT_ALERT_POLICY_REVISION = "0029_llm_operation_outcomes"
 POSTGRES_MIGRATION_TEST_DATABASE_URL = "ALEMBIC_POSTGRES_TEST_DATABASE_URL"
 
