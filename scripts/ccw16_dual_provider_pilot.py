@@ -40,7 +40,7 @@ REQUIRED_ATTESTATIONS = (
     "CCW16_FREE_TIER_VERIFIED",
 )
 MAX_ATTEMPTS = 120  # includes errors/crashed reservations
-MAX_DAILY = {"groq": 20_000, "cloudflare": 1_000}
+MAX_DAILY = {"groq": 60_000, "cloudflare": 1_000}  # owner-approved 2026-10-21
 CLOUDFLARE_NEURON_RESERVE = 250
 MIN_INTERVAL_SECONDS = 90
 PROVIDER_KEYS = {"groq": "GROQ_API_KEY", "cloudflare": "CLOUDFLARE_API_TOKEN"}

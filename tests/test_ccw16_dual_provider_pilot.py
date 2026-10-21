@@ -61,6 +61,13 @@ def test_reserved_budget_limits_before_call():
         {"provider": "groq", "timestamp": "2026-10-21T10:00:00+00:00",
          "reserved": 11000, "state": "reserved"}
     ]}
+    assert pilot.MAX_DAILY == {"groq": 60_000, "cloudflare": 1_000}
+    assert pilot.budget_allows(ledger, "groq", 10000,
+                               datetime(2026, 10, 21, 12, tzinfo=timezone.utc))
+    ledger["attempts"].append(
+        {"provider": "groq", "timestamp": "2026-10-21T11:00:00+00:00",
+         "reserved": 42_000, "state": "reserved"}
+    )
     assert not pilot.budget_allows(ledger, "groq", 10000,
                                    datetime(2026, 10, 21, 12, tzinfo=timezone.utc))
     assert pilot.budget_allows(ledger, "cloudflare", 250,
