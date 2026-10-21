@@ -41,7 +41,8 @@ def _http_error(status, *, code=None):
 
 def _configure(monkeypatch, providers):
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", ",".join(providers))
-    for name in ("groq", "gemini", "cloudflare"):
+    monkeypatch.setenv("OPENAI_ENABLED", "true" if "openai" in providers else "false")
+    for name in ("groq", "openai", "cloudflare"):
         key = config.api_key_env(name)
         if name in providers:
             monkeypatch.setenv(key, "fake-test-key")
@@ -71,14 +72,14 @@ def _reset_state():
 def test_event_default_adds_optional_cloudflare_without_changing_other_tasks(monkeypatch):
     monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
     monkeypatch.delenv("LLM_PROVIDER_PRIORITY", raising=False)
-    assert config.provider_priority("event_analysis") == ["groq", "gemini", "cloudflare"]
-    assert config.provider_priority("daily_report") == ["groq", "gemini"]
+    assert config.provider_priority("event_analysis") == ["groq", "openai", "cloudflare"]
+    assert config.provider_priority("daily_report") == ["groq", "openai"]
 
 
 def test_explicit_global_and_event_priority_remain_authoritative(monkeypatch):
     monkeypatch.delenv("LLM_EVENT_PROVIDERS", raising=False)
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "gemini,groq")
-    assert config.provider_priority("event_analysis") == ["gemini", "groq"]
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "openai,groq")
+    assert config.provider_priority("event_analysis") == ["openai", "groq"]
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,cloudflare")
     assert config.provider_priority("event_analysis") == ["groq", "cloudflare"]
 
@@ -86,26 +87,26 @@ def test_explicit_global_and_event_priority_remain_authoritative(monkeypatch):
 def test_retired_provider_cannot_be_enabled_even_with_legacy_keys(monkeypatch):
     monkeypatch.setenv("MISTRAL_API_KEY", "unused-legacy-key")
     monkeypatch.setenv("MISTRAL_MODEL", "unused-legacy-model")
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,mistral,gemini")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,mistral,openai")
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "mistral,cloudflare,groq")
-    assert config.KNOWN_PROVIDERS == {"groq", "gemini", "cloudflare"}
+    assert config.KNOWN_PROVIDERS == {"groq", "openai", "cloudflare"}
     assert config.api_key("mistral") is None
-    assert config.global_provider_priority() == ["groq", "gemini"]
+    assert config.global_provider_priority() == ["groq", "openai"]
     assert config.provider_priority("event_analysis") == ["cloudflare", "groq"]
 
 
 @pytest.mark.asyncio
 async def test_cloudflare_success_preserves_serving_provider_and_model(monkeypatch):
-    _configure(monkeypatch, ["groq", "gemini", "cloudflare"])
+    _configure(monkeypatch, ["groq", "openai", "cloudflare"])
     groq = StubProvider("groq", AIProviderRateLimitError("429", provider="groq"))
-    gemini = StubProvider("gemini", asyncio.TimeoutError())
+    openai = StubProvider("openai", asyncio.TimeoutError())
     cloudflare = StubProvider("cloudflare", None)
     result = await _event_call(LLMRouter(registry={
-        "groq": groq, "gemini": gemini, "cloudflare": cloudflare,
+        "groq": groq, "openai": openai, "cloudflare": cloudflare,
     }))
     assert result.provider == "cloudflare"
     assert result.model == config.model_for("cloudflare", "event_analysis")
-    assert groq.calls and gemini.calls and cloudflare.calls
+    assert groq.calls and openai.calls and cloudflare.calls
 
 
 @pytest.mark.asyncio
@@ -122,16 +123,16 @@ async def test_cloudflare_failure_advances_no_further_when_last(monkeypatch, err
 
 
 @pytest.mark.asyncio
-async def test_cloudflare_json_mode_output_rejection_reaches_next_gemini(monkeypatch):
-    _configure(monkeypatch, ["cloudflare", "gemini"])
+async def test_cloudflare_json_mode_output_rejection_reaches_next_openai(monkeypatch):
+    _configure(monkeypatch, ["cloudflare", "openai"])
     error = _http_error(400, code="invalid_request_error")
     error.args = ("JSON Mode couldn't be met",)
     assert telemetry.classify_ai_error_reason(error) == "provider_json_validate_failed"
     cloudflare = StubProvider("cloudflare", error)
-    gemini = StubProvider("gemini", None)
-    result = await _event_call(LLMRouter(registry={"cloudflare": cloudflare, "gemini": gemini}))
-    assert result.provider == "gemini"
-    assert len(cloudflare.calls) == len(gemini.calls) == 1
+    openai = StubProvider("openai", None)
+    result = await _event_call(LLMRouter(registry={"cloudflare": cloudflare, "openai": openai}))
+    assert result.provider == "openai"
+    assert len(cloudflare.calls) == len(openai.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -147,9 +148,9 @@ async def test_cloudflare_credentials_are_optional(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mixed_rate_limit_and_timeout_remains_terminal(monkeypatch):
-    _configure(monkeypatch, ["gemini", "cloudflare"])
+    _configure(monkeypatch, ["openai", "cloudflare"])
     router = LLMRouter(registry={
-        "gemini": StubProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
+        "openai": StubProvider("openai", AIProviderRateLimitError("429", provider="openai")),
         "cloudflare": StubProvider("cloudflare", asyncio.TimeoutError()),
     })
     with pytest.raises(AllProvidersFailedError) as caught:
@@ -160,9 +161,9 @@ async def test_mixed_rate_limit_and_timeout_remains_terminal(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_every_provider_429_is_terminal_rate_limit(monkeypatch):
-    _configure(monkeypatch, ["gemini", "cloudflare"])
+    _configure(monkeypatch, ["openai", "cloudflare"])
     router = LLMRouter(registry={
-        "gemini": StubProvider("gemini", AIProviderRateLimitError("429", provider="gemini")),
+        "openai": StubProvider("openai", AIProviderRateLimitError("429", provider="openai")),
         "cloudflare": StubProvider(
             "cloudflare", AIProviderRateLimitError("429", provider="cloudflare")
         ),

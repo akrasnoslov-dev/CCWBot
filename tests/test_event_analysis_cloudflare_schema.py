@@ -55,15 +55,16 @@ def _schema_check(parsed):
 def _configure(monkeypatch, providers=("cloudflare",)):
     monkeypatch.setenv("GROQ_JSON_MODE", "true")
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", ",".join(providers))
+    monkeypatch.setenv("OPENAI_ENABLED", "true" if "openai" in providers else "false")
     monkeypatch.delenv("CLOUDFLARE_MODEL", raising=False)
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "synthetic-token-not-real")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "synthetic-account")
-    if "gemini" in providers:
-        monkeypatch.setenv("GEMINI_API_KEY", "synthetic-key-not-real")
+    if "openai" in providers:
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-key-not-real")
 
 
 def test_cloudflare_gets_bare_json_schema_not_groq_envelope(monkeypatch):
-    _configure(monkeypatch, ("groq", "gemini", "cloudflare"))
+    _configure(monkeypatch, ("groq", "openai", "cloudflare"))
     fmt, overrides = agent._structured_response_formats(
         call_type="event_analysis",
         schema_name="event_significance",
@@ -83,7 +84,7 @@ def test_cloudflare_gets_bare_json_schema_not_groq_envelope(monkeypatch):
     cloudflare_schema = overrides[f"cloudflare:{cloudflare_model}"]["json_schema"]
     assert cloudflare_schema["additionalProperties"] is False
     assert overrides[f"groq:{groq_model}"]["json_schema"]["strict"] is True
-    assert "gemini" not in overrides
+    assert "openai" not in overrides
 
 
 def test_cloudflare_override_only_on_supported_event_model(monkeypatch):
@@ -112,11 +113,27 @@ def test_render_and_json_mode_disabled_are_unchanged(monkeypatch):
     assert not overrides or not any(key.startswith("cloudflare:") for key in overrides)
 
     monkeypatch.setenv("GROQ_JSON_MODE", "false")
-    assert agent._structured_response_formats(
+    default, overrides = agent._structured_response_formats(
         call_type="event_analysis",
         schema_name="event_significance",
         schema=agent._EVENT_SIGNIFICANCE_JSON_SCHEMA,
-    ) == (None, None)
+    )
+    assert default is None
+    assert overrides is not None
+    assert any(key.startswith("cloudflare:") for key in overrides)
+
+
+def test_openai_strict_schema_is_independent_of_legacy_groq_json_toggle(monkeypatch):
+    _configure(monkeypatch, ("openai",))
+    monkeypatch.setenv("GROQ_JSON_MODE", "false")
+    default, overrides = agent._structured_response_formats(
+        call_type="event_analysis",
+        schema_name="event_significance",
+        schema=agent._EVENT_SIGNIFICANCE_JSON_SCHEMA,
+    )
+    assert default is None
+    assert overrides is not None
+    assert any(key.startswith("openai:") for key in overrides)
 
 
 @pytest.mark.asyncio
@@ -196,20 +213,21 @@ async def test_offline_invalid_categories_still_fail_closed(
 
 @pytest.mark.asyncio
 async def test_invalid_cloudflare_output_falls_back_without_new_operation(monkeypatch):
-    _configure(monkeypatch, ("cloudflare", "gemini"))
+    _configure(monkeypatch, ("cloudflare", "openai"))
     cloudflare = RecordedProvider("cloudflare", json.dumps({
         **_VALID, "should_alert": "false"
     }))
-    gemini = RecordedProvider("gemini", json.dumps(_VALID))
+    openai = RecordedProvider("openai", json.dumps(_VALID))
     monkeypatch.setattr(agent, "get_router", lambda: LLMRouter(
-        registry={"cloudflare": cloudflare, "gemini": gemini}
+        registry={"cloudflare": cloudflare, "openai": openai}
     ))
 
     with llm_operation_scope("same-synthetic-operation"):
         result = await agent.ask_event_significance_raw(
             {"symbol": "BTC", "market": {}, "news": []}, schema_check=_schema_check
         )
-    assert result.provider == "gemini"
-    assert len(cloudflare.calls) == len(gemini.calls) == 1
-    assert cloudflare.calls[0][1] == gemini.calls[0][1] == "same-synthetic-operation"
-    assert gemini.calls[0][0]["response_format"] == {"type": "json_object"}
+    assert result.provider == "openai"
+    assert len(cloudflare.calls) == len(openai.calls) == 1
+    assert cloudflare.calls[0][1] == openai.calls[0][1] == "same-synthetic-operation"
+    assert openai.calls[0][0]["response_format"]["type"] == "json_schema"
+    assert openai.calls[0][0]["response_format"]["json_schema"]["strict"] is True

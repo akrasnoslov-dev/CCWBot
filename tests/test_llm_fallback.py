@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import bot.services.ai_agent_groq as ai_agent_groq
-from bot.services.llm import config, gemini_provider, groq_provider, telemetry
+from bot.services.llm import config, groq_provider, openai_provider, telemetry
 from bot.services.llm.errors import AIProviderRateLimitError
 
 
@@ -45,23 +45,34 @@ class ProviderResponseError(RuntimeError):
 
 @pytest.fixture(autouse=True)
 def two_provider_chain(monkeypatch):
+    from bot.services.llm.openai_budget import openai_budget
+
+    async def reserve(**_kwargs):
+        return object()
+
+    async def settle(*_args, **_kwargs):
+        return None
+
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,gemini")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
-    monkeypatch.setattr(gemini_provider.get_provider(), "_client", None)
+    monkeypatch.setattr(openai_provider.get_provider(), "_client", None)
+    monkeypatch.setattr(openai_budget, "reserve", reserve)
+    monkeypatch.setattr(openai_budget, "settle", settle)
     yield
     telemetry.reset_llm_rate_limit_backoffs()
     monkeypatch.setattr(groq_provider.get_provider(), "_client", None)
-    monkeypatch.setattr(gemini_provider.get_provider(), "_client", None)
+    monkeypatch.setattr(openai_provider.get_provider(), "_client", None)
 
 
 @pytest.mark.asyncio
-async def test_event_analysis_falls_back_to_gemini(monkeypatch):
+async def test_event_analysis_falls_back_to_openai(monkeypatch):
     monkeypatch.setattr(groq_provider.get_provider(), "_client", _rate_limited_client())
     monkeypatch.setattr(
-        gemini_provider.get_provider(), "_client", _json_client('{"should_alert": false}')
+        openai_provider.get_provider(), "_client", _json_client('{"should_alert": false}')
     )
 
     result = await ai_agent_groq.ask_event_analysis_raw(
@@ -70,7 +81,7 @@ async def test_event_analysis_falls_back_to_gemini(monkeypatch):
 
     raw, parsed = result
     assert parsed == {"should_alert": False}
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     # Groq's rate limit armed its (provider, model) backoff.
     groq_model = config.model_for("groq", "event_analysis")
     assert telemetry.get_llm_rate_limit_backoff(provider="groq", model=groq_model) is not None
@@ -93,14 +104,14 @@ async def test_provider_quota_response_falls_back_without_rate_limit_backoff(
         _error_client(ProviderResponseError(status_code=status_code, message=message, code=code)),
     )
     monkeypatch.setattr(
-        gemini_provider.get_provider(), "_client", _json_client('{"should_alert": false}')
+        openai_provider.get_provider(), "_client", _json_client('{"should_alert": false}')
     )
 
     result = await ai_agent_groq.ask_event_analysis_raw(
         {"symbol": "BTC", "news": [], "market": {"price": 1.0}}
     )
 
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     groq_model = config.model_for("groq", "event_analysis")
     assert telemetry.get_llm_rate_limit_backoff(provider="groq", model=groq_model) is None
 
@@ -108,7 +119,7 @@ async def test_provider_quota_response_falls_back_without_rate_limit_backoff(
 @pytest.mark.asyncio
 async def test_event_analysis_all_providers_rate_limited(monkeypatch):
     monkeypatch.setattr(groq_provider.get_provider(), "_client", _rate_limited_client())
-    monkeypatch.setattr(gemini_provider.get_provider(), "_client", _rate_limited_client())
+    monkeypatch.setattr(openai_provider.get_provider(), "_client", _rate_limited_client())
 
     with pytest.raises(AIProviderRateLimitError):
         await ai_agent_groq.ask_event_analysis_raw(
@@ -120,9 +131,9 @@ def test_backward_compatible_public_api():
     # AIGroqRateLimitError stays an alias of the provider-agnostic error.
     assert ai_agent_groq.AIGroqRateLimitError is ai_agent_groq.AIProviderRateLimitError
     # LLMJsonResult remains a 2-tuple and exposes usage_log_id, provider, model.
-    result = ai_agent_groq.LLMJsonResult("raw", {"a": 1}, 7, provider="gemini", model="m")
+    result = ai_agent_groq.LLMJsonResult("raw", {"a": 1}, 7, provider="openai", model="m")
     raw, parsed = result
     assert (raw, parsed) == ("raw", {"a": 1})
     assert result.usage_log_id == 7
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     assert result.model == "m"

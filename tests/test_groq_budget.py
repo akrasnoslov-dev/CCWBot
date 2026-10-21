@@ -17,7 +17,8 @@ from bot.services.llm.router import LLMRouter
 def clean_budget(monkeypatch):
     groq_budget.reset()
     monkeypatch.setenv("GROQ_API_KEY", "unit-test")
-    monkeypatch.setenv("GEMINI_API_KEY", "unit-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "unit-test")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
     yield
     groq_budget.reset()
 
@@ -27,7 +28,7 @@ async def test_day_token_limit_reserves_before_request_and_uses_actual_usage(mon
     budget = GroqBudget()
     budget._loaded.add("m")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
     # The report can use only the 20% non-analysis pool; each event symbol
@@ -57,7 +58,7 @@ async def test_non_analysis_usage_cannot_consume_reserved_event_symbol_capacity(
     budget = GroqBudget()
     budget._loaded.add("m")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
 
@@ -87,7 +88,7 @@ async def test_four_symbols_each_get_a_fair_share_without_extra_provider_calls(m
     budget = GroqBudget()
     budget._loaded.add("m")
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "m")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "10000")
 
@@ -176,16 +177,16 @@ async def test_quota_skip_routes_to_fallback_once_and_preserves_operation(monkey
     fallback = SimpleNamespace(
         chat_completion=AsyncMock(
             return_value=ProviderResult(
-                provider="gemini",
-                model="gemini-3.8-flash",
+                provider="openai",
+                model="openai-3.8-flash",
                 raw_content="{}",
                 input_chars=0,
                 response=SimpleNamespace(),
             )
         )
     )
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
-    router = LLMRouter(registry={"groq": groq, "gemini": fallback})
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
+    router = LLMRouter(registry={"groq": groq, "openai": fallback})
     result = await router.chat_completion(
         call_type="event_analysis",
         messages=[{"role": "user", "content": "test"}],
@@ -193,7 +194,7 @@ async def test_quota_skip_routes_to_fallback_once_and_preserves_operation(monkey
         response_format=None,
         symbol="GRAM",
     )
-    assert result.provider == "gemini"
+    assert result.provider == "openai"
     assert result.operation_id
     fallback.chat_completion.assert_awaited_once()
     groq._client.chat.completions.create.assert_not_awaited()
@@ -369,7 +370,7 @@ async def test_non_event_groq_model_can_use_its_full_daily_budget(monkeypatch):
     model = "openai/gpt-oss-20b"
     budget._loaded.add(model)
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "15000")
     for _ in range(2):
@@ -424,7 +425,7 @@ async def test_exhausted_120b_fair_share_does_not_restrict_20b_or_qwen(monkeypat
     budget = GroqBudget()
     budget._loaded.update({"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"})
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MODEL", "openai/gpt-oss-120b")
-    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,gemini")
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "groq,openai")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_DAY", "10000")
     monkeypatch.setenv("GROQ_FREE_TOKEN_BUDGET_MINUTE", "10000")
 

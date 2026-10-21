@@ -18,9 +18,8 @@ When callers pass ``validate_response``, invalid provider *output* is also fallb
 the callback parses/validates each provider's raw response and raises ``AIInvalidJsonError``
 or ``AISchemaValidationError`` when the output cannot be trusted, which makes the router
 advance to the next provider (logged as ``llm_provider_switch reason=invalid_output``).
-Each concrete provider/model entry is attempted at most once per logical call. A provider may
-appear more than once when the chain intentionally tries distinct models (Event Alert Render uses
-this for GPT-OSS followed by Qwen on Groq); there is still no retry loop for the same entry.
+Each concrete provider/model entry is attempted at most once per logical call; there is no
+same-provider retry loop.
 
 Exhaustion mapping preserves the exception contract existing callers already handle:
 - if any provider returned invalid output -> the last ``AIInvalidJsonError`` /
@@ -48,8 +47,9 @@ from bot.services.llm.errors import (
     AllProvidersFailedError,
     LLMRateLimitBackoffActive,
 )
-from bot.services.llm.gemini_provider import get_provider as _gemini_provider
 from bot.services.llm.groq_provider import get_provider as _groq_provider
+from bot.services.llm.openai_budget import OpenAIBudgetExhausted
+from bot.services.llm.openai_provider import get_provider as _openai_provider
 from bot.services.llm.operation import (
     current_llm_operation_id,
     llm_operation_scope,
@@ -109,7 +109,7 @@ _warned_unconfigured: set[str] = set()
 def _default_registry() -> dict:
     return {
         "groq": _groq_provider(),
-        "gemini": _gemini_provider(),
+        "openai": _openai_provider(),
         "cloudflare": _cloudflare_provider(),
     }
 
@@ -238,8 +238,8 @@ class LLMRouter:
         attempted_names: list[str] = []
         failure_categories: list[str] = []
         input_chars = message_input_chars(messages)
-        # One wall-clock allowance for the full Event Analysis chain. No provider is retried;
-        # the 15s + 25s + 15s defaults leave 5s headroom within 60s.
+        # One wall-clock allowance covers the full chain. No provider is retried;
+        # three 15s defaults leave ample headroom within the 90s ceiling.
         deadline = (
             _monotonic() + config.event_analysis_operation_budget_seconds()
             if call_type == "event_analysis"
@@ -248,7 +248,12 @@ class LLMRouter:
         operation_budget_exhausted = False
 
         for index, (name, provider, configured_model) in enumerate(attempts):
-            model = (model_overrides or {}).get(name) or configured_model
+            override = (model_overrides or {}).get(name)
+            model = (
+                config.resolve_model_override(override, default=configured_model)
+                if override
+                else configured_model
+            )
             attempt_max_tokens = config.effective_max_tokens_for(
                 call_type=call_type,
                 provider=name,
@@ -330,6 +335,23 @@ class LLMRouter:
                     first_backoff_error = error
                 last_error = error
                 failure_categories.append(f"{name}:rate_limit_backoff_active")
+                continue
+            except OpenAIBudgetExhausted as error:
+                # Admission failed before HTTP. Preserve the free fallback and do not count
+                # this as a provider request or breaker failure.
+                breaker.record_not_attempted(call_type=call_type, provider=name, model=model)
+                if attempted_names and attempted_names[-1] == name:
+                    attempted_names.pop()
+                last_error = error
+                saw_other_fallback = True
+                failure_categories.append(f"{name}:openai_budget_{error.reason}")
+                logger.info(
+                    "ops_event=llm_provider_switch provider=openai call_type=%s "
+                    "reason=openai_budget_%s operation_id=%s",
+                    call_type,
+                    error.reason,
+                    current_llm_operation_id(),
+                )
                 continue
             except AIProviderRateLimitError as error:
                 attempted += 1

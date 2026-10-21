@@ -11,6 +11,7 @@ from bot.db.database import (
     EventAiAnalysis,
     LlmUsageLog,
     NewsItem,
+    OpenAIBudgetReservation,
     PriceState,
     User,
 )
@@ -1309,5 +1310,101 @@ async def test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_un
         assert "1 success, 1 terminal failed" in rendered
         assert "low-frequency schedule, confidence not established" in rendered
         assert "Weekly report — ok:" not in rendered
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_shows_paid_budget_without_secrets(monkeypatch):
+    now = _now()
+    engine, factory = await build_session_factory()
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
+    try:
+        async with factory() as session:
+            session.add(
+                OpenAIBudgetReservation(
+                    id="00000000-0000-0000-0000-000000000001",
+                    month_start=now.date().replace(day=1),
+                    model="gpt-6-luna",
+                    call_type="daily_report",
+                    reserved_usd="0.2500000000",
+                    input_rate_usd_per_million="1.0000000000",
+                    output_rate_usd_per_million="10.0000000000",
+                    actual_usd="0.1250000000",
+                    status="settled",
+                    created_at=now - timedelta(hours=1),
+                    settled_at=now - timedelta(hours=1),
+                )
+            )
+            await session.commit()
+
+        rendered = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=factory, now=now
+        )
+        assert "Paid OpenAI: switch enabled · readiness ready" in rendered
+        assert "$0.1250 used / $2.50 cap" in rendered
+        assert "$2.3750 remaining" in rendered
+        assert "2026-06-15 15:55 UTC" in rendered
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_blocks_cap_above_owner_approved_maximum(monkeypatch):
+    engine, factory = await build_session_factory()
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
+    monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "100")
+    try:
+        rendered = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=factory, now=_now()
+        )
+        assert "Paid OpenAI: switch enabled · readiness blocked · invalid cap" in rendered
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach(monkeypatch):
+    now = _now()
+    engine, factory = await build_session_factory()
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
+    try:
+        async with factory() as session:
+            session.add(
+                OpenAIBudgetReservation(
+                    id="00000000-0000-0000-0000-000000000002",
+                    month_start=now.date().replace(day=1),
+                    model="gpt-6-luna",
+                    call_type="daily_report",
+                    reserved_usd="0.2500000000",
+                    input_rate_usd_per_million="1.0000000000",
+                    output_rate_usd_per_million="10.0000000000",
+                    actual_usd="0.5000000000",
+                    status="cap_breach",
+                    created_at=now - timedelta(hours=1),
+                    settled_at=now - timedelta(hours=1),
+                )
+            )
+            await session.commit()
+
+        rendered = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=factory, now=now
+        )
+        assert "Paid OpenAI: switch enabled · readiness blocked" in rendered
     finally:
         await engine.dispose()
