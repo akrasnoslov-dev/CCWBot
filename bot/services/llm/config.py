@@ -29,7 +29,8 @@ DEFAULT_PROVIDER_PRIORITY = ["groq", "openai", "cloudflare"]
 DEFAULT_REPORT_PROVIDER_PRIORITY = ["groq", "openai"]
 KNOWN_PROVIDERS = frozenset(DEFAULT_PROVIDER_PRIORITY)
 
-# Per-call-type priority override env vars; fall back to LLM_PROVIDER_PRIORITY when unset.
+# Per-call-type priority override env vars. Report calls keep their dedicated safe default when
+# unset; other call types fall back to LLM_PROVIDER_PRIORITY.
 _CALL_TYPE_PRIORITY_ENV = {
     "event_analysis": "LLM_EVENT_PROVIDERS",
     "event_alert_render": "LLM_EVENT_RENDER_PROVIDERS",
@@ -226,17 +227,17 @@ def global_provider_priority() -> list[str]:
 def provider_priority(call_type: str) -> list[str]:
     """Resolve the ordered provider chain for a call type.
 
-    Per-call-type override env wins when set and non-empty; otherwise the global
-    priority; otherwise the built-in default.
+    Per-call-type override env wins when set and non-empty. Reports otherwise keep
+    their built-in Groq/OpenAI chain so a global Cloudflare route cannot silently
+    replace the approved deterministic data-only fallback. Other call types inherit
+    the global priority.
     """
     override_env = _CALL_TYPE_PRIORITY_ENV.get(call_type)
     if override_env:
         parsed = _parse_priority_list(os.getenv(override_env), env_name=override_env)
         if parsed:
             return parsed
-    if call_type in {"daily_report", "weekly_report", "market_report"} and not os.getenv(
-        "LLM_PROVIDER_PRIORITY"
-    ):
+    if call_type in {"daily_report", "weekly_report", "market_report"}:
         return list(DEFAULT_REPORT_PROVIDER_PRIORITY)
     return global_provider_priority()
 

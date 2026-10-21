@@ -21,6 +21,11 @@ MAX_VERIFIED_INPUT_TOKENS = 10_000_000
 _POSTGRES_ADVISORY_LOCK_ID = 0x4343574F504149  # "CCWOPAI", stable across workers.
 
 
+def _utc_now() -> datetime:
+    """Return the admission clock; isolated for deterministic rollover coverage."""
+    return datetime.now(timezone.utc)
+
+
 class OpenAIBudgetExhausted(RuntimeError):
     """OpenAI was skipped before HTTP because safe authorization was unavailable."""
 
@@ -132,8 +137,6 @@ class OpenAIBudget:
         # Reserve the verified model-wide input ceiling rather than estimating from
         # characters. This covers Unicode, provider framing, and response-schema tokens.
         reserved = _cost(input_token_ceiling, input_rate) + _cost(max_tokens, output_rate)
-        now = datetime.now(timezone.utc)
-        month_start = date(now.year, now.month, 1)
         reservation_id = str(uuid4())
 
         try:
@@ -146,6 +149,12 @@ class OpenAIBudget:
                                 text("SELECT pg_advisory_xact_lock(:lock_id)"),
                                 {"lock_id": _POSTGRES_ADVISORY_LOCK_ID},
                             )
+                        # The ledger month is the UTC month when serialized admission
+                        # actually begins, not when the request first started waiting.
+                        # This prevents a request held across midnight on the first from
+                        # consuming the previous bucket and leaving the new cap untouched.
+                        now = _utc_now()
+                        month_start = date(now.year, now.month, 1)
                         invariant_breach = await session.scalar(
                             select(func.count())
                             .select_from(OpenAIBudgetReservation)

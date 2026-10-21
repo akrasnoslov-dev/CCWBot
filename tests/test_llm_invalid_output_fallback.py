@@ -445,9 +445,36 @@ async def _install_report_inputs(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("report_type", ["daily", "weekly"])
+async def test_global_cloudflare_priority_still_uses_free_only_data_fallback(
+    monkeypatch, report_type
+):
+    _configure(monkeypatch, ["groq", "openai", "cloudflare"], {"groq", "cloudflare"})
+    monkeypatch.delenv("LLM_REPORT_PROVIDERS", raising=False)
+    schema_invalid = json.dumps({"report_type": report_type, "title": "invalid"})
+    registry = {
+        "groq": ContentProvider("groq", schema_invalid),
+        "openai": ContentProvider("openai", RuntimeError("paid provider must stay disabled")),
+        "cloudflare": ContentProvider(
+            "cloudflare", RuntimeError("global provider must not enter report chain")
+        ),
+    }
+    _install_router(monkeypatch, registry)
+    await _install_report_inputs(monkeypatch)
+
+    report = await reports.generate_report_cache(report_type)
+
+    assert report["status"] == "completed"
+    assert report["provider"] == reports.DETERMINISTIC_REPORT_PROVIDER
+    assert report["model"] == reports.DETERMINISTIC_REPORT_MODEL
+    assert [registry[name].calls for name in ("groq", "openai", "cloudflare")] == [1, 0, 0]
+
+
+@pytest.mark.asyncio
 async def test_production_report_chain_reaches_cloudflare_and_persists_actual_route(monkeypatch):
     providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
+    monkeypatch.setenv("LLM_REPORT_PROVIDERS", ",".join(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
@@ -472,6 +499,7 @@ async def test_production_report_chain_reaches_cloudflare_and_persists_actual_ro
 async def test_production_report_chain_can_succeed_before_final_provider(monkeypatch):
     providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
+    monkeypatch.setenv("LLM_REPORT_PROVIDERS", ",".join(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {
         "groq": ContentProvider("groq", schema_invalid),
@@ -492,6 +520,7 @@ async def test_production_report_chain_can_succeed_before_final_provider(monkeyp
 async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
     providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
+    monkeypatch.setenv("LLM_REPORT_PROVIDERS", ",".join(providers))
     registry = {
         "groq": ContentProvider(
             "groq", ProviderHttpError("malformed request", status_code=400, code="bad_request")
@@ -513,6 +542,7 @@ async def test_report_bad_request_is_terminal_without_fanout(monkeypatch):
 async def test_three_provider_schema_exhaustion_uses_safe_deterministic_report(monkeypatch):
     providers = ("groq", "openai", "cloudflare")
     _configure(monkeypatch, providers, set(providers))
+    monkeypatch.setenv("LLM_REPORT_PROVIDERS", ",".join(providers))
     schema_invalid = json.dumps({"report_type": "daily", "title": "Daily Market Report"})
     registry = {name: ContentProvider(name, schema_invalid) for name in providers}
     _install_router(monkeypatch, registry)

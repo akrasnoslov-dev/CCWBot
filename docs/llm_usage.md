@@ -13,6 +13,12 @@ use `groq,openai` and then their verified data-only fallback. Per-feature overri
 `LLM_EVENT_PROVIDERS`, `LLM_EVENT_RENDER_PROVIDERS`, `LLM_NEWS_INTELLIGENCE_PROVIDERS`,
 `LLM_HEARTBEAT_PROVIDERS`, and `LLM_REPORT_PROVIDERS`.
 
+Reports do not inherit `LLM_PROVIDER_PRIORITY`: without an explicit non-empty
+`LLM_REPORT_PROVIDERS`, Daily, Weekly, and legacy `market_report` always use the
+built-in Groq -> optional OpenAI chain, followed by the deterministic data-only
+renderer. This prevents a global Cloudflare fallback from silently entering the
+report path; a report-specific override remains an intentional operator action.
+
 OpenAI is excluded before client construction unless `OPENAI_ENABLED=true`; an API key alone does
 not enable it. Therefore the shipped free-only chains are Groq -> Cloudflare for Event Analysis,
 Render, News Intelligence and Heartbeat, and Groq -> data-only for reports. Cloudflare is skipped
@@ -408,11 +414,11 @@ other structured call types. They replace the Llama 3 defaults scheduled to shut
 6300 effective completion tokens for free-tier TPM safety. The other shipped reasoning call types
 use low effort, with the matching additional headroom above.
 
-The completion budget is sent as `max_tokens`. All providers accept it, and Groq documents it
-as an alias of `max_completion_tokens`, so reasoning models receive the correct budget without a
-per-provider payload difference. The `json_validate_failed` failures seen during the gpt-oss
-migration attempt were caused by the budget being too small, not by the field name — sending
-`max_completion_tokens` would not have changed the outcome.
+The completion budget is sent to Groq and Cloudflare as `max_tokens`; Groq documents it as an
+alias of `max_completion_tokens`. The native OpenAI adapter sends the same resolved budget as
+`max_completion_tokens`, matching that API's reasoning-model contract. The historical
+`json_validate_failed` failures seen during the gpt-oss migration attempt were caused by the
+budget being too small, not by the Groq field name.
 
 An unparseable value for any of these variables — or one below 1 or above 32768 — is rejected with
 a WARNING naming the variable and the rejected value (`ops_event=llm_config_invalid`), and the
@@ -426,17 +432,20 @@ On startup the runtime logs the fully resolved configuration, one INFO line per 
 
 ```text
 ops_event=llm_config call_type=event_analysis max_tokens=300
-  chain=groq:openai/gpt-oss-120b/effort=low/max=1324,gemini:gemini-3.8-flash/effort=low/max=1324(no_api_key)
+  chain=groq:openai/gpt-oss-120b/effort=medium/max=6300,
+  openai:gpt-6-luna/effort=medium/max=8492(disabled),
+  cloudflare:@cf/meta/llama-3.3-70b-instruct-fp8-fast/max=300(no_api_key)
+  operation_budget_seconds=90
 ```
 
-For `event_analysis`, the same startup line also includes
-`operation_budget_seconds=90 gemini_timeout_seconds=25` with the actual sanitized values.
+The example is line-wrapped for readability; runtime emits one line. For `event_analysis`, the
+same startup line also includes `operation_budget_seconds=90` with the actual sanitized value.
 This answers "is the running deploy actually using what I configured?" without reading `.env` on
 the server — the case that made the 2026-07 event-analysis outage hard to diagnose, since the code
 default and the deployed `.env` disagreed. `(no_api_key)` marks a provider that the router will
-exclude from the chain. The line carries provider names, model identifiers, budgets, and effort
-only — never credentials. An API key appears only as the `(no_api_key)` presence marker; the key
-value itself is never read into a log line.
+exclude from the chain, while `(disabled)` marks OpenAI's explicit kill switch. The line carries
+provider names, model identifiers, budgets, and effort only — never credentials. An API key appears
+only as the `(no_api_key)` presence marker; the key value itself is never read into a log line.
 
 Changing the configured model identifier also invalidates the model-aware News Intelligence input
 hash. Expect one bounded re-analysis burst after a model swap, capped by

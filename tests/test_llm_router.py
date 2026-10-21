@@ -614,12 +614,28 @@ async def test_no_configured_providers_raises_all_failed(monkeypatch):
         await _call(router)
 
 
+@pytest.mark.parametrize("call_type", ["daily_report", "weekly_report", "market_report"])
+def test_report_priority_ignores_global_cloudflare_without_report_override(
+    monkeypatch, call_type
+):
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai,cloudflare")
+    monkeypatch.delenv("LLM_REPORT_PROVIDERS", raising=False)
+
+    assert config.provider_priority(call_type) == ["groq", "openai"]
+    assert [provider for provider, _model in config.provider_attempts(call_type)] == [
+        "groq",
+        "openai",
+    ]
+
+
 def test_provider_priority_per_call_type_override(monkeypatch):
-    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai")
+    monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "groq,openai,cloudflare")
     monkeypatch.setenv("LLM_EVENT_PROVIDERS", "cloudflare,groq")
     assert config.provider_priority("event_analysis") == ["cloudflare", "groq"]
-    # Report/heartbeat with no override fall back to the global priority.
+    # Reports have a dedicated safe default and never inherit Cloudflare implicitly.
     assert config.provider_priority("daily_report") == ["groq", "openai"]
+    monkeypatch.setenv("LLM_REPORT_PROVIDERS", "groq,cloudflare")
+    assert config.provider_priority("daily_report") == ["groq", "cloudflare"]
 
 
 def test_provider_priority_filters_unknown_tokens(monkeypatch):

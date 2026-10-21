@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.db.database import Base, OpenAIBudgetReservation
+from bot.services.llm import openai_budget
 from bot.services.llm.openai_budget import (
     _POSTGRES_ADVISORY_LOCK_ID,
     OpenAIBudget,
@@ -331,6 +332,104 @@ async def test_postgres_advisory_lock_serializes_distinct_workers(monkeypatch):
             await session.execute(
                 delete(OpenAIBudgetReservation).where(
                     OpenAIBudgetReservation.month_start == month_start
+                )
+            )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_admission_uses_month_after_advisory_lock(monkeypatch):
+    """A request held across UTC rollover is charged to the month it is admitted."""
+    from bot import runtime
+
+    url = os.getenv("ALEMBIC_POSTGRES_TEST_DATABASE_URL") or os.getenv(
+        "OPS_AGENT_POSTGRES_TEST_DATABASE_URL"
+    )
+    if not url:
+        pytest.skip("set ALEMBIC_POSTGRES_TEST_DATABASE_URL to a migrated throwaway PostgreSQL DB")
+    engine = create_async_engine(url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    old_now = datetime(2026, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    new_now = datetime(2027, 1, 1, 0, 0, 1, tzinfo=timezone.utc)
+    clock = {"now": old_now}
+    monkeypatch.setattr(runtime, "DB_ENABLED", True)
+    monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", sessions)
+    monkeypatch.setattr(openai_budget, "_utc_now", lambda: clock["now"])
+    monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
+    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    old_month = old_now.date().replace(day=1)
+    new_month = new_now.date().replace(day=1)
+    lock_high = _POSTGRES_ADVISORY_LOCK_ID >> 32
+    lock_low = _POSTGRES_ADVISORY_LOCK_ID & 0xFFFFFFFF
+
+    async def wait_for_lock_waiter() -> None:
+        for _attempt in range(200):
+            async with engine.connect() as connection:
+                waiting = await connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_locks "
+                        "WHERE locktype = 'advisory' AND classid = :high "
+                        "AND objid = :low AND NOT granted"
+                    ),
+                    {"high": lock_high, "low": lock_low},
+                )
+            if int(waiting or 0) >= 1:
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("expected an advisory-lock waiter")
+
+    blocker = await engine.connect()
+    try:
+        async with sessions.begin() as session:
+            await session.execute(
+                delete(OpenAIBudgetReservation).where(
+                    OpenAIBudgetReservation.month_start.in_([old_month, new_month])
+                )
+            )
+        await blocker.execute(
+            text("SELECT pg_advisory_lock(:lock_id)"),
+            {"lock_id": _POSTGRES_ADVISORY_LOCK_ID},
+        )
+        admission = asyncio.create_task(
+            OpenAIBudget().reserve(
+                model="gpt-6-luna",
+                call_type="daily_report",
+                input_chars=1,
+                max_tokens=100,
+            )
+        )
+        await wait_for_lock_waiter()
+        clock["now"] = new_now
+        await blocker.execute(
+            text("SELECT pg_advisory_unlock(:lock_id)"),
+            {"lock_id": _POSTGRES_ADVISORY_LOCK_ID},
+        )
+        lease = await admission
+
+        async with sessions() as session:
+            row = await session.get(OpenAIBudgetReservation, lease.reservation_id)
+            assert row.month_start == new_month
+            assert row.created_at.replace(tzinfo=timezone.utc) == new_now
+            old_count = await session.scalar(
+                select(func.count())
+                .select_from(OpenAIBudgetReservation)
+                .where(OpenAIBudgetReservation.month_start == old_month)
+            )
+            assert old_count == 0
+    finally:
+        if blocker.in_transaction():
+            await blocker.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": _POSTGRES_ADVISORY_LOCK_ID},
+            )
+        await blocker.close()
+        async with sessions.begin() as session:
+            await session.execute(
+                delete(OpenAIBudgetReservation).where(
+                    OpenAIBudgetReservation.month_start.in_([old_month, new_month])
                 )
             )
         await engine.dispose()
