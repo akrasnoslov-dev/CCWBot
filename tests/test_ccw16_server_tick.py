@@ -1,10 +1,13 @@
 """Offline tests for the restricted CCW-16 server scheduler."""
 import json
+import os
 from unittest.mock import patch
 
 import pytest
 
 from scripts import ccw16_server_tick as tick
+
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="Hetzner-only scheduler")
 
 
 def setup(tmp_path, count=8, invalid=False):
