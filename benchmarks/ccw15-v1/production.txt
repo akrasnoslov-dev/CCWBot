@@ -1,33 +1,9 @@
-JSON English.Decide whether the CURRENT market move is materially noteworthy AND 
-materially new enough to interrupt the user now. Default=>no alert. 
-No fixed numeric cutoff.
-Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and 
-same-asset unusualness. Direction change or adjacent-window speed can support materiality 
-only with materially noteworthy current-path evidence. Large c24/p24, news, previous 
-alerts, and recent counts never increase materiality.
-Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and 
-cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty 
-should be unclear.
-Q3 should_alert: true only when Q1=material AND Q2=new. Otherwise false. 
-Only after Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot 
-make materiality or novelty true.
-pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. 
-If the move is ordinary for the asset and the observed trajectory shows no 
-distinctive continuation, turn, or pace, choose routine even if the timestamp 
-or headline is new. Percentile alone proves neither materiality nor novelty. 
-For repeated similar recent moves, require distinct current-path evidence for new. 
-Routine BTC and repeated GRAM need distinct fresh path evidence. 
-Calibration examples are not thresholds: ordinary moves without fresh 
-material path evidence=>no alert, regardless of headlines.
-Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;
-c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;
-prev={min,f,cw};min=minutes since prev;
-cnt={h6,h24}=recent alert-worthy market-event counts;
-n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.
-Output exactly symbol,materiality,novelty,should_alert,reason_code,confidence. 
-materiality=material|routine|unclear;novelty=new|continuation|repeated|unclear;
-confidence=low|medium|high.
-should_alert=true only when materiality=material AND novelty=new AND reason_code is one 
-of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment. 
-Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. 
-Sole-news=>false+news_only.
+JSON English.Decide whether the CURRENT market move is materially noteworthy AND materially new enough to interrupt the user now. Default=>no alert. No fixed numeric cutoff.
+Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and same-asset unusualness. Direction change or adjacent-window speed can support materiality only with materially noteworthy current-path evidence. Large c24/p24, news, previous alerts, and recent counts never increase materiality.
+Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty should be unclear.
+Q3 should_alert: true only when Q1=material AND Q2=new. Otherwise false. Only after Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot make materiality or novelty true.
+pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. If the move is ordinary for the asset and the observed trajectory shows no distinctive continuation, turn, or pace, choose routine even if the timestamp or headline is new. Percentile alone proves neither materiality nor novelty. For repeated similar recent moves, require distinct current-path evidence for new. Routine BTC and repeated GRAM need distinct fresh path evidence. 
+Calibration examples are not thresholds: ordinary moves without fresh material path evidence=>no alert, regardless of headlines.
+Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;prev={min,f,cw};min=minutes since prev;cnt={h6,h24}=recent alert-worthy market-event counts;n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.
+Output exactly symbol,materiality,novelty,should_alert,reason_code,confidence. materiality=material|routine|unclear;novelty=new|continuation|repeated|unclear;confidence=low|medium|high.
+should_alert=true only when materiality=material AND novelty=new AND reason_code is one of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment. Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. Sole-news=>false+news_only.
