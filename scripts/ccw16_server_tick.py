@@ -7,10 +7,8 @@ Install/run as ccwbot_ops. Do not revive the cancelled CCW-28 timers.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
-import pwd
 import subprocess
 import sys
 from collections import Counter
@@ -31,6 +29,10 @@ DEFER_STOPS = frozenset({
 
 
 def check_identity() -> None:
+    if os.name != "posix":
+        raise RuntimeError("CCW-16 server scheduler requires Linux")
+    import pwd
+
     if os.geteuid() == 0 or pwd.getpwuid(os.geteuid()).pw_name != "ccwbot_ops":
         raise RuntimeError("Must run only as unprivileged ccwbot_ops")
     if Path.home() != Path("/home/ccwbot_ops"):
@@ -114,6 +116,7 @@ def invoke_provider(provider: str, base: Path = BASE, python: str = sys.executab
 def tick(base: Path = BASE, *, dry_run: bool = False) -> dict:
     """At most one attempt per provider; fail closed on errors or quota stops."""
     check_identity()
+    import fcntl
     if not (base / RUNNER.name).is_file():
         raise RuntimeError("Private runner missing")
     os.umask(0o077)
