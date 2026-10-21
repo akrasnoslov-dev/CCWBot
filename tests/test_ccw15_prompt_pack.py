@@ -5,15 +5,15 @@ import json
 
 import pytest
 
+from bot.services.ai_agent_groq import (
+    _EVENT_SIGNIFICANCE_JSON_SCHEMA,
+    build_event_significance_prompt,
+)
 from scripts.ccw15_prompt_pack import (
     PROMPTS,
     build_prompt,
     check_production_parity,
     instruction,
-)
-from bot.services.ai_agent_groq import (
-    _EVENT_SIGNIFICANCE_JSON_SCHEMA,
-    build_event_significance_prompt,
 )
 
 
@@ -57,7 +57,8 @@ def test_candidate_prompts_are_full_deterministic_instructions_only():
     assert len(rendered) == 3
     for name, text in rendered.items():
         assert text.startswith(instruction("production"))
-        assert text.endswith(build_event_significance_prompt(initial).split("\nInput JSON:\n", 1)[1])
+        prod_payload = build_event_significance_prompt(initial).split("\nInput JSON:\n", 1)[1]
+        assert text.endswith(prod_payload)
         assert json.loads(text.split("\nInput JSON:\n", 1)[1]) == json.loads(
             rendered["production"].split("\nInput JSON:\n", 1)[1]
         )
