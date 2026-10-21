@@ -122,7 +122,10 @@ def main() -> None:
             name: hashlib.sha256(instruction(name).encode("utf-8")).hexdigest()
             for name in PROMPTS
         },
-        "schema_and_model": "Use unchanged production strict event_significance JSON schema; Groq GPT-OSS-120B medium, effective cap 6300",
+        "schema_and_model": (
+            "Use unchanged production strict event_significance JSON schema; "
+            "Groq GPT-OSS-120B medium, effective cap 6300"
+        ),
         "provider_requests": 0,
     }
     if args.benchmark:
