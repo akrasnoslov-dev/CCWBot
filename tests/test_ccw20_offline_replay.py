@@ -84,7 +84,9 @@ def test_ccw20_replay_all_20_recorded_candidate_final_pairs_without_llm_calls():
             final_action,
         )
         if event_id in _BAD_IDS:
-            assert final_action == _EXPECTED_SAFE_ACTION
+            # Keep case-specific observed levels when verified and available.
+            verified_levels = alerts.observed_event_alert_level_action(market)
+            assert final_action == (verified_levels or _EXPECTED_SAFE_ACTION)
             assert "latest decline" in final_situation
             assert "analysed-window rise" in final_situation
             assert final_action != action
