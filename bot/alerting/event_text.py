@@ -159,7 +159,9 @@ def compact_event_alert_situation(
     if _repeats_rendered_market_fact(cleaned, market_data or {}):
         explanation = _concise_explanation_clause(cleaned, market_data or {})
         return explanation or fallback
-    if len(cleaned.split()) > 28:
+    if len(cleaned.split()) > (
+        48 if observed_event_alert_price_band(market_data or {}) else 28
+    ):
         return fallback
     compacted = ensure_useful_situation(
         cleaned,
@@ -231,6 +233,10 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
             "reversal",
             "diverg",
             "align",
+            *(
+                ("observed", "range", "high", "rebound", "recovery")
+                if observed_event_alert_price_band(market_data) else ()
+            ),
         )
     ):
         return False
@@ -813,7 +819,7 @@ def observed_event_alert_price_band(market: dict) -> dict[str, str | int]:
         len({minute for minute, _ in recent}) != 4
         or recent[-1][0] != 0
         or recent[-1][0] - recent[0][0] < 60
-        or any(b[0] - a[0] > 90 for a, b in zip(recent, recent[1:]))
+        or any(b[0] - a[0] > 90 for a, b in zip(recent, recent[1:], strict=True))
         or abs(now - recent[-1][1]) > now * Decimal("0.00001")
     ):
         return {}
@@ -831,7 +837,8 @@ def observed_event_alert_price_band(market: dict) -> dict[str, str | int]:
         return {}
 
     decimals = max(0, -quantum.as_tuple().exponent)
-    display = lambda price: f"${price:,.{decimals}f}"
+    def display(price: Decimal) -> str:
+        return f"${price:,.{decimals}f}"
     near_high = sum(
         abs(price - raw_high) <= raw_high * Decimal("0.001")
         for price in prices
@@ -849,10 +856,18 @@ def observed_event_alert_level_action(market: dict) -> str | None:
     band = observed_event_alert_price_band(market)
     if not band:
         return None
+    window = _decimal_market_value(market.get("chg_window_percent"))
+    day = _decimal_market_value(market.get("chg24h_percent"))
+    if window is not None and day is not None and window > 0 and day < 0:
+        return (
+            f"A sustained move above the observed {band['high']} high would strengthen "
+            f"the short-term recovery case; a move below {band['low']} would "
+            "undermine the rebound and renew downside pressure."
+        )
     return (
-        f"Watch whether price holds above the observed {band['high']} high "
-        f"(extending the rebound) or falls below the {band['low']} low "
-        "(a deeper pullback) in the next observed interval."
+        f"Watch for a sustained move above the observed {band['high']} high "
+        f"or a break below its {band['low']} low in the next interval. "
+        "Either would take price outside its recent four-observation range."
     )
 
 
