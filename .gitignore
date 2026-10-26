@@ -22,6 +22,9 @@ pgdata/
 postgres-data/
 logs/*
 !logs/.gitkeep
+# Root reports/ is versioned research; only ephemeral ops-agent output stays private.
+reports/ops-agent/bundles/
+reports/ops-agent/receipts/
 # All durable project research is tracked under repository-root reports/.
 # Only generated temp data, local hardware evidence, models, and secrets are ignored.
 reports/**/__pycache__/
