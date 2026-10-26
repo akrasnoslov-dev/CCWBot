@@ -354,3 +354,85 @@ def test_ccw20_counterstep_fallback_names_direction_and_next_observation():
     assert "further reversal toward the decline" in action
     assert "analysed-window rise" in action
     assert "%" not in situation and "$" not in situation
+
+
+def test_ccw20_action_rejects_unsupported_future_divergence_or_convergence():
+    from bot.alerting.event_text import compact_event_alert_possible_action
+
+    safe = (
+        "Watch the next observed interval for further reversal toward the decline "
+        "or a return to the analysed-window rise."
+    )
+    invalid = [
+        "If the next observed step extends this counter-move, it may further "
+        "diverge from the 24h downward direction.",
+        "If the next step extends this counter-move, it may further diverge "
+        "from the 24h downtrend.",
+        "If the next interval continues the decline, it may further converge "
+        "with the 24-hour trend.",
+    ]
+    for action in invalid:
+        assert compact_event_alert_possible_action(action, fallback=safe) == safe
+
+    # A conditional *question* presenting two possibilities is not a prediction.
+    valid = (
+        "Watch whether upcoming snapshots begin aligning with the broader "
+        "24-hour direction or continue diverging."
+    )
+    assert compact_event_alert_possible_action(valid, fallback=safe) == valid
+
+
+def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+
+    cases = [
+        (
+            "ETH",
+            [2471.8461459408736, 2477.5362414138694, 2474.518857885452],
+            0.26286988218543744,
+            -3.7848709953819224,
+            "If the next observed step extends this counter-move, it may further "
+            "diverge from the 24h downward direction.",
+        ),
+        (
+            "SOL",
+            [120.16235634127227, 120.46179920179634, 120.36875010816262],
+            0.13531755890781882,
+            -0.08410708430874848,
+            "If the next step extends this counter-move, it may further diverge "
+            "from the 24h downtrend.",
+        ),
+    ]
+    for symbol, prices, window, day, incorrect_action in cases:
+        market = {
+            "price": prices[-1],
+            "chg_window_percent": window,
+            "chg24h_percent": day,
+            "analysed_window_minutes": 180,
+            "snapshots": [
+                {"m": offset, "p": price}
+                for offset, price in zip([-90, -30, 0], prices)
+            ],
+        }
+        decision = EventAnalysisDecision(
+            symbol=symbol, should_alert=True, event_key=None, title=None,
+            message_body=(
+                "The most recent supplied snapshot reverses part of the earlier "
+                "path: the latest decline runs against the net analysed-window rise."
+            ), related_news_ids=[], possible_action=incorrect_action,
+            urgency="normal", confidence="high", reason_for_no_alert=None,
+        )
+        final = alerts._build_event_alert_payload(
+            decision=decision, input_payload={"market": market}, related_news=[]
+        )["plain_text"]
+        situation = final.split("Situation:\\n", 1)[1].split("\\n\\n", 1)[0]
+        action = final.split("Possible action:\\n", 1)[1].split("\\n\\n", 1)[0]
+        assert "latest decline runs against the net analysed-window rise" in situation
+        assert action == (
+            "Watch the next observed interval for further reversal toward "
+            "the decline or a return to the analysed-window rise."
+        )
+        assert "further diverge" not in final.lower()
+
+
