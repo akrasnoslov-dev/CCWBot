@@ -43,6 +43,7 @@ $personalText = '(?i)(?:telegram[_-]?(?:user|chat)[_-]?id|(?:^|[^a-z_])(?:user_i
 # Host/IP traces and credential assignment are never copied to the public research area.
 $highRiskText = '(?i)(?:postgres(?:ql)?://[^\s''"<>]+:[^\s''"<>]+@|(?:TELEGRAM_BOT_TOKEN|OPENAI_API_KEY|GROQ_API_KEY|CLOUDFLARE_API_TOKEN)\s*[:=]\s*["'']?[A-Za-z0-9_-]{20,})'
 
+$strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
 $allowed = New-Object System.Collections.Generic.List[object]
 $excluded = New-Object System.Collections.Generic.List[object]
 foreach ($file in $sourceFiles) {
@@ -52,10 +53,13 @@ foreach ($file in $sourceFiles) {
     elseif ($file.Length -gt 20MB) { $reason = 'large_file_review_required' }
     elseif ($file.Extension.ToLowerInvariant() -notin $allowExtensions) { $reason = 'unsupported_binary_or_format' }
     else {
-        $text = [System.IO.File]::ReadAllText($file.FullName)
-        if ($text -match $secretText -or $text -match $highRiskText) { $reason = 'secret_pattern_requires_manual_redaction' }
-        elseif ($text -match $personalText) { $reason = 'personal_data_or_identifier_requires_redaction' }
-        elseif ($text -match '(?i)(?:PRIVATE KEY|\.env\.production|password\s*[:=]\s*["''][^"'']{6,})') { $reason = 'sensitive_context_requires_redaction' }
+        try { $text = $strictUtf8.GetString([System.IO.File]::ReadAllBytes($file.FullName)) }
+        catch [System.Text.DecoderFallbackException] { $reason = 'non_utf8_data_requires_review' }
+        if (-not $reason) {
+            if ($text -match $secretText -or $text -match $highRiskText) { $reason = 'secret_pattern_requires_manual_redaction' }
+            elseif ($text -match $personalText) { $reason = 'personal_data_or_identifier_requires_redaction' }
+            elseif ($text -match '(?i)(?:PRIVATE KEY|\.env\.production|password\s*[:=]\s*["''][^"'']{6,})') { $reason = 'sensitive_context_requires_redaction' }
+        }
     }
     $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     $meta = [ordered]@{ path=$rel; sha256=$hash; bytes=$file.Length }
