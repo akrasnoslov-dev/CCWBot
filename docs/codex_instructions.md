@@ -72,7 +72,7 @@ applicable contract/lint/configuration check.
 - On the primary Windows workstation the canonical checkout is `D:\Projects\CCWBot`; never silently switch to or create a shadow checkout under `C:\Users\Andrei\Documents`. See `docs/development.md`.
 - Do not overwrite uncommitted user work.
 - One implementation writer at a time unless the owner explicitly approves parallel writers.
-- Never commit secrets, logs, generated runtime reports, dumps, caches, or local state. The allowlisted current Graphify knowledge-base snapshot in `graphify-out/` is a narrowly scoped exception; see `docs/graphify.md`. Independently, owner-approved reproducible Event Alert experiments may be stored under `research/event_alerts/` only after privacy screening; use `scripts/ccwbot_publish_reports.ps1` and retain the full accepted/rejected SHA-256 manifest. Never force-add the entire local reports tree.
+- Never commit secrets, runtime-generated logs, DB dumps, caches, local state, or user data. Portable Graphify outputs belong in root `graphify-out/` (see `docs/graphify.md`). Screened, owner-approved historical research belongs in root `reports/` (see `reports/README.md`), with SHA-256 audit trails under `reports/migration/`. Future durable research must be added directly to `reports/` on `dev` instead of relying on an ignored PC-only folder. Leave only regenerable service files and private environment state untracked.
 
 ## 6. Agents and model routing
 
