@@ -447,42 +447,95 @@ def _event_analysis_percent(value: object) -> object:
     return value if rounded == 0 and value != 0 else rounded
 
 
-_EVENT_SIGNIFICANCE_INSTRUCTIONS = "\n".join(
-    (
-        "JSON English.Decide whether the CURRENT market move is materially noteworthy AND "
-        "materially new enough to interrupt the user now. Default=>no alert. "
-        "No fixed numeric cutoff.",
-        "Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and "
-        "same-asset unusualness. Direction change or adjacent-window speed can support materiality "
-        "only with materially noteworthy current-path evidence. Large c24/p24, news, previous "
-        "alerts, and recent counts never increase materiality.",
-        "Q2 novelty: only if Q1=material, judge whether this is materially new versus prev and "
-        "cnt. Previous/recent events can only reduce novelty. If Q1 is not material, novelty "
-        "should be unclear.",
-        "Q3 should_alert: true only when Q1=material AND Q2=new. Otherwise false. "
-        "Only after Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot "
-        "make materiality or novelty true.",
-        "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. "
-        "If the move is ordinary for the asset and the observed trajectory shows no "
-        "distinctive continuation, turn, or pace, choose routine even if the timestamp "
-        "or headline is new. Percentile alone proves neither materiality nor novelty. "
-        "For repeated similar recent moves, require distinct current-path evidence for new. "
-        "Routine BTC and repeated GRAM need distinct fresh path evidence. ",
-        "Calibration examples are not thresholds: ordinary moves without fresh "
-        "material path evidence=>no alert, regardless of headlines.",
-        "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;"
-        "c30=30m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;"
-        "prev={min,f,cw};min=minutes since prev;"
-        "cnt={h6,h24}=recent alert-worthy market-event counts;"
-        "n<=2 {t,r,mat,h},h=hours old;.042=.042%,not 4.2%.",
-        "Output exactly symbol,materiality,novelty,should_alert,reason_code,confidence. "
-        "materiality=material|routine|unclear;novelty=new|continuation|repeated|unclear;"
-        "confidence=low|medium|high.",
-        "should_alert=true only when materiality=material AND novelty=new AND reason_code is one "
-        "of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment. "
-        "Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. "
-        "Sole-news=>false+news_only.",
-    )
+# CCW-47 owner decision (2026-10-26): retain the original Refined v2,
+# not the shorter Refined v2 Final (14/200 schema failures in the paid Luna replay).
+# Frozen SHA-256:
+# e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c
+_EVENT_SIGNIFICANCE_INSTRUCTIONS = (
+    "JSON English.Decide whether the CURRENT market move is materially noteworthy AND m"
+    "aterially new enough to interrupt the user now. Default=>no alert. No fixed numeri"
+    "c cutoff.\n"
+    "Q1 materiality: judge the CURRENT move itself from recent path,size,speed,and same"
+    "-asset unusualness. Direction change or adjacent-window speed can support material"
+    "ity only with materially noteworthy current-path evidence. Large c24/p24, news, pr"
+    "evious alerts, and recent counts never increase materiality.\n"
+    "Q2 novelty: only if Q1=material, judge whether this is materially new versus prev "
+    "and cnt. Previous/recent events can only reduce novelty. If Q1 is not material, no"
+    "velty should be unclear.\n"
+    "Q3 should_alert: true only when Q1=material AND Q2=new. Otherwise false. Only afte"
+    "r Q1/Q2/Q3 choose reason_code; it labels an established decision and cannot make m"
+    "ateriality or novelty true.\n"
+    "pw,p24=30d same-asset abs-move percentile: context, not threshold;null=unknown. If"
+    " the move is ordinary for the asset and the observed trajectory shows no distincti"
+    "ve continuation, turn, or pace, choose routine even if the timestamp or headline i"
+    "s new. Percentile alone proves neither materiality nor novelty. For repeated simil"
+    "ar recent moves, require distinct current-path evidence for new. Routine BTC and r"
+    "epeated GRAM need distinct fresh path evidence. \n"
+    "Calibration examples are not thresholds: ordinary moves without fresh material pat"
+    "h evidence=>no alert, regardless of headlines.\n"
+    "Input:sym;m={s,w,c30,c60,cw,c24,cl,pw,p24};s=[[min,USD],...],0=now,<0=older;c30=30"
+    "m%;c60=1h%;cw=% over w;c24=24h%;cl=since last sent alert%;prev={min,f,cw};min=minu"
+    "tes since prev;cnt={h6,h24}=recent alert-worthy market-event counts;n<=2 {t,r,mat,"
+    "h},h=hours old;.042=.042%,not 4.2%.\n"
+    "Output exactly symbol,materiality,novelty,should_alert,reason_code,confidence. mat"
+    "eriality=material|routine|unclear;novelty=new|continuation|repeated|unclear;confid"
+    "ence=low|medium|high.\n"
+    "should_alert=true only when materiality=material AND novelty=new AND reason_code i"
+    "s one of unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment."
+    " Otherwise should_alert=false with reason_code=routine_move|news_only|unclear. Sol"
+    "e-news=>false+news_only.\n"
+    "\n"
+    "CCW-29 new balanced market-path decision policy:\n"
+    "FIRST pass: independently judge whether the supplied CURRENT analysed-window movem"
+    "ent itself is market-significant for this exact asset. Ground that in its magnitud"
+    "e, actual time-ordered snapshots, supported short-window movements and same-asset "
+    "history. An old price gap since last message, a sizable 24-hour move, a high perce"
+    "ntile, news, another timestamp, or reversal wording CANNOT turn a small CURRENT mo"
+    "ve into a material event.\n"
+    "SECOND pass (only after material): check that there is a substantively fresh marke"
+    "t leg against any previous alert. Compare the actual after-alert displacement cl w"
+    "ith cw, observed recent path and previous alert age. An already-mentioned three-ho"
+    "ur window overlapping an alert is not fresh by itself. A same-direction drop/rise "
+    "may nevertheless be NEW if there is clearly material further displacement AFTER th"
+    "at alert supported by current snapshots, even if the preceding alert was just minu"
+    "tes ago or counts are high. A small fresh tick is not sufficient. High cnt or iden"
+    "tical directional semantic family alone is not a veto.\n"
+    "Use a fair negative check: if you would issue the same alert from a modest routine"
+    " cw only because the prior message is old or because cl spans many hours, reject i"
+    "t. Use a fair positive check: if a material cw contains a meaningful additional re"
+    "cent fall/rise that the earlier notification could not have described, retain it. "
+    "A partial rebound must not erase a confirmed major additional leg; a high c24 must"
+    " not manufacture a new cw leg.\n"
+    "Do not use rigid percentage thresholds. Keep materiality then novelty then decisio"
+    "n in strict six-field schema. If uncertain on either, no alert. No unsupported cat"
+    "alysts or headlines as triggers.\n"
+    "CCW-29 refinement of balanced prompt after a blinded-holdout-independent diagnosis"
+    " of mistakes ON THE OLDER TRAINING SET ONLY (never numerical rules):\n"
+    "Avoid an over-eager positive. A reversal is not important merely because cw and c2"
+    "4 have opposite signs; require a genuinely important price swing in the CURRENT sn"
+    "apshots. A fast_move or acceleration requires observed substantial current-path di"
+    "splacement, not merely a high percentile, a short speed comparison, or an isolated"
+    " tiny bounce. New data and absence of previous event context do not automatically "
+    "establish significance or novelty.\n"
+    "For a recent similar alert with multiple previously alert-worthy events, distingui"
+    "sh an overlapping three-hour window from genuinely additional price action since t"
+    "he earlier message. A moderate recent post-alert difference that simply repeats th"
+    "e notified trend should remain a continuation; do not call it new solely from an i"
+    "mpressive current-window statistic or repeated related news. Yet a clearly substan"
+    "tive new interval of continued loss/gain can warrant a fresh decision even when th"
+    "ere were many prior alerts.\n"
+    "Avoid over-suppression: evaluate an unusually substantial CURRENT market move on i"
+    "ts own evidence before comparing with an earlier alert, even when the since-last-m"
+    "essage value is oppositely signed due to partial retracement. A short rebound cann"
+    "ot erase a large sustained current-window displacement. Judge moderate moves conte"
+    "xtually with the asset's actual observed path; do not automatically classify all m"
+    "oderate three-hour changes routine without inspecting available snapshots and hist"
+    "orical context. A material fresh development can occur inside a broader trend. How"
+    "ever a large old cl or c24 by itself NEVER creates materiality for a routine curre"
+    "nt window.\n"
+    "Make the final materiality/novelty decision independently of the reason_code label"
+    "; default no alert for genuinely unsupported cases, and return EXACTLY the six spe"
+    "cified JSON keys. No numerical cutoffs."
 )
 
 
@@ -500,9 +553,8 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
     news_items = news_items if isinstance(news_items, list) else []
 
     compact_news = []
-    for item in news_items[:2]:
-        if not isinstance(item, dict):
-            continue
+    # Select the first two VALID headlines, matching the exact context.
+    for item in [entry for entry in news_items if isinstance(entry, dict)][:2]:
         compact_item = {
             "t": item.get("title"),
             "r": item.get("relevance_label"),
@@ -642,25 +694,37 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
 
 _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
-        "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
-        "do not re-decide whether to alert.",
-        "Return exactly message_body,related_news_ids,possible_action. Backend owns event "
-        "identity, title, urgency, and all numeric market facts.",
-        "Market first; news is supporting context only and never a claimed cause. Use supplied "
-        "facts only. message_body must be concise and must not state prices, percentages, "
-        "exact time-window moves, unsupported trajectory claims, or invented market facts. "
-        "possible_action is monitor-only, never a trade instruction.",
-        "Input:sym;market_directions={window,24h,since}, each up|down|flat only when "
-        "supported; n={i,src,t,x,r,mat,h};sig={c,r};news IDs only n.i. "
-        "Do not add numerical claims, specific durations, a market direction absent from "
-        "market_directions, urgency, or causal explanations.",
-        "evidence contains only backend-verified relationships: compare window_vs_24h, "
-        "snapshot_path, latest_interval_pace or comparable_previous_alert where present. "
-        "Situation: explain one distinctive confirmed relationship in your own natural "
-        "words, never repeat a price block or invent a catalyst. "
-        "Possible action: name the NEXT observation that could confirm or contradict "
-        "that same relationship; 'whether' is fine. Avoid generic 'monitor market' advice. "
-        "If evidence is empty, disclose that no distinct trajectory is confirmed.",
+        "JSON English. Event Significance has ALREADY been accepted. Return exactly "
+        "message_body, related_news_ids, possible_action. Do not re-decide whether to alert. "
+        "Never infer news causality or give direct buy/sell instructions.",
+        "Write to help a human understand WHY the observed market path matters and "
+        "WHAT concrete observation would change the interpretation. Avoid robotic "
+        "'watch next snapshots' text when verified price levels are available.",
+        "Input sym; market_directions=verified signs for analysed window and 24h; "
+        "evidence=verified backend observations; n=optional attributed news; "
+        "sig=accepted classification. Do not invent missing metrics or catalysts.",
+        "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
+        "path with the 24h direction and explain uncertainty. When "
+        "evidence.observed_price_band.high_visits >= 2, you may explain that "
+        "recent observations approached the same high more than once, but do not "
+        "claim formal resistance, proven buyer/seller intent, volume, or a breakout. "
+        "Do not repeat USD prices or percentages already stated by the backend. "
+        "Distinguish a counter-move from a confirmed trend reversal.",
+        "Possible action: 1-2 conditional sentences, about 25-55 words. "
+        "When evidence.observed_price_band is present, quote ONLY its EXACT "
+        "high and low USD strings. Describe both testable scenarios: a sustained "
+        "move above the observed high versus a move below the observed low, and "
+        "what each would mean for the short-term attempt. The observed high/low "
+        "are reference prices from the last four supplied observations, NOT "
+        "confirmed support/resistance or trading entry/exit targets. "
+        "Do not invent other price levels, price forecasts or time deadlines. "
+        "Use measured language ('would strengthen/undermine the rebound case', "
+        "'would break the recent range'), not buy/sell orders. "
+        "When band is missing, do not invent prices: explain a specific "
+        "next-step continuation-versus-reversal observation instead.",
+        "No fabricated causes, market sentiment, unusualness, acceleration or "
+        "persistence. No predictive cross-period convergence/divergence claim. "
+        "Never imply a positive move guarantees a profitable trade.",
     )
 )
 

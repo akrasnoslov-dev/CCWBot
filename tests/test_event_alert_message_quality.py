@@ -299,3 +299,324 @@ def test_equal_compounded_per_minute_rate_does_not_claim_pace_change(prices):
     assert "picked up pace" not in situation
     assert "slower per minute" not in situation
     assert "next observed interval" not in watch
+
+
+def test_ccw349_persistent_snapshot_path_must_agree_with_window_direction():
+    market = {
+        "chg_window_percent": Decimal("-3"),
+        "chg24h_percent": Decimal("-4"),
+        "snapshots": [
+            {"m": -120, "p": Decimal("100")},
+            {"m": -60, "p": Decimal("102")},
+            {"m": 0, "p": Decimal("104")},
+        ],
+    }
+    situation, _ = event_alert_presentation_fallback(market, [])
+    assert "persistent" not in situation.lower()
+    assert "24-hour" in situation
+    llm_text = compact_event_alert_situation(
+        "The supplied snapshots show persistent short-term weakness "
+        "aligned with the broader 24-hour direction.",
+        significance_reason=None, market_data=market, related_news=[],
+    )
+    assert "persistent" not in llm_text.lower()
+
+
+def test_ccw349_aligned_latest_counterstep_must_not_claim_fading():
+    market = {
+        "chg_window_percent": Decimal("-2"),
+        "chg24h_percent": Decimal("-4"),
+        "snapshots": [
+            {"m": -120, "p": Decimal("100")},
+            {"m": -60, "p": Decimal("105")},
+            {"m": 0, "p": Decimal("101")},
+        ],
+    }
+    situation, action = event_alert_presentation_fallback(market, [])
+    assert "reverses part of the earlier path" in situation
+    assert "fading" not in situation
+    assert "latest decline aligns with the analysed-window direction" in situation
+    assert "extends the decline" in action
+
+
+def test_ccw20_counterstep_fallback_names_direction_and_next_observation():
+    market = {
+        "chg_window_percent": Decimal("1"),
+        "chg24h_percent": Decimal("2"),
+        "snapshots": [
+            {"m": -120, "p": Decimal("100")},
+            {"m": -60, "p": Decimal("104")},
+            {"m": 0, "p": Decimal("101")},
+        ],
+    }
+    situation, action = event_alert_presentation_fallback(market, [])
+    assert "latest decline runs against the net analysed-window rise" in situation
+    assert "further reversal toward the decline" in action
+    assert "analysed-window rise" in action
+    assert "%" not in situation and "$" not in situation
+
+
+def test_ccw20_action_rejects_unsupported_future_divergence_or_convergence():
+    from bot.alerting.event_text import compact_event_alert_possible_action
+
+    safe = (
+        "Watch the next observed interval for further reversal toward the decline "
+        "or a return to the analysed-window rise."
+    )
+    invalid = [
+        "If the next observed step extends this counter-move, it may further "
+        "diverge from the 24h downward direction.",
+        "If the next step extends this counter-move, it may further diverge "
+        "from the 24h downtrend.",
+        "If the next interval continues the decline, it may further converge "
+        "with the 24-hour trend.",
+    ]
+    for action in invalid:
+        assert compact_event_alert_possible_action(action, fallback=safe) == safe
+
+    # A conditional *question* presenting two possibilities is not a prediction.
+    valid = (
+        "Watch whether upcoming snapshots begin aligning with the broader "
+        "24-hour direction or continue diverging."
+    )
+    assert compact_event_alert_possible_action(valid, fallback=safe) == valid
+
+
+def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+
+    cases = [
+        (
+            "ETH",
+            [2471.8461459408736, 2477.5362414138694, 2474.518857885452],
+            0.26286988218543744,
+            -3.7848709953819224,
+            "If the next observed step extends this counter-move, it may further "
+            "diverge from the 24h downward direction.",
+        ),
+        (
+            "SOL",
+            [120.16235634127227, 120.46179920179634, 120.36875010816262],
+            0.13531755890781882,
+            -0.08410708430874848,
+            "If the next step extends this counter-move, it may further diverge "
+            "from the 24h downtrend.",
+        ),
+    ]
+    for symbol, prices, window, day, incorrect_action in cases:
+        market = {
+            "price": prices[-1],
+            "chg_window_percent": window,
+            "chg24h_percent": day,
+            "analysed_window_minutes": 180,
+            "snapshots": [
+                {"m": offset, "p": price}
+                for offset, price in zip([-90, -30, 0], prices, strict=True)
+            ],
+        }
+        decision = EventAnalysisDecision(
+            symbol=symbol, should_alert=True, event_key=None, title=None,
+            message_body=(
+                "The most recent supplied snapshot reverses part of the earlier "
+                "path: the latest decline runs against the net analysed-window rise."
+            ), related_news_ids=[], possible_action=incorrect_action,
+            urgency="normal", confidence="high", reason_for_no_alert=None,
+        )
+        final = alerts._build_event_alert_payload(
+            decision=decision, input_payload={"market": market}, related_news=[]
+        )["plain_text"]
+        situation = final.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
+        action = final.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
+        assert "latest decline runs against the net analysed-window rise" in situation
+        assert action == (
+            "Watch the next observed interval for further reversal toward "
+            "the decline or a return to the analysed-window rise."
+        )
+        assert "further diverge" not in final.lower()
+
+
+def test_ccw20_verified_eth_levels_and_useful_conditional_action():
+    import json
+
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+    from bot.alerting.event_text import (
+        observed_event_alert_level_action,
+        observed_event_alert_price_band,
+    )
+    from bot.services.ai_agent_groq import build_event_alert_render_prompt
+
+    market = {
+        "price": 2474.518857885452,
+        "chg_window_percent": 0.26286988218543744,
+        "chg24h_percent": -3.7848709953819224,
+        "analysed_window_minutes": 180,
+        "snapshots": [
+            {"m": -210, "p": 2468.031147316202},
+            {"m": -180, "p": 2472.899094100193},
+            {"m": -120, "p": 2477.822953902561},
+            {"m": -90, "p": 2471.8461459408736},
+            {"m": -30, "p": 2477.5362414138694},
+            {"m": 0, "p": 2474.518857885452},
+        ],
+    }
+    band = observed_event_alert_price_band(market)
+    assert band == {
+        "low": "$2,472", "high": "$2,478",
+        "observations": 4, "high_visits": 2,
+    }
+    prompt = build_event_alert_render_prompt({"symbol": "ETH", "market": market})
+    input_json = json.loads(prompt.split("Input JSON:\n", 1)[1])
+    assert input_json["evidence"]["observed_price_band"] == band
+
+    correct_action = (
+        "If price holds above the observed $2,478 high, it would strengthen the "
+        "short-term recovery attempt; if it falls below $2,472, the rebound "
+        "would look weaker."
+    )
+    decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body="The short-term rebound opposes the broader 24-hour decline. "
+        "Two recent snapshots approached the same high, but the latest move "
+        "pulled back; the recovery remains unproven.",
+        related_news_ids=[], possible_action=correct_action,
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    assembled = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert decision.message_body in assembled
+    assert "Possible action:\n" + correct_action in assembled
+    assert "$2,478" in assembled and "$2,472" in assembled
+    assert "buy now" not in assembled.lower()
+
+    wrong_decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body=decision.message_body, related_news_ids=[],
+        possible_action=correct_action.replace("$2,478", "$2,999"),
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    corrected = alerts._build_event_alert_payload(
+        decision=wrong_decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert "$2,999" not in corrected
+    assert observed_event_alert_level_action(market) in corrected
+
+    false_relation_decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body=decision.message_body, related_news_ids=[],
+        possible_action=(
+            "If price holds above $2,478, it would align the rebound with the "
+            "24-hour decline."
+        ),
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    false_relation = alerts._build_event_alert_payload(
+        decision=false_relation_decision,
+        input_payload={"market": market},
+        related_news=[],
+    )["plain_text"]
+    assert false_relation_decision.possible_action not in false_relation
+    assert observed_event_alert_level_action(market) in false_relation
+
+
+def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
+    from bot.alerting.event_text import observed_event_alert_price_band
+
+    observations = [
+        {"m": -120, "p": 100},
+        {"m": -90, "p": 102},
+        {"m": -30, "p": 104},
+        {"m": 0, "p": 101},
+    ]
+    assert observed_event_alert_price_band({"price": 101, "snapshots": observations})
+    assert observed_event_alert_price_band({"price": 120, "snapshots": observations}) == {}
+    assert observed_event_alert_price_band({"price": 101, "snapshots": observations[:3]}) == {}
+    assert observed_event_alert_price_band({
+        "price": 101, "snapshots": [
+            {"m": -220, "p": 100}, *observations[1:]
+        ]
+    }) == {}
+
+
+def test_release_rejects_unproven_repeated_high_claim():
+    from bot.alerting.event_text import (
+        compact_event_alert_situation,
+        observed_event_alert_price_band,
+    )
+
+    market = {
+        "price": 10000,
+        "chg_window_percent": -9.09,
+        "chg24h_percent": -4,
+        "analysed_window_minutes": 90,
+        "snapshots": [
+            {"m": -90, "p": 11000},
+            {"m": -60, "p": 10700},
+            {"m": -30, "p": 10400},
+            {"m": 0, "p": 10000},
+        ],
+    }
+    assert observed_event_alert_price_band(market)["high_visits"] == 1
+    false_claim = (
+        "The observed high was approached twice, leaving the recent "
+        "range unbroken."
+    )
+    guarded = compact_event_alert_situation(
+        false_claim, significance_reason=None, market_data=market,
+        related_news=[],
+    )
+    assert guarded != false_claim
+    assert "twice" not in guarded.lower()
+
+
+def test_release_conditional_levels_cannot_mask_false_observed_direction():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+    from bot.alerting.event_text import observed_event_alert_level_action
+
+    market = {
+        "price": 10000,
+        "chg_window_percent": -9.09,
+        "chg24h_percent": -4,
+        "analysed_window_minutes": 90,
+        "snapshots": [
+            {"m": -90, "p": 11000},
+            {"m": -60, "p": 10700},
+            {"m": -30, "p": 10400},
+            {"m": 0, "p": 10000},
+        ],
+    }
+    invalid = (
+        "The current window shows a rally; watch whether price holds "
+        "above the observed $11,000 high or falls below $10,000."
+    )
+    decision = EventAnalysisDecision(
+        symbol="BTC", should_alert=True, event_key=None, title=None,
+        message_body="The recent price snapshots continue lower.",
+        related_news_ids=[], possible_action=invalid,
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    message = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert "current window shows a rally" not in message.lower()
+    assert observed_event_alert_level_action(market) in message
+
+    # Legitimate conditional upside/downside scenarios must remain accepted.
+    valid = (
+        "If price holds above the observed $11,000 high, the recent range "
+        "could shift upward; if it falls below $10,000, the decline "
+        "would extend."
+    )
+    accepted = alerts._build_event_alert_payload(
+        decision=EventAnalysisDecision(
+            symbol="BTC", should_alert=True, event_key=None, title=None,
+            message_body=decision.message_body,
+            related_news_ids=[], possible_action=valid,
+            urgency="normal", confidence="high", reason_for_no_alert=None,
+        ),
+        input_payload={"market": market}, related_news=[],
+    )["plain_text"]
+    assert "Possible action:\n" + valid in accepted

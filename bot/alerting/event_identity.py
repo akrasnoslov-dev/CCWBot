@@ -309,7 +309,8 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
             if age_hours is not None:
                 compact_news["age_hours"] = age_hours
             news.append(compact_news)
-    news.sort(key=_json_dumps)
+    # Fingerprint must preserve model-visible headline priority.
+    # Sorting can merge decisions over different leading headlines.
     last_msg = input_payload.get("last_msg")
     last_msg = last_msg if isinstance(last_msg, dict) else {}
     previous_event_alert = input_payload.get("previous_event_alert")
