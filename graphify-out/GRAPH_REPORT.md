@@ -1,17 +1,17 @@
 # Graph Report - CCWBot  (2026-10-26)
 
 ## Corpus Check
-- 323 files · ~296,198 words
+- 324 files · ~297,058 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 27 file(s) not represented in the graph (top: .toml 12, (none) 8, .example 2)
 
 ## Summary
-- 5003 nodes · 15121 edges · 211 communities (181 shown, 30 thin omitted)
+- 5004 nodes · 15121 edges · 212 communities (181 shown, 31 thin omitted)
 - Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 1215 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `81d1305d`
+- Built from commit: `4699a66d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -249,7 +249,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (211 total, 30 thin omitted)
+## Communities (212 total, 31 thin omitted)
 
 ### Community 0 - "test_event_analysis_validation.py"
 Cohesion: 0.13
@@ -977,18 +977,18 @@ Nodes (4): Eight mandatory acceptance gates, Event Alert acceptance criteria (ap
 
 ## Knowledge Gaps
 - **272 isolated node(s):** `$schema`, `title`, `type`, `additionalProperties`, `required` (+267 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1329 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **30 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1330 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **31 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `unknown()` connect `unknown` to `test_rich_403_preserves_safe_blocked_classification_without_raw_errors`, `CCWBot Ops-Agent Report Analysis`, `RichDeliveryUncertain`, `event_analysis_health.py`, `CCWBot Ops-Agent`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Why does `RichDeliveryUncertain` connect `RichDeliveryUncertain` to `unknown`, `test_rich_market_report_delivery.py`, `test_rich_403_preserves_safe_blocked_classification_without_raw_errors`, `bot/alerts.py`, `_deliver_market_event_alert`, `test_event_alert_rich_chart_ux.py`, `bot/reports.py`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **Why does `query()` connect `/graphify` to `test_event_alert_rich_chart_ux.py`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `Period` (e.g. with `_alert_quality()` and `_base_payload()`) actually correct?**
   _`Period` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 74 inferred relationships involving `LLMRouter` (e.g. with `AIInvalidJsonError` and `AIProviderRateLimitError`) actually correct?**

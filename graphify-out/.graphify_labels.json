@@ -206,6 +206,7 @@
   "204": "test_expected_models_match_bot_defaults.py",
   "205": "CCW-15 — Reviewer A Event Analysis prompt pack (2026-10-21)",
   "206": "Repository-backed Graphify",
+  "207": "ccwbot_publish_reports.ps1",
   "208": "0031_onboarding_customize_event.py",
   "209": "backfill_blocked_users.py",
   "210": "Event Alert acceptance criteria (approved 2026-10-16)",
