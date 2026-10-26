@@ -116,7 +116,7 @@ def test_discontinuous_history_remains_gap_free_and_partial():
     chart = event_chart(rows)
     assert chart.points[0][0] == AT - timedelta(hours=5, minutes=30)
     assert all(b[0] - a[0] <= timedelta(minutes=45)
-               for a, b in zip(chart.points, chart.points[1:]))
+               for a, b in zip(chart.points, chart.points[1:], strict=False))
     assert "available history" in chart.label
     assert not marker(chart, "−24H").plotted
 
