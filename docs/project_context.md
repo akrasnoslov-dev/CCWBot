@@ -29,7 +29,7 @@ Never place provider/LLM calls inside recipient loops.
   explicitly requested.
 - Never expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs, or
   diagnostic internals in user-facing Telegram messages.
-- Never commit secrets, local env files, logs, generated reports, DB dumps, caches, or local state.
+- Never commit secrets, local env files, logs, generated runtime reports, DB dumps, caches, or local state. The reviewed, allowlisted Graphify knowledge-base snapshot is a narrow exception governed by `docs/graphify.md`.
 - Production forensic SQL uses the read-only `ccwbot_investigator` role through the approved SSH
   tunnel.
 

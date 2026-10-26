@@ -1,0 +1,84 @@
+name: Refresh Graphify graph
+
+on:
+  push:
+    branches: [dev]
+    paths-ignore:
+      - "graphify-out/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: graphify-dev
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 1
+
+      - name: Check for seeded graph
+        id: seed
+        shell: bash
+        run: |
+          if test -s graphify-out/graph.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No committed graph yet. Run scripts/publish_graphify.ps1 once on the existing workstation."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.seed.outputs.present == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned Graphify on disposable runner
+        if: steps.seed.outputs.present == 'true'
+        shell: bash
+        run: python -m pip install --disable-pip-version-check "graphifyy[sql]==0.9.66"
+
+      - name: Refresh and commit allowlisted graph artifacts
+        if: steps.seed.outputs.present == 'true'
+        shell: bash
+        env:
+          PYTHONHASHSEED: "0"
+          GRAPHIFY_SKIP_HOOK: "1"
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin dev
+            git checkout -B graphify-refresh origin/dev
+            if ! test -s graphify-out/graph.json; then
+              echo "Seed missing on latest dev; stop without publishing."
+              exit 0
+            fi
+            python -m graphify update .
+            python -m json.tool graphify-out/graph.json >/dev/null
+            git rev-parse HEAD > graphify-out/SOURCE_COMMIT
+            git add -A -- graphify-out/
+            git diff --cached --check
+            if git diff --cached --quiet; then
+              echo "Graphify already current."
+              exit 0
+            fi
+            git commit -m "chore(graphify): refresh repository graph [skip ci]"
+            if git push origin HEAD:dev; then
+              echo "Graphify committed to dev."
+              exit 0
+            fi
+            echo "Concurrent dev push; retrying from latest commit ($attempt/3)."
+          done
+          echo "Unable to publish graph after 3 attempts."
+          exit 1

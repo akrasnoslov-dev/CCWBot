@@ -23,4 +23,16 @@ postgres-data/
 logs/*
 !logs/.gitkeep
 reports/
-graphify-out/
+# Only the current, portable Graphify knowledge base belongs in Git.
+# Dated backups, caches, logs, device paths and intermediate state stay ignored.
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/graph.html
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/manifest.json
+!graphify-out/.graphify_labels.json
+!graphify-out/.graphify_labels.json.sig
+!graphify-out/.graphify_learning.json
+!graphify-out/SOURCE_COMMIT
+!graphify-out/reflections/
+!graphify-out/reflections/**

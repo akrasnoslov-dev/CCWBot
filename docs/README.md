@@ -17,6 +17,8 @@ Start with `source_of_truth.md`. It says which document owns each durable rule.
 
 ## Development and operations
 
+- `graphify.md` - repository-backed Graphify snapshot, CI refresh, and retention.
+
 - `development.md` - local setup, repository layout, verification.
 - `release_checklist.md` - `dev -> main` release gates.
 - `dev_ops_guide.md` - production deployment, backup, recovery.
