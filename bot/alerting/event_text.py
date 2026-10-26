@@ -819,7 +819,7 @@ def observed_event_alert_price_band(market: dict) -> dict[str, str | int]:
         len({minute for minute, _ in recent}) != 4
         or recent[-1][0] != 0
         or recent[-1][0] - recent[0][0] < 60
-        or any(b[0] - a[0] > 90 for a, b in zip(recent, recent[1:], strict=True))
+        or any(b[0] - a[0] > 90 for a, b in zip(recent[:-1], recent[1:], strict=True))
         or abs(now - recent[-1][1]) > now * Decimal("0.00001")
     ):
         return {}
