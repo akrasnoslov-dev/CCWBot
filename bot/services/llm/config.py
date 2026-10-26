@@ -330,11 +330,19 @@ def model_for(provider: str, call_type: str) -> str:
 
 def provider_attempts(call_type: str) -> list[tuple[str, str]]:
     """Return the ordered concrete provider/model attempts for one logical LLM operation."""
-    if call_type == "event_alert_render" and not os.getenv("LLM_EVENT_RENDER_PROVIDERS"):
-        return [
-            (provider, _model_from_env(env_name, default))
+    if call_type == "event_alert_render":
+        # Respect the requested priority without losing dedicated Render models.
+        # In particular CLOUDFLARE_EVENT_RENDER_MODEL is not CLOUDFLARE_MODEL.
+        render_models = {
+            provider: (env_name, default)
             for provider, env_name, default in _EVENT_ALERT_RENDER_ATTEMPTS
-        ]
+        }
+        order = (
+            provider_priority(call_type)
+            if os.getenv("LLM_EVENT_RENDER_PROVIDERS")
+            else [provider for provider, _, _ in _EVENT_ALERT_RENDER_ATTEMPTS]
+        )
+        return [(provider, _model_from_env(*render_models[provider])) for provider in order]
     return [(provider, model_for(provider, call_type)) for provider in provider_priority(call_type)]
 
 
