@@ -190,7 +190,7 @@ async def test_shared_market_chart_reuses_one_session_and_global_event_not_recip
         current_price=1012.0, market_event_id=17,
     )
     assert visits == {"sessions": 1, "snapshots": 1, "previous": 1}
-    assert payload["chart_png"].startswith(b"\\x89PNG".decode("unicode_escape").encode("latin-1"))
+    assert payload["chart_png"].startswith(bytes((137, 80, 78, 71)))
     assert 'tg://photo?id=chart' in payload["rich_html"]
 
 
@@ -214,4 +214,4 @@ async def test_heartbeat_does_not_query_previous_event(monkeypatch):
     monkeypatch.setattr(alerts, "get_previous_market_event_for_chart", forbidden)
     payload = {"rich_html": "__CCWBOT_CHART_BLOCK__"}
     await alerts._prepare_event_alert_chart(payload, symbol="SOL", as_of=AT)
-    assert payload["chart_png"].startswith(b"\\x89PNG".decode("unicode_escape").encode("latin-1"))
+    assert payload["chart_png"].startswith(bytes((137, 80, 78, 71)))
