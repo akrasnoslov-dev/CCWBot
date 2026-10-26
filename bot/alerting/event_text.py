@@ -198,7 +198,16 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     window_change = _decimal_market_value(market_data.get("chg_window_percent"))
     change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
     has_reversal = len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
     has_broader_comparison = (
         window_change is not None
         and change_24h is not None
@@ -353,14 +362,44 @@ def event_alert_presentation_fallback(
         and change_24h != 0
     )
     has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
 
     if len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0:
+        # Cite the actually observed latest-step direction instead of generic
+        # "fading": the latest countermove may ALIGN with the net window move.
+        if window_change is not None and window_change != 0:
+            latest_direction = "rise" if step_changes[-1] > 0 else "decline"
+            window_direction = "rise" if window_change > 0 else "decline"
+            if (step_changes[-1] > 0) == (window_change > 0):
+                return (
+                    "The most recent supplied snapshot reverses part of the earlier "
+                    f"path: the latest {latest_direction} aligns with the "
+                    "analysed-window direction.",
+                    f"Watch whether the next observed interval extends the "
+                    f"{latest_direction} or reverses it again.",
+                )
+            return (
+                "The most recent supplied snapshot reverses part of the earlier "
+                f"path: the latest {latest_direction} runs against the net "
+                f"analysed-window {window_direction}.",
+                f"Watch the next observed interval for further reversal toward "
+                f"the {latest_direction} or a return to the analysed-window "
+                f"{window_direction}.",
+            )
         return (
-            "The most recent supplied snapshot reverses part of the earlier path, so the "
-            "current move may be fading rather than extending.",
-            "Watch the next short-term snapshots for further reversal versus renewed movement "
-            "in the current direction.",
+            "The most recent supplied snapshot reverses part of the earlier path, "
+            "but the analysed-window direction is not confirmed.",
+            "Watch whether the next observed interval extends the latest counter-move "
+            "or returns to the preceding step's direction.",
         )
 
     if has_persistence and has_divergence:
