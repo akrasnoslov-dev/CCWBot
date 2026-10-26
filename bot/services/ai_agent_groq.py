@@ -449,7 +449,8 @@ def _event_analysis_percent(value: object) -> object:
 
 # CCW-47 owner decision (2026-10-26): retain the original Refined v2,
 # not the shorter Refined v2 Final (14/200 schema failures in the paid Luna replay).
-# Frozen Luna Refined v2 instruction SHA-256: e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c
+# Frozen SHA-256:
+# e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c
 # Source: reports/event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined.txt
 _EVENT_SIGNIFICANCE_INSTRUCTIONS = (
     "JSON English.Decide whether the CURRENT market move is materially noteworthy AND m"
