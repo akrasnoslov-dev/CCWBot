@@ -652,11 +652,23 @@ def soften_possible_action(value: str, *, urgency: str | None) -> str:
     return "Consider reviewing risk controls and waiting for confirmation."
 
 
+# Future cross-period direction cannot be established from a conditional
+# continuation of a single observed step. In particular, extending a decline
+# cannot "further diverge" from an already downward 24h direction. Reject such
+# prognostic causal links and use the verified, market-specific fallback instead.
+_UNVERIFIED_FORWARD_RELATION_RE = re.compile(
+    r"(?i)\\b(?:if|when)\\b[^.!?]{0,160}"
+    r"\\b(?:extend\\w*|continu\\w*|sustain\\w*)\\b[^.!?]{0,180}"
+    r"\\b(?:diverg\\w*|converg\\w*|align\\w*)\\b"
+)
+
+
 def compact_event_alert_possible_action(value: str, *, fallback: str | None = None) -> str:
     """Keep Event Alert actions short, conditional, and non-prescriptive."""
     cleaned = " ".join(str(value or "").split()).strip()
     if (
-        len(cleaned.split()) > 30
+        _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
+        or len(cleaned.split()) > 30
         or len(re.findall(r"[.!?]", cleaned)) > 1
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
