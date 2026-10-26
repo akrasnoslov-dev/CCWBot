@@ -157,7 +157,9 @@ _MARKER_STYLE = {
 }
 
 
-def _observed(reference: tuple[datetime, float | None] | None) -> tuple[datetime | None, float | None]:
+def _observed(
+    reference: tuple[datetime, float | None] | None,
+) -> tuple[datetime | None, float | None]:
     if not isinstance(reference, (tuple, list)) or len(reference) != 2:
         return None, None
     stamp, value = reference
@@ -169,7 +171,10 @@ def _observed(reference: tuple[datetime, float | None] | None) -> tuple[datetime
         price = None
     if price is not None and (not isfinite(price) or price <= 0):
         price = None
-    stamp = stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
+    stamp = (
+        stamp.replace(tzinfo=timezone.utc)
+        if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
+    )
     return stamp, price
 
 
@@ -184,7 +189,10 @@ def _reference_markers(
     previous_at, previous_price = _observed(previous_alert)
     found: list[ReferenceMarker] = []
 
-    def add(label: str, stamp: datetime | None, price: float | None, missing: str = "unavailable") -> None:
+    def add(
+        label: str, stamp: datetime | None, price: float | None,
+        missing: str = "unavailable",
+    ) -> None:
         if stamp is None:
             found.append(ReferenceMarker(label, None, None, False, missing))
         elif stamp < axis_start or stamp > as_of:
@@ -211,12 +219,20 @@ def _reference_price(price: float) -> str:
     return f"${price:,.{decimals}f}"
 
 
-def _draw_reference_shape(draw: ImageDraw.ImageDraw, shape: str, x: int, y: int, color: str) -> None:
+def _draw_reference_shape(
+    draw: ImageDraw.ImageDraw, shape: str, x: int, y: int, color: str,
+) -> None:
     radius = 10
     if shape == "circle":
-        draw.ellipse((x-radius, y-radius, x+radius, y+radius), fill=color, outline="#111b2c", width=2)
+        draw.ellipse(
+            (x-radius, y-radius, x+radius, y+radius),
+            fill=color, outline="#111b2c", width=2,
+        )
     elif shape == "diamond":
-        draw.polygon(((x, y-radius-2), (x+radius+2, y), (x, y+radius+2), (x-radius-2, y)), fill=color)
+        draw.polygon(
+            ((x, y-radius-2), (x+radius+2, y), (x, y+radius+2), (x-radius-2, y)),
+            fill=color,
+        )
     elif shape == "square":
         draw.rectangle((x-radius, y-radius, x+radius, y+radius), fill=color)
     else:
@@ -243,7 +259,9 @@ def _render_marked_chart(
         points, as_of=as_of, axis_start=axis_start,
         current_observation=current_observation, previous_alert=previous_alert,
     ))
-    prices = [p for _, p in points] + [m.price for m in markers if m.plotted and m.price is not None]
+    prices = [p for _, p in points] + [
+        m.price for m in markers if m.plotted and m.price is not None
+    ]
     low, high = min(prices), max(prices)
     scale = max(high-low, high*0.0005)
     floor, ceiling = low - scale*0.12, high + scale*0.12
@@ -296,10 +314,15 @@ def _render_marked_chart(
         draw.rounded_rectangle(bounds, radius=6, fill="#26354a", outline=color, width=1)
         draw.text((chip_x+11, chip_y+1), display, font=f_chip, fill=color)
         _draw_reference_shape(draw, shape, x, y, color)
-        markers[i] = ReferenceMarker(marker.label, marker.timestamp, marker.price, True, label_box=bounds)
+        markers[i] = ReferenceMarker(
+            marker.label, marker.timestamp, marker.price, True, label_box=bounds,
+        )
 
     draw.text((left, 404), axis_start.strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1")
-    draw.text((right, 404), axis_end.strftime("%d %b %H:%M"), font=f_small, fill="#c0cee1", anchor="ra")
+    draw.text(
+        (right, 404), axis_end.strftime("%d %b %H:%M"),
+        font=f_small, fill="#c0cee1", anchor="ra",
+    )
     for index, marker in enumerate(markers):
         y = 444 + index*34
         color, shape = _MARKER_STYLE[marker.label]
@@ -314,7 +337,8 @@ def _render_marked_chart(
         else:
             detail = f"{marker.timestamp:%d %b %H:%M} UTC  |  {marker.reason or 'unavailable'}"
         draw.text((right, y), detail, font=f_small, fill="#c0cee1", anchor="ra")
-    draw.text((left, 591), "Persisted curve only  |  NOW from event observation  |  no interpolation",
+    draw.text(
+        (left, 591), "Persisted curve only  |  NOW from event observation  |  no interpolation",
               font=_font(18), fill="#a7b6ce")
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
