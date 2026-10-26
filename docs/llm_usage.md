@@ -75,8 +75,10 @@ Restarting/recreating the runtime after a reviewed configuration change is neede
 to load updated environment variables. No deployment is authorized by this note.
 
 OpenAI does **not** become usable just because its key is present or second in
-the chain: it requires `OPENAI_ENABLED=true`, model-matched verified pricing and
-input ceiling, positive remaining UTC-month budget, and working budget DB.
+the chain: it requires `OPENAI_ENABLED=true`, a nonempty API key, the exact
+`OPENAI_MODEL=gpt-6-luna` (other models fail closed), a positive remaining
+UTC-month budget, and working budget DB. GPT-6 Luna's verified pricing and
+input ceiling are pinned in code; no separate pricing environment variables are required.
 When budget-blocked, it is skipped without an HTTP call and Groq is attempted
 last if available. Do not bypass the local USD $2.50/month limit.
 
@@ -102,20 +104,42 @@ from actual response/attempt telemetry. The test does not send Telegram messages
 
 ### Optional OpenAI activation and spend cap
 
-OpenAI ships disabled. Enabling it requires all of `OPENAI_ENABLED=true`, `OPENAI_API_KEY`, an
-`OPENAI_PRICED_MODEL` exactly matching `OPENAI_MODEL`, the verified `OPENAI_MAX_INPUT_TOKENS`, and
-activation-time verified positive `OPENAI_INPUT_USD_PER_1M_TOKENS` /
-`OPENAI_OUTPUT_USD_PER_1M_TOKENS`. The single global UTC-calendar-month hard maximum is
-`OPENAI_MONTHLY_BUDGET_USD=2.50`. Missing database state, malformed cap, unknown prices, or an
-exhausted cap skips OpenAI before HTTP and advances to Cloudflare/data-only.
+OpenAI ships disabled. **Exactly four OpenAI environment settings** are used for the
+only approved paid model, `gpt-6-luna`:
+
+```dotenv
+OPENAI_ENABLED=true
+OPENAI_API_KEY=<secret>
+OPENAI_MODEL=gpt-6-luna
+OPENAI_MONTHLY_BUDGET_USD=2.50
+```
+
+The model's pricing and model-wide input ceiling are pinned in
+`bot/services/llm/openai_budget.py` and are **not configurable from `.env`**.
+As verified against OpenAI's [GPT-6 Luna model page](https://developers.openai.com/api/docs/models/gpt-6-luna)
+and [API pricing](https://developers.openai.com/api/docs/pricing) on 2026-10-26,
+the context window is 1,050,000 tokens; Standard short-context prices are
+$0.10 / 1M input and $0.50 / 1M output. Long contexts (>272K input) cost 2x
+input and 1.5x output; cache writes can cost 1.25x uncached input. The guard
+conservatively reserves **$0.25 / 1M input** and **$0.75 / 1M output** for
+*all* requests, including short prompts, to avoid undercounting these tiers.
+This deliberately overstates local spending versus ordinary short prompts.
+Only Standard API requests via the default OpenAI endpoint (no Fast, regional
+processing or tool-related paid charges) are in scope. Before enabling a new
+billing mode or if OpenAI changes pricing/context, review and update the code.
+
+The single global UTC-calendar-month local cap is at most **$2.50**. Missing
+database state, malformed/exhausted budget, or a model other than the verified
+`gpt-6-luna` skips OpenAI **before HTTP** and proceeds to the next provider.
 
 Before each request, `openai_budget_reservations` atomically reserves the verified full model input
 ceiling plus maximum completion/reasoning cost. This deliberately covers Unicode, provider chat
 framing, and response schemas without relying on a token estimate. PostgreSQL advisory locking serializes authorization across
 workers; the ledger survives restarts. Known token usage reconciles the reservation, while timeout,
 5xx, missing usage, or failed reconciliation retains the conservative amount. This is a CCWBot-side
-guard, not an OpenAI organization-wide invoice guarantee. Live API compatibility, exact model ID,
-and current price verification remain part of the separately approved paid-activation gate.
+guard, not an OpenAI organization-wide invoice guarantee; other clients on the same
+API account and future rate changes are not controlled here. Live API compatibility
+and price review are still part of production activation.
 
 The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid

@@ -30,10 +30,11 @@ async def budget_db(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "DB_ENABLED", True)
     monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", sessions)
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1.00")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10.00")
+    # Keep the historical small-budget arithmetic tests deterministic. These
+    # overrides exist only in tests, not as production environment settings.
+    monkeypatch.setattr(openai_budget, "LUNA_VERIFIED_INPUT_TOKENS", 1000)
+    monkeypatch.setattr(openai_budget, "LUNA_INPUT_RATE_USD_PER_MILLION", Decimal("1.00"))
+    monkeypatch.setattr(openai_budget, "LUNA_OUTPUT_RATE_USD_PER_MILLION", Decimal("10.00"))
     yield sessions
     await engine.dispose()
 
@@ -124,27 +125,62 @@ async def test_negative_usage_remains_conservative(budget_db):
 
 
 @pytest.mark.asyncio
-async def test_missing_pricing_and_state_fail_closed(monkeypatch):
+async def test_four_variable_configuration_does_not_require_old_pricing_env(budget_db, monkeypatch):
     from bot import runtime
 
-    monkeypatch.delenv("OPENAI_INPUT_USD_PER_1M_TOKENS", raising=False)
-    monkeypatch.delenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", raising=False)
-    with pytest.raises(OpenAIBudgetExhausted) as unknown:
-        await OpenAIBudget().reserve(
-            model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
-        )
-    assert unknown.value.reason == "unknown_pricing"
+    for name in (
+        "OPENAI_PRICED_MODEL",
+        "OPENAI_MAX_INPUT_TOKENS",
+        "OPENAI_INPUT_USD_PER_1M_TOKENS",
+        "OPENAI_OUTPUT_USD_PER_1M_TOKENS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
 
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
+    lease = await OpenAIBudget().reserve(
+        model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=100
+    )
+    assert lease.reserved_usd > 0
     monkeypatch.setattr(runtime, "DB_ENABLED", False)
     with pytest.raises(OpenAIBudgetExhausted) as missing:
         await OpenAIBudget().reserve(
             model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
         )
     assert missing.value.reason == "state_unavailable"
+
+
+def test_pinned_luna_limits_prices_and_legacy_env_cannot_undercut(monkeypatch):
+    monkeypatch.setenv("OPENAI_PRICED_MODEL", "unapproved-model")
+    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1")
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "0.0000000001")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "0.0000000001")
+
+    assert openai_budget.verified_input_token_ceiling("gpt-6-luna") == (
+        openai_budget.LUNA_VERIFIED_INPUT_TOKENS
+    )
+    assert openai_budget.pricing_usd_per_million() == (
+        openai_budget.LUNA_INPUT_RATE_USD_PER_MILLION,
+        openai_budget.LUNA_OUTPUT_RATE_USD_PER_MILLION,
+    )
+    assert openai_budget.verified_input_token_ceiling("gpt-6-sol") is None
+
+
+@pytest.mark.asyncio
+async def test_official_pinned_luna_prices_reserve_without_extra_env(budget_db, monkeypatch):
+    monkeypatch.setattr(openai_budget, "LUNA_VERIFIED_INPUT_TOKENS", 1_050_000)
+    monkeypatch.setattr(openai_budget, "LUNA_INPUT_RATE_USD_PER_MILLION", Decimal("0.25"))
+    monkeypatch.setattr(openai_budget, "LUNA_OUTPUT_RATE_USD_PER_MILLION", Decimal("0.75"))
+    lease = await OpenAIBudget().reserve(
+        model="gpt-6-luna", call_type="event_analysis", input_chars=1, max_tokens=8492
+    )
+    assert lease.reserved_usd == Decimal("0.2688690000")
+    await OpenAIBudget().settle(lease, prompt_tokens=2500, completion_tokens=500)
+    async with budget_db() as session:
+        row = await session.get(OpenAIBudgetReservation, lease.reservation_id)
+        assert row.status == "settled"
+        assert row.actual_usd <= row.reserved_usd
 
 
 @pytest.mark.asyncio
@@ -163,10 +199,6 @@ async def test_missing_pricing_and_state_fail_closed(monkeypatch):
 )
 async def test_non_finite_budget_values_fail_closed(monkeypatch, value):
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", value)
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
     with pytest.raises(OpenAIBudgetExhausted) as blocked:
         await OpenAIBudget().reserve(
             model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
@@ -175,28 +207,13 @@ async def test_non_finite_budget_values_fail_closed(monkeypatch, value):
 
 
 @pytest.mark.asyncio
-async def test_model_and_input_limit_must_match_verified_pricing(budget_db, monkeypatch):
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "different-model")
+async def test_unapproved_paid_model_fails_closed(budget_db, monkeypatch):
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-sol")
     with pytest.raises(OpenAIBudgetExhausted) as mismatch:
         await OpenAIBudget().reserve(
-            model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
+            model="gpt-6-sol", call_type="daily_report", input_chars=1, max_tokens=1
         )
     assert mismatch.value.reason == "unverified_model_limits"
-
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "not-an-int")
-    with pytest.raises(OpenAIBudgetExhausted) as unknown_limit:
-        await OpenAIBudget().reserve(
-            model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
-        )
-    assert unknown_limit.value.reason == "unverified_model_limits"
-
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "9" * 1000)
-    with pytest.raises(OpenAIBudgetExhausted) as extreme_limit:
-        await OpenAIBudget().reserve(
-            model="gpt-6-luna", call_type="daily_report", input_chars=1, max_tokens=1
-        )
-    assert extreme_limit.value.reason == "unverified_model_limits"
 
 
 @pytest.mark.asyncio
@@ -295,10 +312,9 @@ async def test_postgres_advisory_lock_serializes_distinct_workers(monkeypatch):
     monkeypatch.setattr(runtime, "DB_ENABLED", True)
     monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", sessions)
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "0.015")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    monkeypatch.setattr(openai_budget, "LUNA_VERIFIED_INPUT_TOKENS", 1000)
+    monkeypatch.setattr(openai_budget, "LUNA_INPUT_RATE_USD_PER_MILLION", Decimal("1"))
+    monkeypatch.setattr(openai_budget, "LUNA_OUTPUT_RATE_USD_PER_MILLION", Decimal("10"))
     try:
         async with sessions.begin() as session:
             await session.execute(
@@ -356,10 +372,9 @@ async def test_postgres_admission_uses_month_after_advisory_lock(monkeypatch):
     monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", sessions)
     monkeypatch.setattr(openai_budget, "_utc_now", lambda: clock["now"])
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    monkeypatch.setattr(openai_budget, "LUNA_VERIFIED_INPUT_TOKENS", 1000)
+    monkeypatch.setattr(openai_budget, "LUNA_INPUT_RATE_USD_PER_MILLION", Decimal("1"))
+    monkeypatch.setattr(openai_budget, "LUNA_OUTPUT_RATE_USD_PER_MILLION", Decimal("10"))
     old_month = old_now.date().replace(day=1)
     new_month = new_now.date().replace(day=1)
     lock_high = _POSTGRES_ADVISORY_LOCK_ID >> 32
@@ -451,10 +466,9 @@ async def test_postgres_settlement_breach_is_ordered_before_new_admission(monkey
     monkeypatch.setattr(runtime, "DB_ENABLED", True)
     monkeypatch.setattr(runtime, "DB_SESSION_LOCAL", sessions)
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
+    monkeypatch.setattr(openai_budget, "LUNA_VERIFIED_INPUT_TOKENS", 1000)
+    monkeypatch.setattr(openai_budget, "LUNA_INPUT_RATE_USD_PER_MILLION", Decimal("1"))
+    monkeypatch.setattr(openai_budget, "LUNA_OUTPUT_RATE_USD_PER_MILLION", Decimal("10"))
     lock_high = _POSTGRES_ADVISORY_LOCK_ID >> 32
     lock_low = _POSTGRES_ADVISORY_LOCK_ID & 0xFFFFFFFF
 
