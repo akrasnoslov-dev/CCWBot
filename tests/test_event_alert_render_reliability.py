@@ -94,6 +94,44 @@ def test_render_prompt_contains_only_verified_directions_not_raw_metrics():
     }
 
 
+
+def test_ccw20_render_copy_prioritises_supported_relationship_and_condition():
+    payload = _payload()
+    prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
+    compact = json.loads(prompt.split("Input JSON:\\n", 1)[1])
+
+    # The present BTC fixture truly has a counter-direction 24h comparison.
+    assert compact["evidence"]["window_vs_24h"] == "opposite_direction"
+    assert "most informative VERIFIED market" in prompt
+    assert "latest-step counter-move" in prompt
+    assert "short-term versus 24h" in prompt
+    assert "verified interval pace" in prompt
+    assert "genuinely comparable" in prompt
+    assert "next observed step" in prompt
+    assert "the SAME relationship" in prompt
+    assert "monitor the market" in prompt  # Explicit prohibition, not recommended copy.
+    assert "significance is already accepted" in prompt.lower()
+
+    # No new evidence or data fields; only presentation instructions changed.
+    assert set(compact) == {"sym", "market_directions", "evidence", "n", "sig"}
+    assert "105.0" not in prompt
+    assert "3.1" not in prompt
+
+
+def test_ccw20_render_prompt_missing_context_fails_closed():
+    payload = _payload()
+    payload["market"] = {"price": 105.0}
+    prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
+    compact = json.loads(prompt.split("Input JSON:\\n", 1)[1])
+
+    assert compact["evidence"] == {}
+    assert compact["market_directions"] == {}
+    assert "If evidence is empty" in prompt
+    assert "no distinct path is confirmed" in prompt
+
+
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("render_error", [
     AISchemaValidationError("market_claim_mismatch"),
