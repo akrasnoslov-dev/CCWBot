@@ -10,6 +10,11 @@ This directory tracks verified, versioned market-significance experiments from t
 - 58 decisive cases suitable for conditional error counting; eight ambiguous excluded
 - Aggregate evaluation: [Owner blind disagreement findings](../../docs/event_alert_owner_disagreement_20261026.md)
 
+## Public-safe owner decision table
+
+- [owner_labels_66.csv](owner_labels_66.csv): all 66 anonymized case IDs, symbols, and owner decisions (24 alert / 34 no_alert / 8 ambiguous), without free-text comments or user identifiers. Joined error statistics are in the evaluation report linked above.
+- The case-level predictions and full market payloads are **not yet present** and cannot be reconstructed from this table alone.
+
 ## Data handling
 Only publish verified data without credentials, personal identifiers, private bot messages, raw production logs or database exports. The original user-provided archive also contains sensitive forensic material and duplicated test output, and is NOT suitable for a wholesale public commit. Treat the published evidence as a documented subset until a file-level audit confirms complete reproducibility.
 
