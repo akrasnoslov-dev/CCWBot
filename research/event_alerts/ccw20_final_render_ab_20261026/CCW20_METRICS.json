@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "decision": "REJECT",
+  "reason": "Candidate fails the hard zero-factual-error criterion: two final actions invert convergence/divergence relative to the verified 24h direction.",
+  "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "attempts_completed": 40,
+  "attempt_cap": 40,
+  "provider_stop_reason": null,
+  "baseline": {
+    "requests": 20,
+    "http_200": 20,
+    "schema_valid": 20,
+    "validator_accepted": 11,
+    "deterministic_fallbacks": 9,
+    "situation_replacements": 15,
+    "action_replacements": 16,
+    "any_final_replacement": 17,
+    "factual_errors": 1,
+    "specific_useful_grounded_pairs": 13,
+    "situation_repetition": {
+      "distinct": 8,
+      "duplicate_excess": 12,
+      "max_frequency": 6,
+      "repeated_formulations": 3
+    },
+    "action_repetition": {
+      "distinct": 7,
+      "duplicate_excess": 13,
+      "max_frequency": 8,
+      "repeated_formulations": 3
+    },
+    "pair_repetition": {
+      "distinct": 9,
+      "duplicate_excess": 11,
+      "max_frequency": 6,
+      "repeated_formulations": 3
+    },
+    "usage_reported_attempts": 20,
+    "prompt_tokens": 9210,
+    "completion_tokens": 1395,
+    "total_tokens": 10605
+  },
+  "candidate": {
+    "requests": 20,
+    "http_200": 20,
+    "schema_valid": 20,
+    "validator_accepted": 20,
+    "deterministic_fallbacks": 0,
+    "situation_replacements": 12,
+    "action_replacements": 11,
+    "any_final_replacement": 17,
+    "factual_errors": 2,
+    "specific_useful_grounded_pairs": 18,
+    "situation_repetition": {
+      "distinct": 13,
+      "duplicate_excess": 7,
+      "max_frequency": 6,
+      "repeated_formulations": 3
+    },
+    "action_repetition": {
+      "distinct": 13,
+      "duplicate_excess": 7,
+      "max_frequency": 5,
+      "repeated_formulations": 3
+    },
+    "pair_repetition": {
+      "distinct": 16,
+      "duplicate_excess": 4,
+      "max_frequency": 5,
+      "repeated_formulations": 1
+    },
+    "usage_reported_attempts": 20,
+    "prompt_tokens": 12190,
+    "completion_tokens": 1198,
+    "total_tokens": 13388
+  },
+  "evaluation": {
+    "programmatic": [
+      "HTTP success",
+      "JSON shape",
+      "backend validator acceptance",
+      "final replacement/fallback",
+      "exact normalized repetition",
+      "reported usage"
+    ],
+    "subjective": [
+      "factual relation",
+      "Situation specificity",
+      "Action linkage and diagnostic usefulness"
+    ],
+    "evaluator": "single Codex evaluation; not an independent human review"
+  }
+}
+
