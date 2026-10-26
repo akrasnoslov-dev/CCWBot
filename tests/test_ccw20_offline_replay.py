@@ -12,7 +12,6 @@ from pathlib import Path
 
 from bot import alerts
 
-
 _ROOT = Path(__file__).resolve().parents[1]
 _PAIRS = (
     _ROOT / "research" / "event_alerts" / "ccw20_final_render_ab_20261026"
