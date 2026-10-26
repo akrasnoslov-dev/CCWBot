@@ -53,8 +53,8 @@ def test_historical_baseline_detects_owner_approved_dev_prompt_change():
     historic = build_prompt(payload, "production", require_current_parity=False)
     assert historic.startswith(instruction("production"))
     assert historic != build_event_significance_prompt(payload)
-    assert historic.split("\\nInput JSON:\\n", 1)[1] == (
-        build_event_significance_prompt(payload).split("\\nInput JSON:\\n", 1)[1]
+    assert historic.split("\nInput JSON:\n", 1)[1] == (
+        build_event_significance_prompt(payload).split("\nInput JSON:\n", 1)[1]
     )
 
 
