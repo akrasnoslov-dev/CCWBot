@@ -1,7 +1,7 @@
 # Graph Report - CCWBot  (2026-10-26)
 
 ## Corpus Check
-- 637 files · ~1,133,412 words
+- 637 files · ~1,133,444 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 33 file(s) not represented in the graph (top: .toml 12, (none) 8, .csv 6)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7d2b4f74`
+- Built from commit: `f03d1cdc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -983,7 +983,7 @@ Nodes (3): LLM usage telemetry persistence. Belongs here: saving and updating…
 
 ### Community 206 - "Repository-backed Graphify"
 Cohesion: 0.33
-Nodes (5): One-time migration from existing Windows graph, Repository-backed Graphify, Retention, Shared state in dev, Updates after migration
+Nodes (5): Clones and local development, Repository-backed Graphify, Retention, Shared state in dev, Updates after migration
 
 ### Community 207 - "CCW-25 research evidence"
 Cohesion: 0.40
@@ -1021,9 +1021,9 @@ Nodes (18): automatic_delivery_lock(), _lock_connection_slot(), Reserve capacity
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `unknown()` connect `Observability Snippets` to `Ops-Agent Service`, `_send_report_message`, `CCWBot Ops-Agent Report Analysis`, `_deliver_market_event_alert`, `CCWBot Ops-Agent`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Why does `select()` connect `select` to `test_logical_llm_health.py`, `Base`, `telemetry.py`, `test_telegram_stars_payments.py`, `test_system_status.py`, `test_openai_budget.py`, `test_groq_budget.py`, `test_watchlist_ux.py`, `db/premium.py`, `test_market_heartbeat.py`, `onboarding.py`, `news_intelligence_service.py`, `utc_now`, `test_event_alert_pipeline.py`, `test_multicoin_alerts.py`, `bot/reports.py`, `bot/news.py`, `make_news_key`, `router.py`, `system_status.py`, `db/settings.py`, `test_product_analytics.py`, `User`, `_build_event_analysis_input`, `test_news_intelligence_service.py`, `automatic_price_check`, `test_news_intelligence_schema.py`, `build_review.py`, `test_acquisition_link_workflow.py`, `openai_budget.py`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+- **Why does `unknown()` connect `Observability Snippets` to `Ops-Agent Service`, `_send_report_message`, `CCWBot Ops-Agent Report Analysis`, `_deliver_market_event_alert`, `CCWBot Ops-Agent`?**
   _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Why does `RichDeliveryUncertain` connect `_send_report_message` to `test_event_alert_rich_chart_ux.py`, `Observability Snippets`, `test_rich_market_report_delivery.py`, `bot/alerts.py`, `bot/reports.py`, `_deliver_market_event_alert`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._

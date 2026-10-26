@@ -51992,14 +51992,14 @@
       "source_location": "L1"
     },
     {
-      "id": "docs_graphify_one_time_migration_from_existing_windows_graph",
-      "label": "One-time migration from existing Windows graph",
+      "id": "docs_graphify_clones_and_local_development",
+      "label": "Clones and local development",
       "_origin": "ast",
       "community": 206,
       "community_name": "Repository-backed Graphify",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "one-time migration from existing windows graph",
+      "norm_label": "clones and local development",
       "source_file": "docs/graphify.md",
       "source_location": "L30"
     },
@@ -52025,7 +52025,7 @@
       "node_kind": "heading",
       "norm_label": "retention",
       "source_file": "docs/graphify.md",
-      "source_location": "L75"
+      "source_location": "L68"
     },
     {
       "id": "docs_graphify_shared_state_in_dev",
@@ -52049,7 +52049,7 @@
       "node_kind": "heading",
       "norm_label": "updates after migration",
       "source_file": "docs/graphify.md",
-      "source_location": "L47"
+      "source_location": "L40"
     },
     {
       "id": "reports_ccw25_20261019_readme",
@@ -63608,7 +63608,7 @@
       "node_kind": "heading",
       "norm_label": "heartbeat delivery timestamp migration",
       "source_file": "docs/development.md",
-      "source_location": "L152"
+      "source_location": "L157"
     },
     {
       "id": "docs_development_local_checks",
@@ -63620,7 +63620,7 @@
       "node_kind": "heading",
       "norm_label": "local checks",
       "source_file": "docs/development.md",
-      "source_location": "L23"
+      "source_location": "L28"
     },
     {
       "id": "docs_development_local_migration_recovery",
@@ -63632,7 +63632,7 @@
       "node_kind": "heading",
       "norm_label": "local migration recovery",
       "source_file": "docs/development.md",
-      "source_location": "L126"
+      "source_location": "L131"
     },
     {
       "id": "docs_development_ops_agent_development",
@@ -63644,7 +63644,7 @@
       "node_kind": "heading",
       "norm_label": "ops-agent development",
       "source_file": "docs/development.md",
-      "source_location": "L96"
+      "source_location": "L101"
     },
     {
       "id": "docs_development_runtime_notes",
@@ -63656,7 +63656,7 @@
       "node_kind": "heading",
       "norm_label": "runtime notes",
       "source_file": "docs/development.md",
-      "source_location": "L60"
+      "source_location": "L65"
     },
     {
       "id": "docs_development_scope_boundaries",
@@ -63668,7 +63668,7 @@
       "node_kind": "heading",
       "norm_label": "scope boundaries",
       "source_file": "docs/development.md",
-      "source_location": "L53"
+      "source_location": "L58"
     },
     {
       "id": "scripts_ccwbot_deploy_safe",
@@ -206795,6 +206795,17 @@
     },
     {
       "source": "docs_development_development",
+      "target": "docs_development_ops_agent_development",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/development.md",
+      "source_location": "L101",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_development_development",
       "target": "docs_development_canonical_windows_workspace",
       "relation": "contains",
       "_origin": "ast",
@@ -206812,7 +206823,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/development.md",
-      "source_location": "L126",
+      "source_location": "L131",
       "weight": 1.0
     },
     {
@@ -206823,7 +206834,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/development.md",
-      "source_location": "L152",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -206834,7 +206845,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/development.md",
-      "source_location": "L23",
+      "source_location": "L28",
       "weight": 1.0
     },
     {
@@ -206845,7 +206856,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/development.md",
-      "source_location": "L53",
+      "source_location": "L58",
       "weight": 1.0
     },
     {
@@ -206856,18 +206867,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/development.md",
-      "source_location": "L60",
-      "weight": 1.0
-    },
-    {
-      "source": "docs_development_development",
-      "target": "docs_development_ops_agent_development",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "docs/development.md",
-      "source_location": "L96",
+      "source_location": "L65",
       "weight": 1.0
     },
     {
@@ -207026,7 +207026,7 @@
     },
     {
       "source": "docs_graphify_repository_backed_graphify",
-      "target": "docs_graphify_one_time_migration_from_existing_windows_graph",
+      "target": "docs_graphify_clones_and_local_development",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -207043,7 +207043,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/graphify.md",
-      "source_location": "L47",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "docs_graphify_repository_backed_graphify",
+      "target": "docs_graphify_retention",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/graphify.md",
+      "source_location": "L68",
       "weight": 1.0
     },
     {
@@ -207055,17 +207066,6 @@
       "confidence_score": 1.0,
       "source_file": "docs/graphify.md",
       "source_location": "L7",
-      "weight": 1.0
-    },
-    {
-      "source": "docs_graphify_repository_backed_graphify",
-      "target": "docs_graphify_retention",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "docs/graphify.md",
-      "source_location": "L75",
       "weight": 1.0
     },
     {
@@ -259367,5 +259367,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "7d2b4f74a701cd8c9f9a86dae3c44b35f44e1821"
+  "built_at_commit": "f03d1cdcd74fb346f46943194c1ee97e944c9a68"
 }
