@@ -426,8 +426,8 @@ def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
         final = alerts._build_event_alert_payload(
             decision=decision, input_payload={"market": market}, related_news=[]
         )["plain_text"]
-        situation = final.split("Situation:\\n", 1)[1].split("\\n\\n", 1)[0]
-        action = final.split("Possible action:\\n", 1)[1].split("\\n\\n", 1)[0]
+        situation = final.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
+        action = final.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
         assert "latest decline runs against the net analysed-window rise" in situation
         assert action == (
             "Watch the next observed interval for further reversal toward "
