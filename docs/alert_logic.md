@@ -70,6 +70,25 @@ Alert reasons (`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
 `market_news_alignment`) are valid only with a positive decision. No-alert reasons
 (`routine_move`, `news_only`, `unclear`) are valid only with a negative decision.
 
+### Significance prompt selection — CCW-47 (2026-10-26, dev only)
+
+The owner selected **the exact original Refined v2** for Stage-1 Event Significance,
+not the shorter Refined v2 Final. In the isolated paid GPT-6 Luna replay, the
+original produced 200/200 valid responses; the revised shorter prompt had 14/200
+schema failures, with improved conditional recall but 15 vs 8 false positives
+on differently sized valid subsets of owner-labelled disagreements. Keeping
+the original prioritises low noise and reliable structured outputs. This is a
+**dev prompt selection**, not production-release approval.
+
+The original instructions are frozen at
+`reports/event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined.txt`
+(instruction SHA-256 `e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c`).
+The shorter rejected trial remains in `benchmarks/event-alert-owner-20261026/`
+for experiment provenance only. See
+[`CCW47_REFINED_V2_DECISION_20261026.md`](../reports/event-alert-review-20261016/CCW47_REFINED_V2_DECISION_20261026.md)
+for the metrics, denominator caveats and evaluation limits. Actual Groq/Cloudflare
+significance quality still needs evaluation before any release.
+
 ## Step 5 - Build the message
 Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
 change the significance decision.
