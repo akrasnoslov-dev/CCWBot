@@ -11,6 +11,7 @@ This is the canonical repository-backed evidence index for CCWBot Event Alert re
 - [Six-prompt detailed scoring](owner_review_20261026/six_prompt_scoring.json): per-prompt confusion counts, per-coin breakdown, and case-level error IDs.
 - [Six-prompt assessment](owner_review_20261026/six_prompt_analysis.md) and [aggregate findings](../../docs/event_alert_owner_disagreement_20261026.md).
 - [66 anonymized decision labels](owner_labels_66.csv): short machine-readable decision-only alternative to the full owner review.
+- [Historical benchmark helpers](historical_helpers/): recovered original `build_review.py`, `monitor_resources.ps1` and two isolated-provider launch shell scripts. The original frozen `validation/scripts/event_alert_benchmark.py` is already tracked unchanged as `scripts/event_alert_benchmark.py`.
 
 Frozen cohort: **200** BTC/ETH/GRAM/SOL market cases, **1,200** saved GPT-6 Luna prompt decisions (six variants), **66** owner-reviewed disagreement cases (24 alert / 34 no_alert / 8 ambiguous). The selected 58 decisive disagreements cannot establish population accuracy. Dataset SHA-256: `ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d`.
 
