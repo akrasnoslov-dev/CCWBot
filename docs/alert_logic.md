@@ -39,6 +39,11 @@ Two cases:
   straight to recipient checks;
 - an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
 
+The exact-context fingerprint preserves the priority order of the first two
+valid news items seen by the significance model. It does not sort headlines:
+changing their order may change the model-visible evidence and must
+invalidate cache reuse.
+
 No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
@@ -306,6 +311,15 @@ hours.
 
 No bypass exists for a bigger move, urgency, new news, or a direction change inside the same
 semantic event. A genuinely different semantic event can pass.
+
+The four-hour semantic cooldown starts at **successful delivery**
+(`sent_at`), using `created_at` only for legacy successful deliveries
+without completion timestamps. Legacy events with missing identity may
+recover the stored directional family from verified price movement.
+An in-lock per-recipient same-family check protects against another event
+being delivered between the bulk eligibility pass and actual sending.
+Distinct price directions remain eligible. These are safety checks;
+they do not introduce a percentage threshold.
 
 ## Step 10 - Send once
 Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression
