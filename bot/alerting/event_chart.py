@@ -333,9 +333,9 @@ def _render_marked_chart(
         if marker.timestamp is None:
             detail = marker.reason or "unavailable"
         elif marker.plotted:
-            detail = f"{marker.timestamp:%d %b %H:%M} UTC  |  {_reference_price(marker.price)}"
+            detail = f"{marker.timestamp:%d %b %H:%M:%S} UTC  |  {_reference_price(marker.price)}"
         else:
-            detail = f"{marker.timestamp:%d %b %H:%M} UTC  |  {marker.reason or 'unavailable'}"
+            detail = f"{marker.timestamp:%d %b %H:%M:%S} UTC  |  {marker.reason or 'unavailable'}"
         draw.text((right, y), detail, font=f_small, fill="#c0cee1", anchor="ra")
     draw.text(
         (left, 591), "Persisted curve only  |  NOW from event observation  |  no interpolation",
