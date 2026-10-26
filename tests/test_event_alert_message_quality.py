@@ -437,6 +437,8 @@ def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
 
 
 def test_ccw20_verified_eth_levels_and_useful_conditional_action():
+    import json
+
     from bot import alerts
     from bot.alerting.event_analysis import EventAnalysisDecision
     from bot.alerting.event_text import (
@@ -444,7 +446,6 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
         observed_event_alert_price_band,
     )
     from bot.services.ai_agent_groq import build_event_alert_render_prompt
-    import json
 
     market = {
         "price": 2474.518857885452,
