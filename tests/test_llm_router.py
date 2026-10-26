@@ -84,6 +84,53 @@ def _configure(monkeypatch, priority, keys):
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 
 
+@pytest.mark.asyncio
+async def test_event_alert_render_cloudflare_primary_skips_other_providers(monkeypatch):
+    _configure(monkeypatch, ["groq", "openai", "cloudflare"], {
+        "groq", "openai", "cloudflare"
+    })
+    monkeypatch.setenv("LLM_EVENT_RENDER_PROVIDERS", "cloudflare,openai,groq")
+    providers = {
+        name: FakeProvider(name, _result(name))
+        for name in ("cloudflare", "openai", "groq")
+    }
+    result = await _call(LLMRouter(registry=providers), "event_alert_render")
+    assert result.provider == "cloudflare"
+    assert [providers[name].calls for name in ("cloudflare", "openai", "groq")] == [
+        1, 0, 0
+    ]
+
+
+@pytest.mark.asyncio
+async def test_event_alert_render_cloudflare_limit_then_luna_then_groq(monkeypatch):
+    _configure(monkeypatch, ["groq", "openai", "cloudflare"], {
+        "groq", "openai", "cloudflare"
+    })
+    monkeypatch.setenv("LLM_EVENT_RENDER_PROVIDERS", "cloudflare,openai,groq")
+    calls = []
+
+    def result_after(name, model):
+        calls.append(name)
+        return _result(name, model)
+
+    providers = {
+        "cloudflare": FakeProvider(
+            "cloudflare", AIProviderRateLimitError("quota", provider="cloudflare")
+        ),
+        "openai": FakeProvider(
+            "openai", lambda name, model: result_after(name, model)
+        ),
+        "groq": FakeProvider(
+            "groq", lambda name, model: result_after(name, model)
+        ),
+    }
+    result = await _call(LLMRouter(registry=providers), "event_alert_render")
+    assert result.provider == "openai"
+    assert [providers[name].calls for name in ("cloudflare", "openai", "groq")] == [
+        1, 1, 0
+    ]
+
+
 async def _call(router, call_type="event_analysis"):
     return await router.chat_completion(
         call_type=call_type,

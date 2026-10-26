@@ -44,6 +44,7 @@ _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _OBSERVATION_RE = re.compile(
     r"(?i)\b(?:snapshot|interval|timeframe|time frame|window|30m|1h|24h|"
+    r"price|level|range|high|low|rebound|recovery|short-term|"
     r"hour|minute|trend|direction|pace|path|reversal|reverse|"
     r"slow\w*|accelera\w*|continuation)\b"
 )
@@ -159,7 +160,9 @@ def compact_event_alert_situation(
     if _repeats_rendered_market_fact(cleaned, market_data or {}):
         explanation = _concise_explanation_clause(cleaned, market_data or {})
         return explanation or fallback
-    if len(cleaned.split()) > 28:
+    if len(cleaned.split()) > (
+        48 if observed_event_alert_price_band(market_data or {}) else 28
+    ):
         return fallback
     compacted = ensure_useful_situation(
         cleaned,
@@ -198,7 +201,16 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     window_change = _decimal_market_value(market_data.get("chg_window_percent"))
     change_24h = _decimal_market_value(market_data.get("chg24h_percent"))
     has_reversal = len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
     has_broader_comparison = (
         window_change is not None
         and change_24h is not None
@@ -222,6 +234,10 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
             "reversal",
             "diverg",
             "align",
+            *(
+                ("observed", "range", "high", "rebound", "recovery")
+                if observed_event_alert_price_band(market_data) else ()
+            ),
         )
     ):
         return False
@@ -353,14 +369,44 @@ def event_alert_presentation_fallback(
         and change_24h != 0
     )
     has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
-    has_persistence = _has_persistent_snapshot_direction(step_changes)
+    has_persistence = (
+        _has_persistent_snapshot_direction(step_changes)
+        and (
+            window_change is None
+            or (
+                window_change != 0
+                and (step_changes[-1] > 0) == (window_change > 0)
+            )
+        )
+    )
 
     if len(step_changes) >= 2 and step_changes[-1] * step_changes[-2] < 0:
+        # Cite the actually observed latest-step direction instead of generic
+        # "fading": the latest countermove may ALIGN with the net window move.
+        if window_change is not None and window_change != 0:
+            latest_direction = "rise" if step_changes[-1] > 0 else "decline"
+            window_direction = "rise" if window_change > 0 else "decline"
+            if (step_changes[-1] > 0) == (window_change > 0):
+                return (
+                    "The most recent supplied snapshot reverses part of the earlier "
+                    f"path: the latest {latest_direction} aligns with the "
+                    "analysed-window direction.",
+                    f"Watch whether the next observed interval extends the "
+                    f"{latest_direction} or reverses it again.",
+                )
+            return (
+                "The most recent supplied snapshot reverses part of the earlier "
+                f"path: the latest {latest_direction} runs against the net "
+                f"analysed-window {window_direction}.",
+                f"Watch the next observed interval for further reversal toward "
+                f"the {latest_direction} or a return to the analysed-window "
+                f"{window_direction}.",
+            )
         return (
-            "The most recent supplied snapshot reverses part of the earlier path, so the "
-            "current move may be fading rather than extending.",
-            "Watch the next short-term snapshots for further reversal versus renewed movement "
-            "in the current direction.",
+            "The most recent supplied snapshot reverses part of the earlier path, "
+            "but the analysed-window direction is not confirmed.",
+            "Watch the next observed interval for further reversal of the preceding "
+            "step or a return to that earlier direction.",
         )
 
     if has_persistence and has_divergence:
@@ -613,12 +659,44 @@ def soften_possible_action(value: str, *, urgency: str | None) -> str:
     return "Consider reviewing risk controls and waiting for confirmation."
 
 
-def compact_event_alert_possible_action(value: str, *, fallback: str | None = None) -> str:
+# Future cross-period direction cannot be established from a conditional
+# continuation of a single observed step. In particular, extending a decline
+# cannot "further diverge" from an already downward 24h direction. Reject such
+# prognostic causal links and use the verified, market-specific fallback instead.
+_ACTION_PRICE_RE = re.compile(r"\$\s*([0-9,]+(?:\.[0-9]+)?)")
+
+
+def _action_price_levels_supported(value: str, market: dict | None) -> bool:
+    claims = _ACTION_PRICE_RE.findall(value)
+    if not claims:
+        return True
+    band = observed_event_alert_price_band(market or {})
+    if not band:
+        return False
+    permitted = {
+        str(band["low"]).replace("$", "").replace(",", ""),
+        str(band["high"]).replace("$", "").replace(",", ""),
+    }
+    return all(claim.replace(",", "") in permitted for claim in claims)
+
+
+_UNVERIFIED_FORWARD_RELATION_RE = re.compile(
+    r"(?i)\b(?:if|when)\b[^.!?]{0,160}"
+    r"(?:\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180})?"
+    r"\b(?:diverg\w*|converg\w*|align\w*)\b"
+)
+
+
+def compact_event_alert_possible_action(
+    value: str, *, fallback: str | None = None, market_data: dict | None = None
+) -> str:
     """Keep Event Alert actions short, conditional, and non-prescriptive."""
     cleaned = " ".join(str(value or "").split()).strip()
     if (
-        len(cleaned.split()) > 30
-        or len(re.findall(r"[.!?]", cleaned)) > 1
+        _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
+        or not _action_price_levels_supported(cleaned, market_data)
+        or len(cleaned.split()) > 60
+        or len(re.findall(r"[.!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
@@ -713,11 +791,95 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
 
 
 
+def observed_event_alert_price_band(market: dict) -> dict[str, str | int]:
+    """Derive a recent observed range, never technical support/resistance.
+
+    Only four continuous, time-ordered samples ending at the actual current
+    price are sufficient to name a level. Missing, stale or inconsistent
+    sampling deliberately produces no levels.
+    """
+    if not isinstance(market, dict):
+        return {}
+    now = _decimal_market_value(market.get("price", market.get("price_now_usd")))
+    snapshots = market.get("snapshots")
+    if now is None or now <= 0 or not isinstance(snapshots, list):
+        return {}
+    observations = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and price is not None and price > 0 and -180 <= minute <= 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    if len(observations) < 4:
+        return {}
+    recent = observations[-4:]
+    if (
+        len({minute for minute, _ in recent}) != 4
+        or recent[-1][0] != 0
+        or recent[-1][0] - recent[0][0] < 60
+        or any(b[0] - a[0] > 90 for a, b in zip(recent[:-1], recent[1:], strict=True))
+        or abs(now - recent[-1][1]) > now * Decimal("0.00001")
+    ):
+        return {}
+
+    prices = [price for _, price in recent]
+    raw_low, raw_high = min(prices), max(prices)
+    quantum = (
+        Decimal("1") if now >= 1000 else
+        Decimal("0.01") if now >= 100 else
+        Decimal("0.0001") if now >= 1 else Decimal("0.000001")
+    )
+    low = raw_low.quantize(quantum)
+    high = raw_high.quantize(quantum)
+    if low <= 0 or high <= low:
+        return {}
+
+    decimals = max(0, -quantum.as_tuple().exponent)
+    def display(price: Decimal) -> str:
+        return f"${price:,.{decimals}f}"
+    near_high = sum(
+        abs(price - raw_high) <= raw_high * Decimal("0.001")
+        for price in prices
+    )
+    return {
+        "low": display(low),
+        "high": display(high),
+        "observations": 4,
+        "high_visits": near_high,
+    }
+
+
+def observed_event_alert_level_action(market: dict) -> str | None:
+    """Specific safe scenarios for the next interval, not buy/sell signals."""
+    band = observed_event_alert_price_band(market)
+    if not band:
+        return None
+    window = _decimal_market_value(market.get("chg_window_percent"))
+    day = _decimal_market_value(market.get("chg24h_percent"))
+    if window is not None and day is not None and window > 0 and day < 0:
+        return (
+            f"A sustained move above the observed {band['high']} high would strengthen "
+            f"the short-term recovery case; a move below {band['low']} would "
+            "undermine the rebound and renew downside pressure."
+        )
+    return (
+        f"Watch for a sustained move above the observed {band['high']} high "
+        f"or a break below its {band['low']} low in the next interval. "
+        "Either would take price outside its recent four-observation range."
+    )
+
+
 def verified_event_alert_render_context(
     market: dict, previous_event_alert: dict | None = None
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Small, backed relationship codes for LLM prose; no raw prices or thresholds."""
-    context: dict[str, str] = {}
+    context: dict[str, object] = {}
+    band = observed_event_alert_price_band(market)
+    if band:
+        context["observed_price_band"] = band
     current = _decimal_market_value(market.get("chg_window_percent"))
     day = _decimal_market_value(market.get("chg24h_percent"))
     if current is not None and day is not None and current != 0 and day != 0:

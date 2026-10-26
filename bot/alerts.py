@@ -49,6 +49,8 @@ from bot.alerting.event_text import (
     event_alert_presentation_fallback,
     final_event_alert_quality_flags,
     is_news_centered_event_action,
+    observed_event_alert_level_action,
+    observed_event_alert_price_band,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -672,7 +674,8 @@ def _previous_event_alert_context(
     semantic_family: str | None,
 ) -> dict:
     numeric_context = _numeric_context_payload(getattr(alert, "numeric_context", None))
-    created_at = alert.created_at
+    # Novelty compares the latest SUCCESSFUL delivery, not reservation time.
+    created_at = getattr(alert, "sent_at", None) or alert.created_at
     return {
         "title": _safe_previous_text(getattr(alert, "trigger_reason", None)),
         "canonical_event_key": canonical_event_key or numeric_context.get("event_key"),
@@ -1392,10 +1395,24 @@ def _guard_event_text_against_market_data(
         if field_name == "message_body"
         else _contains_untrusted_percent_claim(value, market_data)
     )
+    # Conditional scenarios describe FUTURE moves in both directions, not the
+    # already-observed net change. The action compactor separately verifies
+    # that any referenced USD levels are the computed observed range.
+    conditional_range_scenarios = (
+        field_name == "possible_action"
+        and bool(observed_event_alert_price_band(market_data))
+        and "$" in value
+        and re.search(r"(?i)\b(?:if|whether)\b", value) is not None
+    )
     contradictory_direction = (
         not market_direction_claims_supported(value, market_data)
         if field_name == "message_body"
-        else _contains_contradictory_direction(value, _primary_market_direction_value(market_data))
+        else (
+            False if conditional_range_scenarios else
+            _contains_contradictory_direction(
+                value, _primary_market_direction_value(market_data)
+            )
+        )
     )
     if has_untrusted_market_claim or contradictory_direction:
         return _deterministic_event_text(
@@ -1749,6 +1766,9 @@ def _build_event_alert_payload(
             previous_event_alert=input_payload.get("previous_event_alert"),
         )
     )
+    verified_level_action = observed_event_alert_level_action(market_data)
+    if verified_level_action:
+        presentation_action_fallback = verified_level_action
     llm_situation = str(decision.message_body or "").strip()
     llm_action = str(decision.possible_action or "").strip()
     message_body = _sanitize_event_text(
@@ -1790,6 +1810,7 @@ def _build_event_alert_payload(
     possible_action = compact_event_alert_possible_action(
         possible_action,
         fallback=presentation_action_fallback,
+        market_data=market_data,
     )
     price = market_data.get("price", market_data.get("price_now_usd"))
     change_since_message = market_data.get("chg_since_msg_percent")
@@ -4369,6 +4390,11 @@ async def _filter_event_recipients_for_cooldown(
                                 "analysed_window_change_percent"
                             ),
                         ).semantic_family
+                    # Recover legacy rows lacking both event key and family.
+                    if stored_family is None:
+                        stored_family = directional_market_family(
+                            previous_context.get("analysed_window_change_percent")
+                        )
                     # Resolve legacy price-family mislabels against their own saved market window.
                     # Keep the existing strict per-recipient four-hour suppression.
                     if stored_family in {"price_uptrend", "price_downtrend"}:
@@ -4386,7 +4412,11 @@ async def _filter_event_recipients_for_cooldown(
                         previous_semantic_alert = previous_alert
                         break
                 last_semantic_sent_at = (
-                    previous_semantic_alert.created_at if previous_semantic_alert else None
+                    (
+                        getattr(previous_semantic_alert, "sent_at", None)
+                        or previous_semantic_alert.created_at
+                    )
+                    if previous_semantic_alert else None
                 )
                 semantic_allowed = True
                 semantic_remaining = 0
@@ -5291,6 +5321,39 @@ async def _deliver_market_event_alert(
     skipped_already_delivered = 0
     for recipient in recipients:
         async with _automatic_delivery_lock(recipient, normalized_symbol):
+            # Recheck after the shared per-user+coin lock: another event
+            # may have completed delivery after the earlier bulk filter.
+            if (
+                event_type == EVENT_ALERT_TYPE
+                and canonical_event_key
+                and DB_ENABLED
+                and DB_SESSION_LOCAL
+                and recipient.user_id is not None
+            ):
+                locked_filter = await _filter_event_recipients_for_cooldown(
+                    [recipient],
+                    symbol=normalized_symbol,
+                    urgency="normal",
+                    cooldown_seconds=0,
+                    canonical_event_key=canonical_event_key,
+                    semantic_family=semantic_family,
+                    now=datetime.now(timezone.utc),
+                    return_summary=True,
+                )
+                if locked_filter.suppressed:
+                    await _record_recipient_outcomes(
+                        locked_filter.suppressed,
+                        symbol=normalized_symbol,
+                        alert_type=event_type,
+                        market_event_id=market_event_id,
+                        event_ai_analysis_id=event_ai_analysis_id,
+                        trigger_source=trigger_source,
+                        event_instance_key=event_instance_key,
+                        semantic_family=semantic_family,
+                        context_fingerprint=context_fingerprint,
+                    )
+                    skipped_count += 1
+                    continue
             recipient_payload = alert_payload
             if event_type == EVENT_ALERT_TYPE:
                 prior_delivery = None

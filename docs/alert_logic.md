@@ -39,6 +39,11 @@ Two cases:
   straight to recipient checks;
 - an exact recent context already ended with no alert / no delivery -> record the reuse and stop.
 
+The exact-context fingerprint preserves the priority order of the first two
+valid news items seen by the significance model. It does not sort headlines:
+changing their order may change the model-visible evidence and must
+invalidate cache reuse.
+
 No rounding buckets or movement tolerances are used.
 
 ## Step 4 - Decide significance
@@ -115,7 +120,12 @@ When only 24-hour alignment supports a fallback, it names direction and compares
 supplied net-move magnitudes without implying pace, novelty or materiality.
 
 Backend guards still reject unsupported numbers, directions, trajectories,
-catalysts, causation, and trading instructions. They no longer discard grounded
+catalysts, causation, and trading instructions. Stage-2 Possible Action also
+fails closed on conditional assertions that extending a future price step would
+**cause convergence, divergence, or alignment** with a different market window:
+such effects are not proven by the present snapshot sequence. The final
+Telegram text uses the specific verified next-interval observation from the
+deterministic market fallback rather than publishing an unsupported inference. They no longer discard grounded
 natural language based on an exhaustive word allowlist. Invalid presentation
 fields may use an evidence-only fallback; the original render-provider exhaustion
 policy remains unchanged, with no additional provider calls for recovery.
@@ -130,6 +140,34 @@ Quality checks inspect the final Telegram message, not only LLM JSON. Sanitized
 event-level replacement/generic/repetition signals are diagnostic only and never
 decide significance. The ops-agent aggregates distinct delivered market events,
 not each recipient or provider draft. See docs/observability.md.
+
+### CCW-20: meaningful observed-price scenarios (proposal in PR #377)
+
+The owner prefers a concise explanation: *what is happening, which actual
+observed prices matter, and what a move through them would change*.
+Stage-2 Render receives a **backend-computed recent price band** only when
+four distinct time-ordered prices span at least one hour, end at the current
+price and have no gap over 90 minutes. The band uses the **last four actually
+supplied observations**. If evidence is stale, missing, noncontiguous or
+inconsistent, there are no numeric levels for the model to invent.
+
+- **Situation:** 1-2 grounded sentences linking recent path to 24h direction.
+  Two approaches to an observed high may be described only when proven by
+  prices, never as confirmed resistance, volume or buyer intent.
+- **Possible Action:** two conditional scenarios: price holding over the
+  observed high versus falling below the observed low, each with its possible
+  implications for the near-term attempt. These are **past observations, not
+  proven support/resistance or trading entry/exit levels**. The existing
+  financial-advice disclaimer remains unchanged.
+- Output is checked against exact verified USD levels; unsupported prices are
+  replaced with the computed safe scenario. Unsupported conditional future
+  convergence/divergence claims still fail closed.
+- Stage-1 significance, alert eligibility, cooldown, providers, recipient
+  routes and paid spend are unchanged by this content change.
+
+**Status:** draft PR, not deployed. The prior 20-event Cloudflare benchmark
+predates this richer price-band context. Green unit/CI tests are not proof
+of improved live Cloudflare prose.
 
 ### Event Alert message quality contract
 
@@ -306,6 +344,15 @@ hours.
 
 No bypass exists for a bigger move, urgency, new news, or a direction change inside the same
 semantic event. A genuinely different semantic event can pass.
+
+The four-hour semantic cooldown starts at **successful delivery**
+(`sent_at`), using `created_at` only for legacy successful deliveries
+without completion timestamps. Legacy events with missing identity may
+recover the stored directional family from verified price movement.
+An in-lock per-recipient same-family check protects against another event
+being delivered between the bulk eligibility pass and actual sending.
+Distinct price directions remain eligible. These are safety checks;
+they do not introduce a percentage threshold.
 
 ## Step 10 - Send once
 Delivery is idempotent. The bot records delivered, failed, filtered, cooldown, and suppression

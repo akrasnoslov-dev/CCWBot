@@ -554,9 +554,8 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
     news_items = news_items if isinstance(news_items, list) else []
 
     compact_news = []
-    for item in news_items[:2]:
-        if not isinstance(item, dict):
-            continue
+    # Select the first two VALID headlines, matching the exact context.
+    for item in [entry for entry in news_items if isinstance(entry, dict)][:2]:
         compact_item = {
             "t": item.get("title"),
             "r": item.get("relevance_label"),
@@ -696,25 +695,37 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
 
 _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
-        "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
-        "do not re-decide whether to alert.",
-        "Return exactly message_body,related_news_ids,possible_action. Backend owns event "
-        "identity, title, urgency, and all numeric market facts.",
-        "Market first; news is supporting context only and never a claimed cause. Use supplied "
-        "facts only. message_body must be concise and must not state prices, percentages, "
-        "exact time-window moves, unsupported trajectory claims, or invented market facts. "
-        "possible_action is monitor-only, never a trade instruction.",
-        "Input:sym;market_directions={window,24h,since}, each up|down|flat only when "
-        "supported; n={i,src,t,x,r,mat,h};sig={c,r};news IDs only n.i. "
-        "Do not add numerical claims, specific durations, a market direction absent from "
-        "market_directions, urgency, or causal explanations.",
-        "evidence contains only backend-verified relationships: compare window_vs_24h, "
-        "snapshot_path, latest_interval_pace or comparable_previous_alert where present. "
-        "Situation: explain one distinctive confirmed relationship in your own natural "
-        "words, never repeat a price block or invent a catalyst. "
-        "Possible action: name the NEXT observation that could confirm or contradict "
-        "that same relationship; 'whether' is fine. Avoid generic 'monitor market' advice. "
-        "If evidence is empty, disclose that no distinct trajectory is confirmed.",
+        "JSON English. Event Significance has ALREADY been accepted. Return exactly "
+        "message_body, related_news_ids, possible_action. Do not re-decide whether to alert. "
+        "Never infer news causality or give direct buy/sell instructions.",
+        "Write to help a human understand WHY the observed market path matters and "
+        "WHAT concrete observation would change the interpretation. Avoid robotic "
+        "'watch next snapshots' text when verified price levels are available.",
+        "Input sym; market_directions=verified signs for analysed window and 24h; "
+        "evidence=verified backend observations; n=optional attributed news; "
+        "sig=accepted classification. Do not invent missing metrics or catalysts.",
+        "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
+        "path with the 24h direction and explain uncertainty. When "
+        "evidence.observed_price_band.high_visits >= 2, you may explain that "
+        "recent observations approached the same high more than once, but do not "
+        "claim formal resistance, proven buyer/seller intent, volume, or a breakout. "
+        "Do not repeat USD prices or percentages already stated by the backend. "
+        "Distinguish a counter-move from a confirmed trend reversal.",
+        "Possible action: 1-2 conditional sentences, about 25-55 words. "
+        "When evidence.observed_price_band is present, quote ONLY its EXACT "
+        "high and low USD strings. Describe both testable scenarios: a sustained "
+        "move above the observed high versus a move below the observed low, and "
+        "what each would mean for the short-term attempt. The observed high/low "
+        "are reference prices from the last four supplied observations, NOT "
+        "confirmed support/resistance or trading entry/exit targets. "
+        "Do not invent other price levels, price forecasts or time deadlines. "
+        "Use measured language ('would strengthen/undermine the rebound case', "
+        "'would break the recent range'), not buy/sell orders. "
+        "When band is missing, do not invent prices: explain a specific "
+        "next-step continuation-versus-reversal observation instead.",
+        "No fabricated causes, market sentiment, unusualness, acceleration or "
+        "persistence. No predictive cross-period convergence/divergence claim. "
+        "Never imply a positive move guarantees a profitable trade.",
     )
 )
 
