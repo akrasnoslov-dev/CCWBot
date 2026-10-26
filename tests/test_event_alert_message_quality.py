@@ -477,14 +477,16 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
     )
     decision = EventAnalysisDecision(
         symbol="ETH", should_alert=True, event_key=None, title=None,
-        message_body="The short-term rebound opposes the 24-hour decline, "
-        "and the latest snapshot shows a pullback rather than a confirmed reversal.",
+        message_body="The short-term rebound opposes the broader 24-hour decline, "
+        "while the latest snapshot has pulled back after repeated approaches to "
+        "the same recent high. The recovery is not yet established.",
         related_news_ids=[], possible_action=correct_action,
         urgency="normal", confidence="high", reason_for_no_alert=None,
     )
     assembled = alerts._build_event_alert_payload(
         decision=decision, input_payload={"market": market}, related_news=[]
     )["plain_text"]
+    assert decision.message_body in assembled
     assert "Possible action:\n" + correct_action in assembled
     assert "$2,478" in assembled and "$2,472" in assembled
     assert "buy now" not in assembled.lower()
