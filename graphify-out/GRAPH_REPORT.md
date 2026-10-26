@@ -1,7 +1,7 @@
 # Graph Report - CCWBot  (2026-10-26)
 
 ## Corpus Check
-- 640 files · ~1,135,167 words
+- 640 files · ~1,135,191 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 33 file(s) not represented in the graph (top: .toml 12, (none) 8, .csv 6)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6571f4af`
+- Built from commit: `f2cd8e18`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1060,10 +1060,10 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Period` connect `Period` to `db.py`, `RedactionReport`, `detectors.py`, `collect_docker`, `render_decision_report_context`, `alert_similarity.py`, `test_observability_reconciliation.py`, `report_markdown.py`, `test_llm_outage_detectors.py`, `test_bundle_and_cli.py`, `build_alert_evidence_payloads`, `report_context.py`, `cli.py`?**
   _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `select()` connect `select` to `LlmUsageLog`, `onboarding.py`, `test_telegram_stars_payments.py`, `test_system_status.py`, `test_openai_budget.py`, `test_groq_budget.py`, `handle_watchlist_callback`, `db/premium.py`, `test_market_heartbeat.py`, `Alert`, `test_heartbeat_silence.py`, `news_intelligence_service.py`, `test_report_cooldowns.py`, `test_event_alert_pipeline.py`, `test_multicoin_alerts.py`, `generate_report_cache`, `bot/news.py`, `db/news.py`, `router.py`, `system_status.py`, `User`, `database.py`, `test_news_intelligence_service.py`, `test_news_intelligence_schema.py`, `datetime`, `test_product_analytics.py`, `openai_budget.py`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **Why does `unknown()` connect `Observability Snippets` to `Ops-Agent Service`, `RichDeliveryUncertain`, `CCWBot Ops-Agent Report Analysis`, `Alert`, `CCWBot Ops-Agent`?**
   _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `select()` connect `select` to `LlmUsageLog`, `onboarding.py`, `test_telegram_stars_payments.py`, `test_system_status.py`, `test_openai_budget.py`, `test_groq_budget.py`, `handle_watchlist_callback`, `db/premium.py`, `test_market_heartbeat.py`, `Alert`, `test_heartbeat_silence.py`, `news_intelligence_service.py`, `test_report_cooldowns.py`, `test_event_alert_pipeline.py`, `test_multicoin_alerts.py`, `generate_report_cache`, `bot/news.py`, `db/news.py`, `router.py`, `system_status.py`, `User`, `database.py`, `test_news_intelligence_service.py`, `test_news_intelligence_schema.py`, `datetime`, `test_product_analytics.py`, `openai_budget.py`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Are the 168 inferred relationships involving `select()` (e.g. with `attach_analysis_to_market_event()` and `count_market_events()`) actually correct?**
   _`select()` has 168 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 31 inferred relationships involving `Period` (e.g. with `_alert_quality()` and `_base_payload()`) actually correct?**

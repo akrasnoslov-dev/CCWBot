@@ -50077,7 +50077,7 @@
       "node_kind": "heading",
       "norm_label": "accounting of the original 95 exclusions",
       "source_file": "research/event_alerts/README.md",
-      "source_location": "L17"
+      "source_location": "L18"
     },
     {
       "id": "research_event_alerts_readme_event_alert_research_archive",
@@ -50101,7 +50101,7 @@
       "node_kind": "heading",
       "norm_label": "operational notes",
       "source_file": "research/event_alerts/README.md",
-      "source_location": "L27"
+      "source_location": "L28"
     },
     {
       "id": "research_event_alerts_readme_snapshot_imported_2026_10_26",
@@ -210956,7 +210956,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "research/event_alerts/README.md",
-      "source_location": "L17",
+      "source_location": "L18",
       "weight": 1.0
     },
     {
@@ -210967,7 +210967,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "research/event_alerts/README.md",
-      "source_location": "L27",
+      "source_location": "L28",
       "weight": 1.0
     },
     {
@@ -259573,5 +259573,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "6571f4af7b8116adb01b3185a3fdcfd796d24909"
+  "built_at_commit": "f2cd8e186f6413cf834b29183224b3d76e7ec910"
 }
