@@ -503,6 +503,23 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
     assert "$2,999" not in corrected
     assert observed_event_alert_level_action(market) in corrected
 
+    false_relation_decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body=decision.message_body, related_news_ids=[],
+        possible_action=(
+            "If price holds above $2,478, it would align the rebound with the "
+            "24-hour decline."
+        ),
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    false_relation = alerts._build_event_alert_payload(
+        decision=false_relation_decision,
+        input_payload={"market": market},
+        related_news=[],
+    )["plain_text"]
+    assert false_relation_decision.possible_action not in false_relation
+    assert observed_event_alert_level_action(market) in false_relation
+
 
 def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
     from bot.alerting.event_text import observed_event_alert_price_band
