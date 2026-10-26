@@ -120,7 +120,12 @@ When only 24-hour alignment supports a fallback, it names direction and compares
 supplied net-move magnitudes without implying pace, novelty or materiality.
 
 Backend guards still reject unsupported numbers, directions, trajectories,
-catalysts, causation, and trading instructions. They no longer discard grounded
+catalysts, causation, and trading instructions. Stage-2 Possible Action also
+fails closed on conditional assertions that extending a future price step would
+**cause convergence, divergence, or alignment** with a different market window:
+such effects are not proven by the present snapshot sequence. The final
+Telegram text uses the specific verified next-interval observation from the
+deterministic market fallback rather than publishing an unsupported inference. They no longer discard grounded
 natural language based on an exhaustive word allowlist. Invalid presentation
 fields may use an evidence-only fallback; the original render-provider exhaustion
 policy remains unchanged, with no additional provider calls for recovery.
