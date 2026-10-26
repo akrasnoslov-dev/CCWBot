@@ -682,7 +682,7 @@ def _action_price_levels_supported(value: str, market: dict | None) -> bool:
 
 _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
     r"(?i)\b(?:if|when)\b[^.!?]{0,160}"
-    r"\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180}"
+    r"(?:\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180})?"
     r"\b(?:diverg\w*|converg\w*|align\w*)\b"
 )
 
