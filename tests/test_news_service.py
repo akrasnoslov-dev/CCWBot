@@ -93,17 +93,18 @@ def test_coindesk_empty_or_malformed_primary_uses_fallback(monkeypatch):
 
     primary = rss.RSS_FEEDS[0]
     mirror = rss.RSS_FEED_FALLBACKS[primary]
+    def make_reader(unusable_feed, calls):
+        def reader(url):
+            calls.append(url)
+            return unusable_feed if url == primary else _sample_rss_feed()
+        return reader
+
     for unusable in (
         _sample_rss_feed(entries=False),
         _sample_rss_feed(bozo=True),
     ):
         calls = []
-
-        def reader(url):
-            calls.append(url)
-            return unusable if url == primary else _sample_rss_feed()
-
-        monkeypatch.setattr(rss, "_read_rss_feed", reader)
+        monkeypatch.setattr(rss, "_read_rss_feed", make_reader(unusable, calls))
         feed, route = rss._read_rss_feed_with_fallback(primary)
         assert route == "fallback"
         assert feed.entries
@@ -132,7 +133,10 @@ def test_coindesk_both_feeds_fail_but_cointelegraph_continues(monkeypatch, caplo
         items = rss.fetch_crypto_news(limit=10)
     assert len(items) == 1
     assert calls == [primary, mirror, second]
-    assert "status=failed primary_reason=TimeoutError fallback_reason=ConnectionError" in caplog.text
+    assert (
+        "status=failed primary_reason=TimeoutError fallback_reason=ConnectionError"
+        in caplog.text
+    )
     assert "source_index=0 status=failed reason=ConnectionError" in caplog.text
     assert "primary private details" not in caplog.text
     assert "mirror private details" not in caplog.text
