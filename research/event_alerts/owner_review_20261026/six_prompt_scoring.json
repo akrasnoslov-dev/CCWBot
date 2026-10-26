@@ -1,0 +1,749 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "owner_review_source_sha256": "7ddf52250354cb83924500cbb950b6c3cca185ca6091be5257ad8d609d4e05cf",
+  "six_ledger_archive_sha256": "7122b4696022a04da3e88ba210582f5c39188b7c68be54e483fe8f048383d47d",
+  "owner_cases": 66,
+  "decisive_cases": 58,
+  "ambiguous": 8,
+  "ranking": [
+    {
+      "prompt": "production",
+      "TP": 2,
+      "FP": 5,
+      "FN": 22,
+      "TN": 29,
+      "owner_accuracy_disagreements": 0.5344827586206896,
+      "precision_disagreements": 0.2857142857142857,
+      "recall_disagreements": 0.08333333333333333,
+      "f1_disagreements": 0.12903225806451613,
+      "amb_alert": 1,
+      "amb_no_alert": 7,
+      "overall_positive_200": 26,
+      "per_coin": {
+        "GRAM": {
+          "fn": 5,
+          "tp": 2,
+          "tn": 7,
+          "fp": 2
+        },
+        "ETH": {
+          "fn": 7,
+          "tn": 10,
+          "amb_no_alert": 2
+        },
+        "SOL": {
+          "fp": 1,
+          "tn": 3,
+          "fn": 10,
+          "amb_no_alert": 3,
+          "amb_alert": 1
+        },
+        "BTC": {
+          "tn": 9,
+          "fp": 2,
+          "amb_no_alert": 2
+        }
+      },
+      "ids": {
+        "tp": [
+          "ev_f8e124afb1e8165c",
+          "ev_9df94d4b7d0af73a"
+        ],
+        "fp": [
+          "ev_673845ec86094a1d",
+          "ev_23e08cd9ee137e52",
+          "ev_48aac7876a7da763",
+          "ev_8fc0a71d48f52691",
+          "ev_2289939e1f4c84d1"
+        ],
+        "fn": [
+          "ev_14a7e14b3235b74f",
+          "ev_b3ccbaff2007d7a2",
+          "ev_686065337837bd2d",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_5c1fe678cd551519",
+          "ev_542fbc621e28df65",
+          "ev_dc246bd4160b239e",
+          "ev_df5a044c6b9374c9",
+          "ev_0932ea1b4a53c7b0",
+          "ev_14758c4bcbd58e1b",
+          "ev_df21210a26fe1d35",
+          "ev_9b51f2401c505ab7",
+          "ev_a4e1bd93914f6249",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_fce00ba49f7dfcc7",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "tn": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_6e57bb32f23f4c9e",
+          "ev_a7cc7577e0767e8c",
+          "ev_b9008313a68e67ee",
+          "ev_f2228512fba9b5c6",
+          "ev_747d289d8339476d",
+          "ev_27f9bc5ba4f71666",
+          "ev_9294785f8cecc14b",
+          "ev_b04b2ad70a179ee7",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_195f1879f01dbc6c",
+          "ev_4238003c7d8cf56e",
+          "ev_64019382b0ba7655",
+          "ev_0443b0a529eb1364",
+          "ev_0282075bb955ef1c",
+          "ev_39da7295eecf6a74",
+          "ev_f748fde23bb604f2",
+          "ev_8f88957f27c5a239",
+          "ev_7d0b437fc7918a36",
+          "ev_3da2b437209cfc96",
+          "ev_1f4d888d17baf529",
+          "ev_1bda2dc7f164e499",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_8a1b3978ad621bfb",
+          "ev_64558d52206a2c40",
+          "ev_eccdf281c0b85c80",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "amb_alert": [
+          "ev_3f11561b791a53f8"
+        ],
+        "amb_no_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_3e3ce48a85ad2810",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ]
+      },
+      "usage": {
+        "tokens_in": 149864,
+        "tokens_out": 51715,
+        "charges": 0.040843900000000016
+      }
+    },
+    {
+      "prompt": "balanced",
+      "TP": 8,
+      "FP": 12,
+      "FN": 16,
+      "TN": 22,
+      "owner_accuracy_disagreements": 0.5172413793103449,
+      "precision_disagreements": 0.4,
+      "recall_disagreements": 0.3333333333333333,
+      "f1_disagreements": 0.36363636363636365,
+      "amb_alert": 0,
+      "amb_no_alert": 8,
+      "overall_positive_200": 44,
+      "per_coin": {
+        "GRAM": {
+          "fn": 6,
+          "tp": 1,
+          "fp": 5,
+          "tn": 4
+        },
+        "ETH": {
+          "tp": 4,
+          "tn": 8,
+          "fp": 2,
+          "fn": 3,
+          "amb_no_alert": 2
+        },
+        "SOL": {
+          "tn": 4,
+          "tp": 3,
+          "fn": 7,
+          "amb_no_alert": 4
+        },
+        "BTC": {
+          "tn": 6,
+          "fp": 5,
+          "amb_no_alert": 2
+        }
+      },
+      "ids": {
+        "tp": [
+          "ev_b3ccbaff2007d7a2",
+          "ev_f8e124afb1e8165c",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_df5a044c6b9374c9",
+          "ev_14758c4bcbd58e1b",
+          "ev_df21210a26fe1d35",
+          "ev_9b51f2401c505ab7",
+          "ev_fce00ba49f7dfcc7"
+        ],
+        "fp": [
+          "ev_b9008313a68e67ee",
+          "ev_23e08cd9ee137e52",
+          "ev_48aac7876a7da763",
+          "ev_27f9bc5ba4f71666",
+          "ev_b04b2ad70a179ee7",
+          "ev_8fc0a71d48f52691",
+          "ev_2289939e1f4c84d1",
+          "ev_0282075bb955ef1c",
+          "ev_8f88957f27c5a239",
+          "ev_7d0b437fc7918a36",
+          "ev_1f4d888d17baf529",
+          "ev_1bda2dc7f164e499"
+        ],
+        "fn": [
+          "ev_14a7e14b3235b74f",
+          "ev_686065337837bd2d",
+          "ev_5c1fe678cd551519",
+          "ev_542fbc621e28df65",
+          "ev_dc246bd4160b239e",
+          "ev_0932ea1b4a53c7b0",
+          "ev_9df94d4b7d0af73a",
+          "ev_a4e1bd93914f6249",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "tn": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_6e57bb32f23f4c9e",
+          "ev_673845ec86094a1d",
+          "ev_a7cc7577e0767e8c",
+          "ev_f2228512fba9b5c6",
+          "ev_747d289d8339476d",
+          "ev_9294785f8cecc14b",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_195f1879f01dbc6c",
+          "ev_4238003c7d8cf56e",
+          "ev_64019382b0ba7655",
+          "ev_0443b0a529eb1364",
+          "ev_39da7295eecf6a74",
+          "ev_f748fde23bb604f2",
+          "ev_3da2b437209cfc96",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_8a1b3978ad621bfb",
+          "ev_64558d52206a2c40",
+          "ev_eccdf281c0b85c80",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "amb_alert": [],
+        "amb_no_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_3e3ce48a85ad2810",
+          "ev_3f11561b791a53f8",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ]
+      },
+      "usage": {
+        "tokens_in": 216664,
+        "tokens_out": 65598,
+        "charges": 0.05446539999999998
+      }
+    },
+    {
+      "prompt": "refined_v2",
+      "TP": 9,
+      "FP": 8,
+      "FN": 15,
+      "TN": 26,
+      "owner_accuracy_disagreements": 0.603448275862069,
+      "precision_disagreements": 0.5294117647058824,
+      "recall_disagreements": 0.375,
+      "f1_disagreements": 0.43902439024390244,
+      "amb_alert": 1,
+      "amb_no_alert": 7,
+      "overall_positive_200": 42,
+      "per_coin": {
+        "GRAM": {
+          "fn": 4,
+          "tp": 3,
+          "tn": 5,
+          "fp": 4
+        },
+        "ETH": {
+          "tp": 3,
+          "tn": 9,
+          "fp": 1,
+          "fn": 4,
+          "amb_no_alert": 2
+        },
+        "SOL": {
+          "tn": 4,
+          "fn": 7,
+          "tp": 3,
+          "amb_no_alert": 3,
+          "amb_alert": 1
+        },
+        "BTC": {
+          "tn": 8,
+          "fp": 3,
+          "amb_no_alert": 2
+        }
+      },
+      "ids": {
+        "tp": [
+          "ev_b3ccbaff2007d7a2",
+          "ev_f8e124afb1e8165c",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_0932ea1b4a53c7b0",
+          "ev_9df94d4b7d0af73a",
+          "ev_df21210a26fe1d35",
+          "ev_9b51f2401c505ab7",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_fce00ba49f7dfcc7"
+        ],
+        "fp": [
+          "ev_b9008313a68e67ee",
+          "ev_23e08cd9ee137e52",
+          "ev_27f9bc5ba4f71666",
+          "ev_2289939e1f4c84d1",
+          "ev_8f88957f27c5a239",
+          "ev_1f4d888d17baf529",
+          "ev_1bda2dc7f164e499",
+          "ev_eccdf281c0b85c80"
+        ],
+        "fn": [
+          "ev_14a7e14b3235b74f",
+          "ev_686065337837bd2d",
+          "ev_5c1fe678cd551519",
+          "ev_542fbc621e28df65",
+          "ev_dc246bd4160b239e",
+          "ev_df5a044c6b9374c9",
+          "ev_14758c4bcbd58e1b",
+          "ev_a4e1bd93914f6249",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "tn": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_6e57bb32f23f4c9e",
+          "ev_673845ec86094a1d",
+          "ev_a7cc7577e0767e8c",
+          "ev_f2228512fba9b5c6",
+          "ev_747d289d8339476d",
+          "ev_48aac7876a7da763",
+          "ev_9294785f8cecc14b",
+          "ev_b04b2ad70a179ee7",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_8fc0a71d48f52691",
+          "ev_195f1879f01dbc6c",
+          "ev_4238003c7d8cf56e",
+          "ev_64019382b0ba7655",
+          "ev_0443b0a529eb1364",
+          "ev_0282075bb955ef1c",
+          "ev_39da7295eecf6a74",
+          "ev_f748fde23bb604f2",
+          "ev_7d0b437fc7918a36",
+          "ev_3da2b437209cfc96",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_8a1b3978ad621bfb",
+          "ev_64558d52206a2c40",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "amb_alert": [
+          "ev_3f11561b791a53f8"
+        ],
+        "amb_no_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_3e3ce48a85ad2810",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ]
+      },
+      "usage": {
+        "tokens_in": 286864,
+        "tokens_out": 67147,
+        "charges": 0.062259900000000076
+      }
+    },
+    {
+      "prompt": "refined_v3",
+      "TP": 0,
+      "FP": 1,
+      "FN": 24,
+      "TN": 33,
+      "owner_accuracy_disagreements": 0.5689655172413793,
+      "precision_disagreements": 0.0,
+      "recall_disagreements": 0.0,
+      "f1_disagreements": 0.0,
+      "amb_alert": 0,
+      "amb_no_alert": 8,
+      "overall_positive_200": 24,
+      "per_coin": {
+        "GRAM": {
+          "fn": 7,
+          "tn": 9
+        },
+        "ETH": {
+          "fn": 7,
+          "tn": 10,
+          "amb_no_alert": 2
+        },
+        "SOL": {
+          "tn": 3,
+          "fp": 1,
+          "fn": 10,
+          "amb_no_alert": 4
+        },
+        "BTC": {
+          "tn": 11,
+          "amb_no_alert": 2
+        }
+      },
+      "ids": {
+        "tp": [],
+        "fp": [
+          "ev_a7cc7577e0767e8c"
+        ],
+        "fn": [
+          "ev_14a7e14b3235b74f",
+          "ev_b3ccbaff2007d7a2",
+          "ev_f8e124afb1e8165c",
+          "ev_686065337837bd2d",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_5c1fe678cd551519",
+          "ev_542fbc621e28df65",
+          "ev_dc246bd4160b239e",
+          "ev_df5a044c6b9374c9",
+          "ev_0932ea1b4a53c7b0",
+          "ev_14758c4bcbd58e1b",
+          "ev_9df94d4b7d0af73a",
+          "ev_df21210a26fe1d35",
+          "ev_9b51f2401c505ab7",
+          "ev_a4e1bd93914f6249",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_fce00ba49f7dfcc7",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "tn": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_6e57bb32f23f4c9e",
+          "ev_673845ec86094a1d",
+          "ev_b9008313a68e67ee",
+          "ev_f2228512fba9b5c6",
+          "ev_23e08cd9ee137e52",
+          "ev_747d289d8339476d",
+          "ev_48aac7876a7da763",
+          "ev_27f9bc5ba4f71666",
+          "ev_9294785f8cecc14b",
+          "ev_b04b2ad70a179ee7",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_8fc0a71d48f52691",
+          "ev_195f1879f01dbc6c",
+          "ev_4238003c7d8cf56e",
+          "ev_64019382b0ba7655",
+          "ev_0443b0a529eb1364",
+          "ev_2289939e1f4c84d1",
+          "ev_0282075bb955ef1c",
+          "ev_39da7295eecf6a74",
+          "ev_f748fde23bb604f2",
+          "ev_8f88957f27c5a239",
+          "ev_7d0b437fc7918a36",
+          "ev_3da2b437209cfc96",
+          "ev_1f4d888d17baf529",
+          "ev_1bda2dc7f164e499",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_8a1b3978ad621bfb",
+          "ev_64558d52206a2c40",
+          "ev_eccdf281c0b85c80",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "amb_alert": [],
+        "amb_no_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_3e3ce48a85ad2810",
+          "ev_3f11561b791a53f8",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ]
+      },
+      "usage": {
+        "tokens_in": 198464,
+        "tokens_out": 82131,
+        "charges": 0.06091189999999998
+      }
+    },
+    {
+      "prompt": "quality_first",
+      "TP": 20,
+      "FP": 32,
+      "FN": 4,
+      "TN": 2,
+      "owner_accuracy_disagreements": 0.3793103448275862,
+      "precision_disagreements": 0.38461538461538464,
+      "recall_disagreements": 0.8333333333333334,
+      "f1_disagreements": 0.5263157894736842,
+      "amb_alert": 8,
+      "amb_no_alert": 0,
+      "overall_positive_200": 83,
+      "per_coin": {
+        "GRAM": {
+          "fn": 4,
+          "tp": 3,
+          "fp": 9
+        },
+        "ETH": {
+          "tp": 7,
+          "fp": 10,
+          "amb_alert": 2
+        },
+        "SOL": {
+          "fp": 4,
+          "tp": 10,
+          "amb_alert": 4
+        },
+        "BTC": {
+          "fp": 9,
+          "tn": 2,
+          "amb_alert": 2
+        }
+      },
+      "ids": {
+        "tp": [
+          "ev_b3ccbaff2007d7a2",
+          "ev_f8e124afb1e8165c",
+          "ev_686065337837bd2d",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_542fbc621e28df65",
+          "ev_df5a044c6b9374c9",
+          "ev_14758c4bcbd58e1b",
+          "ev_9df94d4b7d0af73a",
+          "ev_df21210a26fe1d35",
+          "ev_9b51f2401c505ab7",
+          "ev_a4e1bd93914f6249",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_fce00ba49f7dfcc7",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "fp": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_6e57bb32f23f4c9e",
+          "ev_673845ec86094a1d",
+          "ev_a7cc7577e0767e8c",
+          "ev_b9008313a68e67ee",
+          "ev_f2228512fba9b5c6",
+          "ev_23e08cd9ee137e52",
+          "ev_48aac7876a7da763",
+          "ev_27f9bc5ba4f71666",
+          "ev_9294785f8cecc14b",
+          "ev_b04b2ad70a179ee7",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_8fc0a71d48f52691",
+          "ev_195f1879f01dbc6c",
+          "ev_4238003c7d8cf56e",
+          "ev_64019382b0ba7655",
+          "ev_0443b0a529eb1364",
+          "ev_2289939e1f4c84d1",
+          "ev_0282075bb955ef1c",
+          "ev_39da7295eecf6a74",
+          "ev_f748fde23bb604f2",
+          "ev_8f88957f27c5a239",
+          "ev_7d0b437fc7918a36",
+          "ev_3da2b437209cfc96",
+          "ev_1f4d888d17baf529",
+          "ev_1bda2dc7f164e499",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_64558d52206a2c40",
+          "ev_eccdf281c0b85c80",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "fn": [
+          "ev_14a7e14b3235b74f",
+          "ev_5c1fe678cd551519",
+          "ev_dc246bd4160b239e",
+          "ev_0932ea1b4a53c7b0"
+        ],
+        "tn": [
+          "ev_747d289d8339476d",
+          "ev_8a1b3978ad621bfb"
+        ],
+        "amb_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_3e3ce48a85ad2810",
+          "ev_3f11561b791a53f8",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ],
+        "amb_no_alert": []
+      },
+      "usage": {
+        "tokens_in": 729052,
+        "tokens_out": 116478,
+        "charges": 0.1311442
+      }
+    },
+    {
+      "prompt": "economical",
+      "TP": 13,
+      "FP": 17,
+      "FN": 11,
+      "TN": 17,
+      "owner_accuracy_disagreements": 0.5172413793103449,
+      "precision_disagreements": 0.43333333333333335,
+      "recall_disagreements": 0.5416666666666666,
+      "f1_disagreements": 0.48148148148148145,
+      "amb_alert": 3,
+      "amb_no_alert": 5,
+      "overall_positive_200": 56,
+      "per_coin": {
+        "GRAM": {
+          "tp": 6,
+          "fn": 1,
+          "fp": 5,
+          "tn": 4
+        },
+        "ETH": {
+          "tp": 4,
+          "fp": 5,
+          "tn": 5,
+          "fn": 3,
+          "amb_no_alert": 2
+        },
+        "SOL": {
+          "tn": 4,
+          "fn": 7,
+          "tp": 3,
+          "amb_alert": 2,
+          "amb_no_alert": 2
+        },
+        "BTC": {
+          "tn": 4,
+          "fp": 7,
+          "amb_alert": 1,
+          "amb_no_alert": 1
+        }
+      },
+      "ids": {
+        "tp": [
+          "ev_14a7e14b3235b74f",
+          "ev_b3ccbaff2007d7a2",
+          "ev_f8e124afb1e8165c",
+          "ev_56ce5a3b11bfb1dc",
+          "ev_5c1fe678cd551519",
+          "ev_542fbc621e28df65",
+          "ev_dc246bd4160b239e",
+          "ev_df5a044c6b9374c9",
+          "ev_0932ea1b4a53c7b0",
+          "ev_9df94d4b7d0af73a",
+          "ev_9b51f2401c505ab7",
+          "ev_a4e1bd93914f6249",
+          "ev_fce00ba49f7dfcc7"
+        ],
+        "fp": [
+          "ev_8f7f1e3fc7f9abb5",
+          "ev_23e08cd9ee137e52",
+          "ev_747d289d8339476d",
+          "ev_48aac7876a7da763",
+          "ev_27f9bc5ba4f71666",
+          "ev_9294785f8cecc14b",
+          "ev_b04b2ad70a179ee7",
+          "ev_8fc0a71d48f52691",
+          "ev_195f1879f01dbc6c",
+          "ev_64019382b0ba7655",
+          "ev_2289939e1f4c84d1",
+          "ev_0282075bb955ef1c",
+          "ev_f748fde23bb604f2",
+          "ev_8f88957f27c5a239",
+          "ev_1bda2dc7f164e499",
+          "ev_8a1b3978ad621bfb",
+          "ev_64558d52206a2c40"
+        ],
+        "fn": [
+          "ev_686065337837bd2d",
+          "ev_14758c4bcbd58e1b",
+          "ev_df21210a26fe1d35",
+          "ev_ed2b9dc1c9a9a2af",
+          "ev_939765504bd1e470",
+          "ev_9b87a21dfc191ec6",
+          "ev_64352f403a4118af",
+          "ev_b1950efeba816ba3",
+          "ev_05f1c3c4230e884a",
+          "ev_7d71da21a73bd3fa",
+          "ev_59528ff24933263f"
+        ],
+        "tn": [
+          "ev_6e57bb32f23f4c9e",
+          "ev_673845ec86094a1d",
+          "ev_a7cc7577e0767e8c",
+          "ev_b9008313a68e67ee",
+          "ev_f2228512fba9b5c6",
+          "ev_296201f0d86fd10e",
+          "ev_a4d91b21e69cf512",
+          "ev_4238003c7d8cf56e",
+          "ev_0443b0a529eb1364",
+          "ev_39da7295eecf6a74",
+          "ev_7d0b437fc7918a36",
+          "ev_3da2b437209cfc96",
+          "ev_1f4d888d17baf529",
+          "ev_b8cf7b25bfcd5cb1",
+          "ev_eccdf281c0b85c80",
+          "ev_f2e3ab01706221e2",
+          "ev_b324100011a26477"
+        ],
+        "amb_alert": [
+          "ev_c4f80ddef5b3fe97",
+          "ev_3e3ce48a85ad2810",
+          "ev_3f11561b791a53f8"
+        ],
+        "amb_no_alert": [
+          "ev_4cef8d0733a56185",
+          "ev_76d059ad58cd9c02",
+          "ev_e55d7b380c4f6c11",
+          "ev_6b6ede4514df7393",
+          "ev_ae7bb0bcf5848ba5"
+        ]
+      },
+      "usage": {
+        "tokens_in": 239144,
+        "tokens_out": 121853,
+        "charges": 0.08484089999999997
+      }
+    }
+  ]
+}
