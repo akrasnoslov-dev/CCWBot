@@ -672,7 +672,8 @@ def _previous_event_alert_context(
     semantic_family: str | None,
 ) -> dict:
     numeric_context = _numeric_context_payload(getattr(alert, "numeric_context", None))
-    created_at = alert.created_at
+    # Novelty compares the latest SUCCESSFUL delivery, not reservation time.
+    created_at = getattr(alert, "sent_at", None) or alert.created_at
     return {
         "title": _safe_previous_text(getattr(alert, "trigger_reason", None)),
         "canonical_event_key": canonical_event_key or numeric_context.get("event_key"),
@@ -4369,6 +4370,11 @@ async def _filter_event_recipients_for_cooldown(
                                 "analysed_window_change_percent"
                             ),
                         ).semantic_family
+                    # Recover legacy rows lacking both event key and family.
+                    if stored_family is None:
+                        stored_family = directional_market_family(
+                            previous_context.get("analysed_window_change_percent")
+                        )
                     # Resolve legacy price-family mislabels against their own saved market window.
                     # Keep the existing strict per-recipient four-hour suppression.
                     if stored_family in {"price_uptrend", "price_downtrend"}:
@@ -4386,7 +4392,11 @@ async def _filter_event_recipients_for_cooldown(
                         previous_semantic_alert = previous_alert
                         break
                 last_semantic_sent_at = (
-                    previous_semantic_alert.created_at if previous_semantic_alert else None
+                    (
+                        getattr(previous_semantic_alert, "sent_at", None)
+                        or previous_semantic_alert.created_at
+                    )
+                    if previous_semantic_alert else None
                 )
                 semantic_allowed = True
                 semantic_remaining = 0
@@ -5291,6 +5301,39 @@ async def _deliver_market_event_alert(
     skipped_already_delivered = 0
     for recipient in recipients:
         async with _automatic_delivery_lock(recipient, normalized_symbol):
+            # Recheck after the shared per-user+coin lock: another event
+            # may have completed delivery after the earlier bulk filter.
+            if (
+                event_type == EVENT_ALERT_TYPE
+                and canonical_event_key
+                and DB_ENABLED
+                and DB_SESSION_LOCAL
+                and recipient.user_id is not None
+            ):
+                locked_filter = await _filter_event_recipients_for_cooldown(
+                    [recipient],
+                    symbol=normalized_symbol,
+                    urgency="normal",
+                    cooldown_seconds=0,
+                    canonical_event_key=canonical_event_key,
+                    semantic_family=semantic_family,
+                    now=datetime.now(timezone.utc),
+                    return_summary=True,
+                )
+                if locked_filter.suppressed:
+                    await _record_recipient_outcomes(
+                        locked_filter.suppressed,
+                        symbol=normalized_symbol,
+                        alert_type=event_type,
+                        market_event_id=market_event_id,
+                        event_ai_analysis_id=event_ai_analysis_id,
+                        trigger_source=trigger_source,
+                        event_instance_key=event_instance_key,
+                        semantic_family=semantic_family,
+                        context_fingerprint=context_fingerprint,
+                    )
+                    skipped_count += 1
+                    continue
             recipient_payload = alert_payload
             if event_type == EVENT_ALERT_TYPE:
                 prior_delivery = None
