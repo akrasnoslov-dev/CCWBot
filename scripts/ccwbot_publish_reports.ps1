@@ -106,10 +106,14 @@ The repository remains public. No `.env`, credentials, user IDs, production logs
 # reports/ is gitignored everywhere. Explicitly force-add ONLY the screened output.
 & git add -f -- "research/event_alerts/versioned_evidence_20261026"
 if ($LASTEXITCODE -ne 0) { throw 'git add failed.' }
-& git diff --cached --check
-if ($LASTEXITCODE -ne 0) { Write-Warning 'Archived source contains whitespace warnings; preserving byte-exact SHA-256 evidence.' }
-$staged = @(& git diff --cached --name-only)
-if (@($staged | Where-Object {$_ -notlike 'research/event_alerts/versioned_evidence_20261026/*'}).Count -gt 0) {
+# Research inputs are immutable byte-for-byte snapshots. Do not rewrite historic
+# trailing whitespace; blob bytes must agree with the SHA-256 manifest.
+# Git may quote non-ASCII filenames in --name-only output. Use a native Git
+# negative pathspec instead of comparing human-readable, quoted path strings.
+$unexpectedStaged = @(& git diff --cached --name-only -- . ':(exclude)research/event_alerts/versioned_evidence_20261026/**')
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect staged Git paths.' }
+if ($unexpectedStaged.Count -gt 0) {
+    Write-Warning ('Unexpected staged paths: ' + ($unexpectedStaged -join '; '))
     throw 'Unexpected staged changes; not committing.'
 }
 Write-Host "Prepared $($allowed.Count) screened files out of $($sourceFiles.Count). Skipped $($excluded.Count) potentially sensitive, duplicate or unsupported files."
