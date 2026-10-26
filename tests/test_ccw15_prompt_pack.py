@@ -43,16 +43,28 @@ def _input():
     }
 
 
-def test_baseline_instructions_match_exact_production_prompt():
-    check_production_parity()
+def test_historical_baseline_detects_owner_approved_dev_prompt_change():
+    # CCW-15 is an immutable baseline; CCW-47 deliberately changed dev to Refined v2.
+    with pytest.raises(ValueError, match="Production instructions drifted"):
+        check_production_parity()
     payload = _input()
-    assert build_prompt(payload, "production") == build_event_significance_prompt(payload)
+    with pytest.raises(ValueError, match="Production instructions drifted"):
+        build_prompt(payload, "production")
+    historic = build_prompt(payload, "production", require_current_parity=False)
+    assert historic.startswith(instruction("production"))
+    assert historic != build_event_significance_prompt(payload)
+    assert historic.split("\\nInput JSON:\\n", 1)[1] == (
+        build_event_significance_prompt(payload).split("\\nInput JSON:\\n", 1)[1]
+    )
 
 
 def test_candidate_prompts_are_full_deterministic_instructions_only():
     initial = _input()
     original = copy.deepcopy(initial)
-    rendered = {name: build_prompt(initial, name) for name in PROMPTS}
+    rendered = {
+        name: build_prompt(initial, name, require_current_parity=False)
+        for name in PROMPTS
+    }
     assert initial == original
     assert len(rendered) == 3
     for name, text in rendered.items():
