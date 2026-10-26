@@ -141,6 +141,34 @@ event-level replacement/generic/repetition signals are diagnostic only and never
 decide significance. The ops-agent aggregates distinct delivered market events,
 not each recipient or provider draft. See docs/observability.md.
 
+### CCW-20: meaningful observed-price scenarios (proposal in PR #377)
+
+The owner prefers a concise explanation: *what is happening, which actual
+observed prices matter, and what a move through them would change*.
+Stage-2 Render receives a **backend-computed recent price band** only when
+four distinct time-ordered prices span at least one hour, end at the current
+price and have no gap over 90 minutes. The band uses the **last four actually
+supplied observations**. If evidence is stale, missing, noncontiguous or
+inconsistent, there are no numeric levels for the model to invent.
+
+- **Situation:** 1-2 grounded sentences linking recent path to 24h direction.
+  Two approaches to an observed high may be described only when proven by
+  prices, never as confirmed resistance, volume or buyer intent.
+- **Possible Action:** two conditional scenarios: price holding over the
+  observed high versus falling below the observed low, each with its possible
+  implications for the near-term attempt. These are **past observations, not
+  proven support/resistance or trading entry/exit levels**. The existing
+  financial-advice disclaimer remains unchanged.
+- Output is checked against exact verified USD levels; unsupported prices are
+  replaced with the computed safe scenario. Unsupported conditional future
+  convergence/divergence claims still fail closed.
+- Stage-1 significance, alert eligibility, cooldown, providers, recipient
+  routes and paid spend are unchanged by this content change.
+
+**Status:** draft PR, not deployed. The prior 20-event Cloudflare benchmark
+predates this richer price-band context. Green unit/CI tests are not proof
+of improved live Cloudflare prose.
+
 ### Event Alert message quality contract
 
 A mobile alert should answer three questions in this order without becoming a report:
