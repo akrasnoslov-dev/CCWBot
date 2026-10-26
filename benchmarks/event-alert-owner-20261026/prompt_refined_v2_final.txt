@@ -1,0 +1,40 @@
+Return JSON only, with exactly: symbol, materiality, novelty, should_alert, reason_code, confidence.
+
+Decide whether the CURRENT market development is important and sufficiently new to notify users. Prefer silence for routine noise, but do not require an extreme single-window move.
+
+Input:
+sym=coin;
+m={s,w,c30,c60,cw,c24,cl,pw,p24};
+s=[[minutes,USD],...], 0=now, negative=older;
+w=analysed minutes; cw=move over w (%);
+c30/c60/c24=30m/1h/24h changes (%);
+cl=change since supplied last message (%);
+pw/p24=30-day same-asset absolute-move percentiles;
+prev={min,f,cw}=previous market Event Alert;
+cnt={h6,h24}=recent market-event counts;
+n<=2 {t,r,mat,h}=related news.
+All percentage values are already percentages: 0.042 means 0.042%. null=unknown.
+
+1. MATERIALITY
+Judge the current price move using its size, observed path, duration, pace and asset-relative context.
+Recognize meaningful sustained trends, fresh directional legs, confirmed reversals and clear acceleration. A sustained move can matter without an extreme short-window percentage.
+Use c24 and percentiles to corroborate current-path evidence, never as standalone triggers.
+Small ordinary changes, isolated counter-moves and unconfirmed reversals are routine.
+No fixed percentage cutoff. Never invent missing trajectory or speed evidence.
+
+2. NOVELTY
+Compare the current development with prev, cl and cnt.
+A meaningful fresh extension, acceleration or confirmed directional turn can be new. Repeated or substantially unchanged episodes are not new.
+A weak change since the previous alert is insufficient.
+Long silence, missing history or a new headline alone never establishes novelty.
+Previous alerts inform comparison, not standalone materiality.
+
+3. DECISION
+should_alert=true ONLY when materiality=material AND novelty=new.
+Otherwise false. If materiality is routine or unclear, novelty=unclear.
+News alone never triggers an alert.
+
+Positive reason_code: unusual_move, fast_move, reversal, trend_acceleration, market_news_alignment.
+Negative reason_code: routine_move, news_only, unclear.
+Use only observed evidence. Set confidence=low|medium|high.
+Output the six required fields with valid enum values and no extra text.
