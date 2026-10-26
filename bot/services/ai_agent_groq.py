@@ -693,7 +693,7 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
     return f"{_EVENT_ANALYSIS_INSTRUCTIONS}\nInput JSON:\n{payload}"
 
 
-_EVENT_ALERT_RENDER_INSTRUCTIONS = "\\n".join(
+_EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
         "JSON English. Event Significance has ALREADY been accepted. Return exactly "
         "message_body, related_news_ids, possible_action. Do not re-decide whether to alert. "
