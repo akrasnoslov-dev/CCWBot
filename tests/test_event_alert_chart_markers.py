@@ -175,7 +175,7 @@ async def test_shared_market_chart_reuses_one_session_and_global_event_not_recip
 
     async def get_previous(*args, **kwargs):
         visits["previous"] += 1
-        assert kwargs["symbol"] == "BTC"
+        assert kwargs["symbol"] == "btc"
         assert kwargs["alert_type"] == alerts.EVENT_ALERT_TYPE
         assert kwargs["current_market_event_id"] == 17
         return SimpleNamespace(detected_at=AT - timedelta(hours=2), price=1008.0)
