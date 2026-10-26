@@ -485,7 +485,7 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
     assembled = alerts._build_event_alert_payload(
         decision=decision, input_payload={"market": market}, related_news=[]
     )["plain_text"]
-    assert "Possible action:\\n" + correct_action in assembled
+    assert "Possible action:\n" + correct_action in assembled
     assert "$2,478" in assembled and "$2,472" in assembled
     assert "buy now" not in assembled.lower()
 
