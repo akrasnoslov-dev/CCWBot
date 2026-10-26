@@ -95,7 +95,9 @@ def inspect_private_frozen(benchmark: Path, reviewer_a: Path) -> dict:
     aggregate = {}
     for name in PROMPTS:
         fingerprints = [
-            hashlib.sha256(build_prompt(case["input"], name, require_current_parity=False).encode("utf-8")).hexdigest()
+            hashlib.sha256(
+                build_prompt(case["input"], name, require_current_parity=False).encode("utf-8")
+            ).hexdigest()
             for case in cases
         ]
         aggregate[name] = hashlib.sha256("\n".join(fingerprints).encode("ascii")).hexdigest()
