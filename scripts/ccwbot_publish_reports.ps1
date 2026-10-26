@@ -89,8 +89,8 @@ $manifest = [ordered]@{
     source_tree='research/event_alerts/imported_reports_20261026/reports'
     imported_tree=$relativeDestination
     warning='Screened for common secrets and identifying strings. Excluded files remain local for separate review. Never assume file-level heuristics certify all privacy.'
-    imported=@($allowed)
-    excluded=@($excluded)
+    imported=$allowed.ToArray()
+    excluded=$excluded.ToArray()
 }
 $manifestPath = Join-Path $manifestDirectory 'IMPORT_MANIFEST.json'
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
