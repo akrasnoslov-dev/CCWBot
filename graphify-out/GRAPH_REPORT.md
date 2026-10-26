@@ -1,17 +1,17 @@
 # Graph Report - CCWBot  (2026-10-26)
 
 ## Corpus Check
-- 640 files · ~1,135,278 words
+- 640 files · ~1,135,445 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 33 file(s) not represented in the graph (top: .toml 12, (none) 8, .csv 6)
 
 ## Summary
-- 5581 nodes · 16583 edges · 226 communities (191 shown, 35 thin omitted)
+- 5581 nodes · 16583 edges · 227 communities (192 shown, 35 thin omitted)
 - Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 1399 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2bf00d73`
+- Built from commit: `d85e1b80`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -224,6 +224,7 @@
 - automatic_price_check
 - ccw41_private/reviewer-c-rubric.md
 - README_HUMAN_REVIEW.md
+- sys
 - 0026_growth_analytics.py
 - README_RU.md
 - fresh200_luna_wait_start.sh
@@ -262,7 +263,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (226 total, 35 thin omitted)
+## Communities (227 total, 35 thin omitted)
 
 ### Community 0 - "EventAnalysisValidationError"
 Cohesion: 0.14
@@ -341,8 +342,8 @@ Cohesion: 0.07
 Nodes (81): _alert_quality_summary(), _attention_findings(), _collection_gaps(), _current_status(), _detector_sort_key(), _event_regression_summary(), _int(), _key_metrics() (+73 more)
 
 ### Community 19 - "event_alert_benchmark.py"
-Cohesion: 0.05
-Nodes (72): _groq_json_mode_enabled(), GroqProvider, random, Owner-approved PR2 reviewer A reference, kept outside Git in ignored reports/.…, CCW-29 fresh private holdout: collect real POST-200 market cases via…, CCW-29 new unseen 20-case holdout: verified sealed inputs, model replies,…, choose(), Freeze fresh 200 real CCWBot market cases, excluding both earlier sets;… (+64 more)
+Cohesion: 0.06
+Nodes (71): _groq_json_mode_enabled(), GroqProvider, random, Owner-approved PR2 reviewer A reference, kept outside Git in ignored reports/.…, CCW-29 fresh private holdout: collect real POST-200 market cases via…, choose(), Freeze fresh 200 real CCWBot market cases, excluding both earlier sets;…, scripts (+63 more)
 
 ### Community 20 - "bootstrap.py"
 Cohesion: 0.08
@@ -513,8 +514,8 @@ Cohesion: 0.08
 Nodes (57): sha256_file(), sha256_tree(), _add_failure(), build_parser(), _collect(), _collection_result(), _collection_status(), _event_analysis_signal() (+49 more)
 
 ### Community 62 - "json"
-Cohesion: 0.03
-Nodes (44): argparse, collections, csv, importlib_util, json, math, pathlib, re (+36 more)
+Cohesion: 0.04
+Nodes (41): collections, csv, importlib_util, json, math, pathlib, re, main() (+33 more)
 
 ### Community 63 - "test_event_analysis_health.py"
 Cohesion: 0.10
@@ -565,8 +566,8 @@ Cohesion: 0.33
 Nodes (13): _coerce_related_symbols(), _column_names(), downgrade(), _has_table_and_symbol(), _has_table_columns(), _merge_price_state(), _merge_user_coin_subscriptions(), _merge_user_symbol_alert_state() (+5 more)
 
 ### Community 75 - "hashlib"
-Cohesion: 0.04
-Nodes (46): _json_dumps(), Canonical JSON that writes Decimal market values without binary-float loss., copy, hashlib, io, Change only the CCW-16 experiment user cron cadence, preserving all other jobs., Read-only provider credential authentication probe on isolated Hetzner…, Private CCW16 summary: downloads only restricted experiment ledger, never keys… (+38 more)
+Cohesion: 0.05
+Nodes (34): _json_dumps(), Canonical JSON that writes Decimal market values without binary-float loss., copy, hashlib, io, Change only the CCW-16 experiment user cron cadence, preserving all other jobs., Read-only provider credential authentication probe on isolated Hetzner…, Stage and execute a finite, blind, genuine new-event holdout replay. No… (+26 more)
 
 ### Community 76 - "test_agent_workflow_contract.py"
 Cohesion: 0.19
@@ -805,8 +806,8 @@ Cohesion: 0.32
 Nodes (13): _build_exact_event_context_fingerprint(), _payload(), parametrize, test_decimal_json_is_full_precision_json_number_not_float_or_string(), test_exact_context_does_not_reuse_the_ambiguous_change_field_contract(), test_exact_context_ignores_previous_title_not_sent_to_model(), test_exact_context_ignores_runtime_metadata_and_normalizes_decimal_representation(), test_exact_context_includes_last_message_time_for_grounding_reuse() (+5 more)
 
 ### Community 147 - "os"
-Cohesion: 0.09
-Nodes (18): asyncpg, bot_services, ctypes, dotenv, openai, os, call(), memory() (+10 more)
+Cohesion: 0.07
+Nodes (21): argparse, asyncpg, bot_services, ctypes, dotenv, openai, os, call() (+13 more)
 
 ### Community 148 - "db/settings.py"
 Cohesion: 0.47
@@ -1007,6 +1008,10 @@ Nodes (4): CCW-41 Reviewer C operator prompt, CCW-41 Reviewer C significance rub
 ### Community 210 - "automatic_price_check"
 Cohesion: 0.10
 Nodes (27): _analysed_window_minutes_from_payload(), _raw_event_key_from_payload(), _semantic_family_from_payload(), AlertRecipientResolution, automatic_price_check(), _enabled_subscription_by_symbol(), _event_numeric_context(), _get_or_create_event_alert_market_event() (+19 more)
+
+### Community 213 - "sys"
+Cohesion: 0.11
+Nodes (13): Private CCW16 summary: downloads only restricted experiment ledger, never keys…, Stage verified model-visible pilot calls into isolated CCW-16 workspace. No…, CCW-45 offline matched scorer. Does not generate, rerun or request any model…, hashfile(), main(), metrics(), Versioned private calibration reference from owner's 66 A/C re-decisions.…, write() (+5 more)
 
 ### Community 214 - "0026_growth_analytics.py"
 Cohesion: 0.90
