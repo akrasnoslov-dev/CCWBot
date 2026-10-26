@@ -48,7 +48,7 @@ try {
     }
     Write-Host "Graph ready: $(@($graph.nodes).Count) nodes"
 
-    & git add -A -- graphify-out/
+    & git add -A -- "graphify-out/graph.json" "graphify-out/graph.html" "graphify-out/GRAPH_REPORT.md" "graphify-out/manifest.json" "graphify-out/.graphify_labels.json" "graphify-out/.graphify_labels.json.sig" "graphify-out/.graphify_learning.json" "graphify-out/SOURCE_COMMIT" "graphify-out/reflections/"
     if ($LASTEXITCODE -ne 0) { throw "git add failed" }
     & git diff --cached --check
     if ($LASTEXITCODE -ne 0) { throw "Staged graph files fail git whitespace check" }
