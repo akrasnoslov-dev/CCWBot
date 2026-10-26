@@ -554,9 +554,8 @@ def _event_significance_prompt_payload(input_payload: dict) -> dict:
     news_items = news_items if isinstance(news_items, list) else []
 
     compact_news = []
-    for item in news_items[:2]:
-        if not isinstance(item, dict):
-            continue
+    # Select the first two VALID headlines, matching the exact context.
+    for item in [entry for entry in news_items if isinstance(entry, dict)][:2]:
         compact_item = {
             "t": item.get("title"),
             "r": item.get("relevance_label"),
