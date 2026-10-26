@@ -206,6 +206,39 @@ market significance decisions, semantic cooldown, recipients and billing are unc
 Production client appearance still needs a private Telegram Desktop/mobile smoke test;
 mock images and CI-only HTML assertions do not prove native client rendering.
 
+### Event Alert chart reference markers (2026-10-26)
+
+Event Alert PNGs (not Market Heartbeat PNGs) overlay four separate market
+reference observations. The curve still contains only the latest contiguous
+PostgreSQL price-snapshot run; no line is drawn from the persisted curve to the
+NOW marker, and no line connects missing historical intervals.
+
+- **NOW**: current Event Alert market price from the validated event input
+  (stored in the event numeric context) at the actual price-check timestamp.
+  It is never replaced by the newest persisted snapshot.
+- **PREVIOUS ALERT**: latest *different* recorded market-level Event Alert for
+  the same coin in `market_events`, using its own `detected_at` and `price`.
+  It is not the previous per-recipient delivered notification. Historical
+  events outside the visible chart have a time/status legend entry, but no
+  boundary marker. Missing/unreliable prices produce no price marker.
+- **−3H**: closest actually recorded snapshot in the visible continuous series
+  to the exact current-observation minus three hours, only within **±20 min**.
+  This reference is independent of the LLM's actual analysed-window length.
+- **−24H**: closest actually recorded snapshot in the visible continuous
+  series to the exact current-observation minus 24 hours, only within
+  **±40 min** (normal 30-minute persistence plus scheduling jitter).
+  The plotted point is at its *actual* UTC timestamp.
+
+Every available reference shows its actual UTC timestamp and observed price
+in the PNG legend, not an interpolated/extrapolated price. Unavailable
+references show why the price marker was omitted. Colors, shapes, leader lines
+and nonoverlapping label lanes keep dense/end-of-axis events readable. The
+original full-day/partial-history labels and availability rules still apply.
+There are no new external price calls, recipient-specific PNGs or database
+migrations. Rich delivery, HTML/plain fallback, event decisions and Heartbeat
+are unchanged. The marker overlay can be rolled back as a presentation-only
+change.
+
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a
 standalone news-only Event Alert is rejected.
