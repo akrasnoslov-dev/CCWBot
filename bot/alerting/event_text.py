@@ -398,8 +398,8 @@ def event_alert_presentation_fallback(
         return (
             "The most recent supplied snapshot reverses part of the earlier path, "
             "but the analysed-window direction is not confirmed.",
-            "Watch whether the next observed interval extends the latest counter-move "
-            "or returns to the preceding step's direction.",
+            "Watch the next observed interval for further reversal of the preceding "
+            "step or a return to that earlier direction.",
         )
 
     if has_persistence and has_divergence:
