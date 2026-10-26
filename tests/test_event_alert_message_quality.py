@@ -538,5 +538,3 @@ def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
             {"m": -220, "p": 100}, *observations[1:]
         ]
     }) == {}
-
-
