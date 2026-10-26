@@ -448,14 +448,17 @@ def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
     assert ".ops-agent.env" in gitignore
-    assert "reports/" in gitignore
+    # Durable research in root reports/ is now versioned; only generated
+    # ops-agent bundles/receipts and sensitive temporary artifacts stay ignored.
+    assert "reports/ops-agent/bundles/" in gitignore
+    assert "reports/ops-agent/receipts/" in gitignore
+    assert "reports/" not in gitignore.splitlines()
     assert "logs/*" in gitignore
     assert "!logs/.gitkeep" in gitignore
 
     for generated_path in (
         "logs/app.json",
         "logs/archive.txt",
-        "reports/general.md",
         "reports/ops-agent/bundles/bundle.json",
     ):
         result = subprocess.run(
@@ -464,6 +467,13 @@ def test_gitignore_excludes_ops_agent_secrets_and_generated_artifacts():
             capture_output=True,
         )
         assert result.returncode == 0, f"{generated_path} must stay untracked"
+
+    research = subprocess.run(
+        ["git", "check-ignore", "-q", "reports/general.md"],
+        check=False,
+        capture_output=True,
+    )
+    assert research.returncode == 1, "new durable research must stay Git-trackable"
 
     kept_directory_marker = subprocess.run(
         ["git", "check-ignore", "-q", "logs/.gitkeep"],
