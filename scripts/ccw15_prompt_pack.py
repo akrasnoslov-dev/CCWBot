@@ -44,14 +44,18 @@ def check_production_parity() -> None:
         raise ValueError("Production instructions drifted; do not compare unmatched baseline")
 
 
-def build_prompt(input_payload: dict, candidate: str) -> str:
-    """Build exact user message with production's existing compact payload serializer."""
+def build_prompt(
+    input_payload: dict, candidate: str, *, require_current_parity: bool = True
+) -> str:
+    """Build historical prompt; require current parity unless explicitly replaying an archive."""
     from bot.alerting.event_identity import _json_dumps
     from bot.services.ai_agent_groq import _event_significance_prompt_payload
 
-    check_production_parity()
+    frozen_instruction = instruction(candidate)
+    if require_current_parity:
+        check_production_parity()
     compact = _event_significance_prompt_payload(input_payload)
-    return instruction(candidate) + "\nInput JSON:\n" + _json_dumps(compact)
+    return frozen_instruction + "\nInput JSON:\n" + _json_dumps(compact)
 
 
 def inspect_private_frozen(benchmark: Path, reviewer_a: Path) -> dict:
@@ -91,7 +95,7 @@ def inspect_private_frozen(benchmark: Path, reviewer_a: Path) -> dict:
     aggregate = {}
     for name in PROMPTS:
         fingerprints = [
-            hashlib.sha256(build_prompt(case["input"], name).encode("utf-8")).hexdigest()
+            hashlib.sha256(build_prompt(case["input"], name, require_current_parity=False).encode("utf-8")).hexdigest()
             for case in cases
         ]
         aggregate[name] = hashlib.sha256("\n".join(fingerprints).encode("ascii")).hexdigest()
@@ -113,11 +117,17 @@ def main() -> None:
     args = parser.parse_args()
     if bool(args.benchmark) != bool(args.reviewer_a):
         parser.error("--benchmark and --reviewer-a must be provided together")
-    check_production_parity()
+    # CCW-15 remains a frozen 2026-10 benchmark; current dev adopted
+    # Refined v2 in CCW-47. Never silently label the old prompt "live".
+    from bot.services.ai_agent_groq import _EVENT_SIGNIFICANCE_INSTRUCTIONS
+
     summary = {
         "version": "ccw15-v1",
         "scope": "OFFLINE_PREPARATION_ONLY",
-        "production_source": "bot/services/ai_agent_groq.py",
+        "production_source": "historical CCW-15 frozen production.txt",
+        "matches_current_dev_instructions": (
+            instruction("production") == _EVENT_SIGNIFICANCE_INSTRUCTIONS
+        ),
         "prompt_instruction_sha256": {
             name: hashlib.sha256(instruction(name).encode("utf-8")).hexdigest()
             for name in PROMPTS
