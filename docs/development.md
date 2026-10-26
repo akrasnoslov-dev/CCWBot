@@ -20,6 +20,11 @@ A local `.env` stays in this one checkout and is gitignored; it is
 environment-specific and must never be replaced by copying production's
 whole `.env` file.
 
+Both root `reports/` (research) and `graphify-out/` (portable graph state)
+are Git-tracked on `dev`. A clean clone receives their durable files. Only
+caches, local secrets, databases, raw runtime logs and hardware-specific
+outputs should remain ignored.
+
 ## Local Checks
 
 Run the same lightweight checks before opening a pull request:
