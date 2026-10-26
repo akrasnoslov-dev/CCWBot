@@ -223,11 +223,11 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     # The existence of a price band does not prove repeated visits to its
     # high. Such copy is factual only with at least two observed high visits.
     repeated_high_claim = (
-        re.search(r"(?i)\\b(?:high|peak)\\b", lowered) is not None
+        re.search(r"(?i)\b(?:high|peak)\b", lowered) is not None
         and re.search(
-            r"(?i)\\b(?:twice|repeated\\w*|multiple|again|"
-            r"two\\s+(?:times|visits|approaches|recent\\s+snapshots)|"
-            r"second\\s+(?:time|visit|approach))\\b",
+            r"(?i)\b(?:twice|repeated\w*|multiple|again|"
+            r"two\s+(?:times|visits|approaches|recent\s+snapshots)|"
+            r"second\s+(?:time|visit|approach))\b",
             lowered,
         ) is not None
     )
