@@ -412,7 +412,7 @@ def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
             "analysed_window_minutes": 180,
             "snapshots": [
                 {"m": offset, "p": price}
-                for offset, price in zip([-90, -30, 0], prices)
+                for offset, price in zip([-90, -30, 0], prices, strict=True)
             ],
         }
         decision = EventAnalysisDecision(
