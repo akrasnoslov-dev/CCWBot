@@ -1,7 +1,7 @@
 # Graph Report - CCWBot  (2026-10-26)
 
 ## Corpus Check
-- 640 files · ~1,135,281 words
+- 640 files · ~1,135,278 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 33 file(s) not represented in the graph (top: .toml 12, (none) 8, .csv 6)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3a3ad8c4`
+- Built from commit: `2bf00d73`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

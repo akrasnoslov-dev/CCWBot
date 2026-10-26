@@ -20102,7 +20102,7 @@
       "file_type": "code",
       "norm_label": "_event_alert_render_prompt_payload()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L734"
+      "source_location": "L735"
     },
     {
       "id": "bot_services_ai_agent_groq_render_market_direction",
@@ -20114,7 +20114,7 @@
       "file_type": "code",
       "norm_label": "_render_market_direction()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L721"
+      "source_location": "L722"
     },
     {
       "id": "tests_test_event_alert_composition_investigation_market",
@@ -27290,7 +27290,7 @@
       "file_type": "code",
       "norm_label": "_event_significance_prompt_payload()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L542"
+      "source_location": "L543"
     },
     {
       "id": "reports_event_alert_review_20261016_ccw43_private_analyze_ccw43_read",
@@ -28586,7 +28586,7 @@
       "file_type": "code",
       "norm_label": "ask_event_alert_render_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L772"
+      "source_location": "L773"
     },
     {
       "id": "bot_services_ai_agent_groq_ask_event_analysis_raw",
@@ -28598,7 +28598,7 @@
       "file_type": "code",
       "norm_label": "ask_event_analysis_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L801"
+      "source_location": "L802"
     },
     {
       "id": "bot_services_ai_agent_groq_ask_event_significance_raw",
@@ -28610,7 +28610,7 @@
       "file_type": "code",
       "norm_label": "ask_event_significance_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L608"
+      "source_location": "L609"
     },
     {
       "id": "bot_services_ai_agent_groq_ask_market_heartbeat_raw",
@@ -28622,7 +28622,7 @@
       "file_type": "code",
       "norm_label": "ask_market_heartbeat_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L845"
+      "source_location": "L846"
     },
     {
       "id": "bot_services_ai_agent_groq_ask_market_report_raw",
@@ -28634,7 +28634,7 @@
       "file_type": "code",
       "norm_label": "ask_market_report_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L892"
+      "source_location": "L893"
     },
     {
       "id": "bot_services_ai_agent_groq_ask_news_intelligence_raw",
@@ -28646,7 +28646,7 @@
       "file_type": "code",
       "norm_label": "ask_news_intelligence_raw()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L921"
+      "source_location": "L922"
     },
     {
       "id": "bot_services_ai_agent_groq_build_event_alert_render_prompt",
@@ -28658,7 +28658,7 @@
       "file_type": "code",
       "norm_label": "build_event_alert_render_prompt()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L767"
+      "source_location": "L768"
     },
     {
       "id": "bot_services_ai_agent_groq_build_event_analysis_prompt",
@@ -28670,7 +28670,7 @@
       "file_type": "code",
       "norm_label": "build_event_analysis_prompt()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L691"
+      "source_location": "L692"
     },
     {
       "id": "bot_services_ai_agent_groq_build_market_heartbeat_prompt",
@@ -28682,7 +28682,7 @@
       "file_type": "code",
       "norm_label": "build_market_heartbeat_prompt()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L828"
+      "source_location": "L829"
     },
     {
       "id": "bot_services_ai_agent_groq_build_market_report_prompt",
@@ -28694,7 +28694,7 @@
       "file_type": "code",
       "norm_label": "build_market_report_prompt()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L872"
+      "source_location": "L873"
     },
     {
       "id": "bot_services_ai_agent_groq_json_response_validator",
@@ -38462,7 +38462,7 @@
       "file_type": "code",
       "norm_label": "build_event_significance_prompt()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L603"
+      "source_location": "L604"
     },
     {
       "id": "tests_ops_agent_test_alert_section_extraction_test_final_section_sql_handles_newlines_fanout_and_missing_sections",
@@ -40106,7 +40106,7 @@
       "file_type": "code",
       "norm_label": "_event_analysis_prompt_payload()",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L635"
+      "source_location": "L636"
     },
     {
       "id": "bot_services_llm_breaker_reset_breakers",
@@ -53176,7 +53176,7 @@
       "source_location": "L93"
     },
     {
-      "id": "bot_services_ai_agent_groq_rationale_722",
+      "id": "bot_services_ai_agent_groq_rationale_723",
       "label": "Return only a supported sign; no rounded or raw market numbers reach Render.",
       "_origin": "ast",
       "community": 25,
@@ -53184,7 +53184,7 @@
       "file_type": "rationale",
       "norm_label": "return only a supported sign; no rounded or raw market numbers reach render.",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L722"
+      "source_location": "L723"
     },
     {
       "id": "tests_test_event_alert_composition_investigation_rationale_1",
@@ -55917,7 +55917,7 @@
       "source_location": "L5"
     },
     {
-      "id": "bot_services_ai_agent_groq_rationale_543",
+      "id": "bot_services_ai_agent_groq_rationale_544",
       "label": "Return the small always-on model view used only for significance.",
       "_origin": "ast",
       "community": 42,
@@ -55925,7 +55925,7 @@
       "file_type": "rationale",
       "norm_label": "return the small always-on model view used only for significance.",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L543"
+      "source_location": "L544"
     },
     {
       "id": "reports_event_alert_review_20261016_ccw43_private_analyze_ccw43_rationale_1",
@@ -62837,7 +62837,7 @@
       "source_location": "L440"
     },
     {
-      "id": "bot_services_ai_agent_groq_rationale_636",
+      "id": "bot_services_ai_agent_groq_rationale_637",
       "label": "Return the compact semantic model view without runtime or repeated static\u2026",
       "_origin": "ast",
       "community": 83,
@@ -62845,7 +62845,7 @@
       "file_type": "rationale",
       "norm_label": "return the compact semantic model view without runtime or repeated static...",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L636"
+      "source_location": "L637"
     },
     {
       "id": "bot_services_llm_breaker_rationale_134",
@@ -83256,7 +83256,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L776",
+      "source_location": "L777",
       "weight": 1.0
     },
     {
@@ -83268,7 +83268,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L777",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -83280,7 +83280,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L782",
+      "source_location": "L783",
       "weight": 1.0
     },
     {
@@ -83292,7 +83292,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L786",
+      "source_location": "L787",
       "weight": 1.0
     },
     {
@@ -83304,24 +83304,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L792",
+      "source_location": "L793",
       "weight": 1.0
     },
     {
       "source": "bot_services_ai_agent_groq_ask_event_analysis_raw",
       "target": "bot_services_llm_config_max_tokens_for",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L803",
-      "weight": 1.0
-    },
-    {
-      "source": "bot_services_ai_agent_groq_ask_event_analysis_raw",
-      "target": "bot_services_ai_agent_groq_structured_response_formats",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -83333,6 +83321,18 @@
     },
     {
       "source": "bot_services_ai_agent_groq_ask_event_analysis_raw",
+      "target": "bot_services_ai_agent_groq_structured_response_formats",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "bot/services/ai_agent_groq.py",
+      "source_location": "L805",
+      "weight": 1.0
+    },
+    {
+      "source": "bot_services_ai_agent_groq_ask_event_analysis_raw",
       "target": "bot_services_llm_router_get_router",
       "relation": "calls",
       "_origin": "ast",
@@ -83340,7 +83340,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L809",
+      "source_location": "L810",
       "weight": 1.0
     },
     {
@@ -83352,7 +83352,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L813",
+      "source_location": "L814",
       "weight": 1.0
     },
     {
@@ -83364,24 +83364,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L819",
+      "source_location": "L820",
       "weight": 1.0
     },
     {
       "source": "bot_services_ai_agent_groq_ask_event_significance_raw",
       "target": "bot_services_llm_config_max_tokens_for",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L610",
-      "weight": 1.0
-    },
-    {
-      "source": "bot_services_ai_agent_groq_ask_event_significance_raw",
-      "target": "bot_services_ai_agent_groq_structured_response_formats",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -83393,6 +83381,18 @@
     },
     {
       "source": "bot_services_ai_agent_groq_ask_event_significance_raw",
+      "target": "bot_services_ai_agent_groq_structured_response_formats",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "bot/services/ai_agent_groq.py",
+      "source_location": "L612",
+      "weight": 1.0
+    },
+    {
+      "source": "bot_services_ai_agent_groq_ask_event_significance_raw",
       "target": "bot_services_llm_router_get_router",
       "relation": "calls",
       "_origin": "ast",
@@ -83400,7 +83400,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L616",
+      "source_location": "L617",
       "weight": 1.0
     },
     {
@@ -83412,7 +83412,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L620",
+      "source_location": "L621",
       "weight": 1.0
     },
     {
@@ -83424,24 +83424,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L626",
+      "source_location": "L627",
       "weight": 1.0
     },
     {
       "source": "bot_services_ai_agent_groq_ask_market_heartbeat_raw",
       "target": "bot_services_llm_config_max_tokens_for",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L847",
-      "weight": 1.0
-    },
-    {
-      "source": "bot_services_ai_agent_groq_ask_market_heartbeat_raw",
-      "target": "bot_services_ai_agent_groq_structured_response_formats",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -83453,6 +83441,18 @@
     },
     {
       "source": "bot_services_ai_agent_groq_ask_market_heartbeat_raw",
+      "target": "bot_services_ai_agent_groq_structured_response_formats",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "bot/services/ai_agent_groq.py",
+      "source_location": "L849",
+      "weight": 1.0
+    },
+    {
+      "source": "bot_services_ai_agent_groq_ask_market_heartbeat_raw",
       "target": "bot_services_llm_router_get_router",
       "relation": "calls",
       "_origin": "ast",
@@ -83460,7 +83460,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L853",
+      "source_location": "L854",
       "weight": 1.0
     },
     {
@@ -83472,7 +83472,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L857",
+      "source_location": "L858",
       "weight": 1.0
     },
     {
@@ -83484,24 +83484,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L863",
+      "source_location": "L864",
       "weight": 1.0
     },
     {
       "source": "bot_services_ai_agent_groq_ask_market_report_raw",
       "target": "bot_services_llm_config_max_tokens_for",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L895",
-      "weight": 1.0
-    },
-    {
-      "source": "bot_services_ai_agent_groq_ask_market_report_raw",
-      "target": "bot_services_ai_agent_groq_structured_response_formats",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -83513,6 +83501,18 @@
     },
     {
       "source": "bot_services_ai_agent_groq_ask_market_report_raw",
+      "target": "bot_services_ai_agent_groq_structured_response_formats",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "bot/services/ai_agent_groq.py",
+      "source_location": "L897",
+      "weight": 1.0
+    },
+    {
+      "source": "bot_services_ai_agent_groq_ask_market_report_raw",
       "target": "bot_services_llm_router_get_router",
       "relation": "calls",
       "_origin": "ast",
@@ -83520,7 +83520,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L901",
+      "source_location": "L902",
       "weight": 1.0
     },
     {
@@ -83532,7 +83532,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L905",
+      "source_location": "L906",
       "weight": 1.0
     },
     {
@@ -83544,7 +83544,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L912",
+      "source_location": "L913",
       "weight": 1.0
     },
     {
@@ -83556,7 +83556,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L930",
+      "source_location": "L931",
       "weight": 1.0
     },
     {
@@ -83568,7 +83568,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L933",
+      "source_location": "L934",
       "weight": 1.0
     },
     {
@@ -83580,7 +83580,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L939",
+      "source_location": "L940",
       "weight": 1.0
     },
     {
@@ -83592,7 +83592,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L948",
+      "source_location": "L949",
       "weight": 1.0
     },
     {
@@ -83604,7 +83604,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L768",
+      "source_location": "L769",
       "weight": 1.0
     },
     {
@@ -83616,7 +83616,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L768",
+      "source_location": "L769",
       "weight": 1.0
     },
     {
@@ -83628,7 +83628,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L692",
+      "source_location": "L693",
       "weight": 1.0
     },
     {
@@ -83640,7 +83640,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L692",
+      "source_location": "L693",
       "weight": 1.0
     },
     {
@@ -83652,7 +83652,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L604",
+      "source_location": "L605",
       "weight": 1.0
     },
     {
@@ -83664,7 +83664,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L604",
+      "source_location": "L605",
       "weight": 1.0
     },
     {
@@ -83676,7 +83676,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L841",
+      "source_location": "L842",
       "weight": 1.0
     },
     {
@@ -83688,7 +83688,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L888",
+      "source_location": "L889",
       "weight": 1.0
     },
     {
@@ -83700,7 +83700,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L741",
+      "source_location": "L742",
       "weight": 1.0
     },
     {
@@ -83712,7 +83712,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L759",
+      "source_location": "L760",
       "weight": 1.0
     },
     {
@@ -83724,7 +83724,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L762",
+      "source_location": "L763",
       "weight": 1.0
     },
     {
@@ -83736,7 +83736,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L663",
+      "source_location": "L664",
       "weight": 1.0
     },
     {
@@ -83748,7 +83748,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L666",
+      "source_location": "L667",
       "weight": 1.0
     },
     {
@@ -83760,7 +83760,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L676",
+      "source_location": "L677",
       "weight": 1.0
     },
     {
@@ -83772,7 +83772,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L564",
+      "source_location": "L565",
       "weight": 1.0
     },
     {
@@ -83784,7 +83784,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L579",
+      "source_location": "L580",
       "weight": 1.0
     },
     {
@@ -150036,7 +150036,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L754",
+      "source_location": "L755",
       "weight": 1.0
     },
     {
@@ -203031,7 +203031,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L542",
+      "source_location": "L543",
       "weight": 1.0
     },
     {
@@ -203042,7 +203042,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L603",
+      "source_location": "L604",
       "weight": 1.0
     },
     {
@@ -203053,7 +203053,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L608",
+      "source_location": "L609",
       "weight": 1.0
     },
     {
@@ -203064,7 +203064,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L635",
+      "source_location": "L636",
       "weight": 1.0
     },
     {
@@ -203075,7 +203075,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L691",
+      "source_location": "L692",
       "weight": 1.0
     },
     {
@@ -203097,7 +203097,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L721",
+      "source_location": "L722",
       "weight": 1.0
     },
     {
@@ -203108,7 +203108,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L734",
+      "source_location": "L735",
       "weight": 1.0
     },
     {
@@ -203119,7 +203119,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L767",
+      "source_location": "L768",
       "weight": 1.0
     },
     {
@@ -203130,7 +203130,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L772",
+      "source_location": "L773",
       "weight": 1.0
     },
     {
@@ -203141,7 +203141,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L801",
+      "source_location": "L802",
       "weight": 1.0
     },
     {
@@ -203152,7 +203152,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L828",
+      "source_location": "L829",
       "weight": 1.0
     },
     {
@@ -203163,7 +203163,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L845",
+      "source_location": "L846",
       "weight": 1.0
     },
     {
@@ -203174,7 +203174,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L872",
+      "source_location": "L873",
       "weight": 1.0
     },
     {
@@ -203185,7 +203185,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L892",
+      "source_location": "L893",
       "weight": 1.0
     },
     {
@@ -203196,7 +203196,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L921",
+      "source_location": "L922",
       "weight": 1.0
     },
     {
@@ -240149,14 +240149,14 @@
       "weight": 1.0
     },
     {
-      "source": "bot_services_ai_agent_groq_rationale_543",
+      "source": "bot_services_ai_agent_groq_rationale_544",
       "target": "bot_services_ai_agent_groq_event_significance_prompt_payload",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L543",
+      "source_location": "L544",
       "weight": 1.0
     },
     {
@@ -240171,25 +240171,25 @@
       "weight": 1.0
     },
     {
-      "source": "bot_services_ai_agent_groq_rationale_636",
+      "source": "bot_services_ai_agent_groq_rationale_637",
       "target": "bot_services_ai_agent_groq_event_analysis_prompt_payload",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L636",
+      "source_location": "L637",
       "weight": 1.0
     },
     {
-      "source": "bot_services_ai_agent_groq_rationale_722",
+      "source": "bot_services_ai_agent_groq_rationale_723",
       "target": "bot_services_ai_agent_groq_render_market_direction",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "bot/services/ai_agent_groq.py",
-      "source_location": "L722",
+      "source_location": "L723",
       "weight": 1.0
     },
     {
@@ -259667,5 +259667,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "3a3ad8c4510d39bc757493c49724728997970e36"
+  "built_at_commit": "2bf00d73dcbea4d0ecac6c559fd14eb6a451a07d"
 }
