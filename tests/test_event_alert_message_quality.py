@@ -477,9 +477,9 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
     )
     decision = EventAnalysisDecision(
         symbol="ETH", should_alert=True, event_key=None, title=None,
-        message_body="The short-term rebound opposes the broader 24-hour decline, "
-        "while the latest snapshot has pulled back after repeated approaches to "
-        "the same recent high. The recovery is not yet established.",
+        message_body="The short-term rebound opposes the broader 24-hour decline. "
+        "Two recent snapshots approached the same high, but the latest move "
+        "pulled back; the recovery remains unproven.",
         related_news_ids=[], possible_action=correct_action,
         urgency="normal", confidence="high", reason_for_no_alert=None,
     )
