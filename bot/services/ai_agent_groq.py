@@ -693,37 +693,39 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
     return f"{_EVENT_ANALYSIS_INSTRUCTIONS}\nInput JSON:\n{payload}"
 
 
-_EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
+_EVENT_ALERT_RENDER_INSTRUCTIONS = "\\n".join(
     (
-        "JSON English. Significance is already accepted by Event Analysis. Render the alert only; "
-        "do not re-decide whether to alert.",
-        "Return exactly message_body,related_news_ids,possible_action. Backend owns event "
-        "identity, title, urgency, and all numeric market facts.",
-        "Market first; news is supporting context only and never a claimed cause. Use supplied "
-        "facts only. message_body must be concise and must not state prices, percentages, "
-        "exact time-window moves, unsupported trajectory claims, or invented market facts. "
-        "possible_action is monitor-only, never a trade instruction.",
-        "Input:sym;market_directions={window,24h,since}, each up|down|flat only when "
-        "supported; n={i,src,t,x,r,mat,h};sig={c,r};news IDs only n.i. "
-        "Do not add numerical claims, specific durations, a market direction absent from "
-        "market_directions, urgency, or causal explanations.",
-        "evidence contains only backend-verified relationships: compare window_vs_24h, "
-        "snapshot_path, latest_interval_pace or comparable_previous_alert where present. "
-        "Situation: one short sentence explaining the most informative VERIFIED market "
-        "relationship, not restating a price or percentage already shown by the backend. "
-        "Prioritise an observed latest-step counter-move or short-term versus 24h "
-        "opposite direction; otherwise verified interval pace, a genuinely comparable "
-        "prior recorded alert, consecutive same-direction steps, then 24h alignment. "
-        "Select ONE supported relationship, not a list. Never infer a reversal, "
-        "acceleration, persistence, rarity, novelty, sentiment or cause from missing evidence. "
-        "Possible action: one short conditional observation tied to the SAME relationship: "
-        "whether the next observed step extends or undoes the counter-move, whether "
-        "the short-term direction converges with or diverges from 24h, whether the next "
-        "interval sustains or eases verified pace, or whether a supported path continues "
-        "versus retraces. Do not offer trading advice, repeat metrics, predict prices, "
-        "or say only 'monitor the market' / 'keep watching'. "
-        "If evidence is empty, say no distinct path is confirmed and ask what the next "
-        "observed price interval establishes, without inventing a market relationship.",
+        "JSON English. Event Significance has ALREADY been accepted. Return exactly "
+        "message_body, related_news_ids, possible_action. Do not re-decide whether to alert. "
+        "Never infer news causality or give direct buy/sell instructions.",
+        "Write to help a human understand WHY the observed market path matters and "
+        "WHAT concrete observation would change the interpretation. Avoid robotic "
+        "'watch next snapshots' text when verified price levels are available.",
+        "Input sym; market_directions=verified signs for analysed window and 24h; "
+        "evidence=verified backend observations; n=optional attributed news; "
+        "sig=accepted classification. Do not invent missing metrics or catalysts.",
+        "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
+        "path with the 24h direction and explain uncertainty. When "
+        "evidence.observed_price_band.high_visits >= 2, you may explain that "
+        "recent observations approached the same high more than once, but do not "
+        "claim formal resistance, proven buyer/seller intent, volume, or a breakout. "
+        "Do not repeat USD prices or percentages already stated by the backend. "
+        "Distinguish a counter-move from a confirmed trend reversal.",
+        "Possible action: 1-2 conditional sentences, about 25-55 words. "
+        "When evidence.observed_price_band is present, quote ONLY its EXACT "
+        "high and low USD strings. Describe both testable scenarios: a sustained "
+        "move above the observed high versus a move below the observed low, and "
+        "what each would mean for the short-term attempt. The observed high/low "
+        "are reference prices from the last four supplied observations, NOT "
+        "confirmed support/resistance or trading entry/exit targets. "
+        "Do not invent other price levels, price forecasts or time deadlines. "
+        "Use measured language ('would strengthen/undermine the rebound case', "
+        "'would break the recent range'), not buy/sell orders. "
+        "When band is missing, do not invent prices: explain a specific "
+        "next-step continuation-versus-reversal observation instead.",
+        "No fabricated causes, market sentiment, unusualness, acceleration or "
+        "persistence. No predictive cross-period convergence/divergence claim. "
+        "Never imply a positive move guarantees a profitable trade.",
     )
 )
 
