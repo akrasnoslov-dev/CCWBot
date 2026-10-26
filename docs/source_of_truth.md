@@ -8,6 +8,7 @@ PR comments, copied files, and generated task prompts are context only.
 
 - Product boundaries and architecture invariants: `docs/project_context.md`
 - Event Alert behavior: `docs/alert_logic.md`
+- Event Alert research datasets, owner review and reproducibility: `research/event_alerts/README.md`
 - Daily/weekly reports: `docs/market_reports.md`
 - Acquisition attribution and funnel analytics: `docs/product_analytics.md`
 - ChatGPT/bridge/Codex implementation workflow and PR readiness: `docs/codex_instructions.md`
