@@ -22,7 +22,16 @@ if ($LASTEXITCODE -ne 0 -or $branch -ne 'dev') { throw 'Current branch must be d
 & git diff --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Tracked worktree changes found. No automatic changes were made.' }
 & git diff --cached --quiet
-if ($LASTEXITCODE -ne 0) { throw 'Staged changes found. No automatic changes were made.' }
+if ($LASTEXITCODE -ne 0) {
+    # An earlier interrupted importer may have already staged only this archive.
+    # Resume those files safely, without touching anything outside this path.
+    $preexistingOther = @(& git diff --cached --name-only -- . ':(exclude)research/event_alerts/versioned_evidence_20261026/**')
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect previously staged paths.' }
+    if ($preexistingOther.Count -gt 0) {
+        throw ('Other staged work detected, refusing to commit: ' + ($preexistingOther -join '; '))
+    }
+    Write-Host 'Resuming previously staged archive; all files will be revalidated.'
+}
 & git fetch --quiet origin dev
 if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch origin/dev.' }
 $localHead = (& git rev-parse HEAD).Trim()
