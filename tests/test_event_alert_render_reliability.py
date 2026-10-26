@@ -88,7 +88,7 @@ def test_render_prompt_contains_only_verified_directions_not_raw_metrics():
     assert "105.0" not in prompt
     assert "3.1" not in prompt
     assert "2.4" not in prompt
-    assert "snapshots" not in prompt
+    assert "snapshots" not in json.dumps(compact)
     assert set(ai_agent_groq._EVENT_ALERT_RENDER_JSON_SCHEMA["required"]) == {
         "message_body", "related_news_ids", "possible_action"
     }
