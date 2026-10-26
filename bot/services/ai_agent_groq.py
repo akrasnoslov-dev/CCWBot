@@ -710,11 +710,21 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "market_directions, urgency, or causal explanations.",
         "evidence contains only backend-verified relationships: compare window_vs_24h, "
         "snapshot_path, latest_interval_pace or comparable_previous_alert where present. "
-        "Situation: explain one distinctive confirmed relationship in your own natural "
-        "words, never repeat a price block or invent a catalyst. "
-        "Possible action: name the NEXT observation that could confirm or contradict "
-        "that same relationship; 'whether' is fine. Avoid generic 'monitor market' advice. "
-        "If evidence is empty, disclose that no distinct trajectory is confirmed.",
+        "Situation: one short sentence explaining the most informative VERIFIED market "
+        "relationship, not restating a price or percentage already shown by the backend. "
+        "Prioritise an observed latest-step counter-move or short-term versus 24h "
+        "opposite direction; otherwise verified interval pace, a genuinely comparable "
+        "prior recorded alert, consecutive same-direction steps, then 24h alignment. "
+        "Select ONE supported relationship, not a list. Never infer a reversal, "
+        "acceleration, persistence, rarity, novelty, sentiment or cause from missing evidence. "
+        "Possible action: one short conditional observation tied to the SAME relationship: "
+        "whether the next observed step extends or undoes the counter-move, whether "
+        "the short-term direction converges with or diverges from 24h, whether the next "
+        "interval sustains or eases verified pace, or whether a supported path continues "
+        "versus retraces. Do not offer trading advice, repeat metrics, predict prices, "
+        "or say only 'monitor the market' / 'keep watching'. "
+        "If evidence is empty, say no distinct path is confirmed and ask what the next "
+        "observed price interval establishes, without inventing a market relationship.",
     )
 )
 
