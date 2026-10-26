@@ -127,9 +127,11 @@ separate from deployment to avoid Compose orphan conflicts.
   window; do not infer delivery success from provider HTTP success.
 - Roll back application code and migration together if required. The immediate configuration kill
   switch for any later paid activation is `OPENAI_ENABLED=false`; free routes remain available.
-- For a separately approved paid activation, verify the exact model identifier, prices, and maximum
-  input-token limit together; set the matching `OPENAI_PRICED_MODEL`, `OPENAI_MAX_INPUT_TOKENS`, and
-  price variables, then confirm Admin -> LLM diagnostics shows enabled state and remaining cap.
+- For a separately approved paid activation, verify the exact `gpt-6-luna` model identifier,
+  current official Standard pricing and context limit against the values pinned in
+  `bot/services/llm/openai_budget.py`; configure only `OPENAI_ENABLED`, `OPENAI_API_KEY`,
+  `OPENAI_MODEL`, and `OPENAI_MONTHLY_BUDGET_USD`. Confirm Admin -> LLM diagnostics
+  shows readiness and remaining cap. No Fast/regional processing or extra billed tools.
 
 ### PR #296: Event Analysis medium reasoning
 
