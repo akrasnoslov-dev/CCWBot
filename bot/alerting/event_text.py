@@ -656,6 +656,23 @@ def soften_possible_action(value: str, *, urgency: str | None) -> str:
 # continuation of a single observed step. In particular, extending a decline
 # cannot "further diverge" from an already downward 24h direction. Reject such
 # prognostic causal links and use the verified, market-specific fallback instead.
+_ACTION_PRICE_RE = re.compile(r"\\$\\s*([0-9,]+(?:\\.[0-9]+)?)")
+
+
+def _action_price_levels_supported(value: str, market: dict | None) -> bool:
+    claims = _ACTION_PRICE_RE.findall(value)
+    if not claims:
+        return True
+    band = observed_event_alert_price_band(market or {})
+    if not band:
+        return False
+    permitted = {
+        str(band["low"]).replace("$", "").replace(",", ""),
+        str(band["high"]).replace("$", "").replace(",", ""),
+    }
+    return all(claim.replace(",", "") in permitted for claim in claims)
+
+
 _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
     r"(?i)\b(?:if|when)\b[^.!?]{0,160}"
     r"\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180}"
@@ -663,13 +680,16 @@ _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
 )
 
 
-def compact_event_alert_possible_action(value: str, *, fallback: str | None = None) -> str:
+def compact_event_alert_possible_action(
+    value: str, *, fallback: str | None = None, market_data: dict | None = None
+) -> str:
     """Keep Event Alert actions short, conditional, and non-prescriptive."""
     cleaned = " ".join(str(value or "").split()).strip()
     if (
         _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
-        or len(cleaned.split()) > 30
-        or len(re.findall(r"[.!?]", cleaned)) > 1
+        or not _action_price_levels_supported(cleaned, market_data)
+        or len(cleaned.split()) > 60
+        or len(re.findall(r"[.!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
@@ -764,11 +784,86 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
 
 
 
+def observed_event_alert_price_band(market: dict) -> dict[str, str | int]:
+    """Derive a recent observed range, never technical support/resistance.
+
+    Only four continuous, time-ordered samples ending at the actual current
+    price are sufficient to name a level. Missing, stale or inconsistent
+    sampling deliberately produces no levels.
+    """
+    if not isinstance(market, dict):
+        return {}
+    now = _decimal_market_value(market.get("price", market.get("price_now_usd")))
+    snapshots = market.get("snapshots")
+    if now is None or now <= 0 or not isinstance(snapshots, list):
+        return {}
+    observations = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and price is not None and price > 0 and -180 <= minute <= 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    if len(observations) < 4:
+        return {}
+    recent = observations[-4:]
+    if (
+        len({minute for minute, _ in recent}) != 4
+        or recent[-1][0] != 0
+        or recent[-1][0] - recent[0][0] < 60
+        or any(b[0] - a[0] > 90 for a, b in zip(recent, recent[1:]))
+        or abs(now - recent[-1][1]) > now * Decimal("0.00001")
+    ):
+        return {}
+
+    prices = [price for _, price in recent]
+    raw_low, raw_high = min(prices), max(prices)
+    quantum = (
+        Decimal("1") if now >= 1000 else
+        Decimal("0.01") if now >= 100 else
+        Decimal("0.0001") if now >= 1 else Decimal("0.000001")
+    )
+    low = raw_low.quantize(quantum)
+    high = raw_high.quantize(quantum)
+    if low <= 0 or high <= low:
+        return {}
+
+    decimals = max(0, -quantum.as_tuple().exponent)
+    display = lambda price: f"${price:,.{decimals}f}"
+    near_high = sum(
+        abs(price - raw_high) <= raw_high * Decimal("0.001")
+        for price in prices
+    )
+    return {
+        "low": display(low),
+        "high": display(high),
+        "observations": 4,
+        "high_visits": near_high,
+    }
+
+
+def observed_event_alert_level_action(market: dict) -> str | None:
+    """Specific safe scenarios for the next interval, not buy/sell signals."""
+    band = observed_event_alert_price_band(market)
+    if not band:
+        return None
+    return (
+        f"Watch whether price holds above the observed {band['high']} high "
+        f"(extending the rebound) or falls below the {band['low']} low "
+        "(a deeper pullback) in the next observed interval."
+    )
+
+
 def verified_event_alert_render_context(
     market: dict, previous_event_alert: dict | None = None
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Small, backed relationship codes for LLM prose; no raw prices or thresholds."""
-    context: dict[str, str] = {}
+    context: dict[str, object] = {}
+    band = observed_event_alert_price_band(market)
+    if band:
+        context["observed_price_band"] = band
     current = _decimal_market_value(market.get("chg_window_percent"))
     day = _decimal_market_value(market.get("chg24h_percent"))
     if current is not None and day is not None and current != 0 and day != 0:
