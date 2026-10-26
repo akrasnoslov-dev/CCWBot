@@ -662,7 +662,7 @@ def soften_possible_action(value: str, *, urgency: str | None) -> str:
 # continuation of a single observed step. In particular, extending a decline
 # cannot "further diverge" from an already downward 24h direction. Reject such
 # prognostic causal links and use the verified, market-specific fallback instead.
-_ACTION_PRICE_RE = re.compile(r"\\$\\s*([0-9,]+(?:\\.[0-9]+)?)")
+_ACTION_PRICE_RE = re.compile(r"\$\s*([0-9,]+(?:\.[0-9]+)?)")
 
 
 def _action_price_levels_supported(value: str, market: dict | None) -> bool:
