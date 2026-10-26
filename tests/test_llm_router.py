@@ -614,13 +614,8 @@ async def test_openai_budget_refusal_uses_cloudflare_without_constructing_client
     from bot.services.llm.openai_provider import OpenAIProvider
 
     _configure(monkeypatch, ["openai", "cloudflare"], {"openai", "cloudflare"})
-    for name in (
-        "OPENAI_INPUT_USD_PER_1M_TOKENS",
-        "OPENAI_OUTPUT_USD_PER_1M_TOKENS",
-        "OPENAI_PRICED_MODEL",
-        "OPENAI_MAX_INPUT_TOKENS",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    # Unsupported paid model is refused before constructing an HTTP client.
+    monkeypatch.setenv("OPENAI_MODEL", "unverified-paid-model")
     openai = OpenAIProvider()
     client_requested = False
     usage_rows = []
@@ -647,7 +642,7 @@ async def test_openai_budget_refusal_uses_cloudflare_without_constructing_client
     assert any(
         row["provider"] == "openai"
         and row["status"] == "skipped_due_to_budget"
-        and row["error_reason"] == "openai_budget_unknown_pricing"
+        and row["error_reason"] == "openai_budget_unverified_model_limits"
         for row in usage_rows
     )
 
