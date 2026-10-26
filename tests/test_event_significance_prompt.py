@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 from hashlib import sha256
-from pathlib import Path
 
 import pytest
 
@@ -136,11 +135,7 @@ def test_event_significance_prompt_contains_relative_context_without_numeric_gat
     assert "should_alert=false" in lowered
     # CCW-47: freeze the owner-selected ORIGINAL Refined v2, not the shorter
     # Refined v2 Final that failed 14/200 schema checks in the paid Luna replay.
-    frozen = (Path(__file__).resolve().parents[1] / "reports" /
-              "event-alert-review-20261016" / "ccw29_private" /
-              "fresh200_unseen" / "candidate_refined.txt").read_text(encoding="utf-8").rstrip("\n")
     selected = ai_agent_groq._EVENT_SIGNIFICANCE_INSTRUCTIONS
-    assert selected == frozen
     assert sha256(selected.encode("utf-8")).hexdigest() == (
         "e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c"
     )
