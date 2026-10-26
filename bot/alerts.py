@@ -1401,7 +1401,7 @@ def _guard_event_text_against_market_data(
         field_name == "possible_action"
         and bool(observed_event_alert_price_band(market_data))
         and "$" in value
-        and re.search(r"(?i)\\b(?:if|whether)\\b", value) is not None
+        and re.search(r"(?i)\b(?:if|whether)\b", value) is not None
     )
     contradictory_direction = (
         not market_direction_claims_supported(value, market_data)
