@@ -30,7 +30,7 @@ Never place provider/LLM calls inside recipient loops.
 - Never expose raw JSON, stack traces, DB internals, secrets, tokens, Telegram IDs, payment IDs, or
   diagnostic internals in user-facing Telegram messages.
 - Never commit secrets, local env files, logs, generated runtime reports, DB dumps, caches, or local state. The reviewed, allowlisted Graphify knowledge-base snapshot is a narrow exception governed by `docs/graphify.md`.
-- By explicit owner decision, privacy-screened, reproducible Event Alert experiment evidence may be versioned under `research/event_alerts/` on `dev`, with SHA-256 inventory and an exclusion manifest. This does not authorize credentials, personal Telegram records, raw logs, database dumps, or unreviewed forensic files. Prefer commit provenance to duplicate historical source-code snapshots.
+- By explicit owner decision, privacy-screened, reproducible Event Alert experiment evidence is versioned under root `reports/` on `dev`, with SHA-256 inventory and an exclusion manifest. This does not authorize credentials, personal Telegram records, raw logs, database dumps, or unreviewed forensic files. Prefer commit provenance to duplicate historical source-code snapshots.
 - Production forensic SQL uses the read-only `ccwbot_investigator` role through the approved SSH
   tunnel.
 
