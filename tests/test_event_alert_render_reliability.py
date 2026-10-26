@@ -98,7 +98,7 @@ def test_render_prompt_contains_only_verified_directions_not_raw_metrics():
 def test_ccw20_render_copy_prioritises_supported_relationship_and_condition():
     payload = _payload()
     prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
-    compact = json.loads(prompt.split("Input JSON:\\n", 1)[1])
+    compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
 
     # The present BTC fixture truly has a counter-direction 24h comparison.
     assert compact["evidence"]["window_vs_24h"] == "opposite_direction"
@@ -122,15 +122,12 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     payload = _payload()
     payload["market"] = {"price": 105.0}
     prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
-    compact = json.loads(prompt.split("Input JSON:\\n", 1)[1])
+    compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
 
     assert compact["evidence"] == {}
     assert compact["market_directions"] == {}
     assert "If evidence is empty" in prompt
     assert "no distinct path is confirmed" in prompt
-
-
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("render_error", [
