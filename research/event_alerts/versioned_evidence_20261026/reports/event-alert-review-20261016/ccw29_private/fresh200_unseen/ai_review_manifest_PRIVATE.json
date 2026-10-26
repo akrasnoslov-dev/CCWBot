@@ -1,0 +1,11 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "cases": 200,
+  "reviewers": [
+    "llama-4-scout",
+    "qwen3-30b"
+  ],
+  "not_human": true,
+  "worker_sha256": "c531cd70ec19b7210493c0bb976dbf44f5372f6cfe222140c89d2d72f616a512",
+  "instructions_sha256": "bcf253febe1fe56cf1ff2dbc80685bc678c4350b5b8f0472f11e542d4657a78f"
+}

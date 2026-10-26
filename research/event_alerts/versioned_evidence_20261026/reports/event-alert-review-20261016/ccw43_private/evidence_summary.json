@@ -1,0 +1,338 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "ledger_sha256": "2512e4e340f3074fafc1ee07e497be7b71014e6c2c9b38a6cff2f21c32623ab4",
+  "immutable_source_sha256": {
+    "dataset": "e983a16e8d6f1ae20cf0b155c982e33baec65d06c0f9be4fbb68c90f6499cce6",
+    "reviewer_A": "181944fafd138bc2d69ed7ecf4ab32ed234a905eabf5afc8adf177a2f33946eb",
+    "reviewer_B": "fdff0dd9c5fb7150bdb8e8928f8c0f4cae4268d74a2b146deaf3acd391bcc233",
+    "reviewer_C": "6478f54188501f1acb2a55a57e6a4ffead989e2eedf900d689846a2c3c9cdd2f",
+    "owner_reference": "0efbb5ccc2fac7d00f7a4b136b1654d31e23b12fae6992a276d819d292bbd20a",
+    "owner_votes": "aa0f2fb6a1273d9e08f8f63e768fb5e0acac072af233f0cc9bfd62440a64f53f",
+    "pre_restart_86": "6bad5025c1d31bd4c2ba69db14ba59084ff3b707531e035ae20852133be0412d"
+  },
+  "coverage": {
+    "dataset": 200,
+    "by_symbol": {
+      "BTC": 50,
+      "ETH": 50,
+      "GRAM": 50,
+      "SOL": 50
+    },
+    "reviewer_A": {
+      "no_alert": 112,
+      "alert": 41,
+      "ambiguous": 47
+    },
+    "reviewer_B": {
+      "no_alert": 59,
+      "alert": 101,
+      "ambiguous": 40
+    },
+    "reviewer_C": {
+      "no_alert": 167,
+      "alert": 31,
+      "ambiguous": 2
+    },
+    "owner": {
+      "no_alert": 159,
+      "alert": 31,
+      "ambiguous": 10
+    },
+    "owner_reviewed": 66,
+    "owner_changed": 53,
+    "pilot_distinct_cases": 20,
+    "pilot_calls": 120,
+    "valid": 120,
+    "restarted_preserved": 86,
+    "providers": {
+      "groq": 60,
+      "cloudflare": 60
+    }
+  },
+  "scores": {
+    "original_A": {
+      "groq": {
+        "production": {
+          "TP": 1,
+          "FP": 0,
+          "FN": 7,
+          "TN": 8,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.125
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 0,
+          "FP": 0,
+          "FN": 8,
+          "TN": 8,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": null,
+          "recall": 0.0
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        }
+      },
+      "cloudflare": {
+        "production": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 4,
+          "FP": 2,
+          "FN": 4,
+          "TN": 6,
+          "ambiguous": 4,
+          "scored": 16,
+          "precision": 0.6666666666666666,
+          "recall": 0.5
+        }
+      }
+    },
+    "owner_20261022": {
+      "groq": {
+        "production": {
+          "TP": 0,
+          "FP": 2,
+          "FN": 6,
+          "TN": 12,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 0,
+          "FP": 0,
+          "FN": 6,
+          "TN": 14,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": null,
+          "recall": 0.0
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 3,
+          "TN": 14,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": 1.0,
+          "recall": 0.5
+        }
+      },
+      "cloudflare": {
+        "production": {
+          "TP": 3,
+          "FP": 1,
+          "FN": 3,
+          "TN": 13,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": 0.75,
+          "recall": 0.5
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 2,
+          "FP": 2,
+          "FN": 4,
+          "TN": 12,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": 0.5,
+          "recall": 0.3333333333333333
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 4,
+          "FN": 3,
+          "TN": 10,
+          "ambiguous": 0,
+          "scored": 20,
+          "precision": 0.42857142857142855,
+          "recall": 0.5
+        }
+      }
+    }
+  },
+  "pilot_groups": {
+    "groq/production": {
+      "owner_FN_categories": {
+        "novelty_not_new": 1,
+        "materiality_not_material": 5
+      },
+      "owner_FN_ids": [
+        "ev_b0444ced2d1e8577",
+        "ev_fc6cf60f2f603650",
+        "ev_a9913f63628cf57d",
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f",
+        "ev_8b508b14b2220e57"
+      ],
+      "owner_FP_ids": [
+        "ev_86a8ba257afb7ea2",
+        "ev_73ee7f7d464106e6"
+      ],
+      "owner_FP_by_symbol": {
+        "BTC": 1,
+        "ETH": 1
+      },
+      "total_tokens": 36770,
+      "latency_ms_median": 2122.5,
+      "longer_than_1h_pct_window_on_fn": 5
+    },
+    "groq/ccw15_materiality_evidence_v1": {
+      "owner_FN_categories": {
+        "materiality_not_material": 6
+      },
+      "owner_FN_ids": [
+        "ev_b0444ced2d1e8577",
+        "ev_fc6cf60f2f603650",
+        "ev_a9913f63628cf57d",
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f",
+        "ev_8b508b14b2220e57"
+      ],
+      "owner_FP_ids": [],
+      "owner_FP_by_symbol": {},
+      "total_tokens": 42963,
+      "latency_ms_median": 2347.5,
+      "longer_than_1h_pct_window_on_fn": 5
+    },
+    "groq/ccw15_novelty_independent_v1": {
+      "owner_FN_categories": {
+        "materiality_not_material": 1,
+        "novelty_not_new": 2
+      },
+      "owner_FN_ids": [
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f",
+        "ev_8b508b14b2220e57"
+      ],
+      "owner_FP_ids": [],
+      "owner_FP_by_symbol": {},
+      "total_tokens": 42446,
+      "latency_ms_median": 2026.5,
+      "longer_than_1h_pct_window_on_fn": 2
+    },
+    "cloudflare/production": {
+      "owner_FN_categories": {
+        "materiality_not_material": 3
+      },
+      "owner_FN_ids": [
+        "ev_a9913f63628cf57d",
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f"
+      ],
+      "owner_FP_ids": [
+        "ev_fc35d58391836075"
+      ],
+      "owner_FP_by_symbol": {
+        "SOL": 1
+      },
+      "total_tokens": 16147,
+      "latency_ms_median": 1732.5,
+      "longer_than_1h_pct_window_on_fn": 2
+    },
+    "cloudflare/ccw15_materiality_evidence_v1": {
+      "owner_FN_categories": {
+        "materiality_not_material": 4
+      },
+      "owner_FN_ids": [
+        "ev_fc6cf60f2f603650",
+        "ev_a9913f63628cf57d",
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f"
+      ],
+      "owner_FP_ids": [
+        "ev_86a8ba257afb7ea2",
+        "ev_fc35d58391836075"
+      ],
+      "owner_FP_by_symbol": {
+        "BTC": 1,
+        "SOL": 1
+      },
+      "total_tokens": 20652,
+      "latency_ms_median": 1714.5,
+      "longer_than_1h_pct_window_on_fn": 3
+    },
+    "cloudflare/ccw15_novelty_independent_v1": {
+      "owner_FN_categories": {
+        "materiality_not_material": 3
+      },
+      "owner_FN_ids": [
+        "ev_a9913f63628cf57d",
+        "ev_895e0dfdd31bff53",
+        "ev_7bc9f5986fce346f"
+      ],
+      "owner_FP_ids": [
+        "ev_86a8ba257afb7ea2",
+        "ev_f10d1068c89b3e34",
+        "ev_6cb59fb839fa1a11",
+        "ev_fc35d58391836075"
+      ],
+      "owner_FP_by_symbol": {
+        "BTC": 1,
+        "ETH": 1,
+        "SOL": 2
+      },
+      "total_tokens": 21497,
+      "latency_ms_median": 1819.0,
+      "longer_than_1h_pct_window_on_fn": 2
+    }
+  },
+  "owner_historical_baseline": {
+    "BTC": {
+      "TP": 2,
+      "FP": 23,
+      "FN": 3,
+      "TN": 21
+    },
+    "ETH": {
+      "TP": 3,
+      "FP": 20,
+      "FN": 2,
+      "TN": 22
+    },
+    "GRAM": {
+      "TP": 8,
+      "FP": 16,
+      "FN": 5,
+      "TN": 18
+    },
+    "SOL": {
+      "TP": 7,
+      "FP": 16,
+      "FN": 1,
+      "TN": 23
+    }
+  }
+}

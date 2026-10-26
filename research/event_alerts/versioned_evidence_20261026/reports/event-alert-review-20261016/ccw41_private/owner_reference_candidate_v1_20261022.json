@@ -1,0 +1,4016 @@
+{
+  "schema_version": 1,
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "reference_version": "owner_A_C_re_review_v1_20261022",
+  "status": "private_prompt_calibration_candidate_not_official_ground_truth",
+  "source_sha256": {
+    "dataset": "e983a16e8d6f1ae20cf0b155c982e33baec65d06c0f9be4fbb68c90f6499cce6",
+    "A": "181944fafd138bc2d69ed7ecf4ab32ed234a905eabf5afc8adf177a2f33946eb",
+    "B": "fdff0dd9c5fb7150bdb8e8928f8c0f4cae4268d74a2b146deaf3acd391bcc233",
+    "C": "6478f54188501f1acb2a55a57e6a4ffead989e2eedf900d689846a2c3c9cdd2f",
+    "owner_66_upload": "aa0f2fb6a1273d9e08f8f63e768fb5e0acac072af233f0cc9bfd62440a64f53f"
+  },
+  "policy": "Apply owner votes to exactly 66 A/C disagreements; retain A on 134 agreements.",
+  "limitations": [
+    "Owner saw C explanations on reviewed cases, so labels are not blinded",
+    "134 retained A labels were not re-reviewed",
+    "No written reasons supplied for owner votes",
+    "Ambiguous remains unscored, not a negative",
+    "Repeatedly inspected, stratified calibration set is not an independent holdout"
+  ],
+  "case_labels": [
+    {
+      "id": "ev_da40ee965d9857fe",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "fd1bc5f815b79a60f8fccff008c3be9d56b7cf3f5cc20a50f299b9b9e524534a",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0c44300fbc771971",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "319eb7c7148a491ad477ba5086a89d1ad2e665826993e023e528053b967284a9",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_bb1bef543df7863d",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "bb43d43e8d0dd944fa9e1d5190f1ea4006662023adff10f5945d3bef9191ec5d",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8e5bfaabccc528db",
+      "symbol": "BTC",
+      "scenario_type": "news_present",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "ad0962a73a2a16137a09e022bba3a1d6d225f53d85beca48bd04d16f42763ad9",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_1b84721a312613f6",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "5833b76e240eca7480597d261b4058dbe1604a389b989317513b32285c19ed36",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_b6aa616b32bd7a5b",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "8ef1d57be533d8490df2cc5eb686806097f9643c2eb8ceb20a6bf6b73001fa6e",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f66b929c949038ae",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "172d8f533ec12749a70f711c87cd50e51675a98a936bbe3b16cf57572e2303d2",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_5a5e6d74be8ac3ae",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "3fa5734fb483b4c542c15a980eeee0d23fe910013e9494cfb54984f6c054e3a4",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_4efc809bef076263",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "2ae9d63ecac432f2802be97915d769ff6ceead9713ce6986bf1fb365650c601e",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_5b8a10972d2bbffc",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "069d490500f9bb4dd2aa38d1e08218d258c04a23fdb2cc366100bee301ff327e",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_4753c924fba5e5e7",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "fe7eb9a56877fb6d11a996588398217a19847d096f6be2f373977eb3b1dddbe8",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_62a860b3be4a2b56",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "ee60eeb91735888ad81b9e4c017520edf7ad842fb6079639603aae07602508a0",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_f1b6ad119de05a5a",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "41d2492fa212bf6e969f976f4eb0d4190e7c556b11796de90438753fc2064ae3",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d1065197bab11031",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "e8f1791fcca87cfcf1122277f55351761d1eb04dc8ea1787e545e19ad67e8977",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_86a8ba257afb7ea2",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "c2ab185e98308bf5dce8b12e41f500a4d179f1515429b9a0f9034bbe95332c08",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_4f982aea20ef0890",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "15f413e24fdb4c46b6bfb0ee9484a876a4d5ac9a57e64f655381abefce4c6787",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_6f528887da924dca",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "a89e12a124406cbcf6231ff953829ddbd414bc530b2bb6bf0fa5b34d13428efe",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_aeccd97ec359b1d4",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "49f6cc9a2afd09209583abbdc7e277aba70fb1f5d492d229b818243e878c4901",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d80c01bba0400132",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "a861f6d56d3f33243f9ca26874d9dbe667cc9f3faa50ba8706ee49868a92c384",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_7d7d3e6fc296368d",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "6b6eea2fa7262ee833d32d5541050e7bd2e75e2bd7f5920a9f5b795236462059",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_211d649810a8efa9",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "34f61822ad17057b4c1b731bfa81e95494599cc517ac10cf01362bad38cce3d9",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_28f31e4463d0322b",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "598f16388d7a439909f2f5020a98629f0cb19e6fa9cb8b35e5548388ae3851a4",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_93c7b05a027f4da5",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "3f92c98d42e0c4d64d6f29b477f7b7dd8b1eaee3973358b452471f1c0c224754",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f8b8e7d269620b38",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "7b1fad28b20a6fdd2fd1a13dd1c71aba63e2e15429a94752fedf043ab656fdc7",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6f4abc2c52228700",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "3012b35b0fa0d62480603735758c2c2bde15c47b3a515c9b71c69e70be5b6bad",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_330808e563cb43eb",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "ef2b35959246ce3ca3285d2937f98c95159cbf04a2071481de91a8d0cdefb9e3",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_36436dd74b85d86e",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "03353899af470718fd131a5d08fe0eea58c1ee01a2ba8846f09a680cd1b97b27",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_b35e9bba19d66acf",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "13602b942305a16962f0ca141114b2b2433dec0fa321e8101338f2cc7408369b",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_ee0c748514dfeb40",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "671c2d507eed7bab91294004b075036ea2c4f4ff0fd1d42bbcda45b9d2f8d453",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_07aba65a398cf1dc",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "973340747299846bbd824dc701ca0eecd9af75c4d3522b4bd17ffb3940c1ab5e",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_03fe1ce0c636c3d0",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "68ef27fa175ca8a8bd08cf99fa2657ba8ecc01d5f9ee63ebd6efbac2cbd7972c",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_5d46f8afd287affd",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "dd7aa36f40e7725a8d0aea32ff61c1f26fb22b0dd89007870a60e655dc0162b2",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_793fc544e285b825",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "6d4d4592056ce99a750f1520e4f148710513e6d9e4a557997eecf8fdd5592569",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_d81183cdf4fb1f71",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "3949e5abfa28543521224a75bf07c78b697be12088423e7a978a4723b7d63cfc",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_39891a3b04174bf5",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "6b028fb0a5f3652529e1c622908d980b6079bc1985ee505be8a5e8868248e8e8",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_e094373ba2587375",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "4a1401bbc63a59f85e306f605c943a344fe354c400108b267b7c419b18141e0a",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_c45cb1166d7e0bc7",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "e06a628dec1e169fb5e91411f2298c79368158ba604bd49d39112ae7064daf91",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_979caefc91061751",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "08d19207f192c05bb93cf064baf8dce83fdab03f506233425b41186ac8e6b86c",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_9e6a23dd5e8daa11",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "cee8aa5b058865fd15119b81a8e5e9547695177ee79cf2f188ffd403cabfe060",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_32c91f6811220943",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "5f0f0f35b120b43b42d686f89133a0aa2726e9f3bca513ed95d38a0e5ec127d5",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_19e4fd193fc80064",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "f7ab1a6909ecfc520fe727655d90059533dd4683d9a37e43b7badf978bea0f7c",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_6d57a005dfb4c176",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "3e674e4a72e06f7a3d504efc88ec2538e28cef882d99924739b35e3f95016b08",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_075a5b3e3addb0a1",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "9a9fd52bc37bb9f1159e416cbdc7ce50cfd789940faf4e5eee5e8a09f2844817",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "ambiguous",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_b0444ced2d1e8577",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "03e9ee2262d9a3f8c14653fd4442740842aa2c1bc6074a3cf2bb65eaaa3518c4",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_3071bf23d0f30001",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "3bff9a6df19ae8db4907504ac83b2ccb42ef968b0efdd90d0cf868e406b999b0",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_c7d8b26fae14d237",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "69a98c1d2fdda17fe88696d09bf6175a3e51fa5ead97749d3cfd9c51a44205f7",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_6d645ffe2f593320",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "ceee22f31026f7f033ea344f3ad28a9d02c773df58dfe26f105274036eec2ec3",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_acf2404b069b5d37",
+      "symbol": "BTC",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "5234171d245b814502f339e4526738c9fb43b39e266615c7ff99ea4fd220e6a9",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_66d738d94f921c72",
+      "symbol": "BTC",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "50aacc0e85de9940425a0e5c664a3a5692bf6103fdf1f0494d0bda70dba4455d",
+      "A": "ambiguous",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_4e56e501dc971a10",
+      "symbol": "BTC",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "b7fbf2b5ee8b3c4e47fd5f34fa37391ca7d840f99c2659f78d41037f273db5e3",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_7f44556ce530b1a9",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "79264938946debcb842c8e05dd5fe9fdcc2f47a8808c97dc8f86904100d79e14",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_3c7f3da2e73e4b90",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "82c8426c0b4db799e0c985b81748d62ee8a763893019706bbe29d772681157c1",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_425e80fe25930063",
+      "symbol": "ETH",
+      "scenario_type": "news_present",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "3388b69ac0a776f5690b69f732513489f6c18ce8ad46e15944d221a46fe13cfb",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d3101f97709cbb5a",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "f7a7b2ac5f14cac5be163f316b60214fa497f2e9809932e7264a9045c94b4710",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f10d1068c89b3e34",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "f467e126a5d1d8fa4dbeb0b394a9251b9f9e7c95cfee2a1cc1af9b379ee0f3dd",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_86ff32a6b1b579f8",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "5b5616e3cbc70fbbb7128921c91b96871639ab0b7f70b7e1a2e29c02b32a0dad",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8f9c43b12b1318f6",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "286544db7b37ba19b1a0e0fc8cf239c56c0716621eb35fd3fbb8b7cfbf3e1ea8",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6a0c439c7e9573d3",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "7a53ecc7a429fc3ed66a1092361c92ea597e5be882b8b2301ba57a8057673b12",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_d3fed1a30646aa53",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "14261df62e885aa0a40108efb151da401ca474dbfd422a23109489f44467c299",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_0c7b2c4d1c1394d3",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "1e1850c5e7c1bc228cba354e483c93bed354d6c0d0cb2afdbcb6273d834baae3",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_2f11d6ea41819f42",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "1ce22c2121997ecf4fd9f7c3fd0f277ea19ced9bff3e5807311574ad673dcd2a",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_73ee7f7d464106e6",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "95115b51ccd4a39a7c2becb8b8e77fc66694a9f5acabed7529b36c8a1bfd7547",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_b364782dc5341945",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "774281efeddef269f2647b3b173ff8eec7812fa4b148f7d4e598f6ea3c076306",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_baaa5f69ef79aa48",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "dfda41041707f321101f7aaa1ea331476ff97552e62b71bc071c4e0ab7f388f4",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8ad62d490fe6ea05",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "cc911b29e24902f15f92f4caabdeacdc6df20da0ed5b88f03ac1738919695806",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d53f85d10f93bfd8",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "13323f556f6492d76e10f3a2c01c250a87bb1bdc64b2ba18a4476963c41b0f73",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_df91009d44eaa643",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "b5e200a5850a5a5d8d6d265b6291cd7e39930b5eb9c6eb09a6640f1b05837aa8",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0ab71234c9080ecc",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "5bac794ab559b66ed8182551c9c05ab84cf673d6728f197c5bb77e9609125de8",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_57ad0b63a2dfd1a1",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "861126ab44f302fcb4cc0e9f9948cd529990eeeee5b6cd1f13947a01b6fc7b1d",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_ca419cced38004dd",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "453b9b231f5d456ad1eb775343636c97a86f982b969156e9fe60396e159d4c0b",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_e281b3827cec3ce4",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "8ed6c29ff93b4a9737c102f800eb074f1b3eb169888ec87c0066f37e9c7c946c",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_b969e8cd1dd86db7",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "725f1ad3c500da90e7df0b3251b22ac90a2a76d7c857cd54b603c2ad56266a2e",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_b04b1108793d03c0",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "e3f98c2971bd942f36203149dc6fa8c0bb40e00778d07f6c8ee0aae9d823f6c8",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_be168f096ddd0f3d",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "a04da7f9b95ab6d3bf41caec34b6d1bd051ff2d699c31744ca6dea1dfc2b9898",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_4a4d746de2aaac47",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "5fec2e02ab7b8e41b95f51ae1554f68ad2f4d77838fc48ff7b4058175e201235",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6763522dcef2677d",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "b0643f5a470aed864426502ec4ffa6a665255229e66f96292f7c15029f3481f3",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f69cdb0bcd822c7c",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "ef32b06f011163bbd8457249e1e1717d69999cde1cb1ac7e165fa98b8cd91daa",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_fb26176570e4535a",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "13f8bf5b422d02bcfab39e5e42a402564366e759ff6a91cd8bd21cf5e57485bf",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d5c1443978a2dbdb",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "89418002105d4335c9ed81a85219d346a3874c2d48b8cb079db39e10d765b005",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_893e70ae29cb92e7",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "046eb165e89ff260973f9e962b38ded32c535af55752e3fb9e72911b277ee796",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d2f17612baeae327",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "d81ff457eb87e22e1cbd77b8e74ad86b85ea368f94bc282d04f84021b1c7f6b0",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d1d98b923702d535",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "66a700d1afcf37e561004eeccbe489eed8c928970353501e6ef813ce359b349a",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_8c7dd35f1b3d41e4",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "8bc2eb5ab95c114943854be16cd14882abcd34f950121db01af8d9c047a3b343",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_e63023319a55b676",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "d4127b9304f00edec35fc5543b91fae62fc0da704e19b14e37a5f5096c29a6b2",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0d0d5110cefac3ef",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "f57ba3cb2b6398ae87fca00dd0f5cbcf447cc26c0f54a1bfd1acb66299d3fcbe",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_fc6cf60f2f603650",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "7837a527cfebc5e0ed967d35434847f8f01fc0f960425993115102f8f482c2f1",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_1a9773932f226c8a",
+      "symbol": "ETH",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "816968a3422da607f0fd655a824d5599f372f04f6a2ccbd850f51e1b1722747e",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d61d1e87e694636d",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "4a31675dc9cda56056592b11feb03f53ec3909ed825bdef7ae769fdead5683be",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_1f79b09b0b3404d3",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "01577f4465b485df1aff63dbde8269ace20b184b20e52229c7d4ead09eae0d70",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_61b14c71a3ee8a11",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "5ecd202a1bb194dc7427cf5bcc8dd968987b724514099015f48b123781037282",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_fb76c46b0a897a16",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "221ebbe51dc1715698c8e6dbfe0d496eb515ada48b5a3a8abdecf27c0af9fefe",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_a6a542842bd66174",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "56f9ec12b6fe613acfc89721c12d1bdf92c5667f2a5a001c1ec619d9c35c6c8f",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_2a599a191d8ee97b",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "56e8f4eae52b8ae18a3913e68f46e59c015ecc215ea4ea5a8325dc360c31c192",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f626db856d4e0de1",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "861b75dbcc84eb84718b05502b87b8c9ebb3940f12907f406b5ff97325db3a82",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_7d8fef4f9c5f5a25",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "99343d664f75a4fdc7443b182a076e87b9805d52cbe3ec4db5129db5d7bd701c",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "ambiguous",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "ambiguous",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_a45dcac234e92c29",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "b6f4cdf3e1b8ddcfd74cf5b3868fb4e432038e42b0a854ac48ec924f109a7683",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_378e53a4ff0fcef5",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "c0d8281c8554312190518ed446116eb14b10bfe67a81710b04ea723fc0f2c34a",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a3c395a5f7fe3a9f",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "dfcf46345c4ea05b7116294dc5cc8a6efc16b471028bf6dcfb8ce30e73bba2a1",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_82741746d13a5b75",
+      "symbol": "ETH",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "f8c8bcbb5767233008f2309648d4aee7697629fbb4694ea92e5f00dfd8dd89f6",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_2c673c9dfc2877d5",
+      "symbol": "ETH",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "0407cf94134d64ef0a6c97fe0947d905cd3ffb10517b936b8d4a3b14148302d8",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_bfbc4304d2128d8f",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "3ab2806bf307da1bf0928fbaa49c2d4d59462a494c4cc3040c48bdc46ccd024a",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_9967b46b070601f2",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "29f65a4a944ced158eda58e30d6997448ed61303d5db588466f78d0d26254a1c",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_50a138efdc6d2c14",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "85759e5dbe6f418e74947dd7b7ce423a0a1964688903c5bd6a2d3fee22bfe307",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_934205c0f9e423bd",
+      "symbol": "GRAM",
+      "scenario_type": "news_absent",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "28f018c1236f08321b629120140c71bf41234bc58171dbab15b58d1db8b50735",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_0003d9e4e660d7e7",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "8812e028f39aad5344d6925eb145404068f6e7cb3c5c6f6c62a30828a872eff7",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_345fc49db8255adf",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "5069926631703989f239d1e984b7dd894a3ee7e8bbb5bb74a3f1155bf3e40de1",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_1b39a518ede3c14f",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "d71972345b38646dd2bf7238ef2744bef9e883d5b80ef391803070be8e0282a4",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_969aa6bfdcdfaa89",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "4273126990fedab7888f45bc5f55de6ebbccc6ed1f710d79840561e19c659f65",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_09080bc39e36d3a8",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "00975208ad8a9429795ac95bf4630dae2f7acbe0961a8631384924bf5142988a",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_ff8b4bb2822bd0e6",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "f836e6c073e214234f43373360b776d232844d35a3915db6320c32d5f8d72f27",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a370555b751b33e8",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "420426db4cf0d39a6b8526e28093e27bd5c0d87b69b388b19bcb08c9230b8172",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f584bf6836004d16",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "8e6d8fc2ce1cce4a975aa98a7a8d56a591c2e850750145b6e765ab5d2bfafcb3",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_fa12c2dd8871640e",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "e39f9e300ca4ac4d1a20f361d34d8d66db859aa47bf86839887650f0e6b48b07",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_acb59330389885c1",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "17364c2fbc2181baa0f717d9783cc4679405b5338eda6289574615890bd56200",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_69f05f0f882486c0",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "c04d1155680d5b950b989e86764e50d1e69586552e4c2c8f1222f8bbb573c817",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0feb8fc14b803462",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "fe6995a104f828b773bc45d460ab472a5f0e4971cf3f252bfce15e63a1edec06",
+      "A": "ambiguous",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6568cc18aee71c61",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "3cccf94f9c96251415e9e216c6f22ba3d4004dd94d90526dd6d7b951abe1d136",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8f38a8e2204775fd",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "23a0f6486b4033027be3ee80e5c863148330bf64ab928a7306a246f92ab5c175",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_ca9cba5da00d7194",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "1a50cc107c9daf1d9c95817d4a253299b5f18b103757f190594358d945cc8500",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_06967ba962fd99c2",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "51554994588cfff7f5e2dc2e21374341df5fbf11eb39f4dfac476a55a336808e",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_d867a082f6a2b9eb",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "084a030e4ae68676bbc98078d2dd2d0acda27e409c5071235edb5263833bdd88",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_46defce5e600b2b9",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "85fdfc3b1d8c8d36035e2297091530552f2e2cab972f48ec982aa17942a3a2f5",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6c38787191f25b78",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "18c40ea9201f363aab43939efc8f6e0c9bd96c64a80ddcdff8eb78352a5c3621",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a9913f63628cf57d",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "32207d400871db07593c1432b6e23ad4b5e9b587288c35f34492afee9648f864",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_4f443df56981cc24",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "9813d3d2b20bd23bf46af1a33b82986c29153b68535eadbef94066551ca737fb",
+      "A": "alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0b140892015fd59c",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "4ce3a83beaebee8fdb3500782f651fa5369913255a61fe7e7761228922709b5d",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_adfd6a9505cd87f6",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "8848ea37548f9ffa17a97b47bccf1c6a6d36e5790de266d350515f69190f44b2",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_30a873823ba149b7",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "8bfa4bc21b56572d77c0bb8ca3cb3228431e1bd37ff0f49b347c493854dcbd40",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_557f98e3aed5238b",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "27811db21695ce67d4e0888ebaa68070174c41a450965d64c7b699f1b075d0b8",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_6500c5ad9f5364bc",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "3a4e2e5768cae9621ab365fd5ab3cd6ae65929fdc85b276a36f715d589a96c6c",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_b88733df29407539",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "efeb8db2e499298473733e09b415bd65d649593130be5a0bd89b4e0d7cc48244",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_db18633254df7f92",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "f216cd953a9e33b098f57d0a1335252efe50961be8b97cb1ea6e4192563a8112",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_7804adc277bd3333",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "6d945fd3293077bc439f8c0a8cbbb58a39d89f79fe2846b95cc485fad842e42b",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_f3c455f78f4b8102",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "2268ad253a1adaeaaac7667f269d8511740cf799320303e962a50ac7081d6af2",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_9a4f3dcab93843b9",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "e6f4ba3a88b613131c6f6597fa91eb2b2a085d4d64c004c9d6b758a7ba0c2825",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_da53aaa7812434d6",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "c504808fb3241def90f7b3762bb0e31f304d0492759d6b5bd9f89c9236458d9b",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_5a2ebc546eaa40cc",
+      "symbol": "GRAM",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "a51e2727332c2b8864a87860f608d06a200dd71f86b5ed3b76ae8daf2fa7a9da",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_17695daab778f122",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "3837bb51ce5c023b769617ee1b7a42b0663135857845f0128f7d425366d8cdea",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_dc716b6a61a24adb",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "b2ae92f74dadc18590b3f32248b69cc167dded7bb00594c910f3a05e98b624dd",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_7b3325d2f2609480",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "f2a95077a2b604e61b1798ed1bbfa876cde11570d969800cd880b8a766bf1d6c",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_41ef2b378c8eb878",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "552d4760a955462ab4d8ba016c48b88ca66e82ea4b974bcefb813abddba51e53",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_cadc7ac08e749140",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "0d4484667a1c1b40ea19fe1ba5d1c30b36434a815b6bb3a66a6f2a754c6d7dc5",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_67191663c33d3a79",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "484b722abdb38082dd39d2577594d8cfc4132ddc2d8a85eb828d0d327e92302e",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_59456f55949ff140",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "1c6a173f56cf5524fcf0f4d6fadf4e7859b7fc5f570c4aa5a53c19eb4898ed47",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_895e0dfdd31bff53",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "120a4933db7aae291cc396012f206a32780ebdf5f31e92634bc9c5311b4ed4d3",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d0e34a87a33805d5",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "24161d02b551d4e8fe7fc9ae52523ba31d4a8dcb570008cea0b2c177120346f2",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_270fe81206c0deb8",
+      "symbol": "GRAM",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "fdb3b7cbdd5c5600c3213a9d48a57e25d30a2272e9aa93b06e850c26f541a74c",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_bb41d65cf5464b88",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "f50f9efb5016de451f4feaef77d8b4b8d40ec99a82e4a63794a79aadd710be9c",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_4ab300c3b743b554",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "e6d66fecd07fb3063b47282907b6cc51a6c819d6fd2d81668d1799eb9b0cd96a",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_c560242cca20c2fa",
+      "symbol": "GRAM",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "7eeaf4d095a59e97e11614006becd8fd9c7b55e0fb81c29cf21bb8d258ccd69b",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_89a89ce33b2d07a4",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "9226a798f1ae42e94deaadd7459f61e9bcd01677f692a2dca0f8b9f5030af92e",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_4dc8e670c072696e",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "eb9c6abda09afc5041f4e02fbb85b22c86258029d58f55c93a09ce0fb7c7d072",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_f9e1a59a2e658b29",
+      "symbol": "SOL",
+      "scenario_type": "news_present",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "d1810f35fc29887f04a9cb03f0fcb2d23db803727e0576bdf8639d397a990b52",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_4bba21dd01bc8372",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "f92398cef90757a0bc5d898ab7ceae48be532ed7005fbbb8332c2607c5c3d20b",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d1f0d676477abedb",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "f095c83944ce426d6a3bfa3e27b21be62129cfa057699cac53a9c35138d25ba8",
+      "A": "alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_1ea4cea05b78ed5c",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "b4185580e2d70a96244984f4e3aaa92d943bd693452799e2eea8cc087857a7c5",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_6cb59fb839fa1a11",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "ff346b9890238b7a6e869d19c06108d10acab20c07c9c02006f070c49217b28c",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_b6a717fe983101fc",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "38f5dac9ee30048034b907b55d676952ea481521774d16fa355a024848300bf8",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_c11fc3662a746b39",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "4de29998aaf86b608aaa8fa1d06c3878b830b2d61f4608af5c940bbbb422f115",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_76243ce005b9884c",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "c8005d6777a2e7905247a78d64b67d04157a631512946e0414a2d44348236f6b",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_f908b6d1d12532ee",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "2b5af31ecc362efc80f27bda96f5de031106e9d7a8ea1828a83f76a4b1a4cd29",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_5fae55288b0da0e8",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "5b85ee575b3be2182ff8c617935e4eec2499618fa6327c994415dae5c604fb2a",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_6ba8af3fbb5ad639",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "0d66b4f0ddf3a3500027cc577b3188b6f857f2aed5dc85794a6f63f3e0eaf92f",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_3b761a96823903e0",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "3e65a55f7c72ca094e0d655c4398888d2c91437b4f2cf0caf6cde6915c5ce79a",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8fe203024b366f40",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "90ffa4ff39236d4713309df0f43e956bdcd8bdb27455e8b621208fb9d4405407",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_b3bc36edc283f627",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "663505b0f5b9b0892ec4848bf139c071adce43ef0fa82454746db4a2090aee0f",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_8b508b14b2220e57",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "dea8d758e434101575e8330db96aac09aeee3e920619efdca9fa234400136bea",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_7bc9f5986fce346f",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "30a8e8bee8b58d23bf7faffa98506358558d365ca495824c9ff93a02d3724a35",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_fd251a8bd9ebb3c9",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "f14831d9904e19ac4881e7090d1a975983491dfbff012acddee275ab20d0d0ef",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a14b3c85c8c46d2f",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "43c3a2040cecdce036b8c91920c6d7dfffda7e8f0b5bc2337a1d30d49522a95b",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_1dd3d013e2dd43ef",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "a332f6ce2af8c3eb021716e850f0f16404b399d54198ef703ab22f683755c753",
+      "A": "alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_792067f56370a744",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "2d11bec5e4bbdca09f909e0ea12fb120b51d9d39581ea599b2e2b41d684586fe",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_341d98232c3ee735",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "e68ef85c6659076e181bd1eef6a16d294b12c8e3c9cc852fbe18992ca295db2e",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_584f3b1d7b77e79d",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "2b944fc54b8fc8a5d7a6874c31bc62efb15274a657473f044ac3d3253a0aaa87",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_df062e41fb54ca2d",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "b975b944765bed6ee3933e05d044b9ab24f87221ef27997d4f6c5d5ad03ccfae",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_0943988eada33ccf",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "8c74dbcee906fdac20cda599b3a640bbf79c70bb3462c2d48819e14f1a78227b",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_e72f51e9867839f5",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "da5412cb8c15f88aa8662cb875e5b5f4bf2e412b4005f327f4ea83aef912b2da",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_409cb436a1eeb745",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "be5e891424dce00e6589419329f3d27518f7e1e3edfa8fde4877a2e68a8a73df",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a792d2c32d58b1ef",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "5852c9061db5182046deec8439253b4e2ebdd607d3ffe6972571e0850a1caeb9",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_db78cd52c358d870",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "a182a09ef3e493d8cc5f66fc7c78d6b946d21f37ca77415abbec9b4653b88edc",
+      "A": "alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_47801117db53ec5d",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "0df9b933a4498a14d0c205137fe463b21d162acad1c9c116242ad1b82a95ca9b",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_fa46e26c4b1f587b",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "11cd52f0aeaefedb3e6a7ca2439bc61f56a7f7da733982a0d16d481722116155",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_bcb596cad71e8fbd",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "20d963e70ef071fe98a6a7922d2846310e6396157998c433f87b55a9748d9428",
+      "A": "alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_39dbd732c5eb44eb",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "e16be37a23c4f4fdf53d5defe6757475cfe9b54ec66b69871807fa5d73274678",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_ad411beedbf81f24",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "33259f4a901c478c1cdea9ca8e0b828b82d88b7d15dec1d10766e26717fb7a79",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a4adfdf5e1345df9",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "fdce991b07278ba8c987dc5c643a603db9657ddf425d07e3874d1ae98ea84664",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_19c7744fea400d98",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "bc4f5e655cf63f3f743d5feb817c50458513f8af70c627cac40b9f03f39f006a",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_a68fd4629632ce16",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present",
+        "repeat"
+      ],
+      "input_sha256": "7aa26f5f393df4f566612b7c318aee3f520aab616601adf5ceb38c7c82c9b74d",
+      "A": "no_alert",
+      "B": "no_alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_ee3af1481fb43c2e",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "ca8bf5c3959c7082828314ada23dee115e9b73f49627b80da69aac2e56f997af",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_e41ce9d4645d71d4",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "a8f89375708057e5cb221b1e2489d014ad5d9156522c98cd6f69c52b665f68e2",
+      "A": "no_alert",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_883c34881332dabe",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "continuation",
+        "news_present"
+      ],
+      "input_sha256": "ce993df276d1def38cc0173459ae1cd040d41c824a62a355a60b59d57fd17102",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "ambiguous",
+      "final": "ambiguous",
+      "source": "owner_20261022",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_fc35d58391836075",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "borderline",
+        "news_present",
+        "reversal"
+      ],
+      "input_sha256": "658ad9a2dd5f2b2d9b85776068e01f9d3a580bea495f5cc9e4cd31e344feef81",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_1f64c789a84ad137",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_present",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "3d1ddf13495c1541954e17c9a1ce7365eb1db951bbdcf4725c0867cce74f1f2d",
+      "A": "no_alert",
+      "B": "ambiguous",
+      "C": "no_alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "no_alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_d8537416940d4e41",
+      "symbol": "SOL",
+      "scenario_type": "delivered",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "13c40b8f0eb8528251d4a4080fe55e458b16271181999f3277b70c8d7684025f",
+      "A": "ambiguous",
+      "B": "ambiguous",
+      "C": "alert",
+      "owner_reviewed": true,
+      "owner_vote": "alert",
+      "final": "alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_d7bb0710aca5ad35",
+      "symbol": "SOL",
+      "scenario_type": "repeat",
+      "tags": [
+        "continuation",
+        "news_absent",
+        "repeat"
+      ],
+      "input_sha256": "e11b6523bb41c7af43cdbdb282f99cc5ddf6c87e004e8a77cf53bd6341ef3b9a",
+      "A": "alert",
+      "B": "alert",
+      "C": "alert",
+      "owner_reviewed": false,
+      "owner_vote": null,
+      "final": "alert",
+      "source": "unchanged_A",
+      "changed_from_A": false,
+      "observed_should_alert": true
+    },
+    {
+      "id": "ev_f6c390c7986cbdb1",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "repeat",
+        "reversal"
+      ],
+      "input_sha256": "54b01026bd088c364e9f9e4fd16d193f5ccfba4b923a351148f2a6c02d8670d7",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_427556b5011aeb51",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "60aa4436f0443c77e2b686b800e6a1c8b254a876b6435bc15ba2e5f9ce1bb096",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_9825dfc95253f0f7",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "f0ea977bcd93d5217d7184855221d56192a72ccb1307f5d2c8f97aaf37251465",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_22955d5b99feebef",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "continuation",
+        "news_absent"
+      ],
+      "input_sha256": "9a032b185ac754e89fc1a68eddf64a68e9f75cf5fc35b27bffc5645f3b8aabca",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    },
+    {
+      "id": "ev_bc7ddfa4599baa09",
+      "symbol": "SOL",
+      "scenario_type": "no_alert",
+      "tags": [
+        "borderline",
+        "news_absent",
+        "reversal"
+      ],
+      "input_sha256": "28afe3116ba42c132d10f5bbcce8aa3ffa5abf1b93219547c9c74e8bc1c492f9",
+      "A": "ambiguous",
+      "B": "alert",
+      "C": "no_alert",
+      "owner_reviewed": true,
+      "owner_vote": "no_alert",
+      "final": "no_alert",
+      "source": "owner_20261022",
+      "changed_from_A": true,
+      "observed_should_alert": false
+    }
+  ]
+}

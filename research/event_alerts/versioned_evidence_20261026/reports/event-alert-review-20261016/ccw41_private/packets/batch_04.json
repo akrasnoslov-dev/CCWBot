@@ -1,0 +1,1601 @@
+{
+  "batch_id": "batch_04",
+  "cases": [
+    {
+      "case_id": "rc_7a57c10cce37a06b",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 108.1475312852854,
+          "time": "2026-10-13T07:15:07.276364+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -1.1693113715867751,
+          "chg24h_percent": -3.866910288798623,
+          "chg30m_percent": -0.7779258640116272,
+          "chg_since_msg_percent": -0.7232177732344951,
+          "chg_window_percent": -0.6958621104655272,
+          "payload_points": 6,
+          "price": 107.36538911771588,
+          "relative_24h_percentile_30d": 88.2,
+          "relative_window_percentile_30d": 59.5,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 108.11773950159933
+            },
+            {
+              "m": -180,
+              "p": 108.3364184720127
+            },
+            {
+              "m": -120,
+              "p": 108.1475312852854
+            },
+            {
+              "m": -90,
+              "p": 108.64975862197136
+            },
+            {
+              "m": -30,
+              "p": 108.20716060678869
+            },
+            {
+              "m": 0,
+              "p": 107.36538911771588
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 119,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": 0.8063,
+          "created_at": "2026-10-13T07:15:07.276364+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 19,
+          "h6": 5
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-13T09:14:59.121904+00:00"
+      },
+      "input_sha256": "bc4f5e655cf63f3f743d5feb817c50458513f8af70c627cac40b9f03f39f006a",
+      "symbol": "SOL"
+    },
+    {
+      "case_id": "rc_23ab80d8291f2edd",
+      "input": {
+        "coin_name": "Gram",
+        "display_symbol": "GRAM",
+        "last_msg": {
+          "price": 1.4778781544989448,
+          "time": "2026-10-07T05:40:07.441667+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.4580158522610238,
+          "chg24h_percent": -5.716540945293766,
+          "chg30m_percent": -0.09143005632901173,
+          "chg_since_msg_percent": -0.437347429065805,
+          "chg_window_percent": 0.08014948661097505,
+          "payload_points": 6,
+          "price": 1.4714146923855185,
+          "relative_24h_percentile_30d": 91.8,
+          "relative_window_percentile_30d": 6.8,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 1.4702363055346643
+            },
+            {
+              "m": -180,
+              "p": 1.4778781544989448
+            },
+            {
+              "m": -120,
+              "p": 1.4786647688560721
+            },
+            {
+              "m": -90,
+              "p": 1.4765569068714524
+            },
+            {
+              "m": -30,
+              "p": 1.4727612388157596
+            },
+            {
+              "m": 0,
+              "p": 1.4714146923855185
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "market_wide",
+            "source": "Cointelegraph.com News",
+            "summary": "Russia registered its first crypto exchanges and custodians, including its largest bank, Sberbank.",
+            "time": "Wed, 07 Oct 2026 08:06:35 +0000",
+            "title": "Russia clears first crypto exchanges, custodians under new law"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 179,
+          "analysed_window_move": 1.6322,
+          "created_at": "2026-10-07T05:40:07.441667+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 21,
+          "h6": 5
+        },
+        "symbol": "GRAM",
+        "timestamp_utc": "2026-10-07T08:39:59.119880+00:00"
+      },
+      "input_sha256": "420426db4cf0d39a6b8526e28093e27bd5c0d87b69b388b19bcb08c9230b8172",
+      "symbol": "GRAM"
+    },
+    {
+      "case_id": "rc_724aae981cd26df5",
+      "input": {
+        "coin_name": "Ethereum",
+        "display_symbol": "ETH",
+        "last_msg": {
+          "price": 2346.0577626217414,
+          "time": "2026-10-15T02:35:10.588270+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.7604633218925326,
+          "chg24h_percent": -5.588029858527189,
+          "chg30m_percent": 0.2376195849246802,
+          "chg_since_msg_percent": 1.1886610766107473,
+          "chg_window_percent": -0.28316004528937155,
+          "payload_points": 6,
+          "price": 2373.944438080831,
+          "relative_24h_percentile_30d": 98.7,
+          "relative_window_percentile_30d": 45.9,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 2380.685588471344
+            },
+            {
+              "m": -180,
+              "p": 2378.2207181083027
+            },
+            {
+              "m": -120,
+              "p": 2347.8200784857177
+            },
+            {
+              "m": -90,
+              "p": 2361.9042022810413
+            },
+            {
+              "m": -30,
+              "p": 2368.316853404071
+            },
+            {
+              "m": 0,
+              "p": 2373.944438080831
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Massive liquidations of nearly $1B in crypto bets triggered as Bitcoin and Ethereum prices slide.",
+            "time": "2026-10-15 04:25:15+00:00",
+            "title": "Nearly $1 billion in crypto bets liquidated as bitcoin, ether and XRP slide"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "VanEck withdraws its application for a Lido staked Ether ETF, halting the launch of the proposed fu.",
+            "time": "2026-10-15 01:21:52+00:00",
+            "title": "VanEck seeks to withdraw application for Lido staked Ether ETF"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin stays above $83,000 ahead of U.S. inflation data while altcoins lag.",
+            "time": "2026-10-14 10:51:39+00:00",
+            "title": "Bitcoin holds above $83,000 ahead of U.S. inflation data as altcoins lag"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 329,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": -2.9448,
+          "created_at": "2026-10-15T02:35:10.588270+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 3,
+          "h6": 2
+        },
+        "symbol": "ETH",
+        "timestamp_utc": "2026-10-15T08:04:59.785034+00:00"
+      },
+      "input_sha256": "b6f4cdf3e1b8ddcfd74cf5b3868fb4e432038e42b0a854ac48ec924f109a7683",
+      "symbol": "ETH"
+    },
+    {
+      "case_id": "rc_4410bb7647fd1f81",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 108.77353344182947,
+          "time": "2026-10-09T19:45:09.310531+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.07181522237967529,
+          "chg24h_percent": 2.146155313447494,
+          "chg30m_percent": 0.44353827269972895,
+          "chg_since_msg_percent": 3.249089188099633,
+          "chg_window_percent": 2.721674287456387,
+          "payload_points": 6,
+          "price": 112.30768255640189,
+          "relative_24h_percentile_30d": 65.4,
+          "relative_window_percentile_30d": 97.9,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 109.33202105148716
+            },
+            {
+              "m": -180,
+              "p": 109.56423356795995
+            },
+            {
+              "m": -120,
+              "p": 110.68502175657815
+            },
+            {
+              "m": -90,
+              "p": 111.84316214191837
+            },
+            {
+              "m": -30,
+              "p": 111.81175463123525
+            },
+            {
+              "m": 0,
+              "p": 112.30768255640189
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 2759,
+          "analysed_window_move": -1.0108,
+          "created_at": "2026-10-09T19:45:09.310531+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 0,
+          "h6": 0
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-11T17:44:59.697208+00:00"
+      },
+      "input_sha256": "be5e891424dce00e6589419329f3d27518f7e1e3edfa8fde4877a2e68a8a73df",
+      "symbol": "SOL"
+    },
+    {
+      "case_id": "rc_e2a654dec4501c6a",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 83528.00362018116,
+          "time": "2026-10-12T02:00:11.312820+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.019671106775366414,
+          "chg24h_percent": 0.9526070423397801,
+          "chg30m_percent": 0.28579164154164455,
+          "chg_since_msg_percent": 0.28579164154164455,
+          "chg_window_percent": 0.2283428409565733,
+          "payload_points": 6,
+          "price": 83766.71967287424,
+          "relative_24h_percentile_30d": 61.1,
+          "relative_window_percentile_30d": 46.6,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 83575.88013382221
+            },
+            {
+              "m": -180,
+              "p": 83623.93760048434
+            },
+            {
+              "m": -120,
+              "p": 83758.9488523329
+            },
+            {
+              "m": -90,
+              "p": 83818.52058815939
+            },
+            {
+              "m": -30,
+              "p": 83528.00362018116
+            },
+            {
+              "m": 0,
+              "p": 83766.71967287424
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 29,
+          "analysed_window_move": -0.06,
+          "created_at": "2026-10-12T02:00:11.312820+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 8,
+          "h6": 5
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-12T02:29:59.780146+00:00"
+      },
+      "input_sha256": "973340747299846bbd824dc701ca0eecd9af75c4d3522b4bd17ffb3940c1ab5e",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_cf99db8756472837",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 108.77353344182947,
+          "time": "2026-10-09T19:45:09.310531+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.1305593843061117,
+          "chg24h_percent": -0.8464910041262947,
+          "chg30m_percent": 0.21239204602596284,
+          "chg_since_msg_percent": 0.7269232699453816,
+          "chg_window_percent": 0.30019807894561157,
+          "payload_points": 6,
+          "price": 109.56423356795995,
+          "relative_24h_percentile_30d": 32.2,
+          "relative_window_percentile_30d": 32.7,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 109.23630826902523
+            },
+            {
+              "m": -180,
+              "p": 109.41216662021264
+            },
+            {
+              "m": -120,
+              "p": 109.44626500653587
+            },
+            {
+              "m": -90,
+              "p": 109.35767036920137
+            },
+            {
+              "m": -30,
+              "p": 109.33202105148716
+            },
+            {
+              "m": 0,
+              "p": 109.56423356795995
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 2579,
+          "analysed_window_move": -1.0108,
+          "created_at": "2026-10-09T19:45:09.310531+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 0,
+          "h6": 0
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-11T14:44:59.690774+00:00"
+      },
+      "input_sha256": "da5412cb8c15f88aa8662cb875e5b5f4bf2e412b4005f327f4ea83aef912b2da",
+      "symbol": "SOL"
+    },
+    {
+      "case_id": "rc_f0b8628a3075e53e",
+      "input": {
+        "coin_name": "Ethereum",
+        "display_symbol": "ETH",
+        "last_msg": {
+          "price": 2504.3805217133195,
+          "time": "2026-10-13T09:35:09.846225+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.12829759078840033,
+          "chg24h_percent": -1.707382931857334,
+          "chg30m_percent": -0.2570637692127126,
+          "chg_since_msg_percent": -0.24397550756729333,
+          "chg_window_percent": -1.326614676951105,
+          "payload_points": 6,
+          "price": 2498.270446624053,
+          "relative_24h_percentile_30d": 74.3,
+          "relative_window_percentile_30d": 92.1,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 2531.858452453934
+            },
+            {
+              "m": -180,
+              "p": 2508.558695577858
+            },
+            {
+              "m": -120,
+              "p": 2512.6300737595525
+            },
+            {
+              "m": -90,
+              "p": 2498.8926173958193
+            },
+            {
+              "m": -30,
+              "p": 2504.7091463635106
+            },
+            {
+              "m": 0,
+              "p": 2498.270446624053
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": true,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "ENS upgrade may affect domain registrations",
+            "time": "2026-10-13 11:11:27+00:00",
+            "title": "ENS seeks DAO approval to activate upgraded Ethereum naming system"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Blur, once the largest Ethereum NFT marketplace, is shutting down after a 99% collapse in trading v.",
+            "time": "2026-10-13 04:43:18+00:00",
+            "title": "Once-largest Ethereum NFT marketplace Blur is shutting down after volumes collapse 99%"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Tom Lee predicts a $2 trillion wealth transfer will boost crypto demand, noting Bitmine’s increased.",
+            "time": "2026-10-12 15:27:09+00:00",
+            "title": "Tom Lee sees $2 trillion wealth transfer fueling crypto demand as Bitmine buys more ether"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 149,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": -0.9482,
+          "created_at": "2026-10-13T09:35:09.846225+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 20,
+          "h6": 2
+        },
+        "symbol": "ETH",
+        "timestamp_utc": "2026-10-13T12:04:59.119641+00:00"
+      },
+      "input_sha256": "4a31675dc9cda56056592b11feb03f53ec3909ed825bdef7ae769fdead5683be",
+      "symbol": "ETH"
+    },
+    {
+      "case_id": "rc_88366ff0a607f8f7",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 81444.09264742522,
+          "time": "2026-10-15T08:01:03.683071+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 2.1656231824684467,
+          "chg24h_percent": -0.052697912566028134,
+          "chg30m_percent": 0.8038167471854293,
+          "chg_since_msg_percent": 0.44392440939837774,
+          "chg_window_percent": 1.0473708399575459,
+          "payload_points": 6,
+          "price": 81805.64285470017,
+          "relative_24h_percentile_30d": 3.4,
+          "relative_window_percentile_30d": 92.3,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 80957.71535141363
+            },
+            {
+              "m": -180,
+              "p": 80931.70240933252
+            },
+            {
+              "m": -120,
+              "p": 80553.40495758236
+            },
+            {
+              "m": -90,
+              "p": 80228.33143196195
+            },
+            {
+              "m": -30,
+              "p": 81153.31888659294
+            },
+            {
+              "m": 0,
+              "p": 81805.64285470017
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Bitcoin fell to $80.1K as the KOSPI index dropped 7.5%, showing contagion from a Korean tech sell‑o.",
+            "time": "2026-10-15 09:48:07+00:00",
+            "title": "Bitcoin dips to $80.1K as KOSPI closes at its lowest since April"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Thailand’s new Bitcoin and Ether ETF rules take effect Friday, but CoinShares expects modest initia.",
+            "time": "2026-10-15 09:36:20+00:00",
+            "title": "Thailand crypto ETFs may see slow start despite new rules: CoinShares"
+          },
+          {
+            "material": true,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Bitcoin ETF outflows exceed $260M, indicating investor pullback.",
+            "time": "2026-10-15 07:23:43+00:00",
+            "title": "Bitcoin ETFs shed $261M as XRP funds buck weekly outflow trend"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 418,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": 0.2791,
+          "created_at": "2026-10-15T08:01:03.683071+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 1,
+          "h6": 0
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-15T14:59:59.150187+00:00"
+      },
+      "input_sha256": "03e9ee2262d9a3f8c14653fd4442740842aa2c1bc6074a3cf2bb65eaaa3518c4",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_9c280aee8b80246c",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 112.91103825706901,
+          "time": "2026-10-08T12:15:12.951300+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -1.2795358711190616,
+          "chg24h_percent": -3.895523465634913,
+          "chg30m_percent": -1.0755969415479505,
+          "chg_since_msg_percent": -1.3803671433776508,
+          "chg_window_percent": -2.5797944207671053,
+          "payload_points": 6,
+          "price": 111.35245138372186,
+          "relative_24h_percentile_30d": 93.2,
+          "relative_window_percentile_30d": 98.7,
+          "snapshots": [
+            {
+              "m": -180,
+              "p": 114.30118702958158
+            },
+            {
+              "m": -150,
+              "p": 113.64712600052331
+            },
+            {
+              "m": -120,
+              "p": 113.53216114367078
+            },
+            {
+              "m": -60,
+              "p": 112.79571299254599
+            },
+            {
+              "m": -30,
+              "p": 112.56317747798425
+            },
+            {
+              "m": 0,
+              "p": 111.35245138372186
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": true,
+            "relevance_label": "market_wide",
+            "source": "Cointelegraph.com News",
+            "summary": "Crypto lending has risen by 55% since July, but now has to deal with the dangers of AI assisted hac.",
+            "time": "Thu, 08 Oct 2026 13:30:00 +0000",
+            "title": "Crypto lending rises again… but have they solved the risks?"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 89,
+          "analysed_window_move": -1.8415,
+          "created_at": "2026-10-08T12:15:12.951300+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 21,
+          "h6": 5
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-08T13:44:59.473084+00:00"
+      },
+      "input_sha256": "dea8d758e434101575e8330db96aac09aeee3e920619efdca9fa234400136bea",
+      "symbol": "SOL"
+    },
+    {
+      "case_id": "rc_3789fa6c4a77d076",
+      "input": {
+        "coin_name": "Ethereum",
+        "display_symbol": "ETH",
+        "last_msg": {
+          "price": 2714.2675665973225,
+          "time": "2026-10-06T08:35:07.138034+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg24h_percent": -0.0773896015502042,
+          "chg_since_msg_percent": -0.016755232834308468,
+          "chg_window_percent": 0.38859159600302656,
+          "payload_points": 6,
+          "price": 2713.812784746793,
+          "relative_24h_percentile_30d": 7.3,
+          "relative_window_percentile_30d": 59.4,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 2703.30795721099
+            },
+            {
+              "m": -180,
+              "p": 2711.05309004001
+            },
+            {
+              "m": -120,
+              "p": 2714.1421700732008
+            },
+            {
+              "m": -90,
+              "p": 2715.813396117047
+            },
+            {
+              "m": -30,
+              "p": 2709.166148949951
+            },
+            {
+              "m": 0,
+              "p": 2713.812784746793
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "analysed_window_move": 0.5037,
+          "created_at": "2026-10-06T08:35:07.138034+00:00"
+        },
+        "recent_event_counts": null,
+        "symbol": "ETH",
+        "timestamp_utc": "2026-10-06T13:04:59.100431+00:00"
+      },
+      "input_sha256": "f467e126a5d1d8fa4dbeb0b394a9251b9f9e7c95cfee2a1cc1af9b379ee0f3dd",
+      "symbol": "ETH"
+    },
+    {
+      "case_id": "rc_fbbd58116c633f5c",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 106.78334164017349,
+          "time": "2026-10-14T10:45:07.746751+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.7997738440691309,
+          "chg24h_percent": -2.1915617877220575,
+          "chg30m_percent": 0.7621030618396506,
+          "chg_since_msg_percent": -1.958622911157973,
+          "chg_window_percent": 0.43344727260845045,
+          "payload_points": 6,
+          "price": 104.69185864550896,
+          "relative_24h_percentile_30d": 63.4,
+          "relative_window_percentile_30d": 41.7,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 104.24003306522161
+            },
+            {
+              "m": -180,
+              "p": 103.88462271631715
+            },
+            {
+              "m": -120,
+              "p": 104.27538233009203
+            },
+            {
+              "m": -90,
+              "p": 104.08343308947009
+            },
+            {
+              "m": -30,
+              "p": 103.900033310398
+            },
+            {
+              "m": 0,
+              "p": 104.69185864550896
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Solana announces Oct. 21 Alpenglow upgrade aiming for 150‑ms finality, boosting network speed and e.",
+            "time": "2026-10-14 04:11:16+00:00",
+            "title": "Solana sets Oct. 21 for Alpenglow upgrade targeting 150-millisecond finality"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 659,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": -0.5348,
+          "created_at": "2026-10-14T10:45:07.746751+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 1,
+          "h6": 0
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-14T21:44:59.793371+00:00"
+      },
+      "input_sha256": "658ad9a2dd5f2b2d9b85776068e01f9d3a580bea495f5cc9e4cd31e344feef81",
+      "symbol": "SOL"
+    },
+    {
+      "case_id": "rc_2ecc74b30a6524bd",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 82341.73852702157,
+          "time": "2026-10-15T22:00:56.402433+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.03214393619301569,
+          "chg24h_percent": 1.2442432904079546,
+          "chg30m_percent": 0.012911458906191506,
+          "chg_since_msg_percent": -0.4295687914834999,
+          "chg_window_percent": -0.20871758772655286,
+          "payload_points": 6,
+          "price": 81988.02411594454,
+          "relative_24h_percentile_30d": 68.3,
+          "relative_window_percentile_30d": 41.3,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 82159.50545381581
+            },
+            {
+              "m": -180,
+              "p": 82185.5234410063
+            },
+            {
+              "m": -120,
+              "p": 82136.86332481589
+            },
+            {
+              "m": -90,
+              "p": 82005.74372552715
+            },
+            {
+              "m": -30,
+              "p": 81977.43963251404
+            },
+            {
+              "m": 0,
+              "p": 81988.02411594454
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Scammer loses $4.8M stored on tampered ledgers, highlighting security risks in crypto storage.",
+            "time": "2026-10-15 22:42:58+00:00",
+            "title": "Scammer loses $4.8M stored on tampered Ledgers: Asia Express"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "US PPI rise pushes Bitcoin below $80k, testing key support after strong inflation data.",
+            "time": "2026-10-15 15:10:44+00:00",
+            "title": "Bitcoin slips under $80K after US PPI gains most in four years"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin rebounds to $82,000 after falling below $80,000, marking a significant price recovery in a.",
+            "time": "2026-10-15 10:16:15+00:00",
+            "title": "Live updates: Bitcoin bounces back to $82,000 after first fall below $80,000 in one month"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 329,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": 0.3297,
+          "created_at": "2026-10-15T22:00:56.402433+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 3,
+          "h6": 1
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-16T03:29:59.153452+00:00"
+      },
+      "input_sha256": "ceee22f31026f7f033ea344f3ad28a9d02c773df58dfe26f105274036eec2ec3",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_b031c664cffd1d42",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 83157.9609983893,
+          "time": "2026-10-13T14:01:21.465440+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.4273088091460587,
+          "chg24h_percent": 0.6513975082986767,
+          "chg30m_percent": -0.24638761175922091,
+          "chg_since_msg_percent": -0.21172750829533962,
+          "chg_window_percent": -0.7598171655203647,
+          "payload_points": 6,
+          "price": 82981.8927196182,
+          "relative_24h_percentile_30d": 47.4,
+          "relative_window_percentile_30d": 84.2,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 83617.23079251249
+            },
+            {
+              "m": -180,
+              "p": 83509.54319730817
+            },
+            {
+              "m": -120,
+              "p": 83325.75458918199
+            },
+            {
+              "m": -90,
+              "p": 83467.48609573397
+            },
+            {
+              "m": -30,
+              "p": 83186.85482451794
+            },
+            {
+              "m": 0,
+              "p": 82981.8927196182
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Bitcoin price action preserved overnight gains as US stocks quickly rebounded after opening lower o.",
+            "time": "2026-10-13 15:27:32+00:00",
+            "title": "Bitcoin keeps up pressure on $84K as US stocks skirt Korea tech sell-off"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Bitcoin developer Paul Sztorc questions everyday adoption of Lightning Network despite usability ga.",
+            "time": "2026-10-13 13:30:00+00:00",
+            "title": "Is Bitcoin kidding itself about the Lightning Network?"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin trading in a tight range near $83,000 ahead of key U.S. inflation data.",
+            "time": "2026-10-13 10:46:57+00:00",
+            "title": "Live updates: Bitcoin trading in tight range near $83,000 ahead of key U.S. inflation data"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 238,
+          "analysed_window_minutes": 180,
+          "analysed_window_move": -0.2871,
+          "created_at": "2026-10-13T14:01:21.465440+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 21,
+          "h6": 1
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-13T17:59:59.113380+00:00"
+      },
+      "input_sha256": "08d19207f192c05bb93cf064baf8dce83fdab03f506233425b41186ac8e6b86c",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_4d92044490f7c10c",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 83572.2773007575,
+          "time": "2026-10-11T19:00:58.646861+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.031199929246314387,
+          "chg24h_percent": 0.711014259540499,
+          "chg30m_percent": -0.012102967012468826,
+          "chg_since_msg_percent": 0.031199929246314387,
+          "chg_window_percent": -0.1759678265996102,
+          "payload_points": 6,
+          "price": 83598.35179214487,
+          "relative_24h_percentile_30d": 50.4,
+          "relative_window_percentile_30d": 38.5,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 83745.71731076688
+            },
+            {
+              "m": -180,
+              "p": 83885.2771845768
+            },
+            {
+              "m": -120,
+              "p": 83848.58536406953
+            },
+            {
+              "m": -90,
+              "p": 83789.99656787897
+            },
+            {
+              "m": -30,
+              "p": 83608.47089779726
+            },
+            {
+              "m": 0,
+              "p": 83598.35179214487
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 59,
+          "analysed_window_move": 0.598,
+          "created_at": "2026-10-11T19:00:58.646861+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 3,
+          "h6": 2
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-11T19:59:59.779139+00:00"
+      },
+      "input_sha256": "13602b942305a16962f0ca141114b2b2433dec0fa321e8101338f2cc7408369b",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_743060fd9cafae5a",
+      "input": {
+        "coin_name": "Gram",
+        "display_symbol": "GRAM",
+        "last_msg": {
+          "price": 1.4778781544989448,
+          "time": "2026-10-07T05:40:07.441667+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.053225927640427925,
+          "chg24h_percent": -3.8179990140113285,
+          "chg30m_percent": 0.13086138584870258,
+          "chg_since_msg_percent": 0.053225927640427925,
+          "chg_window_percent": 0.682311811692881,
+          "payload_points": 6,
+          "price": 1.4786647688560721,
+          "relative_24h_percentile_30d": 80.5,
+          "relative_window_percentile_30d": 47.6,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 1.4686440371190854
+            },
+            {
+              "m": -180,
+              "p": 1.4698696479135598
+            },
+            {
+              "m": -120,
+              "p": 1.464475740526099
+            },
+            {
+              "m": -90,
+              "p": 1.4702363055346643
+            },
+            {
+              "m": -30,
+              "p": 1.4767322965075869
+            },
+            {
+              "m": 0,
+              "p": 1.4786647688560721
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 59,
+          "analysed_window_move": 1.6322,
+          "created_at": "2026-10-07T05:40:07.441667+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 21,
+          "h6": 5
+        },
+        "symbol": "GRAM",
+        "timestamp_utc": "2026-10-07T06:39:59.117720+00:00"
+      },
+      "input_sha256": "f836e6c073e214234f43373360b776d232844d35a3915db6320c32d5f8d72f27",
+      "symbol": "GRAM"
+    },
+    {
+      "case_id": "rc_1d27ff55de36e3ee",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 82735.80999155664,
+          "time": "2026-10-10T10:30:56.053463+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.06702205830186647,
+          "chg24h_percent": 0.345769538867258,
+          "chg30m_percent": 0.04819444895598568,
+          "chg_since_msg_percent": 0.2739969202694269,
+          "chg_window_percent": 0.26711326056089996,
+          "payload_points": 6,
+          "price": 82962.50356289347,
+          "relative_24h_percentile_30d": 27.1,
+          "relative_window_percentile_30d": 50.3,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 82741.49007092834
+            },
+            {
+              "m": -180,
+              "p": 82789.97347371864
+            },
+            {
+              "m": -120,
+              "p": 82814.70657739043
+            },
+            {
+              "m": -90,
+              "p": 82926.19675783975
+            },
+            {
+              "m": -30,
+              "p": 82922.53950192021
+            },
+            {
+              "m": 0,
+              "p": 82962.50356289347
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 359,
+          "analysed_window_move": 0.0192,
+          "created_at": "2026-10-10T10:30:56.053463+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 1,
+          "h6": 1
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-10T16:29:59.695313+00:00"
+      },
+      "input_sha256": "598f16388d7a439909f2f5020a98629f0cb19e6fa9cb8b35e5548388ae3851a4",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_6af61ac9a99c5da3",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 82452.60632607089,
+          "time": "2026-10-09T11:31:01.991622+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.3368417013863086,
+          "chg24h_percent": 1.1374104922664527,
+          "chg30m_percent": -0.10192893738331991,
+          "chg_since_msg_percent": -0.07582303112476901,
+          "chg_window_percent": -0.5410899010590909,
+          "payload_points": 6,
+          "price": 82390.08826071309,
+          "relative_24h_percentile_30d": 62.5,
+          "relative_window_percentile_30d": 73.1,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 82838.3180338012
+            },
+            {
+              "m": -180,
+              "p": 82799.16557100751
+            },
+            {
+              "m": -120,
+              "p": 82717.94117166201
+            },
+            {
+              "m": -90,
+              "p": 82604.28638856
+            },
+            {
+              "m": -30,
+              "p": 82474.15328877623
+            },
+            {
+              "m": 0,
+              "p": 82390.08826071309
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin gains amid Trump’s Iran pledge, with bears under liquidation pressure.",
+            "time": "2026-10-09 11:09:04+00:00",
+            "title": "Trump's Iran pledge underpins crypto gains as bitcoin bears face liquidation pressure"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Thailand approves local bitcoin and ether ETFs, boosting regional crypto adoption.",
+            "time": "2026-10-09 10:16:55+00:00",
+            "title": "Thailand opens door to locally listed bitcoin and ether ETFs"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin holds above $82,000 while XRP ETFs see inflows, other crypto funds post outflows.",
+            "time": "2026-10-09 06:51:32+00:00",
+            "title": "Live updates: Bitcoin steadies above $82,000; XRP ETFs only crypto funds with inflows Thursday"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 448,
+          "analysed_window_move": -0.1087,
+          "created_at": "2026-10-09T11:31:01.991622+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 9,
+          "h6": 0
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-09T18:59:59.691896+00:00"
+      },
+      "input_sha256": "a861f6d56d3f33243f9ca26874d9dbe667cc9f3faa50ba8706ee49868a92c384",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_9bbeb866753727fd",
+      "input": {
+        "coin_name": "Bitcoin",
+        "display_symbol": "BTC",
+        "last_msg": {
+          "price": 82209.210912759,
+          "time": "2026-10-09T05:00:54.735810+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": 0.02999706412982558,
+          "chg24h_percent": -0.49610479394671797,
+          "chg30m_percent": 0.0712610398796697,
+          "chg_since_msg_percent": 0.4052322258128699,
+          "chg_window_percent": 0.20081560061107298,
+          "payload_points": 6,
+          "price": 82542.34912796397,
+          "relative_24h_percentile_30d": 35.7,
+          "relative_window_percentile_30d": 39.7,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 82376.92341444433
+            },
+            {
+              "m": -180,
+              "p": 82209.210912759
+            },
+            {
+              "m": -120,
+              "p": 82315.52224419484
+            },
+            {
+              "m": -90,
+              "p": 82440.69180181292
+            },
+            {
+              "m": -30,
+              "p": 82483.57047791153
+            },
+            {
+              "m": 0,
+              "p": 82542.34912796397
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "XRP ETFs are the only ones in green as BTC and ETH ETF funds experience outflows.",
+            "time": "2026-10-09 06:51:32+00:00",
+            "title": "Live updates: XRP ETFs the only ones in green as BTC, ETH, ZEC funds post outflows"
+          },
+          {
+            "material": true,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "US government seizes $1B in Bitcoin from a Bitfinex hack wallet, with no sale indicated.",
+            "time": "2026-10-08 15:43:04+00:00",
+            "title": "U.S. government moves $1 billion in bitcoin tied to Bitfinex hack, with no sign of sale"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Massive exodus of Bitcoin ETF investors signals potential market shift.",
+            "time": "2026-10-08 11:15:00+00:00",
+            "title": "Bitcoin ETF investors head for the exit, and it's the biggest rush in months"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 179,
+          "analysed_window_move": 0.5352,
+          "created_at": "2026-10-09T05:00:54.735810+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 13,
+          "h6": 1
+        },
+        "symbol": "BTC",
+        "timestamp_utc": "2026-10-09T07:59:59.471043+00:00"
+      },
+      "input_sha256": "a89e12a124406cbcf6231ff953829ddbd414bc530b2bb6bf0fa5b34d13428efe",
+      "symbol": "BTC"
+    },
+    {
+      "case_id": "rc_65eaacd1bf66b227",
+      "input": {
+        "coin_name": "Gram",
+        "display_symbol": "GRAM",
+        "last_msg": {
+          "price": 1.4406433395560405,
+          "time": "2026-10-12T09:10:10.063058+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.6997777257556472,
+          "chg24h_percent": -3.435478693762775,
+          "chg30m_percent": 0.046712635129051244,
+          "chg_since_msg_percent": -3.2462445594051412,
+          "chg_window_percent": -2.2785522696698584,
+          "payload_points": 6,
+          "price": 1.39387653352527,
+          "relative_24h_percentile_30d": 71.3,
+          "relative_window_percentile_30d": 91.2,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 1.4263772855389736
+            },
+            {
+              "m": -180,
+              "p": 1.4203879804639832
+            },
+            {
+              "m": -120,
+              "p": 1.4095884735076865
+            },
+            {
+              "m": -90,
+              "p": 1.4053906801056562
+            },
+            {
+              "m": -30,
+              "p": 1.3932257210776589
+            },
+            {
+              "m": 0,
+              "p": 1.39387653352527
+            }
+          ]
+        },
+        "news": [
+          {
+            "material": false,
+            "relevance_label": "market_wide",
+            "source": "Cointelegraph.com News",
+            "summary": "ASIC’s proposal would extend leverage limits and protections against negative balances to certain d.",
+            "time": "Mon, 12 Oct 2026 11:41:58 +0000",
+            "title": "Australia proposes leverage caps for crypto-settled derivatives"
+          }
+        ],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 239,
+          "analysed_window_move": -0.2818,
+          "created_at": "2026-10-12T09:10:10.063058+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 13,
+          "h6": 3
+        },
+        "symbol": "GRAM",
+        "timestamp_utc": "2026-10-12T13:09:59.320436+00:00"
+      },
+      "input_sha256": "6d945fd3293077bc439f8c0a8cbbb58a39d89f79fe2846b95cc485fad842e42b",
+      "symbol": "GRAM"
+    },
+    {
+      "case_id": "rc_64c39115b91476ba",
+      "input": {
+        "coin_name": "Solana",
+        "display_symbol": "SOL",
+        "last_msg": {
+          "price": 107.6798434177823,
+          "time": "2026-10-12T18:45:07.992351+00:00",
+          "type": "event_alert"
+        },
+        "market": {
+          "analysed_window_minutes": 180,
+          "chg1h_percent": -0.8339309619755172,
+          "chg24h_percent": -2.6272536373588404,
+          "chg30m_percent": -0.2793994210002712,
+          "chg_since_msg_percent": -0.0019552139744496676,
+          "chg_window_percent": -0.06974314867315845,
+          "payload_points": 6,
+          "price": 107.67773804643613,
+          "relative_24h_percentile_30d": 71.5,
+          "relative_window_percentile_30d": 7.9,
+          "snapshots": [
+            {
+              "m": -210,
+              "p": 107.75288830352528
+            },
+            {
+              "m": -180,
+              "p": 107.6798434177823
+            },
+            {
+              "m": -120,
+              "p": 108.02702363730974
+            },
+            {
+              "m": -90,
+              "p": 108.57927171488676
+            },
+            {
+              "m": -30,
+              "p": 107.97943195411531
+            },
+            {
+              "m": 0,
+              "p": 107.67773804643613
+            }
+          ]
+        },
+        "news": [],
+        "policy": {
+          "audience": "General retail crypto holder.",
+          "language": "English",
+          "noise": "Prefer fewer useful alerts; avoid repetitive low-value alerts."
+        },
+        "previous_event_alert": {
+          "age_minutes": 179,
+          "analysed_window_move": -1.2377,
+          "created_at": "2026-10-12T18:45:07.992351+00:00"
+        },
+        "recent_event_counts": {
+          "h24": 11,
+          "h6": 7
+        },
+        "symbol": "SOL",
+        "timestamp_utc": "2026-10-12T21:44:59.320359+00:00"
+      },
+      "input_sha256": "e16be37a23c4f4fdf53d5defe6757475cfe9b54ec66b69871807fa5d73274678",
+      "symbol": "SOL"
+    }
+  ],
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "protocol_version": "ccw41-v1",
+  "result_schema_sha256": "e2acbfdc878d71071fcf95e93017035200860e4839dac2941a1bd84b4334cc40",
+  "rubric_sha256": "2615ebb4d4bd0fd53f41f0fe4db260f092a2e7ea7d430e857d9bfbaf102027b0"
+}

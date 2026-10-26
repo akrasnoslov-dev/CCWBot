@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "market_signal_path",
+  "model": "qwen/qwen3.8-27b",
+  "config_fingerprint": "0e03e9b42183b79b5c21c5094795875d5f5e546790403993bdb028a9c5564dfb",
+  "results": []
+}

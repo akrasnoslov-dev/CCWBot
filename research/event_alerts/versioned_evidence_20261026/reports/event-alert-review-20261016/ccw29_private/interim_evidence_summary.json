@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "source": "ccw29_isolated_20261023",
+  "providers": {
+    "cloudflare": {
+      "unique_valid": 60,
+      "expected": 60,
+      "attempts": 60,
+      "status_counts": {
+        "valid": 60
+      },
+      "ledger_sha256": "1377cd43382d81c78608f59b2589529bdb6e8226e608129c1f6ccb07c1c5b6f7",
+      "comparisons": {
+        "production": {
+          "count": 20,
+          "original_A": {
+            "TP": 3,
+            "FP": 0,
+            "FN": 5,
+            "TN": 8,
+            "ambiguous": 4,
+            "scored": 16,
+            "precision": 1.0,
+            "recall": 0.375
+          },
+          "owner_v1": {
+            "TP": 3,
+            "FP": 1,
+            "FN": 3,
+            "TN": 13,
+            "ambiguous": 0,
+            "scored": 20,
+            "precision": 0.75,
+            "recall": 0.5
+          },
+          "reported_prompt_tokens": 15282,
+          "reported_completion_tokens": 865,
+          "reported_total_tokens": 16147,
+          "median_latency_ms": 1558.5
+        },
+        "e1": {
+          "count": 20,
+          "original_A": {
+            "TP": 4,
+            "FP": 1,
+            "FN": 4,
+            "TN": 7,
+            "ambiguous": 4,
+            "scored": 16,
+            "precision": 0.8,
+            "recall": 0.5
+          },
+          "owner_v1": {
+            "TP": 4,
+            "FP": 3,
+            "FN": 2,
+            "TN": 11,
+            "ambiguous": 0,
+            "scored": 20,
+            "precision": 0.5714,
+            "recall": 0.6667
+          },
+          "reported_prompt_tokens": 22202,
+          "reported_completion_tokens": 869,
+          "reported_total_tokens": 23071,
+          "median_latency_ms": 1768.5
+        },
+        "e2": {
+          "count": 20,
+          "original_A": {
+            "TP": 1,
+            "FP": 0,
+            "FN": 7,
+            "TN": 8,
+            "ambiguous": 4,
+            "scored": 16,
+            "precision": 1.0,
+            "recall": 0.125
+          },
+          "owner_v1": {
+            "TP": 1,
+            "FP": 1,
+            "FN": 5,
+            "TN": 13,
+            "ambiguous": 0,
+            "scored": 20,
+            "precision": 0.5,
+            "recall": 0.1667
+          },
+          "reported_prompt_tokens": 21542,
+          "reported_completion_tokens": 880,
+          "reported_total_tokens": 22422,
+          "median_latency_ms": 1537.5
+        }
+      }
+    },
+    "groq": {
+      "unique_valid": 53,
+      "expected": 60,
+      "attempts": 106,
+      "status_counts": {
+        "valid": 53,
+        "http_error": 53
+      },
+      "ledger_sha256": "872a828c3024831cc8cee5dcf55e23c0893a3595b08f27cf7daf28b09fc6676a",
+      "comparisons": {
+        "production": {
+          "count": 13,
+          "original_A": {
+            "TP": 0,
+            "FP": 1,
+            "FN": 6,
+            "TN": 4,
+            "ambiguous": 2,
+            "scored": 11,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          "owner_v1": {
+            "TP": 0,
+            "FP": 1,
+            "FN": 4,
+            "TN": 8,
+            "ambiguous": 0,
+            "scored": 13,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          "reported_prompt_tokens": 13317,
+          "reported_completion_tokens": 10939,
+          "reported_total_tokens": 24256,
+          "median_latency_ms": 2328
+        },
+        "e1": {
+          "count": 20,
+          "original_A": {
+            "TP": 2,
+            "FP": 3,
+            "FN": 6,
+            "TN": 5,
+            "ambiguous": 4,
+            "scored": 16,
+            "precision": 0.4,
+            "recall": 0.25
+          },
+          "owner_v1": {
+            "TP": 2,
+            "FP": 4,
+            "FN": 4,
+            "TN": 10,
+            "ambiguous": 0,
+            "scored": 20,
+            "precision": 0.3333,
+            "recall": 0.3333
+          },
+          "reported_prompt_tokens": 27195,
+          "reported_completion_tokens": 17378,
+          "reported_total_tokens": 44573,
+          "median_latency_ms": 2364.0
+        },
+        "e2": {
+          "count": 20,
+          "original_A": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 8,
+            "TN": 8,
+            "ambiguous": 4,
+            "scored": 16,
+            "precision": null,
+            "recall": 0.0
+          },
+          "owner_v1": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 6,
+            "TN": 14,
+            "ambiguous": 0,
+            "scored": 20,
+            "precision": null,
+            "recall": 0.0
+          },
+          "reported_prompt_tokens": 26575,
+          "reported_completion_tokens": 19544,
+          "reported_total_tokens": 46119,
+          "median_latency_ms": 2711.5
+        }
+      }
+    }
+  }
+}

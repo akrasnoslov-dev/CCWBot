@@ -1,0 +1,7 @@
+{
+  "num_hidden_layers": 36,
+  "num_key_value_heads": 8,
+  "head_dim": 128,
+  "kv_fp16_bytes_8192": 1207959552,
+  "source": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/resolve/cdbee75f17c01a7cc42f958dc650907174af0554/config.json"
+}

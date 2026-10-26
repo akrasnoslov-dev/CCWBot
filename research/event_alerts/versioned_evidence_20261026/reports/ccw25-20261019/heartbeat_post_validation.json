@@ -1,0 +1,106 @@
+[
+  {
+    "model": "phi",
+    "case": "quiet_heartbeat",
+    "repeat": 0,
+    "rejected": "MarketHeartbeatValidationError"
+  },
+  {
+    "model": "phi",
+    "case": "heartbeat_missing_data",
+    "repeat": 0,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Calm Market Heartbeat",
+      "message_body": "The market is showing a calm heartbeat with recent changes indicating a stable environment.",
+      "related_news_ids": [],
+      "possible_action": "Monitor",
+      "confidence": "low"
+    }
+  },
+  {
+    "model": "qwen4",
+    "case": "quiet_heartbeat",
+    "repeat": 0,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Calm Market Heartbeat",
+      "message_body": "Market activity remains stable with no significant directional shifts observed. Price action within the last hour shows minor fluctuations, consistent with normal trading patterns.",
+      "related_news_ids": [],
+      "possible_action": "Monitor for emerging trends",
+      "confidence": "high"
+    }
+  },
+  {
+    "model": "qwen4",
+    "case": "heartbeat_missing_data",
+    "repeat": 0,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Calm Market Heartbeat",
+      "message_body": "Market activity remains stable with no significant directional shifts observed. Price action is within expected range for the current session.",
+      "related_news_ids": [],
+      "possible_action": "Monitor for emerging trends",
+      "confidence": "high"
+    }
+  },
+  {
+    "model": "qwen4",
+    "case": "quiet_heartbeat",
+    "repeat": 1,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Calm Market Heartbeat",
+      "message_body": "Market activity remains stable with no significant directional shifts observed. Price action within the last hour shows minor fluctuations, consistent with normal trading patterns.",
+      "related_news_ids": [],
+      "possible_action": "Monitor for emerging trends",
+      "confidence": "high"
+    }
+  },
+  {
+    "model": "qwen4",
+    "case": "heartbeat_missing_data",
+    "repeat": 1,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Calm Market Heartbeat",
+      "message_body": "Market activity remains stable with no significant directional shifts observed. Price action is within expected range for the current session.",
+      "related_news_ids": [],
+      "possible_action": "Monitor for emerging trends",
+      "confidence": "high"
+    }
+  },
+  {
+    "model": "qwen7",
+    "case": "quiet_heartbeat",
+    "repeat": 0,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Market Heartbeat for SOL",
+      "message_body": "SOL is showing routine market movement without a major signal.",
+      "related_news_ids": [],
+      "possible_action": "Monitor the market for any sudden changes.",
+      "confidence": "low"
+    }
+  },
+  {
+    "model": "qwen7",
+    "case": "heartbeat_missing_data",
+    "repeat": 0,
+    "stage": "post feature validator; not final Telegram assembly",
+    "decision": {
+      "symbol": "SOL",
+      "title": "Market Heartbeat for SOL",
+      "message_body": "The relative 24-hour percentile compared to the last 30 days is 94, indicating it is performing well within this period.",
+      "related_news_ids": [],
+      "possible_action": "Monitor the market for any sudden changes.",
+      "confidence": "low"
+    }
+  }
+]

@@ -1,0 +1,132 @@
+{
+  "model": "gpt-6-luna",
+  "source": "reused_200_not_blind",
+  "cases": 200,
+  "requests_expected": 400,
+  "attempts": 400,
+  "unique_valid": 400,
+  "cost_usd_conservative": 0.104239,
+  "status_counts": {
+    "valid": 400
+  },
+  "scores": {
+    "balanced": {
+      "overall": {
+        "TP": 26,
+        "FP": 6,
+        "FN": 5,
+        "TN": 153,
+        "ambiguous": 10,
+        "missing": 0,
+        "precision": 0.8125,
+        "recall": 0.8387,
+        "accuracy": 0.9421
+      },
+      "per_symbol": {
+        "BTC": {
+          "TP": 4,
+          "FP": 2,
+          "FN": 1,
+          "TN": 42,
+          "ambiguous": 1,
+          "missing": 0,
+          "precision": 0.6667,
+          "recall": 0.8,
+          "accuracy": 0.9388
+        },
+        "ETH": {
+          "TP": 3,
+          "FP": 1,
+          "FN": 2,
+          "TN": 41,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.75,
+          "recall": 0.6,
+          "accuracy": 0.9362
+        },
+        "GRAM": {
+          "TP": 11,
+          "FP": 1,
+          "FN": 2,
+          "TN": 33,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.9167,
+          "recall": 0.8462,
+          "accuracy": 0.9362
+        },
+        "SOL": {
+          "TP": 8,
+          "FP": 2,
+          "FN": 0,
+          "TN": 37,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.8,
+          "recall": 1.0,
+          "accuracy": 0.9574
+        }
+      }
+    },
+    "fresh_leg": {
+      "overall": {
+        "TP": 26,
+        "FP": 9,
+        "FN": 5,
+        "TN": 150,
+        "ambiguous": 10,
+        "missing": 0,
+        "precision": 0.7429,
+        "recall": 0.8387,
+        "accuracy": 0.9263
+      },
+      "per_symbol": {
+        "BTC": {
+          "TP": 4,
+          "FP": 1,
+          "FN": 1,
+          "TN": 43,
+          "ambiguous": 1,
+          "missing": 0,
+          "precision": 0.8,
+          "recall": 0.8,
+          "accuracy": 0.9592
+        },
+        "ETH": {
+          "TP": 3,
+          "FP": 4,
+          "FN": 2,
+          "TN": 38,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.4286,
+          "recall": 0.6,
+          "accuracy": 0.8723
+        },
+        "GRAM": {
+          "TP": 11,
+          "FP": 2,
+          "FN": 2,
+          "TN": 32,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.8462,
+          "recall": 0.8462,
+          "accuracy": 0.9149
+        },
+        "SOL": {
+          "TP": 8,
+          "FP": 2,
+          "FN": 0,
+          "TN": 37,
+          "ambiguous": 3,
+          "missing": 0,
+          "precision": 0.8,
+          "recall": 1.0,
+          "accuracy": 0.9574
+        }
+      }
+    }
+  }
+}

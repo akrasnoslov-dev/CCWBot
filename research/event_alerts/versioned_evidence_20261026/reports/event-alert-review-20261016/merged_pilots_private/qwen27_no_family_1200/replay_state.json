@@ -1,0 +1,93 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "model": "qwen/qwen3.8-27b",
+  "fingerprints": {
+    "production": "bf8512b700d6437ad4c900ba90427b1ab30f2ee67ff91fd626680def5fb5b760",
+    "materiality_first": "cda03450cc3c592795e8ddbd3fdd077dd6445fd930b43eb64707a63099fe4c11",
+    "balanced_novelty": "5800a13fec21e8de3507acbe3a72d345c1cc856ee3feacca359db732a39087f0",
+    "trajectory_evidence": "613dd7ef8110d44fd3cd36bbdee84094df5b135655907f7d57686d90f86dc1aa",
+    "relative_displacement": "d66d691a38190e9286d080158dfdc4345d00f633812821ad5082c5ab71aee918",
+    "rebalanced_core": "d4f3453ad4ccf57e8b4123ce026aad1ba4de61d4e32c22ae19123aaca73e5c35",
+    "global_prior_safe": "3469ef6560e8499048e5a8fc20d7ef28231913f614a4e66648aaaf317abc154e",
+    "global_prior_no_family": "e513b388251a8210d39ff7398f7bd6f642173fd046de9c1a3d2216d72088b01f",
+    "path_facts": "b11240de8be4439dd6cc0a0db437cee321d61fa7dffa24dfa80f511bc4e7e8be",
+    "market_signal_path": "0e03e9b42183b79b5c21c5094795875d5f5e546790403993bdb028a9c5564dfb"
+  },
+  "attempted_requests": 6,
+  "runs": {
+    "production": [],
+    "materiality_first": [],
+    "balanced_novelty": [],
+    "trajectory_evidence": [],
+    "relative_displacement": [],
+    "rebalanced_core": [],
+    "global_prior_safe": [],
+    "global_prior_no_family": [
+      {
+        "id": "ev_f66b929c949038ae",
+        "input_sha256": "172d8f533ec12749a70f711c87cd50e51675a98a936bbe3b16cf57572e2303d2",
+        "status": "provider_error",
+        "error_type": "BadRequestError",
+        "provider_attempts": 1,
+        "http_status": 400
+      },
+      {
+        "id": "ev_df91009d44eaa643",
+        "input_sha256": "b5e200a5850a5a5d8d6d265b6291cd7e39930b5eb9c6eb09a6640f1b05837aa8",
+        "provider_attempts": 1,
+        "total_tokens": 1055,
+        "prompt_tokens": 1011,
+        "completion_tokens": 44,
+        "status": "valid",
+        "should_alert": true,
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move"
+      },
+      {
+        "id": "ev_46defce5e600b2b9",
+        "input_sha256": "85fdfc3b1d8c8d36035e2297091530552f2e2cab972f48ec982aa17942a3a2f5",
+        "provider_attempts": 1,
+        "total_tokens": 1055,
+        "prompt_tokens": 1011,
+        "completion_tokens": 44,
+        "status": "valid",
+        "should_alert": false,
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move"
+      },
+      {
+        "id": "ev_d1f0d676477abedb",
+        "input_sha256": "f095c83944ce426d6a3bfa3e27b21be62129cfa057699cac53a9c35138d25ba8",
+        "status": "provider_error",
+        "error_type": "BadRequestError",
+        "provider_attempts": 1,
+        "http_status": 400
+      },
+      {
+        "id": "ev_86a8ba257afb7ea2",
+        "input_sha256": "c2ab185e98308bf5dce8b12e41f500a4d179f1515429b9a0f9034bbe95332c08",
+        "provider_attempts": 1,
+        "total_tokens": 1087,
+        "prompt_tokens": 1043,
+        "completion_tokens": 44,
+        "status": "valid",
+        "should_alert": true,
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move"
+      },
+      {
+        "id": "ev_fb26176570e4535a",
+        "input_sha256": "13f8bf5b422d02bcfab39e5e42a402564366e759ff6a91cd8bd21cf5e57485bf",
+        "status": "provider_error",
+        "error_type": "BadRequestError",
+        "provider_attempts": 1,
+        "http_status": 400
+      }
+    ],
+    "path_facts": [],
+    "market_signal_path": []
+  }
+}

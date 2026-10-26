@@ -1,0 +1,185 @@
+{
+  "batch_id": "batch_04",
+  "results": [
+    {
+      "case_id": "rc_7a57c10cce37a06b",
+      "input_sha256": "bc4f5e655cf63f3f743d5feb817c50458513f8af70c627cac40b9f03f39f006a",
+      "warrant": "no_alert",
+      "confidence": "medium",
+      "rationale": "Recent selling reverses the prior alert's gain, and the daily decline is elevated. However, the net window decline is ordinary in the supplied historical context and price is only 0.72% below the alert two hours earlier. The sharper recent losses show a pullback, but do not yet establish a sufficiently material new extension of the daily decline.",
+      "evidence_references": ["input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_23ab80d8291f2edd",
+      "input_sha256": "420426db4cf0d39a6b8526e28093e27bd5c0d87b69b388b19bcb08c9230b8172",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The daily loss is elevated, but the current window is nearly flat and low in its historical distribution. Price is only 0.44% below the alert three hours earlier, with a small latest-half-hour decline. This supplies neither a new substantial selloff nor a material reversal of the prior recovery; the market-wide regulatory headline cannot substitute for market evidence.",
+      "evidence_references": ["input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg30m_percent", "input.news[0].title"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_724aae981cd26df5",
+      "input_sha256": "b6f4cdf3e1b8ddcfd74cf5b3868fb4e432038e42b0a854ac48ec924f109a7683",
+      "warrant": "no_alert",
+      "confidence": "medium",
+      "rationale": "The exceptional daily loss follows an alert that already covered a 2.94% declining window. Price has recovered 1.19% since that alert more than five hours earlier, but the current net window change is ordinary and still slightly negative. The supplied recovery is partial, with modest latest-half-hour progress, and does not establish a sufficiently material new episode beyond the alerted selloff.",
+      "evidence_references": ["input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.previous_event_alert.analysed_window_move", "input.previous_event_alert.age_minutes", "input.market.chg_since_msg_percent", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg30m_percent", "input.market.snapshots"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_4410bb7647fd1f81",
+      "input_sha256": "be5e891424dce00e6589419329f3d27518f7e1e3edfa8fde4877a2e68a8a73df",
+      "warrant": "alert",
+      "confidence": "high",
+      "rationale": "The 2.72% window advance is unusually large in the supplied historical context, and the snapshots show a substantial rise retained into the current observation. Price is 3.25% above an alert almost forty-six hours earlier that described a declining window, with no supplied event alerts in the last day. This is a material and meaningfully new advance despite the quieter latest hour.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.snapshots", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.recent_event_counts.h24", "input.market.chg1h_percent"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_e2a654dec4501c6a",
+      "input_sha256": "973340747299846bbd824dc701ca0eecd9af75c4d3522b4bd17ffb3940c1ab5e",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.23% window gain and 0.95% daily gain are ordinary in the supplied historical context. Price rebounds 0.29% from the alert 29 minutes earlier, but stays within the prior snapshot range and the latest hour is nearly unchanged. This is a small rebound without material novelty.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.market.snapshots", "input.market.chg1h_percent"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_cf99db8756472837",
+      "input_sha256": "da5412cb8c15f88aa8662cb875e5b5f4bf2e412b4005f327f4ea83aef912b2da",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.30% window gain and 0.85% daily loss are low in the supplied historical distributions. Price is only 0.73% above the alert almost forty-three hours earlier, and recent changes remain modest. The long interval without alerts does not turn this routine movement into a material new event.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.recent_event_counts.h24"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_f0b8628a3075e53e",
+      "input_sha256": "4a31675dc9cda56056592b11feb03f53ec3909ed825bdef7ae769fdead5683be",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The window decline is historically elevated, but the prior alert 149 minutes earlier already covered a substantial declining window. Price has fallen only another 0.24%, with a small hourly recovery and modest half-hour decline. The snapshots show continued trading near the earlier low rather than a distinct material extension; the ENS headline does not resolve that absence of novelty.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg_since_msg_percent", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.snapshots", "input.news[0].title"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_88366ff0a607f8f7",
+      "input_sha256": "03e9ee2262d9a3f8c14653fd4442740842aa2c1bc6074a3cf2bb65eaaa3518c4",
+      "warrant": "alert",
+      "confidence": "high",
+      "rationale": "The latest hour rises 2.17%, with another 0.80% in the latest half hour and a sharp rebound from the trough visible ninety minutes earlier. The net window advance is also elevated in the supplied historical context. Although current price is only 0.44% above the older alert and the daily change is flat, the intervening drop and rapid recovery establish a new material market phase after nearly seven hours.",
+      "evidence_references": ["input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.snapshots", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg_since_msg_percent", "input.market.chg24h_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.recent_event_counts.h6"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_9c280aee8b80246c",
+      "input_sha256": "dea8d758e434101575e8330db96aac09aeee3e920619efdca9fa234400136bea",
+      "warrant": "alert",
+      "confidence": "high",
+      "rationale": "The 2.58% window fall and 3.90% daily loss are unusually large in the supplied asset context. Price has dropped a further 1.38% since the alert 89 minutes earlier, including a sharp 1.08% decline in the latest half hour to a fresh supplied snapshot low. This is a material new extension of the already alerted selloff, rather than a small repetitive continuation.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg30m_percent", "input.market.snapshots"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_3789fa6c4a77d076",
+      "input_sha256": "f467e126a5d1d8fa4dbeb0b394a9251b9f9e7c95cfee2a1cc1af9b379ee0f3dd",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.39% window gain is ordinary and the daily change is nearly zero. Price is almost identical to the alert roughly four and a half hours earlier by the supplied timestamps, whose window was already advancing modestly. Missing short-interval metrics and recent-event counts do not prevent rejecting this immaterial, non-novel movement.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.created_at", "input.previous_event_alert.analysed_window_move", "input.timestamp_utc"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_fbbd58116c633f5c",
+      "input_sha256": "658ad9a2dd5f2b2d9b85776068e01f9d3a580bea495f5cc9e4cd31e344feef81",
+      "warrant": "no_alert",
+      "confidence": "medium",
+      "rationale": "The latest half hour rebounds 0.76%, but the net window gain remains ordinary in the supplied historical context and the daily loss is not exceptional. Price is still 1.96% below the alert nearly eleven hours earlier. This modest current rebound does not establish a material new reversal, and the upgrade headline alone cannot make it an alert-worthy market episode.",
+      "evidence_references": ["input.market.chg30m_percent", "input.market.chg1h_percent", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.news[0].title"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_2ecc74b30a6524bd",
+      "input_sha256": "ceee22f31026f7f033ea344f3ad28a9d02c773df58dfe26f105274036eec2ec3",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.21% window decline is small and ordinary, while the latest hour and half hour are essentially unchanged. Price is only 0.43% below the alert more than five hours earlier. The daily gain and headlines describing earlier larger moves do not establish a material new market situation in these snapshots.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.news"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_b031c664cffd1d42",
+      "input_sha256": "08d19207f192c05bb93cf064baf8dce83fdab03f506233425b41186ac8e6b86c",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The window decline is elevated, but current price is only 0.21% below an alert almost four hours earlier that already described a declining window. Recent losses are modest and the daily move is ordinary in the supplied context. The current observation does not add a substantial material extension beyond the previously alerted price level.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_4d92044490f7c10c",
+      "input_sha256": "13602b942305a16962f0ca141114b2b2433dec0fa321e8101338f2cc7408369b",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The window and daily moves are small or ordinary in the supplied historical context. The latest half hour is nearly flat and price is only 0.031% above the alert 59 minutes earlier. This is neither a material move nor a meaningfully new episode.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg30m_percent", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_743060fd9cafae5a",
+      "input_sha256": "f836e6c073e214234f43373360b776d232844d35a3915db6320c32d5f8d72f27",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The current window recovery is ordinary in the supplied historical context and smaller than the rising window alerted an hour earlier. Price is only 0.053% above that alert, with small recent gains. The remaining elevated daily loss does not establish a new material event at nearly the same alerted price.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.previous_event_alert.analysed_window_move", "input.previous_event_alert.age_minutes", "input.market.chg_since_msg_percent", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_1d27ff55de36e3ee",
+      "input_sha256": "598f16388d7a439909f2f5020a98629f0cb19e6fa9cb8b35e5548388ae3851a4",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.27% window gain is ordinary and the daily gain is low in the supplied historical context. Recent hourly and half-hour gains are very small, and price is only 0.27% above the alert roughly six hours earlier. This is routine upward drift without a materially noteworthy new event.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_6af61ac9a99c5da3",
+      "input_sha256": "a861f6d56d3f33243f9ca26874d9dbe667cc9f3faa50ba8706ee49868a92c384",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.54% window decline is only moderately elevated and the daily gain is ordinary in the supplied historical context. Price is just 0.076% below the alert more than seven hours earlier, with modest recent selling. This provides no substantial new movement despite the elapsed interval and supporting headlines.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.news"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_9bbeb866753727fd",
+      "input_sha256": "a89e12a124406cbcf6231ff953829ddbd414bc530b2bb6bf0fa5b34d13428efe",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "The 0.20% window gain and 0.50% daily loss are low in the supplied historical distributions. Price has risen a modest 0.41% since an alert three hours earlier whose window was already advancing, and recent gains are small. The government-wallet headline does not supply a material new market movement.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg1h_percent", "input.market.chg30m_percent", "input.news[1].title"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_65eaacd1bf66b227",
+      "input_sha256": "6d945fd3293077bc439f8c0a8cbbb58a39d89f79fe2846b95cc485fad842e42b",
+      "warrant": "alert",
+      "confidence": "high",
+      "rationale": "The 2.28% window decline is unusually large in the supplied historical context, with a sustained downward snapshot path. Price is 3.25% below the alert four hours earlier, whose window declined only 0.28%. This is a substantive new deterioration beyond the prior episode, even though the latest half hour has paused near the low.",
+      "evidence_references": ["input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.snapshots", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.previous_event_alert.analysed_window_move", "input.market.chg30m_percent"],
+      "missing_evidence": []
+    },
+    {
+      "case_id": "rc_64c39115b91476ba",
+      "input_sha256": "e16be37a23c4f4fdf53d5defe6757475cfe9b54ec66b69871807fa5d73274678",
+      "warrant": "no_alert",
+      "confidence": "high",
+      "rationale": "Despite recent hourly selling, the net window is almost unchanged and very low in its historical distribution. Current price is essentially identical to the alert three hours earlier after an intervening rebound in the snapshots. The daily loss is not exceptional enough to turn this return to the recently alerted level into a new material event.",
+      "evidence_references": ["input.market.chg1h_percent", "input.market.chg_window_percent", "input.market.relative_window_percentile_30d", "input.market.chg_since_msg_percent", "input.previous_event_alert.age_minutes", "input.market.snapshots", "input.market.chg24h_percent", "input.market.relative_24h_percentile_30d"],
+      "missing_evidence": []
+    }
+  ]
+}

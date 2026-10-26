@@ -1,0 +1,59 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "model": "qwen/qwen3.8-27b",
+  "fingerprints": {
+    "production": "9f4660ef41a18e8ec2dd62f7fb61392d5d14a08d527536d6ac2de7572e257b7f",
+    "materiality_first": "c4aa2cf51d47b1461f2520704215ab1168845642d478a3a7d5496031f9380e2f",
+    "balanced_novelty": "1dbabd6fda84a40bb620d9bd28219cce314d2d5094dfe01be5e3951ff402c121",
+    "trajectory_evidence": "e50548daee0f36c21fe271736f6b9d62e6305b662dab1e4ea327eada0010f8f0",
+    "relative_displacement": "05b056b1959268ea1f4d85bb18dff5768cbf8f9d76dadd235131050944ee364b",
+    "rebalanced_core": "8c5cbd93964e486a163ba67603bab9ba609d6a93e578e50df40057de8be0ae1c",
+    "global_prior_safe": "53aa5b74f4ab539eb0cd975a8301f651c0b54df3aba00da6983bd0f31965db0d",
+    "global_prior_no_family": "b191e1044d1ea7a77bcde63491eea6559568c2e3ef05fc662d7fd608859b615e",
+    "path_facts": "13c8d3c29d6680012dbb233bb046edad4638d7b2c9a489c017d77f140b7b8e08",
+    "market_signal_path": "558a354c12bd0b173fef5c1fff67252f31d8b90ba0ec5e2f1e63b088232b1657"
+  },
+  "attempted_requests": 3,
+  "runs": {
+    "production": [],
+    "materiality_first": [],
+    "balanced_novelty": [],
+    "trajectory_evidence": [],
+    "relative_displacement": [],
+    "rebalanced_core": [],
+    "global_prior_safe": [],
+    "global_prior_no_family": [
+      {
+        "id": "ev_f66b929c949038ae",
+        "input_sha256": "172d8f533ec12749a70f711c87cd50e51675a98a936bbe3b16cf57572e2303d2",
+        "status": "provider_error",
+        "error_type": "BadRequestError",
+        "provider_attempts": 1,
+        "http_status": 400
+      },
+      {
+        "id": "ev_df91009d44eaa643",
+        "input_sha256": "b5e200a5850a5a5d8d6d265b6291cd7e39930b5eb9c6eb09a6640f1b05837aa8",
+        "status": "provider_error",
+        "error_type": "BadRequestError",
+        "provider_attempts": 1,
+        "http_status": 400
+      },
+      {
+        "id": "ev_46defce5e600b2b9",
+        "input_sha256": "85fdfc3b1d8c8d36035e2297091530552f2e2cab972f48ec982aa17942a3a2f5",
+        "provider_attempts": 1,
+        "total_tokens": 1055,
+        "prompt_tokens": 1011,
+        "completion_tokens": 44,
+        "status": "valid",
+        "should_alert": false,
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move"
+      }
+    ],
+    "path_facts": [],
+    "market_signal_path": []
+  }
+}

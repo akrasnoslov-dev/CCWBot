@@ -1,0 +1,157 @@
+{
+  "method": "Manual review of synthetic outputs against supplied inputs; not a blinded real-world release evaluation or precision/recall measurement.",
+  "qwen4_repeat0": [
+    {
+      "feature": "event_analysis",
+      "cases": [
+        "routine_btc_large_day",
+        "fresh_material_path"
+      ],
+      "finding": "Routine case called material; fresh positive fixture suppressed through unsupported repeated novelty despite no prior alert/counts. Desired negative disposition alone can conceal unsupported intermediate fields."
+    },
+    {
+      "feature": "event_alert_render",
+      "cases": [
+        "aligned",
+        "divergent"
+      ],
+      "finding": "Aligned text misstates the 60-minute analyzed window as 24-hour; divergent output infers reversal from opposed 1h/24h directions despite consistently rising within-hour snapshots."
+    },
+    {
+      "feature": "event_alert_render",
+      "cases": [
+        "missing_path"
+      ],
+      "finding": "Backend validator rejects direction wording that manually matches window up/24h down. Possible guard false positive; not counted as a proven model factual error."
+    },
+    {
+      "feature": "news_intelligence",
+      "cases": [
+        "irrelevant_injection",
+        "multi_asset"
+      ],
+      "finding": "Irrelevant/injected gardening item classified high-impact BTC news; equal BTC/ETH item incorrectly given BTC as primary. Both pass schema validation."
+    },
+    {
+      "feature": "market_heartbeat",
+      "cases": [
+        "heartbeat_missing_data"
+      ],
+      "finding": "Unsupported claims of stable activity and expected session range with null current price/window/day move and absent snapshots. Shorter-window remnants do not establish the claimed session range."
+    },
+    {
+      "feature": "daily_report",
+      "cases": [
+        "daily_report_normal",
+        "daily_report_missing_7d"
+      ],
+      "finding": "Fabricated regulatory/DeFi/institutional catalysts despite no supplied news. Missing-7d output acknowledges unavailable 7d data but still invents catalysts and causal/speculation claims."
+    },
+    {
+      "feature": "weekly_report",
+      "cases": [
+        "weekly_report_normal",
+        "weekly_report_missing_7d"
+      ],
+      "finding": "Invented regulatory, upgrade, institutional and volume events plus fabricated timelines with empty news/weekly history. Missing-data case also asserts market-cap/long-term context that was absent."
+    }
+  ],
+  "phi": [
+    {
+      "feature": "event_analysis",
+      "cases": [
+        "fresh_material_path",
+        "repeated_gram"
+      ],
+      "finding": "Fresh intended-positive fixture rejected and tiny repeated GRAM move accepted. This establishes synthetic fixture failures only, not real-world recall/precision."
+    },
+    {
+      "feature": "event_alert_render",
+      "cases": [
+        "missing_path"
+      ],
+      "finding": "Refers to a previous window and direction reversal without supplied previous-window path. Divergent-case validator rejection should be distinguished from raw directional correctness."
+    },
+    {
+      "feature": "news_intelligence",
+      "cases": [
+        "irrelevant_injection",
+        "multi_asset"
+      ],
+      "finding": "Unlike Qwen4, recognizes injection item as noise, but still assigns BTC as primary despite irrelevant content. Equal BTC/ETH item also gets BTC primary instead of null."
+    },
+    {
+      "feature": "market_heartbeat",
+      "cases": [
+        "quiet_heartbeat",
+        "heartbeat_missing_data"
+      ],
+      "finding": "Quiet case rejected for empty required action. Missing-data case accepted but describes a stable environment without adequate evidence."
+    },
+    {
+      "feature": "daily_report",
+      "cases": [
+        "daily_report_normal",
+        "daily_report_missing_7d"
+      ],
+      "finding": "Generic prose and fabricated regulatory/network/capitalization catalysts. Asset-name expansion in the symbol-only GRAM fixture is not evidence about runtime payloads that include names."
+    },
+    {
+      "feature": "weekly_report",
+      "cases": [
+        "weekly_report_normal",
+        "weekly_report_missing_7d"
+      ],
+      "finding": "Generic market/catalyst/timeline placeholders pass structural validation while adding little input-grounded usefulness."
+    }
+  ],
+  "qwen7": [
+    {
+      "feature": "event_analysis",
+      "cases": [
+        "routine_btc_large_day",
+        "news_alone",
+        "repeated_gram"
+      ],
+      "finding": "Alerts in ordinary/repeated/news-only fixtures contrary to fixture instructions. All five significance calls exceed 15 seconds in this screen."
+    },
+    {
+      "feature": "news_intelligence",
+      "cases": [
+        "irrelevant_injection",
+        "multi_asset",
+        "german_eth"
+      ],
+      "finding": "Irrelevant injected wording is classified high-impact BTC news. Multi-asset primary=null and ETH primary for German source pass those narrow assertions; no general language-quality rate inferred."
+    },
+    {
+      "feature": "market_heartbeat",
+      "cases": [
+        "heartbeat_missing_data"
+      ],
+      "finding": "Raw text converts supplied 0.02% 30m move into 2%. Numeric sanitization strips this; remaining percentile-as-performance interpretation is unsupported. Raw numeric error is not claimed to survive final Telegram assembly."
+    },
+    {
+      "feature": "daily_report",
+      "cases": [
+        "daily_report_missing_7d"
+      ],
+      "finding": "Claims BTC/ETH gains versus GRAM/SOL losses despite identical supplied changes. Fabricates regulatory/exchange/technology catalysts with no supplied news."
+    },
+    {
+      "feature": "weekly_report",
+      "cases": [
+        "weekly_report_normal"
+      ],
+      "finding": "Passes JSON/backend validation but multiplies every supplied 0.042% hourly move to 0.42%; invents market caps and volumes where inputs are null (BTC $1B/$1B, ETH $3M/$3M, GRAM $2K/$2K, SOL $150K/$150K); claims GRAM/SOL 24h increases despite supplied -0.5%. Invents Monday/Tuesday events and institutional/regulatory/adoption catalysts without daily history/news. Includes direct strategy wording. These are raw/backend-accepted findings; final Telegram assembly was not tested."
+    },
+    {
+      "feature": "weekly_report",
+      "cases": [
+        "weekly_report_missing_7d",
+        "long_weekly_report"
+      ],
+      "finding": "Missing-7d response truncates at 800 tokens and is invalid JSON; long weekly times out after 180.03s with no output. Failed responses are not presented as delivered errors, and completion latency for the timeout is right-censored."
+    }
+  ]
+}

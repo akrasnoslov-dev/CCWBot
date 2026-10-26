@@ -1,0 +1,1611 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "reviewer": "GPT-6_direct_model_reasoned_pass",
+  "authority": "AI_SELF_REVIEW_NOT_HUMAN_NOT_BLIND",
+  "label_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
+  "reliability": "subjective_judgment_not_authoritative_human_reference",
+  "selection": "55 highest-risk full-snapshot cases, 145 agreement-negative compact cases; no hard numeric significance thresholds",
+  "repeated_episode_limitation": "Frozen replay uses original production last_msg even when candidate would have altered prior alerts",
+  "case_labels": [
+    {
+      "id": "ev_eafded30ee55bb77",
+      "input_sha256": "59e944ed5dd8896a59c322aa72c3f4cecf13f78203cc3f80993d5766d0cf4fad",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_08a7bd57c3485b30",
+      "input_sha256": "22451efb1d8a93b0f7f76f2c4a8e00382bcf3856e1daa29e1064b82fc70ee66c",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8a6b2dfa9222ae37",
+      "input_sha256": "51b3e42ecc82235db5fb946cb053d5cd6743690e2204d43d1c70d50d99201fbd",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f39661ff4778ff6c",
+      "input_sha256": "8b25ce9a0a21bb97e325bef88cae0c683c437f3ce75f9b3834f1c5a85bcc64f2",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_33dca83516291e3f",
+      "input_sha256": "b3a6f7846d3e11cbca1fbec80c65d34c7335e4df3f6dbe4a69ffd08428148815",
+      "symbol": "BTC",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 4
+    },
+    {
+      "id": "ev_dd2d6f64d087d151",
+      "input_sha256": "8dcfcfb4cf5b16f145ae2d466ef23ee7e3b7914b6e4264489de56d98f5c5aa59",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 15
+    },
+    {
+      "id": "ev_747d289d8339476d",
+      "input_sha256": "124f5075ea14e7ab62675a01a2eadc4eda86366418baf348ebe05f2b2698c601",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5d38c8f15f9d896e",
+      "input_sha256": "01fe62559f5e52c5b9236b052b01e3fc88862afbb50ac1f28af1aa49d16c8698",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_ef6b95a3c14bce41",
+      "input_sha256": "084643bd1655e21d6f9426d934b9dfce8ad4cfaf81acea2f6391de5940bf4b6e",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3f11561b791a53f8",
+      "input_sha256": "5ce8e7d7cc7f031357d4de4b3834ae0875af1fe956c3dd9d535ff51d019821b0",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 46
+    },
+    {
+      "id": "ev_c54c91872a34a71b",
+      "input_sha256": "fc31ec787676f77202e5463a4431c70144d999f9d37866f98d69973ba1e7b99c",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_686065337837bd2d",
+      "input_sha256": "b4b3f941d4c58959ea9475bbf10a8857f1727219dec87c21fff605fde4cfea3c",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_28c7bf0f2489a562",
+      "input_sha256": "b8a62c1134cfa6a075743d21b6673f4cd9c87762dff9dcefdd1cfca6cf7cc9bb",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 53
+    },
+    {
+      "id": "ev_64019382b0ba7655",
+      "input_sha256": "b6cafaf996b40d75c2407d922ac49e6266970d034ea68ba8576bd15ed1c57808",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_df5a044c6b9374c9",
+      "input_sha256": "385bb9e0c1adbd250e00bdee36db9d1bf2a28379298c66c9a235bd18c71c883a",
+      "symbol": "ETH",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 13
+    },
+    {
+      "id": "ev_c4f80ddef5b3fe97",
+      "input_sha256": "7c1547e16517740f7561530881139b8eda3eef42bf171cc076886f1320fa7b2f",
+      "symbol": "BTC",
+      "warrant": "ambiguous",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4cf4e2918e5e0c28",
+      "input_sha256": "a23ea2069cc501578316f35d7774583ada4b37de606b2aff3553ce39ab5b011e",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a9d5dee819e2a40a",
+      "input_sha256": "ab4dc139c4efef0cd3e92b70a08ea8f29b4b9116b936d3a07ae1a8dd91e48aa7",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_dedaaac9eeb3aa18",
+      "input_sha256": "4a44a578933e2691e69c8007bfa38d2c4374d487fbc39b9f0e0ce1ba1b0016e4",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 32
+    },
+    {
+      "id": "ev_5389b27016018097",
+      "input_sha256": "5a8480d72609cad3934586a92cd4bf88879b96d32a2b5438a971927aa5864255",
+      "symbol": "ETH",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 17
+    },
+    {
+      "id": "ev_8fc0a71d48f52691",
+      "input_sha256": "262a40b51c0defb8da7576b006ca08694264148e0c09d3a3011d027ad3c8b2a6",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 29
+    },
+    {
+      "id": "ev_a472a1f3d350585d",
+      "input_sha256": "6ee3460705468eb51404bb60bc9d7ef79a78fe5370f916c222aa8a2e4d99781c",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_05f1c3c4230e884a",
+      "input_sha256": "7551b946b8e0cb3461a0fd4fbaca7329a8b6f2ec2750ba4ecf7ebab1b0ee5a67",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_e07c676303ecd260",
+      "input_sha256": "bb49bfd1923e616b63b8c56bbd9002e31bb36ad401167d83dcfe9b6681c275a4",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_41b9dbf168d0c0d4",
+      "input_sha256": "9d5993261117479006589f23a200e38d17df9f51d8b528d5ebc856e7169178b5",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 54
+    },
+    {
+      "id": "ev_e476ea1c5a8ffb74",
+      "input_sha256": "437794703f2881a1030e8d67323753e94beed51652af7bc23f63e03ddab27b48",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_dbe251f2dd28d179",
+      "input_sha256": "ecf497b93bd9fd7da28b0fb68520b2bd4d9af784c31e72e08919ccbf058bd8f7",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_86e3072f00d15ad4",
+      "input_sha256": "3c7a8f4dca8d60492ab37a0284319eb691c369f47bfe27f6692714ea91e5cfb0",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9538d3865f0bd77c",
+      "input_sha256": "02219d8b406b39ec3921815b4c0e46c9364678f051aeb8435494de81a78dd17f",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_48fbe415e61ad45a",
+      "input_sha256": "bc92fd67047ad0c99e6f9ad8c84878a60e0c857a0c1a8adf58903804329a5045",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_fb11f5a4f59e1033",
+      "input_sha256": "dcc65dfa6245eb880cd184fcb155f34e9177a36703ed96d98ab5654622437a36",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_34dedd27667eb86f",
+      "input_sha256": "28a8074fca9c467b8479f9550eb72485cdc36f923ad08fbfaa20e6ae8f0471d3",
+      "symbol": "GRAM",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 26
+    },
+    {
+      "id": "ev_7e583e94258493be",
+      "input_sha256": "21c2da6467b55d9cd83a1ceed3c89d167e7e8049f3deff3240f96644b36b99b9",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_7f007f67b02a5514",
+      "input_sha256": "d98f2f6ae1a662b1805548411a0113db93b3aa318c11805d389a278f7b920453",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9294785f8cecc14b",
+      "input_sha256": "a1712f8aa9709f0b0b21af69a69be5c1a4ca7cb663dda8fb34b79b46a6614007",
+      "symbol": "ETH",
+      "warrant": "ambiguous",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_271e2fadc30e3e1e",
+      "input_sha256": "5e1c4146e4ea13588485c27f5f7a130d1fb4bee51caa8d0df3a3762202261857",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a4d91b21e69cf512",
+      "input_sha256": "31a0d4da5834dd011e01b94680e9b45174667da1f9b18216a4be361c69a11805",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_df21210a26fe1d35",
+      "input_sha256": "c2af864dc8f383120c669a369673e77b8ff08ffb8760997bc8922ee2a2f0a8fd",
+      "symbol": "ETH",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 16
+    },
+    {
+      "id": "ev_b04b2ad70a179ee7",
+      "input_sha256": "858ee3ef636459227d9aeed7739652051f574148fb847c074bd53be05d20ce26",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 28
+    },
+    {
+      "id": "ev_4e2c992635f5a091",
+      "input_sha256": "b348af040e746a35b12654e9bcfb6fcfb2d6568fe368022f311a7cfd94fedfca",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4881d1fec6fe6d03",
+      "input_sha256": "a5bae5638ae306e55ea29432e0ff28336e828db186655c5633389256035b0db2",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 39
+    },
+    {
+      "id": "ev_8f88957f27c5a239",
+      "input_sha256": "3cfc8760bd13271f9b4d98a128804f10f3ee5a52580bb405d5e888bbe99b50e0",
+      "symbol": "BTC",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 6
+    },
+    {
+      "id": "ev_610f3820cf72cba1",
+      "input_sha256": "a093cfa38a01b7921c082f5d5e096dfd0fd6b9bd08e74a54e9e0bc6b9e11621d",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_b831bd2ca09ae43f",
+      "input_sha256": "8a64235d7562e44e54f8d6af4d9530583dd2740fae1ca08aa67fea634f529861",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5f4de396b8acd2c4",
+      "input_sha256": "5cd0a4f1cf95e2ea6629e3e42dab24796de23d45173ca3fb106bef5fe62e1e7f",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_76d059ad58cd9c02",
+      "input_sha256": "9b9a19c6d8f338797e7dcdf3ccb7cd8d2dc60362808a5850414f413553cea8bd",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_d07dfe674a0e0ddb",
+      "input_sha256": "f30130152dc04810ae9417f5eae3f04906fce78c8bba11b2964dd4bc46246080",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_438665474fb73ac9",
+      "input_sha256": "bd664c620cc1939fce5e6999d864bff1009f9349d4536cd102fa78b526aeaeb9",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a69962d6bb749e12",
+      "input_sha256": "83991da978d9adaf54387598a82bb758c2f94cc66bd8bd26c5d6162990f22581",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_60c41ca6af48ed6f",
+      "input_sha256": "0264fd86a043e3909d4baa3cb7d657204560559a9962c75a6c376dfbeebb8ede",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_cc91ad6e2605a915",
+      "input_sha256": "8d980993fbf1d2b48e33c1ebc0c2b8f1f35a714586c8259d0bac41c8918aab10",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f2228512fba9b5c6",
+      "input_sha256": "78e601412837693308b8eee022cd28b4dc393bc66940e09726a927bff22845d6",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_112d988b15ae224d",
+      "input_sha256": "28bcd746f7a0e6bf29c2201627fc3d2a8b23ef619e2c7f3bfc26dbb0c83ce913",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 33
+    },
+    {
+      "id": "ev_0282075bb955ef1c",
+      "input_sha256": "f0933820b09fcfcc55714b71061297d7625666063e3a2685c21c4684432fccdf",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 20
+    },
+    {
+      "id": "ev_9b87a21dfc191ec6",
+      "input_sha256": "bd6df35b2506d280c19ff71f9ed9236d48ae258ab7147e9bfdd4faec7bbe2166",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_64558d52206a2c40",
+      "input_sha256": "e452629a234b3affe9fb4afe1b6a706c77119500cf64484ab0826f2694819a46",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_e426e7960bd554d7",
+      "input_sha256": "71125ab4e097cbc30899154af3bd5e21ff8ce036546e1b07b113e19b88246ff8",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_7475a20687bb6d0a",
+      "input_sha256": "95036ef035b66f048f526a8c05b774663ea966ccf135d8915008e563294e9908",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 37
+    },
+    {
+      "id": "ev_1da6bc8cc0263ac0",
+      "input_sha256": "67a74430fb42c3f2fe8c87410e3bde3e7a5a6f7dc7c19a8cde2741792fcc8af1",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 47
+    },
+    {
+      "id": "ev_b3ccbaff2007d7a2",
+      "input_sha256": "c0233606d8d2c0c8e07a07904fb4fd85854f359726f0a4211706a09aab000315",
+      "symbol": "ETH",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 9
+    },
+    {
+      "id": "ev_dceb213c0e9efc65",
+      "input_sha256": "f64c06b347416fbe2b83d88ddff404f436bc0e5f7c158d3ba8375acf64359907",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_c3a26dd16d2d35c2",
+      "input_sha256": "bc3c237b0e0cc546c57d2e03eb62bc2a91add0b69dcdcb5fdddd66f3ad6fa0c7",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3ce3d13c60f63c42",
+      "input_sha256": "6f6ac06295d814db8240edb0eafc823748f5a7b31669b132da249f54a59cdd8a",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_363a5d7668297d8f",
+      "input_sha256": "dbc7f0fd739e8d18f246b14936f72fcfe3ed3abf7a840ac2855723d00bfdf6c2",
+      "symbol": "BTC",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 8
+    },
+    {
+      "id": "ev_092996f538a5a4f2",
+      "input_sha256": "816b8b318ac56ec1dd045e0e80d2156b988d71a3e14e908d2f58ffd1b11fa846",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1f9ca5cc8488257e",
+      "input_sha256": "38e63d1ac49fd4b1821f8dc7443d96d533a172ddf9a6b479ab3c156d11dfd09b",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_62cca092d589ec38",
+      "input_sha256": "63f632ff5c20a6447b835007bde4ebf0395433c16232e78db0ef876086e8032f",
+      "symbol": "ETH",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 11
+    },
+    {
+      "id": "ev_6b6ede4514df7393",
+      "input_sha256": "4ff5fe02d7e35304196235302db27f9bc7d712d66aba9e0fa9c4c6498c4f81d1",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2ee45700e64ce525",
+      "input_sha256": "1fbdfd5ca794f37af6bb850986777191d290f211a676f490f8eea7e19dd98368",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2b8beb5a18a6928f",
+      "input_sha256": "812a47d1b3096234a4a49e2275e5fd05ccc46058eea9ff0a5a1f19334607448a",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_59528ff24933263f",
+      "input_sha256": "2da90fc88b7d67ad8af242fb6860d101cc9b1a1592fa318452b6b0384cae22d8",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3e3ce48a85ad2810",
+      "input_sha256": "5d78f12acc9096db3464c51da4a4215f77099676a7e8c35b0189e0865ed5b42e",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_7d0b437fc7918a36",
+      "input_sha256": "e25a1e036cdb633281276a74395165d9a1e5ae03428aa68bf944484960f1e93e",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 7
+    },
+    {
+      "id": "ev_3467d3e66ff40739",
+      "input_sha256": "060286eedf59ae2ce8d82660b8068d43ba84a8c9964db8ae6c37b9309ce175d7",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 51
+    },
+    {
+      "id": "ev_542fbc621e28df65",
+      "input_sha256": "d6b001e49bdc3e679f76418d878d774a56a124b847bfd8d80f2cfd19ba69900c",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8510cd231af0a917",
+      "input_sha256": "a2f8ed35842546dc790154601f693dc9e0c684c8d1bf9a7699ecbaaa34e5409a",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_b4d9598c0d9ebba7",
+      "input_sha256": "fc1913f58cfcf631e24a30e15280e7a7a99d64e7da2f12b1e7c3d1f6bdc1c3e3",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4cef8d0733a56185",
+      "input_sha256": "8e396d44a11519153dfbc6ef0a7dc9500531f56b170cf6ff5b8e9922a13caeb3",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_21e992f945fe8416",
+      "input_sha256": "dcf82e035a45c4ee8b97cf403dafafcc6e22822679a445b5ee3051cf65e2c63d",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 22
+    },
+    {
+      "id": "ev_32cd93c51fa296b3",
+      "input_sha256": "d9708fec43ec653bf02cac7f3c28dc073c83798bacc03c18e4dc2d62527e8200",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_491a85367a0bed6b",
+      "input_sha256": "d7cbaf4e56f63e6854a560e8b3cd9f7ecb91b13502f1e6c3c8c3b2d71b6480de",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 14
+    },
+    {
+      "id": "ev_130fdaad5eff14f9",
+      "input_sha256": "4d7bc4811282c53119fc86eb47e795479eabc0a76c923eafb7f7328f6def13a4",
+      "symbol": "BTC",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 5
+    },
+    {
+      "id": "ev_7037e9396e053ba3",
+      "input_sha256": "f048c8d9fd48cf0779cac0205ebd1a163badba6f6b9e1308daf004061affc2e2",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_6530ce6e0d16055f",
+      "input_sha256": "39448464fdbf006a881ab3973b97e2f5a4cae7c59d72e007311c01406dc6bffb",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_afd8e1b5cc6e09bc",
+      "input_sha256": "53dd8c07b3b4461f6e713cfd0c131e76349546e529b8d041c31836f199df4697",
+      "symbol": "ETH",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 18
+    },
+    {
+      "id": "ev_a5977af179fe10e0",
+      "input_sha256": "ad633a284f94a427941b28d11590b7d46a921754912339fc07fa516919561913",
+      "symbol": "BTC",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 0
+    },
+    {
+      "id": "ev_3cb5a998c333dae4",
+      "input_sha256": "5a20e64e79010cfcbbf0464658a791ce0d17b16ca95aa4df05e507cdfede44c6",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_cd7d91fd375e29b7",
+      "input_sha256": "7acc0ddfbb68b30f3daf1085c67e77618620bad8cd8dfd1b6c0f9829208d2054",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_64352f403a4118af",
+      "input_sha256": "43bb6d592f8556212fa20442fbf8e60d3475bc1093e1cca0d4bcdc7e50a02701",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_7a5e0046bb8eff8e",
+      "input_sha256": "7510ca90a35ac5913a29073871dd1d83d863e93d34ddd8e4eb3a4f1a6efd46ca",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_39da7295eecf6a74",
+      "input_sha256": "0c2a97865e3c4fa16aa9e01c1e9af1b16543ec83dbffaa0c03bcf6bfd3a91f29",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_892ea2a1ddc8d54b",
+      "input_sha256": "cb4723c4aaf0f3828da5c1b1af2a0168a1a988fa6c7180b7c5617d513bc61335",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8b4bdaa4d0fd3e29",
+      "input_sha256": "7c7c5e2fcd408d21520c022a331783ab89c54b1408f92de8976487b052e11fbc",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_fce00ba49f7dfcc7",
+      "input_sha256": "992765b0b751aa182143f32673f10b2dd8bd009f0f981d754f17e709455d9408",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 50
+    },
+    {
+      "id": "ev_12a120886ff0a0b4",
+      "input_sha256": "84f82769067c90224a5b3408f8c330e5a5624165757f5161e22046f8004aa9ca",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5c6f2ef3ed19099c",
+      "input_sha256": "45490132914cf93f6ec8b2001507a1797e76e4f1849c2d43e178e5a532996b3e",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a7cc7577e0767e8c",
+      "input_sha256": "6f5af12648edf5f0f586ae060f5cdd7028d7ca189dfc173109ad05c869dc2afa",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5c1fe678cd551519",
+      "input_sha256": "d4f05330bbc5ca12ae67c22781ac36262c30d6e52c0c0e741ed30652622bf0ed",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1c86ae89efac22ec",
+      "input_sha256": "b38cd87f68849653b6113db782f952658a5fa7b46cbf3468fbe759dd79f76018",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_eccdf281c0b85c80",
+      "input_sha256": "cceb02913e5d74e1e32593bef035f0f7d42afd9e18198bf308639a158710adab",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 36
+    },
+    {
+      "id": "ev_56ce5a3b11bfb1dc",
+      "input_sha256": "f2eeb478624e886cb215bd36943d8369e8a6043ed5f2dfa5edaf70fe7283dee1",
+      "symbol": "ETH",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 12
+    },
+    {
+      "id": "ev_b517a960a982d639",
+      "input_sha256": "c285d381ff827d427e6329ef39f27114cba53c6e1c2d0422ad52843950a5e3d6",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_d024d4809a551a17",
+      "input_sha256": "159c3c70b8ccc64ec3b73432a02face32a2ae2ccb4c4fba4f63d8bf037103166",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8a1b3978ad621bfb",
+      "input_sha256": "0ff4658b274d6de5910d36a8ad29d73ac6980f9d1dccd1f0aef9ed43f72eed57",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3d26ab884ede2811",
+      "input_sha256": "739397e9b9d6db03cd8b33c43bead28c77ca2b7fae17b4a053d8e9f3c6397a6b",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_dc246bd4160b239e",
+      "input_sha256": "7759929d4568a03727aa8d5e9f2ef97609a7610baf47d4eb1a8b1fbcebf5c881",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1690a9f1b39b5cbf",
+      "input_sha256": "a93391b556aa242f18524cb5f726596e867e057fba6b9d51d18d90bfefcd41eb",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_67df67784d62656e",
+      "input_sha256": "f9fb5406a6a38b115717e44524af38150780391410b5abdf8b37437befde04b4",
+      "symbol": "ETH",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 21
+    },
+    {
+      "id": "ev_276c57777e5f554e",
+      "input_sha256": "c59d6911598ee94b569434faa1fa398d27ed5e1d58e3fcaef8ad718a2281e4c4",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_bf45266d99484d0b",
+      "input_sha256": "34e23fdf74373003e0d0c070de91788d7e9ef4039cfe518662a1aa1efe9824fa",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_68b602f2eda0489f",
+      "input_sha256": "27c3ffcf7b6139ac54d143434fbf0492b6671ca575e0135e1dcde5fe13147cc3",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_021997db69b7ff06",
+      "input_sha256": "7b6eee1d24728dfc98dcd987f6484e51db506b2c59405f60f67502368d4f59d3",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_0827d852858d9be0",
+      "input_sha256": "7ea9c321e8088081d2c8958ab63cbc53cf904d52501e41de881166b23f8f8cf1",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f57c75dfaaceb133",
+      "input_sha256": "44b45ec3644ed4f9a2db195db07f6d48f9d48dc6c2d89e4f28360d2ad2ba5fc9",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9bb569c5273af8d7",
+      "input_sha256": "6b80e0a69a506e7ceae2d26c97581829a725599c53930d70313828363377a4c5",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f330e557bc79362e",
+      "input_sha256": "c82b89014ee951757c7bdbfc1c80b4f53b315d3b2325216af36cce964746bde0",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_138dbdebd9844684",
+      "input_sha256": "25b30e3a4f00cd345e01cedf3d0e18918a830dc7c570464dc6d25b6afd1fea86",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_cbc9984c4045ef8b",
+      "input_sha256": "74a03a8c575ade1e74b95504eef9744c22309cb7aabf83a809bb1a361fdb6fd7",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9c90e5a808a75fed",
+      "input_sha256": "a5942a7e64343253d907a6567d0d704ff865ee8000f978518678de6fff2e4bdf",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9b288f582cf38a23",
+      "input_sha256": "63596d451bf463476abfc35d97a74e54309bc32bd06c17f7f97f16e7c9f84895",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_55a9eaf8e9676d75",
+      "input_sha256": "4552e761fd01478d4850f579a8feea6e1ef9e2f3aa4dc5f666ace3efa880039a",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 45
+    },
+    {
+      "id": "ev_b1950efeba816ba3",
+      "input_sha256": "70a2769cc2f1162092c652a42f40377a8e741ad4340c0c1ce7758c855198e18f",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_7d71da21a73bd3fa",
+      "input_sha256": "c7b25e8830ba8314946ca833b264915dca276403d132802c6fac5be55ffc1012",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1e5d6ee9ebde828b",
+      "input_sha256": "0622e6117fde825b29d74d6241ad1c45c6066cda7c363a3abd82b64f9692b4a3",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9a56f435b2435fd0",
+      "input_sha256": "3852421072fab596cc67cd0a9e80137c56ab60d120041b349daf75e9636eeb6b",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3da2b437209cfc96",
+      "input_sha256": "7c8921714fa0404be38071f377d8d581abdfe9a53e1e0f344a3c119b88fc1c28",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_6e57bb32f23f4c9e",
+      "input_sha256": "a06bbba44e3d70cc8808b19bf97c0daeef4fe22678335cb837348b80506d5b28",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8b01399c7b6646f9",
+      "input_sha256": "c8dc432effe8a5adc7ceff664c7fc291ca4ca3c0c5ee250be0a2aecd63444fd8",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 40
+    },
+    {
+      "id": "ev_e1f770b56ebcbd51",
+      "input_sha256": "e448358569587cf3a3f5ba932d444b0381ac0b46d8177952c14dde4daab49cec",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_b324100011a26477",
+      "input_sha256": "abc5b2b61cf6bfcab9910d11ee7b41fd3d1e2aca3778373b0f13277919711aa7",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5f98a4627ac2ce8d",
+      "input_sha256": "34f38482c9a98c8036b53d7b357dbdd9bd81c032b8bb103e245355ddd1980616",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8f7f1e3fc7f9abb5",
+      "input_sha256": "a895e3ea3832dd2e0f9aa786b8ffd39eae77fcf271dddfb4d4a07b3eb8e07d54",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_5acc7beebe029f2d",
+      "input_sha256": "9d95fc108089573ab1257d58831788f62fc42f5cf2ca48778803128cfa1e9708",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4ebe7327d39b32dd",
+      "input_sha256": "24f1de11f3ef0e571dc529bb3a92b1baaf88225d53002f73093a4f98cd4d60c3",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_ff06513ae1f9551a",
+      "input_sha256": "96eec294bf1cc322d7f3d6d44b71df57925a59a4f5323b1e89d128fd7a378bc5",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f748fde23bb604f2",
+      "input_sha256": "20091150e589c5c4bebeaf3e951a932929c973fe689d3d84fedd61316ee15615",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_14d04e25c1f41677",
+      "input_sha256": "d8a6a8b792fb329517b4eaf326f30661e92d6aef70b87b0a3f8a03427dcab150",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_c8704629f5224c76",
+      "input_sha256": "e28dadacd021cf8a7188fe8989887146b45f472249c7a6af0435b535e1864105",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_e31c3bc7ccfa9faf",
+      "input_sha256": "e684a19f54643e3c127552817d6cb43140a0670ccf80a11b8d2d9868cad5af65",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_c3e9463e9fb53946",
+      "input_sha256": "fb8f659f89839449637a8782e43cb5bce78ebd8946c968bea5c178c6a8fe57cb",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2a1c058e88914a1f",
+      "input_sha256": "1c5cd12591e18d47168b6b2ece0860930e4361b33971d3256a3f7144ddcbec16",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a68e232667efc62b",
+      "input_sha256": "535141dc983fff2edf0df8617b62f8a69f0f6508a96c04a2d76ce3eddb842ac0",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_38111a563c78b292",
+      "input_sha256": "769c0d535effb980654c1471ae44a8b8e0c906b9c28a9e747991e7d4d520d550",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 52
+    },
+    {
+      "id": "ev_c3f7f989388ed183",
+      "input_sha256": "6f5ca5a63e296000d9e28b4109c6b881f257f325dc70d957734cad64a0029dec",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_9f557410dee405e7",
+      "input_sha256": "e8385d80ec27972b5a3eb2952c43544f564cd5289a35a7503cfaa526d96f30d3",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_86937c76b79db66a",
+      "input_sha256": "145c3f08d1638d51155f3b2d251bb471109288c877c06f7a8ea0aded1d3cc315",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4a2efae617051449",
+      "input_sha256": "2d5413b1c039d583cf201ba9365ae18f0630354e5a9dfb2c95bfbce5e708952f",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_a4e1bd93914f6249",
+      "input_sha256": "5e3fb88eb43566330548d24b39bb0d0e341e9c2144b9bca2f86b6001b955fbde",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_df5db75448199c44",
+      "input_sha256": "cd91a901c4ef6e1325b7c4bd468a8f812243398dc682baa891e0383dbb6224f2",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2059fc97c113ad24",
+      "input_sha256": "ecacc81c5aec505c198f032e3d9c0f08efc9c8f2cb582991ef71d0336dcdbd2b",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1bda2dc7f164e499",
+      "input_sha256": "11bda113fc4f7db7215a5fff6f21ecb25cded6dc0850ae3d3bdf278fb2f38be3",
+      "symbol": "GRAM",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 35
+    },
+    {
+      "id": "ev_9b51f2401c505ab7",
+      "input_sha256": "36a31681243f1735424c4060db977cdf2b961adf92f79a1c0cb4ff41aaec3712",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 43
+    },
+    {
+      "id": "ev_4c4c9fb8709e87a3",
+      "input_sha256": "a77b3ae135ee1032ad32f6f5179f28871d106369e59d73576b9a04569f7c2696",
+      "symbol": "GRAM",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 34
+    },
+    {
+      "id": "ev_939765504bd1e470",
+      "input_sha256": "c3eb7d38cebb8409d16bd66cffe48b437cfdb1a6bff2c32116b4178ce97f331c",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_27f9bc5ba4f71666",
+      "input_sha256": "aaf053c3fbf0eb35293d87595870ede871dea2b42b52826f211549680982db01",
+      "symbol": "BTC",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 3
+    },
+    {
+      "id": "ev_1cbfa9e593580e22",
+      "input_sha256": "a6c888dcab21327876b170ee77a1657a8c4af404b766028519a08a866d2e00e6",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2cf6f710591cf09a",
+      "input_sha256": "ff40c49c0fc935eca029d4c4a3980702898ea2420ada5100043b17bae11cef2b",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_673845ec86094a1d",
+      "input_sha256": "8b34e43f47aafc63620172e10910c4fb0d6d3f31ff59c4b1c0e376af341fa611",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 38
+    },
+    {
+      "id": "ev_e16d64d67aaf40e2",
+      "input_sha256": "79fd75a0dd373215b2217ef6b23464ec9888951abb5d821456967be07a999a6c",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_e885f0e9958c96ce",
+      "input_sha256": "5f7c17e2c48261090c4ee2d855d18748f5aa7f2dee29cfd2948d52fe775ef35c",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_b9008313a68e67ee",
+      "input_sha256": "c1c683c6a00cedba072a3d42daa2f14bcf177c583526d6a80cfd9bd5a3992dac",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 10
+    },
+    {
+      "id": "ev_9df94d4b7d0af73a",
+      "input_sha256": "9f40f558e398cfeaec5b148bb5a39e7ad40582e526e71f5a8a5bfefa9932d3d2",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 27
+    },
+    {
+      "id": "ev_e55d7b380c4f6c11",
+      "input_sha256": "cd7a53aaea5d91d95df8abbfbfff407440c8e3f8c39ec3a15bc48cc64cbed50d",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_c13d47d62dddfc0e",
+      "input_sha256": "908916a44abe9808ce9252f043c060667b631e6de1f737269f7e05be4a6fa838",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_90e19bfb8e6a68b6",
+      "input_sha256": "fb54d2beec2b22ac529a696bdfed831578597ff86034d23fa9ad526c3146bb47",
+      "symbol": "SOL",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 41
+    },
+    {
+      "id": "ev_1f4d888d17baf529",
+      "input_sha256": "c088f515a5a7b2355a7974919db377c9fedb2c9091580f8e34b8b209ce55af48",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 31
+    },
+    {
+      "id": "ev_b8cf7b25bfcd5cb1",
+      "input_sha256": "f0c9db47a6178a1c5df5ba7ff04f8e1ba4483837cd737fca7f64a52311b54c0f",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_d12824bead1440e0",
+      "input_sha256": "7036472099d11b977d7084d3de1405a2d80a6485b6b5ebe9b1fe307059895828",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_aafa0cfed59dbdc5",
+      "input_sha256": "a88cc2aa8276d1975397ecc79da97a388ae8dfccc3fb279e301c71edd18653f7",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_296201f0d86fd10e",
+      "input_sha256": "1e379061cced521dca4142155a2a7b7a41b4b482957ac0985c1d5c91810db048",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_195f1879f01dbc6c",
+      "input_sha256": "bc068ab43c6ea04572b74d8417aae6181d8fa03885ffcbe20a149d90152f8998",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_1853edbb242712b6",
+      "input_sha256": "3b188213ccdf48888e37fbccf3c54814fb955405650b15b630eb0fe7b614a9ba",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f8e124afb1e8165c",
+      "input_sha256": "e3c15bc2723cf96661d0fe74a7b08dc8d754c42f62c2cfbcf77fe7805417cc44",
+      "symbol": "GRAM",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 23
+    },
+    {
+      "id": "ev_14a7e14b3235b74f",
+      "input_sha256": "ce701614a66d4fb5e138ac3cde09decbc0db9657585c1441bc9b7c131e69de70",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_d2b9c738c7ad3663",
+      "input_sha256": "a1ff2b395023466d04d8c1bbbde622977a7dd25f5842618be5c8e1971f261128",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 49
+    },
+    {
+      "id": "ev_3a79dc96783a143b",
+      "input_sha256": "2290f739132c6cc56a3de5912f7bfa73093d41e45a892120a673834965ef3ee0",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_f2e3ab01706221e2",
+      "input_sha256": "8282c69b8b4507186cb79106d0f1018dc2f3baedca6ccec6b079d2b7f5d715b9",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_0932ea1b4a53c7b0",
+      "input_sha256": "0c71ad1c25663dff5693a8da38115043a0096ddc371225d3d35b642fd519f06b",
+      "symbol": "GRAM",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 25
+    },
+    {
+      "id": "ev_0443b0a529eb1364",
+      "input_sha256": "021c9c1b782cf5de06d91d28b584f241fc14a6bfaa4ab2b6e9f0c1a60e17dc14",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_0cd8afa71c84d152",
+      "input_sha256": "7c57f8c9114c3fee85f30729557aee0cc0ba4baa9a653eaba382f04db9c7261b",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2289939e1f4c84d1",
+      "input_sha256": "ba1e9f5b2ce60ded892752722b836c2de3d51619917c483056e3b54d8813d1b5",
+      "symbol": "GRAM",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 30
+    },
+    {
+      "id": "ev_5e088c7f13b8cc64",
+      "input_sha256": "1f4e4b1cdfb26c0811ac36912a497fde9f3cfa15c1a1a2898759978409e43ccb",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_0c962302f11b3e58",
+      "input_sha256": "362c51af790608b1d6bf0c2ace7abc2cd0668a725c58aebf59ffae51893a4d2c",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 48
+    },
+    {
+      "id": "ev_63a4d265f7830432",
+      "input_sha256": "b112597ea1e09b36cd450e1336a0da8ca438c62997f76909f95695c79d7d8f15",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_ae7bb0bcf5848ba5",
+      "input_sha256": "2547d39a64ab6cf43d430a4710e240d1893cad2d8600c165330d4cfbe8e83b60",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_308d30d59ee31a5d",
+      "input_sha256": "e125ba5890bc246c44235640f3072dda2712eaf081f68f9ee9ace6c9abe525a9",
+      "symbol": "GRAM",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 24
+    },
+    {
+      "id": "ev_23e08cd9ee137e52",
+      "input_sha256": "c87cbdc38e2cc7ac93a208cc2c52d841c2a6f42cd94643ce8ed11c109343a332",
+      "symbol": "BTC",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 1
+    },
+    {
+      "id": "ev_967c352cfb5eaf02",
+      "input_sha256": "2958f36917965cc935a0915db8e7595b9e8643ac8157e1deea3151354d2c296d",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_2327ff20a0586d39",
+      "input_sha256": "e747b6760672224f067854125fea4d32edae3f514a3cf6b8ee622c280d3bddd4",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_251c5b08bdea3dc3",
+      "input_sha256": "cf637f21eb78b286e7db132f1bde15fe4817cdb12b83190783e881e593e4295e",
+      "symbol": "ETH",
+      "warrant": "alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 19
+    },
+    {
+      "id": "ev_14758c4bcbd58e1b",
+      "input_sha256": "55ea99678f14512c1f4056ed79fc5028e23eab198163edd12395073ff2ed1fbc",
+      "symbol": "SOL",
+      "warrant": "ambiguous",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 42
+    },
+    {
+      "id": "ev_4238003c7d8cf56e",
+      "input_sha256": "1918dbbd4b67b2d1c4db893f064a2d934d968b66506ae6952ab1e68106c71b0e",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_bc952a1419423e55",
+      "input_sha256": "22220bc3a0265ca0d4f10965464d3f41aacfc51c5583016a5d41c4d732a4fb5d",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_4a509d520eff16ed",
+      "input_sha256": "12e986bb7bc219a4b7cecf3233fbe5a598fc3a35ab6f967cc0e684664cfb3fd9",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_815fec7625e35361",
+      "input_sha256": "cf9093f3024f0f8a60f28fe2280f265fedc9dc18b81d63a801460d730962c606",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_8300d36139fb118b",
+      "input_sha256": "9efd43eccca95b68770072bbebd554ec4e7b72d32cbc5673eee94f7958cc4dda",
+      "symbol": "GRAM",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_3de2c14fbfea62b5",
+      "input_sha256": "15cf713a83d3e4c3cc69c414e1d654c7e4ae830d6cc7d49532966e58a45b5d84",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    },
+    {
+      "id": "ev_48aac7876a7da763",
+      "input_sha256": "6e04fb11b5fbeff6baedd81c2058492d8b5cfa0ea6aa24c099101e1f7380dc2a",
+      "symbol": "BTC",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 2
+    },
+    {
+      "id": "ev_ed2b9dc1c9a9a2af",
+      "input_sha256": "fa1059ea8cbb5370a5695eadb3cfa1b8570e8c552dc8172d69999f878af41650",
+      "symbol": "SOL",
+      "warrant": "no_alert",
+      "evidence_packet": "full_snapshot",
+      "risk_review_index": 44
+    },
+    {
+      "id": "ev_f4859dc5187ec536",
+      "input_sha256": "c1f67e54aca02d02c25490546024295245ad4daf2deb674c7b13ea30e531f1eb",
+      "symbol": "ETH",
+      "warrant": "no_alert",
+      "evidence_packet": "compact_all-snapshots_pct_and-context",
+      "risk_review_index": null
+    }
+  ]
+}

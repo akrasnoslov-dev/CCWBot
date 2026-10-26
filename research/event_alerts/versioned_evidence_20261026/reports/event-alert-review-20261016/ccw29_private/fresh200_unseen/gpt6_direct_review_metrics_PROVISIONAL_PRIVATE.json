@@ -1,0 +1,107 @@
+{
+  "source_dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "authority": "AI_SELF_REVIEW_NOT_HUMAN_NOT_BLIND",
+  "model_adjudicated_counts": {
+    "no_alert": 160,
+    "alert": 23,
+    "ambiguous": 17
+  },
+  "source_risk_selected": 55,
+  "quality_claim": "exploratory paired comparison only; posthoc not independent",
+  "all_200": {
+    "production": {
+      "TP": 18,
+      "FP": 5,
+      "FN": 5,
+      "TN": 155,
+      "ambiguous": 17,
+      "precision_provisional": 0.783,
+      "recall_provisional": 0.783,
+      "accuracy_provisional": 0.945
+    },
+    "balanced": {
+      "TP": 22,
+      "FP": 12,
+      "FN": 1,
+      "TN": 148,
+      "ambiguous": 17,
+      "precision_provisional": 0.647,
+      "recall_provisional": 0.957,
+      "accuracy_provisional": 0.929
+    },
+    "refined": {
+      "TP": 23,
+      "FP": 8,
+      "FN": 0,
+      "TN": 152,
+      "ambiguous": 17,
+      "precision_provisional": 0.742,
+      "recall_provisional": 1.0,
+      "accuracy_provisional": 0.956
+    }
+  },
+  "high_risk_55": {
+    "production": {
+      "TP": 18,
+      "FP": 5,
+      "FN": 5,
+      "TN": 14,
+      "ambiguous": 13,
+      "precision_provisional": 0.783,
+      "recall_provisional": 0.783,
+      "accuracy_provisional": 0.762
+    },
+    "balanced": {
+      "TP": 22,
+      "FP": 12,
+      "FN": 1,
+      "TN": 7,
+      "ambiguous": 13,
+      "precision_provisional": 0.647,
+      "recall_provisional": 0.957,
+      "accuracy_provisional": 0.69
+    },
+    "refined": {
+      "TP": 23,
+      "FP": 8,
+      "FN": 0,
+      "TN": 11,
+      "ambiguous": 13,
+      "precision_provisional": 0.742,
+      "recall_provisional": 1.0,
+      "accuracy_provisional": 0.81
+    }
+  },
+  "agreement_negative_145": {
+    "production": {
+      "TP": 0,
+      "FP": 0,
+      "FN": 0,
+      "TN": 141,
+      "ambiguous": 4,
+      "precision_provisional": null,
+      "recall_provisional": null,
+      "accuracy_provisional": 1.0
+    },
+    "balanced": {
+      "TP": 0,
+      "FP": 0,
+      "FN": 0,
+      "TN": 141,
+      "ambiguous": 4,
+      "precision_provisional": null,
+      "recall_provisional": null,
+      "accuracy_provisional": 1.0
+    },
+    "refined": {
+      "TP": 0,
+      "FP": 0,
+      "FN": 0,
+      "TN": 141,
+      "ambiguous": 4,
+      "precision_provisional": null,
+      "recall_provisional": null,
+      "accuracy_provisional": 1.0
+    }
+  }
+}

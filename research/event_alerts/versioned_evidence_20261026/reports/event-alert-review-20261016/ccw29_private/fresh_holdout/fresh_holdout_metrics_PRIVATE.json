@@ -1,0 +1,105 @@
+{
+  "artifact": "CCW29_NEW_UNSEEN_20",
+  "dataset_sha256": "cb087b1a52e32b48f96dabda9d9dbf72744fcdb37c273a906572567005fef873",
+  "owner_review_status": "NOT_DONE",
+  "review_reference": "GPT6_PROVISIONAL_NOT_INDEPENDENT_OF_PROMPT_DESIGN",
+  "provisional_label_counts": {
+    "ambiguous": 4,
+    "no_alert": 15,
+    "alert": 1
+  },
+  "blind_label_sha256": "e90075842d5765cdeb5708b20515964f60c6e3f34a79638e4173dcbd3d0ccd2e",
+  "providers": {
+    "groq": {
+      "attempts": 50,
+      "status_counts": {
+        "valid": 26,
+        "http_error": 24
+      },
+      "unique_valid": 26,
+      "expected": 40,
+      "ledger_sha256": "4379a204589756c7ee19ddf59bcf83dc8aa96e64a70ea90f269d0ad500b0c72d",
+      "by_prompt": {
+        "e1": {
+          "coverage": 13,
+          "metrics_provisional_not_authoritative": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 10,
+            "ambiguous": 3,
+            "missing": 7,
+            "scored": 10,
+            "precision": null,
+            "recall": null
+          },
+          "token_usage_total": 28845,
+          "median_latency_ms": 2437,
+          "positive_decisions": 1
+        },
+        "e2": {
+          "coverage": 13,
+          "metrics_provisional_not_authoritative": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 10,
+            "ambiguous": 3,
+            "missing": 7,
+            "scored": 10,
+            "precision": null,
+            "recall": null
+          },
+          "token_usage_total": 30033,
+          "median_latency_ms": 2461,
+          "positive_decisions": 0
+        }
+      }
+    },
+    "cloudflare": {
+      "attempts": 40,
+      "status_counts": {
+        "valid": 40
+      },
+      "unique_valid": 40,
+      "expected": 40,
+      "ledger_sha256": "3b4f50b2f658d1fc853a8bb788a9625f7598c7619fca7e0d614c157931b09b2e",
+      "by_prompt": {
+        "e1": {
+          "coverage": 20,
+          "metrics_provisional_not_authoritative": {
+            "TP": 1,
+            "FP": 4,
+            "FN": 0,
+            "TN": 11,
+            "ambiguous": 4,
+            "missing": 0,
+            "scored": 16,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          "token_usage_total": 23195,
+          "median_latency_ms": 1776.5,
+          "positive_decisions": 7
+        },
+        "e2": {
+          "coverage": 20,
+          "metrics_provisional_not_authoritative": {
+            "TP": 1,
+            "FP": 1,
+            "FN": 0,
+            "TN": 14,
+            "ambiguous": 4,
+            "missing": 0,
+            "scored": 16,
+            "precision": 0.5,
+            "recall": 1.0
+          },
+          "token_usage_total": 22545,
+          "median_latency_ms": 1782.5,
+          "positive_decisions": 4
+        }
+      }
+    }
+  }
+}

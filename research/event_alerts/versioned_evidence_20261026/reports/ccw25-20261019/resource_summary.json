@@ -1,0 +1,29 @@
+[
+  {
+    "model": "qwen4",
+    "samples": 128,
+    "cpu_samples": 83,
+    "sampled_active_logical_cpu_equivalents_p50": 3.95785958953398,
+    "sampled_active_logical_cpu_equivalents_peak": 4.0296160662404406,
+    "peak_working_set_bytes": 5628760064,
+    "note": "Approximately 1-second Windows process samples; Qwen4 monitor covers long-report process only. First monitor samples lack CPU-derived fields due to a corrected PowerShell timer compatibility issue. Not target-host utilization."
+  },
+  {
+    "model": "phi",
+    "samples": 406,
+    "cpu_samples": 405,
+    "sampled_active_logical_cpu_equivalents_p50": 3.952025789626913,
+    "sampled_active_logical_cpu_equivalents_peak": 4.0418519841468585,
+    "peak_working_set_bytes": 5154807808,
+    "note": "Approximately 1-second Windows process samples across this model run; not target-host utilization."
+  },
+  {
+    "model": "qwen7",
+    "samples": 1061,
+    "cpu_samples": 1060,
+    "sampled_active_logical_cpu_equivalents_p50": 3.9531303278301086,
+    "sampled_active_logical_cpu_equivalents_peak": 4.054689139191055,
+    "peak_working_set_bytes": 7441424384,
+    "note": "Approximately 1-second Windows process samples across this model run; not target-host utilization."
+  }
+]

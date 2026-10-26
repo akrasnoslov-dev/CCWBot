@@ -1,0 +1,3508 @@
+{
+  "cases": [
+    {
+      "reviewer_a": "no_alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "ambiguous",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [
+        "Daily-change context at the previous alert, or price history spanning the daily decline and that alert, to determine whether the material daily decline is new or already established."
+      ],
+      "reviewer_c_rationale": "The 3.33% daily loss is unusually large, but the current window decline is ordinary and recent snapshots are effectively flat. Price is 0.60% below the alert roughly four and a half hours earlier, whose window was slightly positive. The supplied evidence does not locate the material daily decline relative to that alert, so it cannot resolve whether this is a new materially significant development or stabilization after an already established decline.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_075a5b3e3addb0a1",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.004565479976659768,
+        "input.market.chg24h_percent": -3.3315900523996405,
+        "input.market.chg30m_percent": 0.027574897268695744,
+        "input.market.chg_since_msg_percent": -0.6017298349888526,
+        "input.market.chg_window_percent": -0.3365254497717276,
+        "input.market.relative_24h_percentile_30d": 98.7,
+        "input.market.relative_window_percentile_30d": 57.3,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 81227.37001541181
+          },
+          {
+            "m": -180,
+            "p": 81216.98617889959
+          },
+          {
+            "m": -120,
+            "p": 80937.6237015911
+          },
+          {
+            "m": -90,
+            "p": 80951.44544681496
+          },
+          {
+            "m": -30,
+            "p": 80931.70240933252
+          },
+          {
+            "m": 0,
+            "p": 80954.0192431297
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 268,
+        "input.previous_event_alert.analysed_window_move": 0.2791
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window recovery is ordinary in the supplied historical distribution and smaller than the advance alerted just 29 minutes earlier. Price has since slipped only 0.078%, with no material change from that alerted level. The daily loss does not establish a fresh event during this small continuation and pause.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_09080bc39e36d3a8",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -3.3527115594645838,
+        "input.market.chg30m_percent": -0.07753399614641358,
+        "input.market.chg_since_msg_percent": -0.07753399614641358,
+        "input.market.chg_window_percent": 0.7585708546760638,
+        "input.market.relative_24h_percentile_30d": 73.8,
+        "input.market.relative_window_percentile_30d": 52.0,
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": 1.6322
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is exceptional, but the current window decline is only moderately elevated and price has fallen just another 0.36% since the declining alert 29 minutes earlier. Recent metrics show continued moderate selling rather than a distinct large downward step. This small extension does not establish enough novelty for another automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_0c7b2c4d1c1394d3",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.5326483017067233,
+        "input.market.chg24h_percent": -3.7556162741601167,
+        "input.market.chg30m_percent": -0.36043345663248005,
+        "input.market.chg_since_msg_percent": -0.36043345663248005,
+        "input.market.chg_window_percent": -0.6800510159669507,
+        "input.market.relative_24h_percentile_30d": 99.7,
+        "input.market.relative_window_percentile_30d": 79.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2619.0203282975417
+          },
+          {
+            "m": -180,
+            "p": 2616.212763113777
+          },
+          {
+            "m": -120,
+            "p": 2619.9121771662926
+          },
+          {
+            "m": -90,
+            "p": 2615.748032184471
+          },
+          {
+            "m": -30,
+            "p": 2610.6191989649137
+          },
+          {
+            "m": 0,
+            "p": 2601.2096539465733
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -0.2259
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "no_alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price has recovered 0.81% since the declining alert 89 minutes earlier, but the 0.59% window gain is ordinary in the supplied historical context and the daily change is very small. The latest half hour adds only a modest gain. This is a partial rebound without sufficiently material market evidence, and the broad lending headline cannot supply that materiality.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_0feb8fc14b803462",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -0.24378324514207997,
+        "input.market.chg30m_percent": 0.1337406555378096,
+        "input.market.chg_since_msg_percent": 0.8086687629659232,
+        "input.market.chg_window_percent": 0.5854571939557021,
+        "input.market.relative_24h_percentile_30d": 5.0,
+        "input.market.relative_window_percentile_30d": 42.0,
+        "input.news[0].title": "Crypto lending rises again… but have they solved the risks?",
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -1.8026
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Recent selling reverses the prior alert's gain, and the daily decline is elevated. However, the net window decline is ordinary in the supplied historical context and price is only 0.72% below the alert two hours earlier. The sharper recent losses show a pullback, but do not yet establish a sufficiently material new extension of the daily decline.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_19c7744fea400d98",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -1.1693113715867751,
+        "input.market.chg24h_percent": -3.866910288798623,
+        "input.market.chg30m_percent": -0.7779258640116272,
+        "input.market.chg_since_msg_percent": -0.7232177732344951,
+        "input.market.chg_window_percent": -0.6958621104655272,
+        "input.market.relative_24h_percentile_30d": 88.2,
+        "input.market.relative_window_percentile_30d": 59.5,
+        "input.previous_event_alert.age_minutes": 119,
+        "input.previous_event_alert.analysed_window_move": 0.8063
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are unusually large, but an alert just 29 minutes earlier already covered almost the same 2.55% declining window. Price has fallen another 0.39%, without a distinct new downward step comparable to the earlier selloff in the snapshots. The current observation is continued deterioration within the recently alerted episode, rather than a materially new extension.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_1a9773932f226c8a",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.6297463921522727,
+        "input.market.chg24h_percent": -3.448713845996523,
+        "input.market.chg30m_percent": -0.388925141429947,
+        "input.market.chg_since_msg_percent": -0.388925141429947,
+        "input.market.chg_window_percent": -2.625681026810027,
+        "input.market.relative_24h_percentile_30d": 93.0,
+        "input.market.relative_window_percentile_30d": 98.3,
+        "input.market.snapshots": [
+          {
+            "m": -180,
+            "p": 2513.3109647822776
+          },
+          {
+            "m": -150,
+            "p": 2512.458354025161
+          },
+          {
+            "m": -120,
+            "p": 2490.654640932798
+          },
+          {
+            "m": -60,
+            "p": 2462.829012486265
+          },
+          {
+            "m": -30,
+            "p": 2456.874839579846
+          },
+          {
+            "m": 0,
+            "p": 2447.3194356352533
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -2.5518
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The roughly 1% window decline is moderately elevated, while the daily move is ordinary in the supplied context. The latest hour is nearly flat, and current price remains above the low visible ninety minutes earlier after a rebound. A 0.65% loss since an already declining alert does not establish a new material extension.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_1dd3d013e2dd43ef",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.03619734020552661,
+        "input.market.chg24h_percent": -1.2864187517801953,
+        "input.market.chg_since_msg_percent": -0.6489283502023748,
+        "input.market.chg_window_percent": -0.9852358946363631,
+        "input.market.relative_24h_percentile_30d": 40.7,
+        "input.market.relative_window_percentile_30d": 73.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.68260317811328
+          },
+          {
+            "m": -180,
+            "p": 111.03303741974685
+          },
+          {
+            "m": -120,
+            "p": 110.27006548932643
+          },
+          {
+            "m": -90,
+            "p": 109.2178942844656
+          },
+          {
+            "m": -30,
+            "p": 109.84975877182798
+          },
+          {
+            "m": 0,
+            "p": 109.59211844248458
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 299,
+        "input.previous_event_alert.analysed_window_move": -0.3651
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The roughly 1% window advance is elevated in the supplied historical context, with a fresh 0.66% jump in the latest half hour after quieter snapshots. Price is 0.63% above the alert almost five hours earlier, whose window was declining. The renewed upward acceleration supports a materially noteworthy reversal and meaningful novelty; the supplied news offers context without establishing its cause.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_1f79b09b0b3404d3",
+      "supporting_evidence": {
+        "input.market.chg30m_percent": 0.6600782883526777,
+        "input.market.chg_since_msg_percent": 0.6278064257155486,
+        "input.market.chg_window_percent": 1.003332871054996,
+        "input.market.relative_window_percentile_30d": 87.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2495.069332781594
+          },
+          {
+            "m": -180,
+            "p": 2504.7091463635106
+          },
+          {
+            "m": -120,
+            "p": 2499.119536966198
+          },
+          {
+            "m": -90,
+            "p": 2498.1329098214333
+          },
+          {
+            "m": -30,
+            "p": 2503.577611308697
+          },
+          {
+            "m": 0,
+            "p": 2520.1031835530043
+          }
+        ],
+        "input.news": [
+          {
+            "material": true,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Russia’s Sberbank has received regulatory approval to launch crypto trading, enabling Bitcoin, Ethe.",
+            "time": "2026-10-13 12:22:24+00:00",
+            "title": "Russia clears Sberbank for crypto trading ahead of December launch"
+          },
+          {
+            "material": true,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "ENS upgrade may affect domain registrations",
+            "time": "2026-10-13 11:11:27+00:00",
+            "title": "ENS seeks DAO approval to activate upgraded Ethereum naming system"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin and Ethereum slipped then rebounded as South Korean stocks fell amid AI‑related concerns.",
+            "time": "2026-10-13 11:06:39+00:00",
+            "title": "Bitcoin, ether slip and rebound as South Korean stocks slide on AI-related concerns"
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 299,
+        "input.previous_event_alert.analysed_window_move": -0.9482
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price remains 2.17% above the advancing alert about twelve and a half hours earlier, but the current window gain is minimal and low in its historical distribution. The daily gain is ordinary and snapshots show a narrow plateau with small recent gains. This continuation does not establish a sufficiently material fresh advance or reversal for another alert.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_22955d5b99feebef",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.2829183824072212,
+        "input.market.chg24h_percent": 2.1588072881129117,
+        "input.market.chg30m_percent": 0.12104873114557374,
+        "input.market.chg_since_msg_percent": 2.173768304737059,
+        "input.market.chg_window_percent": 0.07234388497753336,
+        "input.market.relative_24h_percentile_30d": 62.1,
+        "input.market.relative_window_percentile_30d": 8.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 105.35392877768382
+          },
+          {
+            "m": -180,
+            "p": 105.27233869965565
+          },
+          {
+            "m": -120,
+            "p": 105.51090259590798
+          },
+          {
+            "m": -90,
+            "p": 105.47310745913158
+          },
+          {
+            "m": -30,
+            "p": 105.30267834673703
+          },
+          {
+            "m": 0,
+            "p": 105.43014590273806
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 749,
+        "input.previous_event_alert.analysed_window_move": 1.0041
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily gain is elevated, but the current 0.61% recovery is only moderately elevated in its own historical context. Price remains 0.42% below the prior advancing alert more than seven hours earlier. Recent gains show a modest recovery toward that previously alerted level, without enough new material movement to justify another automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_2c673c9dfc2877d5",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.5449186198867009,
+        "input.market.chg24h_percent": 2.9035095316481354,
+        "input.market.chg30m_percent": 0.3408212010737184,
+        "input.market.chg_since_msg_percent": -0.4185005269966007,
+        "input.market.chg_window_percent": 0.6123540388568767,
+        "input.market.relative_24h_percentile_30d": 84.5,
+        "input.market.relative_window_percentile_30d": 71.3,
+        "input.previous_event_alert.age_minutes": 449,
+        "input.previous_event_alert.analysed_window_move": 0.7502
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is exceptional in the supplied history, but the current window closely matches the declining window alerted just 29 minutes earlier. Price has moved only another 0.13% lower, with no distinct acceleration in the supplied recent metrics. The exceptional daily backdrop therefore does not make this small continuation meaningfully new.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_2f11d6ea41819f42",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.28888874182307167,
+        "input.market.chg24h_percent": -5.909204909774554,
+        "input.market.chg30m_percent": -0.1288263706896821,
+        "input.market.chg_since_msg_percent": -0.1288263706896821,
+        "input.market.chg_window_percent": -0.5887946012878124,
+        "input.market.relative_24h_percentile_30d": 100.0,
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -0.6033
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The aggregate window gain is exceptional, but the recent alert already covered the rebound. Since that alert 148 minutes earlier, price has added a much smaller 0.62% and currently remains below the peak visible ninety minutes ago. Recent gains are modest and the daily move is ordinary, so the large rolling-window figure does not establish a fresh material extension.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_3071bf23d0f30001",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.2451378848757842,
+        "input.market.chg24h_percent": 0.6351490132539777,
+        "input.market.chg30m_percent": 0.33879339659666274,
+        "input.market.chg_since_msg_percent": 0.6168307893809283,
+        "input.market.chg_window_percent": 2.795812202420812,
+        "input.market.relative_24h_percentile_30d": 44.7,
+        "input.market.relative_window_percentile_30d": 100.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 80071.5938555915
+          },
+          {
+            "m": -180,
+            "p": 81153.31888659294
+          },
+          {
+            "m": -120,
+            "p": 82229.54061760113
+          },
+          {
+            "m": -90,
+            "p": 82419.43959963394
+          },
+          {
+            "m": -30,
+            "p": 82032.32514660755
+          },
+          {
+            "m": 0,
+            "p": 82310.24524727896
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 148,
+        "input.previous_event_alert.analysed_window_move": 1.0474
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price is 2.51% below an alert nearly thirty hours earlier, and the latest half hour adds a downward step. However, the 1.13% window decline is only moderately elevated in the supplied history, while the 1.52% daily loss is ordinary for this asset. The direction differs from the older advancing alert, but the supplied movement does not establish a materially noteworthy new episode.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_30a873823ba149b7",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -1.516116868220702,
+        "input.market.chg30m_percent": -0.7435350662465434,
+        "input.market.chg_since_msg_percent": -2.5098584372074857,
+        "input.market.chg_window_percent": -1.127259319792328,
+        "input.market.relative_24h_percentile_30d": 36.5,
+        "input.market.relative_window_percentile_30d": 66.9,
+        "input.previous_event_alert.age_minutes": 1769,
+        "input.previous_event_alert.analysed_window_move": 1.6888
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "There is fresh downward movement, including a 0.53% half-hour decline and 1.39% loss since the older alert. However, the roughly 1% window decline is only moderately elevated in the asset's supplied historical context, while the daily change is near flat. This supports a pullback but not a sufficiently material new market episode for an automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_341d98232c3ee735",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -0.21204584472003593,
+        "input.market.chg30m_percent": -0.5323289801375533,
+        "input.market.chg_since_msg_percent": -1.3910190973049334,
+        "input.market.chg_window_percent": -1.0108461851078432,
+        "input.market.relative_24h_percentile_30d": 6.9,
+        "input.market.relative_window_percentile_30d": 74.8,
+        "input.previous_event_alert.age_minutes": 569,
+        "input.previous_event_alert.analysed_window_move": -0.3651
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "no_alert",
+      "reviewer_b": "no_alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest half hour rises 0.72% after the preceding snapshots stayed close to $83,000, creating a clear fresh upward step. The net window rise is elevated in the supplied historical context, and price is 0.77% above the alert 149 minutes earlier, whose window was almost flat. The abrupt acceleration makes this materially noteworthy and meaningfully new despite an ordinary daily change.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_36436dd74b85d86e",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.7390256834657436,
+        "input.market.chg24h_percent": 0.8720294979327959,
+        "input.market.chg30m_percent": 0.7237771628705615,
+        "input.market.chg_since_msg_percent": 0.7705678576067949,
+        "input.market.chg_window_percent": 0.7375044155274328,
+        "input.market.relative_24h_percentile_30d": 57.6,
+        "input.market.relative_window_percentile_30d": 84.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 83064.17381740722
+          },
+          {
+            "m": -180,
+            "p": 83032.96183862594
+          },
+          {
+            "m": -120,
+            "p": 82991.53436880045
+          },
+          {
+            "m": -90,
+            "p": 82979.53456476267
+          },
+          {
+            "m": -30,
+            "p": 83075.49431126521
+          },
+          {
+            "m": 0,
+            "p": 83676.77576703198
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": 0.0909
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest half hour jumps 1.06% from the visible recent low to a fresh supplied snapshot high, reversing the preceding decline. Price is 0.81% above the alert 89 minutes earlier, whose window was falling. Although the net window gain is ordinary, the abrupt rebound is a materially noteworthy new market phase relative to that prior alert; the headlines are supporting context only.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_378e53a4ff0fcef5",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.8553382563656015,
+        "input.market.chg30m_percent": 1.058617593844696,
+        "input.market.chg_since_msg_percent": 0.8063790320903013,
+        "input.market.chg_window_percent": 0.26508418790733784,
+        "input.market.relative_window_percentile_30d": 43.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2360.7158599726777
+          },
+          {
+            "m": -180,
+            "p": 2364.1991442652056
+          },
+          {
+            "m": -120,
+            "p": 2354.424300552537
+          },
+          {
+            "m": -90,
+            "p": 2348.039645075827
+          },
+          {
+            "m": -30,
+            "p": 2342.1790251987914
+          },
+          {
+            "m": 0,
+            "p": 2366.973744438886
+          }
+        ],
+        "input.news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Thailand’s new Bitcoin and Ether ETF rules take effect Friday, but CoinShares expects modest initia.",
+            "time": "2026-10-15 09:36:20+00:00",
+            "title": "Thailand crypto ETFs may see slow start despite new rules: CoinShares"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Massive liquidations of nearly $1B in crypto bets triggered as Bitcoin and Ethereum prices slide.",
+            "time": "2026-10-15 04:25:15+00:00",
+            "title": "Nearly $1 billion in crypto bets liquidated as bitcoin, ether and XRP slide"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "VanEck withdraws its application for a Lido staked Ether ETF, halting the launch of the proposed fu.",
+            "time": "2026-10-15 01:21:52+00:00",
+            "title": "VanEck seeks to withdraw application for Lido staked Ether ETF"
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -0.8825
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "no_alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest hour rebounds 1.29%, with continued half-hour gains and a clear recovery from the recent trough to above the supplied window's starting price. Price is 1.20% above the alert 89 minutes earlier, whose window had fallen 1.77%. Although the net window is nearly flat, the rapid reversal of that selloff is a material and meaningfully new market phase.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_39891a3b04174bf5",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 1.290121908300745,
+        "input.market.chg30m_percent": 0.5219522979259978,
+        "input.market.chg_since_msg_percent": 1.2027241262389672,
+        "input.market.chg_window_percent": 0.09272323890714682,
+        "input.market.relative_window_percentile_30d": 21.5,
+        "input.market.snapshots": [
+          {
+            "m": -180,
+            "p": 82288.54318935896
+          },
+          {
+            "m": -150,
+            "p": 81952.57524147895
+          },
+          {
+            "m": -120,
+            "p": 81779.62342566125
+          },
+          {
+            "m": -60,
+            "p": 81315.77121253699
+          },
+          {
+            "m": -30,
+            "p": 81937.1708457686
+          },
+          {
+            "m": 0,
+            "p": 82364.84379185364
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -1.7713
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Despite recent hourly selling, the net window is almost unchanged and very low in its historical distribution. Current price is essentially identical to the alert three hours earlier after an intervening rebound in the snapshots. The daily loss is not exceptional enough to turn this return to the recently alerted level into a new material event.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_39dbd732c5eb44eb",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.8339309619755172,
+        "input.market.chg24h_percent": -2.6272536373588404,
+        "input.market.chg_since_msg_percent": -0.0019552139744496676,
+        "input.market.chg_window_percent": -0.06974314867315845,
+        "input.market.relative_24h_percentile_30d": 71.5,
+        "input.market.relative_window_percentile_30d": 7.9,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 107.75288830352528
+          },
+          {
+            "m": -180,
+            "p": 107.6798434177823
+          },
+          {
+            "m": -120,
+            "p": 108.02702363730974
+          },
+          {
+            "m": -90,
+            "p": 108.57927171488676
+          },
+          {
+            "m": -30,
+            "p": 107.97943195411531
+          },
+          {
+            "m": 0,
+            "p": 107.67773804643613
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 179
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price retains a 2.54% gain since the advancing alert about eight and a half hours earlier, but the current window is quiet and low in its historical distribution. The daily gain is ordinary, and the snapshots show consolidation rather than a fresh advance or substantial reversal. The accumulated continuation does not establish a sufficiently material new current episode.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_427556b5011aeb51",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.07274176950214534,
+        "input.market.chg24h_percent": 1.5752780943490707,
+        "input.market.chg30m_percent": -0.1623491391912306,
+        "input.market.chg_since_msg_percent": 2.5396695845520636,
+        "input.market.chg_window_percent": -0.14432698312376455,
+        "input.market.relative_24h_percentile_30d": 48.9,
+        "input.market.relative_window_percentile_30d": 15.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 105.96063860603134
+          },
+          {
+            "m": -180,
+            "p": 105.89696016283543
+          },
+          {
+            "m": -120,
+            "p": 105.83782845175357
+          },
+          {
+            "m": -90,
+            "p": 105.64698647138431
+          },
+          {
+            "m": -30,
+            "p": 105.97976605093315
+          },
+          {
+            "m": 0,
+            "p": 105.80770881303258
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 509,
+        "input.previous_event_alert.analysed_window_move": 1.0041
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price is 1.65% below the prior advancing alert almost seven hours earlier, but the roughly 1% current window loss is ordinary in the supplied historical context and the daily loss is very small for this asset. The latest hour and half hour are nearly flat. This supports a pullback without a materially noteworthy current reversal.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_4f443df56981cc24",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.01396423478836806,
+        "input.market.chg24h_percent": -0.403483840466638,
+        "input.market.chg30m_percent": 0.038337566073165255,
+        "input.market.chg_since_msg_percent": -1.6533881682700302,
+        "input.market.chg_window_percent": -1.0222221467840371,
+        "input.market.relative_24h_percentile_30d": 8.0,
+        "input.market.relative_window_percentile_30d": 62.7,
+        "input.previous_event_alert.age_minutes": 419,
+        "input.previous_event_alert.analysed_window_move": 1.6888
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.33% window gain and 0.55% daily loss are low in the supplied historical distributions. Price remains 1.66% below an alert more than thirty-four hours earlier, while current gains are modest. The long period without alerts does not make this routine current recovery materially noteworthy.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_557f98e3aed5238b",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.23303470936014511,
+        "input.market.chg24h_percent": -0.5474993286569295,
+        "input.market.chg30m_percent": 0.16024024502904913,
+        "input.market.chg_since_msg_percent": -1.66462157187926,
+        "input.market.chg_window_percent": 0.3293844008337049,
+        "input.market.relative_24h_percentile_30d": 13.1,
+        "input.market.relative_window_percentile_30d": 24.9,
+        "input.previous_event_alert.age_minutes": 2069,
+        "input.recent_event_counts.h24": 0
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.41% window recovery is ordinary in the supplied historical context. Price is 0.29% above the alert just 29 minutes earlier, whose window was already advancing by a similar amount. Neither this modest continuation nor the older ETF headline establishes a distinct new material event despite the remaining daily loss.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_57ad0b63a2dfd1a1",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.24897279871043,
+        "input.market.chg_since_msg_percent": 0.2918667839965984,
+        "input.market.chg_window_percent": 0.4116853518671939,
+        "input.market.relative_window_percentile_30d": 58.9,
+        "input.news[0].time": "2026-10-08 07:30:42+00:00",
+        "input.news[0].title": "US Bitcoin ETFs shed $485M in biggest daily outflow since June",
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": 0.5506
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest hour rebounds 1.35%, but the snapshots show this largely recovering weakness earlier in the same window. The net window gain is only 0.38%, with both window and daily movement unexceptional in the supplied historical context. The long interval without an alert establishes room for novelty, but does not make this ordinary net movement material.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_59456f55949ff140",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 1.3496246050410565,
+        "input.market.chg24h_percent": -1.4936419695717202,
+        "input.market.chg30m_percent": 0.8493789627804743,
+        "input.market.chg_window_percent": 0.37800431184066935,
+        "input.market.relative_24h_percentile_30d": 39.7,
+        "input.market.relative_window_percentile_30d": 30.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.3482164001319439
+          },
+          {
+            "m": -180,
+            "p": 1.3452821055157984
+          },
+          {
+            "m": -120,
+            "p": 1.3401560157532442
+          },
+          {
+            "m": -90,
+            "p": 1.3298742710001528
+          },
+          {
+            "m": -30,
+            "p": 1.34191477446464
+          },
+          {
+            "m": 0,
+            "p": 1.3533127162573857
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 2369,
+        "input.recent_event_counts.h24": 0
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window rebound is unusually large, but the alert an hour earlier already covered a still larger 3.67% advance. Price has since pulled back only 0.34%, and the latest half hour is essentially unchanged. The supplied current situation is a pause after the recently alerted rebound, without a material new advance or reversal.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_6568cc18aee71c61",
+      "supporting_evidence": {
+        "input.market.chg30m_percent": -0.011640054652156043,
+        "input.market.chg_since_msg_percent": -0.3404359473823076,
+        "input.market.chg_window_percent": 2.7894052253209733,
+        "input.market.relative_window_percentile_30d": 94.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.352043489397669
+          },
+          {
+            "m": -180,
+            "p": 1.3552457343659898
+          },
+          {
+            "m": -120,
+            "p": 1.3762062390555354
+          },
+          {
+            "m": -90,
+            "p": 1.3860599657662696
+          },
+          {
+            "m": -30,
+            "p": 1.3899192484996858
+          },
+          {
+            "m": 0,
+            "p": 1.3897574611395396
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 59,
+        "input.previous_event_alert.analysed_window_move": 3.6654
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "no_alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window gains only 0.16%, with similarly small hourly and half-hour moves and a low window percentile. Price is 0.25% below the alert more than seven hours earlier. The daily gain is not unusually large in the provided context, and headlines about earlier moves below $80,000 do not turn the supplied quiet snapshots into a fresh material event.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_66d738d94f921c72",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.09617088933232047,
+        "input.market.chg24h_percent": 1.334803872163548,
+        "input.market.chg30m_percent": 0.10247635844645556,
+        "input.market.chg_since_msg_percent": -0.24848267434860644,
+        "input.market.chg_window_percent": 0.1602202986379847,
+        "input.market.relative_24h_percentile_30d": 70.4,
+        "input.market.relative_window_percentile_30d": 32.9,
+        "input.news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin price briefly dipped below $80k, buyers reacted as Asian stocks rebound.",
+            "time": "2026-10-16 04:14:22+00:00",
+            "title": "Bitcoin buyers snap up a brief drop below $80,000 as Asian stocks rebound"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Scammer loses $4.8M stored on tampered ledgers, highlighting security risks in crypto storage.",
+            "time": "2026-10-15 22:42:58+00:00",
+            "title": "Scammer loses $4.8M stored on tampered Ledgers: Asia Express"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "US PPI rise pushes Bitcoin below $80k, testing key support after strong inflation data.",
+            "time": "2026-10-15 15:10:44+00:00",
+            "title": "Bitcoin slips under $80K after US PPI gains most in four years"
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 449
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The present 0.52% window gain and 1.29% daily loss are low or ordinary in the supplied historical context. Price is 1.65% below an alert more than thirty-two hours earlier, while recent moves remain modest and mixed. The absence of recent alerts does not make this routine market movement materially noteworthy.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_67191663c33d3a79",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.10755257844452501,
+        "input.market.chg24h_percent": -1.288126591734305,
+        "input.market.chg30m_percent": -0.3227725711547082,
+        "input.market.chg_since_msg_percent": -1.6501054714610692,
+        "input.market.chg_window_percent": 0.5209129703120233,
+        "input.market.relative_24h_percentile_30d": 34.3,
+        "input.market.relative_window_percentile_30d": 40.5,
+        "input.previous_event_alert.age_minutes": 1949,
+        "input.recent_event_counts.h24": 0
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The prior alert 29 minutes earlier covered a larger declining window, and price has since recovered slightly. Current hourly and half-hour changes are small, while the daily loss is low in the supplied distribution. The remaining window decline is a continuation of recently alerted movement, and the broad lending headline supplies no distinct market event for this asset.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_69f05f0f882486c0",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.0795159135285932,
+        "input.market.chg24h_percent": -1.1315779891297586,
+        "input.market.chg30m_percent": 0.06725869436481727,
+        "input.market.chg_since_msg_percent": 0.06725869436481727,
+        "input.market.chg_window_percent": -1.1830121257307216,
+        "input.market.relative_24h_percentile_30d": 27.2,
+        "input.news[0].title": "Crypto lending rises again… but have they solved the risks?",
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -1.8026
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily decline is elevated, but the present window loss is ordinary and price is just 0.069% below the alert 89 minutes earlier. The latest hour and half hour recover modestly from the visible dip. This provides no substantive new deterioration or material reversal beyond the recent alert.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_6ba8af3fbb5ad639",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.15345170335058497,
+        "input.market.chg24h_percent": -3.8228655840199104,
+        "input.market.chg30m_percent": 0.24741769780588524,
+        "input.market.chg_since_msg_percent": -0.06920831168746736,
+        "input.market.chg_window_percent": -0.44387471723779515,
+        "input.market.relative_24h_percentile_30d": 93.1,
+        "input.market.relative_window_percentile_30d": 43.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 116.71219400009532
+          },
+          {
+            "m": -180,
+            "p": 117.00048248924233
+          },
+          {
+            "m": -120,
+            "p": 116.69488234363908
+          },
+          {
+            "m": -90,
+            "p": 116.27460977334069
+          },
+          {
+            "m": -30,
+            "p": 115.90736275049059
+          },
+          {
+            "m": 0,
+            "p": 116.19413807899537
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is elevated, but the prior alert already described a declining window. The further 1.14% loss accumulated over more than eight hours, while the current window is small and low in its historical distribution and recent selling remains modest. This does not establish a materially new extension beyond the already alerted decline; the inflation headlines supply context rather than stronger current market evidence.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_6d57a005dfb4c176",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.2585494242657283,
+        "input.market.chg24h_percent": -2.235077356100919,
+        "input.market.chg30m_percent": -0.23635205758702132,
+        "input.market.chg_since_msg_percent": -1.138506282141404,
+        "input.market.chg_window_percent": -0.17333765710030505,
+        "input.market.relative_24h_percentile_30d": 88.8,
+        "input.market.relative_window_percentile_30d": 36.2,
+        "input.news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Bitcoin fell below $82,000 amid rising bond yields and hot US CPI inflation, reflecting market vola.",
+            "time": "2026-10-14 14:21:15+00:00",
+            "title": "Bitcoin price dips below $82K as high oil prices spike US CPI inflation"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "U.S. September CPI data was higher than expected, causing a sharp drop in Bitcoin’s price.",
+            "time": "2026-10-14 12:33:56+00:00",
+            "title": "U.S. September CPI comes in hot, sending bitcoin sharply lower"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "U.S. inflation trends are shaping Bitcoin’s price outlook, with analysts weighing Fed policy and co.",
+            "time": "2026-10-14 11:15:00+00:00",
+            "title": "Here's how analysts see U.S. inflation influencing bitcoin"
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 508,
+        "input.previous_event_alert.analysed_window_move": -0.9846
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily decline is exceptional, but the current window loss is ordinary in the supplied historical context. Price has pulled back 0.68% since the alert 89 minutes earlier, after a modest recovery in the snapshots, and the latest half-hour loss is small. This does not establish a sufficiently material new extension of the existing daily decline.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_73ee7f7d464106e6",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -5.443840325952939,
+        "input.market.chg30m_percent": -0.21548470434298647,
+        "input.market.chg_since_msg_percent": -0.6810386370299735,
+        "input.market.chg_window_percent": -0.3131099116956311,
+        "input.market.relative_24h_percentile_30d": 99.7,
+        "input.market.relative_window_percentile_30d": 51.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2562.5450649398763
+          },
+          {
+            "m": -180,
+            "p": 2559.2438311354267
+          },
+          {
+            "m": -120,
+            "p": 2568.2529731012905
+          },
+          {
+            "m": -90,
+            "p": 2572.0380552653537
+          },
+          {
+            "m": -30,
+            "p": 2560.037972606221
+          },
+          {
+            "m": 0,
+            "p": 2554.5214823498823
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": 0.2258
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The present window decline is only moderately elevated and smaller than the decline alerted two hours earlier. Price is just 0.14% below that alert and the latest half hour has recovered slightly. The daily loss does not make this limited continuation a materially new episode.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_76243ce005b9884c",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.5671062604931754,
+        "input.market.chg30m_percent": 0.12899384484754478,
+        "input.market.chg_since_msg_percent": -0.13973735221095077,
+        "input.market.chg_window_percent": -0.8407449631302968,
+        "input.market.relative_24h_percentile_30d": 77.3,
+        "input.market.relative_window_percentile_30d": 69.6,
+        "input.previous_event_alert.age_minutes": 119,
+        "input.previous_event_alert.analysed_window_move": -1.1947
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 1.48% decline since the alert roughly three and a half hours earlier is a clear change from its modest advancing window. However, the current window loss is only moderately elevated in the supplied asset history and the daily loss is ordinary. Recent selling remains measured, so this directional change does not establish a sufficiently material new episode for an automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_7b3325d2f2609480",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.42184745703441795,
+        "input.market.chg24h_percent": -2.689754334813373,
+        "input.market.chg30m_percent": -0.2943804183860278,
+        "input.market.chg_since_msg_percent": -1.4760785706505057,
+        "input.market.chg_window_percent": -1.4760785706505057,
+        "input.market.relative_24h_percentile_30d": 54.1,
+        "input.market.relative_window_percentile_30d": 78.6,
+        "input.previous_event_alert.age_minutes": 209,
+        "input.previous_event_alert.analysed_window_move": 0.2583
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The aggregate window recovery is unusually large, but the alert an hour earlier already described an advancing window and price has added only 0.018% since it. The latest hourly and half-hour moves are tiny as the snapshots flatten after the earlier recovery. The elevated daily loss and wallet headline do not make this near-duplicate observation meaningfully new.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_86a8ba257afb7ea2",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.018261266666702736,
+        "input.market.chg24h_percent": -1.9802401180858555,
+        "input.market.chg30m_percent": 0.06133920307337749,
+        "input.market.chg_since_msg_percent": 0.018261266666702736,
+        "input.market.chg_window_percent": 1.6237731976501113,
+        "input.market.relative_window_percentile_30d": 97.7,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 80431.7803471413
+          },
+          {
+            "m": -180,
+            "p": 80643.75008505619
+          },
+          {
+            "m": -120,
+            "p": 81436.15644449214
+          },
+          {
+            "m": -90,
+            "p": 81606.58445406829
+          },
+          {
+            "m": -30,
+            "p": 81687.70345250428
+          },
+          {
+            "m": 0,
+            "p": 81737.81003881099
+          }
+        ],
+        "input.news[0].title": "U.S. government moves $1 billion in bitcoin tied to Bitfinex hack, with no sign of sale",
+        "input.previous_event_alert.age_minutes": 59,
+        "input.previous_event_alert.analysed_window_move": 0.5098
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price has declined 2.70% since an already declining alert roughly ten and a half hours earlier. However, the present window loss is ordinary in the supplied asset context, the daily loss is only moderately elevated, and the latest half hour is nearly flat. The accumulated continuation does not establish a sufficiently material new current episode; the upgrade headline supplies no stronger market evidence.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_883c34881332dabe",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.8737096853365744,
+        "input.market.chg30m_percent": 0.03738586341966382,
+        "input.market.chg_since_msg_percent": -2.700148061943349,
+        "input.market.chg_window_percent": -0.7131383286807964,
+        "input.market.relative_24h_percentile_30d": 72.2,
+        "input.market.relative_window_percentile_30d": 60.7,
+        "input.news[0].title": "Solana sets Oct. 21 for Alpenglow upgrade targeting 150-millisecond finality",
+        "input.previous_event_alert.age_minutes": 629,
+        "input.previous_event_alert.analysed_window_move": -0.5348
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 3.13% loss since the prior alert accumulated over more than forty-six hours. In the current supplied context, the window decline is ordinary and the daily loss is unexceptional, while recent selling remains modest. The elapsed interval and changed direction do not establish a materially noteworthy new episode.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_895e0dfdd31bff53",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.8152739315511982,
+        "input.market.chg24h_percent": -2.6657546149573492,
+        "input.market.chg30m_percent": -0.46631981123451166,
+        "input.market.chg_since_msg_percent": -3.1271885179986616,
+        "input.market.chg_window_percent": -0.5186996115910633,
+        "input.market.relative_24h_percentile_30d": 58.1,
+        "input.market.relative_window_percentile_30d": 40.6,
+        "input.previous_event_alert.age_minutes": 2789,
+        "input.previous_event_alert.analysed_window_move": 0.3992
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are elevated, but the alert 89 minutes earlier already described almost the same declining window. Price has moved only another 0.21% lower, with modest recent losses and no distinct new downward step in the snapshots. This is a limited continuation of the recently alerted episode.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_8ad62d490fe6ea05",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.4223730045818024,
+        "input.market.chg30m_percent": -0.2492337625600334,
+        "input.market.chg_since_msg_percent": -0.20671200270886425,
+        "input.market.chg_window_percent": -0.8413084816625022,
+        "input.market.relative_24h_percentile_30d": 83.6,
+        "input.market.relative_window_percentile_30d": 85.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2576.861984368399
+          },
+          {
+            "m": -180,
+            "p": 2569.3290416259133
+          },
+          {
+            "m": -120,
+            "p": 2568.731658083138
+          },
+          {
+            "m": -90,
+            "p": 2560.4754359857657
+          },
+          {
+            "m": -30,
+            "p": 2561.5669155372575
+          },
+          {
+            "m": 0,
+            "p": 2555.182625933171
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -0.8217
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current 0.31% window decline is low in its supplied historical distribution and the latest half hour is effectively unchanged. Price is only 0.16% below the alert an hour earlier. The elevated daily loss does not establish a material new event given this small recent movement.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_8f38a8e2204775fd",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -3.98872128931918,
+        "input.market.chg30m_percent": 0.003782525675821955,
+        "input.market.chg_since_msg_percent": -0.15969108898216436,
+        "input.market.chg_window_percent": -0.312163506462367,
+        "input.market.relative_24h_percentile_30d": 78.1,
+        "input.market.relative_window_percentile_30d": 23.2,
+        "input.previous_event_alert.age_minutes": 59
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are only moderately elevated. Price is 0.59% below the alert three hours earlier and still above the low visible ninety minutes ago after a partial recovery. With the latest hour almost unchanged, this does not establish a material new extension of the previously alerted decline.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_8fe203024b366f40",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.012045175138738743,
+        "input.market.chg24h_percent": -2.805111582181594,
+        "input.market.chg_since_msg_percent": -0.5910449399921439,
+        "input.market.chg_window_percent": -1.095465151895874,
+        "input.market.relative_24h_percentile_30d": 76.4,
+        "input.market.relative_window_percentile_30d": 79.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 116.51081142646954
+          },
+          {
+            "m": -180,
+            "p": 115.91961309676837
+          },
+          {
+            "m": -120,
+            "p": 115.32718253370915
+          },
+          {
+            "m": -90,
+            "p": 114.6672605905816
+          },
+          {
+            "m": -30,
+            "p": 115.4201088126892
+          },
+          {
+            "m": 0,
+            "p": 115.23447608910145
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 179,
+        "input.previous_event_alert.analysed_window_move": -0.2786
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current 0.40% window decline and 1% daily gain are low in the supplied historical context. Price remains 2.02% above the advancing alert roughly nine and a half hours earlier, while recent losses show only a modest pullback. This does not establish a material new reversal or fresh substantial advance.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_9825dfc95253f0f7",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.5059840340394812,
+        "input.market.chg24h_percent": 0.9966969803554939,
+        "input.market.chg30m_percent": -0.07744379253320499,
+        "input.market.chg_since_msg_percent": 2.020835227897392,
+        "input.market.chg_window_percent": -0.3967329612341988,
+        "input.market.relative_24h_percentile_30d": 33.2,
+        "input.market.relative_window_percentile_30d": 39.4,
+        "input.previous_event_alert.age_minutes": 569,
+        "input.previous_event_alert.analysed_window_move": 1.0041
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily losses are moderately elevated, but an alert an hour earlier already covered a larger declining window. Current price is only 0.034% below that alert and the snapshots show stabilization after the earlier drop. This is a near-duplicate continuation without a substantive new deterioration.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_9a4f3dcab93843b9",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -3.6464867838288693,
+        "input.market.chg_since_msg_percent": -0.033656222701217486,
+        "input.market.chg_window_percent": -1.24155681062694,
+        "input.market.relative_24h_percentile_30d": 74.7,
+        "input.market.relative_window_percentile_30d": 72.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.4095884735076865
+          },
+          {
+            "m": -180,
+            "p": 1.4053906801056562
+          },
+          {
+            "m": -120,
+            "p": 1.3932257210776589
+          },
+          {
+            "m": -90,
+            "p": 1.39387653352527
+          },
+          {
+            "m": -30,
+            "p": 1.3960448966531986
+          },
+          {
+            "m": 0,
+            "p": 1.3920876318130395
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 59,
+        "input.previous_event_alert.analysed_window_move": -1.9594
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 4.06% daily loss is elevated, but the present window decline is small and low in its historical distribution. Price has fallen only 0.14% since the alert 59 minutes earlier, and remains above the low visible ninety minutes ago. This does not show a material new extension of the already existing daily decline.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_a14b3c85c8c46d2f",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -4.061483568787327,
+        "input.market.chg_since_msg_percent": -0.13517827410279726,
+        "input.market.chg_window_percent": -0.3651128716598409,
+        "input.market.relative_24h_percentile_30d": 91.2,
+        "input.market.relative_window_percentile_30d": 36.2,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.71216227917253
+          },
+          {
+            "m": -180,
+            "p": 110.36331240003612
+          },
+          {
+            "m": -120,
+            "p": 110.51387275968193
+          },
+          {
+            "m": -90,
+            "p": 110.10309024930211
+          },
+          {
+            "m": -30,
+            "p": 110.41734301392438
+          },
+          {
+            "m": 0,
+            "p": 110.30793792419834
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 59
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is elevated, but the current window is nearly flat and low in its historical distribution. Price is only 0.44% below the alert three hours earlier, with a small latest-half-hour decline. This supplies neither a new substantial selloff nor a material reversal of the prior recovery; the market-wide regulatory headline cannot substitute for market evidence.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_a370555b751b33e8",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -5.716540945293766,
+        "input.market.chg30m_percent": -0.09143005632901173,
+        "input.market.chg_since_msg_percent": -0.437347429065805,
+        "input.market.chg_window_percent": 0.08014948661097505,
+        "input.market.relative_24h_percentile_30d": 91.8,
+        "input.market.relative_window_percentile_30d": 6.8,
+        "input.news[0].title": "Russia clears first crypto exchanges, custodians under new law",
+        "input.previous_event_alert.age_minutes": 179,
+        "input.previous_event_alert.analysed_window_move": 1.6322
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The exceptional daily loss follows an alert that already covered a 2.94% declining window. Price has recovered 1.19% since that alert more than five hours earlier, but the current net window change is ordinary and still slightly negative. The supplied recovery is partial, with modest latest-half-hour progress, and does not establish a sufficiently material new episode beyond the alerted selloff.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_a45dcac234e92c29",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -5.588029858527189,
+        "input.market.chg30m_percent": 0.2376195849246802,
+        "input.market.chg_since_msg_percent": 1.1886610766107473,
+        "input.market.chg_window_percent": -0.28316004528937155,
+        "input.market.relative_24h_percentile_30d": 98.7,
+        "input.market.relative_window_percentile_30d": 45.9,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2380.685588471344
+          },
+          {
+            "m": -180,
+            "p": 2378.2207181083027
+          },
+          {
+            "m": -120,
+            "p": 2347.8200784857177
+          },
+          {
+            "m": -90,
+            "p": 2361.9042022810413
+          },
+          {
+            "m": -30,
+            "p": 2368.316853404071
+          },
+          {
+            "m": 0,
+            "p": 2373.944438080831
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 329,
+        "input.previous_event_alert.analysed_window_move": -2.9448
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window decline is elevated, but the daily loss is ordinary in the supplied asset context. Price is only 0.78% below the already declining alert about four and a half hours earlier, and the latest hour is nearly unchanged after the earlier window drop. This does not establish a sufficiently material new extension, while the market-wide tokenization headline adds no stronger market evidence.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_acb59330389885c1",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.04171491604432017,
+        "input.market.chg24h_percent": -2.7506061136270565,
+        "input.market.chg_since_msg_percent": -0.7777584815453982,
+        "input.market.chg_window_percent": -1.8025720314232103,
+        "input.market.relative_24h_percentile_30d": 57.3,
+        "input.market.relative_window_percentile_30d": 86.3,
+        "input.market.snapshots": [
+          {
+            "m": -180,
+            "p": 1.433658917572005
+          },
+          {
+            "m": -150,
+            "p": 1.4256284187431152
+          },
+          {
+            "m": -120,
+            "p": 1.4162930314279982
+          },
+          {
+            "m": -60,
+            "p": 1.4084036973177485
+          },
+          {
+            "m": -30,
+            "p": 1.4098841439382683
+          },
+          {
+            "m": 0,
+            "p": 1.4078161828978473
+          }
+        ],
+        "input.news[0].title": "Securitize brings Apple, Nvidia and Tesla to Solana, with NYSE trading in the works",
+        "input.previous_event_alert.age_minutes": 269,
+        "input.previous_event_alert.analysed_window_move": -0.2391
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The snapshots show a substantial recovery from the low two hours earlier to a fresh supplied high, supported by a 1.41% latest-hour rise and further half-hour gains. Price is 0.89% above the alert three hours earlier, whose window fell 2.87%. Although the net current window is modest, the intervening deeper decline and rapid recovery establish a material new market phase against the exceptional daily-loss backdrop.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_ad411beedbf81f24",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 1.4054796130396927,
+        "input.market.chg24h_percent": -4.98350412614259,
+        "input.market.chg30m_percent": 0.6410252916608843,
+        "input.market.chg_since_msg_percent": 0.8892970661391273,
+        "input.market.chg_window_percent": 0.37542101775788306,
+        "input.market.relative_24h_percentile_30d": 95.9,
+        "input.market.relative_window_percentile_30d": 38.2,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 106.00448438237808
+          },
+          {
+            "m": -180,
+            "p": 105.46455430922674
+          },
+          {
+            "m": -120,
+            "p": 103.56099118083809
+          },
+          {
+            "m": -90,
+            "p": 103.81408180722583
+          },
+          {
+            "m": -30,
+            "p": 105.72472526800848
+          },
+          {
+            "m": 0,
+            "p": 106.4024474965154
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 179,
+        "input.previous_event_alert.analysed_window_move": -2.8722
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window decline is ordinary and the daily gain is not strongly elevated in the supplied historical context. Price is 1.84% above the advancing alert roughly fourteen hours earlier, but recent snapshots show a pullback and partial recovery within the same range. This modest current oscillation does not establish a material new advance or reversal.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_bc7ddfa4599baa09",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.3088570113562937,
+        "input.market.chg24h_percent": 2.5003821290493793,
+        "input.market.chg30m_percent": 0.5411566971308264,
+        "input.market.chg_since_msg_percent": 1.8355129774978014,
+        "input.market.chg_window_percent": -0.40734420505909746,
+        "input.market.relative_24h_percentile_30d": 66.3,
+        "input.market.relative_window_percentile_30d": 40.3,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 105.51090259590798
+          },
+          {
+            "m": -180,
+            "p": 105.47310745913158
+          },
+          {
+            "m": -120,
+            "p": 105.30267834673703
+          },
+          {
+            "m": -90,
+            "p": 105.43014590273806
+          },
+          {
+            "m": -30,
+            "p": 104.51551732692243
+          },
+          {
+            "m": 0,
+            "p": 105.081110048478
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 839,
+        "input.previous_event_alert.analysed_window_move": 1.0041
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window and daily declines are elevated, but the alert two hours earlier already covered a larger 2.18% window fall. Price has declined only another 0.22% since that alert, with small recent moves following the earlier drop. This is a limited continuation of the recently alerted episode rather than a new material extension.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_bcb596cad71e8fbd",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.24844352060035604,
+        "input.market.chg24h_percent": -3.073182396131634,
+        "input.market.chg30m_percent": -0.3045026752582043,
+        "input.market.chg_since_msg_percent": -0.21864411799886652,
+        "input.market.chg_window_percent": -1.4167037234960596,
+        "input.market.relative_24h_percentile_30d": 78.1,
+        "input.market.relative_window_percentile_30d": 87.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.18032117428126
+          },
+          {
+            "m": -180,
+            "p": 110.19461817023378
+          },
+          {
+            "m": -120,
+            "p": 108.85740276980782
+          },
+          {
+            "m": -90,
+            "p": 109.02931448062488
+          },
+          {
+            "m": -30,
+            "p": 108.95115163309269
+          },
+          {
+            "m": 0,
+            "p": 108.6193924616453
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 119,
+        "input.previous_event_alert.analysed_window_move": -2.177
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily gain is elevated, but the current window rise is ordinary in the supplied historical context and smaller than the advancing window previously alerted. Price is only 0.16% above that alert after roughly seven and a half hours. The latest half-hour recovery mainly returns toward the previously alerted level rather than establishing a material new advance.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_c560242cca20c2fa",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 4.1073645957218865,
+        "input.market.chg30m_percent": 0.5230069078716472,
+        "input.market.chg_since_msg_percent": 0.15707756748339932,
+        "input.market.chg_window_percent": 0.960856521996513,
+        "input.market.relative_24h_percentile_30d": 80.1,
+        "input.market.relative_window_percentile_30d": 64.8,
+        "input.previous_event_alert.age_minutes": 449,
+        "input.previous_event_alert.analysed_window_move": 1.5961
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.63% window decline is ordinary in the supplied historical distribution. Price has fallen another 0.33% since an alert 29 minutes earlier that already described a declining window. The elevated daily loss does not make this modest continuation a distinct new material episode.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_ca9cba5da00d7194",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -3.970851673300814,
+        "input.market.chg_since_msg_percent": -0.3345327367917479,
+        "input.market.chg_window_percent": -0.6340857074034085,
+        "input.market.relative_24h_percentile_30d": 78.0,
+        "input.market.relative_window_percentile_30d": 43.4,
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -0.3122
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window decline is moderately elevated and recent snapshots show further selling, but the daily loss is ordinary in the supplied asset context. The 2.37% loss since the prior alert accumulated over more than a day. This is a new direction relative to that older advancing window, but the supplied magnitude and historical context do not establish a materially noteworthy current episode.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_cadc7ac08e749140",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.2620325857483574,
+        "input.market.chg30m_percent": -0.7369175467730624,
+        "input.market.chg_since_msg_percent": -2.37093829341661,
+        "input.market.chg_window_percent": -1.4595926371867984,
+        "input.market.relative_24h_percentile_30d": 50.7,
+        "input.market.relative_window_percentile_30d": 79.3,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.3697593551570932
+          },
+          {
+            "m": -180,
+            "p": 1.3703113516129675
+          },
+          {
+            "m": -120,
+            "p": 1.375565079282041
+          },
+          {
+            "m": -90,
+            "p": 1.3690423132736518
+          },
+          {
+            "m": -30,
+            "p": 1.359786957147998
+          },
+          {
+            "m": 0,
+            "p": 1.3497664484620429
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 1469,
+        "input.previous_event_alert.analysed_window_move": 0.3992
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.41% window gain and 1.16% daily gain are ordinary in the supplied historical context. Price is only 0.17% above the alert two hours earlier, and the latest half hour retreats from the visible recent high. This is routine fluctuation without a material new event.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d1d98b923702d535",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 1.1636351975255737,
+        "input.market.chg30m_percent": -0.300743733958152,
+        "input.market.chg_since_msg_percent": 0.17154980605225306,
+        "input.market.chg_window_percent": 0.4098616635617008,
+        "input.market.relative_24h_percentile_30d": 66.0,
+        "input.market.relative_window_percentile_30d": 62.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2527.174137902852
+          },
+          {
+            "m": -180,
+            "p": 2530.4444830668217
+          },
+          {
+            "m": -120,
+            "p": 2533.186379544511
+          },
+          {
+            "m": -90,
+            "p": 2534.8577452781706
+          },
+          {
+            "m": -30,
+            "p": 2545.1865449169454
+          },
+          {
+            "m": 0,
+            "p": 2537.5320558655617
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 119
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window advance is moderately elevated, but the daily gain is ordinary in the supplied historical context. Price has gained 0.90% since the prior modestly advancing alert about two hours earlier by the timestamps. The snapshots show fresh upward progress, but its supplied scale does not establish a sufficiently material new event; absent short-interval metrics and event counts do not make an alert warranted.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d1f0d676477abedb",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 1.3877689780539577,
+        "input.market.chg_since_msg_percent": 0.896715979842948,
+        "input.market.chg_window_percent": 1.0700186173078974,
+        "input.market.relative_24h_percentile_30d": 49.7,
+        "input.market.relative_window_percentile_30d": 79.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 120.16235634127227
+          },
+          {
+            "m": -180,
+            "p": 120.22777784106245
+          },
+          {
+            "m": -120,
+            "p": 120.36875010816262
+          },
+          {
+            "m": -90,
+            "p": 120.31506449198424
+          },
+          {
+            "m": -30,
+            "p": 120.74196101980456
+          },
+          {
+            "m": 0,
+            "p": 121.44811592511974
+          }
+        ],
+        "input.previous_event_alert.analysed_window_move": 0.1353,
+        "input.previous_event_alert.created_at": "2026-10-06T12:45:14.670361+00:00",
+        "input.timestamp_utc": "2026-10-06T14:44:59.105609+00:00"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window gain is elevated and reverses the prior alert's slight decline, but price has added only 0.47% since that alert 89 minutes earlier. Recent gains remain modest and the daily move is only moderately elevated in the supplied context. The available evidence supports a recovery without a sufficiently material new episode for another automatic alert.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_d2f17612baeae327",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.40747058323153895,
+        "input.market.chg24h_percent": 1.6784244945633722,
+        "input.market.chg30m_percent": 0.20326716260939134,
+        "input.market.chg_since_msg_percent": 0.4737182178672591,
+        "input.market.chg_window_percent": 0.8751223350027809,
+        "input.market.relative_24h_percentile_30d": 75.4,
+        "input.market.relative_window_percentile_30d": 85.7,
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -0.1075
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window decline is ordinary and price is only 0.096% above the alert two hours earlier. The latest half-hour recovery stays within the existing snapshot range and the latest hour is nearly flat. The elevated daily loss therefore does not establish a material new extension or reversal of the already alerted decline.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d53f85d10f93bfd8",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.052960209258440055,
+        "input.market.chg24h_percent": -2.0992518490763343,
+        "input.market.chg30m_percent": 0.302949023067303,
+        "input.market.chg_since_msg_percent": 0.09561078836566934,
+        "input.market.chg_window_percent": -0.24930691188695653,
+        "input.market.relative_24h_percentile_30d": 81.0,
+        "input.market.relative_window_percentile_30d": 42.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2569.3290416259133
+          },
+          {
+            "m": -180,
+            "p": 2563.703325699724
+          },
+          {
+            "m": -120,
+            "p": 2560.4754359857657
+          },
+          {
+            "m": -90,
+            "p": 2570.323770240217
+          },
+          {
+            "m": -30,
+            "p": 2555.182625933171
+          },
+          {
+            "m": 0,
+            "p": 2562.923526736021
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 119,
+        "input.previous_event_alert.analysed_window_move": -0.8217
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window decline is historically elevated, but the prior alert 149 minutes earlier already covered a substantial declining window. Price has fallen only another 0.24%, with a small hourly recovery and modest half-hour decline. The snapshots show continued trading near the earlier low rather than a distinct material extension; the ENS headline does not resolve that absence of novelty.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d61d1e87e694636d",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.12829759078840033,
+        "input.market.chg30m_percent": -0.2570637692127126,
+        "input.market.chg_since_msg_percent": -0.24397550756729333,
+        "input.market.chg_window_percent": -1.326614676951105,
+        "input.market.relative_window_percentile_30d": 92.1,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2531.858452453934
+          },
+          {
+            "m": -180,
+            "p": 2508.558695577858
+          },
+          {
+            "m": -120,
+            "p": 2512.6300737595525
+          },
+          {
+            "m": -90,
+            "p": 2498.8926173958193
+          },
+          {
+            "m": -30,
+            "p": 2504.7091463635106
+          },
+          {
+            "m": 0,
+            "p": 2498.270446624053
+          }
+        ],
+        "input.news[0].title": "ENS seeks DAO approval to activate upgraded Ethereum naming system",
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": -0.9482
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest half hour jumps 1.24%, with a 1.47% hourly rise and a clear upward step after the preceding snapshots stayed near $102. Although the net window and daily moves are not exceptional, the abrupt current rebound is materially noteworthy. It is a distinct market phase from the declining alert more than nine hours earlier, with no event alerts in the supplied last-six-hour count.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_d8537416940d4e41",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 1.4748440427626763,
+        "input.market.chg24h_percent": -1.1255429382281592,
+        "input.market.chg30m_percent": 1.2382869127692018,
+        "input.market.chg_window_percent": 1.00407742308332,
+        "input.market.relative_24h_percentile_30d": 37.2,
+        "input.market.relative_window_percentile_30d": 73.1,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 102.16131874641594
+          },
+          {
+            "m": -180,
+            "p": 102.20512441642357
+          },
+          {
+            "m": -120,
+            "p": 101.97392650366034
+          },
+          {
+            "m": -90,
+            "p": 101.98263795930858
+          },
+          {
+            "m": -30,
+            "p": 101.9249738707875
+          },
+          {
+            "m": 0,
+            "p": 103.18709748307289
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 569,
+        "input.previous_event_alert.analysed_window_move": -0.3097,
+        "input.recent_event_counts.h6": 0
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.53% window gain and 1.32% daily loss are low in the supplied historical context. Price is 1.47% above the alert about eight and a half hours earlier, with modest current hourly and half-hour gains. The changed direction from that earlier decline does not establish a materially noteworthy new market episode at the supplied scale.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_d867a082f6a2b9eb",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.34499183854803794,
+        "input.market.chg24h_percent": -1.3204549903138776,
+        "input.market.chg30m_percent": 0.40258912032682204,
+        "input.market.chg_since_msg_percent": 1.474344593217902,
+        "input.market.chg_window_percent": 0.5337254109205803,
+        "input.market.relative_24h_percentile_30d": 30.1,
+        "input.market.relative_window_percentile_30d": 37.3,
+        "input.previous_event_alert.age_minutes": 509,
+        "input.previous_event_alert.analysed_window_move": -0.3122
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily gains are moderately elevated, but the alert 149 minutes earlier already covered nearly the same advancing window. Price has added only 0.089% since that alert and remains below the earlier visible snapshot high. The current modest rebound is non-novel continuation rather than a material new advance.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_db78cd52c358d870",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 2.86697449730237,
+        "input.market.chg30m_percent": 0.34036343578756806,
+        "input.market.chg_since_msg_percent": 0.08908472088080145,
+        "input.market.chg_window_percent": 1.03466090700888,
+        "input.market.relative_24h_percentile_30d": 74.5,
+        "input.market.relative_window_percentile_30d": 77.9,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 111.62302926983187
+          },
+          {
+            "m": -180,
+            "p": 111.52886724465623
+          },
+          {
+            "m": -120,
+            "p": 113.15439346644426
+          },
+          {
+            "m": -90,
+            "p": 112.52559569559149
+          },
+          {
+            "m": -30,
+            "p": 112.39539628444511
+          },
+          {
+            "m": 0,
+            "p": 112.7779491169059
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": 0.997
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 1.05% window rise is elevated, but nearly the same advancing window was alerted 29 minutes earlier. Price has gained only 0.047% since that alert and the snapshots show the earlier rise flattening out. The current observation is a near-duplicate continuation rather than a materially new advance.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_e094373ba2587375",
+      "supporting_evidence": {
+        "input.market.chg_since_msg_percent": 0.047274137127816036,
+        "input.market.chg_window_percent": 1.0534774259662685,
+        "input.market.relative_window_percentile_30d": 92.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 82830.0640262433
+          },
+          {
+            "m": -180,
+            "p": 83214.67215407945
+          },
+          {
+            "m": -120,
+            "p": 83398.2700536462
+          },
+          {
+            "m": -90,
+            "p": 83692.6001034409
+          },
+          {
+            "m": -30,
+            "p": 83663.10903978032
+          },
+          {
+            "m": 0,
+            "p": 83702.66005267318
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": 0.8714,
+        "input.recent_event_counts.h6": 9
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 7.01% daily loss is notable, but the current window shows a modest recovery followed by a stall. Price has moved only 0.29% lower since the alert 89 minutes ago, and the window move is near the middle of the supplied historical distribution. This does not establish a meaningfully new material episode beyond the existing daily decline and recent alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_f584bf6836004d16",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -7.014400407322649,
+        "input.market.chg_since_msg_percent": -0.2923885286483989,
+        "input.market.chg_window_percent": 0.9232246005641663,
+        "input.market.relative_24h_percentile_30d": 93.1,
+        "input.market.relative_window_percentile_30d": 59.2,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.4171784708285238
+          },
+          {
+            "m": -180,
+            "p": 1.4255810841636503
+          },
+          {
+            "m": -120,
+            "p": 1.4307058032608846
+          },
+          {
+            "m": -90,
+            "p": 1.4344563970585742
+          },
+          {
+            "m": -30,
+            "p": 1.4333114540376501
+          },
+          {
+            "m": 0,
+            "p": 1.4302622111051118
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": 0.5736
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 3.02% daily loss is elevated in the supplied asset context, and price is 3.39% below the alert almost eighteen hours earlier, whose window was essentially flat. Although the current window has consolidated near the lower level, the substantial retained decline since that prior alert establishes a material new deterioration. The small recent losses do not erase that accumulated change.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_f626db856d4e0de1",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.48398143483554407,
+        "input.market.chg24h_percent": -3.018339765472058,
+        "input.market.chg30m_percent": -0.20097994003492628,
+        "input.market.chg_since_msg_percent": -3.393211566658878,
+        "input.market.chg_window_percent": -0.08403318317067378,
+        "input.market.relative_24h_percentile_30d": 89.7,
+        "input.market.relative_window_percentile_30d": 16.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2426.637618356151
+          },
+          {
+            "m": -180,
+            "p": 2437.4363908699484
+          },
+          {
+            "m": -120,
+            "p": 2432.094336055767
+          },
+          {
+            "m": -90,
+            "p": 2448.799821098213
+          },
+          {
+            "m": -30,
+            "p": 2429.481207395212
+          },
+          {
+            "m": 0,
+            "p": 2424.5984375214293
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 1079,
+        "input.previous_event_alert.analysed_window_move": 0.0498
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price retains a 2.63% gain since the advancing alert about five and a half hours earlier, but the current window is effectively flat at a very low historical percentile. The daily gain is ordinary and the snapshots show consolidation within the recent range. The retained continuation does not establish a sufficiently material fresh advance or reversal at the current observation.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_f6c390c7986cbdb1",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 1.5814174651340065,
+        "input.market.chg30m_percent": -0.06009631881577334,
+        "input.market.chg_since_msg_percent": 2.6261642645846046,
+        "input.market.chg_window_percent": -0.04018504896417865,
+        "input.market.relative_24h_percentile_30d": 49.0,
+        "input.market.relative_window_percentile_30d": 4.9,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 105.93953201564834
+          },
+          {
+            "m": -180,
+            "p": 105.40169384728347
+          },
+          {
+            "m": -120,
+            "p": 106.04755806065843
+          },
+          {
+            "m": -90,
+            "p": 105.41129667838555
+          },
+          {
+            "m": -30,
+            "p": 105.96063860603134
+          },
+          {
+            "m": 0,
+            "p": 105.89696016283543
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 329,
+        "input.previous_event_alert.analysed_window_move": 1.0041
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The roughly 1% window decline is moderately elevated, while the daily loss is ordinary in the supplied historical context. Price is 0.83% below an already declining alert about ninety minutes earlier by the timestamps. The latest snapshot drop adds selling, but the supplied move remains a modest extension rather than a materially new episode; missing short-interval metrics do not prevent this assessment.",
+      "scenario_type": "news_present",
+      "source_case_id": "ev_f9e1a59a2e658b29",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -1.2812023684086435,
+        "input.market.chg_since_msg_percent": -0.8253860783557123,
+        "input.market.chg_window_percent": -1.0130669619905313,
+        "input.market.relative_24h_percentile_30d": 45.1,
+        "input.market.relative_window_percentile_30d": 75.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 120.48908652446201
+          },
+          {
+            "m": -180,
+            "p": 120.12535084257118
+          },
+          {
+            "m": -120,
+            "p": 120.11533263751139
+          },
+          {
+            "m": -90,
+            "p": 120.2610695215914
+          },
+          {
+            "m": -30,
+            "p": 120.01453997474849
+          },
+          {
+            "m": 0,
+            "p": 119.2684513960785
+          }
+        ],
+        "input.previous_event_alert.analysed_window_move": -0.6856,
+        "input.previous_event_alert.created_at": "2026-10-06T04:45:06.760208+00:00",
+        "input.timestamp_utc": "2026-10-06T06:14:59.586759+00:00"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window decline remains elevated, but the alert 89 minutes earlier already covered a substantially larger fall. Price is only 0.086% above that alert, and the recent snapshots and short-interval metrics are nearly flat. This is stabilization after the alerted drop rather than a material new extension or reversal.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_fa46e26c4b1f587b",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.07168975417714836,
+        "input.market.chg30m_percent": 0.05623037766213726,
+        "input.market.chg_since_msg_percent": 0.08612079739134815,
+        "input.market.chg_window_percent": -1.163821802849776,
+        "input.market.relative_window_percentile_30d": 80.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.23407988901185
+          },
+          {
+            "m": -180,
+            "p": 110.18032117428126
+          },
+          {
+            "m": -120,
+            "p": 110.16543053649086
+          },
+          {
+            "m": -90,
+            "p": 108.85740276980782
+          },
+          {
+            "m": -30,
+            "p": 108.88992241848077
+          },
+          {
+            "m": 0,
+            "p": 108.95115163309269
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -2.177
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest half hour rebounds 0.76%, but the net window gain remains ordinary in the supplied historical context and the daily loss is not exceptional. Price is still 1.96% below the alert nearly eleven hours earlier. This modest current rebound does not establish a material new reversal, and the upgrade headline alone cannot make it an alert-worthy market episode.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_fc35d58391836075",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.7997738440691309,
+        "input.market.chg24h_percent": -2.1915617877220575,
+        "input.market.chg30m_percent": 0.7621030618396506,
+        "input.market.chg_since_msg_percent": -1.958622911157973,
+        "input.market.chg_window_percent": 0.43344727260845045,
+        "input.market.relative_24h_percentile_30d": 63.4,
+        "input.market.relative_window_percentile_30d": 41.7,
+        "input.news[0].title": "Solana sets Oct. 21 for Alpenglow upgrade targeting 150-millisecond finality",
+        "input.previous_event_alert.age_minutes": 659
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is exceptional, but the current window gain is small and low in its historical distribution. Price remains only 0.25% above the recovery alert four hours earlier after a modest rise and retracement in the snapshots. Recent selling does not establish a material new extension of the daily decline or a substantial reversal of that alerted recovery.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_fd251a8bd9ebb3c9",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.55756702303902,
+        "input.market.chg24h_percent": -5.70940040731608,
+        "input.market.chg30m_percent": -0.4728469647743878,
+        "input.market.chg_since_msg_percent": 0.24575182402193474,
+        "input.market.chg_window_percent": 0.1420449129204762,
+        "input.market.relative_24h_percentile_30d": 97.7,
+        "input.market.relative_window_percentile_30d": 15.3,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 109.45114918694745
+          },
+          {
+            "m": -180,
+            "p": 109.81337619961396
+          },
+          {
+            "m": -120,
+            "p": 110.43992421160543
+          },
+          {
+            "m": -90,
+            "p": 110.47877553825643
+          },
+          {
+            "m": -30,
+            "p": 110.12735282170432
+          },
+          {
+            "m": 0,
+            "p": 109.60661897650051
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 239,
+        "input.previous_event_alert.analysed_window_move": 0.5926
+      },
+      "symbol": "SOL"
+    }
+  ],
+  "count": 66,
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "label": "restricted private Reviewer-C discrepancies",
+  "owner_review_shortlist": [
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The aggregate window gain is exceptional, but the recent alert already covered the rebound. Since that alert 148 minutes earlier, price has added a much smaller 0.62% and currently remains below the peak visible ninety minutes ago. Recent gains are modest and the daily move is ordinary, so the large rolling-window figure does not establish a fresh material extension.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_3071bf23d0f30001",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.2451378848757842,
+        "input.market.chg24h_percent": 0.6351490132539777,
+        "input.market.chg30m_percent": 0.33879339659666274,
+        "input.market.chg_since_msg_percent": 0.6168307893809283,
+        "input.market.chg_window_percent": 2.795812202420812,
+        "input.market.relative_24h_percentile_30d": 44.7,
+        "input.market.relative_window_percentile_30d": 100.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 80071.5938555915
+          },
+          {
+            "m": -180,
+            "p": 81153.31888659294
+          },
+          {
+            "m": -120,
+            "p": 82229.54061760113
+          },
+          {
+            "m": -90,
+            "p": 82419.43959963394
+          },
+          {
+            "m": -30,
+            "p": 82032.32514660755
+          },
+          {
+            "m": 0,
+            "p": 82310.24524727896
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 148,
+        "input.previous_event_alert.analysed_window_move": 1.0474
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The aggregate window recovery is unusually large, but the alert an hour earlier already described an advancing window and price has added only 0.018% since it. The latest hourly and half-hour moves are tiny as the snapshots flatten after the earlier recovery. The elevated daily loss and wallet headline do not make this near-duplicate observation meaningfully new.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_86a8ba257afb7ea2",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.018261266666702736,
+        "input.market.chg24h_percent": -1.9802401180858555,
+        "input.market.chg30m_percent": 0.06133920307337749,
+        "input.market.chg_since_msg_percent": 0.018261266666702736,
+        "input.market.chg_window_percent": 1.6237731976501113,
+        "input.market.relative_window_percentile_30d": 97.7,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 80431.7803471413
+          },
+          {
+            "m": -180,
+            "p": 80643.75008505619
+          },
+          {
+            "m": -120,
+            "p": 81436.15644449214
+          },
+          {
+            "m": -90,
+            "p": 81606.58445406829
+          },
+          {
+            "m": -30,
+            "p": 81687.70345250428
+          },
+          {
+            "m": 0,
+            "p": 81737.81003881099
+          }
+        ],
+        "input.news[0].title": "U.S. government moves $1 billion in bitcoin tied to Bitfinex hack, with no sign of sale",
+        "input.previous_event_alert.age_minutes": 59,
+        "input.previous_event_alert.analysed_window_move": 0.5098
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are unusually large, but an alert just 29 minutes earlier already covered almost the same 2.55% declining window. Price has fallen another 0.39%, without a distinct new downward step comparable to the earlier selloff in the snapshots. The current observation is continued deterioration within the recently alerted episode, rather than a materially new extension.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_1a9773932f226c8a",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.6297463921522727,
+        "input.market.chg24h_percent": -3.448713845996523,
+        "input.market.chg30m_percent": -0.388925141429947,
+        "input.market.chg_since_msg_percent": -0.388925141429947,
+        "input.market.chg_window_percent": -2.625681026810027,
+        "input.market.relative_24h_percentile_30d": 93.0,
+        "input.market.relative_window_percentile_30d": 98.3,
+        "input.market.snapshots": [
+          {
+            "m": -180,
+            "p": 2513.3109647822776
+          },
+          {
+            "m": -150,
+            "p": 2512.458354025161
+          },
+          {
+            "m": -120,
+            "p": 2490.654640932798
+          },
+          {
+            "m": -60,
+            "p": 2462.829012486265
+          },
+          {
+            "m": -30,
+            "p": 2456.874839579846
+          },
+          {
+            "m": 0,
+            "p": 2447.3194356352533
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -2.5518
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window decline is historically elevated, but the prior alert 149 minutes earlier already covered a substantial declining window. Price has fallen only another 0.24%, with a small hourly recovery and modest half-hour decline. The snapshots show continued trading near the earlier low rather than a distinct material extension; the ENS headline does not resolve that absence of novelty.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d61d1e87e694636d",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.12829759078840033,
+        "input.market.chg30m_percent": -0.2570637692127126,
+        "input.market.chg_since_msg_percent": -0.24397550756729333,
+        "input.market.chg_window_percent": -1.326614676951105,
+        "input.market.relative_window_percentile_30d": 92.1,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2531.858452453934
+          },
+          {
+            "m": -180,
+            "p": 2508.558695577858
+          },
+          {
+            "m": -120,
+            "p": 2512.6300737595525
+          },
+          {
+            "m": -90,
+            "p": 2498.8926173958193
+          },
+          {
+            "m": -30,
+            "p": 2504.7091463635106
+          },
+          {
+            "m": 0,
+            "p": 2498.270446624053
+          }
+        ],
+        "input.news[0].title": "ENS seeks DAO approval to activate upgraded Ethereum naming system",
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": -0.9482
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily losses are moderately elevated, but an alert an hour earlier already covered a larger declining window. Current price is only 0.034% below that alert and the snapshots show stabilization after the earlier drop. This is a near-duplicate continuation without a substantive new deterioration.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_9a4f3dcab93843b9",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -3.6464867838288693,
+        "input.market.chg_since_msg_percent": -0.033656222701217486,
+        "input.market.chg_window_percent": -1.24155681062694,
+        "input.market.relative_24h_percentile_30d": 74.7,
+        "input.market.relative_window_percentile_30d": 72.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 1.4095884735076865
+          },
+          {
+            "m": -180,
+            "p": 1.4053906801056562
+          },
+          {
+            "m": -120,
+            "p": 1.3932257210776589
+          },
+          {
+            "m": -90,
+            "p": 1.39387653352527
+          },
+          {
+            "m": -30,
+            "p": 1.3960448966531986
+          },
+          {
+            "m": 0,
+            "p": 1.3920876318130395
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 59,
+        "input.previous_event_alert.analysed_window_move": -1.9594
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily gain is elevated, but the current window rise is ordinary in the supplied historical context and smaller than the advancing window previously alerted. Price is only 0.16% above that alert after roughly seven and a half hours. The latest half-hour recovery mainly returns toward the previously alerted level rather than establishing a material new advance.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_c560242cca20c2fa",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 4.1073645957218865,
+        "input.market.chg30m_percent": 0.5230069078716472,
+        "input.market.chg_since_msg_percent": 0.15707756748339932,
+        "input.market.chg_window_percent": 0.960856521996513,
+        "input.market.relative_24h_percentile_30d": 80.1,
+        "input.market.relative_window_percentile_30d": 64.8,
+        "input.previous_event_alert.age_minutes": 449,
+        "input.previous_event_alert.analysed_window_move": 1.5961
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The roughly 1% window decline is moderately elevated, while the daily move is ordinary in the supplied context. The latest hour is nearly flat, and current price remains above the low visible ninety minutes earlier after a rebound. A 0.65% loss since an already declining alert does not establish a new material extension.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_1dd3d013e2dd43ef",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.03619734020552661,
+        "input.market.chg24h_percent": -1.2864187517801953,
+        "input.market.chg_since_msg_percent": -0.6489283502023748,
+        "input.market.chg_window_percent": -0.9852358946363631,
+        "input.market.relative_24h_percentile_30d": 40.7,
+        "input.market.relative_window_percentile_30d": 73.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.68260317811328
+          },
+          {
+            "m": -180,
+            "p": 111.03303741974685
+          },
+          {
+            "m": -120,
+            "p": 110.27006548932643
+          },
+          {
+            "m": -90,
+            "p": 109.2178942844656
+          },
+          {
+            "m": -30,
+            "p": 109.84975877182798
+          },
+          {
+            "m": 0,
+            "p": 109.59211844248458
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 299,
+        "input.previous_event_alert.analysed_window_move": -0.3651
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are only moderately elevated. Price is 0.59% below the alert three hours earlier and still above the low visible ninety minutes ago after a partial recovery. With the latest hour almost unchanged, this does not establish a material new extension of the previously alerted decline.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_8fe203024b366f40",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.012045175138738743,
+        "input.market.chg24h_percent": -2.805111582181594,
+        "input.market.chg_since_msg_percent": -0.5910449399921439,
+        "input.market.chg_window_percent": -1.095465151895874,
+        "input.market.relative_24h_percentile_30d": 76.4,
+        "input.market.relative_window_percentile_30d": 79.6,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 116.51081142646954
+          },
+          {
+            "m": -180,
+            "p": 115.91961309676837
+          },
+          {
+            "m": -120,
+            "p": 115.32718253370915
+          },
+          {
+            "m": -90,
+            "p": 114.6672605905816
+          },
+          {
+            "m": -30,
+            "p": 115.4201088126892
+          },
+          {
+            "m": 0,
+            "p": 115.23447608910145
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 179,
+        "input.previous_event_alert.analysed_window_move": -0.2786
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window and daily declines are elevated, but the alert two hours earlier already covered a larger 2.18% window fall. Price has declined only another 0.22% since that alert, with small recent moves following the earlier drop. This is a limited continuation of the recently alerted episode rather than a new material extension.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_bcb596cad71e8fbd",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.24844352060035604,
+        "input.market.chg24h_percent": -3.073182396131634,
+        "input.market.chg30m_percent": -0.3045026752582043,
+        "input.market.chg_since_msg_percent": -0.21864411799886652,
+        "input.market.chg_window_percent": -1.4167037234960596,
+        "input.market.relative_24h_percentile_30d": 78.1,
+        "input.market.relative_window_percentile_30d": 87.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 110.18032117428126
+          },
+          {
+            "m": -180,
+            "p": 110.19461817023378
+          },
+          {
+            "m": -120,
+            "p": 108.85740276980782
+          },
+          {
+            "m": -90,
+            "p": 109.02931448062488
+          },
+          {
+            "m": -30,
+            "p": 108.95115163309269
+          },
+          {
+            "m": 0,
+            "p": 108.6193924616453
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 119,
+        "input.previous_event_alert.analysed_window_move": -2.177
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily gains are moderately elevated, but the alert 149 minutes earlier already covered nearly the same advancing window. Price has added only 0.089% since that alert and remains below the earlier visible snapshot high. The current modest rebound is non-novel continuation rather than a material new advance.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_db78cd52c358d870",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 2.86697449730237,
+        "input.market.chg30m_percent": 0.34036343578756806,
+        "input.market.chg_since_msg_percent": 0.08908472088080145,
+        "input.market.chg_window_percent": 1.03466090700888,
+        "input.market.relative_24h_percentile_30d": 74.5,
+        "input.market.relative_window_percentile_30d": 77.9,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 111.62302926983187
+          },
+          {
+            "m": -180,
+            "p": 111.52886724465623
+          },
+          {
+            "m": -120,
+            "p": 113.15439346644426
+          },
+          {
+            "m": -90,
+            "p": 112.52559569559149
+          },
+          {
+            "m": -30,
+            "p": 112.39539628444511
+          },
+          {
+            "m": 0,
+            "p": 112.7779491169059
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": 0.997
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price is 2.51% below an alert nearly thirty hours earlier, and the latest half hour adds a downward step. However, the 1.13% window decline is only moderately elevated in the supplied history, while the 1.52% daily loss is ordinary for this asset. The direction differs from the older advancing alert, but the supplied movement does not establish a materially noteworthy new episode.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_30a873823ba149b7",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -1.516116868220702,
+        "input.market.chg30m_percent": -0.7435350662465434,
+        "input.market.chg_since_msg_percent": -2.5098584372074857,
+        "input.market.chg_window_percent": -1.127259319792328,
+        "input.market.relative_24h_percentile_30d": 36.5,
+        "input.market.relative_window_percentile_30d": 66.9,
+        "input.previous_event_alert.age_minutes": 1769,
+        "input.previous_event_alert.analysed_window_move": 1.6888
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "Price is 1.65% below the prior advancing alert almost seven hours earlier, but the roughly 1% current window loss is ordinary in the supplied historical context and the daily loss is very small for this asset. The latest hour and half hour are nearly flat. This supports a pullback without a materially noteworthy current reversal.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_4f443df56981cc24",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.01396423478836806,
+        "input.market.chg24h_percent": -0.403483840466638,
+        "input.market.chg30m_percent": 0.038337566073165255,
+        "input.market.chg_since_msg_percent": -1.6533881682700302,
+        "input.market.chg_window_percent": -1.0222221467840371,
+        "input.market.relative_24h_percentile_30d": 8.0,
+        "input.market.relative_window_percentile_30d": 62.7,
+        "input.previous_event_alert.age_minutes": 419,
+        "input.previous_event_alert.analysed_window_move": 1.6888
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 1.48% decline since the alert roughly three and a half hours earlier is a clear change from its modest advancing window. However, the current window loss is only moderately elevated in the supplied asset history and the daily loss is ordinary. Recent selling remains measured, so this directional change does not establish a sufficiently material new episode for an automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_7b3325d2f2609480",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.42184745703441795,
+        "input.market.chg24h_percent": -2.689754334813373,
+        "input.market.chg30m_percent": -0.2943804183860278,
+        "input.market.chg_since_msg_percent": -1.4760785706505057,
+        "input.market.chg_window_percent": -1.4760785706505057,
+        "input.market.relative_24h_percentile_30d": 54.1,
+        "input.market.relative_window_percentile_30d": 78.6,
+        "input.previous_event_alert.age_minutes": 209,
+        "input.previous_event_alert.analysed_window_move": 0.2583
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 3.13% loss since the prior alert accumulated over more than forty-six hours. In the current supplied context, the window decline is ordinary and the daily loss is unexceptional, while recent selling remains modest. The elapsed interval and changed direction do not establish a materially noteworthy new episode.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_895e0dfdd31bff53",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.8152739315511982,
+        "input.market.chg24h_percent": -2.6657546149573492,
+        "input.market.chg30m_percent": -0.46631981123451166,
+        "input.market.chg_since_msg_percent": -3.1271885179986616,
+        "input.market.chg_window_percent": -0.5186996115910633,
+        "input.market.relative_24h_percentile_30d": 58.1,
+        "input.market.relative_window_percentile_30d": 40.6,
+        "input.previous_event_alert.age_minutes": 2789,
+        "input.previous_event_alert.analysed_window_move": 0.3992
+      },
+      "symbol": "GRAM"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window advance is moderately elevated, but the daily gain is ordinary in the supplied historical context. Price has gained 0.90% since the prior modestly advancing alert about two hours earlier by the timestamps. The snapshots show fresh upward progress, but its supplied scale does not establish a sufficiently material new event; absent short-interval metrics and event counts do not make an alert warranted.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_d1f0d676477abedb",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": 1.3877689780539577,
+        "input.market.chg_since_msg_percent": 0.896715979842948,
+        "input.market.chg_window_percent": 1.0700186173078974,
+        "input.market.relative_24h_percentile_30d": 49.7,
+        "input.market.relative_window_percentile_30d": 79.0,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 120.16235634127227
+          },
+          {
+            "m": -180,
+            "p": 120.22777784106245
+          },
+          {
+            "m": -120,
+            "p": 120.36875010816262
+          },
+          {
+            "m": -90,
+            "p": 120.31506449198424
+          },
+          {
+            "m": -30,
+            "p": 120.74196101980456
+          },
+          {
+            "m": 0,
+            "p": 121.44811592511974
+          }
+        ],
+        "input.previous_event_alert.analysed_window_move": 0.1353,
+        "input.previous_event_alert.created_at": "2026-10-06T12:45:14.670361+00:00",
+        "input.timestamp_utc": "2026-10-06T14:44:59.105609+00:00"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The roughly 1% window decline is moderately elevated, while the daily loss is ordinary in the supplied historical context. Price is 0.83% below an already declining alert about ninety minutes earlier by the timestamps. The latest snapshot drop adds selling, but the supplied move remains a modest extension rather than a materially new episode; missing short-interval metrics do not prevent this assessment.",
+      "scenario_type": "news_present",
+      "source_case_id": "ev_f9e1a59a2e658b29",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -1.2812023684086435,
+        "input.market.chg_since_msg_percent": -0.8253860783557123,
+        "input.market.chg_window_percent": -1.0130669619905313,
+        "input.market.relative_24h_percentile_30d": 45.1,
+        "input.market.relative_window_percentile_30d": 75.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 120.48908652446201
+          },
+          {
+            "m": -180,
+            "p": 120.12535084257118
+          },
+          {
+            "m": -120,
+            "p": 120.11533263751139
+          },
+          {
+            "m": -90,
+            "p": 120.2610695215914
+          },
+          {
+            "m": -30,
+            "p": 120.01453997474849
+          },
+          {
+            "m": 0,
+            "p": 119.2684513960785
+          }
+        ],
+        "input.previous_event_alert.analysed_window_move": -0.6856,
+        "input.previous_event_alert.created_at": "2026-10-06T04:45:06.760208+00:00",
+        "input.timestamp_utc": "2026-10-06T06:14:59.586759+00:00"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "reviewer_a": "no_alert",
+      "reviewer_b": "no_alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest half hour rises 0.72% after the preceding snapshots stayed close to $83,000, creating a clear fresh upward step. The net window rise is elevated in the supplied historical context, and price is 0.77% above the alert 149 minutes earlier, whose window was almost flat. The abrupt acceleration makes this materially noteworthy and meaningfully new despite an ordinary daily change.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_36436dd74b85d86e",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.7390256834657436,
+        "input.market.chg24h_percent": 0.8720294979327959,
+        "input.market.chg30m_percent": 0.7237771628705615,
+        "input.market.chg_since_msg_percent": 0.7705678576067949,
+        "input.market.chg_window_percent": 0.7375044155274328,
+        "input.market.relative_24h_percentile_30d": 57.6,
+        "input.market.relative_window_percentile_30d": 84.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 83064.17381740722
+          },
+          {
+            "m": -180,
+            "p": 83032.96183862594
+          },
+          {
+            "m": -120,
+            "p": 82991.53436880045
+          },
+          {
+            "m": -90,
+            "p": 82979.53456476267
+          },
+          {
+            "m": -30,
+            "p": 83075.49431126521
+          },
+          {
+            "m": 0,
+            "p": 83676.77576703198
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 149,
+        "input.previous_event_alert.analysed_window_move": 0.0909
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "no_alert",
+      "reviewer_b": "alert",
+      "reviewer_c": "alert",
+      "reviewer_c_confidence": "medium",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The latest hour rebounds 1.29%, with continued half-hour gains and a clear recovery from the recent trough to above the supplied window's starting price. Price is 1.20% above the alert 89 minutes earlier, whose window had fallen 1.77%. Although the net window is nearly flat, the rapid reversal of that selloff is a material and meaningfully new market phase.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_39891a3b04174bf5",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 1.290121908300745,
+        "input.market.chg30m_percent": 0.5219522979259978,
+        "input.market.chg_since_msg_percent": 1.2027241262389672,
+        "input.market.chg_window_percent": 0.09272323890714682,
+        "input.market.relative_window_percentile_30d": 21.5,
+        "input.market.snapshots": [
+          {
+            "m": -180,
+            "p": 82288.54318935896
+          },
+          {
+            "m": -150,
+            "p": 81952.57524147895
+          },
+          {
+            "m": -120,
+            "p": 81779.62342566125
+          },
+          {
+            "m": -60,
+            "p": 81315.77121253699
+          },
+          {
+            "m": -30,
+            "p": 81937.1708457686
+          },
+          {
+            "m": 0,
+            "p": 82364.84379185364
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -1.7713
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "no_alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The current window gains only 0.16%, with similarly small hourly and half-hour moves and a low window percentile. Price is 0.25% below the alert more than seven hours earlier. The daily gain is not unusually large in the provided context, and headlines about earlier moves below $80,000 do not turn the supplied quiet snapshots into a fresh material event.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_66d738d94f921c72",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": 0.09617088933232047,
+        "input.market.chg24h_percent": 1.334803872163548,
+        "input.market.chg30m_percent": 0.10247635844645556,
+        "input.market.chg_since_msg_percent": -0.24848267434860644,
+        "input.market.chg_window_percent": 0.1602202986379847,
+        "input.market.relative_24h_percentile_30d": 70.4,
+        "input.market.relative_window_percentile_30d": 32.9,
+        "input.news": [
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "CoinDesk: Bitcoin, Ethereum, Crypto News and Price Data",
+            "summary": "Bitcoin price briefly dipped below $80k, buyers reacted as Asian stocks rebound.",
+            "time": "2026-10-16 04:14:22+00:00",
+            "title": "Bitcoin buyers snap up a brief drop below $80,000 as Asian stocks rebound"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "Scammer loses $4.8M stored on tampered ledgers, highlighting security risks in crypto storage.",
+            "time": "2026-10-15 22:42:58+00:00",
+            "title": "Scammer loses $4.8M stored on tampered Ledgers: Asia Express"
+          },
+          {
+            "material": false,
+            "relevance_label": "direct_symbol",
+            "source": "Cointelegraph.com News",
+            "summary": "US PPI rise pushes Bitcoin below $80k, testing key support after strong inflation data.",
+            "time": "2026-10-15 15:10:44+00:00",
+            "title": "Bitcoin slips under $80K after US PPI gains most in four years"
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 449
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "ambiguous",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 1.05% window rise is elevated, but nearly the same advancing window was alerted 29 minutes earlier. Price has gained only 0.047% since that alert and the snapshots show the earlier rise flattening out. The current observation is a near-duplicate continuation rather than a materially new advance.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_e094373ba2587375",
+      "supporting_evidence": {
+        "input.market.chg_since_msg_percent": 0.047274137127816036,
+        "input.market.chg_window_percent": 1.0534774259662685,
+        "input.market.relative_window_percentile_30d": 92.5,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 82830.0640262433
+          },
+          {
+            "m": -180,
+            "p": 83214.67215407945
+          },
+          {
+            "m": -120,
+            "p": 83398.2700536462
+          },
+          {
+            "m": -90,
+            "p": 83692.6001034409
+          },
+          {
+            "m": -30,
+            "p": 83663.10903978032
+          },
+          {
+            "m": 0,
+            "p": 83702.66005267318
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": 0.8714,
+        "input.recent_event_counts.h6": 9
+      },
+      "symbol": "BTC"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is exceptional, but the current window decline is only moderately elevated and price has fallen just another 0.36% since the declining alert 29 minutes earlier. Recent metrics show continued moderate selling rather than a distinct large downward step. This small extension does not establish enough novelty for another automatic alert.",
+      "scenario_type": "delivered",
+      "source_case_id": "ev_0c7b2c4d1c1394d3",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.5326483017067233,
+        "input.market.chg24h_percent": -3.7556162741601167,
+        "input.market.chg30m_percent": -0.36043345663248005,
+        "input.market.chg_since_msg_percent": -0.36043345663248005,
+        "input.market.chg_window_percent": -0.6800510159669507,
+        "input.market.relative_24h_percentile_30d": 99.7,
+        "input.market.relative_window_percentile_30d": 79.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2619.0203282975417
+          },
+          {
+            "m": -180,
+            "p": 2616.212763113777
+          },
+          {
+            "m": -120,
+            "p": 2619.9121771662926
+          },
+          {
+            "m": -90,
+            "p": 2615.748032184471
+          },
+          {
+            "m": -30,
+            "p": 2610.6191989649137
+          },
+          {
+            "m": 0,
+            "p": 2601.2096539465733
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -0.2259
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The daily loss is exceptional in the supplied history, but the current window closely matches the declining window alerted just 29 minutes earlier. Price has moved only another 0.13% lower, with no distinct acceleration in the supplied recent metrics. The exceptional daily backdrop therefore does not make this small continuation meaningfully new.",
+      "scenario_type": "no_alert",
+      "source_case_id": "ev_2f11d6ea41819f42",
+      "supporting_evidence": {
+        "input.market.chg1h_percent": -0.28888874182307167,
+        "input.market.chg24h_percent": -5.909204909774554,
+        "input.market.chg30m_percent": -0.1288263706896821,
+        "input.market.chg_since_msg_percent": -0.1288263706896821,
+        "input.market.chg_window_percent": -0.5887946012878124,
+        "input.market.relative_24h_percentile_30d": 100.0,
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": -0.6033
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The 0.41% window recovery is ordinary in the supplied historical context. Price is 0.29% above the alert just 29 minutes earlier, whose window was already advancing by a similar amount. Neither this modest continuation nor the older ETF headline establishes a distinct new material event despite the remaining daily loss.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_57ad0b63a2dfd1a1",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.24897279871043,
+        "input.market.chg_since_msg_percent": 0.2918667839965984,
+        "input.market.chg_window_percent": 0.4116853518671939,
+        "input.market.relative_window_percentile_30d": 58.9,
+        "input.news[0].time": "2026-10-08 07:30:42+00:00",
+        "input.news[0].title": "US Bitcoin ETFs shed $485M in biggest daily outflow since June",
+        "input.previous_event_alert.age_minutes": 29,
+        "input.previous_event_alert.analysed_window_move": 0.5506
+      },
+      "symbol": "ETH"
+    },
+    {
+      "reviewer_a": "ambiguous",
+      "reviewer_b": "alert",
+      "reviewer_c": "no_alert",
+      "reviewer_c_confidence": "high",
+      "reviewer_c_missing_evidence": [],
+      "reviewer_c_rationale": "The window and daily declines are elevated, but the alert 89 minutes earlier already described almost the same declining window. Price has moved only another 0.21% lower, with modest recent losses and no distinct new downward step in the snapshots. This is a limited continuation of the recently alerted episode.",
+      "scenario_type": "repeat",
+      "source_case_id": "ev_8ad62d490fe6ea05",
+      "supporting_evidence": {
+        "input.market.chg24h_percent": -2.4223730045818024,
+        "input.market.chg30m_percent": -0.2492337625600334,
+        "input.market.chg_since_msg_percent": -0.20671200270886425,
+        "input.market.chg_window_percent": -0.8413084816625022,
+        "input.market.relative_24h_percentile_30d": 83.6,
+        "input.market.relative_window_percentile_30d": 85.4,
+        "input.market.snapshots": [
+          {
+            "m": -210,
+            "p": 2576.861984368399
+          },
+          {
+            "m": -180,
+            "p": 2569.3290416259133
+          },
+          {
+            "m": -120,
+            "p": 2568.731658083138
+          },
+          {
+            "m": -90,
+            "p": 2560.4754359857657
+          },
+          {
+            "m": -30,
+            "p": 2561.5669155372575
+          },
+          {
+            "m": 0,
+            "p": 2555.182625933171
+          }
+        ],
+        "input.previous_event_alert.age_minutes": 89,
+        "input.previous_event_alert.analysed_window_move": -0.8217
+      },
+      "symbol": "ETH"
+    }
+  ],
+  "owner_review_shortlist_count": 24
+}

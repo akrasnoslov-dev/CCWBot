@@ -1,0 +1,126 @@
+{
+  "task": "CCW-44",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "status": {
+    "valid": 200
+  },
+  "complete": true,
+  "valid": 200,
+  "required": 200,
+  "input_tokens": 729052,
+  "completion_tokens_including_reasoning": 116478,
+  "avg_input_tokens": 3645.26,
+  "avg_completion_tokens_including_reasoning": 582.39,
+  "missing_usage": 0,
+  "cost_upper_usd": 0.131144,
+  "cap_usd": 0.5,
+  "quality_first_positive": 83,
+  "per_symbol": {
+    "BTC": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 15,
+      "input": 188653,
+      "completion": 24749
+    },
+    "ETH": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 24,
+      "input": 185257,
+      "completion": 35204
+    },
+    "GRAM": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 14,
+      "input": 178659,
+      "completion": 26571
+    },
+    "SOL": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 30,
+      "input": 176483,
+      "completion": 29954
+    }
+  },
+  "matched_changes": {
+    "production": {
+      "changed": 57,
+      "newly_alerts": 57,
+      "suppressed_alerts": 0
+    },
+    "balanced": {
+      "changed": 45,
+      "newly_alerts": 42,
+      "suppressed_alerts": 3
+    },
+    "refined": {
+      "changed": 45,
+      "newly_alerts": 43,
+      "suppressed_alerts": 2
+    },
+    "v3": {
+      "changed": 59,
+      "newly_alerts": 59,
+      "suppressed_alerts": 0
+    }
+  },
+  "quality_reference": "AI POSTHOC SELF-REVIEW ONLY, not human, not independent",
+  "provisional_diagnostic_scores": {
+    "quality_first": {
+      "TP": 22,
+      "FP": 45,
+      "FN": 1,
+      "TN": 115,
+      "ambiguous": 17,
+      "precision_provisional": 0.3284,
+      "recall_provisional": 0.9565,
+      "accuracy_provisional": 0.7486
+    },
+    "production": {
+      "TP": 18,
+      "FP": 5,
+      "FN": 5,
+      "TN": 155,
+      "ambiguous": 17,
+      "precision_provisional": 0.7826,
+      "recall_provisional": 0.7826,
+      "accuracy_provisional": 0.9454
+    },
+    "balanced": {
+      "TP": 22,
+      "FP": 12,
+      "FN": 1,
+      "TN": 148,
+      "ambiguous": 17,
+      "precision_provisional": 0.6471,
+      "recall_provisional": 0.9565,
+      "accuracy_provisional": 0.929
+    },
+    "refined": {
+      "TP": 23,
+      "FP": 8,
+      "FN": 0,
+      "TN": 152,
+      "ambiguous": 17,
+      "precision_provisional": 0.7419,
+      "recall_provisional": 1.0,
+      "accuracy_provisional": 0.9563
+    },
+    "v3": {
+      "TP": 17,
+      "FP": 2,
+      "FN": 6,
+      "TN": 158,
+      "ambiguous": 17,
+      "precision_provisional": 0.8947,
+      "recall_provisional": 0.7391,
+      "accuracy_provisional": 0.9563
+    }
+  },
+  "human_verified_quality_percent": null,
+  "dataset_is_fresh_holdout": false,
+  "source_warning": "new enriched input constructed from previously examined 200 source rows; no new 24-hour time series or realized volatility was invented"
+}
