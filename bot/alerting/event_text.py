@@ -220,6 +220,22 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     has_divergence = has_broader_comparison and (window_change > 0) != (change_24h > 0)
     has_alignment = has_broader_comparison and not has_divergence
 
+    # The existence of a price band does not prove repeated visits to its
+    # high. Such copy is factual only with at least two observed high visits.
+    repeated_high_claim = (
+        re.search(r"(?i)\\b(?:high|peak)\\b", lowered) is not None
+        and re.search(
+            r"(?i)\\b(?:twice|repeated\\w*|multiple|again|"
+            r"two\\s+(?:times|visits|approaches|recent\\s+snapshots)|"
+            r"second\\s+(?:time|visit|approach))\\b",
+            lowered,
+        ) is not None
+    )
+    if repeated_high_claim:
+        band = observed_event_alert_price_band(market_data)
+        if int(band.get("high_visits", 0)) < 2:
+            return False
+
     if not any(
         term in lowered
         for term in (
