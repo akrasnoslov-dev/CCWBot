@@ -135,7 +135,7 @@ event-level replacement/generic/repetition signals are diagnostic only and never
 decide significance. The ops-agent aggregates distinct delivered market events,
 not each recipient or provider draft. See docs/observability.md.
 
-### CCW-20: meaningful observed-price scenarios (proposal in PR #377)
+### CCW-20: meaningful observed-price scenarios
 
 The owner prefers a concise explanation: *what is happening, which actual
 observed prices matter, and what a move through them would change*.
@@ -159,9 +159,10 @@ inconsistent, there are no numeric levels for the model to invent.
 - Stage-1 significance, alert eligibility, cooldown, providers, recipient
   routes and paid spend are unchanged by this content change.
 
-**Status:** draft PR, not deployed. The prior 20-event Cloudflare benchmark
-predates this richer price-band context. Green unit/CI tests are not proof
-of improved live Cloudflare prose.
+**Release status:** included in the focused production release branch; deployment
+still requires its exact CI, review, merge, configuration and runtime gates. The
+prior 20-event Cloudflare benchmark predates this richer price-band context.
+Green unit/CI tests are not proof of improved live Cloudflare prose.
 
 ### Event Alert message quality contract
 

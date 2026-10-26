@@ -57,7 +57,7 @@ The project-wide zero-cost/free-tier service policy is owned by `docs/project_co
 For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
 efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
-### CCW-20 owner-selected Event Alert provider order (pending PR, NOT deployed)
+### CCW-20 owner-selected Event Alert provider order
 
 For the next reviewed deployment, the owner chose **Cloudflare -> budget-guarded
 OpenAI GPT-6 Luna -> Groq** for both `event_analysis` and `event_alert_render`.
@@ -72,7 +72,8 @@ The global provider priority and dedicated report chains are unaffected by these
 two overrides. The shipped code's default without these variables stays Groq-first.
 `.env.example` is only a template; editing it does not alter the server's `.env`.
 Restarting/recreating the runtime after a reviewed configuration change is needed
-to load updated environment variables. No deployment is authorized by this note.
+to load updated environment variables. Apply them only through an approved,
+reviewed release and preserve all unrelated production configuration.
 
 OpenAI does **not** become usable just because its key is present or second in
 the chain: it requires `OPENAI_ENABLED=true`, model-matched verified pricing and
@@ -82,23 +83,19 @@ last if available. Do not bypass the local USD $2.50/month limit.
 
 For Render, changing provider order must retain
 `CLOUDFLARE_EVENT_RENDER_MODEL` (and `GROQ_EVENT_RENDER_MODEL`)
-rather than silently selecting generic models. In PR #377, this is contract-tested.
+rather than silently selecting generic models. The focused release regression
+suite contract-tests this behavior.
 
-Before release, make **one bounded 20-case / maximum 40-call Cloudflare-only
-paired final-copy test** (20 same sanitized positive events with old vs new
-Stage-2 Render+fallback); record raw model text, schema checks, compaction/
-replacement and final assembled Telegram message, not just generated draft.
-Do not invoke the full production provider cascade for this *quality* comparison:
-letting one candidate silently fall back to Luna would compare different models
-and make the verdict invalid. Do not make paid Luna or Groq requests for this test.
-Stop on Cloudflare quota exhaustion; no automatic retry or expanded cohort.
-A separate provider-order contract test uses mocked providers with no tokens.
+The completed bounded historical evaluation is not a recurring release step.
+Do not repeat or expand it for this focused release. Provider-order contracts use
+mocked providers with no tokens; production verification uses sanitized runtime
+configuration and a private smoke test without simulated subscriber alerts.
 
 This section records an **approved direction**, not a measured improvement or
 confirmation that the Cloudflare service is currently reachable. Official
 Cloudflare Workers AI Free allocation is 10,000 neurons/day, shared across
 the account. Finite free quota and output-format compatibility must be verified
-from actual response/attempt telemetry. The test does not send Telegram messages.
+from actual response/attempt telemetry.
 
 ### Optional OpenAI activation and spend cap
 
