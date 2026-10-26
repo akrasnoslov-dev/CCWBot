@@ -27,22 +27,15 @@ Git checkouts necessarily contain local working copies of tracked artifacts.
 "Repository-backed" means Git is authoritative; it cannot mean literally
 zero bytes of local checkout data.
 
-## One-time migration from existing Windows graph
+## Clones and local development
 
-Use the existing `D:\Projects\CCWBot` checkout. First pull latest `dev`, then run:
+The portable graph, current labels, manifest, report and durable reflections are
+tracked in `graphify-out/` on `dev`. The directory itself is **not ignored** by Git.
+A clean clone restores the nine current shared artifacts. Only known disposable
+dated backups, caches, logs and extraction intermediates are ignored.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\publish_graphify.ps1
-```
-
-The script validates the existing graph, scans basic credential patterns,
-commits allowlisted files to `dev`, pushes them, then removes local ignored
-backups/caches/intermediates and the temporary hook scripts created for
-local-only sync. If validation/push fails, it does **not** run cleanup.
-
-The operator must review any security scan failure before publishing. Do not
-force-commit sensitive content, even if this repository is currently public.
-Other machine-specific files are outside Graphify's cleanup scope.
+Use `git ls-files graphify-out/` to see exactly what is versioned. Avoid
+maintaining a separate local-only authoritative graph.
 
 ## Updates after migration
 
@@ -75,8 +68,7 @@ necessary when graph traversal is unavailable.
 ## Retention
 
 Keep only current tracked graph data. Archive snapshots and caches are not
-migrated. The publishing script removes the 16 old dated local backup
-folders only after the current graph has been committed and pushed.
+migrated. The historical publisher removed dated local backups after publishing. The shared graph is now already versioned; temporary local backups are disposable.
 Subsequent Graphify CI jobs use disposable runners: backups they generate
 are discarded with the runner, not committed or stored on the workstation.
 
