@@ -436,3 +436,87 @@ def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
         assert "further diverge" not in final.lower()
 
 
+def test_ccw20_verified_eth_levels_and_useful_conditional_action():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+    from bot.alerting.event_text import (
+        observed_event_alert_level_action,
+        observed_event_alert_price_band,
+    )
+    from bot.services.ai_agent_groq import build_event_alert_render_prompt
+    import json
+
+    market = {
+        "price": 2474.518857885452,
+        "chg_window_percent": 0.26286988218543744,
+        "chg24h_percent": -3.7848709953819224,
+        "analysed_window_minutes": 180,
+        "snapshots": [
+            {"m": -210, "p": 2468.031147316202},
+            {"m": -180, "p": 2472.899094100193},
+            {"m": -120, "p": 2477.822953902561},
+            {"m": -90, "p": 2471.8461459408736},
+            {"m": -30, "p": 2477.5362414138694},
+            {"m": 0, "p": 2474.518857885452},
+        ],
+    }
+    band = observed_event_alert_price_band(market)
+    assert band == {
+        "low": "$2,472", "high": "$2,478",
+        "observations": 4, "high_visits": 2,
+    }
+    prompt = build_event_alert_render_prompt({"symbol": "ETH", "market": market})
+    input_json = json.loads(prompt.split("Input JSON:\n", 1)[1])
+    assert input_json["evidence"]["observed_price_band"] == band
+
+    correct_action = (
+        "If price holds above the observed $2,478 high, it would strengthen the "
+        "short-term recovery attempt; if it falls below $2,472, the rebound "
+        "would look weaker."
+    )
+    decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body="The short-term rebound opposes the 24-hour decline, "
+        "and the latest snapshot shows a pullback rather than a confirmed reversal.",
+        related_news_ids=[], possible_action=correct_action,
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    assembled = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert "Possible action:\\n" + correct_action in assembled
+    assert "$2,478" in assembled and "$2,472" in assembled
+    assert "buy now" not in assembled.lower()
+
+    wrong_decision = EventAnalysisDecision(
+        symbol="ETH", should_alert=True, event_key=None, title=None,
+        message_body=decision.message_body, related_news_ids=[],
+        possible_action=correct_action.replace("$2,478", "$2,999"),
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    corrected = alerts._build_event_alert_payload(
+        decision=wrong_decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert "$2,999" not in corrected
+    assert observed_event_alert_level_action(market) in corrected
+
+
+def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
+    from bot.alerting.event_text import observed_event_alert_price_band
+
+    observations = [
+        {"m": -120, "p": 100},
+        {"m": -90, "p": 102},
+        {"m": -30, "p": 104},
+        {"m": 0, "p": 101},
+    ]
+    assert observed_event_alert_price_band({"price": 101, "snapshots": observations})
+    assert observed_event_alert_price_band({"price": 120, "snapshots": observations}) == {}
+    assert observed_event_alert_price_band({"price": 101, "snapshots": observations[:3]}) == {}
+    assert observed_event_alert_price_band({
+        "price": 101, "snapshots": [
+            {"m": -220, "p": 100}, *observations[1:]
+        ]
+    }) == {}
+
+
