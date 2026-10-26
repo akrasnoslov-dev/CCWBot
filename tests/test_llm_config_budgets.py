@@ -723,6 +723,25 @@ def test_event_alert_render_uses_dedicated_model_level_chain(monkeypatch):
     ]
 
 
+def test_event_alert_cloudflare_luna_groq_priority_preserves_render_specific_models(monkeypatch):
+    # Provider reorder must not fall back to the generic Cloudflare model.
+    monkeypatch.setenv("LLM_EVENT_PROVIDERS", "cloudflare,openai,groq")
+    monkeypatch.setenv("LLM_EVENT_RENDER_PROVIDERS", "cloudflare,openai,groq")
+    monkeypatch.setenv("CLOUDFLARE_MODEL", "@cf/general-model")
+    monkeypatch.setenv("CLOUDFLARE_EVENT_RENDER_MODEL", "@cf/render-model")
+    monkeypatch.setenv("GROQ_EVENT_RENDER_MODEL", "openai/gpt-oss-20b")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
+
+    assert llm_config.provider_priority("event_analysis") == [
+        "cloudflare", "openai", "groq"
+    ]
+    assert llm_config.provider_attempts("event_alert_render") == [
+        ("cloudflare", "@cf/render-model"),
+        ("openai", "gpt-6-luna"),
+        ("groq", "openai/gpt-oss-20b"),
+    ]
+
+
 def test_event_alert_render_model_overrides_are_independent(monkeypatch):
     monkeypatch.setenv("GROQ_EVENT_RENDER_MODEL", "openai/gpt-oss-custom")
     monkeypatch.setenv("CLOUDFLARE_EVENT_RENDER_MODEL", "@cf/custom")
