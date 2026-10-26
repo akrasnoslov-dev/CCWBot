@@ -657,9 +657,9 @@ def soften_possible_action(value: str, *, urgency: str | None) -> str:
 # cannot "further diverge" from an already downward 24h direction. Reject such
 # prognostic causal links and use the verified, market-specific fallback instead.
 _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
-    r"(?i)\\b(?:if|when)\\b[^.!?]{0,160}"
-    r"\\b(?:extend\\w*|continu\\w*|sustain\\w*)\\b[^.!?]{0,180}"
-    r"\\b(?:diverg\\w*|converg\\w*|align\\w*)\\b"
+    r"(?i)\b(?:if|when)\b[^.!?]{0,160}"
+    r"\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180}"
+    r"\b(?:diverg\w*|converg\w*|align\w*)\b"
 )
 
 
