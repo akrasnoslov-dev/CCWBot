@@ -15,7 +15,7 @@ from bot.db.database import make_news_key
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://feeds.feedburner.com/CoinDesk",
     "https://cointelegraph.com/rss",
 ]
 RSS_TIMEOUT_SECONDS = 12
