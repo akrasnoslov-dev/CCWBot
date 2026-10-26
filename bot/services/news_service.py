@@ -15,9 +15,16 @@ from bot.db.database import make_news_key
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    "https://feeds.feedburner.com/CoinDesk",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://cointelegraph.com/rss",
 ]
+# Mirror of the SAME publisher, not an additional news source.
+# Read this only when the primary CoinDesk feed fails or is unusable.
+RSS_FEED_FALLBACKS = {
+    "https://www.coindesk.com/arc/outboundfeeds/rss/": (
+        "https://feeds.feedburner.com/CoinDesk"
+    ),
+}
 RSS_TIMEOUT_SECONDS = 12
 RSS_MAX_BYTES = 1_000_000
 RSS_USER_AGENT = "CCWBot-RSS/1.0 (crypto news feed reader)"
@@ -75,6 +82,37 @@ def _read_rss_feed(feed_url: str):
     return feedparser.parse(payload)
 
 
+def _read_rss_feed_with_fallback(feed_url: str):
+    """Return one usable publisher feed; never fetch the mirror on primary success."""
+    try:
+        primary = _read_rss_feed(feed_url)
+        if feed_url in RSS_FEED_FALLBACKS and (
+            not primary.entries or primary.get("bozo")
+        ):
+            raise ValueError("primary_rss_empty_or_malformed")
+        return primary, "primary"
+    except Exception as primary_error:
+        fallback_url = RSS_FEED_FALLBACKS.get(feed_url)
+        if fallback_url is None:
+            raise
+        try:
+            fallback = _read_rss_feed(fallback_url)
+            if not fallback.entries or fallback.get("bozo"):
+                raise ValueError("fallback_rss_empty_or_malformed")
+        except Exception as fallback_error:
+            logger.warning(
+                "ops_event=news_rss_failover status=failed "
+                "primary_reason=%s fallback_reason=%s",
+                type(primary_error).__name__, type(fallback_error).__name__,
+            )
+            raise
+        logger.info(
+            "ops_event=news_rss_failover status=recovered primary_reason=%s",
+            type(primary_error).__name__,
+        )
+        return fallback, "fallback"
+
+
 def fetch_crypto_news(limit: int = 5) -> list[dict]:
     """Merge available feeds by publication age *before* applying the batch limit.
 
@@ -90,7 +128,7 @@ def fetch_crypto_news(limit: int = 5) -> list[dict]:
     cutoff = now - timedelta(hours=24)
     for source_index, feed_url in enumerate(RSS_FEEDS):
         try:
-            feed = _read_rss_feed(feed_url)
+            feed, route = _read_rss_feed_with_fallback(feed_url)
         except Exception as error:
             # Do not log exception text, URLs, entries, or provider response bodies.
             logger.warning(
@@ -130,10 +168,10 @@ def fetch_crypto_news(limit: int = 5) -> list[dict]:
 
         logger.info(
             "ops_event=news_rss_source source_index=%s status=%s entries=%s "
-            "keyword_pass=%s missing_title=%s published_24h=%s missing_date=%s",
+            "keyword_pass=%s missing_title=%s published_24h=%s missing_date=%s route=%s",
             source_index,
             "partial" if feed.get("bozo") else "ok",
-            len(entries), relevant, missing_title, fresh, missing_date,
+            len(entries), relevant, missing_title, fresh, missing_date, route,
         )
 
     # Keep the stable key dedup rule; do not merge distinct stories by keyword.
