@@ -10,8 +10,7 @@ import json
 import re
 from pathlib import Path
 
-import bot.alerts as alerts
-from bot.alerting.event_analysis import EventAnalysisDecision
+from bot import alerts
 
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +61,7 @@ def test_ccw20_replay_all_20_recorded_candidate_final_pairs_without_llm_calls():
         case = by_id[event_id]
         assert case["symbol"] == symbol
         market = case["input"]["market"]
-        decision = EventAnalysisDecision(
+        decision = alerts.EventAnalysisDecision(
             symbol=symbol, should_alert=True, event_key=None, title=None,
             message_body=situation, possible_action=action,
             related_news_ids=[], urgency="normal", confidence="high",
