@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 
-from bot import alerts
+import bot.alerts as alerts
 from bot.alerting.event_analysis import EventAnalysisDecision
 
 
