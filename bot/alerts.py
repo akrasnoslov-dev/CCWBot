@@ -49,6 +49,7 @@ from bot.alerting.event_text import (
     event_alert_presentation_fallback,
     final_event_alert_quality_flags,
     is_news_centered_event_action,
+    observed_event_alert_level_action,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -1750,6 +1751,9 @@ def _build_event_alert_payload(
             previous_event_alert=input_payload.get("previous_event_alert"),
         )
     )
+    verified_level_action = observed_event_alert_level_action(market_data)
+    if verified_level_action:
+        presentation_action_fallback = verified_level_action
     llm_situation = str(decision.message_body or "").strip()
     llm_action = str(decision.possible_action or "").strip()
     message_body = _sanitize_event_text(
@@ -1791,6 +1795,7 @@ def _build_event_alert_payload(
     possible_action = compact_event_alert_possible_action(
         possible_action,
         fallback=presentation_action_fallback,
+        market_data=market_data,
     )
     price = market_data.get("price", market_data.get("price_now_usd"))
     change_since_message = market_data.get("chg_since_msg_percent")
