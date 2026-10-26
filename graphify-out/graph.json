@@ -44952,7 +44952,7 @@
       "node_kind": "heading",
       "norm_label": "current product behavior",
       "source_file": "docs/project_context.md",
-      "source_location": "L36"
+      "source_location": "L37"
     },
     {
       "id": "docs_project_context_event_alerts",
@@ -44964,7 +44964,7 @@
       "node_kind": "heading",
       "norm_label": "event alerts",
       "source_file": "docs/project_context.md",
-      "source_location": "L93"
+      "source_location": "L94"
     },
     {
       "id": "docs_project_context_manual_command_ux_and_price_lookups",
@@ -44976,7 +44976,7 @@
       "node_kind": "heading",
       "norm_label": "manual command ux and price lookups",
       "source_file": "docs/project_context.md",
-      "source_location": "L50"
+      "source_location": "L51"
     },
     {
       "id": "docs_project_context_market_heartbeat",
@@ -44988,7 +44988,7 @@
       "node_kind": "heading",
       "norm_label": "market heartbeat",
       "source_file": "docs/project_context.md",
-      "source_location": "L68"
+      "source_location": "L69"
     },
     {
       "id": "docs_project_context_permanent_guardrails",
@@ -191118,7 +191118,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/project_context.md",
-      "source_location": "L36",
+      "source_location": "L37",
       "weight": 1.0
     },
     {
@@ -191129,7 +191129,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/project_context.md",
-      "source_location": "L50",
+      "source_location": "L51",
       "weight": 1.0
     },
     {
@@ -191140,7 +191140,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/project_context.md",
-      "source_location": "L68",
+      "source_location": "L69",
       "weight": 1.0
     },
     {
@@ -191151,7 +191151,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/project_context.md",
-      "source_location": "L93",
+      "source_location": "L94",
       "weight": 1.0
     },
     {
@@ -235899,5 +235899,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "4699a66d227307bb12761cfc005145e6a9add7a6"
+  "built_at_commit": "6e021f12edfc5ab52cd8390f0cde76b8cdd89970"
 }
