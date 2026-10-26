@@ -50,6 +50,7 @@ from bot.alerting.event_text import (
     final_event_alert_quality_flags,
     is_news_centered_event_action,
     observed_event_alert_level_action,
+    observed_event_alert_price_band,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -1394,10 +1395,24 @@ def _guard_event_text_against_market_data(
         if field_name == "message_body"
         else _contains_untrusted_percent_claim(value, market_data)
     )
+    # Conditional scenarios describe FUTURE moves in both directions, not the
+    # already-observed net change. The action compactor separately verifies
+    # that any referenced USD levels are the computed observed range.
+    conditional_range_scenarios = (
+        field_name == "possible_action"
+        and bool(observed_event_alert_price_band(market_data))
+        and "$" in value
+        and re.search(r"(?i)\\b(?:if|whether)\\b", value) is not None
+    )
     contradictory_direction = (
         not market_direction_claims_supported(value, market_data)
         if field_name == "message_body"
-        else _contains_contradictory_direction(value, _primary_market_direction_value(market_data))
+        else (
+            False if conditional_range_scenarios else
+            _contains_contradictory_direction(
+                value, _primary_market_direction_value(market_data)
+            )
+        )
     )
     if has_untrusted_market_claim or contradictory_direction:
         return _deterministic_event_text(
