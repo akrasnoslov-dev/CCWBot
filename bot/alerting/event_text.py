@@ -44,6 +44,7 @@ _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
 _CONDITIONAL_ACTION_RE = re.compile(r"(?i)\b(?:if|unless|when|only if)\b")
 _OBSERVATION_RE = re.compile(
     r"(?i)\b(?:snapshot|interval|timeframe|time frame|window|30m|1h|24h|"
+    r"price|level|range|high|low|rebound|recovery|short-term|"
     r"hour|minute|trend|direction|pace|path|reversal|reverse|"
     r"slow\w*|accelera\w*|continuation)\b"
 )
