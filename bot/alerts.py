@@ -1378,6 +1378,36 @@ def _deterministic_event_text(*, field_name: str, symbol: str, market_data: dict
     )
 
 
+def _contradictory_observed_claim_in_level_action(
+    value: str, direction_value: float | None
+) -> bool:
+    """Validate factual direction without rejecting future up/down scenarios.
+
+    A conditional level action can describe both future directions, but any
+    independent statement about *observed* price movement must still agree
+    with the market evidence.
+    """
+    for clause in re.split(r"[;.!?]\s*", value):
+        # In "The current window shows a rally; watch whether ..." validate
+        # the factual clause, not the counterfactual price-level scenarios.
+        prefix = re.split(
+            r"(?i)\b(?:if|whether|when|unless)\b", clause, maxsplit=1
+        )[0]
+        if _contains_contradictory_direction(prefix, direction_value):
+            return True
+        # Catch factual present/past claims embedded after conditional text.
+        for match in re.finditer(
+            r"(?i)\b(?:current|observed|latest|analysed[- ]window)\b"
+            r"[^;.!?]{0,60}\b(?:shows?|is|has|was|were|remains)\b"
+            r"[^;.!?]{0,32}\b(?:up|down|rall\w*|ris\w*|rose|"
+            r"fall|fell|declin\w*|dropp?ed)\b",
+            clause,
+        ):
+            if _contains_contradictory_direction(match.group(0), direction_value):
+                return True
+    return False
+
+
 def _guard_event_text_against_market_data(
     value: str,
     *,
@@ -1407,8 +1437,11 @@ def _guard_event_text_against_market_data(
         not market_direction_claims_supported(value, market_data)
         if field_name == "message_body"
         else (
-            False if conditional_range_scenarios else
-            _contains_contradictory_direction(
+            _contradictory_observed_claim_in_level_action(
+                value, _primary_market_direction_value(market_data)
+            )
+            if conditional_range_scenarios
+            else _contains_contradictory_direction(
                 value, _primary_market_direction_value(market_data)
             )
         )
