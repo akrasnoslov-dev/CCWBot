@@ -1685,6 +1685,7 @@ _REEXPORTS = {
         "get_last_sent_alert",
         "get_latest_sent_alert_for_symbol",
         "get_latest_sent_event_alert_context_for_symbol",
+        "get_previous_market_event_for_chart",
         "count_recent_market_events_for_symbol",
         "get_alert_delivery",
         "get_market_heartbeat_delivery",
