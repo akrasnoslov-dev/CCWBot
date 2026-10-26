@@ -856,7 +856,7 @@ def test_startup_log_contains_no_environment_values_or_credentials(monkeypatch, 
     assert "effort=low" in joined
 
 
-def test_startup_log_marks_enabled_openai_with_unverified_budget_contract(monkeypatch, caplog):
+def test_startup_log_accepts_four_variable_luna_config(monkeypatch, caplog):
     monkeypatch.setenv("LLM_PROVIDER_PRIORITY", "openai")
     monkeypatch.setenv("OPENAI_ENABLED", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
@@ -872,7 +872,7 @@ def test_startup_log_marks_enabled_openai_with_unverified_budget_contract(monkey
     with caplog.at_level(logging.INFO, logger="bot.services.llm.config"):
         llm_config.log_resolved_configuration()
     assert "openai:gpt-6-luna" in caplog.text
-    assert "(budget_blocked)" in caplog.text
+    assert "(budget_blocked)" not in caplog.text
 
 
 def test_startup_log_reports_safe_effective_budget_for_thinking_model(monkeypatch, caplog):
