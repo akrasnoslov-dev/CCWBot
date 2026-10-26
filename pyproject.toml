@@ -1,5 +1,8 @@
 [tool.ruff]
 line-length = 100
+# Versioned historical experiment artifacts are evidence, not maintained runtime code.
+# Keep them byte-for-byte intact; lint source, scripts, tests and future app code.
+extend-exclude = ["reports/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
