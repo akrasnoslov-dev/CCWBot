@@ -75,15 +75,16 @@ Alert reasons (`unusual_move`, `fast_move`, `reversal`, `trend_acceleration`,
 `market_news_alignment`) are valid only with a positive decision. No-alert reasons
 (`routine_move`, `news_only`, `unclear`) are valid only with a negative decision.
 
-### Significance prompt selection — CCW-47 (2026-10-26, dev only)
+### Significance prompt selection — CCW-47 (2026-10-26)
 
 The owner selected **the exact original Refined v2** for Stage-1 Event Significance,
 not the shorter Refined v2 Final. In the isolated paid GPT-6 Luna replay, the
 original produced 200/200 valid responses; the revised shorter prompt had 14/200
 schema failures, with improved conditional recall but 15 vs 8 false positives
 on differently sized valid subsets of owner-labelled disagreements. Keeping
-the original prioritises low noise and reliable structured outputs. This is a
-**dev prompt selection**, not production-release approval.
+the original prioritises low noise and reliable structured outputs. This exact
+prompt was included in the `main` source by PR #378; live deployment and
+model quality require separate verification.
 
 The original instructions are frozen at
 `reports/event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined.txt`
@@ -92,7 +93,7 @@ The shorter rejected trial remains in `benchmarks/event-alert-owner-20261026/`
 for experiment provenance only. See
 [`CCW47_REFINED_V2_DECISION_20261026.md`](../reports/event-alert-review-20261016/CCW47_REFINED_V2_DECISION_20261026.md)
 for the metrics, denominator caveats and evaluation limits. Actual Groq/Cloudflare
-significance quality still needs evaluation before any release.
+significance quality still needs measured live evaluation.
 
 ## Step 5 - Build the message
 Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
@@ -141,7 +142,7 @@ event-level replacement/generic/repetition signals are diagnostic only and never
 decide significance. The ops-agent aggregates distinct delivered market events,
 not each recipient or provider draft. See docs/observability.md.
 
-### CCW-20: meaningful observed-price scenarios (proposal in PR #377)
+### CCW-20: meaningful observed-price scenarios
 
 The owner prefers a concise explanation: *what is happening, which actual
 observed prices matter, and what a move through them would change*.
@@ -165,8 +166,9 @@ inconsistent, there are no numeric levels for the model to invent.
 - Stage-1 significance, alert eligibility, cooldown, providers, recipient
   routes and paid spend are unchanged by this content change.
 
-**Status:** draft PR, not deployed. The prior 20-event Cloudflare benchmark
-predates this richer price-band context. Green unit/CI tests are not proof
+**Release state:** Source integrated into `main` in PR #378; running production
+still requires independent deployment verification. The prior 20-event Cloudflare
+benchmark predates this richer price-band context. Green tests are not proof
 of improved live Cloudflare prose.
 
 ### Event Alert message quality contract

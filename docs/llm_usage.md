@@ -57,7 +57,7 @@ The project-wide zero-cost/free-tier service policy is owned by `docs/project_co
 For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
 efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
-### CCW-20 owner-selected Event Alert provider order (pending PR, NOT deployed)
+### CCW-20 owner-selected Event Alert provider order
 
 For the next reviewed deployment, the owner chose **Cloudflare -> budget-guarded
 OpenAI GPT-6 Luna -> Groq** for both `event_analysis` and `event_alert_render`.
@@ -72,7 +72,9 @@ The global provider priority and dedicated report chains are unaffected by these
 two overrides. The shipped code's default without these variables stays Groq-first.
 `.env.example` is only a template; editing it does not alter the server's `.env`.
 Restarting/recreating the runtime after a reviewed configuration change is needed
-to load updated environment variables. No deployment is authorized by this note.
+to load updated environment variables. PR #378 merged this provider-order
+support into `main` source; verify actual server settings and deployed revision
+separately.
 
 OpenAI does **not** become usable just because its key is present or second in
 the chain: it requires `OPENAI_ENABLED=true`, a nonempty API key, the exact
@@ -84,9 +86,9 @@ last if available. Do not bypass the local USD $2.50/month limit.
 
 For Render, changing provider order must retain
 `CLOUDFLARE_EVENT_RENDER_MODEL` (and `GROQ_EVENT_RENDER_MODEL`)
-rather than silently selecting generic models. In PR #377, this is contract-tested.
+rather than silently selecting generic models. The focused source release #378 contract-tests these model overrides.
 
-Before release, make **one bounded 20-case / maximum 40-call Cloudflare-only
+For a future quality evaluation, use **one bounded 20-case / maximum 40-call Cloudflare-only
 paired final-copy test** (20 same sanitized positive events with old vs new
 Stage-2 Render+fallback); record raw model text, schema checks, compaction/
 replacement and final assembled Telegram message, not just generated draft.

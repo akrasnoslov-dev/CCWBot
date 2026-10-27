@@ -540,3 +540,83 @@ def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
     }) == {}
 
 
+def test_release_rejects_unproven_repeated_high_claim():
+    from bot.alerting.event_text import (
+        compact_event_alert_situation,
+        observed_event_alert_price_band,
+    )
+
+    market = {
+        "price": 10000,
+        "chg_window_percent": -9.09,
+        "chg24h_percent": -4,
+        "analysed_window_minutes": 90,
+        "snapshots": [
+            {"m": -90, "p": 11000},
+            {"m": -60, "p": 10700},
+            {"m": -30, "p": 10400},
+            {"m": 0, "p": 10000},
+        ],
+    }
+    assert observed_event_alert_price_band(market)["high_visits"] == 1
+    false_claim = (
+        "The observed high was approached twice, leaving the recent "
+        "range unbroken."
+    )
+    guarded = compact_event_alert_situation(
+        false_claim, significance_reason=None, market_data=market,
+        related_news=[],
+    )
+    assert guarded != false_claim
+    assert "twice" not in guarded.lower()
+
+
+def test_release_conditional_levels_cannot_mask_false_observed_direction():
+    from bot import alerts
+    from bot.alerting.event_analysis import EventAnalysisDecision
+    from bot.alerting.event_text import observed_event_alert_level_action
+
+    market = {
+        "price": 10000,
+        "chg_window_percent": -9.09,
+        "chg24h_percent": -4,
+        "analysed_window_minutes": 90,
+        "snapshots": [
+            {"m": -90, "p": 11000},
+            {"m": -60, "p": 10700},
+            {"m": -30, "p": 10400},
+            {"m": 0, "p": 10000},
+        ],
+    }
+    invalid = (
+        "The current window shows a rally; watch whether price holds "
+        "above the observed $11,000 high or falls below $10,000."
+    )
+    decision = EventAnalysisDecision(
+        symbol="BTC", should_alert=True, event_key=None, title=None,
+        message_body="The recent price snapshots continue lower.",
+        related_news_ids=[], possible_action=invalid,
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    message = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert "current window shows a rally" not in message.lower()
+    assert observed_event_alert_level_action(market) in message
+
+    # Legitimate conditional upside/downside scenarios must remain accepted.
+    valid = (
+        "If price holds above the observed $11,000 high, the recent range "
+        "could shift upward; if it falls below $10,000, the decline "
+        "would extend."
+    )
+    accepted = alerts._build_event_alert_payload(
+        decision=EventAnalysisDecision(
+            symbol="BTC", should_alert=True, event_key=None, title=None,
+            message_body=decision.message_body,
+            related_news_ids=[], possible_action=valid,
+            urgency="normal", confidence="high", reason_for_no_alert=None,
+        ),
+        input_payload={"market": market}, related_news=[],
+    )["plain_text"]
+    assert "Possible action:\n" + valid in accepted
