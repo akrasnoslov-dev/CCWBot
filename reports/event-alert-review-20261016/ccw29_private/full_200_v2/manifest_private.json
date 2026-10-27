@@ -1,0 +1,23 @@
+{
+  "task": "CCW-29",
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "case_count": 200,
+  "new_candidates": [
+    "balanced",
+    "fresh_leg"
+  ],
+  "prompt_instruction_sha256": {
+    "balanced": "293474b69ada1ee5311a7aae8a81a07f80c2106e3dcc9639e32879f7c5545ae1",
+    "fresh_leg": "036f6a1a7ef41cbec9179ba4ca320d48c6f6e4e05078f84534232a0b114338a0"
+  },
+  "expected_calls": 800,
+  "provider_work_shards": {
+    "groq": 1,
+    "cloudflare": 4
+  },
+  "labels_sent_to_server": false,
+  "baseline_rerun": false,
+  "production_bot_changed": false,
+  "max_output_tokens": "unset_provider_default",
+  "source_type": "200_original_historical_owner_tuned_not_blind"
+}

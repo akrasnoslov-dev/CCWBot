@@ -1,0 +1,41 @@
+{
+  "schema": "ccwbot-utf16-json-recovery-v1",
+  "source_archive": "CCWBot-reports-full(1).zip",
+  "files": [
+    {
+      "source_archive_path": "reports/event-alert-review-20261016/owner_A_cli_scoring_private.json",
+      "recovered_filename": "owner_A_cli_scoring_private.json",
+      "encoding_from": "UTF-16LE with BOM",
+      "encoding_to": "UTF-8 without BOM",
+      "raw_source_sha256": "9988b0545198866ffb643c9a5d1a17184fbeb3f51f52d09bc481bc726c989c61",
+      "recovered_utf8_sha256": "4806bf9be755af72c84a77490271d1e53ab6e10cddd762fe6a94f5a8ad87a6cd",
+      "raw_source_bytes": 42042,
+      "recovered_utf8_bytes": 20132,
+      "semantic_json_equality": true,
+      "heuristic_secret_PII_hits": {
+        "secret": 0,
+        "PII": 0,
+        "host": 0
+      },
+      "newline_normalized_to": "LF"
+    },
+    {
+      "source_archive_path": "reports/event-alert-review-20261016/live_groq_ab_20261016/owner_A_materiality_compare_private.json",
+      "recovered_filename": "owner_A_materiality_compare_private.json",
+      "encoding_from": "UTF-16LE with BOM",
+      "encoding_to": "UTF-8 without BOM",
+      "raw_source_sha256": "6ae2d81584ffc5ace264fbe7d088bb4b81356e7b9b640f45c864c6441c021237",
+      "recovered_utf8_sha256": "95251bedc06ef521d42ddbab3ae4317d377ff8d75e748c8e9cdc74f4e6e26450",
+      "raw_source_bytes": 91592,
+      "recovered_utf8_bytes": 44010,
+      "semantic_json_equality": true,
+      "heuristic_secret_PII_hits": {
+        "secret": 0,
+        "PII": 0,
+        "host": 0
+      },
+      "newline_normalized_to": "LF"
+    }
+  ],
+  "note": "Transcoding preserves JSON data equality, but intentionally changes raw bytes; original hashes preserved. Scan is heuristic, not a full privacy certification."
+}

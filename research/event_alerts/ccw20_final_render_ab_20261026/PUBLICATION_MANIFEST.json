@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "privacy_scan": "credential, provider-account, Telegram-identifier and email patterns: clean",
+  "accepted": {
+    "CCW20_CASE_RESULTS.csv": "12040b0b3156ec52e31b82bcf6d2734d95239e77f2049179f8205623c762165c",
+    "CCW20_FINAL_AB_REPORT.md": "4b38417a1ed189bf5cf6d47793b93860710a775842ecafbdb26f2c848adf4d0f",
+    "CCW20_METRICS.json": "1d1c151115f4dbf7edec4f2739a651c6f923693f8b1e1358a482eb370551202a",
+    "CCW20_PAIRED_MESSAGES.md": "f8820d6c35898b31972f1869310f52b277fedc1322724e99041b5cadb9031c25",
+    "CCW20_RUN_MANIFEST.json": "c1dbc09813443a3b34056a5c13d7f342ee1764a18965bac1c543420131268269"
+  },
+  "excluded": {
+    "raw_response_ledger_private.json": "Private raw provider output; retained only in secured research workspaces.",
+    "frozen_cases_private.json": "Contains the full sanitized input corpus subset and historical final messages; retained privately.",
+    "requests_private.json": "Contains complete provider prompts; retained privately.",
+    "final_baseline_private.json": "Contains raw and intermediate baseline render fields; retained privately.",
+    "final_candidate_private.json": "Contains raw and intermediate candidate render fields; retained privately."
+  }
+}
+

@@ -1,0 +1,261 @@
+{
+  "task": "CCW-45",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "prompt_sha256": "18744d969afd4fddfbce00dde19e6bdc299e55399d1163eadb2eb56fd0be99e9",
+  "state_counts": {
+    "valid": 200
+  },
+  "valid": 200,
+  "expected": 200,
+  "complete": true,
+  "proposed_alerts": 56,
+  "per_symbol": {
+    "BTC": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 12,
+      "input_tokens": 60030,
+      "output_tokens": 29998
+    },
+    "ETH": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 14,
+      "input_tokens": 60073,
+      "output_tokens": 30493
+    },
+    "GRAM": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 13,
+      "input_tokens": 59172,
+      "output_tokens": 29611
+    },
+    "SOL": {
+      "cases": 50,
+      "valid": 50,
+      "positive": 17,
+      "input_tokens": 59869,
+      "output_tokens": 31751
+    }
+  },
+  "input_tokens": 239144,
+  "completion_tokens_including_reasoning": 121853,
+  "avg_input_tokens": 1195.7,
+  "avg_completion_tokens_including_reasoning": 609.3,
+  "missing_usage": 0,
+  "cost_upper_usd": 0.0848409,
+  "spend_cap_usd": 0.4,
+  "paired_matching": {
+    "production": {
+      "old_alerts": 26,
+      "new_alerts": 56,
+      "same_decisions": 168,
+      "new_positive": 31,
+      "withdrawn_positive": 1,
+      "both_positive": 25
+    },
+    "balanced": {
+      "old_alerts": 44,
+      "new_alerts": 56,
+      "same_decisions": 172,
+      "new_positive": 20,
+      "withdrawn_positive": 8,
+      "both_positive": 36
+    },
+    "refined_v2": {
+      "old_alerts": 42,
+      "new_alerts": 56,
+      "same_decisions": 174,
+      "new_positive": 20,
+      "withdrawn_positive": 6,
+      "both_positive": 36
+    },
+    "refined_v3": {
+      "old_alerts": 24,
+      "new_alerts": 56,
+      "same_decisions": 166,
+      "new_positive": 33,
+      "withdrawn_positive": 1,
+      "both_positive": 23
+    },
+    "quality_first": {
+      "old_alerts": 83,
+      "new_alerts": 56,
+      "same_decisions": 161,
+      "new_positive": 6,
+      "withdrawn_positive": 33,
+      "both_positive": 50
+    }
+  },
+  "exploratory_GPT6_posthoc_reference_NOT_independent": {
+    "counts": {
+      "TN": 139,
+      "TP": 22,
+      "FP": 21,
+      "ambiguous_pred_alert": 13,
+      "FN": 1,
+      "ambiguous_pred_no_alert": 4
+    },
+    "precision_against_nonindependent_GPT6": 0.5116,
+    "recall_against_nonindependent_GPT6": 0.9565
+  },
+  "independent_human_precision": null,
+  "independent_human_recall": null,
+  "possible_same_direction_four_hour_pairs_NOT_confirmed_duplicates": 30,
+  "possible_repeat_pairs_PRIVATE": [
+    {
+      "older": "ev_a5977af179fe10e0",
+      "newer": "ev_23e08cd9ee137e52",
+      "gap_minutes": 90.0
+    },
+    {
+      "older": "ev_a5977af179fe10e0",
+      "newer": "ev_747d289d8339476d",
+      "gap_minutes": 180.0
+    },
+    {
+      "older": "ev_23e08cd9ee137e52",
+      "newer": "ev_747d289d8339476d",
+      "gap_minutes": 90.0
+    },
+    {
+      "older": "ev_62cca092d589ec38",
+      "newer": "ev_56ce5a3b11bfb1dc",
+      "gap_minutes": 210.0
+    },
+    {
+      "older": "ev_62cca092d589ec38",
+      "newer": "ev_542fbc621e28df65",
+      "gap_minutes": 240.0
+    },
+    {
+      "older": "ev_56ce5a3b11bfb1dc",
+      "newer": "ev_542fbc621e28df65",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_5c1fe678cd551519",
+      "newer": "ev_dc246bd4160b239e",
+      "gap_minutes": 60.0
+    },
+    {
+      "older": "ev_56ce5a3b11bfb1dc",
+      "newer": "ev_df5a044c6b9374c9",
+      "gap_minutes": 150.0
+    },
+    {
+      "older": "ev_542fbc621e28df65",
+      "newer": "ev_df5a044c6b9374c9",
+      "gap_minutes": 120.0
+    },
+    {
+      "older": "ev_48aac7876a7da763",
+      "newer": "ev_27f9bc5ba4f71666",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_48aac7876a7da763",
+      "newer": "ev_33dca83516291e3f",
+      "gap_minutes": 60.0
+    },
+    {
+      "older": "ev_27f9bc5ba4f71666",
+      "newer": "ev_33dca83516291e3f",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_0932ea1b4a53c7b0",
+      "newer": "ev_34dedd27667eb86f",
+      "gap_minutes": 90.0
+    },
+    {
+      "older": "ev_0932ea1b4a53c7b0",
+      "newer": "ev_9df94d4b7d0af73a",
+      "gap_minutes": 120.0
+    },
+    {
+      "older": "ev_34dedd27667eb86f",
+      "newer": "ev_9df94d4b7d0af73a",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_90e19bfb8e6a68b6",
+      "newer": "ev_9b51f2401c505ab7",
+      "gap_minutes": 240.0
+    },
+    {
+      "older": "ev_9b51f2401c505ab7",
+      "newer": "ev_a4e1bd93914f6249",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_b04b2ad70a179ee7",
+      "newer": "ev_8fc0a71d48f52691",
+      "gap_minutes": 210.0
+    },
+    {
+      "older": "ev_3e3ce48a85ad2810",
+      "newer": "ev_3f11561b791a53f8",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_1da6bc8cc0263ac0",
+      "newer": "ev_0c962302f11b3e58",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_1da6bc8cc0263ac0",
+      "newer": "ev_d2b9c738c7ad3663",
+      "gap_minutes": 60.0
+    },
+    {
+      "older": "ev_0c962302f11b3e58",
+      "newer": "ev_d2b9c738c7ad3663",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_afd8e1b5cc6e09bc",
+      "newer": "ev_251c5b08bdea3dc3",
+      "gap_minutes": 60.0
+    },
+    {
+      "older": "ev_afd8e1b5cc6e09bc",
+      "newer": "ev_0282075bb955ef1c",
+      "gap_minutes": 90.0
+    },
+    {
+      "older": "ev_251c5b08bdea3dc3",
+      "newer": "ev_0282075bb955ef1c",
+      "gap_minutes": 30.0
+    },
+    {
+      "older": "ev_1da6bc8cc0263ac0",
+      "newer": "ev_fce00ba49f7dfcc7",
+      "gap_minutes": 150.0
+    },
+    {
+      "older": "ev_0c962302f11b3e58",
+      "newer": "ev_fce00ba49f7dfcc7",
+      "gap_minutes": 120.0
+    },
+    {
+      "older": "ev_d2b9c738c7ad3663",
+      "newer": "ev_fce00ba49f7dfcc7",
+      "gap_minutes": 90.0
+    },
+    {
+      "older": "ev_38111a563c78b292",
+      "newer": "ev_28c7bf0f2489a562",
+      "gap_minutes": 120.0
+    },
+    {
+      "older": "ev_28c7bf0f2489a562",
+      "newer": "ev_41b9dbf168d0c0d4",
+      "gap_minutes": 120.0
+    }
+  ],
+  "month_estimate_at_historical_200_terminal_Event_Analyses_per_25h_UNVALIDATED": 2.443,
+  "monthly_estimate_excludes_render_retries_provider_price_changes": true,
+  "note": "Historical 200 Event Analyses in ~25h are not verified current production workload. No independently labelled humans; static replay cannot assert delivery-level cooldown or final-message quality. No production deployed."
+}

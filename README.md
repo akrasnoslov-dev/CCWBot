@@ -98,7 +98,7 @@ Common configuration:
 - `LLM_REASONING_EFFORT` and per-call-type `LLM_*_REASONING_EFFORT` (`low` / `medium` / `high`; Event Analysis defaults to `medium`, other reasoning call types to `low`)
 - `LLM_REASONING_MODEL_MARKERS` (model substrings accepting `reasoning_effort`; default `gpt-oss,gpt-6,gemini-2.5,gemini-3.`; Gemini markers are retained for historical compatibility)
 - `OPENAI_ENABLED` / `OPENAI_API_KEY` / `OPENAI_MODEL` (paid fallback; disabled by default)
-- `OPENAI_MONTHLY_BUDGET_USD` / `OPENAI_PRICED_MODEL` / `OPENAI_MAX_INPUT_TOKENS` / `OPENAI_INPUT_USD_PER_1M_TOKENS` / `OPENAI_OUTPUT_USD_PER_1M_TOKENS` (separately approved activation contract and global UTC-month cap)
+- `OPENAI_MONTHLY_BUDGET_USD` (hard local UTC-month cap, max $2.50; GPT-6 Luna's conservative verified input/output rates and context ceiling are pinned in code; no extra pricing env variables)
 - `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
 - `AUTOMATIC_CHECK_INTERVAL_SECONDS`
 - `ALERT_COOLDOWN_MINUTES`

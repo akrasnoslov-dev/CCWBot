@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Frozen research artifacts: retain exact bytes and SHA-256, including CRLF and trailing spaces.
+reports/** -text

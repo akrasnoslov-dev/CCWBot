@@ -72,47 +72,76 @@ The global provider priority and dedicated report chains are unaffected by these
 two overrides. The shipped code's default without these variables stays Groq-first.
 `.env.example` is only a template; editing it does not alter the server's `.env`.
 Restarting/recreating the runtime after a reviewed configuration change is needed
-to load updated environment variables. Apply them only through an approved,
-reviewed release and preserve all unrelated production configuration.
+to load updated environment variables. PR #378 merged this provider-order
+support into `main` source; verify actual server settings and deployed revision
+separately.
 
 OpenAI does **not** become usable just because its key is present or second in
-the chain: it requires `OPENAI_ENABLED=true`, model-matched verified pricing and
-input ceiling, positive remaining UTC-month budget, and working budget DB.
+the chain: it requires `OPENAI_ENABLED=true`, a nonempty API key, the exact
+`OPENAI_MODEL=gpt-6-luna` (other models fail closed), a positive remaining
+UTC-month budget, and working budget DB. GPT-6 Luna's verified pricing and
+input ceiling are pinned in code; no separate pricing environment variables are required.
 When budget-blocked, it is skipped without an HTTP call and Groq is attempted
 last if available. Do not bypass the local USD $2.50/month limit.
 
 For Render, changing provider order must retain
 `CLOUDFLARE_EVENT_RENDER_MODEL` (and `GROQ_EVENT_RENDER_MODEL`)
-rather than silently selecting generic models. The focused release regression
-suite contract-tests this behavior.
+rather than silently selecting generic models. The focused source release #378 contract-tests these model overrides.
 
-The completed bounded historical evaluation is not a recurring release step.
-Do not repeat or expand it for this focused release. Provider-order contracts use
-mocked providers with no tokens; production verification uses sanitized runtime
-configuration and a private smoke test without simulated subscriber alerts.
+For a future quality evaluation, use **one bounded 20-case / maximum 40-call Cloudflare-only
+paired final-copy test** (20 same sanitized positive events with old vs new
+Stage-2 Render+fallback); record raw model text, schema checks, compaction/
+replacement and final assembled Telegram message, not just generated draft.
+Do not invoke the full production provider cascade for this *quality* comparison:
+letting one candidate silently fall back to Luna would compare different models
+and make the verdict invalid. Do not make paid Luna or Groq requests for this test.
+Stop on Cloudflare quota exhaustion; no automatic retry or expanded cohort.
+A separate provider-order contract test uses mocked providers with no tokens.
 
 This section records an **approved direction**, not a measured improvement or
 confirmation that the Cloudflare service is currently reachable. Official
 Cloudflare Workers AI Free allocation is 10,000 neurons/day, shared across
 the account. Finite free quota and output-format compatibility must be verified
-from actual response/attempt telemetry.
+from actual response/attempt telemetry. The test does not send Telegram messages.
 
 ### Optional OpenAI activation and spend cap
 
-OpenAI ships disabled. Enabling it requires all of `OPENAI_ENABLED=true`, `OPENAI_API_KEY`, an
-`OPENAI_PRICED_MODEL` exactly matching `OPENAI_MODEL`, the verified `OPENAI_MAX_INPUT_TOKENS`, and
-activation-time verified positive `OPENAI_INPUT_USD_PER_1M_TOKENS` /
-`OPENAI_OUTPUT_USD_PER_1M_TOKENS`. The single global UTC-calendar-month hard maximum is
-`OPENAI_MONTHLY_BUDGET_USD=2.50`. Missing database state, malformed cap, unknown prices, or an
-exhausted cap skips OpenAI before HTTP and advances to Cloudflare/data-only.
+OpenAI ships disabled. **Exactly four OpenAI environment settings** are used for the
+only approved paid model, `gpt-6-luna`:
+
+```dotenv
+OPENAI_ENABLED=true
+OPENAI_API_KEY=<secret>
+OPENAI_MODEL=gpt-6-luna
+OPENAI_MONTHLY_BUDGET_USD=2.50
+```
+
+The model's pricing and model-wide input ceiling are pinned in
+`bot/services/llm/openai_budget.py` and are **not configurable from `.env`**.
+As verified against OpenAI's [GPT-6 Luna model page](https://developers.openai.com/api/docs/models/gpt-6-luna)
+and [API pricing](https://developers.openai.com/api/docs/pricing) on 2026-10-26,
+the context window is 1,050,000 tokens; Standard short-context prices are
+$0.10 / 1M input and $0.50 / 1M output. Long contexts (>272K input) cost 2x
+input and 1.5x output; cache writes can cost 1.25x uncached input. The guard
+conservatively reserves **$0.25 / 1M input** and **$0.75 / 1M output** for
+*all* requests, including short prompts, to avoid undercounting these tiers.
+This deliberately overstates local spending versus ordinary short prompts.
+Only Standard API requests via the default OpenAI endpoint (no Fast, regional
+processing or tool-related paid charges) are in scope. Before enabling a new
+billing mode or if OpenAI changes pricing/context, review and update the code.
+
+The single global UTC-calendar-month local cap is at most **$2.50**. Missing
+database state, malformed/exhausted budget, or a model other than the verified
+`gpt-6-luna` skips OpenAI **before HTTP** and proceeds to the next provider.
 
 Before each request, `openai_budget_reservations` atomically reserves the verified full model input
 ceiling plus maximum completion/reasoning cost. This deliberately covers Unicode, provider chat
 framing, and response schemas without relying on a token estimate. PostgreSQL advisory locking serializes authorization across
 workers; the ledger survives restarts. Known token usage reconciles the reservation, while timeout,
 5xx, missing usage, or failed reconciliation retains the conservative amount. This is a CCWBot-side
-guard, not an OpenAI organization-wide invoice guarantee. Live API compatibility, exact model ID,
-and current price verification remain part of the separately approved paid-activation gate.
+guard, not an OpenAI organization-wide invoice guarantee; other clients on the same
+API account and future rate changes are not controlled here. Live API compatibility
+and price review are still part of production activation.
 
 The router (`bot/services/llm/router.py`) tries each configured provider/model entry in order. It
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid

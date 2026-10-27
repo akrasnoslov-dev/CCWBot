@@ -270,6 +270,32 @@ async def get_latest_sent_event_alert_context_for_symbol(
     return alert, event_key, semantic_family
 
 
+async def get_previous_market_event_for_chart(
+    session: AsyncSession,
+    *,
+    symbol: str,
+    alert_type: str,
+    as_of: datetime,
+    current_market_event_id: int | None,
+) -> MarketEvent | None:
+    """Global earlier market event, never a recipient's previous delivery.
+
+    An Event Alert market event records the observed event price and detection
+    timestamp once. No per-recipient Alert row is used as chart provenance.
+    """
+    statement = (
+        select(MarketEvent)
+        .where(MarketEvent.symbol == symbol.upper())
+        .where(MarketEvent.event_type == alert_type)
+        .where(MarketEvent.detected_at <= as_of)
+    )
+    if current_market_event_id is not None:
+        statement = statement.where(MarketEvent.id != current_market_event_id)
+    return await session.scalar(
+        statement.order_by(MarketEvent.detected_at.desc(), MarketEvent.id.desc()).limit(1)
+    )
+
+
 async def count_recent_market_events_for_symbol(
     session: AsyncSession,
     *,

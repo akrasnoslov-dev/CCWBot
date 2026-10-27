@@ -1,0 +1,540 @@
+{
+  "format": "CCWBot-Owner-Blind-Disagreement-Review-v1",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "review_type": "owner_blind_disagreement_only_not_population_prevalence",
+  "reviewer": "owner",
+  "exported_at": "2026-10-26T09:38:43.575Z",
+  "total_frozen_source_cases": 200,
+  "total_disagreement_cases": 66,
+  "reviewed_cases": 66,
+  "records": [
+    {
+      "case_id": "ev_14a7e14b3235b74f",
+      "input_sha256": "ce701614a66d4fb5e138ac3cde09decbc0db9657585c1441bc9b7c131e69de70",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "странно что послдений алерт был почти два дня назад, при этом изменние 2.5 процента, алертов при этом не было раньше, а только сейчас и то, когда начало видимо увеличиваться значение цены, но опять же увеличение очень маленькое. ",
+      "assessed_at": "2026-10-25T14:15:16.302Z"
+    },
+    {
+      "case_id": "ev_b3ccbaff2007d7a2",
+      "input_sha256": "c0233606d8d2c0c8e07a07904fb4fd85854f359726f0a4211706a09aab000315",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "видна тенденция падения в течение суток, поэтому стоит ",
+      "assessed_at": "2026-10-25T13:55:49.713Z"
+    },
+    {
+      "case_id": "ev_8f7f1e3fc7f9abb5",
+      "input_sha256": "a895e3ea3832dd2e0f9aa786b8ffd39eae77fcf271dddfb4d4a07b3eb8e07d54",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T13:56:04.876Z"
+    },
+    {
+      "case_id": "ev_f8e124afb1e8165c",
+      "input_sha256": "e3c15bc2723cf96661d0fe74a7b08dc8d754c42f62c2cfbcf77fe7805417cc44",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "опять странно что послдений алерт был два дня назад, но вдино что есть тенденция роста после падения",
+      "assessed_at": "2026-10-25T13:57:21.162Z"
+    },
+    {
+      "case_id": "ev_6e57bb32f23f4c9e",
+      "input_sha256": "a06bbba44e3d70cc8808b19bf97c0daeef4fe22678335cb837348b80506d5b28",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T13:57:29.186Z"
+    },
+    {
+      "case_id": "ev_686065337837bd2d",
+      "input_sha256": "b4b3f941d4c58959ea9475bbf10a8857f1727219dec87c21fff605fde4cfea3c",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения",
+      "assessed_at": "2026-10-25T13:57:41.044Z"
+    },
+    {
+      "case_id": "ev_673845ec86094a1d",
+      "input_sha256": "8b34e43f47aafc63620172e10910c4fb0d6d3f31ff59c4b1c0e376af341fa611",
+      "symbol": "SOL",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:19:45.425Z"
+    },
+    {
+      "case_id": "ev_a7cc7577e0767e8c",
+      "input_sha256": "6f5af12648edf5f0f586ae060f5cdd7028d7ca189dfc173109ad05c869dc2afa",
+      "symbol": "SOL",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:20:02.255Z"
+    },
+    {
+      "case_id": "ev_b9008313a68e67ee",
+      "input_sha256": "c1c683c6a00cedba072a3d42daa2f14bcf177c583526d6a80cfd9bd5a3992dac",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:20:14.547Z"
+    },
+    {
+      "case_id": "ev_f2228512fba9b5c6",
+      "input_sha256": "78e601412837693308b8eee022cd28b4dc393bc66940e09726a927bff22845d6",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:20:17.425Z"
+    },
+    {
+      "case_id": "ev_23e08cd9ee137e52",
+      "input_sha256": "c87cbdc38e2cc7ac93a208cc2c52d841c2a6f42cd94643ce8ed11c109343a332",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:20:20.999Z"
+    },
+    {
+      "case_id": "ev_747d289d8339476d",
+      "input_sha256": "124f5075ea14e7ab62675a01a2eadc4eda86366418baf348ebe05f2b2698c601",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:20:50.632Z"
+    },
+    {
+      "case_id": "ev_56ce5a3b11bfb1dc",
+      "input_sha256": "f2eeb478624e886cb215bd36943d8369e8a6043ed5f2dfa5edaf70fe7283dee1",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "тененция падения ",
+      "assessed_at": "2026-10-25T14:21:46.823Z"
+    },
+    {
+      "case_id": "ev_5c1fe678cd551519",
+      "input_sha256": "d4f05330bbc5ca12ae67c22781ac36262c30d6e52c0c0e741ed30652622bf0ed",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "тенденция падения ",
+      "assessed_at": "2026-10-25T14:22:19.541Z"
+    },
+    {
+      "case_id": "ev_542fbc621e28df65",
+      "input_sha256": "d6b001e49bdc3e679f76418d878d774a56a124b847bfd8d80f2cfd19ba69900c",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "тенденция падения ",
+      "assessed_at": "2026-10-25T14:22:36.781Z"
+    },
+    {
+      "case_id": "ev_dc246bd4160b239e",
+      "input_sha256": "7759929d4568a03727aa8d5e9f2ef97609a7610baf47d4eb1a8b1fbcebf5c881",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "странно что последний алерт был более суток назад и только сейчас решили новый отправить где видна тенденция падения, но явно стоит уже отправить. тут скорее вопрос почему жо этого не отправляли",
+      "assessed_at": "2026-10-25T14:22:55.157Z"
+    },
+    {
+      "case_id": "ev_df5a044c6b9374c9",
+      "input_sha256": "385bb9e0c1adbd250e00bdee36db9d1bf2a28379298c66c9a235bd18c71c883a",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "тенденция падения",
+      "assessed_at": "2026-10-25T14:23:13.791Z"
+    },
+    {
+      "case_id": "ev_48aac7876a7da763",
+      "input_sha256": "6e04fb11b5fbeff6baedd81c2058492d8b5cfa0ea6aa24c099101e1f7380dc2a",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:23:19.349Z"
+    },
+    {
+      "case_id": "ev_0932ea1b4a53c7b0",
+      "input_sha256": "0c71ad1c25663dff5693a8da38115043a0096ddc371225d3d35b642fd519f06b",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "как будто бы тенденция роста после падения, но опять же странно что последний алерт был более суток назад",
+      "assessed_at": "2026-10-25T14:23:33.930Z"
+    },
+    {
+      "case_id": "ev_27f9bc5ba4f71666",
+      "input_sha256": "aaf053c3fbf0eb35293d87595870ede871dea2b42b52826f211549680982db01",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-25T14:23:58.072Z"
+    },
+    {
+      "case_id": "ev_14758c4bcbd58e1b",
+      "input_sha256": "55ea99678f14512c1f4056ed79fc5028e23eab198163edd12395073ff2ed1fbc",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "хотя проценты и маловаты, но тенденция роста видна после падения ",
+      "assessed_at": "2026-10-25T14:24:42.555Z"
+    },
+    {
+      "case_id": "ev_9df94d4b7d0af73a",
+      "input_sha256": "9f40f558e398cfeaec5b148bb5a39e7ad40582e526e71f5a8a5bfefa9932d3d2",
+      "symbol": "GRAM",
+      "label": "alert",
+      "comment": "виджна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:26:12.006Z"
+    },
+    {
+      "case_id": "ev_df21210a26fe1d35",
+      "input_sha256": "c2af864dc8f383120c669a369673e77b8ff08ffb8760997bc8922ee2a2f0a8fd",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:26:25.692Z"
+    },
+    {
+      "case_id": "ev_9b51f2401c505ab7",
+      "input_sha256": "36a31681243f1735424c4060db977cdf2b961adf92f79a1c0cb4ff41aaec3712",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:26:30.421Z"
+    },
+    {
+      "case_id": "ev_a4e1bd93914f6249",
+      "input_sha256": "5e3fb88eb43566330548d24b39bb0d0e341e9c2144b9bca2f86b6001b955fbde",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:26:40.973Z"
+    },
+    {
+      "case_id": "ev_ed2b9dc1c9a9a2af",
+      "input_sha256": "fa1059ea8cbb5370a5695eadb3cfa1b8570e8c552dc8172d69999f878af41650",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:26:48.209Z"
+    },
+    {
+      "case_id": "ev_939765504bd1e470",
+      "input_sha256": "c3eb7d38cebb8409d16bd66cffe48b437cfdb1a6bff2c32116b4178ce97f331c",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:27:02.763Z"
+    },
+    {
+      "case_id": "ev_9b87a21dfc191ec6",
+      "input_sha256": "bd6df35b2506d280c19ff71f9ed9236d48ae258ab7147e9bfdd4faec7bbe2166",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения, хотя проценты и маловаты ",
+      "assessed_at": "2026-10-25T14:27:15.190Z"
+    },
+    {
+      "case_id": "ev_64352f403a4118af",
+      "input_sha256": "43bb6d592f8556212fa20442fbf8e60d3475bc1093e1cca0d4bcdc7e50a02701",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения ",
+      "assessed_at": "2026-10-25T14:27:50.267Z"
+    },
+    {
+      "case_id": "ev_b1950efeba816ba3",
+      "input_sha256": "70a2769cc2f1162092c652a42f40377a8e741ad4340c0c1ce7758c855198e18f",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста после падения  по сравнению с последним алертом, хотя и уже снижается по сравнению с тремя часами. тут скорее вопрос, почему раньше алерта не было ",
+      "assessed_at": "2026-10-25T14:28:53.225Z"
+    },
+    {
+      "case_id": "ev_9294785f8cecc14b",
+      "input_sha256": "a1712f8aa9709f0b0b21af69a69be5c1a4ca7cb663dda8fb34b79b46a6614007",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:25:35.343Z"
+    },
+    {
+      "case_id": "ev_b04b2ad70a179ee7",
+      "input_sha256": "858ee3ef636459227d9aeed7739652051f574148fb847c074bd53be05d20ce26",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:25:40.147Z"
+    },
+    {
+      "case_id": "ev_296201f0d86fd10e",
+      "input_sha256": "1e379061cced521dca4142155a2a7b7a41b4b482957ac0985c1d5c91810db048",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:25:50.839Z"
+    },
+    {
+      "case_id": "ev_a4d91b21e69cf512",
+      "input_sha256": "31a0d4da5834dd011e01b94680e9b45174667da1f9b18216a4be361c69a11805",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:26:10.210Z"
+    },
+    {
+      "case_id": "ev_8fc0a71d48f52691",
+      "input_sha256": "262a40b51c0defb8da7576b006ca08694264148e0c09d3a3011d027ad3c8b2a6",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:26:12.826Z"
+    },
+    {
+      "case_id": "ev_c4f80ddef5b3fe97",
+      "input_sha256": "7c1547e16517740f7561530881139b8eda3eef42bf171cc076886f1320fa7b2f",
+      "symbol": "BTC",
+      "label": "ambiguous",
+      "comment": "тут вроде росло, а сейчас начало падать, но проценты опять же не сильно высокие чтобы об этом говорить",
+      "assessed_at": "2026-10-26T09:26:30.653Z"
+    },
+    {
+      "case_id": "ev_4cef8d0733a56185",
+      "input_sha256": "8e396d44a11519153dfbc6ef0a7dc9500531f56b170cf6ff5b8e9922a13caeb3",
+      "symbol": "BTC",
+      "label": "ambiguous",
+      "comment": "росло, а сейчас начало падать, но проценты не такие большие чтобы об этом гвоорить , можно было бы наверно отправить алерт, просто потому что с последнего прошло 10 часов",
+      "assessed_at": "2026-10-26T09:27:20.453Z"
+    },
+    {
+      "case_id": "ev_76d059ad58cd9c02",
+      "input_sha256": "9b9a19c6d8f338797e7dcdf3ccb7cd8d2dc60362808a5850414f413553cea8bd",
+      "symbol": "ETH",
+      "label": "ambiguous",
+      "comment": "тоже небольшие вроде проценты, хотя видно что тенденция падения ",
+      "assessed_at": "2026-10-26T09:28:25.787Z"
+    },
+    {
+      "case_id": "ev_195f1879f01dbc6c",
+      "input_sha256": "bc068ab43c6ea04572b74d8417aae6181d8fa03885ffcbe20a149d90152f8998",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:29:04.760Z"
+    },
+    {
+      "case_id": "ev_4238003c7d8cf56e",
+      "input_sha256": "1918dbbd4b67b2d1c4db893f064a2d934d968b66506ae6952ab1e68106c71b0e",
+      "symbol": "SOL",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:29:12.612Z"
+    },
+    {
+      "case_id": "ev_64019382b0ba7655",
+      "input_sha256": "b6cafaf996b40d75c2407d922ac49e6266970d034ea68ba8576bd15ed1c57808",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:29:11.283Z"
+    },
+    {
+      "case_id": "ev_0443b0a529eb1364",
+      "input_sha256": "021c9c1b782cf5de06d91d28b584f241fc14a6bfaa4ab2b6e9f0c1a60e17dc14",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:29:17.070Z"
+    },
+    {
+      "case_id": "ev_3e3ce48a85ad2810",
+      "input_sha256": "5d78f12acc9096db3464c51da4a4215f77099676a7e8c35b0189e0865ed5b42e",
+      "symbol": "SOL",
+      "label": "ambiguous",
+      "comment": "маленькие процентные отклонения, но вдина  тенденция роста, может имет смысл ещё понаблюдать до следующего окошка и если бы там дальше росле то уже тогда отправлять",
+      "assessed_at": "2026-10-26T09:29:47.112Z"
+    },
+    {
+      "case_id": "ev_3f11561b791a53f8",
+      "input_sha256": "5ce8e7d7cc7f031357d4de4b3834ae0875af1fe956c3dd9d535ff51d019821b0",
+      "symbol": "SOL",
+      "label": "ambiguous",
+      "comment": "аналогично предыдущему  маленькие процентные отклонения, но вдина  тенденция роста, может имет смысл ещё понаблюдать до следующего окошка и если бы там дальше росле то уже тогда отправлять",
+      "assessed_at": "2026-10-26T09:30:38.721Z"
+    },
+    {
+      "case_id": "ev_05f1c3c4230e884a",
+      "input_sha256": "7551b946b8e0cb3461a0fd4fbaca7329a8b6f2ec2750ba4ecf7ebab1b0ee5a67",
+      "symbol": "ETH",
+      "label": "alert",
+      "comment": "видно что падает и при это стабилизировалось. хотя проценты и не большие",
+      "assessed_at": "2026-10-26T09:30:47.427Z"
+    },
+    {
+      "case_id": "ev_2289939e1f4c84d1",
+      "input_sha256": "ba1e9f5b2ce60ded892752722b836c2de3d51619917c483056e3b54d8813d1b5",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:31:26.121Z"
+    },
+    {
+      "case_id": "ev_0282075bb955ef1c",
+      "input_sha256": "f0933820b09fcfcc55714b71061297d7625666063e3a2685c21c4684432fccdf",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "пока как будто бы не надо отпарвлять, потому что видно что тенденция роста была, а теперь падает. если и дальше продолжит падать, то тогда стои следующее отправить, а если вдруг опять начнёт расти то выглядит как обычныу флуктуации ",
+      "assessed_at": "2026-10-26T09:31:50.549Z"
+    },
+    {
+      "case_id": "ev_fce00ba49f7dfcc7",
+      "input_sha256": "992765b0b751aa182143f32673f10b2dd8bd009f0f981d754f17e709455d9408",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "тенденция роста видна ",
+      "assessed_at": "2026-10-26T09:32:52.925Z"
+    },
+    {
+      "case_id": "ev_e55d7b380c4f6c11",
+      "input_sha256": "cd7a53aaea5d91d95df8abbfbfff407440c8e3f8c39ec3a15bc48cc64cbed50d",
+      "symbol": "SOL",
+      "label": "ambiguous",
+      "comment": "пока как будто бы не надо отпарвлять, потому что видно что тенденция роста была, а теперь падает. если и дальше продолжит падать, то тогда стои следующее отправить, а если вдруг опять начнёт расти то выглядит как обычныу флуктуации ",
+      "assessed_at": "2026-10-26T09:33:12.726Z"
+    },
+    {
+      "case_id": "ev_6b6ede4514df7393",
+      "input_sha256": "4ff5fe02d7e35304196235302db27f9bc7d712d66aba9e0fa9c4c6498c4f81d1",
+      "symbol": "SOL",
+      "label": "ambiguous",
+      "comment": "аналогично предудыщкему пока как будто бы не надо отпарвлять, потому что видно что тенденция роста была, а теперь падает. если и дальше продолжит падать, то тогда стои следующее отправить, а если вдруг опять начнёт расти то выглядит как обычныу флуктуации ",
+      "assessed_at": "2026-10-26T09:33:34.800Z"
+    },
+    {
+      "case_id": "ev_39da7295eecf6a74",
+      "input_sha256": "0c2a97865e3c4fa16aa9e01c1e9af1b16543ec83dbffaa0c03bcf6bfd3a91f29",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "вдино что начианет падать, но пока не настолько сильно чтобы начать отправлять алерты",
+      "assessed_at": "2026-10-26T09:33:48.745Z"
+    },
+    {
+      "case_id": "ev_7d71da21a73bd3fa",
+      "input_sha256": "c7b25e8830ba8314946ca833b264915dca276403d132802c6fac5be55ffc1012",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видна тенденция роста",
+      "assessed_at": "2026-10-26T09:34:23.376Z"
+    },
+    {
+      "case_id": "ev_f748fde23bb604f2",
+      "input_sha256": "20091150e589c5c4bebeaf3e951a932929c973fe689d3d84fedd61316ee15615",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "несмотря на то что видна тенденция роста, как будто бы с последнего алерта не сильно выросло",
+      "assessed_at": "2026-10-26T09:34:51.620Z"
+    },
+    {
+      "case_id": "ev_8f88957f27c5a239",
+      "input_sha256": "3cfc8760bd13271f9b4d98a128804f10f3ee5a52580bb405d5e888bbe99b50e0",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "несмотря на то что видна тенденция роста, как будто бы с последнего алерта не сильно выросло",
+      "assessed_at": "2026-10-26T09:34:59.278Z"
+    },
+    {
+      "case_id": "ev_7d0b437fc7918a36",
+      "input_sha256": "e25a1e036cdb633281276a74395165d9a1e5ae03428aa68bf944484960f1e93e",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "несмотря на то что видна тенденция роста, как будто бы с последнего алерта не сильно выросло",
+      "assessed_at": "2026-10-26T09:35:09.270Z"
+    },
+    {
+      "case_id": "ev_3da2b437209cfc96",
+      "input_sha256": "7c8921714fa0404be38071f377d8d581abdfe9a53e1e0f344a3c119b88fc1c28",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "несмотря на то что видна тенденция роста, как будто бы с последнего алерта не сильно выросло",
+      "assessed_at": "2026-10-26T09:35:15.049Z"
+    },
+    {
+      "case_id": "ev_1f4d888d17baf529",
+      "input_sha256": "c088f515a5a7b2355a7974919db377c9fedb2c9091580f8e34b8b209ce55af48",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "видна тенденция падения, но слимшком маленькие проценты ",
+      "assessed_at": "2026-10-26T09:35:36.429Z"
+    },
+    {
+      "case_id": "ev_1bda2dc7f164e499",
+      "input_sha256": "11bda113fc4f7db7215a5fff6f21ecb25cded6dc0850ae3d3bdf278fb2f38be3",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:35:51.060Z"
+    },
+    {
+      "case_id": "ev_b8cf7b25bfcd5cb1",
+      "input_sha256": "f0c9db47a6178a1c5df5ba7ff04f8e1ba4483837cd737fca7f64a52311b54c0f",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:35:59.643Z"
+    },
+    {
+      "case_id": "ev_8a1b3978ad621bfb",
+      "input_sha256": "0ff4658b274d6de5910d36a8ad29d73ac6980f9d1dccd1f0aef9ed43f72eed57",
+      "symbol": "BTC",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:36:03.006Z"
+    },
+    {
+      "case_id": "ev_64558d52206a2c40",
+      "input_sha256": "e452629a234b3affe9fb4afe1b6a706c77119500cf64484ab0826f2694819a46",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:36:05.355Z"
+    },
+    {
+      "case_id": "ev_eccdf281c0b85c80",
+      "input_sha256": "cceb02913e5d74e1e32593bef035f0f7d42afd9e18198bf308639a158710adab",
+      "symbol": "GRAM",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:36:12.990Z"
+    },
+    {
+      "case_id": "ev_59528ff24933263f",
+      "input_sha256": "2da90fc88b7d67ad8af242fb6860d101cc9b1a1592fa318452b6b0384cae22d8",
+      "symbol": "SOL",
+      "label": "alert",
+      "comment": "видно что начало падаать и в целом достаточные проценты для оповещния мне кажется ",
+      "assessed_at": "2026-10-26T09:36:17.990Z"
+    },
+    {
+      "case_id": "ev_f2e3ab01706221e2",
+      "input_sha256": "8282c69b8b4507186cb79106d0f1018dc2f3baedca6ccec6b079d2b7f5d715b9",
+      "symbol": "ETH",
+      "label": "no_alert",
+      "comment": "видно что начало падать, но не так чтобы прошло достаточчно времени или сильно бы упало по сравнению с предыдущим алертом ",
+      "assessed_at": "2026-10-26T09:37:07.454Z"
+    },
+    {
+      "case_id": "ev_b324100011a26477",
+      "input_sha256": "abc5b2b61cf6bfcab9910d11ee7b41fd3d1e2aca3778373b0f13277919711aa7",
+      "symbol": "SOL",
+      "label": "no_alert",
+      "comment": "слишком маленькие процентные отклонения",
+      "assessed_at": "2026-10-26T09:37:14.136Z"
+    },
+    {
+      "case_id": "ev_ae7bb0bcf5848ba5",
+      "input_sha256": "2547d39a64ab6cf43d430a4710e240d1893cad2d8600c165330d4cfbe8e83b60",
+      "symbol": "ETH",
+      "label": "ambiguous",
+      "comment": "видно что тенденция падения, но по сравнинею с тем как упало с прошлого алерта, сейчас упало ещё на процент, не понятно стоит ли пользователю об этом говорить, что тенденция созраняется. хотя может если прошло уже 5 часов, то стоит. спорно в общем, но скорее да чем нет",
+      "assessed_at": "2026-10-26T09:37:25.009Z"
+    }
+  ]
+}

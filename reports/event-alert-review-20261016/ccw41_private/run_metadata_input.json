@@ -1,0 +1,17 @@
+{
+  "provider": "OpenAI",
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "ultra",
+  "interface": "local Codex isolated subagent",
+  "data_transfer_approval": "Owner directive 'DO CCW-41' on 2026-10-22; sanitized significance-only inputs via the existing OpenAI Codex session",
+  "model_identity_verification": "Explicit collaboration model override accepted as gpt-6.1-sol with ultra reasoning",
+  "sampling_settings": "Platform-managed; not exposed",
+  "context_limit": "Not exposed",
+  "request_errors": 1,
+  "request_error_detail": "One capacity rejection before batch 02 produced no decision; the unchanged batch was retried successfully",
+  "measured_tokens": null,
+  "measured_cost_usd": null,
+  "billing_context": "No separate API endpoint or metered API spend was used; existing Codex plan/quota consumption and marginal cost are not exposed",
+  "review_session": "One clean no-parent-history Reviewer C agent processed ten frozen 20-case batches; it was instructed not to read A/B labels, prior result files, comparison reports, repository code, or other batches",
+  "discarded_preflight": "A different agent was interrupted before producing output when packet scrubbing was tightened; no output from that preflight entered the run"
+}

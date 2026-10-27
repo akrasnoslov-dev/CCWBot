@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "balanced_novelty",
+  "model": "openai/gpt-oss-120b",
+  "config_fingerprint": "1feaecbd7a3fa52d713190f771b41c5c1d09096c0a8742bcb449864b53ec9f9b",
+  "results": []
+}

@@ -1,0 +1,12 @@
+{
+  "coverage_complete": true,
+  "requests": 74,
+  "unique_cases_per_model": 19,
+  "recorded_json_contract_deadline_verdicts_rechecked": true,
+  "source_snapshot_files_verified": 123,
+  "workload_aggregate_reconciliation": "3573 rows = 2076 attempts + 1497 skips; 1548644 input / 549419 output tokens",
+  "production_changes": false,
+  "paid_services_purchased": false,
+  "research_only_ignored_files": true,
+  "graphify": "query succeeded; update command exited 1 without diagnostics. No tracked runtime source changed; no package provisioning attempted."
+}

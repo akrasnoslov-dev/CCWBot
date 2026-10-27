@@ -1,0 +1,938 @@
+{
+  "gate": {
+    "role": "ccwbot_investigator",
+    "transaction_read_only": "on",
+    "default_transaction_read_only": "on"
+  },
+  "start_utc": "2026-10-12T00:00:00Z",
+  "end_utc": "2026-10-19T00:00:00Z",
+  "queries": {
+    "coverage": [
+      {
+        "first_at": "2026-10-12 00:00:01.984228+00:00",
+        "last_at": "2026-10-18 23:45:09.758495+00:00",
+        "rows": 3573,
+        "missing_operation_ids": 0
+      }
+    ],
+    "feature_status": [
+      {
+        "call_type": "daily_report",
+        "status": "schema_error",
+        "rows": 3,
+        "input_tokens": 1208,
+        "output_tokens": 647,
+        "input_token_rows": 1,
+        "output_token_rows": 1
+      },
+      {
+        "call_type": "daily_report",
+        "status": "skipped_due_to_rate_limit",
+        "rows": 4,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "daily_report",
+        "status": "success",
+        "rows": 45,
+        "input_tokens": 61139,
+        "output_tokens": 28109,
+        "input_token_rows": 45,
+        "output_token_rows": 45
+      },
+      {
+        "call_type": "event_alert_render",
+        "status": "schema_error",
+        "rows": 36,
+        "input_tokens": 16403,
+        "output_tokens": 4537,
+        "input_token_rows": 34,
+        "output_token_rows": 34
+      },
+      {
+        "call_type": "event_alert_render",
+        "status": "skipped_due_to_rate_limit",
+        "rows": 53,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "event_alert_render",
+        "status": "success",
+        "rows": 216,
+        "input_tokens": 103109,
+        "output_tokens": 28168,
+        "input_token_rows": 216,
+        "output_token_rows": 216
+      },
+      {
+        "call_type": "event_alert_render",
+        "status": "timeout",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "other_error",
+        "rows": 65,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "rate_limit",
+        "rows": 24,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "schema_error",
+        "rows": 10,
+        "input_tokens": 6985,
+        "output_tokens": 441,
+        "input_token_rows": 10,
+        "output_token_rows": 10
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "skipped_due_to_rate_limit",
+        "rows": 1435,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "success",
+        "rows": 1334,
+        "input_tokens": 1162369,
+        "output_tokens": 432853,
+        "input_token_rows": 1334,
+        "output_token_rows": 1334
+      },
+      {
+        "call_type": "event_analysis",
+        "status": "timeout",
+        "rows": 37,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "market_heartbeat",
+        "status": "success",
+        "rows": 97,
+        "input_tokens": 62104,
+        "output_tokens": 15461,
+        "input_token_rows": 97,
+        "output_token_rows": 97
+      },
+      {
+        "call_type": "news_intelligence",
+        "status": "schema_error",
+        "rows": 1,
+        "input_tokens": 428,
+        "output_tokens": 138,
+        "input_token_rows": 1,
+        "output_token_rows": 1
+      },
+      {
+        "call_type": "news_intelligence",
+        "status": "skipped_due_to_rate_limit",
+        "rows": 3,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "news_intelligence",
+        "status": "success",
+        "rows": 197,
+        "input_tokens": 121315,
+        "output_tokens": 33799,
+        "input_token_rows": 197,
+        "output_token_rows": 197
+      },
+      {
+        "call_type": "weekly_report",
+        "status": "schema_error",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "weekly_report",
+        "status": "skipped_due_to_rate_limit",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null,
+        "input_token_rows": 0,
+        "output_token_rows": 0
+      },
+      {
+        "call_type": "weekly_report",
+        "status": "success",
+        "rows": 7,
+        "input_tokens": 13584,
+        "output_tokens": 5266,
+        "input_token_rows": 7,
+        "output_token_rows": 7
+      }
+    ],
+    "daily": [
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "daily_report",
+        "rows": 7,
+        "attempted_rows": 7,
+        "logical_ops": 7,
+        "input_tokens": 9156,
+        "output_tokens": 4462
+      },
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "event_alert_render",
+        "rows": 112,
+        "attempted_rows": 96,
+        "logical_ops": 79,
+        "input_tokens": 37543,
+        "output_tokens": 9569
+      },
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "event_analysis",
+        "rows": 427,
+        "attempted_rows": 220,
+        "logical_ops": 192,
+        "input_tokens": 158815,
+        "output_tokens": 64161
+      },
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "market_heartbeat",
+        "rows": 52,
+        "attempted_rows": 52,
+        "logical_ops": 52,
+        "input_tokens": 31777,
+        "output_tokens": 7932
+      },
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "news_intelligence",
+        "rows": 41,
+        "attempted_rows": 40,
+        "logical_ops": 40,
+        "input_tokens": 16754,
+        "output_tokens": 6406
+      },
+      {
+        "utc_day": "2026-10-12",
+        "call_type": "weekly_report",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 1766,
+        "output_tokens": 714
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "daily_report",
+        "rows": 8,
+        "attempted_rows": 6,
+        "logical_ops": 7,
+        "input_tokens": 8476,
+        "output_tokens": 3646
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "event_alert_render",
+        "rows": 116,
+        "attempted_rows": 81,
+        "logical_ops": 72,
+        "input_tokens": 35163,
+        "output_tokens": 8727
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "event_analysis",
+        "rows": 434,
+        "attempted_rows": 216,
+        "logical_ops": 192,
+        "input_tokens": 169452,
+        "output_tokens": 64510
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "market_heartbeat",
+        "rows": 40,
+        "attempted_rows": 40,
+        "logical_ops": 40,
+        "input_tokens": 27596,
+        "output_tokens": 6793
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "news_intelligence",
+        "rows": 36,
+        "attempted_rows": 34,
+        "logical_ops": 35,
+        "input_tokens": 22547,
+        "output_tokens": 5703
+      },
+      {
+        "utc_day": "2026-10-13",
+        "call_type": "weekly_report",
+        "rows": 3,
+        "attempted_rows": 2,
+        "logical_ops": 2,
+        "input_tokens": 2080,
+        "output_tokens": 770
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "daily_report",
+        "rows": 7,
+        "attempted_rows": 7,
+        "logical_ops": 7,
+        "input_tokens": 9728,
+        "output_tokens": 3862
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "event_alert_render",
+        "rows": 11,
+        "attempted_rows": 11,
+        "logical_ops": 10,
+        "input_tokens": 7550,
+        "output_tokens": 2382
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "event_analysis",
+        "rows": 420,
+        "attempted_rows": 195,
+        "logical_ops": 192,
+        "input_tokens": 168999,
+        "output_tokens": 59694
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "market_heartbeat",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 521,
+        "output_tokens": 151
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "news_intelligence",
+        "rows": 37,
+        "attempted_rows": 37,
+        "logical_ops": 37,
+        "input_tokens": 24545,
+        "output_tokens": 6385
+      },
+      {
+        "utc_day": "2026-10-14",
+        "call_type": "weekly_report",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 1779,
+        "output_tokens": 767
+      },
+      {
+        "utc_day": "2026-10-15",
+        "call_type": "daily_report",
+        "rows": 6,
+        "attempted_rows": 6,
+        "logical_ops": 6,
+        "input_tokens": 8369,
+        "output_tokens": 4068
+      },
+      {
+        "utc_day": "2026-10-15",
+        "call_type": "event_alert_render",
+        "rows": 20,
+        "attempted_rows": 20,
+        "logical_ops": 16,
+        "input_tokens": 12084,
+        "output_tokens": 3565
+      },
+      {
+        "utc_day": "2026-10-15",
+        "call_type": "event_analysis",
+        "rows": 410,
+        "attempted_rows": 219,
+        "logical_ops": 192,
+        "input_tokens": 168746,
+        "output_tokens": 63515
+      },
+      {
+        "utc_day": "2026-10-15",
+        "call_type": "news_intelligence",
+        "rows": 40,
+        "attempted_rows": 40,
+        "logical_ops": 40,
+        "input_tokens": 26630,
+        "output_tokens": 7065
+      },
+      {
+        "utc_day": "2026-10-15",
+        "call_type": "weekly_report",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 1772,
+        "output_tokens": 857
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "daily_report",
+        "rows": 6,
+        "attempted_rows": 6,
+        "logical_ops": 6,
+        "input_tokens": 8573,
+        "output_tokens": 3765
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "event_alert_render",
+        "rows": 14,
+        "attempted_rows": 14,
+        "logical_ops": 10,
+        "input_tokens": 9142,
+        "output_tokens": 2633
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "event_analysis",
+        "rows": 405,
+        "attempted_rows": 203,
+        "logical_ops": 192,
+        "input_tokens": 169554,
+        "output_tokens": 60841
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "market_heartbeat",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 521,
+        "output_tokens": 110
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "news_intelligence",
+        "rows": 27,
+        "attempted_rows": 27,
+        "logical_ops": 27,
+        "input_tokens": 17975,
+        "output_tokens": 4859
+      },
+      {
+        "utc_day": "2026-10-16",
+        "call_type": "weekly_report",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 1778,
+        "output_tokens": 695
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "daily_report",
+        "rows": 8,
+        "attempted_rows": 8,
+        "logical_ops": 7,
+        "input_tokens": 9774,
+        "output_tokens": 5233
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "event_alert_render",
+        "rows": 9,
+        "attempted_rows": 9,
+        "logical_ops": 8,
+        "input_tokens": 5389,
+        "output_tokens": 1661
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "event_analysis",
+        "rows": 406,
+        "attempted_rows": 203,
+        "logical_ops": 192,
+        "input_tokens": 167305,
+        "output_tokens": 57751
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "market_heartbeat",
+        "rows": 2,
+        "attempted_rows": 2,
+        "logical_ops": 2,
+        "input_tokens": 1171,
+        "output_tokens": 292
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "news_intelligence",
+        "rows": 4,
+        "attempted_rows": 4,
+        "logical_ops": 4,
+        "input_tokens": 2661,
+        "output_tokens": 680
+      },
+      {
+        "utc_day": "2026-10-17",
+        "call_type": "weekly_report",
+        "rows": 3,
+        "attempted_rows": 2,
+        "logical_ops": 2,
+        "input_tokens": 1770,
+        "output_tokens": 788
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "daily_report",
+        "rows": 10,
+        "attempted_rows": 8,
+        "logical_ops": 8,
+        "input_tokens": 8271,
+        "output_tokens": 3720
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "event_alert_render",
+        "rows": 25,
+        "attempted_rows": 23,
+        "logical_ops": 21,
+        "input_tokens": 12641,
+        "output_tokens": 4168
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "event_analysis",
+        "rows": 403,
+        "attempted_rows": 214,
+        "logical_ops": 192,
+        "input_tokens": 166483,
+        "output_tokens": 62822
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "market_heartbeat",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 518,
+        "output_tokens": 183
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "news_intelligence",
+        "rows": 16,
+        "attempted_rows": 16,
+        "logical_ops": 16,
+        "input_tokens": 10631,
+        "output_tokens": 2839
+      },
+      {
+        "utc_day": "2026-10-18",
+        "call_type": "weekly_report",
+        "rows": 1,
+        "attempted_rows": 1,
+        "logical_ops": 1,
+        "input_tokens": 2639,
+        "output_tokens": 675
+      }
+    ],
+    "provider_status": [
+      {
+        "provider": "cloudflare",
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "status": "schema_error",
+        "error_reason": "schema_validation_failed",
+        "rows": 11,
+        "input_tokens": 7465,
+        "output_tokens": 516
+      },
+      {
+        "provider": "cloudflare",
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "status": "success",
+        "error_reason": null,
+        "rows": 746,
+        "input_tokens": 566088,
+        "output_tokens": 32726
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "status": "success",
+        "error_reason": null,
+        "rows": 1,
+        "input_tokens": 486,
+        "output_tokens": 103
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "other_error",
+        "error_reason": "provider_5xx",
+        "rows": 53,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "other_error",
+        "error_reason": "provider_quota_exhausted",
+        "rows": 12,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "rate_limit",
+        "error_reason": "rate_limit",
+        "rows": 1,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "skipped_due_to_rate_limit",
+        "error_reason": "rate_limit_backoff_active",
+        "rows": 647,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "success",
+        "error_reason": null,
+        "rows": 66,
+        "input_tokens": 59755,
+        "output_tokens": 3361
+      },
+      {
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "timeout",
+        "error_reason": "timeout",
+        "rows": 37,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "status": "rate_limit",
+        "error_reason": "rate_limit",
+        "rows": 14,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "status": "schema_error",
+        "error_reason": "schema_validation_failed",
+        "rows": 23,
+        "input_tokens": 11621,
+        "output_tokens": 3622
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "status": "skipped_due_to_rate_limit",
+        "error_reason": "rate_limit_backoff_active",
+        "rows": 7,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "status": "skipped_due_to_rate_limit",
+        "error_reason": "rate_limit_budget_exhausted",
+        "rows": 840,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "status": "success",
+        "error_reason": null,
+        "rows": 676,
+        "input_tokens": 617053,
+        "output_tokens": 421303
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "schema_error",
+        "error_reason": "provider_json_validate_failed",
+        "rows": 4,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "schema_error",
+        "error_reason": "schema_validation_failed",
+        "rows": 2,
+        "input_tokens": 1636,
+        "output_tokens": 785
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "skipped_due_to_rate_limit",
+        "error_reason": "rate_limit_budget_exhausted",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "success",
+        "error_reason": null,
+        "rows": 345,
+        "input_tokens": 257017,
+        "output_tokens": 81734
+      },
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "status": "schema_error",
+        "error_reason": "provider_json_validate_failed",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "status": "schema_error",
+        "error_reason": "schema_validation_failed",
+        "rows": 10,
+        "input_tokens": 4302,
+        "output_tokens": 840
+      },
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "status": "success",
+        "error_reason": null,
+        "rows": 62,
+        "input_tokens": 23221,
+        "output_tokens": 4429
+      },
+      {
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "status": "timeout",
+        "error_reason": "timeout",
+        "rows": 2,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "mistral",
+        "model": "mistral-small-2603",
+        "status": "rate_limit",
+        "error_reason": "rate_limit",
+        "rows": 9,
+        "input_tokens": null,
+        "output_tokens": null
+      },
+      {
+        "provider": "mistral",
+        "model": "mistral-small-2603",
+        "status": "skipped_due_to_rate_limit",
+        "error_reason": "rate_limit_backoff_active",
+        "rows": 1,
+        "input_tokens": null,
+        "output_tokens": null
+      }
+    ],
+    "sizes": [
+      {
+        "call_type": "daily_report",
+        "rows": 48,
+        "input_char_rows": 48,
+        "input_chars_p50": 3028.5,
+        "input_chars_p95": 4063.45,
+        "input_chars_max": 4129,
+        "input_tokens_p50": 1309.0,
+        "input_tokens_p95": 1601.75,
+        "output_tokens_p95": 770.0
+      },
+      {
+        "call_type": "event_alert_render",
+        "rows": 254,
+        "input_char_rows": 254,
+        "input_chars_p50": 1679.5,
+        "input_chars_p95": 2528.0,
+        "input_chars_max": 2629,
+        "input_tokens_p50": 450.0,
+        "input_tokens_p95": 721.65,
+        "output_tokens_p95": 241.19999999999993
+      },
+      {
+        "call_type": "event_analysis",
+        "rows": 1470,
+        "input_char_rows": 1470,
+        "input_chars_p50": 2718.0,
+        "input_chars_p95": 2863.0,
+        "input_chars_max": 2899,
+        "input_tokens_p50": 801.0,
+        "input_tokens_p95": 1052.0,
+        "output_tokens_p95": 962.8499999999999
+      },
+      {
+        "call_type": "market_heartbeat",
+        "rows": 97,
+        "input_char_rows": 97,
+        "input_chars_p50": 1213.0,
+        "input_chars_p95": 2688.7999999999997,
+        "input_chars_max": 2778,
+        "input_tokens_p50": 524.0,
+        "input_tokens_p95": 899.0,
+        "output_tokens_p95": 202.19999999999982
+      },
+      {
+        "call_type": "news_intelligence",
+        "rows": 198,
+        "input_char_rows": 198,
+        "input_chars_p50": 1492.5,
+        "input_chars_p95": 1657.0,
+        "input_chars_max": 1705,
+        "input_tokens_p50": 656.5,
+        "input_tokens_p95": 685.15,
+        "output_tokens_p95": 216.0
+      },
+      {
+        "call_type": "weekly_report",
+        "rows": 9,
+        "input_char_rows": 9,
+        "input_chars_p50": 4318.0,
+        "input_chars_p95": 6512.999999999999,
+        "input_chars_max": 7251,
+        "input_tokens_p50": 1778.0,
+        "input_tokens_p95": 2471.2999999999997,
+        "output_tokens_p95": 836.3
+      }
+    ],
+    "burst": [
+      {
+        "peak_rows_per_minute": 10,
+        "peak_attempted_rows_per_minute": 6,
+        "peak_logical_ops_per_minute": 8
+      }
+    ],
+    "fallback": [
+      {
+        "correlated_ops": 1913,
+        "multi_attempt_ops": 159,
+        "recovered_multi_attempt_ops": 150,
+        "no_success_ops": 17,
+        "max_attempts": 3
+      }
+    ],
+    "analysis_outcomes": [
+      {
+        "analysis_type": "event_analysis",
+        "status": "no_alert",
+        "error_reason": null,
+        "rows": 1118
+      },
+      {
+        "analysis_type": "event_analysis",
+        "status": "schema_error",
+        "error_reason": "schema_validation_failed",
+        "rows": 10
+      },
+      {
+        "analysis_type": "event_analysis",
+        "status": "success",
+        "error_reason": null,
+        "rows": 216
+      }
+    ],
+    "heartbeat_outcomes": [
+      {
+        "status": "completed",
+        "rows": 97
+      }
+    ],
+    "report_outcomes": [
+      {
+        "report_type": "daily",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "status": "completed",
+        "rows": 1
+      },
+      {
+        "report_type": "daily",
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "completed",
+        "rows": 44
+      },
+      {
+        "report_type": "daily",
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "failed",
+        "rows": 3
+      },
+      {
+        "report_type": "weekly",
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "completed",
+        "rows": 7
+      },
+      {
+        "report_type": "weekly",
+        "provider": "groq",
+        "model": "openai/gpt-oss-20b",
+        "status": "failed",
+        "rows": 2
+      }
+    ],
+    "reuse": []
+  }
+}

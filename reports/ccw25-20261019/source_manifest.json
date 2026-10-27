@@ -1,0 +1,23 @@
+{
+  "Qwen/Qwen3-4B-Instruct-2507": {
+    "revision": "cdbee75f17c01a7cc42f958dc650907174af0554",
+    "license": "apache-2.0",
+    "model_card": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507"
+  },
+  "microsoft/Phi-4-mini-instruct": {
+    "revision": "cfbefacb99257ffa30c83adab238a50856ac3083",
+    "license": "mit",
+    "model_card": "https://huggingface.co/microsoft/Phi-4-mini-instruct"
+  },
+  "Qwen/Qwen2.5-7B-Instruct": {
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "license": "apache-2.0",
+    "model_card": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct"
+  },
+  "llama.cpp": {
+    "tag": "b11734",
+    "target_commitish": "f3fb2fcdbc93a8f677e893b8dbd36462b3190ffd",
+    "published_at": "2026-10-19T14:08:40Z",
+    "source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11734"
+  }
+}

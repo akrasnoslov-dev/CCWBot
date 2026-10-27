@@ -1,0 +1,416 @@
+{
+  "a_ambiguous": {
+    "A-B": {
+      "agreement": 7,
+      "disagreement": 40,
+      "total": 47
+    },
+    "A-C": {
+      "agreement": 1,
+      "disagreement": 46,
+      "total": 47
+    },
+    "B-C": {
+      "agreement": 6,
+      "disagreement": 41,
+      "total": 47
+    }
+  },
+  "a_b_conflict_subset": {
+    "c_agrees_a": 53,
+    "c_agrees_b": 7,
+    "c_agrees_neither": 37,
+    "c_ambiguous": 2,
+    "count": 99
+  },
+  "a_decisive": {
+    "A-B": {
+      "agreement": 94,
+      "disagreement": 59,
+      "total": 153
+    },
+    "A-C": {
+      "agreement": 133,
+      "disagreement": 20,
+      "total": 153
+    },
+    "B-C": {
+      "agreement": 81,
+      "disagreement": 72,
+      "total": 153
+    }
+  },
+  "breakdowns": {
+    "scenario_type:delivered": {
+      "A-B": {
+        "agreement": 37,
+        "disagreement": 35,
+        "total": 72
+      },
+      "A-C": {
+        "agreement": 50,
+        "disagreement": 22,
+        "total": 72
+      },
+      "B-C": {
+        "agreement": 39,
+        "disagreement": 33,
+        "total": 72
+      }
+    },
+    "scenario_type:news_absent": {
+      "A-B": {
+        "agreement": 1,
+        "disagreement": 0,
+        "total": 1
+      },
+      "A-C": {
+        "agreement": 1,
+        "disagreement": 0,
+        "total": 1
+      },
+      "B-C": {
+        "agreement": 1,
+        "disagreement": 0,
+        "total": 1
+      }
+    },
+    "scenario_type:news_present": {
+      "A-B": {
+        "agreement": 3,
+        "disagreement": 0,
+        "total": 3
+      },
+      "A-C": {
+        "agreement": 2,
+        "disagreement": 1,
+        "total": 3
+      },
+      "B-C": {
+        "agreement": 2,
+        "disagreement": 1,
+        "total": 3
+      }
+    },
+    "scenario_type:no_alert": {
+      "A-B": {
+        "agreement": 47,
+        "disagreement": 53,
+        "total": 100
+      },
+      "A-C": {
+        "agreement": 68,
+        "disagreement": 32,
+        "total": 100
+      },
+      "B-C": {
+        "agreement": 37,
+        "disagreement": 63,
+        "total": 100
+      }
+    },
+    "scenario_type:repeat": {
+      "A-B": {
+        "agreement": 13,
+        "disagreement": 11,
+        "total": 24
+      },
+      "A-C": {
+        "agreement": 13,
+        "disagreement": 11,
+        "total": 24
+      },
+      "B-C": {
+        "agreement": 8,
+        "disagreement": 16,
+        "total": 24
+      }
+    },
+    "symbol:BTC": {
+      "A-B": {
+        "agreement": 33,
+        "disagreement": 17,
+        "total": 50
+      },
+      "A-C": {
+        "agreement": 42,
+        "disagreement": 8,
+        "total": 50
+      },
+      "B-C": {
+        "agreement": 31,
+        "disagreement": 19,
+        "total": 50
+      }
+    },
+    "symbol:ETH": {
+      "A-B": {
+        "agreement": 24,
+        "disagreement": 26,
+        "total": 50
+      },
+      "A-C": {
+        "agreement": 35,
+        "disagreement": 15,
+        "total": 50
+      },
+      "B-C": {
+        "agreement": 23,
+        "disagreement": 27,
+        "total": 50
+      }
+    },
+    "symbol:GRAM": {
+      "A-B": {
+        "agreement": 23,
+        "disagreement": 27,
+        "total": 50
+      },
+      "A-C": {
+        "agreement": 30,
+        "disagreement": 20,
+        "total": 50
+      },
+      "B-C": {
+        "agreement": 18,
+        "disagreement": 32,
+        "total": 50
+      }
+    },
+    "symbol:SOL": {
+      "A-B": {
+        "agreement": 21,
+        "disagreement": 29,
+        "total": 50
+      },
+      "A-C": {
+        "agreement": 27,
+        "disagreement": 23,
+        "total": 50
+      },
+      "B-C": {
+        "agreement": 15,
+        "disagreement": 35,
+        "total": 50
+      }
+    },
+    "tag:borderline": {
+      "A-B": {
+        "agreement": 28,
+        "disagreement": 44,
+        "total": 72
+      },
+      "A-C": {
+        "agreement": 47,
+        "disagreement": 25,
+        "total": 72
+      },
+      "B-C": {
+        "agreement": 27,
+        "disagreement": 45,
+        "total": 72
+      }
+    },
+    "tag:continuation": {
+      "A-B": {
+        "agreement": 66,
+        "disagreement": 46,
+        "total": 112
+      },
+      "A-C": {
+        "agreement": 69,
+        "disagreement": 43,
+        "total": 112
+      },
+      "B-C": {
+        "agreement": 50,
+        "disagreement": 62,
+        "total": 112
+      }
+    },
+    "tag:news_absent": {
+      "A-B": {
+        "agreement": 49,
+        "disagreement": 41,
+        "total": 90
+      },
+      "A-C": {
+        "agreement": 59,
+        "disagreement": 31,
+        "total": 90
+      },
+      "B-C": {
+        "agreement": 38,
+        "disagreement": 52,
+        "total": 90
+      }
+    },
+    "tag:news_present": {
+      "A-B": {
+        "agreement": 52,
+        "disagreement": 58,
+        "total": 110
+      },
+      "A-C": {
+        "agreement": 75,
+        "disagreement": 35,
+        "total": 110
+      },
+      "B-C": {
+        "agreement": 49,
+        "disagreement": 61,
+        "total": 110
+      }
+    },
+    "tag:repeat": {
+      "A-B": {
+        "agreement": 57,
+        "disagreement": 64,
+        "total": 121
+      },
+      "A-C": {
+        "agreement": 78,
+        "disagreement": 43,
+        "total": 121
+      },
+      "B-C": {
+        "agreement": 47,
+        "disagreement": 74,
+        "total": 121
+      }
+    },
+    "tag:reversal": {
+      "A-B": {
+        "agreement": 35,
+        "disagreement": 53,
+        "total": 88
+      },
+      "A-C": {
+        "agreement": 65,
+        "disagreement": 23,
+        "total": 88
+      },
+      "B-C": {
+        "agreement": 37,
+        "disagreement": 51,
+        "total": 88
+      }
+    }
+  },
+  "case_count": 200,
+  "confirmed_patterns": [
+    "Reviewer C selected no_alert more often and ambiguous less often than either human reviewer.",
+    "Reviewer C agreed with Reviewer A more often on A-decisive cases than on A-ambiguous cases.",
+    "Reviewer A/C disagreement increased from BTC through ETH and GRAM to SOL in this frozen sample."
+  ],
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "distributions": {
+    "A": {
+      "alert": 41,
+      "ambiguous": 47,
+      "no_alert": 112
+    },
+    "B": {
+      "alert": 101,
+      "ambiguous": 40,
+      "no_alert": 59
+    },
+    "C": {
+      "alert": 31,
+      "ambiguous": 2,
+      "no_alert": 167
+    }
+  },
+  "high_impact_counts": {
+    "a_alert_c_no_alert": 17,
+    "a_ambiguous_c_decisive": 46,
+    "a_no_alert_c_alert": 2
+  },
+  "hypotheses_for_owner_review": [
+    "The frozen rubric may have induced a conservative materiality/novelty interpretation in Reviewer C; this is a hypothesis, not a demonstrated human-label defect.",
+    "Reviewer C's low ambiguous rate may indicate over-resolution of incomplete evidence rather than stronger certainty.",
+    "Higher GRAM/SOL disagreement may reflect asset-specific context gaps or reviewer calibration and requires case-level owner review."
+  ],
+  "label": "exploratory Reviewer-C agreement/disagreement",
+  "limitations": [
+    "Reviewer C is exploratory and is not adjudicated truth.",
+    "Agreement with either human reviewer does not establish correctness.",
+    "Small subgroup denominators are descriptive and must not be generalized.",
+    "No majority-vote relabeling or production policy change is authorized."
+  ],
+  "pairwise": {
+    "A-B": {
+      "agreement": 101,
+      "agreement_rate": 0.505,
+      "cohen_kappa": 0.2766066274524132,
+      "confusion": {
+        "alert": {
+          "alert": 37,
+          "ambiguous": 4,
+          "no_alert": 0
+        },
+        "ambiguous": {
+          "alert": 38,
+          "ambiguous": 7,
+          "no_alert": 2
+        },
+        "no_alert": {
+          "alert": 26,
+          "ambiguous": 29,
+          "no_alert": 57
+        }
+      },
+      "disagreement": 99,
+      "total": 200
+    },
+    "A-C": {
+      "agreement": 134,
+      "agreement_rate": 0.67,
+      "cohen_kappa": 0.33771511715418207,
+      "confusion": {
+        "alert": {
+          "alert": 24,
+          "ambiguous": 0,
+          "no_alert": 17
+        },
+        "ambiguous": {
+          "alert": 5,
+          "ambiguous": 1,
+          "no_alert": 41
+        },
+        "no_alert": {
+          "alert": 2,
+          "ambiguous": 1,
+          "no_alert": 109
+        }
+      },
+      "disagreement": 66,
+      "total": 200
+    },
+    "B-C": {
+      "agreement": 87,
+      "agreement_rate": 0.435,
+      "cohen_kappa": 0.16097416097416098,
+      "confusion": {
+        "alert": {
+          "alert": 29,
+          "ambiguous": 2,
+          "no_alert": 70
+        },
+        "ambiguous": {
+          "alert": 1,
+          "ambiguous": 0,
+          "no_alert": 39
+        },
+        "no_alert": {
+          "alert": 1,
+          "ambiguous": 0,
+          "no_alert": 58
+        }
+      },
+      "disagreement": 113,
+      "total": 200
+    }
+  },
+  "protocol_version": "ccw41-v1"
+}

@@ -1,0 +1,291 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "model": "gpt-6-luna",
+  "evaluation_kind": "static historical input replay; not an updated-state sequential simulation",
+  "expected": 200,
+  "status_counts": {
+    "valid": 200
+  },
+  "unique_valid": 200,
+  "cost_conservative_usd": 0.060912,
+  "prior_two_luna_cost_usd": 0.261808,
+  "cost_total_usd": 0.32272,
+  "by_prompt": {
+    "production": {
+      "suggested_alerts": 26,
+      "by_symbol": {
+        "BTC": 5,
+        "ETH": 4,
+        "GRAM": 5,
+        "SOL": 12
+      },
+      "potential_repeated_alert_pairs_within_4h": 7
+    },
+    "balanced": {
+      "suggested_alerts": 44,
+      "by_symbol": {
+        "BTC": 9,
+        "ETH": 11,
+        "GRAM": 10,
+        "SOL": 14
+      },
+      "potential_repeated_alert_pairs_within_4h": 22
+    },
+    "v3": {
+      "suggested_alerts": 24,
+      "by_symbol": {
+        "BTC": 4,
+        "ETH": 5,
+        "GRAM": 2,
+        "SOL": 13
+      },
+      "potential_repeated_alert_pairs_within_4h": 6
+    },
+    "refined": {
+      "suggested_alerts": 42,
+      "by_symbol": {
+        "BTC": 7,
+        "ETH": 9,
+        "GRAM": 10,
+        "SOL": 16
+      },
+      "potential_repeated_alert_pairs_within_4h": 16
+    }
+  },
+  "v3_vs_refined": {
+    "switched": 20,
+    "now_alert": 1,
+    "now_no_alert": 19,
+    "disagreement_details": [
+      {
+        "id": "ev_3f11561b791a53f8",
+        "coin": "SOL",
+        "source_utc": "2026-10-20T04:45:01.531017Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.2891118377310447,
+        "last_60m_pct": -0.001958786934774145,
+        "last_30m_pct": -0.0355717338275337,
+        "previous_alert_age_minutes": 209
+      },
+      {
+        "id": "ev_df21210a26fe1d35",
+        "coin": "ETH",
+        "source_utc": "2026-10-19T01:35:02.266623Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.3416141099587584,
+        "last_60m_pct": 0.6678155579534945,
+        "last_30m_pct": 0.3954576864830843,
+        "previous_alert_age_minutes": 209
+      },
+      {
+        "id": "ev_8f88957f27c5a239",
+        "coin": "BTC",
+        "source_utc": "2026-10-21T09:30:29.182800Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 0.9886083352497574,
+        "last_60m_pct": 0.3306969854022175,
+        "last_30m_pct": 0.18366226230527252,
+        "previous_alert_age_minutes": 117
+      },
+      {
+        "id": "ev_b3ccbaff2007d7a2",
+        "coin": "ETH",
+        "source_utc": "2026-10-17T17:05:03.019010Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -0.9443378283010546,
+        "last_60m_pct": -0.39732828455141156,
+        "last_30m_pct": -0.17465818952726803,
+        "previous_alert_age_minutes": 809
+      },
+      {
+        "id": "ev_fce00ba49f7dfcc7",
+        "coin": "SOL",
+        "source_utc": "2026-10-20T16:45:02.129154Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.7260233224985846,
+        "last_60m_pct": 0.41332083976070566,
+        "last_30m_pct": 0.5250648332051854,
+        "previous_alert_age_minutes": 239
+      },
+      {
+        "id": "ev_a7cc7577e0767e8c",
+        "coin": "SOL",
+        "source_utc": "2026-10-18T02:15:01.656193Z",
+        "from_refined": false,
+        "to_v3": true,
+        "window_pct": 0.41026215850934217,
+        "last_60m_pct": -0.10294741906763605,
+        "last_30m_pct": -0.6242681058803006,
+        "previous_alert_age_minutes": 29
+      },
+      {
+        "id": "ev_eccdf281c0b85c80",
+        "coin": "GRAM",
+        "source_utc": "2026-10-22T04:40:01.894196Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -0.9034305305185812,
+        "last_60m_pct": 0.3241973730178443,
+        "last_30m_pct": -0.019651442695679148,
+        "previous_alert_age_minutes": 719
+      },
+      {
+        "id": "ev_56ce5a3b11bfb1dc",
+        "coin": "ETH",
+        "source_utc": "2026-10-18T17:05:01.738107Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -0.860464237581546,
+        "last_60m_pct": -0.033529201204297296,
+        "last_30m_pct": 0.28570167422385506,
+        "previous_alert_age_minutes": 959
+      },
+      {
+        "id": "ev_1bda2dc7f164e499",
+        "coin": "GRAM",
+        "source_utc": "2026-10-21T19:10:01.697837Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -0.48955047019050524,
+        "last_60m_pct": -0.4702305142828903,
+        "last_30m_pct": -0.7220765915691151,
+        "previous_alert_age_minutes": 149
+      },
+      {
+        "id": "ev_9b51f2401c505ab7",
+        "coin": "SOL",
+        "source_utc": "2026-10-19T02:15:01.932809Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.6646549217969682,
+        "last_60m_pct": 0.6111103393732135,
+        "last_30m_pct": 0.3698145738291888,
+        "previous_alert_age_minutes": 239
+      },
+      {
+        "id": "ev_27f9bc5ba4f71666",
+        "coin": "BTC",
+        "source_utc": "2026-10-18T23:00:06.744749Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 0.8715610126371919,
+        "last_60m_pct": 0.6931636497275382,
+        "last_30m_pct": 0.20173944515834463,
+        "previous_alert_age_minutes": 58
+      },
+      {
+        "id": "ev_b9008313a68e67ee",
+        "coin": "ETH",
+        "source_utc": "2026-10-18T04:05:03.581255Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 0.9238263699177752,
+        "last_60m_pct": 0.31096307599706763,
+        "last_30m_pct": 0.1431526923152318,
+        "previous_alert_age_minutes": 179
+      },
+      {
+        "id": "ev_9df94d4b7d0af73a",
+        "coin": "GRAM",
+        "source_utc": "2026-10-19T00:40:01.831631Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.4252417468859306,
+        "last_60m_pct": -0.07678956954304757,
+        "last_30m_pct": -0.11529370519837626,
+        "previous_alert_age_minutes": 4559
+      },
+      {
+        "id": "ev_1f4d888d17baf529",
+        "coin": "GRAM",
+        "source_utc": "2026-10-21T11:40:01.719921Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -1.0337742737531295,
+        "last_60m_pct": -0.15901919774841938,
+        "last_30m_pct": -0.14416128412517418,
+        "previous_alert_age_minutes": 119
+      },
+      {
+        "id": "ev_f8e124afb1e8165c",
+        "coin": "GRAM",
+        "source_utc": "2026-10-17T19:40:01.679616Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.6268938916439513,
+        "last_60m_pct": 0.0833917006571193,
+        "last_30m_pct": 0.4007523047191868,
+        "previous_alert_age_minutes": 2819
+      },
+      {
+        "id": "ev_0932ea1b4a53c7b0",
+        "coin": "GRAM",
+        "source_utc": "2026-10-18T22:40:01.598150Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 0.810334327484183,
+        "last_60m_pct": 1.2869156837009017,
+        "last_30m_pct": 0.38984513302021856,
+        "previous_alert_age_minutes": 4439
+      },
+      {
+        "id": "ev_2289939e1f4c84d1",
+        "coin": "GRAM",
+        "source_utc": "2026-10-20T14:10:03.071673Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 0.8431459271678428,
+        "last_60m_pct": 1.1684668310713862,
+        "last_30m_pct": 1.018441576006871,
+        "previous_alert_age_minutes": 1949
+      },
+      {
+        "id": "ev_308d30d59ee31a5d",
+        "coin": "GRAM",
+        "source_utc": "2026-10-18T13:40:02.512367Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -0.9175849429445138,
+        "last_60m_pct": -0.5437213042056006,
+        "last_30m_pct": -0.5930614910007507,
+        "previous_alert_age_minutes": 3899
+      },
+      {
+        "id": "ev_23e08cd9ee137e52",
+        "coin": "BTC",
+        "source_utc": "2026-10-18T15:30:25.517638Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": -1.0389921092559598,
+        "last_60m_pct": -0.20524178889674816,
+        "last_30m_pct": 0.11120568377994502,
+        "previous_alert_age_minutes": 358
+      },
+      {
+        "id": "ev_ed2b9dc1c9a9a2af",
+        "coin": "SOL",
+        "source_utc": "2026-10-19T03:45:01.939590Z",
+        "from_refined": true,
+        "to_v3": false,
+        "window_pct": 1.0502538265378114,
+        "last_60m_pct": 0.11426804520350531,
+        "last_30m_pct": -0.17036428393616412,
+        "previous_alert_age_minutes": 329
+      }
+    ]
+  },
+  "classification_accuracy": {
+    "available": false,
+    "reason": "No independent adjudicated labels for these fresh 200 cases; old production/model outputs are not reference labels."
+  },
+  "sequence_simulation": {
+    "available": false,
+    "reason": "Frozen inputs retain original previous-alert state; a new decision would alter downstream states.",
+    "four_hour_proximity_is_diagnostic_not_confirmed_duplicate": true
+  }
+}

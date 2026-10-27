@@ -1,0 +1,21 @@
+{
+  "task": "CCW-45",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "prompt_instruction_sha256": {
+    "economical": "18744d969afd4fddfbce00dde19e6bdc299e55399d1163eadb2eb56fd0be99e9"
+  },
+  "expected": 200,
+  "labels_in_model_input": false,
+  "reused_development_set": true,
+  "origin": "source snapshots + CCW-44 independently stored read-only event_ai_analyses price history",
+  "model": "gpt-6-luna",
+  "api": "/v1/chat/completions",
+  "response_format": "json_object",
+  "max_completion_tokens": 2048,
+  "one_off_budget_usd": 0.4,
+  "candidate_count": 1,
+  "retry_policy": "never retry submitted paid request",
+  "production_modified": false,
+  "request_upper_bound_usd": 0.3200826,
+  "request_bytes_average": 4694.1
+}

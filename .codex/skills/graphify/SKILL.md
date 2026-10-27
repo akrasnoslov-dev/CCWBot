@@ -10,8 +10,10 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 ## CCWBot safety overrides
 
 For this repository, use only an already-provisioned local Graphify installation. Do not
-automatically install, upgrade, or fetch Graphify packages. If it is unavailable, report that
-provisioning is required and use ordinary repository navigation instead.
+automatically install, upgrade, or fetch Graphify packages in an interactive developer environment.
+The version-pinned installation on an ephemeral runner in `.github/workflows/graphify.yml`
+is separately authorized by `docs/graphify.md`. If the local CLI is unavailable, use the
+published repository snapshot and normal source navigation; never auto-install locally.
 
 Do not send CCWBot repository content to Gemini or any external semantic-extraction provider
 unless the current user request explicitly approves that run. Without that approval, use existing

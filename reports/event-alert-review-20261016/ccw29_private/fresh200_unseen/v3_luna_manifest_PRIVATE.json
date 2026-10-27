@@ -1,0 +1,13 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "prompts": {
+    "v3": "93860c81fff1d09e1ecf3de379e1b100fcef48b84efbec15416d65386cd7d02f"
+  },
+  "count": 200,
+  "budget_this_run_usd": 0.35,
+  "prior_openai_tests_total_usd": 0.261808,
+  "cumulative_budget_cap_usd": 0.611808,
+  "new_cost_if_all_valid_estimated_usd": 0.053,
+  "production_changed": false,
+  "saved_key_present": false
+}

@@ -1,0 +1,1061 @@
+{
+  "dataset_sha256": "cb087b1a52e32b48f96dabda9d9dbf72744fcdb37c273a906572567005fef873",
+  "matches": [
+    {
+      "case_id": "ev_72cd3db99c134e42",
+      "symbol": "SOL",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "reversal",
+        "should_alert": true,
+        "symbol": "SOL"
+      },
+      "source_sha256": "9627a101b2bd2705740d9758b398e0ded87a0b32e78e4fc744c93311cd4a7e2c"
+    },
+    {
+      "case_id": "ev_72cd3db99c134e42",
+      "symbol": "SOL",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "9627a101b2bd2705740d9758b398e0ded87a0b32e78e4fc744c93311cd4a7e2c"
+    },
+    {
+      "case_id": "ev_544477d235fbf661",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "low",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fd098012acc65fc357ee3871204be87e0464badc8edffd8d89b2c7509c5a092b"
+    },
+    {
+      "case_id": "ev_544477d235fbf661",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fd098012acc65fc357ee3871204be87e0464badc8edffd8d89b2c7509c5a092b"
+    },
+    {
+      "case_id": "ev_8b8b87e751079825",
+      "symbol": "BTC",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "cfd08878b7d000020ba5984766c8ae98bd41561a3ef262eaa44004d9e96e2244"
+    },
+    {
+      "case_id": "ev_8b8b87e751079825",
+      "symbol": "BTC",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "cfd08878b7d000020ba5984766c8ae98bd41561a3ef262eaa44004d9e96e2244"
+    },
+    {
+      "case_id": "ev_a3ab11595080a841",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "news_only",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "97cd90e6c7fec4a2d777d2cfd4e5d14d6284d8c79177be7ce7f4279854ece76f"
+    },
+    {
+      "case_id": "ev_a3ab11595080a841",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "97cd90e6c7fec4a2d777d2cfd4e5d14d6284d8c79177be7ce7f4279854ece76f"
+    },
+    {
+      "case_id": "ev_49f6b1c0c9db82b2",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "63f046839fd016e05e75cde6ccceb4f9b6ee0fa6b91e909a686e34e3cc9cc78d"
+    },
+    {
+      "case_id": "ev_49f6b1c0c9db82b2",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "63f046839fd016e05e75cde6ccceb4f9b6ee0fa6b91e909a686e34e3cc9cc78d"
+    },
+    {
+      "case_id": "ev_8d4e92992898e191",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "11240adc7958d0d63a73ebc741e6cb50eb78004a3926c3972a2616f8b6d53752"
+    },
+    {
+      "case_id": "ev_8d4e92992898e191",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "11240adc7958d0d63a73ebc741e6cb50eb78004a3926c3972a2616f8b6d53752"
+    },
+    {
+      "case_id": "ev_d8f9a8e4eadaa72c",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "b978a5034c75781e9550408a0afc6513aedd02399f4bdd7e6b7fd447e5a45199"
+    },
+    {
+      "case_id": "ev_d8f9a8e4eadaa72c",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "b978a5034c75781e9550408a0afc6513aedd02399f4bdd7e6b7fd447e5a45199"
+    },
+    {
+      "case_id": "ev_3506c242b8186a8e",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d2001493303f3b72b3c7756348a7f0b868103b26513d630504323e3798ad5b6c"
+    },
+    {
+      "case_id": "ev_3506c242b8186a8e",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d2001493303f3b72b3c7756348a7f0b868103b26513d630504323e3798ad5b6c"
+    },
+    {
+      "case_id": "ev_b983dc5bcb5f5e35",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "aa7f9d17e0c284c10d885b154dda1e3fdbb73f1dd3a0ea1e27e6630a10369452"
+    },
+    {
+      "case_id": "ev_b983dc5bcb5f5e35",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "aa7f9d17e0c284c10d885b154dda1e3fdbb73f1dd3a0ea1e27e6630a10369452"
+    },
+    {
+      "case_id": "ev_c46fa7dacd0047da",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "news_only",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "15972aed9c66e064332cbc2650877a7718e3f2c91819402edc2172f3adc68959"
+    },
+    {
+      "case_id": "ev_c46fa7dacd0047da",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "15972aed9c66e064332cbc2650877a7718e3f2c91819402edc2172f3adc68959"
+    },
+    {
+      "case_id": "ev_5f3b346f5a08510a",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "57bf69359e777b802882342dd2075a4113db1cc38f68c537d887343a275208ed"
+    },
+    {
+      "case_id": "ev_5f3b346f5a08510a",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "57bf69359e777b802882342dd2075a4113db1cc38f68c537d887343a275208ed"
+    },
+    {
+      "case_id": "ev_8b05eb6c15b1a67d",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "news_only",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "93f90dd76cc7e6c0114cbd87a973fd6022e1ce942af5285ada268d50fb790538"
+    },
+    {
+      "case_id": "ev_8b05eb6c15b1a67d",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "93f90dd76cc7e6c0114cbd87a973fd6022e1ce942af5285ada268d50fb790538"
+    },
+    {
+      "case_id": "ev_64d6c8ab2d814257",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "d731bef343ac6d12613d86f6f57cef65e554695fd23e032d06b5aa9f258a6168"
+    },
+    {
+      "case_id": "ev_64d6c8ab2d814257",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "groq",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "routine",
+        "novelty": "unclear",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "d731bef343ac6d12613d86f6f57cef65e554695fd23e032d06b5aa9f258a6168"
+    },
+    {
+      "case_id": "ev_72cd3db99c134e42",
+      "symbol": "SOL",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "9627a101b2bd2705740d9758b398e0ded87a0b32e78e4fc744c93311cd4a7e2c"
+    },
+    {
+      "case_id": "ev_72cd3db99c134e42",
+      "symbol": "SOL",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "9627a101b2bd2705740d9758b398e0ded87a0b32e78e4fc744c93311cd4a7e2c"
+    },
+    {
+      "case_id": "ev_544477d235fbf661",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fd098012acc65fc357ee3871204be87e0464badc8edffd8d89b2c7509c5a092b"
+    },
+    {
+      "case_id": "ev_544477d235fbf661",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fd098012acc65fc357ee3871204be87e0464badc8edffd8d89b2c7509c5a092b"
+    },
+    {
+      "case_id": "ev_8b8b87e751079825",
+      "symbol": "BTC",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "BTC"
+      },
+      "source_sha256": "cfd08878b7d000020ba5984766c8ae98bd41561a3ef262eaa44004d9e96e2244"
+    },
+    {
+      "case_id": "ev_8b8b87e751079825",
+      "symbol": "BTC",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "BTC"
+      },
+      "source_sha256": "cfd08878b7d000020ba5984766c8ae98bd41561a3ef262eaa44004d9e96e2244"
+    },
+    {
+      "case_id": "ev_a3ab11595080a841",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "97cd90e6c7fec4a2d777d2cfd4e5d14d6284d8c79177be7ce7f4279854ece76f"
+    },
+    {
+      "case_id": "ev_a3ab11595080a841",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "97cd90e6c7fec4a2d777d2cfd4e5d14d6284d8c79177be7ce7f4279854ece76f"
+    },
+    {
+      "case_id": "ev_49f6b1c0c9db82b2",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "63f046839fd016e05e75cde6ccceb4f9b6ee0fa6b91e909a686e34e3cc9cc78d"
+    },
+    {
+      "case_id": "ev_49f6b1c0c9db82b2",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "63f046839fd016e05e75cde6ccceb4f9b6ee0fa6b91e909a686e34e3cc9cc78d"
+    },
+    {
+      "case_id": "ev_8d4e92992898e191",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "11240adc7958d0d63a73ebc741e6cb50eb78004a3926c3972a2616f8b6d53752"
+    },
+    {
+      "case_id": "ev_8d4e92992898e191",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "11240adc7958d0d63a73ebc741e6cb50eb78004a3926c3972a2616f8b6d53752"
+    },
+    {
+      "case_id": "ev_d8f9a8e4eadaa72c",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "b978a5034c75781e9550408a0afc6513aedd02399f4bdd7e6b7fd447e5a45199"
+    },
+    {
+      "case_id": "ev_d8f9a8e4eadaa72c",
+      "symbol": "ETH",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "b978a5034c75781e9550408a0afc6513aedd02399f4bdd7e6b7fd447e5a45199"
+    },
+    {
+      "case_id": "ev_3506c242b8186a8e",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "high",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d2001493303f3b72b3c7756348a7f0b868103b26513d630504323e3798ad5b6c"
+    },
+    {
+      "case_id": "ev_3506c242b8186a8e",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d2001493303f3b72b3c7756348a7f0b868103b26513d630504323e3798ad5b6c"
+    },
+    {
+      "case_id": "ev_b983dc5bcb5f5e35",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "aa7f9d17e0c284c10d885b154dda1e3fdbb73f1dd3a0ea1e27e6630a10369452"
+    },
+    {
+      "case_id": "ev_b983dc5bcb5f5e35",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "aa7f9d17e0c284c10d885b154dda1e3fdbb73f1dd3a0ea1e27e6630a10369452"
+    },
+    {
+      "case_id": "ev_c46fa7dacd0047da",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "15972aed9c66e064332cbc2650877a7718e3f2c91819402edc2172f3adc68959"
+    },
+    {
+      "case_id": "ev_c46fa7dacd0047da",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "15972aed9c66e064332cbc2650877a7718e3f2c91819402edc2172f3adc68959"
+    },
+    {
+      "case_id": "ev_5f3b346f5a08510a",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "57bf69359e777b802882342dd2075a4113db1cc38f68c537d887343a275208ed"
+    },
+    {
+      "case_id": "ev_5f3b346f5a08510a",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "57bf69359e777b802882342dd2075a4113db1cc38f68c537d887343a275208ed"
+    },
+    {
+      "case_id": "ev_8b05eb6c15b1a67d",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "93f90dd76cc7e6c0114cbd87a973fd6022e1ce942af5285ada268d50fb790538"
+    },
+    {
+      "case_id": "ev_8b05eb6c15b1a67d",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "93f90dd76cc7e6c0114cbd87a973fd6022e1ce942af5285ada268d50fb790538"
+    },
+    {
+      "case_id": "ev_64d6c8ab2d814257",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "d731bef343ac6d12613d86f6f57cef65e554695fd23e032d06b5aa9f258a6168"
+    },
+    {
+      "case_id": "ev_64d6c8ab2d814257",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "d731bef343ac6d12613d86f6f57cef65e554695fd23e032d06b5aa9f258a6168"
+    },
+    {
+      "case_id": "ev_8ecaa26b75fcdb66",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fb78c8ebdf397fd476bfcf52aa1f3029c9f8da9b117a0cc3a5a7f0acef0bea8f"
+    },
+    {
+      "case_id": "ev_8ecaa26b75fcdb66",
+      "symbol": "GRAM",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "GRAM"
+      },
+      "source_sha256": "fb78c8ebdf397fd476bfcf52aa1f3029c9f8da9b117a0cc3a5a7f0acef0bea8f"
+    },
+    {
+      "case_id": "ev_892b39ac0c5d9692",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "dbe68366375d2b006769ba8e0312e0b23f7b42082aad5837f7a2d8ad2d76b7a7"
+    },
+    {
+      "case_id": "ev_892b39ac0c5d9692",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "dbe68366375d2b006769ba8e0312e0b23f7b42082aad5837f7a2d8ad2d76b7a7"
+    },
+    {
+      "case_id": "ev_efba2ebdf7d341bc",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "BTC"
+      },
+      "source_sha256": "62952c3782dfaa3ab6eaa19bbdbc81db5c0a2679c67c578b6febf9c7ac8e10cc"
+    },
+    {
+      "case_id": "ev_efba2ebdf7d341bc",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "high",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "BTC"
+      },
+      "source_sha256": "62952c3782dfaa3ab6eaa19bbdbc81db5c0a2679c67c578b6febf9c7ac8e10cc"
+    },
+    {
+      "case_id": "ev_ba0487d20e4f1d69",
+      "symbol": "ETH",
+      "reference_provisional": "alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d1f8075b60fa729398e350accf0a16a4bd0892fa1529c2814ae0a4a99999db37"
+    },
+    {
+      "case_id": "ev_ba0487d20e4f1d69",
+      "symbol": "ETH",
+      "reference_provisional": "alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "ETH"
+      },
+      "source_sha256": "d1f8075b60fa729398e350accf0a16a4bd0892fa1529c2814ae0a4a99999db37"
+    },
+    {
+      "case_id": "ev_6d02b017020d73a3",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "material",
+        "novelty": "new",
+        "reason_code": "unusual_move",
+        "should_alert": true,
+        "symbol": "SOL"
+      },
+      "source_sha256": "730dd54aaea5a0825ade1c7541c33ce34d484e6a5e7d2cb91c672e4fadd5e86e"
+    },
+    {
+      "case_id": "ev_6d02b017020d73a3",
+      "symbol": "SOL",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "SOL"
+      },
+      "source_sha256": "730dd54aaea5a0825ade1c7541c33ce34d484e6a5e7d2cb91c672e4fadd5e86e"
+    },
+    {
+      "case_id": "ev_2350f56c1233f023",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "f270ce0949ce25ff2c25008751c99da51e54bbbfecffd466294b0ee69c017bec"
+    },
+    {
+      "case_id": "ev_2350f56c1233f023",
+      "symbol": "BTC",
+      "reference_provisional": "no_alert",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "BTC"
+      },
+      "source_sha256": "f270ce0949ce25ff2c25008751c99da51e54bbbfecffd466294b0ee69c017bec"
+    },
+    {
+      "case_id": "ev_0c0ba772d3e480b8",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e1",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "ac86045a784f35135ecdaaf9c741644c427e1a2c9c5b89a21367e047b54796c6"
+    },
+    {
+      "case_id": "ev_0c0ba772d3e480b8",
+      "symbol": "ETH",
+      "reference_provisional": "ambiguous",
+      "provider": "cloudflare",
+      "prompt": "e2",
+      "decision": {
+        "confidence": "medium",
+        "materiality": "routine",
+        "novelty": "continuation",
+        "reason_code": "routine_move",
+        "should_alert": false,
+        "symbol": "ETH"
+      },
+      "source_sha256": "ac86045a784f35135ecdaaf9c741644c427e1a2c9c5b89a21367e047b54796c6"
+    }
+  ]
+}

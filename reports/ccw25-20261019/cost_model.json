@@ -1,0 +1,98 @@
+{
+  "status": "planning scenario, NOT observed API spending",
+  "days": 7,
+  "month_days": 30,
+  "fx_date": "2026-10-16",
+  "eur_dkk": 7.4748,
+  "eur_usd": 1.1253,
+  "features": {
+    "daily_report": {
+      "operations": 48,
+      "attempts": 48,
+      "input_tokens": 62347,
+      "output_tokens": 28756,
+      "planning_eur_month": 0.05066391819324371
+    },
+    "event_alert_render": {
+      "operations": 216,
+      "attempts": 254,
+      "input_tokens": 119512,
+      "output_tokens": 32705,
+      "planning_eur_month": 0.14300872148379482
+    },
+    "event_analysis": {
+      "operations": 1344,
+      "attempts": 1470,
+      "input_tokens": 1169354,
+      "output_tokens": 433294,
+      "planning_eur_month": 1.6581463990554899
+    },
+    "market_heartbeat": {
+      "operations": 97,
+      "attempts": 97,
+      "input_tokens": 62104,
+      "output_tokens": 15461,
+      "planning_eur_month": 0.03540427314620863
+    },
+    "news_intelligence": {
+      "operations": 199,
+      "attempts": 198,
+      "input_tokens": 121743,
+      "output_tokens": 33937,
+      "planning_eur_month": 0.07354924401112085
+    },
+    "weekly_report": {
+      "operations": 9,
+      "attempts": 9,
+      "input_tokens": 13584,
+      "output_tokens": 5266,
+      "planning_eur_month": 0.009896789427581217
+    }
+  },
+  "equivalent_paid_cloud_eur_30d": 1.970669345317439,
+  "options_net_eur": {
+    "existing_host_total": 4.49,
+    "existing_incremental": 0,
+    "cx33_total": 8.99,
+    "cx33_incremental": 4.5,
+    "cx43_total": 16.490000000000002,
+    "cx43_incremental": 12.000000000000002,
+    "separate_gpu_incremental": 214,
+    "separate_gpu_total": 218.49,
+    "gpu_setup": 209
+  },
+  "cloud_sensitivity": [
+    {
+      "volume": 1,
+      "operations_day": 273.2857142857143,
+      "input_tokens_day": 221234.85714285713,
+      "output_tokens_day": 78488.42857142857,
+      "net_eur_30d": 1.970669345317439,
+      "dkk_30d": 14.730359222378794,
+      "vat25_eur_30d": 2.463336681646799,
+      "vat25_dkk_30d": 18.412949027973493
+    },
+    {
+      "volume": 3,
+      "operations_day": 819.8571428571429,
+      "input_tokens_day": 663704.5714285714,
+      "output_tokens_day": 235465.28571428568,
+      "net_eur_30d": 5.912008035952317,
+      "dkk_30d": 44.191077667136376,
+      "vat25_eur_30d": 7.3900100449403965,
+      "vat25_dkk_30d": 55.238847083920476
+    },
+    {
+      "volume": 10,
+      "operations_day": 2732.8571428571427,
+      "input_tokens_day": 2212348.5714285714,
+      "output_tokens_day": 784884.2857142857,
+      "net_eur_30d": 19.706693453174392,
+      "dkk_30d": 147.30359222378794,
+      "vat25_eur_30d": 24.63336681646799,
+      "vat25_dkk_30d": 184.12949027973494
+    }
+  ],
+  "simple_features_eur_30d": 0.3125229462619492,
+  "no_production_or_paid_service_changes": true
+}

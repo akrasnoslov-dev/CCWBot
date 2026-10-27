@@ -1,0 +1,4 @@
+{
+  "stop_groq_at_utc": "2026-10-19T16:10:00+00:00",
+  "reason": "Protect the production bot when its safety restart fires at 16:12 UTC."
+}

@@ -1,0 +1,126 @@
+{
+  "run_id": "6e210ce3-0068-4fb2-b0c7-81d8b9647c0c",
+  "source_commit": "e0b47e4c95399f930a6a63554ecfe058b58d8cd5",
+  "corpus_sha256": "c014babfc7a595cdb252b03c649acf06132fe93600aaf514b9c0821643f8e3b0",
+  "case_names": [
+    "long_daily_report",
+    "long_weekly_report"
+  ],
+  "completed": true,
+  "model": "qwen4",
+  "threads": 4,
+  "context": 8192,
+  "slots": 1,
+  "gpu_layers": 0,
+  "cache_prompt": false,
+  "startup_seconds": 4.548999599996023,
+  "repeats": 1,
+  "command": [
+    "D:\\Projects\\CCWBot\\reports\\ccw25-20261019\\runtime\\llama-server.exe",
+    "-m",
+    "D:\\Projects\\CCWBot\\reports\\ccw25-20261019\\models\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "18725",
+    "-c",
+    "8192",
+    "-np",
+    "1",
+    "-t",
+    "4",
+    "-tb",
+    "4",
+    "-ngl",
+    "0",
+    "--jinja",
+    "--cors-origins",
+    "http://127.0.0.1",
+    "--no-webui",
+    "--no-warmup",
+    "-b",
+    "512",
+    "-ub",
+    "128"
+  ],
+  "rows": [
+    {
+      "model": "qwen4",
+      "case": "long_daily_report",
+      "feature": "daily_report",
+      "repeat": 0,
+      "deadline_seconds": 20,
+      "latency_seconds": 94.02915630000643,
+      "within_deadline": false,
+      "finish_reason": "stop",
+      "output": "{\n  \"report_type\": \"daily\",\n  \"title\": \"Daily Crypto Market Update: BTC, ETH, GRAM, and SOL Activity\",\n  \"market_pulse\": \"Bitcoin shows slight short-term gains despite a 24-hour decline, while Ethereum and Solana remain stable. GRAM experiences minor volatility with a positive one-hour movement.\",\n  \"dashboard\": [\n    \"BTC: 1-hour +0.042%, 24h -0.5%, 7d +1.2%\",\n    \"ETH: 1-hour +0.042%, 24h -0.5%, 7d +1.2%\",\n    \"GRAM: 1-hour +0.042%, 24h -0.5%, 7d +1.2%\",\n    \"SOL: 1-hour +0.042%, 24h -0.5%, 7d +1.2%\"\n  ],\n  \"coin_cards\": [\n    {\n      \"symbol\": \"BTC\",\n      \"summary\": \"Bitcoin shows a brief 1-hour increase, offset by a 24-hour decline. Seven-day performance remains positive, indicating sustained market confidence.\",\n      \"watch\": \"Monitor short-term volatility and 24h price action for potential reversals.\"\n    },\n    {\n      \"symbol\": \"ETH\",\n      \"summary\": \"Ethereum maintains a stable trend with a small 1-hour gain and a positive 7-day performance, despite a recent 24-hour drop.\",\n      \"watch\": \"Track network activity and developer updates for potential catalysts.\"\n    },\n    {\n      \"symbol\": \"GRAM\",\n      \"summary\": \"GRAM exhibits minor price fluctuations, with a positive one-hour movement and a solid 7-day gain, suggesting underlying demand stability.\",\n      \"watch\": \"Watch for macroeconomic shifts affecting smaller-cap altcoins.\"\n    },\n    {\n      \"symbol\": \"SOL\",\n      \"summary\": \"Solana shows a brief upward movement in the last hour, with a consistent 7-day positive trend, though it recently declined over 24 hours.\",\n      \"watch\": \"Monitor transaction volume and on-chain activity for signs of network health.\"\n    }\n  ],\n  \"market_catalysts\": [\n    \"Scheduled infrastructure review impacting network performance\",\n    \"Ongoing developer updates for Ethereum and Solana\",\n    \"Increased trading volume in altcoin segments\"\n  ],\n  \"why_it_matters\": \"Short-term price movements reflect market sentiment and technical indicators, while long-term trends indicate underlying demand and network health.\",\n  \"watch_next\": \"Evaluate price action and volume changes across all active symbols for potential breakout signals.\",\n  \"week_timeline\": [],\n  \"themes\": [],\n  \"next_week_focus\": \"\"\n}",
+      "usage": {
+        "completion_tokens": 574,
+        "prompt_tokens": 1040,
+        "total_tokens": 1614,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 1040,
+        "prompt_ms": 19051.201,
+        "prompt_per_token_ms": 18.318462500000003,
+        "prompt_per_second": 54.58973426399732,
+        "predicted_n": 574,
+        "predicted_ms": 74957.075,
+        "predicted_per_token_ms": 130.81513961605583,
+        "predicted_per_second": 7.644375130699804
+      },
+      "json_valid": true,
+      "contract_valid": true,
+      "expected_match": null,
+      "resources": {
+        "peak_working_set_bytes": 5566394368,
+        "working_set_bytes": 5566394368,
+        "private_commit_bytes": 3143999488,
+        "peak_pagefile_bytes": 3144028160
+      }
+    },
+    {
+      "model": "qwen4",
+      "case": "long_weekly_report",
+      "feature": "weekly_report",
+      "repeat": 0,
+      "deadline_seconds": 20,
+      "latency_seconds": 118.85139919997891,
+      "within_deadline": false,
+      "finish_reason": "stop",
+      "output": "{\n  \"report_type\": \"weekly\",\n  \"title\": \"Weekly Crypto Market Overview: Key Trends and Insights\",\n  \"market_pulse\": \"Markets show mixed signals with stable short-term gains offset by recent volatility. BTC and ETH maintain strong presence, while smaller assets like GRAM and SOL exhibit moderate activity.\",\n  \"dashboard\": [\n    \"BTC remains a dominant force with steady 7-day growth.\",\n    \"ETH shows resilience despite short-term declines.\",\n    \"GRAM and SOL demonstrate niche demand with active community engagement.\",\n    \"Market sentiment remains cautious amid ongoing infrastructure reviews.\"\n  ],\n  \"coin_cards\": [\n    {\n      \"symbol\": \"BTC\",\n      \"summary\": \"Bitcoin continues to lead the market with a 1.2% weekly gain, showing consistent demand and institutional interest.\",\n      \"watch\": \"Monitor for macroeconomic shifts and regulatory updates affecting large-cap adoption.\"\n    },\n    {\n      \"symbol\": \"ETH\",\n      \"summary\": \"Ethereum maintains strong momentum with a 1.2% weekly increase, driven by ongoing ecosystem developments.\",\n      \"watch\": \"Track upgrades and network activity to assess long-term sustainability.\"\n    },\n    {\n      \"symbol\": \"GRAM\",\n      \"summary\": \"Gram shows modest growth with a 1.2% weekly increase, supported by active governance and community participation.\",\n      \"watch\": \"Watch for changes in staking incentives and tokenomics.\"\n    },\n    {\n      \"symbol\": \"SOL\",\n      \"summary\": \"Solana experiences steady demand with a 1.2% weekly rise, fueled by DeFi and NFT activity.\",\n      \"watch\": \"Monitor for network congestion and transaction fee trends.\"\n    }\n  ],\n  \"market_catalysts\": [\n    \"Scheduled infrastructure reviews across major blockchain networks.\",\n    \"Ongoing upgrades to Ethereum's consensus layer.\",\n    \"Increased adoption of Layer 1 and Layer 2 solutions.\",\n    \"Community-driven governance initiatives in smaller ecosystems.\"\n  ],\n  \"why_it_matters\": \"Market dynamics are shaped by technical developments and community engagement, with smaller assets showing potential for breakout if network activity improves.\",\n  \"watch_next\": \"Focus on upcoming network upgrades and regulatory developments that may influence market sentiment.\",\n  \"week_timeline\": [\n    \"Week 1: Infrastructure reviews begin across major chains.\",\n    \"Week 2: Ecosystem updates and staking incentives announced.\",\n    \"Week 3: Community-driven proposals gain traction.\",\n    \"Week 4: Market consolidation observed with reduced volatility.\"\n  ],\n  \"themes\": [\n    \"Network upgrades and technical scalability\",\n    \"Community governance and tokenomics\",\n    \"Short-term volatility and macroeconomic signals\",\n    \"Ecosystem expansion in DeFi and NFTs\"\n  ],\n  \"next_week_focus\": \"Monitor for technical updates and community proposals that could influence market direction.\"\n}",
+      "usage": {
+        "completion_tokens": 582,
+        "prompt_tokens": 1585,
+        "total_tokens": 2167,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 1585,
+        "prompt_ms": 31360.821,
+        "prompt_per_token_ms": 19.786006940063093,
+        "prompt_per_second": 50.5407686871463,
+        "predicted_n": 582,
+        "predicted_ms": 87364.549,
+        "predicted_per_token_ms": 150.36927538726334,
+        "predicted_per_second": 6.65029473224889
+      },
+      "json_valid": true,
+      "contract_valid": true,
+      "expected_match": null,
+      "resources": {
+        "peak_working_set_bytes": 5628760064,
+        "working_set_bytes": 5239431168,
+        "private_commit_bytes": 3382603776,
+        "peak_pagefile_bytes": 3382624256
+      }
+    }
+  ]
+}

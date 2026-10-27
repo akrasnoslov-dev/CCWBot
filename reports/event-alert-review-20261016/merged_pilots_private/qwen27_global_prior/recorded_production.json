@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "production",
+  "model": "qwen/qwen3.8-27b",
+  "config_fingerprint": "9f4660ef41a18e8ec2dd62f7fb61392d5d14a08d527536d6ac2de7572e257b7f",
+  "results": []
+}

@@ -82,11 +82,18 @@ not the shorter Refined v2 Final. In the isolated paid GPT-6 Luna replay, the
 original produced 200/200 valid responses; the revised shorter prompt had 14/200
 schema failures, with improved conditional recall but 15 vs 8 false positives
 on differently sized valid subsets of owner-labelled disagreements. Keeping
-the original prioritises low noise and reliable structured outputs. The selected
-runtime instruction SHA-256 is
-`e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c` and is
-locked by a release-safe regression test. Private replay ledgers and rejected
-experimental prompts are deliberately excluded from production release branches.
+the original prioritises low noise and reliable structured outputs. This exact
+prompt was included in the `main` source by PR #378; live deployment and
+model quality require separate verification.
+
+The original instructions are frozen at
+`reports/event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined.txt`
+(instruction SHA-256 `e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c`).
+The shorter rejected trial remains in `benchmarks/event-alert-owner-20261026/`
+for experiment provenance only. See
+[`CCW47_REFINED_V2_DECISION_20261026.md`](../reports/event-alert-review-20261016/CCW47_REFINED_V2_DECISION_20261026.md)
+for the metrics, denominator caveats and evaluation limits. Actual Groq/Cloudflare
+significance quality still needs measured live evaluation.
 
 ## Step 5 - Build the message
 Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
@@ -159,10 +166,10 @@ inconsistent, there are no numeric levels for the model to invent.
 - Stage-1 significance, alert eligibility, cooldown, providers, recipient
   routes and paid spend are unchanged by this content change.
 
-**Release status:** included in the focused production release branch; deployment
-still requires its exact CI, review, merge, configuration and runtime gates. The
-prior 20-event Cloudflare benchmark predates this richer price-band context.
-Green unit/CI tests are not proof of improved live Cloudflare prose.
+**Release state:** Source integrated into `main` in PR #378; running production
+still requires independent deployment verification. The prior 20-event Cloudflare
+benchmark predates this richer price-band context. Green tests are not proof
+of improved live Cloudflare prose.
 
 ### Event Alert message quality contract
 
@@ -257,6 +264,39 @@ The 24-hour Heartbeat silence criterion, eligibility, idempotency, existing LLM 
 market significance decisions, semantic cooldown, recipients and billing are unchanged.
 Production client appearance still needs a private Telegram Desktop/mobile smoke test;
 mock images and CI-only HTML assertions do not prove native client rendering.
+
+### Event Alert chart reference markers (2026-10-26)
+
+Event Alert PNGs (not Market Heartbeat PNGs) overlay four separate market
+reference observations. The curve still contains only the latest contiguous
+PostgreSQL price-snapshot run; no line is drawn from the persisted curve to the
+NOW marker, and no line connects missing historical intervals.
+
+- **NOW**: current Event Alert market price from the validated event input
+  (stored in the event numeric context) at the actual price-check timestamp.
+  It is never replaced by the newest persisted snapshot.
+- **PREVIOUS ALERT**: latest *different* recorded market-level Event Alert for
+  the same coin in `market_events`, using its own `detected_at` and `price`.
+  It is not the previous per-recipient delivered notification. Historical
+  events outside the visible chart have a time/status legend entry, but no
+  boundary marker. Missing/unreliable prices produce no price marker.
+- **−3H**: closest actually recorded snapshot in the visible continuous series
+  to the exact current-observation minus three hours, only within **±20 min**.
+  This reference is independent of the LLM's actual analysed-window length.
+- **−24H**: closest actually recorded snapshot in the visible continuous
+  series to the exact current-observation minus 24 hours, only within
+  **±40 min** (normal 30-minute persistence plus scheduling jitter).
+  The plotted point is at its *actual* UTC timestamp.
+
+Every available reference shows its actual UTC timestamp and observed price
+in the PNG legend, not an interpolated/extrapolated price. Unavailable
+references show why the price marker was omitted. Colors, shapes, leader lines
+and nonoverlapping label lanes keep dense/end-of-axis events readable. The
+original full-day/partial-history labels and availability rules still apply.
+There are no new external price calls, recipient-specific PNGs or database
+migrations. Rich delivery, HTML/plain fallback, event decisions and Heartbeat
+are unchanged. The marker overlay can be rolled back as a presentation-only
+change.
 
 ## Step 6 - Validate the message
 The backend validates schema and factual market claims. News may support the explanation, but a

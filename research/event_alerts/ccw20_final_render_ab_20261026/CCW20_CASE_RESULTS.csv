@@ -1,0 +1,22 @@
+case_id,symbol,relations,baseline_schema_valid,baseline_validator_valid,baseline_fallback,baseline_situation_replaced,baseline_action_replaced,baseline_factual_error,baseline_useful_specific,candidate_schema_valid,candidate_validator_valid,candidate_fallback,candidate_situation_replaced,candidate_action_replaced,candidate_factual_error,candidate_useful_specific,candidate_error_note
+ev_03fe1ce0c636c3d0,BTC,latest_countermove;window_vs_24h_divergence;pace_change;latest_reversal,True,True,False,False,True,False,True,True,True,False,True,True,False,True,
+ev_39891a3b04174bf5,BTC,window_vs_24h_divergence,True,True,False,True,True,False,True,True,True,False,True,False,False,True,
+ev_0c44300fbc771971,BTC,pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,False,False,True,
+ev_19e4fd193fc80064,BTC,latest_countermove;pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,True,False,True,
+ev_330808e563cb43eb,BTC,pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,True,False,True,
+ev_0ab71234c9080ecc,ETH,latest_countermove;window_vs_24h_divergence;latest_reversal,True,True,False,False,False,True,False,True,True,False,True,False,True,False,Action says extending the latest decline would further diverge from the 24h decline; it would align/converge.
+ev_1f79b09b0b3404d3,ETH,window_vs_24h_divergence;pace_change,True,True,False,True,True,False,True,True,True,False,True,False,False,True,
+ev_baaa5f69ef79aa48,ETH,sustained_path;pace_change,True,True,False,True,True,False,True,True,True,False,True,True,False,True,
+ev_0c7b2c4d1c1394d3,ETH,pace_change,True,False,True,True,True,False,True,True,True,False,True,True,False,True,
+ev_3c7f3da2e73e4b90,ETH,window_vs_24h_divergence;pace_change;latest_reversal,True,True,False,False,False,False,True,True,True,False,True,False,False,True,
+ev_7804adc277bd3333,GRAM,latest_countermove;pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,True,False,True,
+ev_345fc49db8255adf,GRAM,window_vs_24h_divergence;pace_change,True,True,False,True,False,False,True,True,True,False,False,False,False,True,
+ev_7b3325d2f2609480,GRAM,sustained_path;pace_change,True,True,False,True,True,False,True,True,True,False,True,True,False,True,
+ev_1b39a518ede3c14f,GRAM,pace_change,True,False,True,True,True,False,True,True,True,False,True,True,False,True,
+ev_6500c5ad9f5364bc,GRAM,pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,True,False,True,
+ev_4bba21dd01bc8372,SOL,latest_countermove;window_vs_24h_divergence;pace_change;latest_reversal,True,True,False,False,True,False,True,True,True,False,True,False,True,False,Action says extending the latest decline would further diverge from the 24h downtrend; it would align/converge.
+ev_1ea4cea05b78ed5c,SOL,window_vs_24h_divergence;pace_change,True,True,False,False,False,False,True,True,True,False,False,True,False,True,
+ev_47801117db53ec5d,SOL,sustained_path;pace_change,True,True,False,True,True,False,True,True,True,False,True,True,False,True,
+ev_19c7744fea400d98,SOL,pace_change,True,False,True,True,True,False,True,True,True,False,True,False,False,True,
+ev_409cb436a1eeb745,SOL,pace_change;latest_reversal,True,False,True,True,True,False,False,True,True,False,False,False,False,True,
+

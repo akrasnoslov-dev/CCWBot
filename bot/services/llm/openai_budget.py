@@ -17,7 +17,18 @@ MILLION = Decimal("1000000")
 DEFAULT_MONTHLY_BUDGET_USD = Decimal("2.50")
 MIN_CONFIG_DECIMAL = Decimal("0.0000000001")
 MAX_CONFIG_DECIMAL = Decimal("99999999")
-MAX_VERIFIED_INPUT_TOKENS = 10_000_000
+# Pinned GPT-6 Luna Standard-tier contract (verified 2026-10-26).
+# https://developers.openai.com/api/docs/models/gpt-6-luna
+# https://developers.openai.com/api/docs/pricing
+# The model has a 1,050,000-token context window. Long-context prompts (>272K
+# input tokens) cost 2x the normal input rate and 1.5x output; the rate below
+# also covers the higher long-context cache-write rate (1.25x).
+# This is deliberately conservative for shorter ordinary requests, including
+# settlement, so a $2.50 local cap is never silently understated.
+SUPPORTED_OPENAI_MODEL = "gpt-6-luna"
+LUNA_VERIFIED_INPUT_TOKENS = 1_050_000
+LUNA_INPUT_RATE_USD_PER_MILLION = Decimal("0.25")
+LUNA_OUTPUT_RATE_USD_PER_MILLION = Decimal("0.75")
 _POSTGRES_ADVISORY_LOCK_ID = 0x4343574F504149  # "CCWOPAI", stable across workers.
 
 
@@ -56,17 +67,6 @@ def _positive_decimal_env(name: str, default: Decimal | None = None) -> Decimal 
     return value
 
 
-def _positive_int_env(name: str, *, maximum: int) -> int | None:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return None
-    try:
-        value = int(raw.strip())
-    except ValueError:
-        return None
-    return value if 0 < value <= maximum else None
-
-
 def monthly_budget_usd() -> Decimal | None:
     """Return a cap at or below the owner-approved hard maximum of $2.50."""
     configured = _positive_decimal_env(
@@ -77,23 +77,14 @@ def monthly_budget_usd() -> Decimal | None:
     return configured
 
 
-def pricing_usd_per_million() -> tuple[Decimal, Decimal] | None:
-    """Require activation-time verified prices instead of embedding a guessed future price."""
-    input_rate = _positive_decimal_env("OPENAI_INPUT_USD_PER_1M_TOKENS")
-    output_rate = _positive_decimal_env("OPENAI_OUTPUT_USD_PER_1M_TOKENS")
-    if input_rate is None or output_rate is None:
-        return None
-    return input_rate, output_rate
+def pricing_usd_per_million() -> tuple[Decimal, Decimal]:
+    """Pinned conservative GPT-6 Luna Standard-tier rates; no pricing env required."""
+    return LUNA_INPUT_RATE_USD_PER_MILLION, LUNA_OUTPUT_RATE_USD_PER_MILLION
 
 
 def verified_input_token_ceiling(model: str) -> int | None:
-    """Return the activation-time verified input ceiling for exactly ``model``."""
-    priced_model = os.getenv("OPENAI_PRICED_MODEL", "").strip()
-    if not priced_model or priced_model != model:
-        return None
-    return _positive_int_env(
-        "OPENAI_MAX_INPUT_TOKENS", maximum=MAX_VERIFIED_INPUT_TOKENS
-    )
+    """Allow paid admission only for the verified exact GPT-6 Luna model ID."""
+    return LUNA_VERIFIED_INPUT_TOKENS if model == SUPPORTED_OPENAI_MODEL else None
 
 
 def _cost(tokens: int, rate: Decimal) -> Decimal:
@@ -134,8 +125,9 @@ class OpenAIBudget:
             raise OpenAIBudgetExhausted("state_unavailable") from error
 
         input_rate, output_rate = rates
-        # Reserve the verified model-wide input ceiling rather than estimating from
-        # characters. This covers Unicode, provider framing, and response-schema tokens.
+        # Reserve the full verified context ceiling at the worst-case supported
+        # Standard-tier rate, including the long-context price multiplier.
+        # No input token heuristic can underreserve Unicode/provider framing.
         reserved = _cost(input_token_ceiling, input_rate) + _cost(max_tokens, output_rate)
         reservation_id = str(uuid4())
 

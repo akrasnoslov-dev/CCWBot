@@ -1,0 +1,888 @@
+{
+  "provenance": "REAL_MARKET_FROZEN; no external calls; unlabelled != negative",
+  "version": "v2-2026-10-16-private-human-review",
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "real_market_usable_cases": 200,
+  "target_case_count": "150-200",
+  "agreement": {
+    "reviewed_by_both": 200,
+    "disagreements": [
+      {
+        "id": "ev_4efc809bef076263",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_5b8a10972d2bbffc",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_62a860b3be4a2b56",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_f1b6ad119de05a5a",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_6f528887da924dca",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d80c01bba0400132",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_793fc544e285b825",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d81183cdf4fb1f71",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_39891a3b04174bf5",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_32c91f6811220943",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_19e4fd193fc80064",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_6d57a005dfb4c176",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_075a5b3e3addb0a1",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_c7d8b26fae14d237",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_6d645ffe2f593320",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_acf2404b069b5d37",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_66d738d94f921c72",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d3fed1a30646aa53",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_0c7b2c4d1c1394d3",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_2f11d6ea41819f42",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_73ee7f7d464106e6",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_b364782dc5341945",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_baaa5f69ef79aa48",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_8ad62d490fe6ea05",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d53f85d10f93bfd8",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_0ab71234c9080ecc",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_57ad0b63a2dfd1a1",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_ca419cced38004dd",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_e281b3827cec3ce4",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_be168f096ddd0f3d",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d5c1443978a2dbdb",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_893e70ae29cb92e7",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_8c7dd35f1b3d41e4",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_e63023319a55b676",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_0d0d5110cefac3ef",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_1f79b09b0b3404d3",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_61b14c71a3ee8a11",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_f626db856d4e0de1",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_7d8fef4f9c5f5a25",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_a45dcac234e92c29",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_378e53a4ff0fcef5",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_82741746d13a5b75",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_2c673c9dfc2877d5",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_9967b46b070601f2",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_345fc49db8255adf",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_09080bc39e36d3a8",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_ff8b4bb2822bd0e6",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_a370555b751b33e8",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_f584bf6836004d16",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_fa12c2dd8871640e",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_acb59330389885c1",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_69f05f0f882486c0",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_0feb8fc14b803462",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_6568cc18aee71c61",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_8f38a8e2204775fd",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_ca9cba5da00d7194",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_06967ba962fd99c2",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d867a082f6a2b9eb",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_6c38787191f25b78",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_4f443df56981cc24",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_adfd6a9505cd87f6",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_557f98e3aed5238b",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_5a2ebc546eaa40cc",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_17695daab778f122",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_dc716b6a61a24adb",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_41ef2b378c8eb878",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_67191663c33d3a79",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_59456f55949ff140",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_bb41d65cf5464b88",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_4ab300c3b743b554",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_89a89ce33b2d07a4",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_d1f0d676477abedb",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_b6a717fe983101fc",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_c11fc3662a746b39",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_f908b6d1d12532ee",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_5fae55288b0da0e8",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_b3bc36edc283f627",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_fd251a8bd9ebb3c9",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_a14b3c85c8c46d2f",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_1dd3d013e2dd43ef",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_792067f56370a744",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_341d98232c3ee735",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_584f3b1d7b77e79d",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_df062e41fb54ca2d",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_a792d2c32d58b1ef",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_fa46e26c4b1f587b",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_bcb596cad71e8fbd",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_ad411beedbf81f24",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_19c7744fea400d98",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_ee3af1481fb43c2e",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_e41ce9d4645d71d4",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_883c34881332dabe",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_fc35d58391836075",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_1f64c789a84ad137",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_f6c390c7986cbdb1",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_427556b5011aeb51",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_9825dfc95253f0f7",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_22955d5b99feebef",
+        "field": "warrant"
+      },
+      {
+        "id": "ev_bc7ddfa4599baa09",
+        "field": "warrant"
+      }
+    ],
+    "unresolved_disagreements": 99,
+    "adjudicated": 0
+  },
+  "overall": {
+    "events": 200,
+    "types": {
+      "delivered": 72,
+      "news_absent": 1,
+      "news_present": 3,
+      "no_alert": 100,
+      "repeat": 24
+    },
+    "tags": {
+      "borderline": 72,
+      "continuation": 112,
+      "news_absent": 90,
+      "news_present": 110,
+      "repeat": 121,
+      "reversal": 88
+    },
+    "event_level": {
+      "scored_cases": 94,
+      "unscored_cases": 99,
+      "ambiguous_cases": 7,
+      "tp": 20,
+      "fp": 30,
+      "fn": 17,
+      "tn": 27,
+      "precision": 0.4,
+      "recall": 0.5405405405405406
+    },
+    "delivered_weighted_precision": {
+      "reviewed_deliveries": 4357,
+      "deserved_deliveries": 503,
+      "low_value_deliveries": 3854,
+      "ambiguous_deliveries": 1,
+      "unreviewed_deliveries": 2945,
+      "unknown_volume_events": 0,
+      "precision": 0.11544640807895341
+    },
+    "recipient_eligible_weighted": {
+      "scored_cases": 0,
+      "unscored_cases": 193,
+      "ambiguous_cases": 7,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "precision": null,
+      "recall": null
+    },
+    "final_text": {
+      "usefulness_reviewed_events": 0,
+      "usefulness_rate": null,
+      "usefulness_reviewed_deliveries": 0,
+      "delivery_weighted_usefulness": null,
+      "fact_checked_events": 0,
+      "factual_errors": 0,
+      "factual_error_rate": null
+    },
+    "technical_observations": {
+      "delivered_count": {
+        "measured_events": 200,
+        "total": 7303
+      },
+      "delivery_failures": {
+        "measured_events": 200,
+        "total": 5
+      },
+      "llm_calls": {
+        "measured_events": 0,
+        "total": null
+      },
+      "provider_attempts": {
+        "measured_events": 0,
+        "total": null
+      },
+      "total_tokens": {
+        "measured_events": 0,
+        "total": null
+      },
+      "rate_limit_attempts": {
+        "measured_events": 0,
+        "total": null
+      },
+      "operating_cost_usd": {
+        "measured_events": 0,
+        "total": null
+      },
+      "same_event_duplicates": {
+        "measured_events": 0,
+        "total": null
+      },
+      "same_family_duplicates": {
+        "measured_events": 0,
+        "total": null
+      }
+    }
+  },
+  "by_symbol": {
+    "BTC": {
+      "events": 50,
+      "types": {
+        "delivered": 18,
+        "news_present": 1,
+        "no_alert": 25,
+        "repeat": 6
+      },
+      "tags": {
+        "borderline": 18,
+        "continuation": 26,
+        "news_absent": 14,
+        "news_present": 36,
+        "repeat": 31,
+        "reversal": 24
+      },
+      "event_level": {
+        "scored_cases": 32,
+        "unscored_cases": 17,
+        "ambiguous_cases": 1,
+        "tp": 2,
+        "fp": 14,
+        "fn": 4,
+        "tn": 12,
+        "precision": 0.125,
+        "recall": 0.3333333333333333
+      },
+      "delivered_weighted_precision": {
+        "reviewed_deliveries": 4308,
+        "deserved_deliveries": 481,
+        "low_value_deliveries": 3827,
+        "ambiguous_deliveries": 0,
+        "unreviewed_deliveries": 2892,
+        "unknown_volume_events": 0,
+        "precision": 0.111652739090065
+      },
+      "recipient_eligible_weighted": {
+        "scored_cases": 0,
+        "unscored_cases": 49,
+        "ambiguous_cases": 1,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "tn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "final_text": {
+        "usefulness_reviewed_events": 0,
+        "usefulness_rate": null,
+        "usefulness_reviewed_deliveries": 0,
+        "delivery_weighted_usefulness": null,
+        "fact_checked_events": 0,
+        "factual_errors": 0,
+        "factual_error_rate": null
+      },
+      "technical_observations": {
+        "delivered_count": {
+          "measured_events": 50,
+          "total": 7200
+        },
+        "delivery_failures": {
+          "measured_events": 50,
+          "total": 5
+        },
+        "llm_calls": {
+          "measured_events": 0,
+          "total": null
+        },
+        "provider_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "total_tokens": {
+          "measured_events": 0,
+          "total": null
+        },
+        "rate_limit_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "operating_cost_usd": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_event_duplicates": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_family_duplicates": {
+          "measured_events": 0,
+          "total": null
+        }
+      }
+    },
+    "ETH": {
+      "events": 50,
+      "types": {
+        "delivered": 18,
+        "news_present": 1,
+        "no_alert": 25,
+        "repeat": 6
+      },
+      "tags": {
+        "borderline": 18,
+        "continuation": 26,
+        "news_absent": 16,
+        "news_present": 34,
+        "repeat": 31,
+        "reversal": 24
+      },
+      "event_level": {
+        "scored_cases": 22,
+        "unscored_cases": 26,
+        "ambiguous_cases": 2,
+        "tp": 3,
+        "fp": 7,
+        "fn": 3,
+        "tn": 9,
+        "precision": 0.3,
+        "recall": 0.5
+      },
+      "delivered_weighted_precision": {
+        "reviewed_deliveries": 13,
+        "deserved_deliveries": 2,
+        "low_value_deliveries": 11,
+        "ambiguous_deliveries": 0,
+        "unreviewed_deliveries": 15,
+        "unknown_volume_events": 0,
+        "precision": 0.15384615384615385
+      },
+      "recipient_eligible_weighted": {
+        "scored_cases": 0,
+        "unscored_cases": 48,
+        "ambiguous_cases": 2,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "tn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "final_text": {
+        "usefulness_reviewed_events": 0,
+        "usefulness_rate": null,
+        "usefulness_reviewed_deliveries": 0,
+        "delivery_weighted_usefulness": null,
+        "fact_checked_events": 0,
+        "factual_errors": 0,
+        "factual_error_rate": null
+      },
+      "technical_observations": {
+        "delivered_count": {
+          "measured_events": 50,
+          "total": 28
+        },
+        "delivery_failures": {
+          "measured_events": 50,
+          "total": 0
+        },
+        "llm_calls": {
+          "measured_events": 0,
+          "total": null
+        },
+        "provider_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "total_tokens": {
+          "measured_events": 0,
+          "total": null
+        },
+        "rate_limit_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "operating_cost_usd": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_event_duplicates": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_family_duplicates": {
+          "measured_events": 0,
+          "total": null
+        }
+      }
+    },
+    "GRAM": {
+      "events": 50,
+      "types": {
+        "delivered": 18,
+        "news_absent": 1,
+        "no_alert": 25,
+        "repeat": 6
+      },
+      "tags": {
+        "borderline": 16,
+        "continuation": 32,
+        "news_absent": 29,
+        "news_present": 21,
+        "repeat": 30,
+        "reversal": 18
+      },
+      "event_level": {
+        "scored_cases": 23,
+        "unscored_cases": 27,
+        "ambiguous_cases": 0,
+        "tp": 8,
+        "fp": 5,
+        "fn": 7,
+        "tn": 3,
+        "precision": 0.6153846153846154,
+        "recall": 0.5333333333333333
+      },
+      "delivered_weighted_precision": {
+        "reviewed_deliveries": 24,
+        "deserved_deliveries": 16,
+        "low_value_deliveries": 8,
+        "ambiguous_deliveries": 0,
+        "unreviewed_deliveries": 23,
+        "unknown_volume_events": 0,
+        "precision": 0.6666666666666666
+      },
+      "recipient_eligible_weighted": {
+        "scored_cases": 0,
+        "unscored_cases": 50,
+        "ambiguous_cases": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "tn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "final_text": {
+        "usefulness_reviewed_events": 0,
+        "usefulness_rate": null,
+        "usefulness_reviewed_deliveries": 0,
+        "delivery_weighted_usefulness": null,
+        "fact_checked_events": 0,
+        "factual_errors": 0,
+        "factual_error_rate": null
+      },
+      "technical_observations": {
+        "delivered_count": {
+          "measured_events": 50,
+          "total": 47
+        },
+        "delivery_failures": {
+          "measured_events": 50,
+          "total": 0
+        },
+        "llm_calls": {
+          "measured_events": 0,
+          "total": null
+        },
+        "provider_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "total_tokens": {
+          "measured_events": 0,
+          "total": null
+        },
+        "rate_limit_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "operating_cost_usd": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_event_duplicates": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_family_duplicates": {
+          "measured_events": 0,
+          "total": null
+        }
+      }
+    },
+    "SOL": {
+      "events": 50,
+      "types": {
+        "delivered": 18,
+        "news_present": 1,
+        "no_alert": 25,
+        "repeat": 6
+      },
+      "tags": {
+        "borderline": 20,
+        "continuation": 28,
+        "news_absent": 31,
+        "news_present": 19,
+        "repeat": 29,
+        "reversal": 22
+      },
+      "event_level": {
+        "scored_cases": 17,
+        "unscored_cases": 29,
+        "ambiguous_cases": 4,
+        "tp": 7,
+        "fp": 4,
+        "fn": 3,
+        "tn": 3,
+        "precision": 0.6363636363636364,
+        "recall": 0.7
+      },
+      "delivered_weighted_precision": {
+        "reviewed_deliveries": 12,
+        "deserved_deliveries": 4,
+        "low_value_deliveries": 8,
+        "ambiguous_deliveries": 1,
+        "unreviewed_deliveries": 15,
+        "unknown_volume_events": 0,
+        "precision": 0.3333333333333333
+      },
+      "recipient_eligible_weighted": {
+        "scored_cases": 0,
+        "unscored_cases": 46,
+        "ambiguous_cases": 4,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "tn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "final_text": {
+        "usefulness_reviewed_events": 0,
+        "usefulness_rate": null,
+        "usefulness_reviewed_deliveries": 0,
+        "delivery_weighted_usefulness": null,
+        "fact_checked_events": 0,
+        "factual_errors": 0,
+        "factual_error_rate": null
+      },
+      "technical_observations": {
+        "delivered_count": {
+          "measured_events": 50,
+          "total": 28
+        },
+        "delivery_failures": {
+          "measured_events": 50,
+          "total": 0
+        },
+        "llm_calls": {
+          "measured_events": 0,
+          "total": null
+        },
+        "provider_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "total_tokens": {
+          "measured_events": 0,
+          "total": null
+        },
+        "rate_limit_attempts": {
+          "measured_events": 0,
+          "total": null
+        },
+        "operating_cost_usd": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_event_duplicates": {
+          "measured_events": 0,
+          "total": null
+        },
+        "same_family_duplicates": {
+          "measured_events": 0,
+          "total": null
+        }
+      }
+    }
+  }
+}

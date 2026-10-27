@@ -1,0 +1,233 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "source_case_count": 200,
+  "owner_labels": {
+    "no_alert": 159,
+    "alert": 31,
+    "ambiguous": 10
+  },
+  "dataset_status": "REUSED_TUNING_200_NOT_BLIND_HOLDOUT",
+  "baseline_historical_production": {
+    "TP": 20,
+    "FP": 75,
+    "FN": 11,
+    "TN": 84,
+    "ambiguous": 10,
+    "missing": 0,
+    "scored": 190,
+    "precision": 0.2105,
+    "recall": 0.6452
+  },
+  "providers": {
+    "groq": {
+      "valid": 0,
+      "expected": 400,
+      "attempts": 1,
+      "status_counts": {
+        "http_error": 1
+      }
+    },
+    "cloudflare": {
+      "valid": 400,
+      "expected": 400,
+      "attempts": 400,
+      "status_counts": {
+        "valid": 400
+      }
+    }
+  },
+  "new_candidates": {
+    "groq": {
+      "balanced": {
+        "TP": 0,
+        "FP": 0,
+        "FN": 0,
+        "TN": 0,
+        "ambiguous": 0,
+        "missing": 200,
+        "scored": 0,
+        "precision": null,
+        "recall": null,
+        "valid_case_count": 0,
+        "reported_total_tokens": 0,
+        "per_symbol": {
+          "BTC": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "ETH": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "GRAM": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "SOL": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          }
+        }
+      },
+      "fresh_leg": {
+        "TP": 0,
+        "FP": 0,
+        "FN": 0,
+        "TN": 0,
+        "ambiguous": 0,
+        "missing": 200,
+        "scored": 0,
+        "precision": null,
+        "recall": null,
+        "valid_case_count": 0,
+        "reported_total_tokens": 0,
+        "per_symbol": {
+          "BTC": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "ETH": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "GRAM": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          },
+          "SOL": {
+            "TP": 0,
+            "FP": 0,
+            "FN": 0,
+            "TN": 0,
+            "ambiguous": 0,
+            "valid": 0
+          }
+        }
+      }
+    },
+    "cloudflare": {
+      "balanced": {
+        "TP": 16,
+        "FP": 36,
+        "FN": 15,
+        "TN": 123,
+        "ambiguous": 10,
+        "missing": 0,
+        "scored": 190,
+        "precision": 0.3077,
+        "recall": 0.5161,
+        "valid_case_count": 200,
+        "reported_total_tokens": 227400,
+        "per_symbol": {
+          "BTC": {
+            "TP": 3,
+            "FP": 16,
+            "FN": 2,
+            "TN": 28,
+            "ambiguous": 1,
+            "valid": 50
+          },
+          "ETH": {
+            "TP": 4,
+            "FP": 8,
+            "FN": 1,
+            "TN": 34,
+            "ambiguous": 3,
+            "valid": 50
+          },
+          "GRAM": {
+            "TP": 2,
+            "FP": 6,
+            "FN": 11,
+            "TN": 28,
+            "ambiguous": 3,
+            "valid": 50
+          },
+          "SOL": {
+            "TP": 7,
+            "FP": 6,
+            "FN": 1,
+            "TN": 33,
+            "ambiguous": 3,
+            "valid": 50
+          }
+        }
+      },
+      "fresh_leg": {
+        "TP": 9,
+        "FP": 19,
+        "FN": 22,
+        "TN": 140,
+        "ambiguous": 10,
+        "missing": 0,
+        "scored": 190,
+        "precision": 0.3214,
+        "recall": 0.2903,
+        "valid_case_count": 200,
+        "reported_total_tokens": 227925,
+        "per_symbol": {
+          "BTC": {
+            "TP": 2,
+            "FP": 6,
+            "FN": 3,
+            "TN": 38,
+            "ambiguous": 1,
+            "valid": 50
+          },
+          "ETH": {
+            "TP": 2,
+            "FP": 5,
+            "FN": 3,
+            "TN": 37,
+            "ambiguous": 3,
+            "valid": 50
+          },
+          "GRAM": {
+            "TP": 1,
+            "FP": 2,
+            "FN": 12,
+            "TN": 32,
+            "ambiguous": 3,
+            "valid": 50
+          },
+          "SOL": {
+            "TP": 4,
+            "FP": 6,
+            "FN": 4,
+            "TN": 33,
+            "ambiguous": 3,
+            "valid": 50
+          }
+        }
+      }
+    }
+  }
+}

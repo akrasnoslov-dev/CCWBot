@@ -1,0 +1,896 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "conflicts": [
+    {
+      "id": "ev_4efc809bef076263",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-07T18:30:02.611547Z",
+      "window_move_percent": 0.4585270733446644,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_5b8a10972d2bbffc",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-07T21:00:02.052692Z",
+      "window_move_percent": 0.19769557265645116,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_62a860b3be4a2b56",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-08T08:30:02.139765Z",
+      "window_move_percent": 0.43137492348080136,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_f1b6ad119de05a5a",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-08T11:00:03.474993Z",
+      "window_move_percent": -0.5079882221988385,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_6f528887da924dca",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-09T08:00:01.861477Z",
+      "window_move_percent": 0.20081560061107298,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_d80c01bba0400132",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-09T19:00:02.975775Z",
+      "window_move_percent": -0.5410899010590909,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_793fc544e285b825",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-12T07:30:03.484267Z",
+      "window_move_percent": 0.6155827207446997,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_d81183cdf4fb1f71",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-12T15:00:02.917907Z",
+      "window_move_percent": -0.9368999552780505,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_39891a3b04174bf5",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-13T02:00:03.354782Z",
+      "window_move_percent": 0.09272323890714682,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_32c91f6811220943",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-14T04:00:03.292120Z",
+      "window_move_percent": 0.49393743980980925,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_19e4fd193fc80064",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-14T08:00:06.132901Z",
+      "window_move_percent": -0.25181124776131153,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_6d57a005dfb4c176",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-14T22:30:03.451876Z",
+      "window_move_percent": -0.17333765710030505,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_075a5b3e3addb0a1",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-15T12:30:03.690104Z",
+      "window_move_percent": -0.3365254497717276,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_c7d8b26fae14d237",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-15T22:00:03.386266Z",
+      "window_move_percent": 0.32972128308622006,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_6d645ffe2f593320",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-16T03:30:02.726579Z",
+      "window_move_percent": -0.20871758772655286,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_acf2404b069b5d37",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-16T04:30:02.962528Z",
+      "window_move_percent": -0.20535484013995456,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_66d738d94f921c72",
+      "symbol": "BTC",
+      "observed_utc": "2026-10-16T05:30:03.231811Z",
+      "window_move_percent": 0.1602202986379847,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "no_alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_d3fed1a30646aa53",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-07T07:35:01.528936Z",
+      "window_move_percent": 0.3030798354984976,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_0c7b2c4d1c1394d3",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-07T09:35:01.109251Z",
+      "window_move_percent": -0.6800510159669507,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_2f11d6ea41819f42",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-07T15:05:00.374426Z",
+      "window_move_percent": -0.5887946012878124,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_73ee7f7d464106e6",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-07T18:05:01.905906Z",
+      "window_move_percent": -0.3131099116956311,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_b364782dc5341945",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-07T21:35:01.197404Z",
+      "window_move_percent": 0.5588376976557023,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_baaa5f69ef79aa48",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-08T05:05:00.922174Z",
+      "window_move_percent": -0.8216881656323884,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_8ad62d490fe6ea05",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-08T06:35:01.049266Z",
+      "window_move_percent": -0.8413084816625022,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_d53f85d10f93bfd8",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-08T07:05:00.337089Z",
+      "window_move_percent": -0.24930691188695653,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_0ab71234c9080ecc",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-09T00:05:01.948395Z",
+      "window_move_percent": 0.26286988218543744,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_57ad0b63a2dfd1a1",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-09T06:35:01.306482Z",
+      "window_move_percent": 0.4116853518671939,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_ca419cced38004dd",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-09T17:05:02.418180Z",
+      "window_move_percent": -0.16281237955303482,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_e281b3827cec3ce4",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-09T18:35:01.473179Z",
+      "window_move_percent": -0.3465968396141457,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_be168f096ddd0f3d",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-10T19:05:02.070922Z",
+      "window_move_percent": 0.10267969731822325,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_d5c1443978a2dbdb",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-11T20:35:03.065918Z",
+      "window_move_percent": -0.3170141564142397,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_893e70ae29cb92e7",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-11T21:35:02.563113Z",
+      "window_move_percent": -0.5636510699050872,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_8c7dd35f1b3d41e4",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-12T04:35:02.878018Z",
+      "window_move_percent": 0.25465326991346726,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_e63023319a55b676",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-12T13:35:03.035163Z",
+      "window_move_percent": -1.358590527612572,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_0d0d5110cefac3ef",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-12T15:35:01.410074Z",
+      "window_move_percent": -0.5575565091457803,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_1f79b09b0b3404d3",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-13T14:35:03.018316Z",
+      "window_move_percent": 1.003332871054996,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_61b14c71a3ee8a11",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-13T23:05:01.906268Z",
+      "window_move_percent": -0.19885113477269567,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_f626db856d4e0de1",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-14T18:35:03.948943Z",
+      "window_move_percent": -0.08403318317067378,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_7d8fef4f9c5f5a25",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-15T02:05:05.087421Z",
+      "window_move_percent": -0.28731440412264003,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_a45dcac234e92c29",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-15T08:05:02.120013Z",
+      "window_move_percent": -0.28316004528937155,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_378e53a4ff0fcef5",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-15T14:35:02.525819Z",
+      "window_move_percent": 0.26508418790733784,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_82741746d13a5b75",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-16T04:35:01.240022Z",
+      "window_move_percent": 0.01744783856626687,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_2c673c9dfc2877d5",
+      "symbol": "ETH",
+      "observed_utc": "2026-10-16T05:05:02.194306Z",
+      "window_move_percent": 0.6123540388568767,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_9967b46b070601f2",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-06T02:40:01.906380Z",
+      "window_move_percent": -0.551985462398445,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_345fc49db8255adf",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-06T17:40:01.139551Z",
+      "window_move_percent": -1.2934816690381044,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_09080bc39e36d3a8",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-07T06:10:00.467797Z",
+      "window_move_percent": 0.7585708546760638,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_ff8b4bb2822bd0e6",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-07T06:40:01.223030Z",
+      "window_move_percent": 0.682311811692881,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_a370555b751b33e8",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-07T08:40:01.608757Z",
+      "window_move_percent": 0.08014948661097505,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_f584bf6836004d16",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-07T18:40:01.463945Z",
+      "window_move_percent": 0.9232246005641663,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_fa12c2dd8871640e",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T02:40:00.740902Z",
+      "window_move_percent": -0.46659971493009245,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_acb59330389885c1",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T13:10:06.843340Z",
+      "window_move_percent": -1.8025720314232103,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_69f05f0f882486c0",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T13:40:01.001660Z",
+      "window_move_percent": -1.1830121257307216,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_0feb8fc14b803462",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T14:40:01.908223Z",
+      "window_move_percent": 0.5854571939557021,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "no_alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_6568cc18aee71c61",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T20:40:03.805328Z",
+      "window_move_percent": 2.7894052253209733,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_8f38a8e2204775fd",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-08T23:40:01.960554Z",
+      "window_move_percent": -0.312163506462367,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_ca9cba5da00d7194",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-09T00:10:01.922085Z",
+      "window_move_percent": -0.6340857074034085,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_06967ba962fd99c2",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-09T03:40:01.288470Z",
+      "window_move_percent": 0.4139510104779849,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_d867a082f6a2b9eb",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-09T08:10:02.878241Z",
+      "window_move_percent": 0.5337254109205803,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_6c38787191f25b78",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-09T23:40:02.754564Z",
+      "window_move_percent": -0.07231921859864866,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_4f443df56981cc24",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-10T12:10:02.903075Z",
+      "window_move_percent": -1.0222221467840371,
+      "reviewer_A": "alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_adfd6a9505cd87f6",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-11T10:10:02.841687Z",
+      "window_move_percent": 0.13595568731312394,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_557f98e3aed5238b",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-11T15:40:02.149346Z",
+      "window_move_percent": 0.3293844008337049,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_5a2ebc546eaa40cc",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-13T01:10:02.943142Z",
+      "window_move_percent": -0.4546987179218251,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_17695daab778f122",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-13T08:10:02.680848Z",
+      "window_move_percent": -0.04712916765633109,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_dc716b6a61a24adb",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-13T08:40:26.966622Z",
+      "window_move_percent": 0.25833530075898803,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_41ef2b378c8eb878",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-13T19:40:02.391476Z",
+      "window_move_percent": -0.6045081937367761,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_67191663c33d3a79",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-14T22:10:03.022631Z",
+      "window_move_percent": 0.5209129703120233,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_59456f55949ff140",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-15T05:10:02.678602Z",
+      "window_move_percent": 0.37800431184066935,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_bb41d65cf5464b88",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-15T23:10:01.714241Z",
+      "window_move_percent": 0.00990780349765004,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_4ab300c3b743b554",
+      "symbol": "GRAM",
+      "observed_utc": "2026-10-16T00:40:01.589005Z",
+      "window_move_percent": -0.42355166148837203,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_89a89ce33b2d07a4",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-06T00:45:01.239978Z",
+      "window_move_percent": 0.16314200722450514,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_d1f0d676477abedb",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-06T14:45:00.554527Z",
+      "window_move_percent": 1.0700186173078974,
+      "reviewer_A": "alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_b6a717fe983101fc",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-07T07:45:00.814286Z",
+      "window_move_percent": 0.5419425040048876,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_c11fc3662a746b39",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-07T09:15:00.744926Z",
+      "window_move_percent": -0.37864930217394965,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_f908b6d1d12532ee",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-07T16:45:01.437279Z",
+      "window_move_percent": 0.46605059944650784,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_5fae55288b0da0e8",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-07T18:45:01.836483Z",
+      "window_move_percent": 0.33845723510905656,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_b3bc36edc283f627",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-08T08:15:01.766974Z",
+      "window_move_percent": 0.14483944067981996,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_fd251a8bd9ebb3c9",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-09T00:15:01.869908Z",
+      "window_move_percent": 0.1420449129204762,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_a14b3c85c8c46d2f",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-09T10:15:03.053782Z",
+      "window_move_percent": -0.3651128716598409,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_1dd3d013e2dd43ef",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-09T15:15:03.238257Z",
+      "window_move_percent": -0.9852358946363631,
+      "reviewer_A": "alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_792067f56370a744",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-09T16:45:02.821965Z",
+      "window_move_percent": -0.7097273908986236,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_341d98232c3ee735",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-09T19:45:03.935999Z",
+      "window_move_percent": -1.0108461851078432,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_584f3b1d7b77e79d",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-10T07:45:02.310716Z",
+      "window_move_percent": 0.007200267954767337,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_df062e41fb54ca2d",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-10T13:15:03.146608Z",
+      "window_move_percent": -0.14421079430425798,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_a792d2c32d58b1ef",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-11T20:45:02.676424Z",
+      "window_move_percent": -0.5932484950346423,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_fa46e26c4b1f587b",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-12T16:15:03.666922Z",
+      "window_move_percent": -1.163821802849776,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_bcb596cad71e8fbd",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-12T16:45:02.323552Z",
+      "window_move_percent": -1.4167037234960596,
+      "reviewer_A": "alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_ad411beedbf81f24",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-13T02:45:03.585006Z",
+      "window_move_percent": 0.37542101775788306,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_19c7744fea400d98",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-13T09:15:27.299786Z",
+      "window_move_percent": -0.6958621104655272,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_ee3af1481fb43c2e",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-13T23:45:02.773232Z",
+      "window_move_percent": -0.6177960393997303,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_e41ce9d4645d71d4",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-14T09:45:02.039096Z",
+      "window_move_percent": -0.5899581687706554,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_883c34881332dabe",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-14T21:15:01.901148Z",
+      "window_move_percent": -0.7131383286807964,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_fc35d58391836075",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-14T21:45:02.369206Z",
+      "window_move_percent": 0.43344727260845045,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_1f64c789a84ad137",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-14T23:15:01.745040Z",
+      "window_move_percent": 0.19095064433248218,
+      "reviewer_A": "no_alert",
+      "reviewer_B": "ambiguous",
+      "resolution": null
+    },
+    {
+      "id": "ev_f6c390c7986cbdb1",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-15T19:45:01.668816Z",
+      "window_move_percent": -0.04018504896417865,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_427556b5011aeb51",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-15T22:45:02.111849Z",
+      "window_move_percent": -0.14432698312376455,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_9825dfc95253f0f7",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-15T23:45:01.596677Z",
+      "window_move_percent": -0.3967329612341988,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_22955d5b99feebef",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-16T02:45:01.288191Z",
+      "window_move_percent": 0.07234388497753336,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    },
+    {
+      "id": "ev_bc7ddfa4599baa09",
+      "symbol": "SOL",
+      "observed_utc": "2026-10-16T04:15:01.352342Z",
+      "window_move_percent": -0.40734420505909746,
+      "reviewer_A": "ambiguous",
+      "reviewer_B": "alert",
+      "resolution": null
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "materiality_first",
+  "model": "qwen/qwen3.8-27b",
+  "config_fingerprint": "cda03450cc3c592795e8ddbd3fdd077dd6445fd930b43eb64707a63099fe4c11",
+  "results": []
+}

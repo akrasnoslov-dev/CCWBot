@@ -1,0 +1,24 @@
+{
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "total": 200,
+  "by_symbol": {
+    "BTC": 50,
+    "SOL": 50,
+    "GRAM": 50,
+    "ETH": 50
+  },
+  "historical_positive_observed": 49,
+  "historical_positive_per_symbol": {
+    "BTC": 11,
+    "SOL": 18,
+    "ETH": 18,
+    "GRAM": 2
+  },
+  "source_period": "2026-10-17 to 2026-10-22 UTC",
+  "blind_review_status": "NOT_REVIEWED",
+  "authoritative_independent_human_ground_truth": false,
+  "source_sha256": "377fc476beb3c189120bc74998f691a13f895b914eb68e141a7cc4e6c91ade34",
+  "blind_packet_sha256": "cca08b8159b75982419551cd7a9cc2c8057b19ced482c87be1ae5f1d83ab3e43",
+  "overlap_old200": 0,
+  "overlap_holdout20": 0
+}

@@ -1,0 +1,88 @@
+{
+  "benchmark": "CCW29 new 200, never in older tuning 200 or previous 20",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "expected": 600,
+  "valid": 600,
+  "statuses": {
+    "valid": 600
+  },
+  "openai_cost_usd_conservative": 0.157569,
+  "budget_this_run_usd": 0.85,
+  "human_review_A_complete": false,
+  "human_review_B_complete": false,
+  "authoritative_human_labels_available": false,
+  "scores": {
+    "production": {
+      "valid": 200,
+      "positive_predictions": 26,
+      "old_production_disagreements": 45,
+      "by_symbol": {
+        "BTC": {
+          "valid": 50,
+          "positive": 5
+        },
+        "ETH": {
+          "valid": 50,
+          "positive": 4
+        },
+        "GRAM": {
+          "valid": 50,
+          "positive": 5
+        },
+        "SOL": {
+          "valid": 50,
+          "positive": 12
+        }
+      },
+      "if_two_human_labels": null
+    },
+    "balanced": {
+      "valid": 200,
+      "positive_predictions": 44,
+      "old_production_disagreements": 41,
+      "by_symbol": {
+        "BTC": {
+          "valid": 50,
+          "positive": 9
+        },
+        "ETH": {
+          "valid": 50,
+          "positive": 11
+        },
+        "GRAM": {
+          "valid": 50,
+          "positive": 10
+        },
+        "SOL": {
+          "valid": 50,
+          "positive": 14
+        }
+      },
+      "if_two_human_labels": null
+    },
+    "refined": {
+      "valid": 200,
+      "positive_predictions": 42,
+      "old_production_disagreements": 45,
+      "by_symbol": {
+        "BTC": {
+          "valid": 50,
+          "positive": 7
+        },
+        "ETH": {
+          "valid": 50,
+          "positive": 9
+        },
+        "GRAM": {
+          "valid": 50,
+          "positive": 10
+        },
+        "SOL": {
+          "valid": 50,
+          "positive": 16
+        }
+      },
+      "if_two_human_labels": null
+    }
+  }
+}

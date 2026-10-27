@@ -1,0 +1,26 @@
+{
+  "version": "CCW29-20261023-FRESH200-LUNA-3PROMPTS",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "cases": 200,
+  "prompts": [
+    "production",
+    "balanced",
+    "refined"
+  ],
+  "instructions_sha256": {
+    "production": "e6496d98812ca7380a899c33c8e8e9294eddcee00d157515a179a91892aeb308",
+    "balanced": "293474b69ada1ee5311a7aae8a81a07f80c2106e3dcc9639e32879f7c5545ae1",
+    "refined": "e30183660bffd977bc81a5a8f19093a07e9267a3da12aa12e9bbac913ed3f07c"
+  },
+  "model": "gpt-6-luna",
+  "call_slots": 600,
+  "provider_budget_cap_usd": 0.85,
+  "previous_luna_test_cost_usd": 0.104239,
+  "combined_total_max_usd": 0.954239,
+  "max_completion_tokens": 4096,
+  "key_not_in_jobs": true,
+  "labels_not_in_jobs": true,
+  "fresh_human_labels_pending": true,
+  "original_200_overlap": 0,
+  "prior_new20_overlap": 0
+}

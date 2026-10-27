@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "balanced_novelty",
+  "model": "qwen/qwen3.8-27b",
+  "config_fingerprint": "1dbabd6fda84a40bb620d9bd28219cce314d2d5094dfe01be5e3951ff402c121",
+  "results": []
+}

@@ -1,0 +1,2239 @@
+﻿{
+    "schema":  "ccwbot-research-public-evidence-v1",
+    "source":  "local staged research evidence exported from full reports archive",
+    "source_file_count":  426,
+    "imported_file_count":  331,
+    "excluded_file_count":  95,
+    "source_tree":  "research/event_alerts/imported_reports_20261026/reports",
+    "imported_tree":  "research/event_alerts/versioned_evidence_20261026/reports",
+    "warning":  "Screened for common secrets and identifying strings. Excluded files remain local for separate review. Never assume file-level heuristics certify all privacy.",
+    "imported":  [
+                     {
+                         "path":  "context-audit.md",
+                         "sha256":  "9fc7574fbc1667a58b4cb5adc0000069e8a07250da2bc4a7d12af3cdebf44292",
+                         "bytes":  7743
+                     },
+                     {
+                         "path":  "ccw25-20261019/artifact_manifest.json",
+                         "sha256":  "a9141e3e9cc82a2331a0a517dac5e0d44b5ead6b2b042f40511e3919f216fd89",
+                         "bytes":  1650
+                     },
+                     {
+                         "path":  "ccw25-20261019/benchmark.py",
+                         "sha256":  "52baed32d0c934077760e881a74d5204abeb63036645e150c1d59c3b699e97e4",
+                         "bytes":  17009
+                     },
+                     {
+                         "path":  "ccw25-20261019/benchmark_summary.json",
+                         "sha256":  "e8f8434c1cdcbb6d8907c47d8a71026140b3ce9e3ac66df2fe259ae5dc0d3395",
+                         "bytes":  10315
+                     },
+                     {
+                         "path":  "ccw25-20261019/benchmark_table.md",
+                         "sha256":  "5986f883201974a91f1d745c5202a50e29bf235eca16365389583b7d9e987100",
+                         "bytes":  1835
+                     },
+                     {
+                         "path":  "ccw25-20261019/collect_workload.py",
+                         "sha256":  "a4b7fe0773a84dd3ebd7a77c839b7075d887c7f213b78ca03f397a3f2b9f8211",
+                         "bytes":  4868
+                     },
+                     {
+                         "path":  "ccw25-20261019/corpus.json",
+                         "sha256":  "c014babfc7a595cdb252b03c649acf06132fe93600aaf514b9c0821643f8e3b0",
+                         "bytes":  112116
+                     },
+                     {
+                         "path":  "ccw25-20261019/cost_model.json",
+                         "sha256":  "8a3658a65d97b5ca8344418950209092a72a18a299eee10ee87fe10061e4be93",
+                         "bytes":  2889
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev_source_manifest.json",
+                         "sha256":  "3a778bc1d939cef275b3e52163418101dc080323861896a6d985b28af63090e8",
+                         "bytes":  12641
+                     },
+                     {
+                         "path":  "ccw25-20261019/download.py",
+                         "sha256":  "8b40d0e8af5d403611eba31183a3f440f925918feee1712ce9a93d8ef5578f00",
+                         "bytes":  2707
+                     },
+                     {
+                         "path":  "ccw25-20261019/evidence_manifest.json",
+                         "sha256":  "d362c94d541198f0ee3d86058b0c675bfcd3edf2742a7232fb7ea1e51bdb1b11",
+                         "bytes":  3410
+                     },
+                     {
+                         "path":  "ccw25-20261019/finalize.py",
+                         "sha256":  "5ede8aa578b0163a248be11ba931e5384457ae903c030a06174d0371f8b57a85",
+                         "bytes":  9242
+                     },
+                     {
+                         "path":  "ccw25-20261019/heartbeat_post_validation.json",
+                         "sha256":  "ebb4f8c0aa8bace306a1c9ce1e09e10041e485eed9cf99f4f50342a611ebf631",
+                         "bytes":  3800
+                     },
+                     {
+                         "path":  "ccw25-20261019/owner_decision_report.md",
+                         "sha256":  "9a46c83a94427c29aeadb34a3bc40abb61602efee420931e4f4200ed54d4b92c",
+                         "bytes":  7978
+                     },
+                     {
+                         "path":  "ccw25-20261019/package_evidence.py",
+                         "sha256":  "b6856c413efa7e1c9c5fabe3cb479f720bf87211053c16b8e33912c67d05a7ba",
+                         "bytes":  1840
+                     },
+                     {
+                         "path":  "ccw25-20261019/phi.results.json",
+                         "sha256":  "7e95eda27db2b450fe0b65988554c1c4599300a1770f98fee2ffe7b5a31ac7e9",
+                         "bytes":  36942
+                     },
+                     {
+                         "path":  "ccw25-20261019/python_environment.json",
+                         "sha256":  "3d7f06cef7eb24315e392e0c8c61d997f4291fd7817010ef23b2b1f18c077cf4",
+                         "bytes":  210
+                     },
+                     {
+                         "path":  "ccw25-20261019/quality_review.json",
+                         "sha256":  "b06d1875676d0c30a2040c9e9ecd3ad1c7a9efe3a1e6796906488f890b7153e6",
+                         "bytes":  6800
+                     },
+                     {
+                         "path":  "ccw25-20261019/qwen4.long.results.json",
+                         "sha256":  "d4875f7d63d6d109ce62098c8a3442f290875ce8117e26f1c70bc6684df472ab",
+                         "bytes":  8739
+                     },
+                     {
+                         "path":  "ccw25-20261019/qwen4.results.json",
+                         "sha256":  "c90a10c78169c55726f5789c6d2e1c1c2e33ed4fe712809e9dd0b5cb4e60da0e",
+                         "bytes":  70729
+                     },
+                     {
+                         "path":  "ccw25-20261019/qwen4_memory_sizing.json",
+                         "sha256":  "3adc054fcbca4e78091a22710275c737ba1a5237c0c6c4e4a7722675c855971c",
+                         "bytes":  245
+                     },
+                     {
+                         "path":  "ccw25-20261019/qwen7.results.json",
+                         "sha256":  "86fb3a2f4b8c235e31e742f4a2ad8eda01b6996a2575e3a981c1e2fc62908fb5",
+                         "bytes":  40961
+                     },
+                     {
+                         "path":  "ccw25-20261019/README.md",
+                         "sha256":  "3236ab92d7d8450996a4a9dff4a8b74b494cecdf1247e6fd6dc8facd71f2d5f3",
+                         "bytes":  5051
+                     },
+                     {
+                         "path":  "ccw25-20261019/resource_summary.json",
+                         "sha256":  "68fefc02fb12d1d95a01db87193b2f9d0845b8e60d4c0386f20dcaba7e606f55",
+                         "bytes":  1266
+                     },
+                     {
+                         "path":  "ccw25-20261019/review_notes.json",
+                         "sha256":  "d43f1c631fef7fc62c7a040a2b43ee0936b43267d6b63d0030571d47bd9b8e3d",
+                         "bytes":  1378
+                     },
+                     {
+                         "path":  "ccw25-20261019/run_manifest.json",
+                         "sha256":  "e74d7d0267f9255d3bd4622f1d98b851e25293aa63f25005e672519aaf37a0f0",
+                         "bytes":  6605
+                     },
+                     {
+                         "path":  "ccw25-20261019/run_remaining.py",
+                         "sha256":  "6bc251ad11c0c48d8aff778ba3a18025922f67ff977f94fd63c768fd3eabc23c",
+                         "bytes":  981
+                     },
+                     {
+                         "path":  "ccw25-20261019/source_manifest.json",
+                         "sha256":  "fd66d15ee000dcd23add6afb0f71053cc67aab2ae080346b9c91890b5324693a",
+                         "bytes":  844
+                     },
+                     {
+                         "path":  "ccw25-20261019/technical_appendix.md",
+                         "sha256":  "94cbff9e972ea315125020f778655bbe4a876d2349b09dc2478eba025aef14a6",
+                         "bytes":  21560
+                     },
+                     {
+                         "path":  "ccw25-20261019/verification.json",
+                         "sha256":  "0b2deb95e31435aec9f71f50c8a401b09c993439bb12c74861f4b844d3cb0dbd",
+                         "bytes":  569
+                     },
+                     {
+                         "path":  "ccw25-20261019/workload.json",
+                         "sha256":  "acde8239fdc815d95f7ec2bdbd8675c4aa5efcd8fb6faeb199044fab334bcad1",
+                         "bytes":  25179
+                     },
+                     {
+                         "path":  "ccw25-20261019/workload_queries.json",
+                         "sha256":  "ba620e248c3d4d8e930f255531318fa1faf53543afcdeca31003802ab8cb3b25",
+                         "bytes":  4173
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/analyze_reviewer_A_errors.py",
+                         "sha256":  "e9938569591452b0a4857ff1c6357b9750f8b8aea0fcbb6ea57d8e1e0e73ad73",
+                         "bytes":  2406
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/baseline_consensus_private.json",
+                         "sha256":  "d182dadeb3f663fbf7db6b6fcdaf044dbe6e3c5cc5dcbe2d33ae0418f03a253d",
+                         "bytes":  21022
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/baseline_reviewer_A_reference_private.json",
+                         "sha256":  "f0d3c1592ba4a98d67315e271a080e3be1e1b2ade6c4ab81600dab007cc9af97",
+                         "bytes":  21020
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/build_owner_reviewer_A_reference.py",
+                         "sha256":  "4024b073150dc3b5352a1d669911b215a4eb058f5db5b89d217126e2e030292a",
+                         "bytes":  3291
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/convert_html_reviews.py",
+                         "sha256":  "edefd980dc13783f7e71a3ec390fbf2fcc83d1a4720a974b32950e2fefa90546",
+                         "bytes":  3291
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/convert_human_reviews.py",
+                         "sha256":  "ec0f43dcc6f266a328a943dd461ac2378542cdcc7649be9e7b7e6a0e2ca7c31b",
+                         "bytes":  5081
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/convert_joint_adjudication.py",
+                         "sha256":  "f575de6e57445bdaf20d0213602142003a6592fc86f19898862411a719414547",
+                         "bytes":  1117
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/diagnose_global_private.py",
+                         "sha256":  "8844d442d890409e7f730321dfd32f70231d9b4ad16e8eafdc4f2522e57cc1be",
+                         "bytes":  1271
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/diagnose_live_20261016_private.py",
+                         "sha256":  "abad3ba752a5bd63d1bf08b50063ee7165b3cdc833df41f14e0bd76bdaa71538",
+                         "bytes":  1681
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/diagnose_message_repetition.py",
+                         "sha256":  "2607fe885e73b5b7dd2f74cfd448484e6c0f918ec6998d582b01f8766eb75fa7",
+                         "bytes":  1262
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/diagnose_relative_private.py",
+                         "sha256":  "0b36f7e7fc88539d4ea69c3c03e82481992125426f81f7ab5fa287183e67677b",
+                         "bytes":  1218
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/fix_factuality_question.py",
+                         "sha256":  "072602ca823c4e7e36f1aad60f916d7a9c68d4ebfb0e98b83f8a4bd051e0624b",
+                         "bytes":  4704
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/HUMAN_REVIEW_RESULTS_RU.md",
+                         "sha256":  "26e5a99dc0e9a03671d1357c3c265f08eaf4fed8938972d5aebbec92ea93e79b",
+                         "bytes":  4802
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/make_disagreement_review.py",
+                         "sha256":  "81c26daed2f88c6cf9a26f86b8b2365d9e4d6901c4d4b022e5312babd2160a6f",
+                         "bytes":  2872
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/make_telegram_review.py",
+                         "sha256":  "0a96883c387c5d9abc79eb1d99e957f4de513839cb501ebaf5e8d38c95ca1942",
+                         "bytes":  25265
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/owner_reviewer_A_resolution_private.json",
+                         "sha256":  "ce6d4f966bd9cdf4db4c049382af1e55bfcb388f0e272d27c762605521c23c97",
+                         "bytes":  12782
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/package_reviewers.py",
+                         "sha256":  "a5608916265a147ed21913386dd8351cd08ce8ef165432c671acf37bc564a2be",
+                         "bytes":  742
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/pr2_analyze_significance.py",
+                         "sha256":  "b6665aa96fd8f2c72f4186eb197241deed403041e1a872833cafee44e9db1084",
+                         "bytes":  1851
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/pr2_diagnostic.py",
+                         "sha256":  "57e06db0d67b4c8eb566b7645eb3a997d403e4c8612289b318138370a7a06a89",
+                         "bytes":  1215
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/probe_pg_private.py",
+                         "sha256":  "0f4133678a930b94543e635a2672490f8d4f1c36c005dfd321eb9cac223039ed",
+                         "bytes":  723
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/README_HUMAN_REVIEW.md",
+                         "sha256":  "2fb05ab3a1be0900404eef07945c8eeb564786ec46ceb6ec140e92ca034a08c0",
+                         "bytes":  1925
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/README_RU.md",
+                         "sha256":  "b173bc70f58b3386e09bebdc408d94bd87c07876c103ce2c770daef1c17f782b",
+                         "bytes":  2640
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_A_message_blind.json",
+                         "sha256":  "78455645122631d0f66d1ef404fa223490b9eb92f17e5681faf3af63d4fd71f7",
+                         "bytes":  625322
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_A_phase1_significance.csv",
+                         "sha256":  "8d972d3e6588b6b31941330df7ae0055bc66673979cf92790766c4fce6d8f1f7",
+                         "bytes":  252148
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_A_phase2_final_message.csv",
+                         "sha256":  "295cfdb7073e3f4d4f5e4b368002f7fe28bc386bc966baa8b9f4f1fb15d6f8e2",
+                         "bytes":  128681
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_A_significance_blind.json",
+                         "sha256":  "a1b75ba1f045589fb0263a2c6360ab39eec4701bf6b916953b58b3e49445211a",
+                         "bytes":  581244
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_A_significance_for_pr1.json",
+                         "sha256":  "181944fafd138bc2d69ed7ecf4ab32ed234a905eabf5afc8adf177a2f33946eb",
+                         "bytes":  25472
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_B_message_blind.json",
+                         "sha256":  "78455645122631d0f66d1ef404fa223490b9eb92f17e5681faf3af63d4fd71f7",
+                         "bytes":  625322
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_B_phase1_significance.csv",
+                         "sha256":  "8d972d3e6588b6b31941330df7ae0055bc66673979cf92790766c4fce6d8f1f7",
+                         "bytes":  252148
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_B_phase2_final_message.csv",
+                         "sha256":  "295cfdb7073e3f4d4f5e4b368002f7fe28bc386bc966baa8b9f4f1fb15d6f8e2",
+                         "bytes":  128681
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_B_significance_blind.json",
+                         "sha256":  "a1b75ba1f045589fb0263a2c6360ab39eec4701bf6b916953b58b3e49445211a",
+                         "bytes":  581244
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/reviewer_B_significance_for_pr1.json",
+                         "sha256":  "fdff0dd9c5fb7150bdb8e8928f8c0f4cae4268d74a2b146deaf3acd391bcc233",
+                         "bytes":  25286
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/run_pg_lock_checks_private.py",
+                         "sha256":  "4f672c5c8aa6ba6d0317db7cda786f7fbd7e24ae293e0cad3d0ab31b36027b43",
+                         "bytes":  1774
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/sampling_summary.json",
+                         "sha256":  "b31c82c0645d4c47923ac33e0133e9e953990a628c17b8ed697f37688c099bcd",
+                         "bytes":  1246
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/score_user_submissions.py",
+                         "sha256":  "740eedaeded327d6d6b1fcc78be660903ec966caacd049428d71f1784d14c4ec",
+                         "bytes":  3092
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/smoke_browser.py",
+                         "sha256":  "f87a8628a566c0ff4bc42ceb82899828f54a81a2efd1a22e25458f7260e72563",
+                         "bytes":  1071
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ui_js_smoke_test.js",
+                         "sha256":  "a766e290fabd39e07110047951579371afbf1bffd95f6a2edfc0a91401eae0ff",
+                         "bytes":  2032
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/unresolved_human_disagreements_private.json",
+                         "sha256":  "6b1689dbd5f23e75eaea662b398f1dfd7e7a9f30acc7ecd7c010d31a6b9a9c92",
+                         "bytes":  26935
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/v2_private_sanitized.json",
+                         "sha256":  "e983a16e8d6f1ae20cf0b155c982e33baec65d06c0f9be4fbb68c90f6499cce6",
+                         "bytes":  737443
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/verify_telegram_review.py",
+                         "sha256":  "57b955c5ee919323d76bf9420610e9e2ba42ff8e467e2a3a1dfc3d130f89b2d1",
+                         "bytes":  1184
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_commit_market_evidence_private.py",
+                         "sha256":  "dec197036ada7fcff40f785ae6acc22d78f889ff18d6de872b2db5749b532a3b",
+                         "bytes":  1050
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_commit_quality_runner_private.py",
+                         "sha256":  "d536844652bb30726b64c0b9fe749e35d6f735da4b8ce74c59b49ec8a22149aa",
+                         "bytes":  1611
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_commit_worker_status_private.py",
+                         "sha256":  "ebafabfd2b897289227d69e93e89e948f87ef854e20814ea602881cb19b43d2e",
+                         "bytes":  956
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_error_diagnosis_private.py",
+                         "sha256":  "0e391e39e64521dc38f8cb14f1af3ec5b0c0b774356902ef2a33e2160ec140c1",
+                         "bytes":  1657
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_fallback_quality_status_private.py",
+                         "sha256":  "86877ec1e95a713075f24033e501124da7007a3e379300ccc1253b4ab6278295",
+                         "bytes":  1301
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_feature_diagnosis_private.py",
+                         "sha256":  "66d2a3f81e8485cf89a140e5dd477c5fdf58c58636029d4311fcf733200c8c4b",
+                         "bytes":  1344
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_live_audit_private.py",
+                         "sha256":  "1c150d515d57d5aace0755880835a23b6e6350db8dbe6ada55c2825dda84bf2e",
+                         "bytes":  1527
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_message_regression_private.py",
+                         "sha256":  "412ede3dec47819a85a6392214f4452bf755f295b7a9d772e8e422014b35f496",
+                         "bytes":  4388
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_provider_audit_private.py",
+                         "sha256":  "2045dde1ef13705dba28c81dff117ed7370c5816851f60d1ee62128f3ee537a9",
+                         "bytes":  1265
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_quota_commit_private.py",
+                         "sha256":  "8ad9d4852c242e3bfd0e357f66f6e111d4726cc7d5d4dda4ef777bf3e66d383d",
+                         "bytes":  694
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_qwen_frozen_probe_private.py",
+                         "sha256":  "06a8716ae382448e354dd4c359e5fe93a27e0d7a9d1bff0980f967b833f785c5",
+                         "bytes":  1791
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_qwen_probe_private.py",
+                         "sha256":  "79a015bc1d5e33f82e64b0423093c8a8dee90a569b871c9891821fe42f31228a",
+                         "bytes":  1902
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_refactor_fallback_runner_private.py",
+                         "sha256":  "19ecd5335727ebb5bf323c7a31ce5d193e08df7bac591928a23c6f069c7cf3be",
+                         "bytes":  3248
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr2_register_quality_task_private.py",
+                         "sha256":  "9b7bbf81fb56ef55d89317be184b514358cd155e2086386bcef8b5f756e9443a",
+                         "bytes":  824
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr349_current_fpfn_private.py",
+                         "sha256":  "a5e85e91c9a6f5caf62dabce06cf526f8bc00408f15693faec24af2b5a6f73c0",
+                         "bytes":  1640
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/_pr349_stage_vps_private.py",
+                         "sha256":  "ed718dd1573c0d58f76034dac8f566e096608b3499b72dd61c29d89bce6fe851",
+                         "bytes":  2748
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/ccw16_final_20261023.summary.json",
+                         "sha256":  "59bbbb303233ede5177c560af4ba46f86dd7ac5d75bd064eee6c9ebd1529c430",
+                         "bytes":  3615
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/pilot-ledger-complete_20261023_120.json",
+                         "sha256":  "2512e4e340f3074fafc1ee07e497be7b71014e6c2c9b38a6cff2f21c32623ab4",
+                         "bytes":  74510
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/pilot-ledger-stopped_20261022_86.json",
+                         "sha256":  "6bad5025c1d31bd4c2ba69db14ba59084ff3b707531e035ae20852133be0412d",
+                         "bytes":  53408
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/pilot-ledger.json",
+                         "sha256":  "90fb603deeb324c2d8504ff392a98f7e284642ed700d0d1d5d70135c8a4707ea",
+                         "bytes":  26715
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/pilot-manifest.json",
+                         "sha256":  "a27572958119501219a39d9b9d168ea4bfefd3d3f63475a69ce7ae338b08f34e",
+                         "bytes":  39795
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_accelerate_cron_private.py",
+                         "sha256":  "3789bb556c409d6109f6d6ea6b1570dc6c0ba74b79c8c900188ca7e696b71356",
+                         "bytes":  1653
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_provider_metadata_preflight_private.py",
+                         "sha256":  "b0ec61ef211c913940c65088d4b1b56e0e903a26176eedb7f98f3833fac15eb5",
+                         "bytes":  2117
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_quota_status_20261021.py",
+                         "sha256":  "fd1b9ff9a3e325dec49bec3282eb5f935adfc9277aaa6b4b6e932faa95f484a2",
+                         "bytes":  1541
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_runner_private.py",
+                         "sha256":  "22ae9854a8a422199b165e1d8ced0aa50652a1a53d53ae60c5e6c5193fcb43c9",
+                         "bytes":  12932
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_score_private.py",
+                         "sha256":  "2aa7c0d9caf0d33457acb1f24f34cf4e8d1c3189fc0059ec9a82e814f60efbfb",
+                         "bytes":  1867
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw16_private/_stage_pilot_calls_private.py",
+                         "sha256":  "d45ba24e1b3bbfcd2069dc74eff05de54b4990c7ba7deb1737526cd9a316201d",
+                         "bytes":  2280
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/audit_19_evidence.py",
+                         "sha256":  "b78e235b311fdeb327ecb77ee88adab6c12590f5c0d38fd08bfbb89e342d8cc7",
+                         "bytes":  1421
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/blind_ai_review_worker.py",
+                         "sha256":  "c531cd70ec19b7210493c0bb976dbf44f5372f6cfe222140c89d2d72f616a512",
+                         "bytes":  4029
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/blind_view.py",
+                         "sha256":  "14ca66da8eb2c6aeee6db466d2941e93368dc9157476b96d50bf3fc87ae6138c",
+                         "bytes":  1003
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/ccw29_fresh_deploy.py",
+                         "sha256":  "de926e3b0aa0948c4e8382a7b96314d30415de4c5c199527f6d93148d403df8f",
+                         "bytes":  9193
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/ccw29_fresh_holdout_prep.py",
+                         "sha256":  "a9d1648b1d0621f7618acf7b4f9e8946fa1b448dafc55d71a19c98209077f7f4",
+                         "bytes":  4523
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/ccw29_fresh_score.py",
+                         "sha256":  "931671eb264a256fa235ccc298c49dfa2a5a76a2a1c0ba9f68f29310e1084815",
+                         "bytes":  5540
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/ccw29_groq_full_retry.py",
+                         "sha256":  "28c9b47b18cc4170aff09108c234120fcc0246b48e74f5585ea892cc0e9bda16",
+                         "bytes":  2930
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/check_owner_html.py",
+                         "sha256":  "daa653f7ec57ca1295ce44a4451f777dc66f69810c8e143a92c94d1cbcf54d8c",
+                         "bytes":  1359
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/cloudflare-ledger_PRIVATE.json",
+                         "sha256":  "1377cd43382d81c78608f59b2589529bdb6e8226e608129c1f6ccb07c1c5b6f7",
+                         "bytes":  38935
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/diagnose_matched.py",
+                         "sha256":  "19ba3cbcf6bbded5d05c815fb8a996aa05a41b182fe1587185d96525d4bad3e0",
+                         "bytes":  1379
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/direct_self_review_negatives.py",
+                         "sha256":  "9c6a520ba00482ddd8c1c6807ad2dc12daa02e1ab8c8c31977432e0f78891fa1",
+                         "bytes":  1680
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/direct_self_review_packet.py",
+                         "sha256":  "5ac46862517d4331c3f4d08786c75e04ae5fc03fcc47deba9f2d3a3a4b9d0c9e",
+                         "bytes":  2632
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/enrich_quality_first_history.py",
+                         "sha256":  "92520e7c05f053491cd9aa98fc453905ff68a7509cf5c623f415cae7e1a9e943",
+                         "bytes":  7830
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fix_fresh200_luna_manifest.py",
+                         "sha256":  "6f7feaa149a5a7eaabd29dce5c9c7e23992f3eac7042f0dd35f0c1a9b77db9bf",
+                         "bytes":  1858
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_luna_score.py",
+                         "sha256":  "43a5204cc1e42e2f23bc844e86ff02ba16cd92876f6b6dd546d042b0a766b462",
+                         "bytes":  4988
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen_collect.py",
+                         "sha256":  "ebf80e1a18fdde59ee67fabb4b6e3172ed03eb53fbf1df93e25eee0bfbbc6d60",
+                         "bytes":  5368
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2_deploy.py",
+                         "sha256":  "087df3bb64f2478245e7e1f228b321bae5d924dbba164e829396bd9418a31830",
+                         "bytes":  11337
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2_score.py",
+                         "sha256":  "67bbc48a978ae47d1c47f14cb4e200948093368719b7cec9ae78251ae0945480",
+                         "bytes":  5557
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/groq-ledger_PRIVATE.json",
+                         "sha256":  "872a828c3024831cc8cee5dcf55e23c0893a3595b08f27cf7daf28b09fc6676a",
+                         "bytes":  58265
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/import_owner_blind.py",
+                         "sha256":  "d5e794f7be10e1b157f5af4dbb6b733d6c4c9536b12fbb3c5b843b30c4786ef1",
+                         "bytes":  2313
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/inspect_economical_inputs.py",
+                         "sha256":  "471aa23613436ebf5f7f31b895b77ca8b58ef3a5ee88526b87ab9ec4da5e0aa6",
+                         "bytes":  1768
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/inspect_economical_outcome.py",
+                         "sha256":  "c3f714ae511a72c288a65b473e7656ca368f9f65e6a038b81fdf2902b71a0ae8",
+                         "bytes":  3066
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/interim_evidence_summary.json",
+                         "sha256":  "436dc58b8decd0ed5a05c2b4f36ded1901e950f5c6ab9263408ed2cc58617868",
+                         "bytes":  5064
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/luna_error_audit.py",
+                         "sha256":  "9d344dd91a52a9c33783d1987d1a18857889b740f8da58ff88eacc28b825e089",
+                         "bytes":  2015
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/make_fresh200_blind_html.py",
+                         "sha256":  "aaa61c9ddd1c92a78e96637823087b7b1ca808c62602e032977d85f4cb984e07",
+                         "bytes":  1898
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/make_owner_blind_html.py",
+                         "sha256":  "9e746c6a5e1b81267522c047d5ad8555b9d1019e5ece252ee821450d955e672d",
+                         "bytes":  8000
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/openai_luna_200_runner.py",
+                         "sha256":  "3f573b59c3446444b20611b80f69f1ab36e70f36b76ebe1a07fcc3d88e5ba6a4",
+                         "bytes":  9091
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/openai_luna_200_score.py",
+                         "sha256":  "a1c478422a133dfe610c92f89db74466997078b9a2950f4171025dc0df97ce81",
+                         "bytes":  3801
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/save_direct_gpt6_review.py",
+                         "sha256":  "969a416035a27abd2ab8c5db14fbb34055bfd2c9a014b4f39ee75162262eebdb",
+                         "bytes":  4160
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/score_blind_ai_review.py",
+                         "sha256":  "ecf79624e5b1ca8a797f0b32ae3d7e10c21ef4fcd338fa1c0a4965ade9a99101",
+                         "bytes":  3927
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/score_economical_200.py",
+                         "sha256":  "e3bb96ae927e3addc0f4dbf17dcfb57bdc9cb456a0d9e0222dc41a20ff1b29dc",
+                         "bytes":  8229
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/score_luna_v3.py",
+                         "sha256":  "beeab24cc13cb457ade815da1c767b8edfa9c68f372313f414e0045350e6f319",
+                         "bytes":  5600
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/score_owner_blind.py",
+                         "sha256":  "10cf22ff0f96df0ba698852327f54e8c4111bda25f6cb9c1535f079dab09aa59",
+                         "bytes":  2076
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/score_quality_first_200.py",
+                         "sha256":  "af411bda11e8f68559366d7781e8607dc1bdb6f3bd6e39b65a06f8acf0e94b5d",
+                         "bytes":  6488
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/seal_provisional_blind.py",
+                         "sha256":  "941e16c77ec1303b1af41c9ec233471f054c0cec932c2189dd09968bae498464",
+                         "bytes":  4524
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/stage_blind_ai_review.py",
+                         "sha256":  "da5500c110de49204ae05ce72a8be0ab9161202e7d76fd63124bba7d650748a1",
+                         "bytes":  4456
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/stage_economical_200.py",
+                         "sha256":  "7e99c2da5265bd18ae1dc8c9eabf8609a379ee93334c75aec90c0e68ed4a3cdc",
+                         "bytes":  15429
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/stage_fresh200_luna.py",
+                         "sha256":  "ea5fefee94c2ac0285b29df9deeefd22a10aa07b7906e21b583a2e114ce2e768",
+                         "bytes":  7911
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/stage_luna_v3.py",
+                         "sha256":  "50a14b20ae021a40e26d9897a2d4161c7af7fc0ddfae885dd76829205e14733a",
+                         "bytes":  5522
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/stage_quality_first_200.py",
+                         "sha256":  "059ab0929d1b04f67ca276c6559c47a893acf1b8694930a2a080063589fa409f",
+                         "bytes":  15500
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/sync_economical_worker.py",
+                         "sha256":  "d987b076c9d1ca16a947596b6c04dd4f4906ad4051f12238356a9322f9751581",
+                         "bytes":  1586
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_jobs_PRIVATE.json",
+                         "sha256":  "491a294876d7964616ad08d440eaca15d3df499b801438a1e64d144dcbfd75d2",
+                         "bytes":  1051607
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_luna_ledger_PRIVATE.json",
+                         "sha256":  "6e250a121f2eb0200ac7f8abb8a60dbb6f8bbc5dc479864fca1043caea4ca89a",
+                         "bytes":  133049
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_luna_runner_PRIVATE.py",
+                         "sha256":  "7b44e1edaa0e417618b146c64c1f6d4dac8f2b2e289b996c21095ef2b74e4f01",
+                         "bytes":  9383
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_manifest.json",
+                         "sha256":  "6aa8e3e1f5c0b97620f8e5edf73fcd6a8d5505b591b292d0211328075a2c015b",
+                         "bytes":  789
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_prompt.txt",
+                         "sha256":  "d417d8ee1e92559f345e21a0007abda52682df0c880607929b957b10376f3d37",
+                         "bytes":  3220
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_results_PRIVATE.json",
+                         "sha256":  "e25214ca76f2cc041faf1b79f5afcc9182232704637cae58a2cc5f4c9921b8f1",
+                         "bytes":  6727
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/economical_200/economical_worker_sha256.txt",
+                         "sha256":  "0362af4bf707bd96157f20aa430466220b87e019b4544327796bd6c6c453cb1d",
+                         "bytes":  93
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/ai_review_manifest_PRIVATE.json",
+                         "sha256":  "ce36d9f2d0e9e6f0e4e513962c1f41b66e79bb0e78b74ab18d863de02b6824dd",
+                         "bytes":  378
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_balanced.txt",
+                         "sha256":  "7f39abcd4048215d808e138100e0229ac309ac8365a26b155f1abe003aa42514",
+                         "bytes":  3957
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_production.txt",
+                         "sha256":  "cd71762b0edcd06a4519c21cc38d88951c8b37adbc25d9e416c7ea0ed64e6add",
+                         "bytes":  2198
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined.txt",
+                         "sha256":  "91da15c45f09fcf1752038a092e8485d3989eda4d69d9886c61ad6d94e4f29f3",
+                         "bytes":  5949
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/candidate_refined_v3_UNTESTED.txt",
+                         "sha256":  "2ab6ff5e79377a713b13dfefef46c80343c7d0e85626e2d289e5fb4def5997a7",
+                         "bytes":  3548
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/CCW29_BLIND_REVIEW_A_200.html",
+                         "sha256":  "e3ab659c8653897c979682c02262be0cd334da78389cfbda25676e6e6b4bf338",
+                         "bytes":  426311
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/CCW29_BLIND_REVIEW_B_200.html",
+                         "sha256":  "fb89ca47785089a6b20abe99f2affb47e1adb9a44cf3cbc8f825239e21cdc39c",
+                         "bytes":  426311
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_blind_packet_PRIVATE.json",
+                         "sha256":  "cca08b8159b75982419551cd7a9cc2c8057b19ced482c87be1ae5f1d83ab3e43",
+                         "bytes":  650331
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_luna_eval_PRIVATE.json",
+                         "sha256":  "c589f6d848746fd54a9345661edefb4def01e4216fdbe12e92a02a0ab0a8f0b8",
+                         "bytes":  2002
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_luna_manifest_PRIVATE.json",
+                         "sha256":  "fc65c660b2af46aafd72b638e309034a7c62acc7322a3008a6f4e9dc75bc2c3e",
+                         "bytes":  886
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_luna_runner_PRIVATE.py",
+                         "sha256":  "54210fcedb98d6fedbae4fbeb7a9145020d4ef1ad26c9e328a9af356656790bd",
+                         "bytes":  9203
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_manifest.json",
+                         "sha256":  "1bea12426b476de985aafdd2935cf6b9685be4cd4500cc56ef9993a01adb63ea",
+                         "bytes":  731
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/fresh200_source_SEALED_PRIVATE.json",
+                         "sha256":  "377fc476beb3c189120bc74998f691a13f895b914eb68e141a7cc4e6c91ade34",
+                         "bytes":  761745
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/gpt6_direct_review_200_PROVISIONAL_PRIVATE.json",
+                         "sha256":  "7ebf816faa0636cdaf082f4fe1074b550e8c4cca27129ee2307dbdce09f8eff9",
+                         "bytes":  58378
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/gpt6_direct_review_metrics_PROVISIONAL_PRIVATE.json",
+                         "sha256":  "6b0c313b8e145064ca466f6fa285b2836f3fdaec603184300d29cec03edab9fa",
+                         "bytes":  2499
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/openai-luna-fresh200-ledger_PRIVATE.json",
+                         "sha256":  "167d1685b36a54f42bd8883f2257321cb3bafe44a50cdc0fcdcbafebb335b640",
+                         "bytes":  396655
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/openai-luna-v3-ledger_PRIVATE.json",
+                         "sha256":  "fcf1b02a28606fc24b8f767a103047574ec46a82f6ab157d1dbda8a7575ff85f",
+                         "bytes":  131344
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/v3_luna_comparison_PRIVATE.json",
+                         "sha256":  "e34e728a5d2c68e040eb91a1175873fbdf24a3e8d1111047fbb273cfecef4c9f",
+                         "bytes":  9293
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh200_unseen/v3_luna_manifest_PRIVATE.json",
+                         "sha256":  "f4e5627a5b674802cb34d56f5f79f7859545e1b61f0a33f568afc719efdb6ab0",
+                         "bytes":  442
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/CCW29_OWNER_BLIND_REVIEW.html",
+                         "sha256":  "f0179bd834e338b63c99d181d9373043af86a90d054e7dffa97643a82624aba5",
+                         "bytes":  48942
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/cloudflare-ledger_PRIVATE.json",
+                         "sha256":  "3b4f50b2f658d1fc853a8bb788a9625f7598c7619fca7e0d614c157931b09b2e",
+                         "bytes":  25925
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/fresh_holdout_metrics_PRIVATE.json",
+                         "sha256":  "bb7e5eea3deb4c7155dc67a57a03d62d73568af37a2ed9859fb8e600d64fe544",
+                         "bytes":  2914
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/fresh_holdout_predictions_PRIVATE.json",
+                         "sha256":  "c9444f0b854de6ada6f13b9b6247d277039b4cc54c912cdae15eda27a84e921a",
+                         "bytes":  32924
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/groq-ledger_PRIVATE.json",
+                         "sha256":  "4379a204589756c7ee19ddf59bcf83dc8aa96e64a70ea90f269d0ad500b0c72d",
+                         "bytes":  27666
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/holdout_20_blind_packet_PRIVATE.json",
+                         "sha256":  "42cb497f1ca40c8bb24f70db3ade21240359d6f579eeabc0382ae7d37f31b0dc",
+                         "bytes":  65193
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/holdout_20_source_SEALED_PRIVATE.json",
+                         "sha256":  "96d4288f1c190add97ec810bfa85c075e873ad673c833bff943ec0e79492cd62",
+                         "bytes":  78116
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/holdout_manifest.json",
+                         "sha256":  "42ab1df201977e5bb5c0030ea7209061fe8492bdc4b9379b26490637fe1ee698",
+                         "bytes":  786
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/reviewer_gpt6_provisional_blind.json",
+                         "sha256":  "e90075842d5765cdeb5708b20515964f60c6e3f34a79638e4173dcbd3d0ccd2e",
+                         "bytes":  7093
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/fresh_holdout/staged_calls_manifest_PRIVATE.json",
+                         "sha256":  "f964e544a3842177c898e5ea85e51998fb16e2a4a7992ae480cfa4ed0a2b2d8f",
+                         "bytes":  285
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/candidate_balanced.txt",
+                         "sha256":  "7f39abcd4048215d808e138100e0229ac309ac8365a26b155f1abe003aa42514",
+                         "bytes":  3957
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/candidate_fresh_leg.txt",
+                         "sha256":  "410b194cf9fc6535bd104e04d9436d2661a1473f6aabcd739cc6687a37306350",
+                         "bytes":  4037
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/cloudflare-0-ledger_PRIVATE.json",
+                         "sha256":  "a6f2701ab1dd04c27d72c87fe5148a737208cda8af4a373960f471a19a4f1b57",
+                         "bytes":  65024
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/cloudflare-1-ledger_PRIVATE.json",
+                         "sha256":  "317971024c4554ee4e515f4759a982d0dea828ecad07f7dc4e5772f2ddfd4c96",
+                         "bytes":  65148
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/cloudflare-2-ledger_PRIVATE.json",
+                         "sha256":  "26f9206f5c0709bca0e5e554123c4ae52559032537cb6315e65e6e1e83b75159",
+                         "bytes":  65066
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/cloudflare-3-ledger_PRIVATE.json",
+                         "sha256":  "1e3a317dd60db79b5e99bbb238a54239e0d9020370f9fa70c103860633c8c265",
+                         "bytes":  65183
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/full200_interim_metrics_PRIVATE.json",
+                         "sha256":  "d60c0424de5ecee59aff5aaa0350862ed17dae0339f73295b4d93880a87f06fd",
+                         "bytes":  5075
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/groq-0-ledger_PRIVATE.json",
+                         "sha256":  "3b1864c7af2c915c6c92a74bb18431bb021bd4cf918d35d5343c0f9880c7996a",
+                         "bytes":  619
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/manifest_private.json",
+                         "sha256":  "1ef0a29c13bd5a51f6035eddc817aea188d766e6bdaab9245f863039984b2c01",
+                         "bytes":  724
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/openai-luna-ledger_PRIVATE.json",
+                         "sha256":  "d7a12095e76e3a467223d79a6c190c504da7acc7c42b30afaeaa6b8c165b9315",
+                         "bytes":  264671
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/openai_luna_metrics_PRIVATE.json",
+                         "sha256":  "366ba57dcc912716c74aa4ba059e3e193d75d7c6eda009a68d1305665c2f4368",
+                         "bytes":  2864
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/full_200_v2/worker.py",
+                         "sha256":  "1153a9dd3e6d3683c6bccf76268f5160b7dca9d50d70f0c2785ba3c1965d447f",
+                         "bytes":  7228
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/quality_first_200/quality_first_luna_ledger_PRIVATE.json",
+                         "sha256":  "d42f8d41cd5f5ace9769c8cefb0a9189b68ce598ef4f4785167c6fc2e88116b7",
+                         "bytes":  133278
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/quality_first_200/quality_first_manifest.json",
+                         "sha256":  "84378ecdc23aaedac1279890c4d22a518f7aac33c9f49cbbdc8d7297708040d1",
+                         "bytes":  880
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/quality_first_200/quality_first_prompt.txt",
+                         "sha256":  "eb2ea1c72ac49aaf26d43b2b68d02ad78d219872c992efa589ee9da579dd62ab",
+                         "bytes":  4805
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw29_private/quality_first_200/quality_first_results_PRIVATE.json",
+                         "sha256":  "371484d6dc862a493cd5f796bd39dbbb5f4ccb69ef3d3959cc979b7327eacd7e",
+                         "bytes":  3032
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/aggregate_summary.json",
+                         "sha256":  "6f99c22b68c20d57fe7f2d50f5c4b51f8e87e97ab361fe60cc5b1a25fcff5d5e",
+                         "bytes":  8831
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/aggregate_summary.md",
+                         "sha256":  "5802661f75ed320bbe3f89b409227f7ae354c1b1ac765aa4f6652d9b62d16e34",
+                         "bytes":  3278
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/build_A_C_66_survey.py",
+                         "sha256":  "6b3d8f418b04c6783d7cbfcd739e6b6129ad6a8ae397913c559089a9424d2e2d",
+                         "bytes":  15160
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/build_owner_reference_candidate_v1.py",
+                         "sha256":  "ce5d5c9e5a4b7222f243ab728ff56b9a16612fbd4f995538fbd9a12d57f93de1",
+                         "bytes":  10089
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/manifest.json",
+                         "sha256":  "589697aad066e3941ec82e89e2471c34377cc7f6ba6f8ad70ce0af7c910192c7",
+                         "bytes":  83286
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/operator_prompt.md",
+                         "sha256":  "d5169b9a87442da61807cbb9841c865b3c134d9df3b79485c24e56d4749199c2",
+                         "bytes":  3327
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_ac_66_answers_20261022.compact.json",
+                         "sha256":  "d927f88f08cc01a91136d41d0f330746cbf23e5fbd02085075771b37696cb98d",
+                         "bytes":  2405
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_ac_66_answers_20261022.original.json",
+                         "sha256":  "aa0f2fb6a1273d9e08f8f63e768fb5e0acac072af233f0cc9bfd62440a64f53f",
+                         "bytes":  5279
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_reference_candidate_v1_20261022.changes_66.csv",
+                         "sha256":  "8861f10fde57e84693dc18a13a736d66c2d76786c4e5474f8eac9d8f189d9a68",
+                         "bytes":  5180
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_reference_candidate_v1_20261022.json",
+                         "sha256":  "0efbb5ccc2fac7d00f7a4b136b1654d31e23b12fae6992a276d819d292bbd20a",
+                         "bytes":  108393
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_reference_candidate_v1_20261022.scorer.json",
+                         "sha256":  "a3d569c8ebe11179d3860512baea80b72471509c9edd18864c1a161282c50ffa",
+                         "bytes":  24277
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/owner_reference_candidate_v1_20261022.summary.md",
+                         "sha256":  "e0ddbf561b231ec7592d801925070a0a92861dacfca4857d45f907c3a63da79c",
+                         "bytes":  2657
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/private_discrepancies.json",
+                         "sha256":  "f5f08895f2baec72ccfca44c38c1123256df40bab284a0d6d92baf22a03dd991",
+                         "bytes":  147668
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/reviewer-c-result.schema.json",
+                         "sha256":  "e2acbfdc878d71071fcf95e93017035200860e4839dac2941a1bd84b4334cc40",
+                         "bytes":  1304
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/reviewer-c-rubric.md",
+                         "sha256":  "2615ebb4d4bd0fd53f41f0fe4db260f092a2e7ea7d430e857d9bfbaf102027b0",
+                         "bytes":  1583
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/reviewer_c_partial.json",
+                         "sha256":  "61b9890efda7a2ae5ed1b7d5a5a0670c893987f950abba7515cb91cf5a9d6de2",
+                         "bytes":  205225
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/reviewer_c_sealed.json",
+                         "sha256":  "6478f54188501f1acb2a55a57e6a4ffead989e2eedf900d689846a2c3c9cdd2f",
+                         "bytes":  225298
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/run_manifest.json",
+                         "sha256":  "3c4bf7e56fac7788981f0c9dc17cf04113a9e2dc5009f7c2c452aa19eec4f156",
+                         "bytes":  1830
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/run_metadata_input.json",
+                         "sha256":  "b0513ce0603da9b1818cd68cd7fa07197e19a26e853196676e315a8ae7073942",
+                         "bytes":  1245
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_expand_report.py",
+                         "sha256":  "a2f08827bb534e7826f77d85d0ab97e38b7b23717a4e11439b1b02135a509d78",
+                         "bytes":  5215
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_finish_ccw41_patch.py",
+                         "sha256":  "73d6b4fc3c889645a0be29bbd0b7558e4cc06d158d4ca7a7cb321412455e8b8a",
+                         "bytes":  12528
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_inspect_survey.py",
+                         "sha256":  "8740be3e37813b47d6dfc6a98ec8195e17150d04f76582cbc714c87d8356f577",
+                         "bytes":  1293
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_smoke_A_C_66.py",
+                         "sha256":  "5efde410050f556c62e399f5a248232dd6fae5ab7ac4fba5c8759553bc136800",
+                         "bytes":  2153
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_test_A_C_survey.js",
+                         "sha256":  "47443f076a9e9f7885d1c082f29c1665b66d425daea24b82716abbff12368676",
+                         "bytes":  3058
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/_working_code_backup.py",
+                         "sha256":  "5e0fdf42b81fe6d4a91e341aafe5fcab090cd7d034d6fdc2eded996d76ee2873",
+                         "bytes":  33447
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_01.json",
+                         "sha256":  "59d7b01770b2909202153c684ac1f024558860d29f1c37c6bba72f7928d006ab",
+                         "bytes":  50184
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_02.json",
+                         "sha256":  "794cb0ff6f59a9eb5ff48f8a156a4b50889bc07de9a50cffb55a084bd3c77c2a",
+                         "bytes":  50360
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_03.json",
+                         "sha256":  "d733cd843d91ce3f017905d81f326477650f4267ae8457597b49c637027c2d49",
+                         "bytes":  54826
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_04.json",
+                         "sha256":  "e974da940a522643b7e8ebcae3aa2fec23c4f475f15d99e5423fa04056a6b748",
+                         "bytes":  52401
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_05.json",
+                         "sha256":  "b0db4a434cd6d6b86594a143fbfe93f6c78f69b66197deb2056c7f6a6ad281a5",
+                         "bytes":  51984
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_06.json",
+                         "sha256":  "348f2af4b193abe653ddd876f6bafb9e538bd71b1429be14a572f57d64dca536",
+                         "bytes":  47193
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_07.json",
+                         "sha256":  "e12bf0eee1df38e10b7097308dab14de89f9787da54398c0687437157246cc92",
+                         "bytes":  47528
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_08.json",
+                         "sha256":  "4230eae0e4bc3c0c1417156a02525e131c0120eaa80085067e21ed0ed154bf7d",
+                         "bytes":  51851
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_09.json",
+                         "sha256":  "d509233ab252f95f3c2331339dcf84ecc67800e46341ecf8a164e924822f2b3a",
+                         "bytes":  49746
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/packets/batch_10.json",
+                         "sha256":  "d90a9f1759bbc0281d0777a0285a67fbecfc53ad8bfe9475a52125d67cbb6f28",
+                         "bytes":  47156
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_01.json",
+                         "sha256":  "59eae8233574fffd87522cc02a97fa0faa8589a460625ad28c30910a53b6cdae",
+                         "bytes":  20210
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_02.json",
+                         "sha256":  "2336d0345bda6171c7ced247bb6999e181d4e5956b258d7dcb6db38dd5adce55",
+                         "bytes":  18612
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_03.json",
+                         "sha256":  "941b96f85c82e758836e7e381aea2e4d4f96798a2799d7c90211cc58128ee84f",
+                         "bytes":  19260
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_04.json",
+                         "sha256":  "9b784817d44251b244ce2498dcaf8aaa979bdd91655fdfc371806b2586af5fd2",
+                         "bytes":  18856
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_05.json",
+                         "sha256":  "1cfb04f427d971f4c53e7835106c2337127b36cfa024450061fea60627ccfe2b",
+                         "bytes":  19122
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_06.json",
+                         "sha256":  "26d4faf5fd00145e14d80a79ed9c3a4004e8a7a3a20271f87da35c2689229ff3",
+                         "bytes":  18918
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_07.json",
+                         "sha256":  "2dcf411d88e3c5cef93929c2d624154fff92343ca2600eefc8ce6928cfd80781",
+                         "bytes":  18941
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_08.json",
+                         "sha256":  "1b31bf8cc0b2eadbb7b1e261630385370e456698460fe43737db2b6e59716c78",
+                         "bytes":  19179
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_09.json",
+                         "sha256":  "3e8316356415e098c0de6b39c4357feae078385c71345c89ccee60a426fbb7a1",
+                         "bytes":  19090
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw41_private/results/batch_10.json",
+                         "sha256":  "1aad9cedebced289259a8fc07bb896141f998bd25b5617323623d23f337b47b1",
+                         "bytes":  19333
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/analyze_ccw43.py",
+                         "sha256":  "4feae66298da74791d9c7a1dc1f81ea3c7a5749717c0c84ee7414a0a27c5e00c",
+                         "bytes":  10374
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/candidate_manifest.json",
+                         "sha256":  "2fb7b3d7d4c5fbda6392c2384b2748ade724c4b1c912c0fd2234d0bd47ba51af",
+                         "bytes":  2465
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw29_collect_score.py",
+                         "sha256":  "5dba7434874b6bff5362f349dbc2ac53594120de90fc3cc3a851aa8d67aad4f3",
+                         "bytes":  4384
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw29_deploy_isolated.py",
+                         "sha256":  "647be153063e586caf01687f454897bd5f8a3011ca880aebd96a741eec65697f",
+                         "bytes":  10673
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/CCW29_HANDOFF.md",
+                         "sha256":  "8c6cae0e4fa89024c42c3f527613e23ceed85e0da8097a59eb2c2270c453feea",
+                         "bytes":  8412
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw29_resume_groq.py",
+                         "sha256":  "4735db80b95b25722410727695c30dfd3c46362a0d1e1cce7c07672cbc442f31",
+                         "bytes":  2922
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw29_skip_control.py",
+                         "sha256":  "ffe530f0effadfc09776f9ed6e635681baf4a164870352fa578c4c08e1e2c0ef",
+                         "bytes":  2257
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw43_incremental_market_leg_v1.txt",
+                         "sha256":  "1a74766e81d775d4d93159dd4cae15b7ef8867164f94783ee0aee6ad760120de",
+                         "bytes":  3867
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/CCW43_REPORT.md",
+                         "sha256":  "23a8016266458965907a892343187dadc3549135c4935cf1acb9951e13251ed9",
+                         "bytes":  10875
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/ccw43_two_sided_counterfactual_v1.txt",
+                         "sha256":  "4efe2d8b1ae7ff9d429ec9237a885802e1c67afaf9a5160c5a0802f891d55e0a",
+                         "bytes":  3867
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/design_ccw43.py",
+                         "sha256":  "2241667f19eee2dfbdf19f9ab330c7a46174a60af61f4a43608935d0187de17c",
+                         "bytes":  6264
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/evidence_summary.json",
+                         "sha256":  "6deea5a373feb74fb0d649a5d0e43b68b090937b53c177d0474e80870a4f5c0f",
+                         "bytes":  8448
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/inspect_ccw43.py",
+                         "sha256":  "3bf68adf16fc33d28aa3825cd93b4d70069e589e6fbebad4f6a6076c9ecdf56b",
+                         "bytes":  1377
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/inspect_errors.py",
+                         "sha256":  "50f1ecdf162b1b19b16bb918ddb54cd97d603864c4a6211d3f8dfcc6c694d585",
+                         "bytes":  1215
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/owner_200_case_audit_PRIVATE.json",
+                         "sha256":  "3bac18b587ca1fed6b0ec13aeddab57e80d7b6af41e4f17a5e2259d8baa05646",
+                         "bytes":  872882
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/ccw43_private/pilot_case_audit_PRIVATE.json",
+                         "sha256":  "46f78f4ad073db2ba90b98bce1ae6021a6f17d2b25c8acc51d30a2eeed0b9e16",
+                         "bytes":  124640
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/live_groq_ab_20261016/recorded_balanced_novelty.json",
+                         "sha256":  "86499d03441eaa2b08b93cbe3bc5baead16f2c49b45727b1cfc25a2f6d2f6db5",
+                         "bytes":  6977
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/live_groq_ab_20261016/recorded_materiality_first.json",
+                         "sha256":  "be838174a4703a09e29bfde8eaacdafb3a495c9b1569fe94d583ce01b5b9ce38",
+                         "bytes":  9909
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/live_groq_ab_20261016/recorded_production.json",
+                         "sha256":  "28a4dd72e5f08e15d63679b6a10b1a5d9dbc209c23a6c5f858cc44132e8dd3ee",
+                         "bytes":  10324
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/live_groq_ab_20261016/replay_state.json",
+                         "sha256":  "e6ce488bec5aaf55d7536f9a312078b2229ce21fb28932499758d317a885c298",
+                         "bytes":  28592
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/cloudflare_replay_usage_journal.json",
+                         "sha256":  "71448b9d6bd8e5e33ec53225fdc893adcaeb538ce7c71500d68414e096d7a7b2",
+                         "bytes":  130
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/groq_batch_input.jsonl",
+                         "sha256":  "6d44a02532f91cb6c70999d94931e3ada11c7592c6965b34646d8c3812c2aadd",
+                         "bytes":  564396
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/groq_batch_manifest.json",
+                         "sha256":  "5b2b2d030bedf8c38a18ac1709d1f5f2fccb8a9be95c28f047f9df9e26727717",
+                         "bytes":  29948
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/groq_batch_status.json",
+                         "sha256":  "25780be59cf0905ebf11faa688ac456007e106ce60c19b746e5d3f3746602bc1",
+                         "bytes":  156
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/hourly_replay_status.json",
+                         "sha256":  "823b558af76a4fd0fa06eee765cd5a06b95a42a4763ef26c5b82a4e5fd32e7e3",
+                         "bytes":  303
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/quality_worker_launcher_status.json",
+                         "sha256":  "6548a91ba36c80c71c640ae4205c910b91e402059869ee349f07eaeeb0bd3c9e",
+                         "bytes":  121
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/quality_worker_policy.json",
+                         "sha256":  "96337d90b8d3bce8f5eef1fb91cdca68bf8f96a3aab1cd15fadb8a81bc0d66cf",
+                         "bytes":  140
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/quality_worker_status.json",
+                         "sha256":  "0c4b57ef934d970eb3605f61279de9d23536e98fd1eab31cbb8de7e1bd081f5c",
+                         "bytes":  400
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_balanced_novelty.json",
+                         "sha256":  "86499d03441eaa2b08b93cbe3bc5baead16f2c49b45727b1cfc25a2f6d2f6db5",
+                         "bytes":  6977
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_contextual_materiality.json",
+                         "sha256":  "a5c1f5bb168beead6ab02fb2552f783a3f31b4bf49ffe78d532d7fb7747150e8",
+                         "bytes":  281
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_global_prior_no_family.json",
+                         "sha256":  "a5f9e928bbd7be5a908522c25b3fb67429f7b4738655d1036a2329400a64b893",
+                         "bytes":  19399
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_global_prior_safe.json",
+                         "sha256":  "fc6552e489d1ceeef994033cfa27ac1feb31a20840c12ff2352d8960e125081d",
+                         "bytes":  18535
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_market_event_evidence.json",
+                         "sha256":  "dccd3b082b44a28c76704fdc8ec2d49c3f8cf44c1742aa46fd07124d50b1c8d6",
+                         "bytes":  280
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_market_signal_path.json",
+                         "sha256":  "04430619b3c771d9d87ba183b8700ec3ebc4a0154ceaed5539d6d11f91642c5b",
+                         "bytes":  11144
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_materiality_first.json",
+                         "sha256":  "be838174a4703a09e29bfde8eaacdafb3a495c9b1569fe94d583ce01b5b9ce38",
+                         "bytes":  9909
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_path_facts.json",
+                         "sha256":  "c35e230913abed205d56e6a1cae4066eff5cb070e030937ce311d1fce3bf5574",
+                         "bytes":  7088
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_production.json",
+                         "sha256":  "adb7f5c1db98d8389f53bd3e8eb80b1cf12500eae6518e4f0ae34d4869ff1250",
+                         "bytes":  13680
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_rebalanced_core.json",
+                         "sha256":  "f93a986fddfdea93491718bb3a13f08b51f4069c837569fdc30bfb062756cf8a",
+                         "bytes":  10786
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_relative_displacement.json",
+                         "sha256":  "728d0e721dc541e616f5929cf5b54aefaee89f4c05f572e67a4188482d63a1b1",
+                         "bytes":  8224
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/recorded_trajectory_evidence.json",
+                         "sha256":  "54998f1655467a8242c8882b3c9dd78fa6d3af67c25cdcdc67f1eceb58090831",
+                         "bytes":  3606
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/replay_state.json",
+                         "sha256":  "627e96c199e9c41a7d03aadc902ba5676e8dd9a4ea073a45662fd9c20b2d0249",
+                         "bytes":  115047
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_balanced_novelty/replay_state.json",
+                         "sha256":  "6ff65080e9b153b26defbe4cc5d2808aaaecfe0f99428830f047c2f8a58230e4",
+                         "bytes":  8979
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_contextual_materiality/replay_state.json",
+                         "sha256":  "bc4e497860d54096a38f99a9114715c745cd25316e0e56237e8abd240118504a",
+                         "bytes":  8990
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_global_prior_safe/replay_state.json",
+                         "sha256":  "6e3c8109b45f6bdea4420b6904a9b2a384aedbad6b40e45a7123f608b6689dfe",
+                         "bytes":  7253
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_market_event_evidence/replay_state.json",
+                         "sha256":  "6f92fc9c247d5a33ab85b7801f3a48eab0cf4814d6f8137fb14970352fb681f9",
+                         "bytes":  8507
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_materiality_first/replay_state.json",
+                         "sha256":  "2a962de37bf38c8833db4048c8d9e75ff5008c04f66bd2aef7202aa6f00be790",
+                         "bytes":  4867
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_path_facts/replay_state.json",
+                         "sha256":  "623ed0655f2a6d638caa8e2bcb26060e86bdc7f63ce4b4633003baa6edadc3b2",
+                         "bytes":  14216
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_rebalanced_core/replay_state.json",
+                         "sha256":  "0e91ba228d9b95256ffc4c1e34b0c27c5517e568755bb703dfb77836011b7622",
+                         "bytes":  6849
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_relative_displacement/replay_state.json",
+                         "sha256":  "033d0529ce8f3b57ae2f00ce47c948e199cc192847f7ce600b2823fe8c94b968",
+                         "bytes":  8113
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_cloudflare_trajectory_evidence/replay_state.json",
+                         "sha256":  "85e19a69aef7afc9fb6e6dc4352b19546ad3d201d2ab80352fcf52c14c2d803b",
+                         "bytes":  5287
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_balanced_novelty_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "26644fa69738b0a6692d9652b94e93a3cc316eadbadca9b31dd29f52a5a61062",
+                         "bytes":  4429
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_contextual_materiality_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "ba184b49adeabddb4ab7af161665208d191e6818511f9ba05c1d2dcd0e756268",
+                         "bytes":  5267
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_market_event_evidence_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "1f6cf4e074e9d20cb4e432b362073a34deb79862ced2cd3a792ae26b20e4c471",
+                         "bytes":  4857
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_path_facts/replay_state.json",
+                         "sha256":  "b55bdf2ee03ac16416ff926dab207df20a9301b4bb40eb9e1facea90d80bc3d6",
+                         "bytes":  894
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_path_facts_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "b66c5cee66b242e95bdb757d7666f2aec811093ca3f112db6fb3275fa39a078e",
+                         "bytes":  10157
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_production_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "5df455a5af5d49a11ae949cc66a63960d604449faafd26a34ce5e95f4dc16b2b",
+                         "bytes":  4012
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_rebalanced_core_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "52b30e166a199fdfc3871dc14006a928d0901235e1206d91b523d8bec65b7037",
+                         "bytes":  9764
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_relative_displacement_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "2f6d7dc6120fcec4fd1843ae19681854f79209d59a0efc41be36557f8e0a3e52",
+                         "bytes":  4853
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/fallback_gemini_trajectory_evidence_gemini-3.5-flash-lite/replay_state.json",
+                         "sha256":  "a0d5a14d68460710cd289f64ca1ec668559daa0dad4b246b6d65312d69758e02",
+                         "bytes":  4041
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_balanced_novelty.json",
+                         "sha256":  "8e9a0f7def4a5ec8153a4b2ee47911b2353ddc166d47fdfed85dba538442f7f1",
+                         "bytes":  272
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_global_prior_no_family.json",
+                         "sha256":  "f46a5af458ad57b1686335213507709609615680e6a3f97dfba3e3c9825eaa18",
+                         "bytes":  1168
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_global_prior_safe.json",
+                         "sha256":  "b9ee86fe80ffc97da8dd4e2ee2db5fc37d2b382f80e3dea111cb397c2ec21328",
+                         "bytes":  273
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_market_signal_path.json",
+                         "sha256":  "734ef6c8f515b4fb95c6bea9f387dcfe1185922c0b87a1375ffccd671f0d81c6",
+                         "bytes":  274
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_materiality_first.json",
+                         "sha256":  "0ce581d655715c6acaf061f6481613960abb4cb4e9529ebbdea21d6bae1c8c1e",
+                         "bytes":  273
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_path_facts.json",
+                         "sha256":  "a87cb9e274c41c0c668579e0d578e41de1cad5e184c69b161f34374988fc8bf9",
+                         "bytes":  266
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_production.json",
+                         "sha256":  "db49c6a827950a7344a8ca83c815860dacf9887bb301ad0e25cdb8bc9e40becd",
+                         "bytes":  266
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_rebalanced_core.json",
+                         "sha256":  "30ffc33b3cf757aa702840e2f8f542e90cff517488056c1826a8987ff62a0d5c",
+                         "bytes":  271
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_relative_displacement.json",
+                         "sha256":  "32fe8402fd5be7ac56fd7f54a7abef71ff67df612de0ff841e306c338229c736",
+                         "bytes":  277
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/recorded_trajectory_evidence.json",
+                         "sha256":  "db1346ae45f87b9146ee53c16b102a62940fe4233f8fe681241ab79257a52375",
+                         "bytes":  275
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_global_prior/replay_state.json",
+                         "sha256":  "5e6b742c0981f398101f9fab4846643453d1c3c0320b4232ebb35dcd0febdadb",
+                         "bytes":  2458
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_balanced_novelty.json",
+                         "sha256":  "534499696c78133f3ae16682827ac0c5ab66d69affa5ead6c8930bc0f243c641",
+                         "bytes":  272
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_global_prior_no_family.json",
+                         "sha256":  "c0553e18930036e5cf3888837001246aad9468e340ca4b53d2d2e52823b993fa",
+                         "bytes":  2232
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_global_prior_safe.json",
+                         "sha256":  "7fd8a7dfbc088763f4aa0b4720a081581e43b3400ed532a121ecc194dabe43dd",
+                         "bytes":  273
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_market_signal_path.json",
+                         "sha256":  "beb7245cc8f08fbb6ff8b028dbd2eb06baf9bf6635f4c0d9ed9aad1f598314cf",
+                         "bytes":  274
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_materiality_first.json",
+                         "sha256":  "a86cd58870ffdf63115f4bf1d9dc04753dcce14f6c840098f9a099a6662c39c1",
+                         "bytes":  273
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_path_facts.json",
+                         "sha256":  "46d4d5fe1200a3a447de5744f6f863ad7710f95046447c10764d4ded1f96a84a",
+                         "bytes":  266
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_production.json",
+                         "sha256":  "1ee58545f5259c0b9ad6061e228e1a333ff0e056e83f3c0ff03d012ac3c29728",
+                         "bytes":  266
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_rebalanced_core.json",
+                         "sha256":  "58a3efbee8aeb6df5228ea27e379e5fd72a7a5626294fb155a1cbd29150f4d95",
+                         "bytes":  271
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_relative_displacement.json",
+                         "sha256":  "d0e16038dd2955949552163c1d5e5f1ee49840976deef2e1c11e7e0b321aa4fd",
+                         "bytes":  277
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/recorded_trajectory_evidence.json",
+                         "sha256":  "5e3dac6f4759b59f8f05efd6d06599681ed7ee383ff903807fc1e6a01efa82f5",
+                         "bytes":  275
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/merged_pilots_private/qwen27_no_family_1200/replay_state.json",
+                         "sha256":  "393269ddef1f3db2173498ea5bf157c0c77d23796b32a493396a953586465e90",
+                         "bytes":  3630
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_RECONCILE_99.html",
+                         "sha256":  "d842e0428f523cde02a003df78c843df1927a051670103b68b7b6bde6389d5f1",
+                         "bytes":  125197
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_Reviewer_A_PHASE1.html",
+                         "sha256":  "2848183f42d0b5c69ccd530480e87971c865bb4e04b692d05bc69b74d7769b05",
+                         "bytes":  217937
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_Reviewer_A_PHASE2.html",
+                         "sha256":  "0f566f5266a93578793c70f673e629cb6ca0632ac9dc45c0e792b0e10b960ec4",
+                         "bytes":  132976
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_Reviewer_B_PHASE1.html",
+                         "sha256":  "0d5eb28bfecfbfb65fdc2b7a3e8a3c534c221bfdba26ab5a9e56dcd08017863f",
+                         "bytes":  217937
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_Reviewer_B_PHASE2.html",
+                         "sha256":  "49069f38cb5383828a96ece1d3af31c3135a8cefae678d4486661bc9456b513c",
+                         "bytes":  132976
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/CCWBot_REVIEW_A_vs_GPT6_66.html",
+                         "sha256":  "4f916f76399a93da31362dad1c5a2312a0f4829f146a0762d6ff486c1a393e99",
+                         "bytes":  176073
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/telegram_review/ОТКРЫТЬ_ОЦЕНКУ.html",
+                         "sha256":  "f34694f4d2b664dc5e52c79f0559e2676abfd0d7377b06c1a4248ecc815a185b",
+                         "bytes":  4153
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/trajectory_holdout_private/recorded_balanced_novelty.json",
+                         "sha256":  "def097cf7aae06cc12d8d3b1b7643957db700fbc7701b10c77681800b9860294",
+                         "bytes":  275
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/trajectory_holdout_private/recorded_materiality_first.json",
+                         "sha256":  "e236d316009491d072deaab3a6ad8f545680d50d9cfb88e92bb85bbc2d862d7a",
+                         "bytes":  276
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/trajectory_holdout_private/recorded_production.json",
+                         "sha256":  "667a2458e085ab5f658dd9b02dcdb970d176e64db8751bbefa8e469fd90d4abb",
+                         "bytes":  3628
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/trajectory_holdout_private/recorded_trajectory_evidence.json",
+                         "sha256":  "54998f1655467a8242c8882b3c9dd78fa6d3af67c25cdcdc67f1eceb58090831",
+                         "bytes":  3606
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/trajectory_holdout_private/replay_state.json",
+                         "sha256":  "f6852afc3b5a8b7a076f5765457ff2dfa23be56370df8d8ef1e51a6f39a4a696",
+                         "bytes":  7793
+                     },
+                     {
+                         "path":  "ops-agent/reports/ccwbot-ops-agent-2026-10-14-unverified.md",
+                         "sha256":  "46064ae09f75c9c3726f5b01b662e403e08bef544aee0c2a3e319134c8c9e9cf",
+                         "bytes":  5805
+                     }
+                 ],
+    "excluded":  [
+                     {
+                         "path":  "ccw25-20261019/host_evidence.json",
+                         "sha256":  "743344702e6a43ba05d6d92546c024c6aff58d75aee580e597fc209bba41683e",
+                         "bytes":  2398,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/resource_samples.jsonl",
+                         "sha256":  "9531240d10b43521d832aab72d53ba7c7e00513dcc183554e8a0883349bf1bed",
+                         "bytes":  383617,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/workstation.json",
+                         "sha256":  "a23974db64ce84a72e48fd7e6c8e175f882a168062f6afb5a8bfed23b679925f",
+                         "bytes":  291,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/backfill_blocked_users.py",
+                         "sha256":  "1a6c8888c9d79d38c6565794e09b6d7ec86f714a40a7e803ab0c90d750ca99ad",
+                         "bytes":  1019,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/coin_icons.py",
+                         "sha256":  "be29c77f7d84a100dc4f180e0f4de4bde648aa99a94a34598221815bf74caddf",
+                         "bytes":  1682,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/error_logging.py",
+                         "sha256":  "495aff55984d78ee478eb858d79a34b459cb8e78d0e43ee8ba2326f5fd0f0835",
+                         "bytes":  1436,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/health.py",
+                         "sha256":  "e1c7e945963c48ed8f79666a15cda67ef2b2f30403d7138a577e44f7de69898c",
+                         "bytes":  6694,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/keyboards.py",
+                         "sha256":  "4ca70a288e89f66f5fb5f0018f1ba978bb31f1dfe58868f9b1d712006e9892e0",
+                         "bytes":  8363,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/news.py",
+                         "sha256":  "aa27c3bbab6342679918f3932609b7012d21b0099fdc38859729fe040b8eb53f",
+                         "bytes":  20652,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/news_titles.py",
+                         "sha256":  "48add728d7cb1ad7c1a76d4032bbb4a598962530dd4c0bad1445664a4adf397e",
+                         "bytes":  859,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/settings.py",
+                         "sha256":  "57420abf41e6faf7bcd4d4d5ce35b02fc1190d498a1041da03d0937a2ff16f2d",
+                         "bytes":  3006,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/storage.py",
+                         "sha256":  "ad2c9020294754f66f13dd14c48944bfcc57db91cedc930bcf5bd2878f76fb96",
+                         "bytes":  1064,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/telegram_errors.py",
+                         "sha256":  "bf6167a6f442a3e803d2dfa656c3fa3ba86c800d078266e89ef4c8f20522f1b5",
+                         "bytes":  580,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/__init__.py",
+                         "sha256":  "2e31331ea1db67ec18f5089b69cb638e7b723c010af83589668b9ea32e905e40",
+                         "bytes":  63,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/alert_rules.py",
+                         "sha256":  "501e0a2ae71012b00a42cfc6efc1e58f5dd4fe8666b64dd218c14bddaa44e682",
+                         "bytes":  910,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/alert_severity.py",
+                         "sha256":  "34dc9251047442e9f43d20e1b050bb21ecb39bc3f26aa4532d13455c5b8c516f",
+                         "bytes":  1770,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/event_analysis.py",
+                         "sha256":  "27575ace26455558e7891937d131902cbf0187cd82e05181217310ad0e356e81",
+                         "bytes":  49700,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/event_chart.py",
+                         "sha256":  "c2068ef8a557a83096ec0bac56354f0b7f8578733e067e00299f9a463128e348",
+                         "bytes":  5623,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/event_identity.py",
+                         "sha256":  "1ae0241676bc13cb0ed190f0bb7394e14ba4bfd954ea0d08bdd37bcadb6aa57d",
+                         "bytes":  15880,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/event_text.py",
+                         "sha256":  "c34b27ae54fb195d244643c896168b1577130add1c622b6497cd170a26ec399f",
+                         "bytes":  31448,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/market_heartbeat.py",
+                         "sha256":  "150b737a66b83b65692c7c8daf3bd1529084c7f20c67f1708da2c1dffd553ffd",
+                         "bytes":  4163,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/market_report.py",
+                         "sha256":  "4f724e1a262655b4280cab178b34c04b03f100f41827fb6408fbb7d668b8a60d",
+                         "bytes":  11169,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/market_report_rich.py",
+                         "sha256":  "66d5180ae28858ab373b7e3aa177fae9a2c01580e3ec532bc5704a76a9ee3c8f",
+                         "bytes":  18152,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/news_context.py",
+                         "sha256":  "ecf62040190ae089ed4d53a74555d28a81fe9872c4e1d9e0e3570fa383477e5b",
+                         "bytes":  13443,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/notification_decision.py",
+                         "sha256":  "120fb2ae19ac890d4e3f5a0304688d9c61349737717a416a2bbc55e650a16953",
+                         "bytes":  318,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/alerting/__init__.py",
+                         "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                         "bytes":  0,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/application/alert_processing.py",
+                         "sha256":  "2a80d769e3298d803d34eb1570dd23a3410282dd2b9f7584a3d9bc839429e98f",
+                         "bytes":  567,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/application/report_processing.py",
+                         "sha256":  "d073f9f2fd95bb80262a3cd205093a6ae067398abe14ea531cb1b8ec7aea8e21",
+                         "bytes":  336,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/application/trial_lifecycle.py",
+                         "sha256":  "ef0c08b1c3251bc9ccece69d9da40cdd1187656f14d422812371efe30405d6b5",
+                         "bytes":  1768,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/application/__init__.py",
+                         "sha256":  "cacd66bc2758f4a80e3f205b7e0e1d8df14553a401a51ed244ccf9e9508b22c1",
+                         "bytes":  50,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/db/llm_usage.py",
+                         "sha256":  "f5e7b061254dfa5a75cf0b99dfaa13d48e06e5dc160752289f6d26230816bfcc",
+                         "bytes":  3802,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/db/news.py",
+                         "sha256":  "08d28c1186f31d2f9bc1e665dad5470a2004ff0a0467b85ca744af0ca7b721da",
+                         "bytes":  8820,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/db/reports.py",
+                         "sha256":  "a7e6963d32092ea5e2936fc0b3f49f8b9c4fd660e97028bc6df12563710165b0",
+                         "bytes":  1959,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/db/__init__.py",
+                         "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                         "bytes":  0,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/domain/attribution.py",
+                         "sha256":  "b585e01134c9f966ee1c7effda476c7173fd0f22143749b6aa7efa28cc070f74",
+                         "bytes":  3144,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/domain/premium.py",
+                         "sha256":  "1d1a253f0e8b8f53651107a5351c07cd70de440348e7f8db80c5adba8cb4f781",
+                         "bytes":  4104,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/domain/supported_coins.py",
+                         "sha256":  "df4bbaa0404e21685d3800676733b60b4ae362b5fff1a92b7e76b8fec1180943",
+                         "bytes":  2364,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/domain/__init__.py",
+                         "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                         "bytes":  0,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/handlers/error_handler.py",
+                         "sha256":  "aaca6adacace94640ae8275229ed6ecc4ad36030e6c5592f032a2eabefba2736",
+                         "bytes":  1037,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/handlers/plans.py",
+                         "sha256":  "5d2eae5970a5afeb89679861c4569c92a5cfc4660dd4e1a85605e371c68a822a",
+                         "bytes":  882,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/handlers/price.py",
+                         "sha256":  "4c14f112f2c102c583be2c8a7a2717282d9af758fa7fb6c4d14d007d1758da7c",
+                         "bytes":  2570,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/handlers/reports.py",
+                         "sha256":  "150a7caf51cdbd4fe413b111c08c1f760bd11bcdd234fce57e418a3338f31f30",
+                         "bytes":  781,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/handlers/settings.py",
+                         "sha256":  "fbdd365551c6599b7747ed4173a6b0b0a3cbac3fa99b47c5bbbb625508db7466",
+                         "bytes":  1116,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/error_file_logging.py",
+                         "sha256":  "87cd399d7376d542afdddf8c819095066677a4dca0403d86951f3e91f9ef8ac3",
+                         "bytes":  5347,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/event_analysis_health.py",
+                         "sha256":  "5eae76d89fe07705bc4d487216b52c15b376c4c91110c1cbcb2b8b7730e3a305",
+                         "bytes":  5122,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/logging_setup.py",
+                         "sha256":  "62c3ffa156a7374b66c87b1a8c0103427d03d2e612a57d5318ac2bf41c5b559a",
+                         "bytes":  1301,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/logical_llm_health.py",
+                         "sha256":  "5dd8e710672bcd947b561b26e2fe564e8dec48153c231d8372ae01632bc49864",
+                         "bytes":  10216,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/operational_logging.py",
+                         "sha256":  "93b362b112dc708d668a1ba856534fa1b3abf7465bd69baa0e0eedf3fe9d2633",
+                         "bytes":  1200,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/system_status.py",
+                         "sha256":  "5e61d08ebe036530c08cf7e139219ffb140514ea6ac5744ce8244f6d8cfda76d",
+                         "bytes":  43497,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/observability/__init__.py",
+                         "sha256":  "d82b250aff52c9108f079f1b70f944181ffff58b0f7108ceb269b1704d896dcc",
+                         "bytes":  44,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/runtime/event_loop.py",
+                         "sha256":  "075a45ef536408aecae9ee8f09a3d5b449ac5f985e5506fe135bf5b9ff6d9bc1",
+                         "bytes":  365,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/runtime/scheduler.py",
+                         "sha256":  "2bf97f586a2693f44f249eb5077318e3e386f5e83d9e05918edab868ca719a29",
+                         "bytes":  1563,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/runtime/state.py",
+                         "sha256":  "52af8f33f5359c0447a56abbe973b5003011c813342ed965633a6bc7b58b4509",
+                         "bytes":  1775,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/runtime/telegram_app.py",
+                         "sha256":  "b629315935991c6da001f8815d23d9606b74b54e5b3e28df78e1f5f8e4eb9a9a",
+                         "bytes":  397,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/runtime/__init__.py",
+                         "sha256":  "31fbec08cde48730f6e40f56f56db5d58351e3b16ff582a8ba46435795fb72cf",
+                         "bytes":  365,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/ai_agent_groq.py",
+                         "sha256":  "10fc2723f98a8e6743c7ab5ee1cc0bb16241375d20bd700af43afd6435e2aedc",
+                         "bytes":  36464,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/news_intelligence_service.py",
+                         "sha256":  "fe677e880e58dbce85ab4b43929601283e89ad6fed459dbdd88c783b4b822f83",
+                         "bytes":  32629,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/news_service.py",
+                         "sha256":  "4a626f62fd51c8beb6485f2055aab4fd054f850669cdee79e6c8b3fbbc60968e",
+                         "bytes":  5551,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/price_service.py",
+                         "sha256":  "1e849c1d9051de43fb295c2f232502d6bc3868e33adc1dd561678ad40da69e26",
+                         "bytes":  21144,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/__init__.py",
+                         "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                         "bytes":  0,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/base_provider.py",
+                         "sha256":  "237a398e447d5efcd9b86e244e2695e59e43b87b98a274e02c9061d3add6f024",
+                         "bytes":  12188,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/breaker.py",
+                         "sha256":  "9f566d7f342f134114bed9c5e13d0e939448f0bdee7e27cf8e2c9abdb2988a13",
+                         "bytes":  10865,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/budget.py",
+                         "sha256":  "6c65e2995f4fb6f6a1a578cbf6b97d07819cf5f1f53ff8e8b399e72a7ae35fbf",
+                         "bytes":  12581,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/cloudflare_provider.py",
+                         "sha256":  "dbe3f9ca8eab199ddabdd92391efb2aede18d29151d7d37bf5a4b398dab6be68",
+                         "bytes":  337,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/config.py",
+                         "sha256":  "0b301647c92fa9e1b23dae276e7e13defd5948b6cced011c98ba5dfe3a838178",
+                         "bytes":  24750,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/env.py",
+                         "sha256":  "db395bf26e939fd255b7cb8862898acf10bfbbaf825bab031168cd8a03dc7740",
+                         "bytes":  5297,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/errors.py",
+                         "sha256":  "f37ecf42c0c363e0ea6f5d4c2e62f39d75e5972db824ba350a0585ceb14015d3",
+                         "bytes":  3827,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/gemini_provider.py",
+                         "sha256":  "3a96172fab1038d1a6a6cf9c80ec85b7625af9fa0c395520efb5e7d13e2919d1",
+                         "bytes":  722,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/groq_provider.py",
+                         "sha256":  "979e51552f4ac560e91dc578755252717b17d84b8ee7cb78f5d2ef2b5fcca7c0",
+                         "bytes":  294,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/operation.py",
+                         "sha256":  "48ac6785fb80744730bc3f83840e59a96a640fd21829925809687b797933a31e",
+                         "bytes":  963,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/router.py",
+                         "sha256":  "5b4fdc60cf9fb84d7d1f95e5f063e3c56bc90fc3c5d4b363f6a80c7cbc9295d6",
+                         "bytes":  25052,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/telemetry.py",
+                         "sha256":  "c210e8cda9a8e788858fd549325ab56fe56bf8749f2a244e28dd53a24f93fdb7",
+                         "bytes":  29140,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/bot/services/llm/__init__.py",
+                         "sha256":  "3ca8df964cacfaeefae334b6f823d13d3b69666e5567de9a53d0c6f9126810bc",
+                         "bytes":  1354,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/alert_similarity.py",
+                         "sha256":  "10baa5602f7dfbbe7198fff176ffe54295ca137577dc35a97d769e6cacf8951c",
+                         "bytes":  42930,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/bundle.py",
+                         "sha256":  "af47a78ca88167686b5ee01ac807a20ceb4caf5b759fb6bd6762c293fa1d8149",
+                         "bytes":  18036,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/cli.py",
+                         "sha256":  "892ba5cda639f428673512f4484464c4d266624659def04d6385f27e80f08551",
+                         "bytes":  24897,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/config.py",
+                         "sha256":  "c8d5e59f0ffd46e64066d567713edeecc0e71e7a758ac99b8887daf9bcd6bc4c",
+                         "bytes":  4561,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/detectors.py",
+                         "sha256":  "2607c8ddc90b21db30976eaf733b6f1fbbcb17335e22592491764a751c2eabf2",
+                         "bytes":  50340,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/docker-compose.ops-agent.yml",
+                         "sha256":  "f794b92a6830499116406df40bd17151bbcd4dcae0914a766a741a09dc3178ac",
+                         "bytes":  433,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/expected_models.py",
+                         "sha256":  "bfa3c90ffbcd8fca41b603302a0ca3fb933dee45046e6822dca283cdb00e5d21",
+                         "bytes":  2758,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/README.md",
+                         "sha256":  "b82c9c32a86f90053532a129f626f27ce6e04002a9660e7f06757cd67243d609",
+                         "bytes":  22294,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/report_context.py",
+                         "sha256":  "b57f9b3635e32c0b4f39dfa9c3aaae27913bb9efaa588e0c95f96ac0d803191c",
+                         "bytes":  13588,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/report_markdown.py",
+                         "sha256":  "e0e77b381e479b0c9f97719eed2a64252f5594d7b032a64b6479ae686f02970b",
+                         "bytes":  45397,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/retention.py",
+                         "sha256":  "6dbdc16fe59c813fb8701e29eb8bceeba4d462b1e552cf4859c75440d5300d38",
+                         "bytes":  1555,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/schemas.py",
+                         "sha256":  "09018086f692895c74c8b4b14854c1dc5d262a854000e6647d708328dd0d7a29",
+                         "bytes":  1511,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/state.py",
+                         "sha256":  "a98339422f9a3ed644b20cdd4882ad12511a16cb9d07e0685143d31a7d0b2c92",
+                         "bytes":  4750,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/__init__.py",
+                         "sha256":  "1d741f6f6ad7459d4d1828fae7572771882307d3a063b7bc5ea0a26c1213bc42",
+                         "bytes":  108,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/__main__.py",
+                         "sha256":  "42b508702c862c53c05b0b01ad38365074f8a24c3d451445d43bf69480ac4456",
+                         "bytes":  125,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/collectors/docker.py",
+                         "sha256":  "f138f94d0ff64f9c273b4d2c74ac1b83a5a44c63a8ed92036076d1726c50f603",
+                         "bytes":  7339,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/collectors/health.py",
+                         "sha256":  "0a488145898cc2d9864a8bc84614d1d3cceabee4beeb3418065338aad48f9cbc",
+                         "bytes":  2577,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/collectors/local_state.py",
+                         "sha256":  "59af244d073c4e0000c8d67df80c4100135df8680f44b5a973b2e2c18934f651",
+                         "bytes":  941,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/collectors/logs.py",
+                         "sha256":  "dc210179d317abfb55c0ce244a2827c05ffb2295e9abcfb944f8eb8ba01cec71",
+                         "bytes":  21378,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "ccw25-20261019/dev-source/ops_agent/collectors/__init__.py",
+                         "sha256":  "f5b28e366fbb49077741bbc9e345165d522194001c470f15be7eb5b227d6ad63",
+                         "bytes":  38,
+                         "reason":  "sensitive_or_duplicate_path"
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/owner_A_cli_scoring_private.json",
+                         "sha256":  "9988b0545198866ffb643c9a5d1a17184fbeb3f51f52d09bc481bc726c989c61",
+                         "bytes":  42042,
+                         "reason":  "non_utf8_data_requires_review"
+                     },
+                     {
+                         "path":  "event-alert-review-20261016/live_groq_ab_20261016/owner_A_materiality_compare_private.json",
+                         "sha256":  "6ae2d81584ffc5ace264fbe7d088bb4b81356e7b9b640f45c864c6441c021237",
+                         "bytes":  91592,
+                         "reason":  "non_utf8_data_requires_review"
+                     }
+                 ]
+}

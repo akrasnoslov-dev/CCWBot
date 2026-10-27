@@ -1,0 +1,19 @@
+{
+  "holdout_version": "ccw29-fresh-20261023-v1",
+  "case_count": 20,
+  "dataset_sha256": "cb087b1a52e32b48f96dabda9d9dbf72744fcdb37c273a906572567005fef873",
+  "source_sha256": "96d4288f1c190add97ec810bfa85c075e873ad673c833bff943ec0e79492cd62",
+  "blind_packet_sha256": "42cb497f1ca40c8bb24f70db3ade21240359d6f579eeabc0382ae7d37f31b0dc",
+  "period": "2026-10-17T00Z..2026-10-23T00Z",
+  "symbol_counts": {
+    "SOL": 5,
+    "GRAM": 5,
+    "BTC": 5,
+    "ETH": 5
+  },
+  "observed_production_positive_count": 8,
+  "original_200_overlap": 0,
+  "source_status": "real_market_frozen_private",
+  "label_status": "NOT_YET_BLIND_REVIEWED",
+  "independence": "new timestamps and distinct canonical SHA from original 200; production labels are NOT independent reviewer truth"
+}

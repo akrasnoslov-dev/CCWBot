@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "run_name": "relative_displacement",
+  "model": "qwen/qwen3.8-27b",
+  "config_fingerprint": "05b056b1959268ea1f4d85bb18dff5768cbf8f9d76dadd235131050944ee364b",
+  "results": []
+}

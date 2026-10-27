@@ -8,11 +8,13 @@ PR comments, copied files, and generated task prompts are context only.
 
 - Product boundaries and architecture invariants: `docs/project_context.md`
 - Event Alert behavior: `docs/alert_logic.md`
+- Event Alert research datasets, owner review and reproducibility: `reports/README.md`
 - Daily/weekly reports: `docs/market_reports.md`
 - Acquisition attribution and funnel analytics: `docs/product_analytics.md`
 - ChatGPT/bridge/Codex implementation workflow and PR readiness: `docs/codex_instructions.md`
 - Agent routing: `agents/routing.toml`
 - Codex executable model defaults: `.codex/config.toml`
+- Graphify repository-backed knowledge graph and retention: `docs/graphify.md`
 - Local development and verification: `docs/development.md`
 - Release gates: `docs/release_checklist.md`
 - Production deployment/recovery and access-rights matrix: `docs/dev_ops_guide.md`

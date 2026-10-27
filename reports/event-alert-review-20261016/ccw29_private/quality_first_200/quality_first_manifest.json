@@ -1,0 +1,23 @@
+{
+  "task": "CCW-44",
+  "dataset_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+  "prompt_instruction_sha256": {
+    "quality_first": "d3fa7c6b2d4a94a73768453c8f051a12aa622bb74422917dddd733e6996140fc"
+  },
+  "expected": 200,
+  "labels_in_model_input": false,
+  "privacy": "private real market source",
+  "sample_status": "reused developmental set, not independently blind",
+  "token_policy": "quality-first; no filler for absent evidence",
+  "verified_long_price_history": true,
+  "long_history_source": "ccwbot_investigator read-only event_ai_analyses_market_price",
+  "source_window": "Sep 16\u2013Oct 23 2026, no future observations in each case",
+  "one_off_budget_usd": 0.5,
+  "source_period": "Oct17\u201322",
+  "input_history_rows": 6079,
+  "per_case_24h_buckets": {
+    "min": 29,
+    "max": 48,
+    "avg": 41.66
+  }
+}

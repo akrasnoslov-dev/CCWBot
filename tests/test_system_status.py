@@ -1321,10 +1321,6 @@ async def test_llm_diagnostics_shows_paid_budget_without_secrets(monkeypatch):
     monkeypatch.setenv("OPENAI_ENABLED", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
     try:
         async with factory() as session:
@@ -1378,10 +1374,6 @@ async def test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach(mo
     monkeypatch.setenv("OPENAI_ENABLED", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-not-real")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_PRICED_MODEL", "gpt-6-luna")
-    monkeypatch.setenv("OPENAI_MAX_INPUT_TOKENS", "1000")
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_1M_TOKENS", "1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_1M_TOKENS", "10")
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "2.50")
     try:
         async with factory() as session:

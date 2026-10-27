@@ -1,0 +1,154 @@
+{
+  "run": "ccw16_completed_2026-10-23",
+  "generated_at_utc": "2026-10-23T08:36:20.458142+00:00",
+  "ledger_sha256": "2512e4e340f3074fafc1ee07e497be7b71014e6c2c9b38a6cff2f21c32623ab4",
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "total_attempts": 120,
+  "complete": true,
+  "references": {
+    "original_A": {
+      "groq": {
+        "production": {
+          "TP": 1,
+          "FP": 0,
+          "FN": 7,
+          "TN": 8,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.125
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 0,
+          "FP": 0,
+          "FN": 8,
+          "TN": 8,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": null,
+          "recall": 0.0
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        }
+      },
+      "cloudflare": {
+        "production": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 5,
+          "TN": 8,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": 1.0,
+          "recall": 0.375
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 4,
+          "FP": 2,
+          "FN": 4,
+          "TN": 6,
+          "ambiguous": 4,
+          "n": 20,
+          "scored": 16,
+          "precision": 0.667,
+          "recall": 0.5
+        }
+      }
+    },
+    "owner_20261022": {
+      "groq": {
+        "production": {
+          "TP": 0,
+          "FP": 2,
+          "FN": 6,
+          "TN": 12,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": 0.0,
+          "recall": 0.0
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 0,
+          "FP": 0,
+          "FN": 6,
+          "TN": 14,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": null,
+          "recall": 0.0
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 0,
+          "FN": 3,
+          "TN": 14,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": 1.0,
+          "recall": 0.5
+        }
+      },
+      "cloudflare": {
+        "production": {
+          "TP": 3,
+          "FP": 1,
+          "FN": 3,
+          "TN": 13,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": 0.75,
+          "recall": 0.5
+        },
+        "ccw15_materiality_evidence_v1": {
+          "TP": 2,
+          "FP": 2,
+          "FN": 4,
+          "TN": 12,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": 0.5,
+          "recall": 0.333
+        },
+        "ccw15_novelty_independent_v1": {
+          "TP": 3,
+          "FP": 4,
+          "FN": 3,
+          "TN": 10,
+          "ambiguous": 0,
+          "n": 20,
+          "scored": 20,
+          "precision": 0.429,
+          "recall": 0.5
+        }
+      }
+    }
+  }
+}

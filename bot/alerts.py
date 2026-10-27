@@ -86,6 +86,7 @@ from bot.db.database import (
     get_latest_success_event_ai_analysis,
     get_market_event_by_instance_key,
     get_or_create_market_event,
+    get_previous_market_event_for_chart,
     get_price_snapshots_since,
     get_price_state,
     get_recent_alert_delivery_outcome_by_context_fingerprint,
@@ -4990,19 +4991,42 @@ async def _prepare_event_alert_chart(
     *,
     symbol: str,
     as_of: datetime,
+    event_markers: bool = False,
+    current_price: float | None = None,
+    market_event_id: int | None = None,
 ) -> None:
-    """One DB read and one PNG per shared event, before the recipient loop."""
+    """Build one shared PNG before fanout. No recipient data enters this image."""
     rich_html = alert_payload.get("rich_html")
     if not rich_html or "__CCWBOT_CHART_BLOCK__" not in rich_html:
         return
     chart = None
     if DB_ENABLED and DB_SESSION_LOCAL:
         try:
+            previous_event = None
             async with DB_SESSION_LOCAL() as session:
                 snapshots = await get_price_snapshots_since(
                     session, symbol=normalize_symbol(symbol), since=as_of - timedelta(hours=24),
                 )
-            chart = render_price_chart(snapshots, as_of=as_of, symbol=symbol)
+                if event_markers:
+                    previous_event = await get_previous_market_event_for_chart(
+                        session, symbol=normalize_symbol(symbol), alert_type=EVENT_ALERT_TYPE,
+                        as_of=as_of, current_market_event_id=market_event_id,
+                    )
+            previous = (
+                (previous_event.detected_at, previous_event.price)
+                if previous_event is not None else None
+            )
+            if event_markers:
+                chart = render_price_chart(
+                    snapshots, as_of=as_of, symbol=symbol, event_markers=True,
+                    current_observation=(
+                        (as_of, current_price) if current_price is not None else None
+                    ),
+                    previous_alert=previous,
+                )
+            else:
+                # Market Heartbeat keeps its original PNG/plotting behavior.
+                chart = render_price_chart(snapshots, as_of=as_of, symbol=symbol)
         except Exception:
             logger.warning("Event chart unavailable; using text-only rich fallback")
     if chart is not None and chart.png is not None:
@@ -5284,10 +5308,22 @@ async def _deliver_market_event_alert(
         return False
 
     if event_type == EVENT_ALERT_TYPE:
+        # This is the market-event observation from LLM input, not a historical
+        # snapshot and not a recipient's last successfully delivered message.
+        marker_price = None
+        try:
+            marker_price = _optional_float(
+                json.loads(numeric_context or "{}").get("current_price")
+            )
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            pass
         await _prepare_event_alert_chart(
             alert_payload,
             symbol=normalized_symbol,
             as_of=chart_as_of or datetime.now(timezone.utc),
+            event_markers=True,
+            current_price=marker_price,
+            market_event_id=market_event_id,
         )
     plain_text = str(alert_payload.get("plain_text", ""))
     raw_stored_severity = (
@@ -6527,7 +6563,7 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 semantic_family=_semantic_family_from_payload(input_payload),
                 event_instance_key=event_instance_key,
                 analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
-                chart_as_of=now,
+                chart_as_of=datetime.fromisoformat(checked_at),
                 numeric_context=_event_numeric_context(
                     input_payload,
                     decision,

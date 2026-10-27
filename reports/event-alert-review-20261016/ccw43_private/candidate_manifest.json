@@ -1,0 +1,45 @@
+{
+  "task": "CCW-43",
+  "artifact_version": "20261023-v1",
+  "model_visible_system_message": "You are a careful crypto monitoring assistant.",
+  "baseline_instruction_sha256": "e6496d98812ca7380a899c33c8e8e9294eddcee00d157515a179a91892aeb308",
+  "baseline_file_sha256": "0635c03e68b8fe519ae64bdc433c5a057e101581c9dfdf34929ec4d67d860ac4",
+  "dataset_sha256": "ed126380369014e6522cee49009b880cf0350aa7565269d50641c3f1bbdc3bee",
+  "prompts": {
+    "ccw43_incremental_market_leg_v1": {
+      "file": "ccw43_incremental_market_leg_v1.txt",
+      "file_sha256": "1a74766e81d775d4d93159dd4cae15b7ef8867164f94783ee0aee6ad760120de",
+      "instruction_sha256": "af47056653aa7257ffe0ab5e339f216b45f889cc6c18890472492a5622a77247",
+      "rendered_200_sha256": "eab472c80e40588455b5d0eb0b27f53fed3fd5b2ba74fc8562c1474e38c36eee",
+      "max_user_message_bytes": 4523,
+      "all_cases_covered": 200,
+      "output_fields": [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence"
+      ],
+      "schema_contract": "materiality=material|routine|unclear; novelty=new|continuation|repeated|unclear; confidence=low|medium|high; should_alert=true iff materiality=material, novelty=new, reason_code in unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment; false reason_code=routine_move|news_only|unclear"
+    },
+    "ccw43_two_sided_counterfactual_v1": {
+      "file": "ccw43_two_sided_counterfactual_v1.txt",
+      "file_sha256": "4efe2d8b1ae7ff9d429ec9237a885802e1c67afaf9a5160c5a0802f891d55e0a",
+      "instruction_sha256": "aab1596ee2cf8432a9bb7a427323d3a23a76e82e16f02b0b640a8cfd790f8228",
+      "rendered_200_sha256": "02290d7bec8086dccab692d2a1dd43ef89e90424867e7ffb7937e093114fcab1",
+      "max_user_message_bytes": 4523,
+      "all_cases_covered": 200,
+      "output_fields": [
+        "symbol",
+        "materiality",
+        "novelty",
+        "should_alert",
+        "reason_code",
+        "confidence"
+      ],
+      "schema_contract": "materiality=material|routine|unclear; novelty=new|continuation|repeated|unclear; confidence=low|medium|high; should_alert=true iff materiality=material, novelty=new, reason_code in unusual_move|fast_move|reversal|trend_acceleration|market_news_alignment; false reason_code=routine_move|news_only|unclear"
+    }
+  },
+  "test_scope": "UNTESTED_OFFLINE_DESIGN; no API calls or production change"
+}

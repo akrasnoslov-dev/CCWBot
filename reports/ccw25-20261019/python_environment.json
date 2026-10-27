@@ -1,0 +1,11 @@
+{
+  "python": "3.14.7",
+  "packages": {
+    "openai": "2.45.0",
+    "httpx": "0.28.1",
+    "sqlalchemy": "2.0.52",
+    "asyncpg": "0.31.0",
+    "python-dotenv": "1.2.3",
+    "pydantic": "2.13.4"
+  }
+}

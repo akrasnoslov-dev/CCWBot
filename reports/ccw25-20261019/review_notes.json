@@ -1,0 +1,14 @@
+{
+  "scope": "Read-only final reviews of research artifacts, not a runtime implementation review.",
+  "reviewers": ["devops_review", "llm_quality_review", "security_review"],
+  "findings_resolved": [
+    "Corrected real double-encoded report punctuation/currency and verified zero known mojibake markers.",
+    "Expanded Qwen7 backend-accepted weekly factual error record; failed/truncated outputs are not called delivered errors.",
+    "Scoped partial resource-monitor coverage to Qwen4; Phi/Qwen7 notes describe their own coverage.",
+    "Changed API-tax wording to unknown spending and applicable tax.",
+    "Clarified included synthetic corpus uses repository templates; excluded raw production requests and private user content.",
+    "Explicit evidence whitelist includes intentional task-owned process resource counters; every shared file is hashed and ZIP contents verified."
+  ],
+  "checks": "74 requests; 19 cases/model; disjoint shards; replayed JSON/backend/deadline verdicts; 123 source hashes; workload/token reconciliation; Python syntax; UTF-8 report scan; ZIP integrity and per-file SHA-256.",
+  "limitations_retained": "Synthetic small-N Windows screen; unequal repetitions; diagnostic output caps; right-censored timeout; no blinded real-context gold evaluation, final Telegram assembly, target-Linux capacity/queue/soak test, or actual API billing proof."
+}
