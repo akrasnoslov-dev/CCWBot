@@ -738,3 +738,14 @@ rate-limit count, timeout count, and invalid-JSON/schema-error count.
 
 The collector reads `llm_usage_logs` only. It does not call Groq, retry failed requests, inspect
 raw prompts, or export provider response bodies.
+
+For Event Analysis model-drift checks, the separate compact
+`event_analysis_model_usage` query groups by provider/model **without** status and symbol,
+and includes a total-group count to expose its 200-group cap. The general
+`llm_usage_summary` can truncate important provider rows at its `:limit`; it must
+never alone justify a claim that the deployed primary model matches or differs from
+the shipped Groq default. The operator-approved Cloudflare -> OpenAI -> Groq order
+recorded above is not proof of the deployed environment. An ops-agent primary-provider
+and model expectation must be explicitly and independently verified; if unavailable
+the detector remains UNKNOWN. Models known to be withdrawn are still flagged across
+all observed Event Analysis providers.
