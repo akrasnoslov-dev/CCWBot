@@ -2640,3 +2640,21 @@ def test_news_quality_sql_does_not_classify_optional_missing_news_as_failure():
     assert "AS no_attached_news_optional" in sql
     assert "AS selected_news_attachment_mismatch" in sql
     assert "a.status = 'sent'" in sql
+
+
+def test_known_heartbeat_generation_failure_survives_missing_optional_new_queries():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc), source="test",
+    )
+    evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+        "market_heartbeats_summary": {"rows": [
+            {"symbol": "BTC", "status": "failed", "heartbeats": 1},
+        ]},
+        "market_heartbeats_freshness": {"rows": []},
+    }}}
+    result = {
+        item.id: item for item in run_detectors(evidence, period)
+    }["stale_or_failed_market_heartbeats"]
+    assert result.status == "triggered"
+    assert result.metrics["failed_heartbeats"] == 1
