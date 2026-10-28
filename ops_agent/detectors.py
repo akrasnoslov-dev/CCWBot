@@ -1,6 +1,7 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,9 +10,8 @@ from ops_agent.db_queries import (
     MARKET_DATA_FRESHNESS_GRACE_SECONDS,
 )
 from ops_agent.expected_models import (
-    EVENT_ANALYSIS_PRIMARY_PROVIDER,
     KNOWN_DECOMMISSIONED_MODELS,
-    expected_model,
+    expected_event_analysis_route,
 )
 from ops_agent.schemas import DetectorResult, Period
 
@@ -1027,70 +1027,107 @@ def _event_analysis_model_drift_detector(
     llm_summary: list[dict[str, Any]],
     db_result,
 ) -> DetectorResult:
-    """Models actually used for event_analysis differ from the shipped default.
+    """Separate observed models from safely verified runtime routing.
 
-    A deployed `.env` silently overrides the code default, which is exactly how the outage
-    persisted: the shipped default was changed while production kept calling a decommissioned
-    model. Comparing what the database says was *used* against what the code ships makes that
-    disagreement visible without reading `.env` on the server.
+    The generic LLM summary is grouped by status and symbol, and its row cap
+    can hide a provider. A dedicated bounded aggregate supplies all distinct
+    provider/model groups plus a completeness count. Without an operator-verified
+    primary route, observed successes never establish the configured primary.
     """
-    expected = expected_model("event_analysis")
-    primary_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            == EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
+    aggregate = "evidence/db/aggregate_metrics.json"
+    query = _query_payload(evidence, aggregate, "event_analysis_model_usage")
+    records = list((query or {}).get("rows") or [])
+    summary = records[0] if len(records) == 1 and isinstance(records[0], dict) else {}
+    models = summary.get("models")
+    if isinstance(models, str):
+        try:
+            models = json.loads(models)
+        except (TypeError, ValueError):
+            models = None
+    if not isinstance(models, list):
+        models = []
+    usage = [
+        row for row in models
+        if isinstance(row, dict) and isinstance(row.get("provider"), str)
+        and isinstance(row.get("model"), str)
+    ]
+    # For old bundles, still catch a known withdrawn model when directly seen.
+    # Never use a capped generic query to declare healthy model routing.
+    if query is None:
+        usage = [
+            row for row in llm_summary
+            if row.get("call_type") == "event_analysis"
+            and isinstance(row.get("provider"), str)
+            and isinstance(row.get("model"), str)
+        ]
+    total_groups = _int(summary.get("total_groups")) if query is not None else 0
+    incomplete = (
+        query is None or not records or not isinstance(summary.get("models"), (str, list))
+        or total_groups > len(usage)
+        or (query is not None and total_groups < len(usage))
     )
-    fallback_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            != EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
-    )
+    observed_models = sorted({str(row["model"]).strip() for row in usage if row["model"]})
+    providers = sorted({str(row["provider"]).strip().lower() for row in usage})
+    expected_provider, expected = expected_event_analysis_route()
+    primary_models = sorted({
+        str(row["model"]).strip() for row in usage
+        if expected_provider and str(row["provider"]).lower() == expected_provider
+        and row["model"]
+    })
+    fallback_models = sorted({
+        str(row["model"]).strip() for row in usage
+        if (not expected_provider or str(row["provider"]).lower() != expected_provider)
+        and row["model"]
+    })
+    decommissioned = sorted(set(observed_models) & KNOWN_DECOMMISSIONED_MODELS)
     drifted = [model for model in primary_models if expected and model != expected]
-    decommissioned = [model for model in primary_models if model in KNOWN_DECOMMISSIONED_MODELS]
-
-    if not primary_models:
-        status = "unknown"
-        summary = "No primary-provider event_analysis model recorded in this period"
-    elif decommissioned:
+    if decommissioned:
         status = "triggered"
-        summary = (
-            "event_analysis is calling a model the provider has withdrawn; "
-            "expected the shipped default"
-        )
+        message = "A withdrawn model was observed in Event Analysis attempts"
+    elif incomplete:
+        status = "unknown"
+        message = "Dedicated Event Analysis model evidence is missing or incomplete"
+    elif not usage:
+        status = "unknown"
+        message = "No Event Analysis provider/model attempts recorded"
+    elif not expected_provider or not expected:
+        status = "unknown"
+        message = "Deployed primary provider/model not verified; observed calls cannot establish routing"
+    elif not primary_models:
+        status = "unknown"
+        message = "No attempts for the operator-verified Event Analysis primary provider"
     elif drifted:
         status = "triggered"
-        summary = "event_analysis model in use differs from the shipped default"
+        message = "Observed primary-provider model differs from explicitly expected deployment"
     else:
         status = "clear"
-        summary = "event_analysis model matches the shipped default"
+        message = "Observed primary-provider models match operator-verified expectation"
 
     return db_result(
         "event_analysis_model_drift",
         "high" if decommissioned else "medium",
-        [("evidence/db/aggregate_metrics.json", "llm_usage_summary")],
+        [(aggregate, "event_analysis_model_usage")],
         status,
-        summary,
-        ["evidence/db/aggregate_metrics.json"],
+        message,
+        [aggregate],
         {
+            "shipped_default_primary_provider": "groq",
             "expected_model": expected,
-            "expected_primary_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
+            "expected_primary_provider": expected_provider,
+            "observed_providers": providers,
+            "observed_models": observed_models,
             "primary_models_in_use": primary_models,
             "fallback_models_in_use": fallback_models,
             "drifted_primary_models": drifted,
-            "decommissioned_primary_models_in_use": decommissioned,
+            "decommissioned_models_observed": decommissioned,
+            "decommissioned_primary_models_in_use": [
+                model for model in primary_models if model in KNOWN_DECOMMISSIONED_MODELS
+            ],
+            "model_usage_groups_observed": len(usage),
+            "model_usage_total_groups": total_groups,
+            "model_usage_incomplete": incomplete,
         },
     )
-
 
 def detector_payload(period: Period, results: list[DetectorResult]) -> dict[str, Any]:
     return {
