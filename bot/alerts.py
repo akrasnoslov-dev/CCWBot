@@ -50,7 +50,6 @@ from bot.alerting.event_text import (
     final_event_alert_quality_flags,
     is_news_centered_event_action,
     observed_event_alert_level_action,
-    observed_event_alert_price_band,
     sanitize_financial_instruction,
     soften_possible_action,
 )
