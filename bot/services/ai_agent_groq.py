@@ -704,6 +704,14 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Input sym; market_directions=verified signs for analysed window and 24h; "
         "evidence=verified backend observations; n=optional attributed news; "
         "sig=accepted classification. Do not invent missing metrics or catalysts.",
+        "When evidence.recent_price_path is supplied, use its ordered actual "
+        "step_directions, measured step_durations_minutes and "
+        "current_range_position to distinguish this event from another coin's "
+        "move. They describe the last four verified observations only. "
+        "Never infer volume, order flow, or persistent momentum from one step. "
+        "Do not claim acceleration unless latest_interval_pace confirms it. "
+        "Prefer what the latest step changes about the prior short-term path "
+        "over generic 24h-alignment filler. Never invent a missing path.",
         "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
         "path with the 24h direction and explain uncertainty. When "
         "evidence.observed_price_band.high_visits >= 2, you may explain that "
@@ -722,7 +730,10 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Use measured language ('would strengthen/undermine the rebound case', "
         "'would break the recent range'), not buy/sell orders. "
         "When band is missing, do not invent prices: explain a specific "
-        "next-step continuation-versus-reversal observation instead.",
+        "next-step continuation-versus-reversal observation instead. "
+        "Choose scenario implications grounded in this event's observed "
+        "step sequence and range position, not generic range-exit filler. "
+        "Do not restate that a range break would exit the same range.",
         "No fabricated causes, market sentiment, unusualness, acceleration or "
         "persistence. No predictive cross-period convergence/divergence claim. "
         "Never imply a positive move guarantees a profitable trade.",
