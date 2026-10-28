@@ -374,6 +374,9 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         and {str(row.get("symbol") or "").lower() for row in heartbeat_freshness}
         <= set(potential_by_symbol)
     )
+    delivery_evidence_complete = _has_query(
+        evidence, aggregate, "market_heartbeat_delivery_summary"
+    )
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
     news_budget_counts: dict[str, int] = {}
     news_budget_by_impact: dict[str, int] = {}
@@ -796,12 +799,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             [
                 (aggregate, "market_heartbeats_summary"),
                 (aggregate, "market_heartbeats_freshness"),
-                (aggregate, "market_heartbeat_potential_recipients"),
-                (aggregate, "market_heartbeat_delivery_summary"),
             ],
             "triggered" if heartbeat_failures or latest_failed_heartbeats or heartbeat_delivery_failures
             else "unknown" if not demand_evidence_complete or unknown_due_symbols
-                or heartbeat_missing_completion
+                or not delivery_evidence_complete or heartbeat_missing_completion
             else "clear",
             (f"{heartbeat_failures} failed generation attempts in period; "
              f"{len(latest_failed_heartbeats)} latest failed generation statuses; "
@@ -1149,7 +1150,7 @@ def _event_analysis_model_drift_detector(
     return db_result(
         "event_analysis_model_drift",
         "high" if decommissioned else "medium",
-        [(aggregate, "event_analysis_model_usage")],
+        [],
         status,
         message,
         [aggregate],
