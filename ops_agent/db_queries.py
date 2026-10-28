@@ -366,9 +366,8 @@ QUERIES: tuple[DbQuery, ...] = (
     DbQuery(
         "event_analysis_news_candidates_summary",
         "evidence/db/aggregate_metrics.json",
-        # Counts only (no news content): distinguishes analyses that genuinely had zero
-        # candidate news in their input from should_alert=true analyses that had
-        # candidates available but attached none (possible news-attach gap).
+        # Counts only (no news content). Candidate presence alone is NOT evidence
+        # that news was relevant, selected, or lost during attachment.
         "WITH analysis_news AS ("
         "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, should_alert, related_news_ids, "
         f"{RELATED_NEWS_CANDIDATES_COUNT_SQL} AS related_news_candidates_count "
@@ -381,7 +380,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE related_news_candidates_count IS NULL) AS unknown_candidates_analyses, "
         "count(*) FILTER (WHERE related_news_candidates_count > 0 AND should_alert = true "
         "AND (related_news_ids IS NULL OR related_news_ids::text IN ('[]', 'null', ''))) "
-        "AS alerts_with_candidates_but_no_attached_news "
+        "AS candidates_present_but_unselected_or_unattached "
         "FROM analysis_news GROUP BY symbol ORDER BY symbol",
     ),
     DbQuery(
@@ -460,9 +459,17 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND lower(coalesce(a.message, '')) LIKE '%analysed-window change%') AS old_analysed_window_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' "
         "AND coalesce(a.message, '') ~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?price change[[:space:]]*:') AS old_generic_price_change_label, "
-        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND eai.id IS NOT NULL AND ("
         "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
-        ")) AS empty_related_context, "
+        ")) AS no_attached_news_optional, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND eai.id IS NULL) "
+        "AS missing_analysis_evidence, "
+        "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND eai.id IS NOT NULL AND ("
+        "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
+        ") AND CASE WHEN a.numeric_context IS JSON THEN "
+        "CASE WHEN jsonb_typeof(a.numeric_context::jsonb->'stable_related_news_ids') = 'array' "
+        "THEN jsonb_array_length(a.numeric_context::jsonb->'stable_related_news_ids') > 0 "
+        "ELSE false END ELSE false END) AS selected_news_attachment_mismatch, "
         "count(*) FILTER (WHERE a.message IS NULL OR length(trim(a.message)) = 0) AS malformed_formatting "
         "FROM alerts a "
         "LEFT JOIN market_events me ON me.id = a.market_event_id "
