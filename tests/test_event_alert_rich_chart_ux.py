@@ -653,3 +653,24 @@ async def test_rich_valid_identity_calls_receipt_callback_once(monkeypatch):
     )
     assert result is None
     assert received == [42]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["pending", "retry_pending", "sent"])
+async def test_persistence_uncertainty_reservation_identity_is_not_sent_twice(
+    monkeypatch, status,
+):
+    # After a transport acknowledgement with an uncertain DB commit, a persisted
+    # pending identity must never be reopened as a fresh send.
+    existing = SimpleNamespace(status=status, final_failed_at=None)
+    query = AsyncMock(return_value=existing)
+    monkeypatch.setattr(db_alerts, "get_alert_delivery", query)
+    session = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
+    row, should_send = await db_alerts.reserve_alert_delivery(
+        session, user_id=1, symbol="BTC", alert_type="event_alert",
+        sent_to_chat_id=123, market_event_id=42, event_ai_analysis_id=44,
+        message="recipient-specific safe text",
+    )
+    assert row is existing
+    assert should_send is False
+    session.commit.assert_not_awaited()
