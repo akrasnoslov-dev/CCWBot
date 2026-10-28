@@ -977,6 +977,26 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY calls DESC LIMIT :limit",
     ),
     DbQuery(
+        "event_analysis_model_usage",
+        "evidence/db/aggregate_metrics.json",
+        # One compact row, independent of generic llm_usage_summary's status/symbol
+        # row cap. If >200 provider/model groups exist, expose the truncation
+        # count so the detector cannot falsely call an incomplete sample healthy.
+        "WITH model_groups AS ("
+        "SELECT lower(coalesce(provider, 'unknown')) AS provider, "
+        "coalesce(model, '') AS model, count(*) AS calls "
+        "FROM llm_usage_logs WHERE call_type = 'event_analysis' "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY lower(coalesce(provider, 'unknown')), coalesce(model, '')"
+        "), bounded AS ("
+        "SELECT provider, model, calls FROM model_groups "
+        "ORDER BY calls DESC, provider, model LIMIT 200"
+        ") SELECT (SELECT count(*) FROM model_groups) AS total_groups, "
+        "coalesce((SELECT jsonb_agg(jsonb_build_object("
+        "'provider', provider, 'model', model, 'calls', calls) "
+        "ORDER BY calls DESC, provider, model) FROM bounded), '[]'::jsonb) AS models",
+    ),
+    DbQuery(
         "llm_operation_reconciliation",
         "evidence/db/llm_operation_reconciliation.json",
         "WITH candidate_operations AS ("
