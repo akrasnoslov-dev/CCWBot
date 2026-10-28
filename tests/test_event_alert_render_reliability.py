@@ -334,7 +334,7 @@ def test_render_metrics_never_invent_missing_prior_notification_or_invalid_numbe
         "chg_window_percent": float("inf"),
         "chg24h_percent": "not a number",
         "chg30m_percent": None,
-        "chg1h_percent": float("-inf"),
+        "chg1h_percent": "1e10000",
         "chg_since_msg_percent": 3.0,
     })
     # A change without an attributed last notification must not be relabeled.
