@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from sqlalchemy.exc import IntegrityError
 from telegram.error import BadRequest
 
 from bot import alerts
+from bot.db import alerts as db_alerts
 from bot.alerting.event_chart import prepare_chart_points, render_price_chart
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.coin_icons import build_coin_icon_html
@@ -584,9 +586,6 @@ async def test_rich_httpx_transport_uncertainty_never_retries_or_falls_back(monk
 
 @pytest.mark.asyncio
 async def test_integrity_error_recovery_does_not_reopen_terminal_delivery(monkeypatch):
-    from sqlalchemy.exc import IntegrityError
-    from bot.db import alerts as db_alerts
-
     terminal = SimpleNamespace(status="failed", final_failed_at=AT)
     session = SimpleNamespace(
         add=lambda *_: None,
