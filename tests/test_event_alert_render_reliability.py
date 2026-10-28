@@ -79,16 +79,20 @@ def test_render_cannot_invent_or_escalate_urgency():
     assert decision.should_alert is True
 
 
-def test_render_prompt_contains_only_verified_directions_not_raw_metrics():
+def test_render_prompt_includes_actual_primary_market_metrics():
     payload = _payload()
     prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
     compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
     assert compact["sym"] == "BTC"
     assert compact["market_directions"] == {"window": "down", "24h": "up"}
-    assert "105.0" not in prompt
-    assert "3.1" not in prompt
-    assert "2.4" not in prompt
+    assert compact["market_metrics"] == {
+        "price_now_usd": 105.0,
+        "analysed_window_minutes": 180,
+        "analysed_window_change_percent": -3.1,
+        "change_24h_percent": 2.4,
+    }
     assert "snapshots" not in json.dumps(compact)
+    assert "Do not repeat" in prompt
     assert set(ai_agent_groq._EVENT_ALERT_RENDER_JSON_SCHEMA["required"]) == {
         "message_body", "related_news_ids", "possible_action"
     }
@@ -107,7 +111,7 @@ def test_ccw20_render_copy_asks_for_meaningful_price_scenarios():
     assert compact["market_directions"] == {"window": "down", "24h": "up"}
     # Insufficient snapshots must not invent price levels.
     assert "observed_price_band" not in compact["evidence"]
-    assert set(compact) == {"sym", "market_directions", "evidence", "n", "sig"}
+    assert set(compact) == {"sym", "market_directions", "market_metrics", "evidence", "n", "sig"}
 
 
 def test_ccw20_render_prompt_missing_context_fails_closed():
@@ -117,6 +121,7 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
     assert compact["evidence"] == {}
     assert compact["market_directions"] == {}
+    assert compact["market_metrics"] == {"price_now_usd": 105.0}
     assert "When band is missing, do not invent prices" in prompt
 
 
@@ -270,3 +275,73 @@ async def test_flat_news_led_input_cannot_be_recovered_as_market_alert(monkeypat
     assert decision is None and analysis_id is None
     assert render_outcome.await_args.kwargs["status"] != "success"
     assert delivery_outcome.await_args.kwargs["status"] != alerts.OUTCOME_ALLOWED
+
+
+def test_render_metrics_match_published_alert_inputs_and_optional_lookbacks():
+    from bot import alerts
+
+    payload = _payload()
+    payload["market"].update({
+        "price": 105.257,
+        "chg30m_percent": -0.41234567,
+        "chg1h_percent": -0.8754321,
+        "chg_since_msg_percent": -1.17234567,
+    })
+    payload["timestamp_utc"] = "2026-10-09T09:00:00+00:00"
+    payload["last_msg"] = {
+        "time": "2026-10-09T06:31:00+00:00",
+        "price": 106.5,
+        "type": "event_alert",
+    }
+
+    compact = json.loads(
+        ai_agent_groq.build_event_alert_render_prompt(payload).split("Input JSON:\n", 1)[1]
+    )
+    metrics = compact["market_metrics"]
+    assert metrics == {
+        "price_now_usd": 105.257,
+        "analysed_window_minutes": 180,
+        "analysed_window_change_percent": -3.1,
+        "change_24h_percent": 2.4,
+        "change_30m_percent": -0.412346,
+        "change_1h_percent": -0.875432,
+        "since_previous_notification": {
+            "change_percent": -1.172346,
+            "elapsed": "2h 29m ago",
+        },
+    }
+    # The independently assembled Telegram header uses the same source fields.
+    lines = alerts._event_alert_market_context_lines(
+        symbol="BTC",
+        price=payload["market"]["price"],
+        change_since_message=payload["market"]["chg_since_msg_percent"],
+        last_message_at=payload["last_msg"]["time"],
+        last_message_price=payload["last_msg"]["price"],
+        last_message_type=payload["last_msg"]["type"],
+        current_at=payload["timestamp_utc"],
+        analysed_window_minutes=payload["market"]["analysed_window_minutes"],
+        analysed_window_change=payload["market"]["chg_window_percent"],
+    )
+    assert "Price (now): $105.26" in lines
+    assert "Since previous alert (2h 29m ago): -1.17%" in lines
+    assert "3h market move: -3.10%" in lines
+
+
+def test_render_metrics_never_invent_missing_prior_notification_or_invalid_numbers():
+    payload = _payload()
+    payload["market"].update({
+        "price": float("nan"),
+        "chg_window_percent": float("inf"),
+        "chg24h_percent": "not a number",
+        "chg30m_percent": None,
+        "chg1h_percent": "1e10000",
+        "chg_since_msg_percent": 3.0,
+    })
+    # A change without an attributed last notification must not be relabeled.
+    payload["last_msg"] = {"time": None, "price": None}
+    compact = json.loads(
+        ai_agent_groq.build_event_alert_render_prompt(payload).split("Input JSON:\n", 1)[1]
+    )
+    assert compact["market_metrics"] == {"analysed_window_minutes": 180}
+    assert "since_previous_notification" not in compact["market_metrics"]
+    assert compact["market_directions"] == {}

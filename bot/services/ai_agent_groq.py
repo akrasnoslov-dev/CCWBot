@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from decimal import Decimal, InvalidOperation
+from math import isfinite
 
 from dotenv import load_dotenv
 
@@ -702,8 +703,27 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "WHAT concrete observation would change the interpretation. Avoid robotic "
         "'watch next snapshots' text when verified price levels are available.",
         "Input sym; market_directions=verified signs for analysed window and 24h; "
+        "market_metrics=observed numeric price and percentage changes from the same "
+        "market event as the Telegram metric header (30m/1h lookbacks optional); "
         "evidence=verified backend observations; n=optional attributed news; "
         "sig=accepted classification. Do not invent missing metrics or catalysts.",
+        "Use market_metrics magnitudes and periods to interpret how important the "
+        "accepted move is, not just the up/down signs. The "
+        "analysed_window_change_percent "
+        "applies only to analysed_window_minutes. A since_previous_notification "
+        "change is a difference from an actual previous market notification, not "
+        "a new event or proof of novelty. Missing metrics mean unknown, not zero. "
+        "Price and changes are already rendered separately by the backend; "
+        "do not restate their numbers in Situation. Never calculate or invent "
+        "new numeric claims, or conflate 30m, 1h, analysed-window and 24h moves.",
+        "When evidence.recent_price_path is supplied, use its ordered actual "
+        "step_directions, measured step_durations_minutes and "
+        "current_range_position to distinguish this event from another coin's "
+        "move. They describe the last four verified observations only. "
+        "Never infer volume, order flow, or persistent momentum from one step. "
+        "Do not claim acceleration unless latest_interval_pace confirms it. "
+        "Prefer what the latest step changes about the prior short-term path "
+        "over generic 24h-alignment filler. Never invent a missing path.",
         "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
         "path with the 24h direction and explain uncertainty. When "
         "evidence.observed_price_band.high_visits >= 2, you may explain that "
@@ -722,7 +742,10 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Use measured language ('would strengthen/undermine the rebound case', "
         "'would break the recent range'), not buy/sell orders. "
         "When band is missing, do not invent prices: explain a specific "
-        "next-step continuation-versus-reversal observation instead.",
+        "next-step continuation-versus-reversal observation instead. "
+        "Choose scenario implications grounded in this event's observed "
+        "step sequence and range position, not generic range-exit filler. "
+        "Do not restate that a range break would exit the same range.",
         "No fabricated causes, market sentiment, unusualness, acceleration or "
         "persistence. No predictive cross-period convergence/divergence claim. "
         "Never imply a positive move guarantees a profitable trade.",
@@ -741,6 +764,68 @@ def _render_market_direction(value: object) -> str | None:
     if not change.is_finite():
         return None
     return "up" if change > 0 else "down" if change < 0 else "flat"
+
+
+def _finite_render_metric(value: object) -> float | None:
+    """Pass only finite numeric market observations to prose rendering."""
+    if value is None:
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not parsed.is_finite():
+        return None
+    try:
+        bounded = float(parsed)
+    except (ValueError, OverflowError):
+        return None
+    if not isfinite(bounded):
+        return None
+    # Keep meaningful sub-0.000001 percent movements from collapsing to zero.
+    return float(_event_analysis_percent(bounded))
+
+
+def _event_alert_render_market_metrics(
+    market: dict, input_payload: dict
+) -> dict[str, object]:
+    """Facts from the same input used for the Telegram header, not a new feed."""
+    metrics: dict[str, object] = {}
+    price = _finite_render_metric(
+        market.get("price", market.get("price_now_usd"))
+    )
+    if price is not None and price > 0:
+        metrics["price_now_usd"] = price
+    minutes = _finite_render_metric(market.get("analysed_window_minutes"))
+    if minutes is not None and minutes > 0 and minutes == int(minutes):
+        metrics["analysed_window_minutes"] = int(minutes)
+    for output_key, source_key in (
+        ("analysed_window_change_percent", "chg_window_percent"),
+        ("change_24h_percent", "chg24h_percent"),
+        ("change_30m_percent", "chg30m_percent"),
+        ("change_1h_percent", "chg1h_percent"),
+    ):
+        metric = _finite_render_metric(market.get(source_key))
+        if metric is not None:
+            # Label an analysed-window percentage only when its duration is known.
+            if source_key != "chg_window_percent" or "analysed_window_minutes" in metrics:
+                metrics[output_key] = metric
+    previous = input_payload.get("last_msg")
+    if isinstance(previous, dict) and previous.get("time") and (
+        _finite_render_metric(previous.get("price")) is not None
+    ):
+        change = _finite_render_metric(market.get("chg_since_msg_percent"))
+        if change is not None:
+            from bot.alerting.event_text import compact_elapsed_since
+
+            reference: dict[str, object] = {"change_percent": change}
+            elapsed = compact_elapsed_since(
+                previous["time"], input_payload.get("timestamp_utc")
+            )
+            if elapsed is not None:
+                reference["elapsed"] = elapsed
+            metrics["since_previous_notification"] = reference
+    return metrics
 
 
 def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
@@ -768,6 +853,7 @@ def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
     return {
         "sym": input_payload.get("symbol"),
         "market_directions": directions,
+        "market_metrics": _event_alert_render_market_metrics(market, input_payload),
         "evidence": verified_event_alert_render_context(
             market, input_payload.get("previous_event_alert")
         ),
