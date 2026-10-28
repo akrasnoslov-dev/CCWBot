@@ -13,8 +13,8 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.db.database import Base, OpenAIBudgetReservation
-from bot.services.llm import openai_costs as costs
 from bot.services.llm.openai_budget import OpenAIBudget
+from bot.services.llm import openai_costs as costs
 
 
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
