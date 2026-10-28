@@ -890,7 +890,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "market_heartbeat_delivery_freshness",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, user_id, count(*) AS deliveries, "
-        "max(created_at) FILTER (WHERE status = 'sent') AS latest_sent_at, "
+        "max(coalesce(sent_at, created_at)) FILTER (WHERE status = 'sent') AS latest_sent_at, "
         "count(*) FILTER (WHERE status = 'sent') AS sent_count, "
         "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) "
         "AS failed_count, "
@@ -952,6 +952,17 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM report_types rt LEFT JOIN latest l ON l.report_type = rt.report_type "
         "LEFT JOIN cached c ON c.report_type = rt.report_type "
         "LEFT JOIN period_counts pc ON pc.report_type = rt.report_type ORDER BY rt.report_type",
+    ),
+    # Dedicated untruncated provider/model census for Event Analysis drift diagnostics.
+    # Generic llm_usage_summary is top-N and can omit low-volume fallback rows.
+    DbQuery(
+        "event_analysis_provider_models",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT provider, model, status, count(*) AS calls "
+        "FROM llm_usage_logs "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND call_type = 'event_analysis' "
+        "GROUP BY provider, model, status ORDER BY provider, model, status",
     ),
     DbQuery(
         "llm_usage_summary",
