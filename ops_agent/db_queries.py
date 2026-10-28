@@ -368,7 +368,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         # Counts only (no news content): distinguishes analyses that genuinely had zero
         # candidate news in their input from should_alert=true analyses that had
-        # candidates available but attached none (possible news-attach gap).
+        # Candidate presence is informational, not proof of an attachment fault.
         "WITH analysis_news AS ("
         "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, should_alert, related_news_ids, "
         f"{RELATED_NEWS_CANDIDATES_COUNT_SQL} AS related_news_candidates_count "
@@ -462,7 +462,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND coalesce(a.message, '') ~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?price change[[:space:]]*:') AS old_generic_price_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
         "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
-        ")) AS empty_related_context, "
+        ")) AS no_news_attached_sent_deliveries, "
         "count(*) FILTER (WHERE a.message IS NULL OR length(trim(a.message)) = 0) AS malformed_formatting "
         "FROM alerts a "
         "LEFT JOIN market_events me ON me.id = a.market_event_id "
