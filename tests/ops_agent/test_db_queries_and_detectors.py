@@ -2408,6 +2408,11 @@ def test_heartbeat_cache_age_alone_does_not_prove_failed_on_demand_delivery(fail
         "evidence/db/aggregate_metrics.json": {
             "queries": {
                 "market_heartbeats_summary": {"rows": [{"status": "failed", "heartbeats": failed}]},
+                "market_heartbeat_potential_recipients": {"rows": [
+                    {"symbol": "BTC", "potential_recipients": 2},
+                    {"symbol": "ETH", "potential_recipients": 2},
+                ]},
+                "market_heartbeat_delivery_summary": {"rows": []},
                 "market_heartbeats_freshness": {
                     "rows": [
                         {
@@ -2430,7 +2435,7 @@ def test_heartbeat_cache_age_alone_does_not_prove_failed_on_demand_delivery(fail
 
     detector = results["stale_or_failed_market_heartbeats"]
     assert detector.status == expected
-    assert "on demand" in detector.summary
+    assert "on-demand" in detector.summary
     assert detector.metrics["stale_or_missing_heartbeats"] == (0 if expected == "clear" else 2)
     assert detector.metrics["affected_symbols"] == ([] if expected == "clear" else ["BTC", "ETH"])
 
@@ -2447,6 +2452,10 @@ def test_latest_failed_heartbeat_remains_triggered_outside_report_window():
         "evidence/db/aggregate_metrics.json": {
             "queries": {
                 "market_heartbeats_summary": {"rows": []},
+                "market_heartbeat_potential_recipients": {"rows": [
+                    {"symbol": "ETH", "potential_recipients": 1}
+                ]},
+                "market_heartbeat_delivery_summary": {"rows": []},
                 "market_heartbeats_freshness": {"rows": [{
                     "symbol": "ETH",
                     "latest_status": "failed",
@@ -2548,3 +2557,86 @@ def test_report_freshness_sql_reads_completed_cache_independent_of_latest_attemp
     assert "WHERE status = 'completed'" in query
     assert "cached_expires_at" in query
     assert "cache_available" in query
+
+
+@pytest.mark.parametrize(
+    ("potential", "age", "delivery_failures", "expected"),
+    [(0, 90000, 0, "clear"), (5, 90000, 0, "unknown"),
+     (0, 90000, 1, "triggered"), (0, 60, 0, "clear")],
+)
+def test_on_demand_heartbeat_idle_unknown_due_and_delivery_failures(
+    potential, age, delivery_failures, expected,
+):
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc), source="test",
+    )
+    evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+        "market_heartbeats_summary": {"rows": []},
+        "market_heartbeats_freshness": {"rows": [
+            {"symbol": "BTC", "latest_status": "completed",
+             "latest_generated_at": "2026-06-01T00:00:00Z", "age_seconds": age},
+        ]},
+        "market_heartbeat_potential_recipients": {"rows": [
+            {"symbol": "BTC", "potential_recipients": potential},
+        ]},
+        "market_heartbeat_delivery_summary": {"rows": [
+            {"symbol": "BTC", "failed_deliveries": delivery_failures,
+             "sent_deliveries": 0, "missing_completion_timestamps": 0},
+        ]},
+    }}}
+    result = {
+        item.id: item for item in run_detectors(evidence, period)
+    }["stale_or_failed_market_heartbeats"]
+    assert result.status == expected
+    if potential == 0 and age > 7200:
+        assert result.metrics["currently_idle_symbols"] == ["BTC"]
+    elif potential and age > 7200:
+        assert result.metrics["unknown_due_recipient_symbols"] == ["BTC"]
+    assert result.metrics["failed_deliveries"] == delivery_failures
+
+
+def test_heartbeat_due_recipient_observability_gap_stays_unknown():
+    period = Period(
+        start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 2, tzinfo=timezone.utc), source="test",
+    )
+    evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+        "market_heartbeats_summary": {"rows": []},
+        "market_heartbeats_freshness": {"rows": [
+            {"symbol": "GRAM", "latest_status": "completed",
+             "latest_generated_at": "2026-06-01T00:00:00Z", "age_seconds": 90000},
+        ]},
+        "market_heartbeat_delivery_summary": {"rows": []},
+    }}}
+    result = {
+        item.id: item for item in run_detectors(evidence, period)
+    }["stale_or_failed_market_heartbeats"]
+    assert result.status == "unknown"
+
+
+def test_heartbeat_completion_timestamps_not_reservation_time():
+    queries = {query.name: query.sql for query in QUERIES}
+    for name in ("market_heartbeat_delivery_summary", "market_heartbeat_delivery_freshness"):
+        sql = queries[name]
+        assert "max(sent_at)" in sql
+        assert "status = 'sent' AND sent_at IS NULL" in sql
+        assert "max(created_at) FILTER (WHERE status = 'sent')" not in sql
+
+
+def test_new_model_usage_aggregate_escapes_generic_row_cap():
+    queries = {query.name: query.sql for query in QUERIES}
+    usage = queries["event_analysis_model_usage"]
+    assert "GROUP BY lower(coalesce(provider, 'unknown')), coalesce(model, '')" in usage
+    assert "total_groups" in usage and "LIMIT 200" in usage
+    assert "event_analysis" in usage
+    assert "llm_usage_summary" in queries and "LIMIT :limit" in queries["llm_usage_summary"]
+
+
+def test_news_quality_sql_does_not_classify_optional_missing_news_as_failure():
+    queries = {query.name: query.sql for query in QUERIES}
+    sql = queries["alert_quality_summary"]
+    assert "AS empty_related_context" not in sql
+    assert "AS no_attached_news_optional" in sql
+    assert "AS selected_news_attachment_mismatch" in sql
+    assert "a.status = 'sent'" in sql
