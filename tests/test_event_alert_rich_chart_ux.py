@@ -501,3 +501,62 @@ async def test_rich_403_preserves_safe_blocked_classification_without_raw_errors
         )
     assert is_bot_blocked_error(caught.value) is expected
     assert str(caught.value) != description
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identity", [None, 0, -2, True, "42", 3.5])
+async def test_rich_success_without_valid_receipt_is_uncertain(monkeypatch, identity):
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": {"message_id": identity}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    acknowledged = []
+    with pytest.raises(RichDeliveryUncertain):
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<b>A</b>",
+            chart_png=None, on_message_id=acknowledged.append,
+        )
+    assert not acknowledged
+
+
+@pytest.mark.asyncio
+async def test_rich_httpx_transport_uncertainty_prevents_fallback(monkeypatch):
+    class FailingClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs):
+            raise httpx.ReadTimeout("timed out")
+    monkeypatch.setattr(httpx, "AsyncClient", FailingClient)
+    bot = SimpleNamespace(token="test", send_message=AsyncMock())
+    outcome = await alerts._send_alert_to_recipient_with_retry(
+        SimpleNamespace(bot=bot), alerts.AlertRecipient(chat_id=123),
+        {"rich_html": "<b>A</b>", "html_text": "<b>A</b>", "plain_text": "A"},
+    )
+    assert outcome[0] is False
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code,exception_name", [(400, "BadRequest"), (403, "Forbidden"), (429, "RetryAfter")])
+async def test_rich_confirmed_telegram_rejections(monkeypatch, code, exception_name):
+    from telegram.error import Forbidden, RetryAfter
+    expected = {"BadRequest": BadRequest, "Forbidden": Forbidden, "RetryAfter": RetryAfter}[exception_name]
+    class FakeResponse:
+        def json(self):
+            return {"ok": False, "error_code": code, "parameters": {"retry_after": 2}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    with pytest.raises(expected):
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<b>A</b>", chart_png=None,
+        )
