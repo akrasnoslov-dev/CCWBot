@@ -1029,67 +1029,72 @@ def _event_analysis_model_drift_detector(
     llm_summary: list[dict[str, Any]],
     db_result,
 ) -> DetectorResult:
-    """Models actually used for event_analysis differ from the shipped default.
+    """Report withdrawn models across all observed providers; avoid assumed routing drift.
 
-    A deployed `.env` silently overrides the code default, which is exactly how the outage
-    persisted: the shipped default was changed while production kept calling a decommissioned
-    model. Comparing what the database says was *used* against what the code ships makes that
-    disagreement visible without reading `.env` on the server.
+    The provider census is untruncated. A production provider/model expectation
+    must be established independently of observed successful requests.
     """
     expected = expected_model("event_analysis")
-    primary_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            == EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
-    )
-    fallback_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            != EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
-    )
-    drifted = [model for model in primary_models if expected and model != expected]
-    decommissioned = [model for model in primary_models if model in KNOWN_DECOMMISSIONED_MODELS]
+    configured_primary = configured_event_analysis_primary_provider()
+    observed = sorted({
+        (str(row.get("provider") or "").lower(), str(row.get("model") or "").strip())
+        for row in llm_summary if row.get("provider") and row.get("model")
+    })
+    withdrawn = sorted({
+        model for _, model in observed if model in KNOWN_DECOMMISSIONED_MODELS
+    })
+    primary_models = sorted({
+        model for provider, model in observed if provider == configured_primary
+    }) if configured_primary else []
+    # A pinned expected model is meaningful only when the deployed provider is
+    # explicitly supplied. Groq's shipped default alone is not live configuration.
+    drifted = [
+        model for model in primary_models if expected and model != expected
+    ] if configured_primary == EVENT_ANALYSIS_PRIMARY_PROVIDER else []
 
-    if not primary_models:
-        status = "unknown"
-        summary = "No primary-provider event_analysis model recorded in this period"
-    elif decommissioned:
+    query = (evidence.get("evidence/db/aggregate_metrics.json") or {}).get("queries", {}).get(
+        "event_analysis_provider_models", {}
+    )
+    complete = isinstance(query, dict) and query.get("status") == "ok"
+    if withdrawn:
         status = "triggered"
-        summary = (
-            "event_analysis is calling a model the provider has withdrawn; "
-            "expected the shipped default"
-        )
+        summary = "Withdrawn event_analysis model observed in provider attempts"
+    elif not complete or not observed:
+        status = "unknown"
+        summary = "Event Analysis provider evidence missing or incomplete"
+    elif configured_primary is None:
+        status = "unknown"
+        summary = "Observed providers available; deployed primary routing is unverified"
+    elif configured_primary != EVENT_ANALYSIS_PRIMARY_PROVIDER:
+        status = "unknown"
+        summary = "Approved provider override observed; deployed model expectation unverified"
+    elif not primary_models:
+        status = "unknown"
+        summary = "No attempts for the independently configured primary provider"
     elif drifted:
         status = "triggered"
-        summary = "event_analysis model in use differs from the shipped default"
+        summary = "Observed primary model differs from independently configured expected model"
     else:
         status = "clear"
-        summary = "event_analysis model matches the shipped default"
+        summary = "Observed primary model matches configured expected model"
 
     return db_result(
         "event_analysis_model_drift",
-        "high" if decommissioned else "medium",
-        [("evidence/db/aggregate_metrics.json", "llm_usage_summary")],
+        "high" if withdrawn else "medium",
+        [("evidence/db/aggregate_metrics.json", "event_analysis_provider_models")],
         status,
         summary,
         ["evidence/db/aggregate_metrics.json"],
         {
-            "expected_model": expected,
-            "expected_primary_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
-            "primary_models_in_use": primary_models,
-            "fallback_models_in_use": fallback_models,
+            "shipped_default_model": expected_model("event_analysis"),
+            "shipped_default_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
+            "verified_configured_primary_provider": configured_primary,
+            "observed_provider_model_count": len(observed),
+            "observed_providers": sorted({provider for provider, _ in observed}),
+            "observed_primary_models": primary_models,
             "drifted_primary_models": drifted,
-            "decommissioned_primary_models_in_use": decommissioned,
+            "withdrawn_models_observed": withdrawn,
+            "census_complete": complete,
         },
     )
 
