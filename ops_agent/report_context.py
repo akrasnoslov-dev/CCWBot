@@ -253,6 +253,15 @@ def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
         ordered = sorted(grouped.items(), key=lambda pair: (-pair[1], pair[0]))
         for name, count in ordered[:MAX_ALERT_QUALITY_ISSUES]:
             lines.append(f"  - `{name}`: {count} ({_pct(count, total)})")
+    news_counts = quality.get("news_context_diagnostics")
+    if isinstance(news_counts, dict):
+        lines.append(
+            "- Optional news (sampled sent deliveries, not failures): "
+            + ", ".join(
+                f"{key}={_int(value)}" for key, value in sorted(news_counts.items())
+            )
+            + ". Candidate news does not prove relevance or attachment loss."
+        )
     if full_sent is not None:
         lines.insert(
             0,
