@@ -333,7 +333,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))
         for row in heartbeats
-        if str(row.get("status")) != "completed"
+        if str(row.get("status") or "").lower() in {"failed", "error"}
+    )
+    heartbeat_delivery_failures = sum(
+        _int(row.get("failed_deliveries")) for row in heartbeats
     )
     # A failed latest generation is direct evidence, even if its attempt predates
     # the requested period. Cache age alone is only inconclusive for on-demand jobs.
@@ -770,14 +773,17 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             "medium",
             [(aggregate, "market_heartbeats_summary"), (aggregate, "market_heartbeats_freshness")],
             "triggered" if heartbeat_failures or latest_failed_heartbeats
-            else "unknown" if stale_heartbeats else "clear",
-            (f"{heartbeat_failures} failed in period, "
+            or heartbeat_delivery_failures else "unknown" if stale_heartbeats else "clear",
+            (f"{heartbeat_failures} generation failures in period, "
+             f"{heartbeat_delivery_failures} delivery failures in period, "
              f"{len(latest_failed_heartbeats)} latest failed generation statuses, "
              f"{len(stale_heartbeats)} stale/missing heartbeat rows; "
-             "content is generated on demand, so cache age alone does not prove a missed delivery"),
+             "content is generated on demand; without due-recipient evidence, "
+             "stale cache alone cannot distinguish idle from missed generation"),
             ["evidence/db/aggregate_metrics.json"],
             {
                 "failed_heartbeats": heartbeat_failures,
+                "failed_heartbeat_deliveries": heartbeat_delivery_failures,
                 "latest_failed_heartbeat_symbols": [
                     row.get("symbol") for row in latest_failed_heartbeats[:10]
                 ],
