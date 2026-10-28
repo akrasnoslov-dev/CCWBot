@@ -394,7 +394,7 @@ RICH_ALERT_CHART_TEXT_FALLBACK = "Last 24 hours: chart unavailable in text-only 
 
 
 def _quality_issues(
-    row: dict[str, Any], *, delivered_text: str
+    row: dict[str, Any], *, delivered_text: str, related_news_count: int = 0
 ) -> list[str]:
     is_event_alert = (
         str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
