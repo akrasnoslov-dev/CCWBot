@@ -1428,11 +1428,15 @@ def _guard_event_text_against_market_data(
     # Conditional scenarios describe FUTURE moves in both directions, not the
     # already-observed net change. The action compactor separately verifies
     # that any referenced USD levels are the computed observed range.
+    # Conditional future moves must not be judged against the direction of
+    # the already-observed price change. "When"/"would" and price-free
+    # scenarios receive the same factual-claim check as "if"/"whether".
+    # Any USD levels are independently bound to verified observations.
     conditional_range_scenarios = (
         field_name == "possible_action"
-        and bool(observed_event_alert_price_band(market_data))
-        and "$" in value
-        and re.search(r"(?i)\b(?:if|whether)\b", value) is not None
+        and re.search(
+            r"(?i)\b(?:if|whether|when|unless|would|could|might)\b", value
+        ) is not None
     )
     contradictory_direction = (
         not market_direction_claims_supported(value, market_data)
