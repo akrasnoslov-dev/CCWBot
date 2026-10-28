@@ -241,11 +241,23 @@ and bundles from before and after this change are not directly comparable on tho
 
 **Ops-agent detectors.** `event_analysis_success_rate_zero` (critical) triggers when zero
 `event_analysis` calls succeeded, and counts consecutive collection cycles with the same result
-via a two-counter signal carried in ops-agent state. `event_analysis_model_drift` compares only
-Groq primary-provider evidence in `llm_usage_logs` against the shipped default (or an explicit
-operator override); Gemini and Cloudflare fallback models are reported separately and do
-not count as drift. Missing Groq evidence is inconclusive, never healthy. A withdrawn primary
-model is high severity. Both read existing tables only.
+via a two-counter signal carried in ops-agent state. `event_analysis_model_drift`
+distinguishes the shipped Groq-first default, operator-approved deployment overrides, and
+actual observed provider/model attempts. Groq absence is **not drift** when Cloudflare-first
+routing may be configured. The runtime primary provider is never inferred from success counts.
+The ops-agent has no safe direct access to the bot's production `.env`; its collector uses an
+independent compact `event_analysis_model_usage` read-only aggregate (up to 200 distinct
+provider/model groups, plus the full group count), rather than the generic
+`llm_usage_summary` status/symbol rows, which can hit its own row cap. A partial/missing
+aggregate gives **UNKNOWN**, not a healthy verdict. For an independently verified deployed
+route, an operator may set `OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER`
+(`groq`, `cloudflare` or `openai`) and
+`OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL` in the **ops-agent** environment.
+Cloudflare/OpenAI expectations require both variables; the Groq model may use the shipped
+default when only Groq is explicitly declared. This assertion is not itself proof of live
+routing; verify deployed settings with an authorized operator before using it.
+Fallback providers never count as primary drift. Withdrawn models observed on **any**
+provider remain a high-severity finding. No provider calls are added.
 
 Last successful Event Analysis, and the size of the current failure streak:
 
@@ -776,11 +788,13 @@ SELECT
   status,
   COUNT(*) AS deliveries,
   COUNT(DISTINCT user_id) AS recipients,
-  MAX(created_at) AS latest_delivery_at
+  MAX(sent_at) FILTER (WHERE status = 'sent') AS latest_completed_at,
+  COUNT(*) FILTER (WHERE status = 'sent' AND sent_at IS NULL)
+    AS missing_completion_timestamps
 FROM alerts
 WHERE alert_type = 'market_heartbeat'
 GROUP BY symbol, status
-ORDER BY latest_delivery_at DESC;
+ORDER BY latest_completed_at DESC NULLS LAST;
 ```
 
 ## Event Alert section diagnostics and on-demand heartbeat cache
@@ -791,10 +805,19 @@ repetition counts. A textual difference from stored Render fields is a diagnosti
 signal, not proof of harmful rewriting; whitespace, safety guards and compaction can
 legitimately change it. Generic-action matching is heuristic, not a literary review.
 
-Heartbeat content is generated only for due recipients. A cache older than the
-collector's two-hour freshness reference does not establish a missed 24-hour silence
-notification. With no generation failure or due-recipient correlation, the stale-cache
-finding is UNKNOWN; explicit failed generation remains a triggered finding.
+Heartbeat content is generated only for due recipients on the hourly cycle, after
+**24 consecutive hours** without a successful notification per eligible user/coin. An old
+or absent cache is **not** by itself a failure. The read-only
+`market_heartbeat_potential_recipients` aggregate counts currently active users with an
+enabled coin; zero establishes a currently idle coin, but a positive count is only an
+upper bound, **not proof someone was due** (Premium/trial and the 24-hour clock still apply).
+Without a safe due-recipient correlation the stale-cache finding stays **UNKNOWN**.
+Explicit failed generation or failed heartbeat delivery rows trigger a finding; pending
+generation does not. `market_heartbeat_delivery_summary` separates delivery failures
+and successful completion. For successful sends, `alerts.sent_at` is authoritative,
+not `alerts.created_at` (reservation). Legacy sent rows without a completion timestamp
+remain an evidence gap; only independently justified backfill can supply historical
+completion. No extra runtime polling, generation, provider calls, or eligibility changes.
 
 ## Compact admin LLM overview
 
@@ -805,3 +828,28 @@ real provider-request totals, and backoff/circuit skips separately.
 The **Provider details** button retains the original, sanitized detailed
 breakdown, and **Summary** returns. This presentation change does not alter
 health eligibility, DB evidence, LLM calls or provider routing.
+
+
+## Event Alert optional news: collection-quality contract (2026-10-28)
+
+Event Alerts are market-first. Related news is **optional**; an Event Analysis with
+`related_news_ids=[]` is not automatically a malformed or failed alert. Candidate items
+in the LLM input may legitimately be unselected and a positive candidate count never
+proves that the news was relevant or should have been attached. The collector records
+sanitized, count-only `news_context_diagnostics`: `no_candidate_news`,
+`candidates_unselected`, `news_evidence_unknown`, `attached_news`, or
+`selected_news_attachment_mismatch`. The last means a sent alert's persisted
+`stable_related_news_ids` indicates a selection but the linked analysis has no
+`related_news_ids`. It is a consistency signal for **read-only investigation**, not
+definitive proof of transport loss or an Event Alert runtime failure.
+
+The Python quality rollup and the SQL `alert_quality_summary` distinguish optional
+absence (`no_attached_news_optional`), missing linked analysis
+(`missing_analysis_evidence`), and observed mismatch
+(`selected_news_attachment_mismatch`). Neither uses `empty_related_context` as
+an automatic quality defect. The denominator is **sampled successfully sent Event
+Alert deliveries**; failed/pending reservations are excluded and multi-recipient
+deliveries contribute once per actually sent row. Full-period user-impact counts
+remain distinct from sampled rollups. No raw candidate articles, user IDs or
+message bodies are exported. The four historical GRAM alerts therefore require
+additional evidence before anyone labels them runtime failures.
