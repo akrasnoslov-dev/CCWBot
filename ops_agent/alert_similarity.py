@@ -314,6 +314,17 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
     event_key = row.get("event_key") or row.get("analysis_event_key")
     related_news = _parse_json_list(row.get("related_news_ids"))
     numeric_context = _parse_json_dict(row.get("alert_numeric_context"))
+    selected_news = numeric_context.get("stable_related_news_ids")
+    selected_news_count = len(selected_news) if isinstance(selected_news, list) else 0
+    candidates = row.get("related_news_candidates_count")
+    candidate_count = _int(candidates) if candidates is not None else None
+    news_context_state = (
+        "attached_news" if related_news else
+        "selected_news_attachment_mismatch" if selected_news_count else
+        "news_evidence_unknown" if candidate_count is None else
+        "candidates_unselected" if candidate_count > 0 else
+        "no_candidate_news"
+    )
     delivery_count = _int(row.get("delivery_count"))
     sent_delivery_count = _int(row.get("sent_delivery_count"))
     first_delivery_at = _iso(row.get("first_delivery_at"))
@@ -326,6 +337,7 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
             row,
             delivered_text=str(row.get("alert_message") or ""),
             related_news_count=len(related_news),
+            selected_news_count=selected_news_count,
         )
         if sent_delivery_count > 0
         else []
@@ -383,6 +395,7 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
             if str(item).strip()
         ],
         "related_news_count": len(related_news),
+        "news_context_state": news_context_state,
         "quality_issues": quality_issues,
         "delivery_members": _delivery_members(row, hasher),
     }
@@ -395,7 +408,8 @@ RICH_ALERT_CHART_TEXT_FALLBACK = "Last 24 hours: chart unavailable in text-only 
 
 
 def _quality_issues(
-    row: dict[str, Any], *, delivered_text: str, related_news_count: int
+    row: dict[str, Any], *, delivered_text: str, related_news_count: int,
+    selected_news_count: int = 0,
 ) -> list[str]:
     is_event_alert = (
         str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
@@ -422,8 +436,10 @@ def _quality_issues(
         issues.append("old_generic_market_change_label")
     if is_event_alert and "24h change" in lowered:
         issues.append("old_24h_change_label")
-    if is_event_alert and related_news_count == 0:
-        issues.append("empty_related_context")
+    # News is optional. A candidate count alone does not prove selection.
+    # Only contradictory persisted selected-news evidence merits a quality flag.
+    if is_event_alert and related_news_count == 0 and selected_news_count > 0:
+        issues.append("selected_news_attachment_mismatch")
     alert_message = str(row.get("alert_message") or "")
     if not alert_message.strip() or alert_message.count("**") % 2:
         issues.append("malformed_formatting")
@@ -490,12 +506,15 @@ def _alert_quality(
     affected_event_alert_deliveries = 0
     severe_affected_event_alert_deliveries = 0
     quality_issue_occurrences = 0
+    news_context_diagnostics: Counter[str] = Counter()
     for row in rows:
         issues = row.get("quality_issues") or []
         sent_count = _int(row.get("sent_delivery_count"))
         if str(row.get("alert_type") or "") == "event_alert":
             sampled_event_alert_attempts += _int(row.get("delivery_count"))
             total_event_alert_deliveries += sent_count
+            if sent_count:
+                news_context_diagnostics[str(row.get("news_context_state") or "news_evidence_unknown")] += sent_count
             if issues:
                 affected_event_alert_deliveries += sent_count
             if SEVERE_QUALITY_ISSUES.intersection(issues):
@@ -578,6 +597,8 @@ def _alert_quality(
     payload["affected_event_alert_deliveries"] = affected_event_alert_deliveries
     payload["severe_affected_event_alert_deliveries"] = severe_affected_event_alert_deliveries
     payload["quality_issue_occurrences"] = quality_issue_occurrences
+    payload["news_context_diagnostics"] = dict(sorted(news_context_diagnostics.items()))
+    payload["news_context_denominator"] = "sampled_sent_event_alert_deliveries"
     payload["issues"] = sorted(
         issue_rows,
         key=lambda item: (-item["delivery_count"], item["issue"], item["symbol"]),
