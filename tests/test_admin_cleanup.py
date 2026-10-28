@@ -59,6 +59,7 @@ def test_admin_keyboards_have_expected_items():
                 ("Alert settings", "admin:alert_settings"),
                 ("System status", "admin:system_status"),
                 ("LLM diagnostics", "admin:llm_diagnostics"),
+                ("OpenAI Costs", "admin:openai_costs"),
                 ("Premium management", "admin:premium_menu"),
                 ("Logs", "admin:logs_menu"),
             ],
