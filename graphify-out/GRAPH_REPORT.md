@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0c103089`
+- Built from commit: `9b06bc23`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1073,7 +1073,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `RichDeliveryUncertain` connect `test_rich_market_report_delivery.py` to `test_event_alert_rich_chart_ux.py`, `User`, `Observability Snippets`, `bot/alerts.py`, `bot/reports.py`?**
   _High betweenness centrality (0.031) - this node is a cross-community bridge._
 - **Why does `select()` connect `select` to `utc_now`, `LlmUsageLog`, `test_onboarding.py`, `test_telegram_stars_payments.py`, `test_system_status.py`, `test_openai_budget.py`, `test_groq_budget.py`, `test_product_analytics.py`, `db/premium.py`, `test_market_heartbeat.py`, `test_heartbeat_silence.py`, `_build_event_analysis_input`, `automatic_price_check`, `openai_budget.py`, `test_report_cooldowns.py`, `test_event_alert_pipeline.py`, `bot/reports.py`, `bot/news.py`, `test_news_intelligence_schema.py`, `database.py`, `sqlalchemy_ext_asyncio`, `system_status.py`, `User`, `test_news_intelligence_service.py`, `test_watchlist_ux.py`, `datetime`, `test_acquisition_link_workflow.py`, `get_or_create_user`, `analytics.py`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
 - **Are the 168 inferred relationships involving `select()` (e.g. with `attach_analysis_to_market_event()` and `count_market_events()`) actually correct?**
   _`select()` has 168 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 31 inferred relationships involving `Period` (e.g. with `_alert_quality()` and `_base_payload()`) actually correct?**

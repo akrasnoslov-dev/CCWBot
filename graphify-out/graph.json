@@ -2858,7 +2858,7 @@
       "file_type": "code",
       "norm_label": "build_session_factory()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L30"
+      "source_location": "L29"
     },
     {
       "id": "tests_test_system_status_event_analysis",
@@ -2870,7 +2870,7 @@
       "file_type": "code",
       "norm_label": "_event_analysis()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L92"
+      "source_location": "L91"
     },
     {
       "id": "tests_test_system_status_final_failed_alert",
@@ -2882,7 +2882,7 @@
       "file_type": "code",
       "norm_label": "_final_failed_alert()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L115"
+      "source_location": "L114"
     },
     {
       "id": "tests_test_system_status_now",
@@ -2894,7 +2894,7 @@
       "file_type": "code",
       "norm_label": "_now()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L43"
+      "source_location": "L42"
     },
     {
       "id": "tests_test_system_status_seed_fresh_prices",
@@ -2906,7 +2906,7 @@
       "file_type": "code",
       "norm_label": "_seed_fresh_prices()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L47"
+      "source_location": "L46"
     },
     {
       "id": "tests_test_system_status_seed_healthy_status_dependencies",
@@ -2918,7 +2918,7 @@
       "file_type": "code",
       "norm_label": "_seed_healthy_status_dependencies()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L62"
+      "source_location": "L61"
     },
     {
       "id": "tests_test_system_status_test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited",
@@ -2930,7 +2930,7 @@
       "file_type": "code",
       "norm_label": "test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1223"
+      "source_location": "L1222"
     },
     {
       "id": "tests_test_system_status_test_legacy_persisted_cadence_is_normalized_for_status_freshness",
@@ -2942,7 +2942,7 @@
       "file_type": "code",
       "norm_label": "test_legacy_persisted_cadence_is_normalized_for_status_freshness()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1294"
+      "source_location": "L1293"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request",
@@ -2954,7 +2954,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1040"
+      "source_location": "L1039"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_blocks_cap_above_owner_approved_maximum",
@@ -2966,7 +2966,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_blocks_cap_above_owner_approved_maximum()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1397"
+      "source_location": "L1396"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach",
@@ -2978,7 +2978,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1412"
+      "source_location": "L1411"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details",
@@ -2990,7 +2990,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1178"
+      "source_location": "L1177"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids",
@@ -3002,7 +3002,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1111"
+      "source_location": "L1110"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown",
@@ -3014,7 +3014,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1323"
+      "source_location": "L1322"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_separates_event_render_models",
@@ -3026,7 +3026,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_separates_event_render_models()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1067"
+      "source_location": "L1066"
     },
     {
       "id": "tests_test_system_status_test_llm_diagnostics_shows_paid_budget_without_secrets",
@@ -3038,7 +3038,7 @@
       "file_type": "code",
       "norm_label": "test_llm_diagnostics_shows_paid_budget_without_secrets()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1359"
+      "source_location": "L1358"
     },
     {
       "id": "tests_test_system_status_test_market_freshness_runtime_grace_boundary",
@@ -3050,7 +3050,7 @@
       "file_type": "code",
       "norm_label": "test_market_freshness_runtime_grace_boundary()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1264"
+      "source_location": "L1263"
     },
     {
       "id": "tests_test_system_status_test_system_status_attributes_shared_model_backoff_to_triggering_call_type",
@@ -3062,7 +3062,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_attributes_shared_model_backoff_to_triggering_call_type()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L482"
+      "source_location": "L481"
     },
     {
       "id": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
@@ -3074,7 +3074,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_bounds_provider_breakdown_for_telegram_card()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1146"
+      "source_location": "L1145"
     },
     {
       "id": "tests_test_system_status_test_system_status_db_disabled_is_not_fake_ok",
@@ -3086,7 +3086,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_db_disabled_is_not_fake_ok()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L248"
+      "source_location": "L247"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_blocked_only_final_failures_are_not_system_failure",
@@ -3098,7 +3098,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_blocked_only_final_failures_are_not_system_failure()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L704"
+      "source_location": "L703"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_counts",
@@ -3110,7 +3110,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_counts()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L649"
+      "source_location": "L648"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts",
@@ -3122,7 +3122,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L798"
+      "source_location": "L797"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_no_rows_is_compact_warning",
@@ -3134,7 +3134,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_no_rows_is_compact_warning()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L946"
+      "source_location": "L945"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_ok_shows_blocked_users_info",
@@ -3146,7 +3146,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_ok_shows_blocked_users_info()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L846"
+      "source_location": "L845"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_real_final_failures_fail_without_raw_details",
@@ -3158,7 +3158,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_real_final_failures_fail_without_raw_details()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L758"
+      "source_location": "L757"
     },
     {
       "id": "tests_test_system_status_test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail",
@@ -3170,7 +3170,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L899"
+      "source_location": "L898"
     },
     {
       "id": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
@@ -3182,7 +3182,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_marks_latest_ai_failure_active()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L421"
+      "source_location": "L420"
     },
     {
       "id": "tests_test_system_status_test_system_status_marks_old_ai_failure_resolved_by_newer_success",
@@ -3194,7 +3194,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_marks_old_ai_failure_resolved_by_newer_success()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L319"
+      "source_location": "L318"
     },
     {
       "id": "tests_test_system_status_test_system_status_news_cache_stale_and_missing",
@@ -3206,7 +3206,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_news_cache_stale_and_missing()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L545"
+      "source_location": "L544"
     },
     {
       "id": "tests_test_system_status_test_system_status_news_fresh_without_enrichment_stays_ok",
@@ -3218,7 +3218,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_news_fresh_without_enrichment_stays_ok()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L582"
+      "source_location": "L581"
     },
     {
       "id": "tests_test_system_status_test_system_status_rate_limit_active_backoff",
@@ -3230,7 +3230,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_rate_limit_active_backoff()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L450"
+      "source_location": "L449"
     },
     {
       "id": "tests_test_system_status_test_system_status_rate_limit_recent_telemetry_without_backoff",
@@ -3242,7 +3242,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_rate_limit_recent_telemetry_without_backoff()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L514"
+      "source_location": "L513"
     },
     {
       "id": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
@@ -3254,7 +3254,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_rejects_old_article_refetched_today()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L616"
+      "source_location": "L615"
     },
     {
       "id": "tests_test_system_status_test_system_status_sanitizes_ai_failure_detail",
@@ -3266,7 +3266,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_sanitizes_ai_failure_detail()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L387"
+      "source_location": "L386"
     },
     {
       "id": "tests_test_system_status_test_system_status_shows_container_start_on_database_failure",
@@ -3278,7 +3278,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_shows_container_start_on_database_failure()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L163"
+      "source_location": "L162"
     },
     {
       "id": "tests_test_system_status_test_system_status_shows_missing_symbols_compactly",
@@ -3290,7 +3290,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_shows_missing_symbols_compactly()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L265"
+      "source_location": "L264"
     },
     {
       "id": "tests_test_system_status_test_system_status_shows_per_call_type_provider_llm_breakdown",
@@ -3302,7 +3302,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_shows_per_call_type_provider_llm_breakdown()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L964"
+      "source_location": "L963"
     },
     {
       "id": "tests_test_system_status_test_system_status_shows_stale_btc_without_price_details",
@@ -3314,7 +3314,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_shows_stale_btc_without_price_details()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L288"
+      "source_location": "L287"
     },
     {
       "id": "tests_test_system_status_test_system_status_uses_real_fresh_telemetry",
@@ -3326,7 +3326,7 @@
       "file_type": "code",
       "norm_label": "test_system_status_uses_real_fresh_telemetry()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L174"
+      "source_location": "L173"
     },
     {
       "id": "reports_event_alert_review_20261016_ccw41_private_test_a_c_survey_el",
@@ -30806,7 +30806,7 @@
       "file_type": "code",
       "norm_label": "test_container_started_at_falls_back_if_proc_unavailable()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L154"
+      "source_location": "L153"
     },
     {
       "id": "tests_test_system_status_test_container_started_at_falls_back_if_proc_unavailable_no_proc",
@@ -30818,7 +30818,7 @@
       "file_type": "code",
       "norm_label": "no_proc()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L155"
+      "source_location": "L154"
     },
     {
       "id": "tests_test_system_status_test_container_started_at_reads_linux_pid1_time",
@@ -30830,7 +30830,7 @@
       "file_type": "code",
       "norm_label": "test_container_started_at_reads_linux_pid1_time()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L135"
+      "source_location": "L134"
     },
     {
       "id": "tests_test_system_status_test_container_started_at_reads_linux_pid1_time_fake_open",
@@ -30842,7 +30842,7 @@
       "file_type": "code",
       "norm_label": "fake_open()",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L140"
+      "source_location": "L139"
     },
     {
       "id": "bot_services_price_service_build_stale_price_payload",
@@ -66080,6 +66080,18 @@
       "type": "external"
     },
     {
+      "id": "builtins",
+      "label": "builtins",
+      "_origin": "semantic",
+      "community": 10,
+      "community_name": "test_system_status.py",
+      "external": true,
+      "file_type": "concept",
+      "norm_label": "builtins",
+      "source_file": "",
+      "type": "external"
+    },
+    {
       "id": "ref_assert",
       "label": "ref_assert",
       "_origin": "semantic",
@@ -67228,17 +67240,6 @@
       "external": true,
       "file_type": "concept",
       "norm_label": "telegram",
-      "source_file": "",
-      "type": "external"
-    },
-    {
-      "id": "builtins",
-      "label": "builtins",
-      "community": 10,
-      "community_name": "test_system_status.py",
-      "external": true,
-      "file_type": "concept",
-      "norm_label": "builtins",
       "source_file": "",
       "type": "external"
     }
@@ -130601,7 +130602,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L100",
+      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -130613,7 +130614,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L122",
+      "source_location": "L121",
       "weight": 1.0
     },
     {
@@ -130625,7 +130626,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L53",
+      "source_location": "L52",
       "weight": 1.0
     },
     {
@@ -130637,7 +130638,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L63",
+      "source_location": "L62",
       "weight": 1.0
     },
     {
@@ -130649,7 +130650,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L65",
+      "source_location": "L64",
       "weight": 1.0
     },
     {
@@ -130661,7 +130662,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L72",
+      "source_location": "L71",
       "weight": 1.0
     },
     {
@@ -130673,7 +130674,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L81",
+      "source_location": "L80",
       "weight": 1.0
     },
     {
@@ -130685,7 +130686,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L159",
+      "source_location": "L158",
       "weight": 1.0
     },
     {
@@ -130697,12 +130698,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L149",
+      "source_location": "L148",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1223",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130714,18 +130727,6 @@
     },
     {
       "source": "tests_test_system_status_test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1225",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_healthy_event_analysis_stays_healthy_when_heartbeat_is_rate_limited",
       "target": "tests_test_system_status_seed_healthy_status_dependencies",
       "relation": "calls",
       "_origin": "ast",
@@ -130733,7 +130734,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1228",
+      "source_location": "L1227",
       "weight": 1.0
     },
     {
@@ -130745,12 +130746,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1241",
+      "source_location": "L1240",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_legacy_persisted_cadence_is_normalized_for_status_freshness",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1294",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_legacy_persisted_cadence_is_normalized_for_status_freshness",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130762,18 +130775,6 @@
     },
     {
       "source": "tests_test_system_status_test_legacy_persisted_cadence_is_normalized_for_status_freshness",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1296",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_legacy_persisted_cadence_is_normalized_for_status_freshness",
       "target": "tests_test_system_status_seed_fresh_prices",
       "relation": "calls",
       "_origin": "ast",
@@ -130781,7 +130782,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1304",
+      "source_location": "L1303",
       "weight": 1.0
     },
     {
@@ -130793,7 +130794,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1310",
+      "source_location": "L1309",
       "weight": 1.0
     },
     {
@@ -130805,12 +130806,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1311",
+      "source_location": "L1310",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1040",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130822,18 +130835,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1042",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_backoff_only_is_not_a_failed_provider_request",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -130841,7 +130842,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1054",
+      "source_location": "L1053",
       "weight": 1.0
     },
     {
@@ -130853,12 +130854,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1398",
+      "source_location": "L1397",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_blocks_cap_above_owner_approved_maximum",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1402",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_blocks_cap_above_owner_approved_maximum",
+      "target": "tests_test_system_status_now",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130869,7 +130882,7 @@
       "weight": 1.0
     },
     {
-      "source": "tests_test_system_status_test_llm_diagnostics_blocks_cap_above_owner_approved_maximum",
+      "source": "tests_test_system_status_test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach",
       "target": "tests_test_system_status_now",
       "relation": "calls",
       "_origin": "ast",
@@ -130877,12 +130890,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1404",
+      "source_location": "L1412",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach",
-      "target": "tests_test_system_status_now",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130894,18 +130907,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1414",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_blocks_readiness_after_budget_invariant_breach",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -130913,12 +130914,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1438",
+      "source_location": "L1437",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1178",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130930,18 +130943,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1180",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_categories_reconcile_and_do_not_leak_raw_details",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -130949,12 +130950,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1205",
+      "source_location": "L1204",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1111",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -130966,18 +130979,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1113",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_keeps_distinct_custom_render_models_without_leaking_ids",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -130985,12 +130986,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1131",
+      "source_location": "L1130",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1325",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131002,18 +131015,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1327",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_unknown",
       "target": "tests_test_system_status_event_analysis",
       "relation": "calls",
       "_origin": "ast",
@@ -131021,7 +131022,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1330",
+      "source_location": "L1329",
       "weight": 1.0
     },
     {
@@ -131033,12 +131034,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1345",
+      "source_location": "L1344",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_separates_event_render_models",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1067",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_separates_event_render_models",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131050,18 +131063,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_separates_event_render_models",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1069",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_separates_event_render_models",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131069,12 +131070,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1096",
+      "source_location": "L1095",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_shows_paid_budget_without_secrets",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1359",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_llm_diagnostics_shows_paid_budget_without_secrets",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131086,18 +131099,6 @@
     },
     {
       "source": "tests_test_system_status_test_llm_diagnostics_shows_paid_budget_without_secrets",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1361",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_llm_diagnostics_shows_paid_budget_without_secrets",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131105,12 +131106,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1385",
+      "source_location": "L1384",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_market_freshness_runtime_grace_boundary",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1264",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_market_freshness_runtime_grace_boundary",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131122,18 +131135,6 @@
     },
     {
       "source": "tests_test_system_status_test_market_freshness_runtime_grace_boundary",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1266",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_market_freshness_runtime_grace_boundary",
       "target": "bot_observability_system_status_market_data_health",
       "relation": "calls",
       "_origin": "ast",
@@ -131141,12 +131142,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1281",
+      "source_location": "L1280",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_attributes_shared_model_backoff_to_triggering_call_type",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L482",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_attributes_shared_model_backoff_to_triggering_call_type",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131158,18 +131171,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_attributes_shared_model_backoff_to_triggering_call_type",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L484",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_attributes_shared_model_backoff_to_triggering_call_type",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131177,12 +131178,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L500",
+      "source_location": "L499",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1146",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131194,18 +131207,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1148",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
       "target": "tests_test_system_status_seed_healthy_status_dependencies",
       "relation": "calls",
       "_origin": "ast",
@@ -131213,7 +131214,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1151",
+      "source_location": "L1150",
       "weight": 1.0
     },
     {
@@ -131225,7 +131226,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1164",
+      "source_location": "L1163",
       "weight": 1.0
     },
     {
@@ -131237,7 +131238,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L249",
+      "source_location": "L248",
       "weight": 1.0
     },
     {
@@ -131249,12 +131250,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L253",
+      "source_location": "L252",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_blocked_only_final_failures_are_not_system_failure",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L704",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_blocked_only_final_failures_are_not_system_failure",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131266,18 +131279,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_blocked_only_final_failures_are_not_system_failure",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L706",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_blocked_only_final_failures_are_not_system_failure",
       "target": "tests_test_system_status_seed_healthy_status_dependencies",
       "relation": "calls",
       "_origin": "ast",
@@ -131285,7 +131286,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L709",
+      "source_location": "L708",
       "weight": 1.0
     },
     {
@@ -131297,7 +131298,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L724",
+      "source_location": "L723",
       "weight": 1.0
     },
     {
@@ -131309,12 +131310,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L738",
+      "source_location": "L737",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_counts",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L649",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_counts",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131326,18 +131339,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_counts",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L651",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_counts",
       "target": "tests_test_system_status_seed_healthy_status_dependencies",
       "relation": "calls",
       "_origin": "ast",
@@ -131345,7 +131346,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L654",
+      "source_location": "L653",
       "weight": 1.0
     },
     {
@@ -131357,12 +131358,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L689",
+      "source_location": "L688",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L798",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131374,18 +131387,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L800",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_mixed_final_failures_show_real_and_blocked_counts",
       "target": "tests_test_system_status_final_failed_alert",
       "relation": "calls",
       "_origin": "ast",
@@ -131393,7 +131394,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L805",
+      "source_location": "L804",
       "weight": 1.0
     },
     {
@@ -131405,12 +131406,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L824",
+      "source_location": "L823",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_no_rows_is_compact_warning",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L946",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_no_rows_is_compact_warning",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131422,18 +131435,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_no_rows_is_compact_warning",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L948",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_no_rows_is_compact_warning",
       "target": "bot_observability_system_status_build_admin_system_status_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131441,12 +131442,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L950",
+      "source_location": "L949",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_ok_shows_blocked_users_info",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L846",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_ok_shows_blocked_users_info",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131458,18 +131471,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_ok_shows_blocked_users_info",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L848",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_ok_shows_blocked_users_info",
       "target": "bot_observability_system_status_build_admin_system_status_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131477,12 +131478,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L885",
+      "source_location": "L884",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_real_final_failures_fail_without_raw_details",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L758",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_real_final_failures_fail_without_raw_details",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131494,18 +131507,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_real_final_failures_fail_without_raw_details",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L760",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_real_final_failures_fail_without_raw_details",
       "target": "tests_test_system_status_final_failed_alert",
       "relation": "calls",
       "_origin": "ast",
@@ -131513,7 +131514,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L765",
+      "source_location": "L764",
       "weight": 1.0
     },
     {
@@ -131525,12 +131526,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L779",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L899",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131542,18 +131555,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L901",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_delivery_success_with_blocked_final_failures_stays_non_fail",
       "target": "tests_test_system_status_final_failed_alert",
       "relation": "calls",
       "_origin": "ast",
@@ -131561,7 +131562,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L920",
+      "source_location": "L919",
       "weight": 1.0
     },
     {
@@ -131573,12 +131574,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L929",
+      "source_location": "L928",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L421",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131590,18 +131603,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L423",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
       "target": "tests_test_system_status_event_analysis",
       "relation": "calls",
       "_origin": "ast",
@@ -131609,7 +131610,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L427",
+      "source_location": "L426",
       "weight": 1.0
     },
     {
@@ -131621,12 +131622,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L436",
+      "source_location": "L435",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_marks_old_ai_failure_resolved_by_newer_success",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L319",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_marks_old_ai_failure_resolved_by_newer_success",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131638,18 +131651,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_marks_old_ai_failure_resolved_by_newer_success",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L321",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_marks_old_ai_failure_resolved_by_newer_success",
       "target": "tests_test_system_status_event_analysis",
       "relation": "calls",
       "_origin": "ast",
@@ -131657,7 +131658,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L325",
+      "source_location": "L324",
       "weight": 1.0
     },
     {
@@ -131669,12 +131670,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L342",
+      "source_location": "L341",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_news_cache_stale_and_missing",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L545",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_news_cache_stale_and_missing",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131686,18 +131699,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_news_cache_stale_and_missing",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L547",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_news_cache_stale_and_missing",
       "target": "bot_observability_system_status_build_admin_system_status_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131705,12 +131706,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L549",
+      "source_location": "L548",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_news_fresh_without_enrichment_stays_ok",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L582",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_news_fresh_without_enrichment_stays_ok",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131722,18 +131735,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_news_fresh_without_enrichment_stays_ok",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L584",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_news_fresh_without_enrichment_stays_ok",
       "target": "bot_observability_system_status_build_admin_system_status_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131741,12 +131742,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L600",
+      "source_location": "L599",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_rate_limit_active_backoff",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L450",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_rate_limit_active_backoff",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131758,18 +131771,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_rate_limit_active_backoff",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L452",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_rate_limit_active_backoff",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131777,12 +131778,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L468",
+      "source_location": "L467",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_rate_limit_recent_telemetry_without_backoff",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L514",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_rate_limit_recent_telemetry_without_backoff",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131794,18 +131807,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_rate_limit_recent_telemetry_without_backoff",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L516",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_rate_limit_recent_telemetry_without_backoff",
       "target": "bot_observability_system_status_build_admin_llm_diagnostics_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131813,12 +131814,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L532",
+      "source_location": "L531",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L616",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131830,18 +131843,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L618",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
       "target": "bot_observability_system_status_build_admin_system_status_text",
       "relation": "calls",
       "_origin": "ast",
@@ -131849,12 +131850,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L638",
+      "source_location": "L637",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_sanitizes_ai_failure_detail",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L391",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_sanitizes_ai_failure_detail",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131866,18 +131879,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_sanitizes_ai_failure_detail",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L393",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_sanitizes_ai_failure_detail",
       "target": "tests_test_system_status_event_analysis",
       "relation": "calls",
       "_origin": "ast",
@@ -131885,7 +131886,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L397",
+      "source_location": "L396",
       "weight": 1.0
     },
     {
@@ -131897,12 +131898,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L407",
+      "source_location": "L406",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_shows_container_start_on_database_failure",
       "target": "bot_observability_system_status_build_admin_system_status_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L165",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_shows_container_start_on_database_failure",
+      "target": "tests_test_system_status_now",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131913,7 +131926,7 @@
       "weight": 1.0
     },
     {
-      "source": "tests_test_system_status_test_system_status_shows_container_start_on_database_failure",
+      "source": "tests_test_system_status_test_system_status_shows_missing_symbols_compactly",
       "target": "tests_test_system_status_now",
       "relation": "calls",
       "_origin": "ast",
@@ -131921,12 +131934,12 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L167",
+      "source_location": "L265",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_shows_missing_symbols_compactly",
-      "target": "tests_test_system_status_now",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -131938,18 +131951,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_shows_missing_symbols_compactly",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L267",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_shows_missing_symbols_compactly",
       "target": "tests_test_system_status_seed_fresh_prices",
       "relation": "calls",
       "_origin": "ast",
@@ -131957,7 +131958,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L270",
+      "source_location": "L269",
       "weight": 1.0
     },
     {
@@ -131969,7 +131970,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L273",
+      "source_location": "L272",
       "weight": 1.0
     },
     {
@@ -131981,7 +131982,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1009",
+      "source_location": "L1008",
       "weight": 1.0
     },
     {
@@ -131993,7 +131994,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L965",
+      "source_location": "L964",
       "weight": 1.0
     },
     {
@@ -132005,12 +132006,24 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L966",
+      "source_location": "L965",
       "weight": 1.0
     },
     {
       "source": "tests_test_system_status_test_system_status_shows_stale_btc_without_price_details",
       "target": "tests_test_system_status_now",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L288",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status_test_system_status_shows_stale_btc_without_price_details",
+      "target": "tests_test_system_status_build_session_factory",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -132022,18 +132035,6 @@
     },
     {
       "source": "tests_test_system_status_test_system_status_shows_stale_btc_without_price_details",
-      "target": "tests_test_system_status_build_session_factory",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L290",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status_test_system_status_shows_stale_btc_without_price_details",
       "target": "tests_test_system_status_seed_fresh_prices",
       "relation": "calls",
       "_origin": "ast",
@@ -132041,7 +132042,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L293",
+      "source_location": "L292",
       "weight": 1.0
     },
     {
@@ -132053,7 +132054,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L304",
+      "source_location": "L303",
       "weight": 1.0
     },
     {
@@ -132065,7 +132066,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L175",
+      "source_location": "L174",
       "weight": 1.0
     },
     {
@@ -132077,7 +132078,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L176",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -132089,7 +132090,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L179",
+      "source_location": "L178",
       "weight": 1.0
     },
     {
@@ -132101,7 +132102,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L181",
+      "source_location": "L180",
       "weight": 1.0
     },
     {
@@ -132113,7 +132114,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L219",
+      "source_location": "L218",
       "weight": 1.0
     },
     {
@@ -142493,7 +142494,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1222",
+      "source_location": "L1221",
       "weight": 1.0
     },
     {
@@ -142505,7 +142506,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1293",
+      "source_location": "L1292",
       "weight": 1.0
     },
     {
@@ -142517,7 +142518,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1039",
+      "source_location": "L1038",
       "weight": 1.0
     },
     {
@@ -142529,7 +142530,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1396",
+      "source_location": "L1395",
       "weight": 1.0
     },
     {
@@ -142541,7 +142542,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1411",
+      "source_location": "L1410",
       "weight": 1.0
     },
     {
@@ -142553,7 +142554,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1177",
+      "source_location": "L1176",
       "weight": 1.0
     },
     {
@@ -142565,7 +142566,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1110",
+      "source_location": "L1109",
       "weight": 1.0
     },
     {
@@ -142577,7 +142578,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1322",
+      "source_location": "L1321",
       "weight": 1.0
     },
     {
@@ -142589,7 +142590,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1066",
+      "source_location": "L1065",
       "weight": 1.0
     },
     {
@@ -142601,7 +142602,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1358",
+      "source_location": "L1357",
       "weight": 1.0
     },
     {
@@ -142613,7 +142614,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1255",
+      "source_location": "L1254",
       "weight": 1.0
     },
     {
@@ -142625,7 +142626,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1256",
+      "source_location": "L1255",
       "weight": 1.0
     },
     {
@@ -142637,7 +142638,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L481",
+      "source_location": "L480",
       "weight": 1.0
     },
     {
@@ -142649,7 +142650,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1145",
+      "source_location": "L1144",
       "weight": 1.0
     },
     {
@@ -142661,7 +142662,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L247",
+      "source_location": "L246",
       "weight": 1.0
     },
     {
@@ -142673,7 +142674,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L703",
+      "source_location": "L702",
       "weight": 1.0
     },
     {
@@ -142685,7 +142686,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L648",
+      "source_location": "L647",
       "weight": 1.0
     },
     {
@@ -142697,7 +142698,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L797",
+      "source_location": "L796",
       "weight": 1.0
     },
     {
@@ -142709,7 +142710,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L945",
+      "source_location": "L944",
       "weight": 1.0
     },
     {
@@ -142721,7 +142722,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L845",
+      "source_location": "L844",
       "weight": 1.0
     },
     {
@@ -142733,7 +142734,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L757",
+      "source_location": "L756",
       "weight": 1.0
     },
     {
@@ -142745,7 +142746,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L898",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
@@ -142757,7 +142758,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L420",
+      "source_location": "L419",
       "weight": 1.0
     },
     {
@@ -142769,7 +142770,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L318",
+      "source_location": "L317",
       "weight": 1.0
     },
     {
@@ -142781,7 +142782,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L544",
+      "source_location": "L543",
       "weight": 1.0
     },
     {
@@ -142793,7 +142794,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L581",
+      "source_location": "L580",
       "weight": 1.0
     },
     {
@@ -142805,7 +142806,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L449",
+      "source_location": "L448",
       "weight": 1.0
     },
     {
@@ -142817,7 +142818,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L513",
+      "source_location": "L512",
       "weight": 1.0
     },
     {
@@ -142829,7 +142830,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L615",
+      "source_location": "L614",
       "weight": 1.0
     },
     {
@@ -142841,7 +142842,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L356",
+      "source_location": "L355",
       "weight": 1.0
     },
     {
@@ -142853,7 +142854,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L357",
+      "source_location": "L356",
       "weight": 1.0
     },
     {
@@ -142865,7 +142866,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L162",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -142877,7 +142878,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L264",
+      "source_location": "L263",
       "weight": 1.0
     },
     {
@@ -142889,7 +142890,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L963",
+      "source_location": "L962",
       "weight": 1.0
     },
     {
@@ -142901,7 +142902,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L287",
+      "source_location": "L286",
       "weight": 1.0
     },
     {
@@ -142913,7 +142914,7 @@
       "confidence_score": 1.0,
       "context": "decorator",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L173",
+      "source_location": "L172",
       "weight": 1.0
     },
     {
@@ -170254,110 +170255,14 @@
     },
     {
       "source": "tests_test_system_status",
-      "target": "bot_db_database_alert",
+      "target": "builtins",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_appsettings",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_base",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_eventaianalysis",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_llmusagelog",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_newsitem",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_openaibudgetreservation",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_pricestate",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database_user",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
+      "source_location": "L1",
       "weight": 1.0
     },
     {
@@ -170369,7 +170274,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1324",
+      "source_location": "L1323",
       "weight": 1.0
     },
     {
@@ -170381,7 +170286,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L23",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -170393,19 +170298,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L23",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "builtins",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L4",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -170417,7 +170310,115 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L6",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_alert",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_appsettings",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_base",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_eventaianalysis",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_llmusagelog",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_newsitem",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_openaibudgetreservation",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_pricestate",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database_user",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -186125,30 +186126,6 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "bot_db_database",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "io",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "tests/test_system_status.py",
       "source_location": "L2",
       "weight": 1.0
     },
@@ -186161,7 +186138,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L21",
+      "source_location": "L20",
       "weight": 1.0
     },
     {
@@ -186173,7 +186150,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L22",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -186185,7 +186162,19 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L27",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "io",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L3",
       "weight": 1.0
     },
     {
@@ -186197,7 +186186,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L7",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -186209,7 +186198,19 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L8",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "bot_db_database",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -192785,7 +192786,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L92",
+      "source_location": "L91",
       "weight": 1.0
     },
     {
@@ -192797,7 +192798,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L115",
+      "source_location": "L114",
       "weight": 1.0
     },
     {
@@ -192809,7 +192810,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L47",
+      "source_location": "L46",
       "weight": 1.0
     },
     {
@@ -192821,7 +192822,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L62",
+      "source_location": "L61",
       "weight": 1.0
     },
     {
@@ -194141,7 +194142,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L43",
+      "source_location": "L42",
       "weight": 1.0
     },
     {
@@ -195173,7 +195174,7 @@
       "confidence_score": 1.0,
       "context": "submodule_import",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L22",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -235928,7 +235929,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1040",
+      "source_location": "L1039",
       "weight": 1.0
     },
     {
@@ -235939,7 +235940,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1067",
+      "source_location": "L1066",
       "weight": 1.0
     },
     {
@@ -235950,18 +235951,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1111",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L1146",
+      "source_location": "L1110",
       "weight": 1.0
     },
     {
@@ -235972,7 +235962,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L115",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "tests_test_system_status_test_system_status_bounds_provider_breakdown_for_telegram_card",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L1145",
       "weight": 1.0
     },
     {
@@ -235983,7 +235984,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1178",
+      "source_location": "L1177",
       "weight": 1.0
     },
     {
@@ -235994,7 +235995,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1223",
+      "source_location": "L1222",
       "weight": 1.0
     },
     {
@@ -236005,7 +236006,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1264",
+      "source_location": "L1263",
       "weight": 1.0
     },
     {
@@ -236016,7 +236017,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1294",
+      "source_location": "L1293",
       "weight": 1.0
     },
     {
@@ -236027,7 +236028,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1323",
+      "source_location": "L1322",
       "weight": 1.0
     },
     {
@@ -236038,7 +236039,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L135",
+      "source_location": "L134",
       "weight": 1.0
     },
     {
@@ -236049,7 +236050,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1359",
+      "source_location": "L1358",
       "weight": 1.0
     },
     {
@@ -236060,7 +236061,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1397",
+      "source_location": "L1396",
       "weight": 1.0
     },
     {
@@ -236071,7 +236072,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1412",
+      "source_location": "L1411",
       "weight": 1.0
     },
     {
@@ -236082,7 +236083,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L154",
+      "source_location": "L153",
       "weight": 1.0
     },
     {
@@ -236093,7 +236094,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L163",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -236104,7 +236105,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L174",
+      "source_location": "L173",
       "weight": 1.0
     },
     {
@@ -236115,7 +236116,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L248",
+      "source_location": "L247",
       "weight": 1.0
     },
     {
@@ -236126,7 +236127,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -236137,7 +236138,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L288",
+      "source_location": "L287",
       "weight": 1.0
     },
     {
@@ -236148,7 +236149,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L30",
+      "source_location": "L29",
       "weight": 1.0
     },
     {
@@ -236159,7 +236160,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L319",
+      "source_location": "L318",
       "weight": 1.0
     },
     {
@@ -236170,18 +236171,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L387",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L421",
+      "source_location": "L386",
       "weight": 1.0
     },
     {
@@ -236192,7 +236182,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L43",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "tests_test_system_status_test_system_status_marks_latest_ai_failure_active",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L420",
       "weight": 1.0
     },
     {
@@ -236203,7 +236204,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L450",
+      "source_location": "L449",
       "weight": 1.0
     },
     {
@@ -236214,7 +236215,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L47",
+      "source_location": "L46",
       "weight": 1.0
     },
     {
@@ -236225,7 +236226,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L482",
+      "source_location": "L481",
       "weight": 1.0
     },
     {
@@ -236236,7 +236237,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L514",
+      "source_location": "L513",
       "weight": 1.0
     },
     {
@@ -236247,7 +236248,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L545",
+      "source_location": "L544",
       "weight": 1.0
     },
     {
@@ -236258,18 +236259,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L582",
-      "weight": 1.0
-    },
-    {
-      "source": "tests_test_system_status",
-      "target": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "tests/test_system_status.py",
-      "source_location": "L616",
+      "source_location": "L581",
       "weight": 1.0
     },
     {
@@ -236280,7 +236270,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L62",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "tests_test_system_status",
+      "target": "tests_test_system_status_test_system_status_rejects_old_article_refetched_today",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tests/test_system_status.py",
+      "source_location": "L615",
       "weight": 1.0
     },
     {
@@ -236291,7 +236292,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L649",
+      "source_location": "L648",
       "weight": 1.0
     },
     {
@@ -236302,7 +236303,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L704",
+      "source_location": "L703",
       "weight": 1.0
     },
     {
@@ -236313,7 +236314,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L758",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -236324,7 +236325,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L798",
+      "source_location": "L797",
       "weight": 1.0
     },
     {
@@ -236335,7 +236336,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L846",
+      "source_location": "L845",
       "weight": 1.0
     },
     {
@@ -236346,7 +236347,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L899",
+      "source_location": "L898",
       "weight": 1.0
     },
     {
@@ -236357,7 +236358,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L92",
+      "source_location": "L91",
       "weight": 1.0
     },
     {
@@ -236368,7 +236369,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L946",
+      "source_location": "L945",
       "weight": 1.0
     },
     {
@@ -236379,7 +236380,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L964",
+      "source_location": "L963",
       "weight": 1.0
     },
     {
@@ -249835,7 +249836,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L158",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -249847,7 +249848,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L147",
+      "source_location": "L146",
       "weight": 1.0
     },
     {
@@ -253963,7 +253964,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1305",
+      "source_location": "L1304",
       "weight": 1.0
     },
     {
@@ -253975,7 +253976,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "tests/test_system_status.py",
-      "source_location": "L477",
+      "source_location": "L476",
       "weight": 1.0
     },
     {
@@ -263255,7 +263256,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L33",
+      "source_location": "L32",
       "weight": 0.8
     },
     {
@@ -263266,7 +263267,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1230",
+      "source_location": "L1229",
       "weight": 0.8
     },
     {
@@ -263277,7 +263278,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1300",
+      "source_location": "L1299",
       "weight": 0.8
     },
     {
@@ -263288,7 +263289,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1305",
+      "source_location": "L1304",
       "weight": 0.8
     },
     {
@@ -263299,7 +263300,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1046",
+      "source_location": "L1045",
       "weight": 0.8
     },
     {
@@ -263310,7 +263311,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1422",
+      "source_location": "L1421",
       "weight": 0.8
     },
     {
@@ -263321,7 +263322,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1193",
+      "source_location": "L1192",
       "weight": 0.8
     },
     {
@@ -263332,7 +263333,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1121",
+      "source_location": "L1120",
       "weight": 0.8
     },
     {
@@ -263343,7 +263344,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1335",
+      "source_location": "L1334",
       "weight": 0.8
     },
     {
@@ -263354,7 +263355,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1077",
+      "source_location": "L1076",
       "weight": 0.8
     },
     {
@@ -263365,7 +263366,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1369",
+      "source_location": "L1368",
       "weight": 0.8
     },
     {
@@ -263376,7 +263377,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1271",
+      "source_location": "L1270",
       "weight": 0.8
     },
     {
@@ -263387,7 +263388,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L1154",
+      "source_location": "L1153",
       "weight": 0.8
     },
     {
@@ -263398,7 +263399,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L712",
+      "source_location": "L711",
       "weight": 0.8
     },
     {
@@ -263409,7 +263410,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L657",
+      "source_location": "L656",
       "weight": 0.8
     },
     {
@@ -263420,7 +263421,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L669",
+      "source_location": "L668",
       "weight": 0.8
     },
     {
@@ -263431,7 +263432,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L853",
+      "source_location": "L852",
       "weight": 0.8
     },
     {
@@ -263442,7 +263443,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L865",
+      "source_location": "L864",
       "weight": 0.8
     },
     {
@@ -263453,7 +263454,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L906",
+      "source_location": "L905",
       "weight": 0.8
     },
     {
@@ -263464,7 +263465,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L912",
+      "source_location": "L911",
       "weight": 0.8
     },
     {
@@ -263475,7 +263476,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L558",
+      "source_location": "L557",
       "weight": 0.8
     },
     {
@@ -263486,7 +263487,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L588",
+      "source_location": "L587",
       "weight": 0.8
     },
     {
@@ -263497,7 +263498,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L520",
+      "source_location": "L519",
       "weight": 0.8
     },
     {
@@ -263508,7 +263509,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L622",
+      "source_location": "L621",
       "weight": 0.8
     },
     {
@@ -263519,7 +263520,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L979",
+      "source_location": "L978",
       "weight": 0.8
     },
     {
@@ -263530,7 +263531,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L295",
+      "source_location": "L294",
       "weight": 0.8
     },
     {
@@ -263541,7 +263542,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L188",
+      "source_location": "L187",
       "weight": 0.8
     },
     {
@@ -263552,7 +263553,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L197",
+      "source_location": "L196",
       "weight": 0.8
     },
     {
@@ -263563,7 +263564,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.95,
       "source_file": "tests/test_system_status.py",
-      "source_location": "L208",
+      "source_location": "L207",
       "weight": 0.8
     },
     {
@@ -263854,5 +263855,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "0c1030893d8b94c7564027412be4d6acaa798492"
+  "built_at_commit": "9b06bc2381202dc5329ca0aaac49dcfce37faaae"
 }
