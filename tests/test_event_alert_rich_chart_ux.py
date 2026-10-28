@@ -10,10 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from telegram.error import BadRequest
 
 from bot import alerts
-from bot.db import alerts as db_alerts
 from bot.alerting.event_chart import prepare_chart_points, render_price_chart
 from bot.alerting.rich_delivery import RichDeliveryUncertain, send_rich_event_alert
 from bot.coin_icons import build_coin_icon_html
+from bot.db import alerts as db_alerts
 
 AT = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 
