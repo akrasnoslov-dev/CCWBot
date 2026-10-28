@@ -141,7 +141,7 @@ def test_container_started_at_reads_linux_pid1_time(monkeypatch):
         if path == "/proc/1/stat":
             return StringIO(pid1_stat)
         if path == "/proc/stat":
-            return StringIO("cpu 1 2 3\\nbtime 1720000000\\n")
+            return StringIO("cpu 1 2 3\nbtime 1720000000\n")
         return actual_open(path, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", fake_open)
@@ -166,7 +166,7 @@ async def test_system_status_shows_container_start_on_database_failure(monkeypat
     rendered = await build_admin_system_status_text(
         db_enabled=True, session_factory=None, now=_now()
     )
-    assert "✅ Bot — running\\n   Container started: 2026-06-15 12:34 UTC" in rendered
+    assert "✅ Bot — running\n   Container started: 2026-06-15 12:34 UTC" in rendered
     assert "❌ Database — session unavailable" in rendered
 
 
