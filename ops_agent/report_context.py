@@ -238,6 +238,7 @@ def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     funnel = _query_row(evidence, "delivery_funnel")
     full_sent = _int(funnel.get("telegram_delivered")) if funnel else None
     grouped: dict[str, int] = {}
+    no_news = _int(quality.get("no_news_sent_event_alert_deliveries"))
     severe_count = 0
     severe_names = {"contains_n_a", "contains_unknown", "contains_unavailable", "contains_null"}
     for item in issues:
@@ -264,6 +265,11 @@ def _alert_quality_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     if sampled_attempts or non_sent:
         lines.insert(
             1, f"- Sampled attempts: {sampled_attempts}; excluded non-sent: {non_sent}."
+        )
+    if no_news:
+        lines.append(
+            f"- Optional news absent: {no_news} sampled sent deliveries "
+            "(diagnostic only, not evidence of attachment loss)."
         )
     return {
         "lines": lines,

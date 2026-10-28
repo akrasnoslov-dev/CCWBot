@@ -11,6 +11,7 @@ from ops_agent.db_queries import (
 from ops_agent.expected_models import (
     EVENT_ANALYSIS_PRIMARY_PROVIDER,
     KNOWN_DECOMMISSIONED_MODELS,
+    configured_event_analysis_primary_provider,
     expected_model,
 )
 from ops_agent.schemas import DetectorResult, Period
@@ -171,6 +172,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_failures = _query_rows(evidence, "evidence/db/recent_alert_failures.json", "alerts_failures")
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
+    event_provider_models = _query_rows(evidence, aggregate, "event_analysis_provider_models")
     llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
     llm_reconciliation_rows = _query_rows(
         evidence, aggregate, "llm_operation_reconciliation_summary"
@@ -331,7 +333,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))
         for row in heartbeats
-        if str(row.get("status")) != "completed"
+        if str(row.get("status") or "").lower() in {"failed", "error"}
+    )
+    heartbeat_delivery_failures = sum(
+        _int(row.get("failed_deliveries")) for row in heartbeats
     )
     # A failed latest generation is direct evidence, even if its attempt predates
     # the requested period. Cache age alone is only inconclusive for on-demand jobs.
@@ -768,14 +773,17 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             "medium",
             [(aggregate, "market_heartbeats_summary"), (aggregate, "market_heartbeats_freshness")],
             "triggered" if heartbeat_failures or latest_failed_heartbeats
-            else "unknown" if stale_heartbeats else "clear",
-            (f"{heartbeat_failures} failed in period, "
+            or heartbeat_delivery_failures else "unknown" if stale_heartbeats else "clear",
+            (f"{heartbeat_failures} generation failures in period, "
+             f"{heartbeat_delivery_failures} delivery failures in period, "
              f"{len(latest_failed_heartbeats)} latest failed generation statuses, "
              f"{len(stale_heartbeats)} stale/missing heartbeat rows; "
-             "content is generated on demand, so cache age alone does not prove a missed delivery"),
+             "content is generated on demand; without due-recipient evidence, "
+             "stale cache alone cannot distinguish idle from missed generation"),
             ["evidence/db/aggregate_metrics.json"],
             {
                 "failed_heartbeats": heartbeat_failures,
+                "failed_heartbeat_deliveries": heartbeat_delivery_failures,
                 "latest_failed_heartbeat_symbols": [
                     row.get("symbol") for row in latest_failed_heartbeats[:10]
                 ],
@@ -921,7 +929,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             None if logs_available else "Required evidence missing: evidence/logs/pattern_counts.json",
         ),
         _event_analysis_dead_detector(evidence, llm_summary, db_result),
-        _event_analysis_model_drift_detector(evidence, llm_summary, db_result),
+        _event_analysis_model_drift_detector(evidence, event_provider_models, db_result),
     ]
     return detectors
 
@@ -1027,67 +1035,82 @@ def _event_analysis_model_drift_detector(
     llm_summary: list[dict[str, Any]],
     db_result,
 ) -> DetectorResult:
-    """Models actually used for event_analysis differ from the shipped default.
+    """Report withdrawn models across all observed providers; avoid assumed routing drift.
 
-    A deployed `.env` silently overrides the code default, which is exactly how the outage
-    persisted: the shipped default was changed while production kept calling a decommissioned
-    model. Comparing what the database says was *used* against what the code ships makes that
-    disagreement visible without reading `.env` on the server.
+    The provider census is untruncated. A production provider/model expectation
+    must be established independently of observed successful requests.
     """
     expected = expected_model("event_analysis")
-    primary_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            == EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
-    )
-    fallback_models = sorted(
-        {
-            str(row.get("model") or "").strip()
-            for row in llm_summary
-            if str(row.get("call_type") or "") == "event_analysis"
-            and str(row.get("provider") or "").strip().lower()
-            != EVENT_ANALYSIS_PRIMARY_PROVIDER
-            and row.get("model")
-        }
-    )
-    drifted = [model for model in primary_models if expected and model != expected]
-    decommissioned = [model for model in primary_models if model in KNOWN_DECOMMISSIONED_MODELS]
+    configured_primary = configured_event_analysis_primary_provider()
+    observed = sorted({
+        (str(row.get("provider") or "").lower(), str(row.get("model") or "").strip())
+        for row in llm_summary if row.get("provider") and row.get("model")
+    })
+    withdrawn = sorted({
+        model for _, model in observed if model in KNOWN_DECOMMISSIONED_MODELS
+    })
+    primary_models = sorted({
+        model for provider, model in observed if provider == configured_primary
+    }) if configured_primary else []
+    fallback_models = sorted({
+        model for provider, model in observed if provider != configured_primary
+    })
+    # A pinned expected model is meaningful only when the deployed provider is
+    # explicitly supplied. Groq's shipped default alone is not live configuration.
+    drifted = [
+        model for model in primary_models if expected and model != expected
+    ] if configured_primary == EVENT_ANALYSIS_PRIMARY_PROVIDER else []
 
-    if not primary_models:
-        status = "unknown"
-        summary = "No primary-provider event_analysis model recorded in this period"
-    elif decommissioned:
+    query = (evidence.get("evidence/db/aggregate_metrics.json") or {}).get("queries", {}).get(
+        "event_analysis_provider_models", {}
+    )
+    complete = (
+        isinstance(query, dict)
+        and query.get("query_name") == "event_analysis_provider_models"
+        and isinstance(query.get("rows"), list)
+    )
+    if withdrawn:
         status = "triggered"
-        summary = (
-            "event_analysis is calling a model the provider has withdrawn; "
-            "expected the shipped default"
-        )
+        summary = "Withdrawn event_analysis model observed in provider attempts"
+    elif not complete or not observed:
+        status = "unknown"
+        summary = "Event Analysis provider evidence missing or incomplete"
+    elif configured_primary is None:
+        status = "unknown"
+        summary = "Observed providers available; deployed primary routing is unverified"
+    elif configured_primary != EVENT_ANALYSIS_PRIMARY_PROVIDER:
+        status = "unknown"
+        summary = "Approved provider override observed; deployed model expectation unverified"
+    elif not primary_models:
+        status = "unknown"
+        summary = "No attempts for the independently configured primary provider"
     elif drifted:
         status = "triggered"
-        summary = "event_analysis model in use differs from the shipped default"
+        summary = "Observed primary model differs from independently configured expected model"
     else:
         status = "clear"
-        summary = "event_analysis model matches the shipped default"
+        summary = "Observed primary model matches configured expected model"
 
     return db_result(
         "event_analysis_model_drift",
-        "high" if decommissioned else "medium",
-        [("evidence/db/aggregate_metrics.json", "llm_usage_summary")],
+        "high" if withdrawn else "medium",
+        [("evidence/db/aggregate_metrics.json", "event_analysis_provider_models")],
         status,
         summary,
         ["evidence/db/aggregate_metrics.json"],
         {
-            "expected_model": expected,
-            "expected_primary_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
+            "shipped_default_model": expected_model("event_analysis"),
+            "shipped_default_provider": EVENT_ANALYSIS_PRIMARY_PROVIDER,
+            "verified_configured_primary_provider": configured_primary,
+            "observed_provider_model_count": len(observed),
+            "observed_providers": sorted({provider for provider, _ in observed}),
+            "observed_primary_models": primary_models,
             "primary_models_in_use": primary_models,
             "fallback_models_in_use": fallback_models,
+            "decommissioned_primary_models_in_use": withdrawn,
             "drifted_primary_models": drifted,
-            "decommissioned_primary_models_in_use": decommissioned,
+            "withdrawn_models_observed": withdrawn,
+            "census_complete": complete,
         },
     )
 

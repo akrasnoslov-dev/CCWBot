@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -97,6 +98,9 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_PROCESS_STARTED_AT = _utc_now()
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -110,6 +114,32 @@ def _format_utc(value: datetime | None) -> str:
     if value is None:
         return "not recorded"
     return value.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _container_started_at() -> datetime:
+    """Read Linux container PID 1 start time; fall back to this Python process start.
+
+    Docker launches `python main.py` as PID 1. The kernel's start ticks are stable
+    for the lifetime of this container and do not depend on admin dashboard opens.
+    """
+    try:
+        with open("/proc/1/stat", encoding="ascii") as handle:
+            # The parenthesized command can contain spaces; fields after ")" start at #3.
+            fields = handle.read().rsplit(")", 1)[1].split()
+        start_ticks = int(fields[19])  # Linux proc stat field 22 (starttime).
+        with open("/proc/stat", encoding="ascii") as handle:
+            boot_seconds = next(
+                int(line.split()[1]) for line in handle if line.startswith("btime ")
+            )
+        ticks_per_second = os.sysconf("SC_CLK_TCK")
+        if ticks_per_second <= 0:
+            raise ValueError("invalid clock ticks")
+        return datetime.fromtimestamp(
+            boot_seconds + start_ticks / ticks_per_second, tz=timezone.utc
+        )
+    except (OSError, ValueError, IndexError, StopIteration, OverflowError, AttributeError):
+        # Non-Linux developer machines and restricted /proc environments.
+        return _PROCESS_STARTED_AT
 
 
 def _age_label(value: datetime | None, *, now: datetime) -> str:
@@ -1202,6 +1232,7 @@ def _render_status(
         f"Overall: {_STATUS_ICON[overall]} {_OVERALL_LABEL[overall]}",
         "",
         "✅ Bot — running",
+        f"   Container started: {_format_utc(_container_started_at())}",
     ]
     for section in sections:
         summary = section.summary or section.detail

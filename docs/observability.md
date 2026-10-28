@@ -292,10 +292,14 @@ Default output is designed for mobile scanning:
 The default Telegram message shows one main line per component. It adds indented details only for
 degraded or failing components. Long OK details, repeated timestamps, price values, CoinGecko ids, raw
 table names, provider payloads, traces, and secrets are not shown in the default dashboard.
+The Bot line also shows the container start date/time in UTC. On Linux Docker this is
+read from PID 1's kernel start time, not inferred from when the admin page was opened.
+If `/proc` is unavailable (for example, during Windows development), it falls back to
+the Python process's initial import time. It is read-only and resets on container restart.
 
 Signals currently summarized:
 
-- Runtime: admin command response.
+- Runtime: admin command response and container start timestamp.
 - Database: explicit lightweight PostgreSQL query.
 - Market data: freshness for each active symbol from persisted price telemetry. Automatic market
   check health is folded into this component.
@@ -321,6 +325,7 @@ System status — 2026-06-15 16:55 UTC
 Overall: ⚠️ Needs attention
 
 ✅ Bot — running
+   Container started: 2026-06-15 15:10 UTC
 ✅ Database — connected
 ⚠️ Market data — stale/missing symbols
    BTC stale: last check 32h ago
@@ -800,3 +805,38 @@ real provider-request totals, and backoff/circuit skips separately.
 The **Provider details** button retains the original, sanitized detailed
 breakdown, and **Summary** returns. This presentation change does not alter
 health eligibility, DB evidence, LLM calls or provider routing.
+
+
+## Optional related news in Event Alerts
+
+Event Analysis is market-driven; related news is optional. A sent Event Alert with
+`related_news_ids=[]` is not by itself a failed attachment or a Telegram runtime
+failure. The ops-agent reports `no_news_sent_event_alert_deliveries` as a
+diagnostic count, not as `empty_related_context` quality defects.
+`alerts_with_candidates_but_no_attached_news` is likewise diagnostic:
+candidate count alone does not prove relevance or that the selection stage
+chose an attachment. Confirmed attachment loss requires independently
+recorded selected/expected attachment evidence plus missing persisted
+attachment, which existing aggregates alone do not establish. The four
+historical GRAM examples must not be described as runtime failures without
+such evidence.
+
+## Model routing and heartbeat evidence
+
+The ops-agent's untruncated `event_analysis_provider_models` census includes
+provider/model/status rows independently of the capped general LLM summary.
+Observed attempts are not proof of configured primary routing. The
+`OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER` diagnostic override may be set
+only after independently verifying the deployed routing. With no verified
+primary (including an intentionally configured Cloudflare-first chain),
+model drift remains UNKNOWN; known withdrawn models observed on *any*
+provider are still flagged. Shipped Groq defaults do not prove live settings.
+
+Market Heartbeat generation is on demand. An old or missing cache row alone
+does not mean generation failed: due-recipient evidence is required to
+distinguish idle periods from missed work. Actual failed generation status
+and failed delivery are separate signals. The successful delivery clock uses
+`alerts.sent_at` (completion) and only falls back to `created_at` for
+legacy sent records without a completion timestamp. Reservation time must
+not be used as proof of current delivery. This diagnostic change adds no
+polling, provider calls, or new LLM requests.

@@ -1,4 +1,6 @@
+import builtins
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 
 import pytest
 from sqlalchemy import select
@@ -127,6 +129,44 @@ def _final_failed_alert(
         last_error=last_error,
         final_failed_at=created_at,
     )
+
+
+def test_container_started_at_reads_linux_pid1_time(monkeypatch):
+    # Linux Docker CMD runs Python as PID 1; field 22 is its start tick.
+    pid1_stat = "1 (python main.py) " + " ".join(["S", *["0"] * 18, "250", "0"])
+    actual_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if path == "/proc/1/stat":
+            return StringIO(pid1_stat)
+        if path == "/proc/stat":
+            return StringIO("cpu 1 2 3\nbtime 1720000000\n")
+        return actual_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    monkeypatch.setattr(system_status.os, "sysconf", lambda _: 100)
+    assert system_status._container_started_at() == datetime.fromtimestamp(
+        1720000002.5, tz=timezone.utc
+    )
+
+
+def test_container_started_at_falls_back_if_proc_unavailable(monkeypatch):
+    def no_proc(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(builtins, "open", no_proc)
+    assert system_status._container_started_at() == system_status._PROCESS_STARTED_AT
+
+
+@pytest.mark.asyncio
+async def test_system_status_shows_container_start_on_database_failure(monkeypatch):
+    started = datetime(2026, 6, 15, 12, 34, tzinfo=timezone.utc)
+    monkeypatch.setattr(system_status, "_container_started_at", lambda: started)
+    rendered = await build_admin_system_status_text(
+        db_enabled=True, session_factory=None, now=_now()
+    )
+    assert "✅ Bot — running\n   Container started: 2026-06-15 12:34 UTC" in rendered
+    assert "❌ Database — session unavailable" in rendered
 
 
 @pytest.mark.asyncio

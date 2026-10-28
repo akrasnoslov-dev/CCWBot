@@ -92,11 +92,12 @@ async def send_rich_event_alert(
         # A valid Telegram success response is proof of completion.
         if not isinstance(payload.get("result"), dict):
             raise RichDeliveryUncertain("Rich delivery response lacks receipt")
+        message_id = payload["result"].get("message_id")
+        # A successful HTTP/JSON response without a valid Telegram message identity
+        # is still ambiguous. bool is an int in Python, but not a Telegram message ID.
+        if type(message_id) is not int or message_id <= 0:
+            raise RichDeliveryUncertain("Rich delivery lacks valid message identity")
         if on_message_id is not None:
-            message_id = payload["result"].get("message_id")
-            if not isinstance(message_id, int):
-                # Telegram may have sent it; never retry a missing receipt.
-                raise RichDeliveryUncertain("Rich delivery lacks message identity")
             on_message_id(message_id)
         return _returned_photo_file_id(payload["result"]) or chart_file_id
 

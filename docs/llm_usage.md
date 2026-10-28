@@ -738,3 +738,88 @@ rate-limit count, timeout count, and invalid-JSON/schema-error count.
 
 The collector reads `llm_usage_logs` only. It does not call Groq, retry failed requests, inspect
 raw prompts, or export provider response bodies.
+
+### Admin OpenAI Platform Costs monitoring (optional, read-only)
+
+The `/admin` → **OpenAI Costs** screen compares the existing conservative
+`openai_budget_reservations` ledger with
+[OpenAI Platform Costs](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs),
+`GET /v1/organization/costs`. This **does not change** the pinned model,
+prices, reserve/settle behavior, or the $2.50 UTC-month admission limit.
+The hard admission guard continues to use only the local database; provider
+Costs data is delayed and is never an admission source of truth.
+
+The monitor requests daily UTC buckets from the first of the current month
+through **00:00 UTC today (exclusive)**. It deliberately excludes today's
+partial bucket. It requests one explicit project ID and `group_by=project_id`,
+verifies each result belongs to the configured project, follows pagination,
+validates USD, and sums decimal amounts without binary-floating rounding.
+Missing days, invalid data, other/unknown project attribution, auth/network
+errors and incomplete pages all report **UNAVAILABLE**, never fake $0. A
+successful response is cached in memory for one hour and is fetched only on
+opening the screen. Cache resets on process restart. The private admin screen
+uses the existing Telegram allowlist/DB-role check and Back navigation.
+
+The internal section counts each reservation **once**, exactly as admission:
+`actual_usd` when known, otherwise `reserved_usd`. Its breakdown is
+`settled`/cap-breach actual estimates, still-`reserved` pending charges,
+and `conservative` unreconciled charges. The local used/remaining values
+cover the entire current UTC month, including today. The difference compares
+the provider result with the current state of local ledger rows **created
+before the provider coverage end**; older rows may have been reconciled since
+that day. These are conservative internal estimates, not invoice charges.
+Provider totals may include non-inference costs and may be backfilled.
+
+Three independent opt-in variables (in addition to the four inference settings)
+are available. All remain unset/false by default:
+
+```dotenv
+OPENAI_COSTS_ADMIN_KEY=
+OPENAI_COSTS_PROJECT_ID=
+OPENAI_COSTS_SCOPE_CONFIRMED=false
+```
+
+**Credential creation and minimum privileges (owner-only, manual):**
+
+1. Sign in to the **OpenAI API Platform**, not ChatGPT Admin Console. Select
+   the correct API organization. Only an API Platform organization owner can
+   create its Admin keys.
+2. Under API Platform **Organization settings → Admin keys**, create a
+   dedicated, expiring key for this monitor. Select only the **Usage: Read**
+   permission (`api.usage.read`); deny organization administration, projects
+   management, writes, inference and other scopes. Verify the actual key scope
+   selection exposed to this organization before using it. Do not mistake
+   the ChatGPT workspace Costs permission for this API permission.
+3. **If the Platform cannot issue an Admin key limited to Usage Read, STOP.**
+   Do not place an unrestricted or broadly privileged Admin key in the bot
+   runtime. Leave the feature `NOT CONFIGURED` and instead use a separate
+   trusted, access-controlled cost-export/broker that stores the Admin key
+   outside the bot and releases only CCWBot-project aggregates. Such a broker
+   requires a separately reviewed implementation; this PR does not add one.
+4. In API Platform **Projects**, verify the dedicated CCWBot project ID
+   (format `proj_...`). Confirm the bot's **inference key actually belongs
+   to that project** and that no other clients or cost-bearing features use
+   it. The local ledger has no project-ID column. Only after this audit,
+   set `OPENAI_COSTS_SCOPE_CONFIRMED=true` to enable the numeric difference.
+   Otherwise the difference remains `NOT COMPARABLE`.
+5. Store the restricted key solely in an operator-controlled secret store or
+   protected deployment environment as `OPENAI_COSTS_ADMIN_KEY`. Store the
+   verified project ID as `OPENAI_COSTS_PROJECT_ID`. Never commit a populated
+   env file, expose values in a Telegram chat, reuse `OPENAI_API_KEY`, or
+   create keys automatically. The bot only reads this key on admin screen opens.
+6. On a separately approved production release, inject these settings and
+   recreate/restart the bot so the new environment is loaded. Confirm private
+   admin screen, denied non-admin/group access, project attribution, prior-day
+   coverage and refresh timestamp. Check that failure states show no $0,
+   local budget remains unchanged, and no sensitive data entered logs.
+
+**Rotation/recovery:** create a *new* minimally scoped, expiring key manually;
+update the protected secret store, recreate the bot, verify a private admin
+refresh, then revoke the old key. For HTTP 401/403 verify API Platform (not
+ChatGPT) key scopes and expiration; for 429/5xx/network failures wait for
+provider recovery. The screen is allowed to say `UNAVAILABLE`; do not
+elevate key permissions or bypass the local hard cap to make it work.
+An Admin key with `api.usage.read` can still expose **organization-wide
+usage** if compromised; the request's project filter is not a credential
+security boundary. If that residual read exposure is unacceptable, prefer
+the external broker and leave the bot credential unset.

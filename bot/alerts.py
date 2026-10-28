@@ -5401,6 +5401,10 @@ async def _deliver_market_event_alert(
                     current_price=current_event_price,
                     as_of=chart_as_of or datetime.now(timezone.utc),
                 )
+                # Per-recipient rendering creates a distinct payload. Reuse the
+                # accepted chart upload only within this dispatch, not globally.
+                if alert_payload.get("chart_file_id"):
+                    recipient_payload["chart_file_id"] = alert_payload["chart_file_id"]
             delivery_decision_reason = (delivery_decision_reasons_by_recipient or {}).get(
                 _recipient_decision_key(recipient), DECISION_REASON_DELIVERED
             )
@@ -5550,6 +5554,8 @@ async def _deliver_market_event_alert(
                     detail=None if sent else _truncate_text(str(error_message or ""), 255),
                 )
             if sent:
+                if event_type == EVENT_ALERT_TYPE and recipient_payload.get("chart_file_id"):
+                    alert_payload["chart_file_id"] = recipient_payload["chart_file_id"]
                 delivered = True
                 sent_count += 1
                 await _persist_successful_product_alert_state(

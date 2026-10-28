@@ -29,11 +29,24 @@ PERIOD = Period(
 )
 
 
+@pytest.fixture(autouse=True)
+def _test_verified_groq_routing(monkeypatch):
+    # Model-drift clear/triggered assertions require a separately verified primary.
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER", "groq")
+
+
 def _evidence(llm_rows, *, state_runs=None):
     return {
         "evidence/db/aggregate_metrics.json": {
             "queries": {
                 "llm_usage_summary": {"rows": llm_rows},
+                "event_analysis_provider_models": {
+                    "query_name": "event_analysis_provider_models",
+                    "rows": [
+                        row for row in llm_rows
+                        if row.get("call_type") == "event_analysis"
+                    ],
+                },
                 "llm_failure_category_summary": {"rows": []},
                 "event_analysis_logical_outcome_summary": {"rows": []},
             }

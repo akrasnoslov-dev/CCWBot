@@ -38,6 +38,16 @@ SHIPPED_DEFAULT_MODELS: dict[str, str] = {
 # Groq primary only; fallback models are reported separately and must never be mislabelled drift.
 EVENT_ANALYSIS_PRIMARY_PROVIDER = "groq"
 
+
+def configured_event_analysis_primary_provider() -> str | None:
+    """Return an explicitly verified deployed primary, never guess from usage.
+
+    The shipped Groq default is not proof of production routing: the operator
+    may configure Cloudflare -> OpenAI -> Groq via environment overrides.
+    """
+    value = (os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER") or "").strip().lower()
+    return value if value in {"groq", "openai", "cloudflare"} else None
+
 # Models the provider has withdrawn. A recorded call against one of these is not drift, it is
 # an outage in progress, and is reported at a higher severity.
 KNOWN_DECOMMISSIONED_MODELS: frozenset[str] = frozenset(

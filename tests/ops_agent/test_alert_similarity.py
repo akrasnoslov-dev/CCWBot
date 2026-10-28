@@ -141,7 +141,8 @@ def test_alert_quality_groups_placeholder_and_missing_market_context():
     assert ("contains_unavailable", "news") in issues
     assert ("old_since_last_btc_alert_label", "news") in issues
     assert ("old_analysed_window_change_label", "news") in issues
-    assert ("empty_related_context", "news") in issues
+    assert ("empty_related_context", "news") not in issues
+    assert quality["no_news_sent_event_alert_deliveries"] == 82
     assert quality["total_event_alert_deliveries"] == 84
     assert quality["affected_event_alert_deliveries"] == 84
     assert quality["severe_affected_event_alert_deliveries"] == 84
@@ -674,3 +675,46 @@ def test_same_copy_in_multiple_coins_has_distinct_joinable_similarity_groups():
             group["sample_event_refs"]
         )
 
+
+
+def test_optional_related_news_is_not_telegram_quality_failure():
+    from ops_agent.alert_similarity import _quality_issues
+    for candidates in (0, 3, None):
+        row = {
+            "alert_type": "event_alert",
+            "market_event_id": 42,
+            "related_news_candidates_count": candidates,
+            "alert_message": "Price move verified. Not financial advice.",
+        }
+        assert "empty_related_context" not in _quality_issues(
+            row, delivered_text=row["alert_message"]
+        )
+
+
+def test_no_news_sent_counter_uses_recipient_deliveries_not_attempts():
+    from datetime import datetime, timezone
+
+    from ops_agent.alert_similarity import _alert_quality
+    from ops_agent.schemas import Period
+    period = Period(
+        start=datetime(2026, 10, 28, tzinfo=timezone.utc),
+        end=datetime(2026, 10, 29, tzinfo=timezone.utc),
+        source="test",
+    )
+    rows = [{
+        "alert_type": "event_alert", "symbol": "GRAM",
+        "related_news_count": 0, "quality_issues": [],
+        "delivery_count": 4, "sent_delivery_count": 2,
+        "sent_distinct_recipient_count": 2,
+    }, {
+        "alert_type": "event_alert", "symbol": "GRAM",
+        "related_news_count": 1, "quality_issues": [],
+        "delivery_count": 1, "sent_delivery_count": 1,
+        "sent_distinct_recipient_count": 1,
+    }]
+    result = _alert_quality(rows, period, [])
+    assert result["total_event_alert_deliveries"] == 3
+    assert result["sampled_non_sent_event_alerts"] == 2
+    assert result["no_news_sent_event_alert_deliveries"] == 2
+    assert result["affected_event_alert_deliveries"] == 0
+    assert result["issues"] == []

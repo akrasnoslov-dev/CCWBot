@@ -325,7 +325,6 @@ def _indexed_row(row: dict[str, Any], hasher: BundleHasher) -> dict[str, Any]:
         _quality_issues(
             row,
             delivered_text=str(row.get("alert_message") or ""),
-            related_news_count=len(related_news),
         )
         if sent_delivery_count > 0
         else []
@@ -395,7 +394,7 @@ RICH_ALERT_CHART_TEXT_FALLBACK = "Last 24 hours: chart unavailable in text-only 
 
 
 def _quality_issues(
-    row: dict[str, Any], *, delivered_text: str, related_news_count: int
+    row: dict[str, Any], *, delivered_text: str, related_news_count: int = 0
 ) -> list[str]:
     is_event_alert = (
         str(row.get("alert_type") or "") == "event_alert" or row.get("market_event_id") is not None
@@ -422,8 +421,8 @@ def _quality_issues(
         issues.append("old_generic_market_change_label")
     if is_event_alert and "24h change" in lowered:
         issues.append("old_24h_change_label")
-    if is_event_alert and related_news_count == 0:
-        issues.append("empty_related_context")
+    # Supporting news is optional. No attached news is not a quality defect,
+    # even if candidate news was available but not selected.
     alert_message = str(row.get("alert_message") or "")
     if not alert_message.strip() or alert_message.count("**") % 2:
         issues.append("malformed_formatting")
@@ -490,12 +489,15 @@ def _alert_quality(
     affected_event_alert_deliveries = 0
     severe_affected_event_alert_deliveries = 0
     quality_issue_occurrences = 0
+    no_news_sent_deliveries = 0
     for row in rows:
         issues = row.get("quality_issues") or []
         sent_count = _int(row.get("sent_delivery_count"))
         if str(row.get("alert_type") or "") == "event_alert":
             sampled_event_alert_attempts += _int(row.get("delivery_count"))
             total_event_alert_deliveries += sent_count
+            if _int(row.get("related_news_count")) == 0:
+                no_news_sent_deliveries += sent_count
             if issues:
                 affected_event_alert_deliveries += sent_count
             if SEVERE_QUALITY_ISSUES.intersection(issues):
@@ -578,6 +580,8 @@ def _alert_quality(
     payload["affected_event_alert_deliveries"] = affected_event_alert_deliveries
     payload["severe_affected_event_alert_deliveries"] = severe_affected_event_alert_deliveries
     payload["quality_issue_occurrences"] = quality_issue_occurrences
+    # Diagnostic only: no-news Event Alerts are legitimate market-based alerts.
+    payload["no_news_sent_event_alert_deliveries"] = no_news_sent_deliveries
     payload["issues"] = sorted(
         issue_rows,
         key=lambda item: (-item["delivery_count"], item["issue"], item["symbol"]),
