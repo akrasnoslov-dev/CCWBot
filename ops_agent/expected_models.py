@@ -47,7 +47,9 @@ def expected_event_analysis_route() -> tuple[str | None, str | None]:
     a Groq override may safely use the shipped Groq default.
     Missing deployed routing evidence is UNKNOWN, not a drift alert.
     """
-    provider = (os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER") or "").strip().lower()
+    provider = (
+        os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER") or ""
+    ).strip().lower()
     if provider not in _KNOWN_PROVIDERS:
         return None, None
     configured_model = (os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL") or "").strip()
