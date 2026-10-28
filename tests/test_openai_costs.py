@@ -57,8 +57,8 @@ def client_mock(monkeypatch, responses):
         return httpx.Response(
             status,
             text=json.dumps(
-                payload, default=lambda value: str(value) if isinstance(value, Decimal) else value
-            ).replace('": "', '": "'),
+                payload, default=lambda value: float(value) if isinstance(value, Decimal) else value
+            ),
         )
 
     monkeypatch.setattr(
@@ -109,9 +109,6 @@ async def test_missing_configuration_never_calls_provider(monkeypatch):
 async def test_success_multiple_days_with_pagination_and_scoping(monkeypatch):
     configured(monkeypatch)
     # Use native JSON numeric encoding, not a float calculated in Python.
-    raw1 = '{"object":"page","data":['
-    raw1 += json.dumps(bucket(0, "0"), default=str).replace('"0"', "0.1", 1)
-    # Build fully valid fixtures manually from generated buckets below.
     p1 = page([bucket(0, "1")], more=True, cursor="next")
     p2 = page([bucket(1, "2")])
     seen = client_mock(monkeypatch, [(200, p1), (200, p2)])
@@ -207,8 +204,6 @@ async def test_concurrent_open_coalesces_fetch_and_first_day_has_no_data(monkeyp
 
 @pytest.mark.asyncio
 async def test_internal_ledger_partition_and_matching_window(tmp_path, monkeypatch):
-    from bot.services.llm import openai_budget as budget
-
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'costs.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
