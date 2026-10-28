@@ -185,6 +185,8 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
     heartbeat_freshness = _query_rows(evidence, aggregate, "market_heartbeats_freshness")
+    heartbeat_potential = _query_rows(evidence, aggregate, "market_heartbeat_potential_recipients")
+    heartbeat_delivery = _query_rows(evidence, aggregate, "market_heartbeat_delivery_summary")
     market_event_summary = _query_rows(evidence, aggregate, "market_events_summary")
     price_state = _query_rows(evidence, aggregate, "price_state_current")
     market_events = _query_rows(evidence, "evidence/db/recent_market_events.json", "market_events_recent")
@@ -331,7 +333,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     heartbeat_failures = sum(
         _int(row.get("heartbeats"))
         for row in heartbeats
-        if str(row.get("status")) != "completed"
+        if str(row.get("status") or "").lower() in {"failed", "error"}
     )
     # A failed latest generation is direct evidence, even if its attempt predates
     # the requested period. Cache age alone is only inconclusive for on-demand jobs.
@@ -347,6 +349,31 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         or str(row.get("latest_status") or "") != "completed"
         or _int(row.get("age_seconds")) > heartbeat_threshold_seconds
     ]
+    potential_by_symbol = {
+        str(row.get("symbol") or "").lower(): _int(row.get("potential_recipients"))
+        for row in heartbeat_potential
+    }
+    heartbeat_delivery_failures = sum(
+        _int(row.get("failed_deliveries")) for row in heartbeat_delivery
+    )
+    heartbeat_missing_completion = sum(
+        _int(row.get("missing_completion_timestamps")) for row in heartbeat_delivery
+    )
+    # Zero potential recipients proves a currently idle coin; positive is only
+    # an upper bound, not proof that anybody has been due for 24h.
+    idle_symbols = [
+        row.get("symbol") for row in stale_heartbeats
+        if potential_by_symbol.get(str(row.get("symbol") or "").lower()) == 0
+    ]
+    unknown_due_symbols = [
+        row.get("symbol") for row in stale_heartbeats
+        if potential_by_symbol.get(str(row.get("symbol") or "").lower()) != 0
+    ]
+    demand_evidence_complete = (
+        _has_query(evidence, aggregate, "market_heartbeat_potential_recipients")
+        and {str(row.get("symbol") or "").lower() for row in heartbeat_freshness}
+        <= set(potential_by_symbol)
+    )
     news_failures = sum(1 for row in news_rows if str(row.get("llm_status")) != "success")
     news_budget_counts: dict[str, int] = {}
     news_budget_by_impact: dict[str, int] = {}
@@ -766,22 +793,38 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
         db_result(
             "stale_or_failed_market_heartbeats",
             "medium",
-            [(aggregate, "market_heartbeats_summary"), (aggregate, "market_heartbeats_freshness")],
-            "triggered" if heartbeat_failures or latest_failed_heartbeats
-            else "unknown" if stale_heartbeats else "clear",
-            (f"{heartbeat_failures} failed in period, "
-             f"{len(latest_failed_heartbeats)} latest failed generation statuses, "
-             f"{len(stale_heartbeats)} stale/missing heartbeat rows; "
-             "content is generated on demand, so cache age alone does not prove a missed delivery"),
-            ["evidence/db/aggregate_metrics.json"],
+            [
+                (aggregate, "market_heartbeats_summary"),
+                (aggregate, "market_heartbeats_freshness"),
+                (aggregate, "market_heartbeat_potential_recipients"),
+                (aggregate, "market_heartbeat_delivery_summary"),
+            ],
+            "triggered" if heartbeat_failures or latest_failed_heartbeats or heartbeat_delivery_failures
+            else "unknown" if not demand_evidence_complete or unknown_due_symbols
+                or heartbeat_missing_completion
+            else "clear",
+            (f"{heartbeat_failures} failed generation attempts in period; "
+             f"{len(latest_failed_heartbeats)} latest failed generation statuses; "
+             f"{heartbeat_delivery_failures} failed delivery records; "
+             f"{len(idle_symbols)} currently idle stale-cache coins; "
+             f"{len(unknown_due_symbols)} stale-cache coins with unverified due recipients. "
+             "Old on-demand cache timestamps alone are not failures."),
+            [aggregate],
             {
                 "failed_heartbeats": heartbeat_failures,
+                "failed_deliveries": heartbeat_delivery_failures,
+                "missing_completion_timestamps": heartbeat_missing_completion,
                 "latest_failed_heartbeat_symbols": [
                     row.get("symbol") for row in latest_failed_heartbeats[:10]
                 ],
                 "stale_or_missing_heartbeats": len(stale_heartbeats),
                 "freshness_threshold_seconds": heartbeat_threshold_seconds,
                 "affected_symbols": [row.get("symbol") for row in stale_heartbeats[:10]],
+                "currently_idle_symbols": idle_symbols[:10],
+                "unknown_due_recipient_symbols": unknown_due_symbols[:10],
+                "potential_recipient_counts": potential_by_symbol,
+                "due_recipient_evidence": "not_collected_runtime_due_status",
+                "delivery_clock_source": "alerts.sent_at",
             },
         ),
         db_result(
