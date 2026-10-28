@@ -165,6 +165,33 @@ inconsistent, there are no numeric levels for the model to invent.
   convergence/divergence claims still fail closed.
 - Stage-1 significance, alert eligibility, cooldown, providers, recipient
   routes and paid spend are unchanged by this content change.
+- **Verified recent path for Stage-2:** When the four-observation price band is
+  valid, Render also receives only the actual ordered step directions, actual
+  step durations, and whether NOW is at the observed high, low or inside
+  the observed range. Missing or discontinuous history supplies no path.
+  A verified snapshot-pace comparison may be described without being discarded
+  by the text guard. Future conditional up/down scenarios are not judged as
+  historical direction claims; any independent present/past claim and all USD
+  levels still require factual verification. A decimal point in a verified
+  USD price must not count as an extra sentence or split a future conditional
+  clause during direction validation and trigger a generic fallback.
+  Content tests check meaningful
+  distinct scenario descriptions, not fabricated uniqueness when facts match.
+  This adds no provider calls and never influences the significance decision.
+- **Numeric market context for Stage-2:** The Render prompt includes the same
+  source market data used in the Telegram alert: current USD price, the actual
+  analysed-window minutes and percentage move, 24-hour percentage change, and
+  the change since the previous delivered market notification only when an
+  attributable prior time/price exists. Verified 30m/1h lookbacks are optional.
+  Missing or nonfinite metrics must not become fabricated zeros. These are
+  observation facts for assessing magnitude and comparing periods, not text
+  to repeat in Situation: the backend alone prints user-facing numbers. Keep
+  the original precision-safe market fact checks, and never relabel a 24-hour
+  move as an analysed-window move. Render is shared per event, so prior-message
+  context must only be attributed to the supplied event, not claimed to hold
+  for every subscriber. No new external price or LLM requests are allowed.
+
+
 
 **Release state:** Source integrated into `main` in PR #378; running production
 still requires independent deployment verification. The prior 20-event Cloudflare

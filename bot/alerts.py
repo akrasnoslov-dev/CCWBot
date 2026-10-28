@@ -50,7 +50,6 @@ from bot.alerting.event_text import (
     final_event_alert_quality_flags,
     is_news_centered_event_action,
     observed_event_alert_level_action,
-    observed_event_alert_price_band,
     sanitize_financial_instruction,
     soften_possible_action,
 )
@@ -1388,7 +1387,10 @@ def _contradictory_observed_claim_in_level_action(
     independent statement about *observed* price movement must still agree
     with the market evidence.
     """
-    for clause in re.split(r"[;.!?]\s*", value):
+    # Preserve decimal price literals ($102.00) inside the original
+    # conditional clause. Splitting on their dot loses "when/if" and can
+    # misclassify a future upward case as an observed upward claim.
+    for clause in re.split(r";\s*|(?<!\d)\.\s*|\.(?!\d)\s*|[!?]\s*", value):
         # In "The current window shows a rally; watch whether ..." validate
         # the factual clause, not the counterfactual price-level scenarios.
         prefix = re.split(
@@ -1428,11 +1430,15 @@ def _guard_event_text_against_market_data(
     # Conditional scenarios describe FUTURE moves in both directions, not the
     # already-observed net change. The action compactor separately verifies
     # that any referenced USD levels are the computed observed range.
+    # Conditional future moves must not be judged against the direction of
+    # the already-observed price change. "When"/"would" and price-free
+    # scenarios receive the same factual-claim check as "if"/"whether".
+    # Any USD levels are independently bound to verified observations.
     conditional_range_scenarios = (
         field_name == "possible_action"
-        and bool(observed_event_alert_price_band(market_data))
-        and "$" in value
-        and re.search(r"(?i)\b(?:if|whether)\b", value) is not None
+        and re.search(
+            r"(?i)\b(?:if|whether|when|unless|would|could|might)\b", value
+        ) is not None
     )
     contradictory_direction = (
         not market_direction_claims_supported(value, market_data)

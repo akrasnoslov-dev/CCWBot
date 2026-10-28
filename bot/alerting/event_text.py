@@ -122,6 +122,21 @@ def ensure_useful_situation(
     )
 
 
+def _has_unsupported_event_claim(value: str, market_data: dict) -> bool:
+    """Permit a verified pace comparison, but not an unsupported event claim."""
+    pace = _short_window_pace_context(market_data)
+    faster = pace is not None and "picked up pace" in pace[0]
+    slower = pace is not None and "has eased" in pace[0]
+    for match in _UNSUPPORTED_EVENT_CLAIM_RE.finditer(value):
+        claim = match.group(0).lower()
+        if faster and (claim == "faster" or claim.startswith("accelerat")):
+            continue
+        if slower and (claim == "slower" or claim.startswith("decelerat")):
+            continue
+        return True
+    return False
+
+
 def compact_event_alert_situation(
     value: str,
     *,
@@ -149,7 +164,7 @@ def compact_event_alert_situation(
     if (
         _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
         or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(cleaned)
-        or _UNSUPPORTED_EVENT_CLAIM_RE.search(cleaned)
+        or _has_unsupported_event_claim(cleaned, market_data or {})
     ):
         return fallback
     # Free-form LLM copy cannot establish unstructured facts (for example demand, sentiment,
@@ -712,12 +727,13 @@ def compact_event_alert_possible_action(
         _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
         or not _action_price_levels_supported(cleaned, market_data)
         or len(cleaned.split()) > 60
-        or len(re.findall(r"[.!?]", cleaned)) > 2
+        # A decimal point inside an observed USD price is not a sentence end.
+        or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
         or _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
-        or _UNSUPPORTED_EVENT_CLAIM_RE.search(cleaned)
+        or _has_unsupported_event_claim(cleaned, market_data or {})
         or _DIRECT_FINANCIAL_INSTRUCTION_RE.search(cleaned)
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."
@@ -888,6 +904,45 @@ def observed_event_alert_level_action(market: dict) -> str | None:
     )
 
 
+def _verified_recent_price_path(market: dict) -> dict[str, object]:
+    """A four-observation price path, only when the recent band is verified."""
+    if not observed_event_alert_price_band(market):
+        return {}
+    snapshots = market.get("snapshots")
+    if not isinstance(snapshots, list):
+        return {}
+    observations = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and price is not None and price > 0 and -180 <= minute <= 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    recent = observations[-4:]
+    if len(recent) != 4:
+        return {}
+    durations = [later[0] - earlier[0] for earlier, later in zip(recent, recent[1:], strict=False)]
+    if any(duration <= 0 or duration != int(duration) for duration in durations):
+        return {}
+    prices = [price for _, price in recent]
+    directions = [
+        "up" if later > earlier else "down" if later < earlier else "flat"
+        for earlier, later in zip(prices, prices[1:], strict=False)
+    ]
+    location = (
+        "at_high" if prices[-1] == max(prices) else
+        "at_low" if prices[-1] == min(prices) else
+        "inside_range"
+    )
+    return {
+        "step_directions": directions,
+        "step_durations_minutes": [int(duration) for duration in durations],
+        "current_range_position": location,
+    }
+
+
 def verified_event_alert_render_context(
     market: dict, previous_event_alert: dict | None = None
 ) -> dict[str, object]:
@@ -896,6 +951,9 @@ def verified_event_alert_render_context(
     band = observed_event_alert_price_band(market)
     if band:
         context["observed_price_band"] = band
+        recent_path = _verified_recent_price_path(market)
+        if recent_path:
+            context["recent_price_path"] = recent_path
     current = _decimal_market_value(market.get("chg_window_percent"))
     day = _decimal_market_value(market.get("chg24h_percent"))
     if current is not None and day is not None and current != 0 and day != 0:
