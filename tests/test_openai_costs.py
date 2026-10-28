@@ -1,6 +1,6 @@
 """Offline regression coverage for read-only OpenAI project cost monitoring."""
 
-import asyncio
+import asyncio  # noqa: I001 - allow mixed imports in this isolated mock suite
 import json
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
