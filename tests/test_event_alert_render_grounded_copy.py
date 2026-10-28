@@ -3,6 +3,7 @@
 All cases use synthetic snapshots and no provider/Telegram/DB calls.
 """
 
+import json
 from decimal import Decimal
 
 import bot.alerts as alerts
@@ -12,7 +13,6 @@ from bot.alerting.event_text import (
     verified_event_alert_render_context,
 )
 from bot.services.ai_agent_groq import build_event_alert_render_prompt
-import json
 
 
 def market_down():
