@@ -172,7 +172,10 @@ class OpenAICostsMonitor:
         now = _utc(now or datetime.now(timezone.utc))
         key = os.getenv("OPENAI_COSTS_ADMIN_KEY", "").strip()
         project_id = os.getenv("OPENAI_COSTS_PROJECT_ID", "").strip()
-        if not key or not PROJECT_ID_PATTERN.fullmatch(project_id):
+        if (
+            not key or key == os.getenv("OPENAI_API_KEY", "").strip()
+            or not PROJECT_ID_PATTERN.fullmatch(project_id)
+        ):
             return "NOT CONFIGURED", None
         start, end = _window(now)
         if end <= start:
