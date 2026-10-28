@@ -121,6 +121,7 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
     assert compact["evidence"] == {}
     assert compact["market_directions"] == {}
+    assert compact["market_metrics"] == {"price_now_usd": 105.0}
     assert "When band is missing, do not invent prices" in prompt
 
 
