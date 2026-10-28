@@ -897,7 +897,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "market_heartbeat_delivery_freshness",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, user_id, count(*) AS deliveries, "
-        "max(created_at) FILTER (WHERE status = 'sent') AS latest_sent_at, "
+        "max(sent_at) FILTER (WHERE status = 'sent') AS latest_sent_at, "
+        "count(*) FILTER (WHERE status = 'sent' AND sent_at IS NULL) "
+        "AS sent_missing_completion_at, "
         "count(*) FILTER (WHERE status = 'sent') AS sent_count, "
         "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) "
         "AS failed_count, "
@@ -909,6 +911,38 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM alerts WHERE (alert_type = 'market_heartbeat' OR market_heartbeat_id IS NOT NULL) "
         "AND created_at >= :since AND created_at < :until "
         "GROUP BY symbol, user_id ORDER BY latest_sent_at DESC NULLS LAST, symbol LIMIT :limit",
+    ),
+    DbQuery(
+        "market_heartbeat_potential_recipients",
+        "evidence/db/aggregate_metrics.json",
+        # A zero count establishes idle for the *current* eligibility snapshot.
+        # Nonzero is only an upper bound: Premium gating and the 24h due clock
+        # still require runtime evaluation. No user IDs leave this query.
+        "WITH symbols(symbol) AS ("
+        f"{ACTIVE_SYMBOL_VALUES_SQL}"
+        ") SELECT s.symbol, count(DISTINCT u.id) AS potential_recipients "
+        "FROM symbols s "
+        "LEFT JOIN user_coin_subscriptions cs ON lower(cs.symbol) = s.symbol "
+        "AND cs.is_enabled = true "
+        "LEFT JOIN users u ON u.id = cs.user_id AND u.is_active = true "
+        "AND u.bot_blocked = false AND u.telegram_chat_id IS NOT NULL "
+        "GROUP BY s.symbol ORDER BY s.symbol",
+    ),
+    DbQuery(
+        "market_heartbeat_delivery_summary",
+        "evidence/db/aggregate_metrics.json",
+        # Completed transport timestamp, not pre-send reservation time.
+        "SELECT lower(symbol) AS symbol, "
+        "count(*) FILTER (WHERE status = 'sent') AS sent_deliveries, "
+        "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') "
+        "OR final_failed_at IS NOT NULL) AS failed_deliveries, "
+        "max(sent_at) FILTER (WHERE status = 'sent') AS last_completed_at, "
+        "count(*) FILTER (WHERE status = 'sent' AND sent_at IS NULL) "
+        "AS missing_completion_timestamps "
+        "FROM alerts WHERE (alert_type = 'market_heartbeat' "
+        "OR market_heartbeat_id IS NOT NULL) "
+        "AND created_at >= :since AND created_at < :until "
+        "GROUP BY lower(symbol) ORDER BY symbol",
     ),
     DbQuery(
         "market_reports_summary",
