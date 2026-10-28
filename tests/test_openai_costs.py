@@ -17,6 +17,7 @@ from bot.services.llm.openai_budget import OpenAIBudget
 from bot.services.llm import openai_costs as costs
 
 
+REAL_ASYNC_CLIENT = httpx.AsyncClient
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
 NOW = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
 PROJECT = "proj_ccwbot"
@@ -45,7 +46,7 @@ def page(data, *, more=False, cursor=None):
 def client_mock(monkeypatch, responses):
     """Mock every HTTP request without outbound API calls."""
     seen = []
-    original_client = httpx.AsyncClient
+    original_client = REAL_ASYNC_CLIENT
 
     def handler(request):
         seen.append(request)
@@ -198,6 +199,19 @@ async def test_success_cache_hour_ttl_and_utc_day_rollover(monkeypatch):
     assert len(seen) == 2
     # New UTC day requires its own daily bucket, not stale cached totals.
     assert (await monitor.get(now=NOW + timedelta(days=1)))[0] == "UNAVAILABLE"
+
+
+def test_utc_month_transition_uses_new_calendar_month():
+    nov_start, nov_end = costs._window(
+        datetime(2026, 11, 1, 0, 1, tzinfo=timezone.utc)
+    )
+    assert nov_start == datetime(2026, 11, 1, tzinfo=timezone.utc)
+    assert nov_end == nov_start
+    oct_start, oct_end = costs._window(
+        datetime(2026, 10, 31, 23, 59, tzinfo=timezone.utc)
+    )
+    assert oct_start == START
+    assert oct_end == datetime(2026, 10, 31, tzinfo=timezone.utc)
 
 
 @pytest.mark.asyncio
