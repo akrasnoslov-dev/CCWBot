@@ -25,6 +25,8 @@ logs/*
 # Root reports/ is versioned research; only ephemeral ops-agent output stays private.
 reports/ops-agent/bundles/
 reports/ops-agent/receipts/
+reports/ops-agent/.in-progress/
+reports/ops-agent/reports/
 # All durable project research is tracked under repository-root reports/.
 # Only generated temp data, local hardware evidence, models, and secrets are ignored.
 reports/**/__pycache__/
