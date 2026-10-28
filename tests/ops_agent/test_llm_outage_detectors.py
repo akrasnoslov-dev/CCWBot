@@ -390,3 +390,14 @@ def test_missing_dedicated_model_evidence_does_not_claim_healthy(monkeypatch):
     ])
     del evidence["evidence/db/aggregate_metrics.json"]["queries"]["event_analysis_model_usage"]
     assert _detector(evidence, "event_analysis_model_drift").status == "unknown"
+
+
+def test_withdrawn_model_evidence_survives_absent_dedicated_aggregate():
+    evidence = _evidence([
+        _row("other_error", 2, provider="openai",
+             model="meta-llama/llama-4-scout-17b-16e-instruct")
+    ])
+    del evidence["evidence/db/aggregate_metrics.json"]["queries"]["event_analysis_model_usage"]
+    result = _detector(evidence, "event_analysis_model_drift")
+    assert result.status == "triggered"
+    assert result.metrics["model_usage_incomplete"] is True
