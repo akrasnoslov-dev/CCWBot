@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from decimal import Decimal, InvalidOperation
+from math import isfinite
 
 from dotenv import load_dotenv
 
@@ -775,9 +776,14 @@ def _finite_render_metric(value: object) -> float | None:
         return None
     if not parsed.is_finite():
         return None
+    try:
+        bounded = float(parsed)
+    except (ValueError, OverflowError):
+        return None
+    if not isfinite(bounded):
+        return None
     # Keep meaningful sub-0.000001 percent movements from collapsing to zero.
-    rounded = _event_analysis_percent(parsed)
-    return float(rounded)
+    return float(_event_analysis_percent(bounded))
 
 
 def _event_alert_render_market_metrics(
