@@ -271,6 +271,25 @@ def _findings(
                 confidence="high",
             )
         )
+    mismatch_rows = [
+        row for row in quality_issues
+        if row.get("issue") == "selected_news_attachment_mismatch"
+    ]
+    if mismatch_rows:
+        findings.append(
+            ReportFinding(
+                title="Selected-news evidence differs from saved analysis attachments",
+                severity="medium",
+                evidence=(
+                    f"{sum(_int(row.get('delivery_count')) for row in mismatch_rows)} "
+                    "sampled sent deliveries with persisted selection/attachment mismatch"
+                ),
+                user_impact="Unknown; this is a consistency signal, not proof of a failed runtime attachment.",
+                recommended_action="Review selected-news provenance using approved read-only evidence.",
+                pr_mapping="Ops-agent news context consistency",
+                confidence="medium",
+            )
+        )
     old_label_quality = [
         row for row in quality_issues if str(row.get("issue") or "").startswith("old_")
     ]
