@@ -368,7 +368,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         # Counts only (no news content): distinguishes analyses that genuinely had zero
         # candidate news in their input from should_alert=true analyses that had
-        # candidates available but attached none (possible news-attach gap).
+        # Candidate presence is informational, not proof of an attachment fault.
         "WITH analysis_news AS ("
         "SELECT coalesce(symbol, 'UNKNOWN') AS symbol, should_alert, related_news_ids, "
         f"{RELATED_NEWS_CANDIDATES_COUNT_SQL} AS related_news_candidates_count "
@@ -462,7 +462,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "AND coalesce(a.message, '') ~* '(^|\\n)[[:space:]]*([•*\\-][[:space:]]*)?price change[[:space:]]*:') AS old_generic_price_change_label, "
         "count(*) FILTER (WHERE a.alert_type = 'event_alert' AND ("
         "eai.related_news_ids IS NULL OR eai.related_news_ids::text IN ('[]', 'null', '')"
-        ")) AS empty_related_context, "
+        ")) AS no_news_attached_sent_deliveries, "
         "count(*) FILTER (WHERE a.message IS NULL OR length(trim(a.message)) = 0) AS malformed_formatting "
         "FROM alerts a "
         "LEFT JOIN market_events me ON me.id = a.market_event_id "
@@ -890,7 +890,7 @@ QUERIES: tuple[DbQuery, ...] = (
         "market_heartbeat_delivery_freshness",
         "evidence/db/aggregate_metrics.json",
         "SELECT symbol, user_id, count(*) AS deliveries, "
-        "max(created_at) FILTER (WHERE status = 'sent') AS latest_sent_at, "
+        "max(coalesce(sent_at, created_at)) FILTER (WHERE status = 'sent') AS latest_sent_at, "
         "count(*) FILTER (WHERE status = 'sent') AS sent_count, "
         "count(*) FILTER (WHERE status IN ('failed', 'retry_pending') OR final_failed_at IS NOT NULL) "
         "AS failed_count, "
@@ -952,6 +952,17 @@ QUERIES: tuple[DbQuery, ...] = (
         "FROM report_types rt LEFT JOIN latest l ON l.report_type = rt.report_type "
         "LEFT JOIN cached c ON c.report_type = rt.report_type "
         "LEFT JOIN period_counts pc ON pc.report_type = rt.report_type ORDER BY rt.report_type",
+    ),
+    # Dedicated untruncated provider/model census for Event Analysis drift diagnostics.
+    # Generic llm_usage_summary is top-N and can omit low-volume fallback rows.
+    DbQuery(
+        "event_analysis_provider_models",
+        "evidence/db/aggregate_metrics.json",
+        "SELECT provider, model, status, count(*) AS calls "
+        "FROM llm_usage_logs "
+        "WHERE created_at >= :since AND created_at < :until "
+        "AND call_type = 'event_analysis' "
+        "GROUP BY provider, model, status ORDER BY provider, model, status",
     ),
     DbQuery(
         "llm_usage_summary",

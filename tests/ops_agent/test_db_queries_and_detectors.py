@@ -2548,3 +2548,56 @@ def test_report_freshness_sql_reads_completed_cache_independent_of_latest_attemp
     assert "WHERE status = 'completed'" in query
     assert "cached_expires_at" in query
     assert "cache_available" in query
+
+
+@pytest.mark.parametrize(
+    "provider_override,rows,expected_state",
+    [
+        (None, [("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")], "unknown"),
+        ("cloudflare", [("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+                        ("openai", "gpt-6-luna")], "unknown"),
+        ("groq", [("groq", "openai/gpt-oss-120b")], "clear"),
+        ("groq", [("openai", "gpt-6-luna")], "unknown"),
+        (None, [("openai", "meta-llama/llama-4-scout-17b-16e-instruct")], "triggered"),
+    ],
+)
+def test_model_drift_requires_verified_routing_and_checks_all_providers(
+    monkeypatch, provider_override, rows, expected_state,
+):
+    from ops_agent.detectors import _event_analysis_model_drift_detector
+    if provider_override is None:
+        monkeypatch.delenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER", raising=False)
+    else:
+        monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER", provider_override)
+    model_rows = [
+        {"provider": provider, "model": model, "status": "success", "calls": 1}
+        for provider, model in rows
+    ]
+    evidence = {"evidence/db/aggregate_metrics.json": {"queries": {
+        "event_analysis_provider_models": {
+            "query_name": "event_analysis_provider_models", "rows": model_rows
+        }
+    }}}
+    result = _event_analysis_model_drift_detector(
+        evidence, model_rows, lambda *args: args,
+    )
+    assert result[3] == expected_state
+
+
+def test_model_drift_missing_or_partial_census_is_unknown(monkeypatch):
+    from ops_agent.detectors import _event_analysis_model_drift_detector
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PROVIDER", "groq")
+    rows = [{"provider": "groq", "model": "openai/gpt-oss-120b", "calls": 1}]
+    assert _event_analysis_model_drift_detector(
+        {}, rows, lambda *args: args
+    )[3] == "unknown"
+
+
+def test_dedicated_model_census_has_no_generic_row_cap():
+    queries = {item.name: item.sql for item in QUERIES}
+    assert "LIMIT :limit" in queries["llm_usage_summary"]
+    assert "LIMIT" not in queries["event_analysis_provider_models"].upper()
+    assert "call_type = 'event_analysis'" in queries["event_analysis_provider_models"]
+    assert "coalesce(sent_at, created_at)" in queries["market_heartbeat_delivery_freshness"]
+    assert "no_news_attached_sent_deliveries" in queries["alert_quality_summary"]
+    assert "empty_related_context" not in queries["alert_quality_summary"]
