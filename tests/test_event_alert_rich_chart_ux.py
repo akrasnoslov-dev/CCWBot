@@ -612,7 +612,9 @@ async def test_event_chart_file_id_reused_across_recipients_in_one_dispatch(monk
 
     async def send_rich(**kwargs):
         calls.append((kwargs["chat_id"], kwargs["chart_file_id"]))
-        return "confirmed-chart-file" if kwargs["chart_file_id"] is None else kwargs["chart_file_id"]
+        if kwargs["chart_file_id"] is None:
+            return "confirmed-chart-file"
+        return kwargs["chart_file_id"]
 
     monkeypatch.setattr(alerts, "DB_ENABLED", False)
     monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
