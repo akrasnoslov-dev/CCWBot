@@ -603,3 +603,34 @@ async def test_integrity_conflict_preserves_terminal_delivery_reservation(
     )
     assert found is existing
     assert can_send is (not terminal)
+
+
+@pytest.mark.asyncio
+async def test_event_chart_file_id_reused_across_recipients_in_one_dispatch(monkeypatch):
+    calls = []
+
+    async def send_rich(**kwargs):
+        calls.append((kwargs["chat_id"], kwargs["chart_file_id"]))
+        return "confirmed-chart-file" if kwargs["chart_file_id"] is None else kwargs["chart_file_id"]
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    monkeypatch.setattr(alerts, "send_rich_event_alert", send_rich)
+
+    payload = {
+        "plain_text": "Observed market movement. Not financial advice.",
+        "rich_html": "<h2>Market event</h2><footer>Not financial advice.</footer>",
+        "chart_png": b"sample",
+    }
+    outcome = await alerts._deliver_market_event_alert(
+        SimpleNamespace(bot=SimpleNamespace(token="test")),
+        symbol="eth", alert_payload=payload,
+        market_event_id=None, event_ai_analysis_id=None,
+        recipients=[
+            alerts.AlertRecipient(chat_id=101),
+            alerts.AlertRecipient(chat_id=102),
+        ],
+        event_type=alerts.EVENT_ALERT_TYPE,
+    )
+    assert outcome is True
+    assert calls == [(101, None), (102, "confirmed-chart-file")]
