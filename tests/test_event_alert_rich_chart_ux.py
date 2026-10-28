@@ -543,10 +543,17 @@ async def test_rich_httpx_transport_uncertainty_prevents_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("code,exception_name", [(400, "BadRequest"), (403, "Forbidden"), (429, "RetryAfter")])
+@pytest.mark.parametrize(
+    "code,exception_name",
+    [(400, "BadRequest"), (403, "Forbidden"), (429, "RetryAfter")],
+)
 async def test_rich_confirmed_telegram_rejections(monkeypatch, code, exception_name):
     from telegram.error import Forbidden, RetryAfter
-    expected = {"BadRequest": BadRequest, "Forbidden": Forbidden, "RetryAfter": RetryAfter}[exception_name]
+    expected = {
+        "BadRequest": BadRequest,
+        "Forbidden": Forbidden,
+        "RetryAfter": RetryAfter,
+    }[exception_name]
     class FakeResponse:
         def json(self):
             return {"ok": False, "error_code": code, "parameters": {"retry_after": 2}}
