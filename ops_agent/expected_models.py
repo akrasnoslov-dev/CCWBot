@@ -34,9 +34,28 @@ SHIPPED_DEFAULT_MODELS: dict[str, str] = {
     "news_intelligence": "openai/gpt-oss-20b",
 }
 
-# The fallback chain is intentionally provider-specific. Model drift compares the configured
-# Groq primary only; fallback models are reported separately and must never be mislabelled drift.
+# Shipped routing default, not proof of the running deployment. The owner can pin
+# Cloudflare -> OpenAI -> Groq in the runtime environment, outside the ops image.
 EVENT_ANALYSIS_PRIMARY_PROVIDER = "groq"
+_KNOWN_PROVIDERS = frozenset({"groq", "cloudflare", "openai"})
+
+
+def expected_event_analysis_route() -> tuple[str | None, str | None]:
+    """Verified operator assertion, never inferred from successful requests.
+
+    A Cloudflare/OpenAI override needs an explicit expected model as well;
+    a Groq override may safely use the shipped Groq default.
+    Missing deployed routing evidence is UNKNOWN, not a drift alert.
+    """
+    provider = (os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER") or "").strip().lower()
+    if provider not in _KNOWN_PROVIDERS:
+        return None, None
+    configured_model = (os.getenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL") or "").strip()
+    if configured_model and _MODEL_NAME_RE.fullmatch(configured_model):
+        return provider, configured_model
+    if provider == EVENT_ANALYSIS_PRIMARY_PROVIDER:
+        return provider, SHIPPED_DEFAULT_MODELS["event_analysis"]
+    return provider, None
 
 # Models the provider has withdrawn. A recorded call against one of these is not drift, it is
 # an outage in progress, and is reported at a higher severity.
