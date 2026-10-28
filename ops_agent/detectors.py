@@ -1052,6 +1052,9 @@ def _event_analysis_model_drift_detector(
     primary_models = sorted({
         model for provider, model in observed if provider == configured_primary
     }) if configured_primary else []
+    fallback_models = sorted({
+        model for provider, model in observed if provider != configured_primary
+    })
     # A pinned expected model is meaningful only when the deployed provider is
     # explicitly supplied. Groq's shipped default alone is not live configuration.
     drifted = [
@@ -1102,6 +1105,9 @@ def _event_analysis_model_drift_detector(
             "observed_provider_model_count": len(observed),
             "observed_providers": sorted({provider for provider, _ in observed}),
             "observed_primary_models": primary_models,
+            "primary_models_in_use": primary_models,
+            "fallback_models_in_use": fallback_models,
+            "decommissioned_primary_models_in_use": withdrawn,
             "drifted_primary_models": drifted,
             "withdrawn_models_observed": withdrawn,
             "census_complete": complete,
