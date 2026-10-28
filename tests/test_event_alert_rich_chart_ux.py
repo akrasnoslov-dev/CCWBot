@@ -575,6 +575,7 @@ async def test_integrity_conflict_preserves_terminal_delivery_reservation(
     monkeypatch, terminal,
 ):
     from sqlalchemy.exc import IntegrityError
+
     from bot.db import alerts as db_alerts
 
     existing = SimpleNamespace(
