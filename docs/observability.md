@@ -292,10 +292,14 @@ Default output is designed for mobile scanning:
 The default Telegram message shows one main line per component. It adds indented details only for
 degraded or failing components. Long OK details, repeated timestamps, price values, CoinGecko ids, raw
 table names, provider payloads, traces, and secrets are not shown in the default dashboard.
+The Bot line also shows the container start date/time in UTC. On Linux Docker this is
+read from PID 1's kernel start time, not inferred from when the admin page was opened.
+If `/proc` is unavailable (for example, during Windows development), it falls back to
+the Python process's initial import time. It is read-only and resets on container restart.
 
 Signals currently summarized:
 
-- Runtime: admin command response.
+- Runtime: admin command response and container start timestamp.
 - Database: explicit lightweight PostgreSQL query.
 - Market data: freshness for each active symbol from persisted price telemetry. Automatic market
   check health is folded into this component.
@@ -321,6 +325,7 @@ System status — 2026-06-15 16:55 UTC
 Overall: ⚠️ Needs attention
 
 ✅ Bot — running
+   Container started: 2026-06-15 15:10 UTC
 ✅ Database — connected
 ⚠️ Market data — stale/missing symbols
    BTC stale: last check 32h ago
