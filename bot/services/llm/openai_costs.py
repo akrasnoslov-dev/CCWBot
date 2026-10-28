@@ -242,7 +242,10 @@ async def read_internal_costs(
         else:
             conservative += charge
         breach |= status == "cap_breach"
-        timestamp = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else _utc(created)
+        timestamp = (
+            created.replace(tzinfo=timezone.utc)
+            if created.tzinfo is None else _utc(created)
+        )
         if start <= timestamp < end:
             comparable += charge
     return InternalCosts(
@@ -276,7 +279,11 @@ def format_costs_screen(
             lines.append("WARNING: local budget cap invariant breach recorded.")
     lines += ["", "OpenAI Platform (official, delayed daily data):"]
     if state != "OK" or provider is None:
-        lines += [f"Reported cost: {state}", "Last successful refresh: UNAVAILABLE", "Coverage: UNAVAILABLE"]
+        lines += [
+            f"Reported cost: {state}",
+            "Last successful refresh: UNAVAILABLE",
+            "Coverage: UNAVAILABLE",
+        ]
     else:
         lines += [
             f"Reported cost MTD: ${provider.total_usd:.4f}",
