@@ -430,7 +430,9 @@ async def reserve_alert_delivery(
         )
         if existing is None:
             raise
-        return existing, existing.status == "failed"
+        # A concurrent worker may have permanently finalized this identity.
+        # Never reopen a terminal failed delivery after a uniqueness race.
+        return existing, existing.status == "failed" and existing.final_failed_at is None
     await session.refresh(alert)
     return alert, True
 
