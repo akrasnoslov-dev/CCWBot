@@ -11,6 +11,7 @@ from ops_agent.db_queries import (
 from ops_agent.expected_models import (
     EVENT_ANALYSIS_PRIMARY_PROVIDER,
     KNOWN_DECOMMISSIONED_MODELS,
+    configured_event_analysis_primary_provider,
     expected_model,
 )
 from ops_agent.schemas import DetectorResult, Period
@@ -171,6 +172,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     alert_failures = _query_rows(evidence, "evidence/db/recent_alert_failures.json", "alerts_failures")
     alert_summary = _query_rows(evidence, aggregate, "alerts_summary")
     llm_summary = _query_rows(evidence, aggregate, "llm_usage_summary")
+    event_provider_models = _query_rows(evidence, aggregate, "event_analysis_provider_models")
     llm_category_rows = _query_rows(evidence, aggregate, "llm_failure_category_summary")
     llm_reconciliation_rows = _query_rows(
         evidence, aggregate, "llm_operation_reconciliation_summary"
@@ -921,7 +923,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             None if logs_available else "Required evidence missing: evidence/logs/pattern_counts.json",
         ),
         _event_analysis_dead_detector(evidence, llm_summary, db_result),
-        _event_analysis_model_drift_detector(evidence, llm_summary, db_result),
+        _event_analysis_model_drift_detector(evidence, event_provider_models, db_result),
     ]
     return detectors
 
