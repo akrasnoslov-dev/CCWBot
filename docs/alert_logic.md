@@ -173,7 +173,8 @@ inconsistent, there are no numeric levels for the model to invent.
   by the text guard. Future conditional up/down scenarios are not judged as
   historical direction claims; any independent present/past claim and all USD
   levels still require factual verification. A decimal point in a verified
-  USD price must not count as an extra sentence and trigger a generic fallback.
+  USD price must not count as an extra sentence or split a future conditional
+  clause during direction validation and trigger a generic fallback.
   Content tests check meaningful
   distinct scenario descriptions, not fabricated uniqueness when facts match.
   This adds no provider calls and never influences the significance decision.
