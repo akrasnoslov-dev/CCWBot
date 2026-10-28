@@ -141,7 +141,7 @@ def test_alert_quality_groups_placeholder_and_missing_market_context():
     assert ("contains_unavailable", "news") in issues
     assert ("old_since_last_btc_alert_label", "news") in issues
     assert ("old_analysed_window_change_label", "news") in issues
-    assert ("empty_related_context", "news") in issues
+    assert ("empty_related_context", "news") not in issues
     assert quality["total_event_alert_deliveries"] == 84
     assert quality["affected_event_alert_deliveries"] == 84
     assert quality["severe_affected_event_alert_deliveries"] == 84
@@ -674,3 +674,51 @@ def test_same_copy_in_multiple_coins_has_distinct_joinable_similarity_groups():
             group["sample_event_refs"]
         )
 
+
+
+@pytest.mark.parametrize(
+    ("candidates", "selected_ids", "expected"),
+    [
+        (0, [], "no_candidate_news"),
+        (2, [], "candidates_unselected"),
+        (None, [], "news_evidence_unknown"),
+        (2, ["selected-news-ref"], "selected_news_attachment_mismatch"),
+    ],
+)
+def test_optional_news_is_not_reported_as_bad_content_without_selection_evidence(
+    candidates, selected_ids, expected,
+):
+    payloads = build_alert_evidence_payloads(
+        [_row(
+            related_news_ids="[]",
+            related_news_candidates_count=candidates,
+            alert_numeric_context=_numeric_context_json(stable_related_news_ids=selected_ids),
+            sent_delivery_count=2, delivery_count=3, sent_distinct_recipient_count=2,
+        )],
+        period=_period(), row_cap=20, semantic_cooldown_seconds=14400,
+    )
+    quality = payloads["evidence/db/alert_quality.json"]
+    assert quality["news_context_diagnostics"][expected] == 2
+    issues = {row["issue"] for row in quality["issues"]}
+    assert ("selected_news_attachment_mismatch" in issues) is bool(selected_ids)
+    assert "empty_related_context" not in issues
+    assert quality["total_event_alert_deliveries"] == 2
+    if not selected_ids:
+        assert quality["affected_event_alert_deliveries"] == 0
+
+
+def test_news_context_diagnostics_exclude_unsent_and_count_multiple_recipients_once_each():
+    payloads = build_alert_evidence_payloads(
+        [
+            _row(related_news_ids="[]", related_news_candidates_count=0,
+                 sent_delivery_count=3, delivery_count=5, sent_distinct_recipient_count=3),
+            _row(market_event_id=20, event_ai_analysis_id=200,
+                 related_news_ids="[]", related_news_candidates_count=3,
+                 sent_delivery_count=0, delivery_count=4),
+        ],
+        period=_period(), row_cap=20, semantic_cooldown_seconds=14400,
+    )
+    quality = payloads["evidence/db/alert_quality.json"]
+    assert quality["news_context_diagnostics"]["no_candidate_news"] == 3
+    assert quality["total_event_alert_deliveries"] == 3
+    assert quality["affected_event_alert_deliveries"] == 0
