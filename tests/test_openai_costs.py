@@ -106,6 +106,16 @@ async def test_missing_configuration_never_calls_provider(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_rejects_reused_inference_key(monkeypatch):
+    configured(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-admin-key")
+    loader = AsyncMock(side_effect=AssertionError("no administrative request allowed"))
+    monkeypatch.setattr(costs, "_fetch", loader)
+    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "NOT CONFIGURED"
+    loader.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_success_multiple_days_with_pagination_and_scoping(monkeypatch):
     configured(monkeypatch)
     # Use native JSON numeric encoding, not a float calculated in Python.
