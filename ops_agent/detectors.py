@@ -1061,7 +1061,11 @@ def _event_analysis_model_drift_detector(
     query = (evidence.get("evidence/db/aggregate_metrics.json") or {}).get("queries", {}).get(
         "event_analysis_provider_models", {}
     )
-    complete = isinstance(query, dict) and query.get("status") == "ok"
+    complete = (
+        isinstance(query, dict)
+        and query.get("query_name") == "event_analysis_provider_models"
+        and isinstance(query.get("rows"), list)
+    )
     if withdrawn:
         status = "triggered"
         summary = "Withdrawn event_analysis model observed in provider attempts"
