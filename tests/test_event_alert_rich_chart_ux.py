@@ -501,3 +501,139 @@ async def test_rich_403_preserves_safe_blocked_classification_without_raw_errors
         )
     assert is_bot_blocked_error(caught.value) is expected
     assert str(caught.value) != description
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identity", [None, 0, -2, True, "42", 3.5])
+async def test_rich_success_without_valid_receipt_is_uncertain(monkeypatch, identity):
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": {"message_id": identity}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    acknowledged = []
+    with pytest.raises(RichDeliveryUncertain):
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<b>A</b>",
+            chart_png=None, on_message_id=acknowledged.append,
+        )
+    assert not acknowledged
+
+
+@pytest.mark.asyncio
+async def test_rich_httpx_transport_uncertainty_prevents_fallback(monkeypatch):
+    class FailingClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs):
+            raise httpx.ReadTimeout("timed out")
+    monkeypatch.setattr(httpx, "AsyncClient", FailingClient)
+    bot = SimpleNamespace(token="test", send_message=AsyncMock())
+    outcome = await alerts._send_alert_to_recipient_with_retry(
+        SimpleNamespace(bot=bot), alerts.AlertRecipient(chat_id=123),
+        {"rich_html": "<b>A</b>", "html_text": "<b>A</b>", "plain_text": "A"},
+    )
+    assert outcome[0] is False
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "code,exception_name",
+    [(400, "BadRequest"), (403, "Forbidden"), (429, "RetryAfter")],
+)
+async def test_rich_confirmed_telegram_rejections(monkeypatch, code, exception_name):
+    from telegram.error import Forbidden, RetryAfter
+    expected = {
+        "BadRequest": BadRequest,
+        "Forbidden": Forbidden,
+        "RetryAfter": RetryAfter,
+    }[exception_name]
+    class FakeResponse:
+        def json(self):
+            return {"ok": False, "error_code": code, "parameters": {"retry_after": 2}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs): return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    with pytest.raises(expected):
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<b>A</b>", chart_png=None,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", [False, True])
+async def test_integrity_conflict_preserves_terminal_delivery_reservation(
+    monkeypatch, terminal,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    from bot.db import alerts as db_alerts
+
+    existing = SimpleNamespace(
+        status="failed",
+        final_failed_at=AT if terminal else None,
+    )
+    lookups = iter([None, existing])
+
+    async def find_delivery(*args, **kwargs):
+        return next(lookups)
+
+    class RacingSession:
+        def add(self, alert):
+            pass
+        async def commit(self):
+            raise IntegrityError("INSERT", {}, Exception("duplicate"))
+        async def rollback(self):
+            pass
+
+    monkeypatch.setattr(db_alerts, "get_alert_delivery", find_delivery)
+    found, can_send = await db_alerts.reserve_alert_delivery(
+        RacingSession(),
+        user_id=1, symbol="ETH", alert_type="event_alert",
+        sent_to_chat_id=123, market_event_id=20,
+        event_ai_analysis_id=None, message="Test",
+    )
+    assert found is existing
+    assert can_send is (not terminal)
+
+
+@pytest.mark.asyncio
+async def test_event_chart_file_id_reused_across_recipients_in_one_dispatch(monkeypatch):
+    calls = []
+
+    async def send_rich(**kwargs):
+        calls.append((kwargs["chat_id"], kwargs["chart_file_id"]))
+        if kwargs["chart_file_id"] is None:
+            return "confirmed-chart-file"
+        return kwargs["chart_file_id"]
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "DB_SESSION_LOCAL", None)
+    monkeypatch.setattr(alerts, "send_rich_event_alert", send_rich)
+
+    payload = {
+        "plain_text": "Observed market movement. Not financial advice.",
+        "rich_html": "<h2>Market event</h2><footer>Not financial advice.</footer>",
+        "chart_png": b"sample",
+    }
+    outcome = await alerts._deliver_market_event_alert(
+        SimpleNamespace(bot=SimpleNamespace(token="test")),
+        symbol="eth", alert_payload=payload,
+        market_event_id=None, event_ai_analysis_id=None,
+        recipients=[
+            alerts.AlertRecipient(chat_id=101),
+            alerts.AlertRecipient(chat_id=102),
+        ],
+        event_type=alerts.EVENT_ALERT_TYPE,
+    )
+    assert outcome is True
+    assert calls == [(101, None), (102, "confirmed-chart-file")]

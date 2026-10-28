@@ -430,7 +430,9 @@ async def reserve_alert_delivery(
         )
         if existing is None:
             raise
-        return existing, existing.status == "failed"
+        # A competing reservation may already be terminal. Never resurrect it
+        # through the integrity-conflict recovery path.
+        return existing, existing.status == "failed" and existing.final_failed_at is None
     await session.refresh(alert)
     return alert, True
 
