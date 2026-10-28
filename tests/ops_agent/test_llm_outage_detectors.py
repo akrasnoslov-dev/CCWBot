@@ -30,10 +30,22 @@ PERIOD = Period(
 
 
 def _evidence(llm_rows, *, state_runs=None):
+    groups = {}
+    for row in llm_rows:
+        if row.get("call_type") == "event_analysis":
+            key = (row.get("provider"), row.get("model"))
+            groups[key] = groups.get(key, 0) + row.get("calls", 0)
+    usage = [
+        {"provider": provider, "model": model, "calls": calls}
+        for (provider, model), calls in groups.items()
+    ]
     return {
         "evidence/db/aggregate_metrics.json": {
             "queries": {
                 "llm_usage_summary": {"rows": llm_rows},
+                "event_analysis_model_usage": {"rows": [{
+                    "models": usage, "total_groups": len(usage),
+                }]},
                 "llm_failure_category_summary": {"rows": []},
                 "event_analysis_logical_outcome_summary": {"rows": []},
             }
@@ -153,7 +165,8 @@ def test_state_records_the_per_run_signal():
 # --- model drift -------------------------------------------------------------------------
 
 
-def test_model_matching_the_shipped_default_is_clear():
+def test_model_matching_the_shipped_default_is_clear(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
     result = _detector(
         _evidence([_row("success", 10, model=SHIPPED_DEFAULT_MODELS["event_analysis"])]),
         "event_analysis_model_drift",
@@ -172,12 +185,13 @@ def test_decommissioned_model_in_use_triggers_at_high_severity():
 
     assert result.status == "triggered"
     assert result.severity == "high"
-    assert result.metrics["decommissioned_primary_models_in_use"] == [
+    assert result.metrics["decommissioned_models_observed"] == [
         "meta-llama/llama-4-scout-17b-16e-instruct"
     ]
 
 
-def test_any_other_divergence_triggers_at_medium_severity():
+def test_any_other_divergence_triggers_at_medium_severity(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
     result = _detector(
         _evidence([_row("success", 10, model="llama-3.1-8b-instant")]),
         "event_analysis_model_drift",
@@ -189,6 +203,7 @@ def test_any_other_divergence_triggers_at_medium_severity():
 
 
 def test_operator_can_declare_an_intentional_model_override(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
     monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL", "llama-3.1-8b-instant")
     result = _detector(
         _evidence([_row("success", 10, model="llama-3.1-8b-instant")]),
@@ -211,7 +226,8 @@ def test_no_recorded_model_is_unknown():
         ("mistral", "mistral-small-latest"),
     ],
 )
-def test_fallback_models_do_not_count_as_primary_model_drift(provider, model):
+def test_fallback_models_do_not_count_as_primary_model_drift(monkeypatch, provider, model):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
     result = _detector(
         _evidence(
             [
@@ -313,3 +329,64 @@ def test_a_failure_storm_no_longer_starves_delivered_analyses_of_the_row_cap():
         [row for row in rows if row["status"] not in excluded], row_cap=500
     )
     assert len([row for row in after if row["status"] == "success"]) == 6
+
+
+def test_cloudflare_first_with_openai_fallback_is_not_groq_drift(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "cloudflare")
+    monkeypatch.setenv(
+        "OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL",
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    )
+    evidence = _evidence([
+        _row("success", 9, provider="cloudflare",
+             model="@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+        _row("success", 183, provider="openai", model="gpt-6-luna"),
+    ])
+    result = _detector(evidence, "event_analysis_model_drift")
+    assert result.status == "clear"
+    assert result.metrics["primary_models_in_use"] == [
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    ]
+    assert result.metrics["fallback_models_in_use"] == ["gpt-6-luna"]
+
+
+def test_observed_openai_success_without_deployment_config_remains_unknown(monkeypatch):
+    monkeypatch.delenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", raising=False)
+    monkeypatch.delenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_MODEL", raising=False)
+    result = _detector(
+        _evidence([_row("success", 183, provider="openai", model="gpt-6-luna")]),
+        "event_analysis_model_drift",
+    )
+    assert result.status == "unknown"
+    assert result.metrics["expected_primary_provider"] is None
+
+
+def test_withdrawn_model_detected_in_non_primary_provider(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "cloudflare")
+    result = _detector(
+        _evidence([_row("other_error", 1, provider="openai",
+                        model="meta-llama/llama-4-scout-17b-16e-instruct")]),
+        "event_analysis_model_drift",
+    )
+    assert result.status == "triggered"
+    assert result.metrics["decommissioned_models_observed"]
+
+
+def test_model_usage_row_cap_is_unknown_even_when_visible_model_matches(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
+    evidence = _evidence([
+        _row("success", 1, model=SHIPPED_DEFAULT_MODELS["event_analysis"])
+    ])
+    evidence["evidence/db/aggregate_metrics.json"]["queries"]["event_analysis_model_usage"][
+        "rows"
+    ][0]["total_groups"] = 201
+    assert _detector(evidence, "event_analysis_model_drift").status == "unknown"
+
+
+def test_missing_dedicated_model_evidence_does_not_claim_healthy(monkeypatch):
+    monkeypatch.setenv("OPS_AGENT_EXPECTED_EVENT_ANALYSIS_PRIMARY_PROVIDER", "groq")
+    evidence = _evidence([
+        _row("success", 1, model=SHIPPED_DEFAULT_MODELS["event_analysis"])
+    ])
+    del evidence["evidence/db/aggregate_metrics.json"]["queries"]["event_analysis_model_usage"]
+    assert _detector(evidence, "event_analysis_model_drift").status == "unknown"
