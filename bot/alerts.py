@@ -5472,6 +5472,10 @@ async def _deliver_market_event_alert(
                 recipient_payload,
                 alert_id=alert_id,
             )
+            # Recipient-specific copies do not update the shared Event Alert payload.
+            # Carry the confirmed Telegram media identity across this dispatch only.
+            if sent and recipient_payload.get("chart_file_id"):
+                alert_payload["chart_file_id"] = recipient_payload["chart_file_id"]
             if DB_ENABLED and DB_SESSION_LOCAL and alert_id is not None:
                 async with DB_SESSION_LOCAL() as session:
                     await update_alert_delivery_status(
