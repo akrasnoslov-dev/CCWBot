@@ -603,3 +603,54 @@ async def test_integrity_error_recovery_does_not_reopen_terminal_delivery(monkey
     assert alert is terminal
     assert should_send is False
     session.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("code", "exception_type"),
+    [(400, "BadRequest"), (403, "Forbidden"), (429, "RetryAfter"), (500, "RichDeliveryUncertain")],
+)
+async def test_rich_http_rejection_and_uncertainty_are_classified_safely(
+    monkeypatch, code, exception_type,
+):
+    from telegram.error import Forbidden, RetryAfter
+
+    class FakeResponse:
+        def json(self):
+            return {"ok": False, "error_code": code,
+                    "description": "private recipient and bot token",
+                    "parameters": {"retry_after": 2}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *_args, **_kwargs): return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    expected = {"BadRequest": BadRequest, "Forbidden": Forbidden,
+                "RetryAfter": RetryAfter, "RichDeliveryUncertain": RichDeliveryUncertain}
+    with pytest.raises(expected[exception_type]) as caught:
+        await send_rich_event_alert(
+            bot_token="private", chat_id=123, rich_html="<p>Hi</p>", chart_png=None
+        )
+    assert "private" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_rich_valid_identity_calls_receipt_callback_once(monkeypatch):
+    received = []
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": {"message_id": 42}}
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *_args, **_kwargs): return FakeResponse()
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    result = await send_rich_event_alert(
+        bot_token="test", chat_id=123, rich_html="<p>Hi</p>", chart_png=None,
+        on_message_id=received.append,
+    )
+    assert result is None
+    assert received == [42]
