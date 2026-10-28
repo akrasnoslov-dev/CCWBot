@@ -106,11 +106,12 @@ async def _build_admin_openai_costs_text() -> str:
     internal = None
     if root.DB_ENABLED and root.DB_SESSION_LOCAL:
         try:
-            start, _ = _window(now)
+            start, prior_day = _window(now)
             internal = await read_internal_costs(
-                root.DB_SESSION_LOCAL, start=start, end=now,
+                root.DB_SESSION_LOCAL, start=start,
+                end=provider.coverage_end if provider else prior_day,
             )
-        except (ValueError, RuntimeError, Exception):
+        except Exception:
             # Do not expose database errors or secret-bearing exception messages.
             internal = None
     return format_costs_screen(
