@@ -9,6 +9,7 @@ from decimal import Decimal
 import bot.alerts as alerts
 from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.event_text import (
+    compact_event_alert_possible_action,
     compact_event_alert_situation,
     verified_event_alert_render_context,
 )
@@ -64,6 +65,12 @@ def test_when_two_sided_conditions_do_not_inherit_the_observed_down_direction():
         "When price moves above the observed $102.00 high, the rebound case "
         "would strengthen; when it falls below $100.00, that case would weaken."
     )
+    assert alerts._guard_event_text_against_market_data(
+        action, field_name="possible_action", symbol="BTC", market_data=market_down()
+    ) == action
+    assert compact_event_alert_possible_action(
+        action, fallback="fallback", market_data=market_down()
+    ) == action
     assert final_action(market_down(), action) == action
 
 
