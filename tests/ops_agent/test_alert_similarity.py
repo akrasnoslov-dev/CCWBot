@@ -141,7 +141,8 @@ def test_alert_quality_groups_placeholder_and_missing_market_context():
     assert ("contains_unavailable", "news") in issues
     assert ("old_since_last_btc_alert_label", "news") in issues
     assert ("old_analysed_window_change_label", "news") in issues
-    assert ("empty_related_context", "news") in issues
+    assert ("empty_related_context", "news") not in issues
+    assert quality["no_news_sent_event_alert_deliveries"] == 84
     assert quality["total_event_alert_deliveries"] == 84
     assert quality["affected_event_alert_deliveries"] == 84
     assert quality["severe_affected_event_alert_deliveries"] == 84
