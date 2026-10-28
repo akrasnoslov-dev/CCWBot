@@ -501,3 +501,105 @@ async def test_rich_403_preserves_safe_blocked_classification_without_raw_errors
         )
     assert is_bot_blocked_error(caught.value) is expected
     assert str(caught.value) != description
+
+
+@pytest.mark.asyncio
+async def test_event_dispatch_reuses_confirmed_chart_file_id_across_recipients(monkeypatch):
+    """Chart upload happens once, while recipient-specific text remains separate."""
+    seen = []
+
+    async def chart(payload, **_kwargs):
+        payload["chart_png"] = b"one-chart"
+        payload["rich_html"] = "<h2>BTC</h2><img src='tg://photo?id=chart'/>"
+
+    async def rich_send(**kwargs):
+        seen.append((kwargs["chart_file_id"], kwargs["chart_png"], kwargs["chat_id"]))
+        return "telegram-cached-chart"
+
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    monkeypatch.setattr(alerts, "_prepare_event_alert_chart", chart)
+    monkeypatch.setattr(alerts, "send_rich_event_alert", rich_send)
+    monkeypatch.setattr(alerts, "_record_alert_delivery", AsyncMock())
+    monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+    monkeypatch.setattr(alerts, "_persist_successful_product_alert_state", AsyncMock())
+    app = SimpleNamespace(bot=SimpleNamespace(token="fake", send_message=AsyncMock()))
+    sent = await alerts._deliver_market_event_alert(
+        app, symbol="BTC", event_type=alerts.EVENT_ALERT_TYPE,
+        alert_payload={"plain_text": "BTC Event Alert. Not financial advice."},
+        market_event_id=None, event_ai_analysis_id=None,
+        recipients=[alerts.AlertRecipient(chat_id=111), alerts.AlertRecipient(chat_id=222)],
+    )
+    assert sent
+    assert [(file_id, png) for file_id, png, _ in seen] == [
+        (None, b"one-chart"), ("telegram-cached-chart", b"one-chart")
+    ]
+    app.bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message_id", [None, False, 0, -1, "17", 1.5])
+async def test_rich_success_without_valid_message_identity_is_uncertain(monkeypatch, message_id):
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": {"message_id": message_id,
+                                            "rich_message": {"photo": [{"file_id": "id"}]}}}
+
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *_args, **_kwargs): return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    with pytest.raises(RichDeliveryUncertain):
+        await send_rich_event_alert(
+            bot_token="test", chat_id=123, rich_html="<p>Hi</p>", chart_png=b"png"
+        )
+
+
+@pytest.mark.asyncio
+async def test_rich_httpx_transport_uncertainty_never_retries_or_falls_back(monkeypatch):
+    attempts = []
+
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *_args, **_kwargs):
+            attempts.append(1)
+            raise httpx.ReadTimeout("timeout with private URL")
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    bot = SimpleNamespace(token="private", send_message=AsyncMock())
+    result = await alerts._send_alert_to_recipient_with_retry(
+        SimpleNamespace(bot=bot), alerts.AlertRecipient(chat_id=123),
+        {"rich_html": "<p>Hi</p>", "html_text": "Hi", "plain_text": "Hi"}
+    )
+    assert not result[0]
+    assert isinstance(result[2], RichDeliveryUncertain)
+    assert attempts == [1]
+    assert "private" not in str(result[2])
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_integrity_error_recovery_does_not_reopen_terminal_delivery(monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+    from bot.db import alerts as db_alerts
+
+    terminal = SimpleNamespace(status="failed", final_failed_at=AT)
+    session = SimpleNamespace(
+        add=lambda *_: None,
+        commit=AsyncMock(side_effect=IntegrityError("unique", {}, Exception("duplicate"))),
+        rollback=AsyncMock(),
+    )
+    get_existing = AsyncMock(side_effect=[None, terminal])
+    monkeypatch.setattr(db_alerts, "get_alert_delivery", get_existing)
+    alert, should_send = await db_alerts.reserve_alert_delivery(
+        session, user_id=1, symbol="BTC", alert_type="event_alert",
+        sent_to_chat_id=2, market_event_id=3, event_ai_analysis_id=4,
+        message="safe message",
+    )
+    assert alert is terminal
+    assert should_send is False
+    session.rollback.assert_awaited_once()
