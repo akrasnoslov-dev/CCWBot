@@ -908,7 +908,7 @@ def test_news_candidates_signal_and_freshness_queries_expose_sanitized_columns()
     assert "zero_candidate_analyses" in summary.sql
     assert "with_candidates_analyses" in summary.sql
     assert "unknown_candidates_analyses" in summary.sql
-    assert "alerts_with_candidates_but_no_attached_news" in summary.sql
+    assert "candidates_present_but_unselected_or_unattached" in summary.sql
     # Counts only — the signal must never select news content columns.
     assert "title" not in summary.sql.lower()
     assert "url" not in summary.sql.lower()
