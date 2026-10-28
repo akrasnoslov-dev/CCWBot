@@ -1387,7 +1387,10 @@ def _contradictory_observed_claim_in_level_action(
     independent statement about *observed* price movement must still agree
     with the market evidence.
     """
-    for clause in re.split(r"[;.!?]\s*", value):
+    # Preserve decimal price literals ($102.00) inside the original
+    # conditional clause. Splitting on their dot loses "when/if" and can
+    # misclassify a future upward case as an observed upward claim.
+    for clause in re.split(r";\s*|(?<!\d)\.\s*|\.(?!\d)\s*|[!?]\s*", value):
         # In "The current window shows a rally; watch whether ..." validate
         # the factual clause, not the counterfactual price-level scenarios.
         prefix = re.split(
