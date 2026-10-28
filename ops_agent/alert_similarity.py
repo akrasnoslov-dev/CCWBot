@@ -514,7 +514,8 @@ def _alert_quality(
             sampled_event_alert_attempts += _int(row.get("delivery_count"))
             total_event_alert_deliveries += sent_count
             if sent_count:
-                news_context_diagnostics[str(row.get("news_context_state") or "news_evidence_unknown")] += sent_count
+                news_context_state = str(row.get("news_context_state") or "news_evidence_unknown")
+                news_context_diagnostics[news_context_state] += sent_count
             if issues:
                 affected_event_alert_deliveries += sent_count
             if SEVERE_QUALITY_ISSUES.intersection(issues):
