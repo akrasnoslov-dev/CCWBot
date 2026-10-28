@@ -36,6 +36,12 @@ WITH recent_analyses AS (
         eai.confidence,
         eai.reason_for_no_alert AS analysis_reason_for_no_alert,
         eai.related_news_ids,
+        CASE WHEN eai.raw_input_json IS JSON THEN coalesce(
+            CASE WHEN jsonb_typeof(eai.raw_input_json::jsonb->'news') = 'array'
+                 THEN jsonb_array_length(eai.raw_input_json::jsonb->'news') END,
+            CASE WHEN jsonb_typeof(eai.raw_input_json::jsonb->'candidate_news') = 'array'
+                 THEN jsonb_array_length(eai.raw_input_json::jsonb->'candidate_news') END
+        ) END AS related_news_candidates_count,
         eai.plain_text AS analysis_plain_text,
         CASE
             WHEN eai.raw_input_json IS JSON THEN
@@ -141,8 +147,8 @@ delivery_rollup AS (
         END AS status,
         (array_agg(a.message ORDER BY a.created_at DESC, a.id DESC)
             FILTER (WHERE a.status = 'sent'))[1] AS alert_message,
-        (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC))[1]
-            AS alert_numeric_context,
+        (array_agg(a.numeric_context ORDER BY a.created_at DESC, a.id DESC)
+            FILTER (WHERE a.status = 'sent'))[1] AS alert_numeric_context,
         (array_agg(ado.semantic_family ORDER BY ado.created_at DESC, ado.id DESC)
             FILTER (WHERE ado.semantic_family IS NOT NULL))[1] AS semantic_family,
         (array_agg(ado.decision_reason ORDER BY ado.created_at DESC, ado.id DESC)
@@ -237,6 +243,7 @@ SELECT
     ra.confidence,
     ra.analysis_reason_for_no_alert,
     ra.related_news_ids,
+    ra.related_news_candidates_count,
     ra.analysis_plain_text,
     ra.analysis_created_at,
     coalesce(dr.delivery_count, 0) AS delivery_count,
