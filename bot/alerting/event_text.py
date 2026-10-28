@@ -727,7 +727,8 @@ def compact_event_alert_possible_action(
         _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
         or not _action_price_levels_supported(cleaned, market_data)
         or len(cleaned.split()) > 60
-        or len(re.findall(r"[.!?]", cleaned)) > 2
+        # A decimal point inside an observed USD price is not a sentence end.
+        or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
@@ -922,13 +923,13 @@ def _verified_recent_price_path(market: dict) -> dict[str, object]:
     recent = observations[-4:]
     if len(recent) != 4:
         return {}
-    durations = [later[0] - earlier[0] for earlier, later in zip(recent, recent[1:], strict=True)]
+    durations = [later[0] - earlier[0] for earlier, later in zip(recent, recent[1:], strict=False)]
     if any(duration <= 0 or duration != int(duration) for duration in durations):
         return {}
     prices = [price for _, price in recent]
     directions = [
         "up" if later > earlier else "down" if later < earlier else "flat"
-        for earlier, later in zip(prices, prices[1:], strict=True)
+        for earlier, later in zip(prices, prices[1:], strict=False)
     ]
     location = (
         "at_high" if prices[-1] == max(prices) else
