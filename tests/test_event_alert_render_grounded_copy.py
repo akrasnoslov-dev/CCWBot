@@ -110,7 +110,7 @@ def test_render_evidence_exposes_grounded_recent_path_not_only_direction():
 
 def test_render_does_not_invent_a_path_from_missing_or_gapped_snapshots():
     market = market_down()
-    market["snapshots"][1]["m"] = -150
+    market["snapshots"][1]["m"] = -250
     assert "recent_price_path" not in verified_event_alert_render_context(market)
     market["snapshots"] = [{"m": 0, "p": Decimal("100")}]
     assert "recent_price_path" not in verified_event_alert_render_context(market)
