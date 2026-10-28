@@ -707,7 +707,7 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "evidence=verified backend observations; n=optional attributed news; "
         "sig=accepted classification. Do not invent missing metrics or catalysts.",
         "Use market_metrics magnitudes and periods to interpret how important the "
-        "accepted move is, not just the up/down signs. The " 
+        "accepted move is, not just the up/down signs. The "
         "analysed_window_change_percent "
         "applies only to analysed_window_minutes. A since_previous_notification "
         "change is a difference from an actual previous market notification, not "
