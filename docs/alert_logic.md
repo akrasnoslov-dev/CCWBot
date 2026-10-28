@@ -165,6 +165,17 @@ inconsistent, there are no numeric levels for the model to invent.
   convergence/divergence claims still fail closed.
 - Stage-1 significance, alert eligibility, cooldown, providers, recipient
   routes and paid spend are unchanged by this content change.
+- **Verified recent path for Stage-2:** When the four-observation price band is
+  valid, Render also receives only the actual ordered step directions, actual
+  step durations, and whether NOW is at the observed high, low or inside
+  the observed range. Missing or discontinuous history supplies no path.
+  A verified snapshot-pace comparison may be described without being discarded
+  by the text guard. Future conditional up/down scenarios are not judged as
+  historical direction claims; any independent present/past claim and all USD
+  levels still require factual verification. Content tests check meaningful
+  distinct scenario descriptions, not fabricated uniqueness when facts match.
+  This adds no provider calls and never influences the significance decision.
+
 
 **Release state:** Source integrated into `main` in PR #378; running production
 still requires independent deployment verification. The prior 20-event Cloudflare
