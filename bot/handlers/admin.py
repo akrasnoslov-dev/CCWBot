@@ -5,6 +5,8 @@ grant/revoke entrypoints, and warning/error log export controls. User-facing
 non-admin commands belong in their domain modules.
 """
 
+import os
+from datetime import datetime, timezone
 from io import BytesIO
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -30,6 +32,12 @@ from bot.observability.system_status import (
     build_admin_llm_diagnostics_text,
     build_admin_llm_summary_html,
     build_admin_system_status_text,
+)
+from bot.services.llm.openai_costs import (
+    _window,
+    format_costs_screen,
+    openai_costs_monitor,
+    read_internal_costs,
 )
 from bot.settings import (
     get_db_alert_settings,
@@ -89,6 +97,27 @@ def _llm_diagnostics_menu(*, detailed: bool) -> InlineKeyboardMarkup:
             [InlineKeyboardButton("Back to Admin", callback_data="admin:back")],
         ]
     return InlineKeyboardMarkup(buttons)
+
+
+async def _build_admin_openai_costs_text() -> str:
+    root = handlers_module()
+    now = datetime.now(timezone.utc)
+    state, provider = await openai_costs_monitor.get(now=now)
+    internal = None
+    if root.DB_ENABLED and root.DB_SESSION_LOCAL:
+        try:
+            start, _ = _window(now)
+            internal = await read_internal_costs(
+                root.DB_SESSION_LOCAL, start=start, end=now,
+            )
+        except (ValueError, RuntimeError, Exception):
+            # Do not expose database errors or secret-bearing exception messages.
+            internal = None
+    return format_costs_screen(
+        now=now, state=state, provider=provider, internal=internal,
+        scope_confirmed=os.getenv("OPENAI_COSTS_SCOPE_CONFIRMED", "").strip().lower()
+        in {"1", "true", "yes"},
+    )
 
 
 def _premium_grant_usage_text() -> str:
@@ -428,6 +457,22 @@ async def send_admin_callback_response(data: str, query, application) -> bool:
             query,
             await _build_admin_llm_diagnostics_text(),
             reply_markup=_llm_diagnostics_menu(detailed=True),
+        )
+        return True
+    if data == "admin:openai_costs":
+        root = handlers_module()
+        user_id = getattr(getattr(query, "from_user", None), "id", None)
+        if not await root.is_admin_user(user_id):
+            return True  # Router rejects this as well; defense in depth.
+        if str(getattr(getattr(query.message, "chat", None), "type", "")) != "private":
+            await safe_edit_callback_message(
+                query, "OpenAI Costs is available only in a private admin chat.",
+                reply_markup=build_admin_back_keyboard(),
+            )
+            return True
+        await safe_edit_callback_message(
+            query, await _build_admin_openai_costs_text(),
+            reply_markup=build_admin_back_keyboard(),
         )
         return True
     if data == "admin:premium_menu":
