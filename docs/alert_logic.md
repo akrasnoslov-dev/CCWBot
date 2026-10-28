@@ -178,6 +178,19 @@ inconsistent, there are no numeric levels for the model to invent.
   Content tests check meaningful
   distinct scenario descriptions, not fabricated uniqueness when facts match.
   This adds no provider calls and never influences the significance decision.
+- **Numeric market context for Stage-2:** The Render prompt includes the same
+  source market data used in the Telegram alert: current USD price, the actual
+  analysed-window minutes and percentage move, 24-hour percentage change, and
+  the change since the previous delivered market notification only when an
+  attributable prior time/price exists. Verified 30m/1h lookbacks are optional.
+  Missing or nonfinite metrics must not become fabricated zeros. These are
+  observation facts for assessing magnitude and comparing periods, not text
+  to repeat in Situation: the backend alone prints user-facing numbers. Keep
+  the original precision-safe market fact checks, and never relabel a 24-hour
+  move as an analysed-window move. Render is shared per event, so prior-message
+  context must only be attributed to the supplied event, not claimed to hold
+  for every subscriber. No new external price or LLM requests are allowed.
+
 
 
 **Release state:** Source integrated into `main` in PR #378; running production
