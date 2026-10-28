@@ -567,3 +567,39 @@ async def test_rich_confirmed_telegram_rejections(monkeypatch, code, exception_n
         await send_rich_event_alert(
             bot_token="test", chat_id=123, rich_html="<b>A</b>", chart_png=None,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", [False, True])
+async def test_integrity_conflict_preserves_terminal_delivery_reservation(
+    monkeypatch, terminal,
+):
+    from sqlalchemy.exc import IntegrityError
+    from bot.db import alerts as db_alerts
+
+    existing = SimpleNamespace(
+        status="failed",
+        final_failed_at=AT if terminal else None,
+    )
+    lookups = iter([None, existing])
+
+    async def find_delivery(*args, **kwargs):
+        return next(lookups)
+
+    class RacingSession:
+        def add(self, alert):
+            pass
+        async def commit(self):
+            raise IntegrityError("INSERT", {}, Exception("duplicate"))
+        async def rollback(self):
+            pass
+
+    monkeypatch.setattr(db_alerts, "get_alert_delivery", find_delivery)
+    found, can_send = await db_alerts.reserve_alert_delivery(
+        RacingSession(),
+        user_id=1, symbol="ETH", alert_type="event_alert",
+        sent_to_chat_id=123, market_event_id=20,
+        event_ai_analysis_id=None, message="Test",
+    )
+    assert found is existing
+    assert can_send is (not terminal)
