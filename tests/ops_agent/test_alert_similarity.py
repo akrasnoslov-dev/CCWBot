@@ -693,6 +693,7 @@ def test_optional_related_news_is_not_telegram_quality_failure():
 
 def test_no_news_sent_counter_uses_recipient_deliveries_not_attempts():
     from datetime import datetime, timezone
+
     from ops_agent.alert_similarity import _alert_quality
     from ops_agent.schemas import Period
     period = Period(
