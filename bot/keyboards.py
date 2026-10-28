@@ -173,6 +173,7 @@ def build_admin_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("Alert settings", callback_data="admin:alert_settings")],
             [InlineKeyboardButton("System status", callback_data="admin:system_status")],
             [InlineKeyboardButton("LLM diagnostics", callback_data="admin:llm_diagnostics")],
+            [InlineKeyboardButton("OpenAI Costs", callback_data="admin:openai_costs")],
             [InlineKeyboardButton("Premium management", callback_data="admin:premium_menu")],
             [InlineKeyboardButton("Logs", callback_data="admin:logs_menu")],
         ]
