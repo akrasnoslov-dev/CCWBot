@@ -186,10 +186,11 @@ class OpenAICostsMonitor:
             ):
                 return "OK", cache
             try:
-                snapshot = await _fetch(
-                    key=key, project_id=project_id, start=start, end=end, now=now,
-                )
-            except (httpx.HTTPError, ValueError, UnicodeError, OverflowError):
+                async with asyncio.timeout(12):
+                    snapshot = await _fetch(
+                        key=key, project_id=project_id, start=start, end=end, now=now,
+                    )
+            except (httpx.HTTPError, ValueError, UnicodeError, OverflowError, TimeoutError):
                 return "UNAVAILABLE", None
             # No raw error/response logging, even if the provider sends secrets.
             self._cached = snapshot
