@@ -143,6 +143,33 @@ separate from deployment to avoid Compose orphan conflicts.
   Event Analysis outcomes, false positives, coverage and cost/rate changes.
 - Roll back code/config only via an authorized compatible release.
 
+### Event Alert Luna-only release (owner-approved 2026-10-29)
+
+For the Event Alert copy/news/chart release (#393 and #394), source promotion
+alone is insufficient to activate the owner-selected Luna-only provider.
+Before the bot is restarted on production, an authorized administrator must
+check the actual, uncommitted `/opt/CCWBot/.env` and set, if necessary,
+`OPENAI_ENABLED=true`, `OPENAI_MODEL=gpt-6-luna`,
+`LLM_EVENT_PROVIDERS=openai` and `LLM_EVENT_RENDER_PROVIDERS=openai`.
+Preserve the existing API key, budget guard and all unrelated settings; never
+copy the template over `.env` or print the key. Make a protected root-only
+backup of the existing `.env` **outside** the production Git checkout before
+editing. If the key, budget or model readiness cannot be confirmed, do not
+restart under a claim of Luna-only readiness.
+
+Then use the ordinary read-only `ccwbot-deploy-safe status` followed by the
+separately approved `ccwbot-deploy-safe deploy` through `ccwbot-prod-ops`.
+Do not run migrations or raw Compose for this bot-only release. Inspect the
+sanitized startup routing configuration and the actual Stage-1
+`event_analysis` **and separate Stage-2** `event_alert_render` attribution
+before claiming both use Luna; no Groq or Cloudflare Event Alert fallback.
+Verify the revised sections and PNG on a naturally occurring private Telegram
+Event Alert. If no such event occurs during verification, record client-smoke
+status as pending rather than forcing a market alert. Health-only success is
+not proof that AI text or news relevance is correct. Back out via the
+approved protected environment backup and the restricted rollback workflow
+only after review of the observed failure.
+
 ### Render changes
 
 - Identify actual PR number and SHA before proposing a release. Run prompt
