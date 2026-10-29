@@ -26,7 +26,7 @@ _UNSUPPORTED_MARKET_CLAIM_RE = re.compile(
     r"whales?|on[ -]?chain)\b"
 )
 _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
-    r"(?i)\b(?:because|due to|caused by|driven by|explains?|"
+    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after|following|"
     r"triggered|sparked|attributed to)\b"
 )
 # Unstructured Render prose cannot establish a catalyst, a new piece of news, or
@@ -66,6 +66,33 @@ _EXTREME_ACTION_RE = re.compile(
     r"(?i)\b(?:entire|all|fully|immediately)\b.*\b(?:position|exposure)\b|"
     r"\b(?:liquidate|close|exit)\b.*\b(?:entire|all|fully|immediately)\b"
 )
+
+
+# Temporal prose about actual market observations is not external news causation.
+# This exemption never permits an unsupported "after [catalyst]" explanation.
+_OBSERVED_TEMPORAL_PATH_RE = re.compile(
+    r"(?i)\b(?:after|following)\s+"
+    r"(?:(?:the|an?|two|three|several|previous|recent|earlier|latest|"
+    r"brief|small|observed|intervening|initial|short-term)\s+){0,5}"
+    r"(?:upward|downward|rising|falling|positive|negative|price|snapshot|"
+    r"moves?|steps?|intervals?|bounce|decline|rise|rebound|recovery|"
+    r"uptick|downtick|pullback|drop|rally|path)"
+    r"(?:\s+(?:steps?|moves?|snapshots?|intervals?))?\b"
+)
+
+
+def _has_unsupported_situation_causality(value: str, market_data: dict) -> bool:
+    without_observed_path = _OBSERVED_TEMPORAL_PATH_RE.sub("observed price path", value)
+    if _UNSUPPORTED_CAUSAL_CLAIM_RE.search(without_observed_path):
+        return True
+    step_changes = _snapshot_step_changes(market_data)
+    for direction, sign in (("upward", 1), ("downward", -1)):
+        if re.search(rf"(?i)\b(?:after|following)\s+two\s+{direction}\s+steps?\b", value):
+            if len(step_changes) < 3 or not all(
+                step * sign > 0 for step in step_changes[-3:-1]
+            ):
+                return True
+    return False
 
 
 def compact_elapsed_since(previous_at: object, current_at: object) -> str | None:
@@ -163,7 +190,7 @@ def compact_event_alert_situation(
         return fallback
     if (
         _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
-        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(cleaned)
+        or _has_unsupported_situation_causality(cleaned, market_data or {})
         or _has_unsupported_event_claim(cleaned, market_data or {})
     ):
         return fallback
@@ -372,7 +399,7 @@ def _concise_explanation_clause(value: str, market_data: dict) -> str | None:
         or len(clause.split()) > 28
         or _repeats_rendered_market_fact(clause, market_data)
         or _UNSUPPORTED_MARKET_CLAIM_RE.search(clause)
-        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(clause)
+        or _has_unsupported_situation_causality(clause, market_data)
     ):
         return None
     return clause[:1].upper() + clause[1:]
@@ -743,7 +770,10 @@ def compact_event_alert_possible_action(
         # A decimal point inside an observed USD price is not a sentence end.
         or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
-        or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b", cleaned)
+        or not re.search(
+            r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b",
+            cleaned,
+        )
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
         or _has_unsupported_action_market_claim(cleaned)
         or _has_unsupported_event_claim(cleaned, market_data or {})
