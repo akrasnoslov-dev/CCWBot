@@ -82,6 +82,24 @@ def test_temporal_after_between_observed_steps_is_not_news_causation():
     ) == situation
 
 
+def test_after_non_market_event_still_fails_causality_guard():
+    from bot.alerting.event_text import _has_unsupported_situation_causality
+
+    assert _has_unsupported_situation_causality(
+        "After a policy meeting, the latest snapshot declined and aligned with "
+        "the broader 24-hour downtrend.",
+        _market(),
+    ) is True
+    declining = _market()
+    declining["snapshots"] = [
+        {"m": -90, "p": 104.0}, {"m": -60, "p": 103.0},
+        {"m": -30, "p": 102.0}, {"m": 0, "p": 100.0},
+    ]
+    assert _has_unsupported_situation_causality(
+        "After two upward steps, the latest snapshot fell.", declining
+    ) is True
+
+
 def test_metadata_only_ethereum_tag_cannot_turn_bitcoin_news_into_eth_news():
     wrongly_tagged = {
         "title": "Bitcoin reaches a new range after US economic data",
