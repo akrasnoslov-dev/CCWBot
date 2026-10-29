@@ -193,5 +193,5 @@ def test_selected_unrelated_article_omitted_from_delivered_alert():
             "source": "Wire", "url": "https://example.com/story",
         }],
     )["plain_text"]
-    assert "Related context:" not in message
+    assert "Related context:\nNo relevant news linked to this market move." in message
     assert "yacht" not in message.lower()
