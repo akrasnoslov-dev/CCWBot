@@ -337,7 +337,15 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     ):
         return False
 
-    return market_direction_claims_supported(value, market_data)
+    # Verified earlier counter-steps do not assert the analysed-window net
+    # direction. Check that sequence above, then mask only its historical
+    # directional adjective before checking period-scoped net direction.
+    direction_text = re.sub(
+        r"(?i)\b(?:after|following)\s+two\s+(?:upward|downward)\s+steps?\b",
+        "after observed earlier steps",
+        value,
+    )
+    return market_direction_claims_supported(direction_text, market_data)
 
 
 def _repeats_rendered_market_fact(value: str, market_data: dict) -> bool:
@@ -763,6 +771,27 @@ def _has_unsupported_action_market_claim(value: str) -> bool:
     ) is not None
 
 
+def _has_final_reference_disclaimer(value: str) -> bool:
+    """Allow a third sentence only when it denies technical/trading levels."""
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<!\d)[.!?]\s+", value)
+        if part.strip()
+    ]
+    if len(sentences) != 3:
+        return False
+    tail = sentences[-1]
+    return (
+        tail.lower().startswith(("these ", "those ", "the observed "))
+        and re.search(
+            r"(?i)\bnot\s+(?:an?\s+)?(?:confirmed|established|proven|formal|trading)\b",
+            tail,
+        ) is not None
+        and re.search(r"(?i)\b(?:support|resistance|targets?|entry|exit)\b", tail)
+        is not None
+    )
+
+
 def compact_event_alert_possible_action(
     value: str, *, fallback: str | None = None, market_data: dict | None = None
 ) -> str:
@@ -773,7 +802,10 @@ def compact_event_alert_possible_action(
         or not _action_price_levels_supported(cleaned, market_data)
         or len(cleaned.split()) > 60
         # A decimal point inside an observed USD price is not a sentence end.
-        or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
+        or (
+            len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
+            and not _has_final_reference_disclaimer(cleaned)
+        )
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(
             r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b",
