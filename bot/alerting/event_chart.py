@@ -239,13 +239,31 @@ def _draw_reference_shape(
         draw.polygon(((x, y-radius-3), (x+radius+3, y+radius), (x-radius-3, y+radius)), fill=color)
 
 
+def _connectable_now_segment(
+    points: tuple[tuple[datetime, float], ...],
+    markers: list[ReferenceMarker] | tuple[ReferenceMarker, ...],
+) -> tuple[tuple[datetime, float], tuple[datetime, float]] | None:
+    """Join two genuine observations only within the documented 45m cadence."""
+    if not points:
+        return None
+    now = next((marker for marker in markers if marker.label == "NOW"), None)
+    if now is None or not now.plotted or now.timestamp is None or now.price is None:
+        return None
+    last_at, last_price = points[-1]
+    gap = now.timestamp - last_at
+    if not timedelta(0) < gap <= timedelta(minutes=45):
+        return None
+    return (last_at, last_price), (now.timestamp, now.price)
+
+
 def _render_marked_chart(
     selected: ChartResult, *, as_of: datetime, symbol: str,
     current_observation: tuple[datetime, float] | None,
     previous_alert: tuple[datetime, float | None] | None,
 ) -> ChartResult:
-    # The historical curve remains the original contiguous persisted run. NOW
-    # is intentionally a separate point, not a fabricated database snapshot.
+    # The historical curve remains a persisted contiguous run. A separately
+    # observed NOW may extend its last segment within the same 45m cadence;
+    # it never becomes a synthetic persisted point or bridges a missing sample.
     as_of = as_of.astimezone(timezone.utc)
     points = selected.points
     width, height = 900, 615
@@ -259,6 +277,7 @@ def _render_marked_chart(
         points, as_of=as_of, axis_start=axis_start,
         current_observation=current_observation, previous_alert=previous_alert,
     ))
+    now_segment = _connectable_now_segment(points, markers)
     prices = [p for _, p in points] + [
         m.price for m in markers if m.plotted and m.price is not None
     ]
@@ -290,6 +309,13 @@ def _render_marked_chart(
         last = xy
     if last:
         draw.ellipse((last[0]-5, last[1]-5, last[0]+5, last[1]+5), fill=accent)
+    if now_segment is not None:
+        (previous_at, previous_price), (current_at, current_price) = now_segment
+        draw.line(
+            (x_at(previous_at), y_at(previous_price),
+             x_at(current_at), y_at(current_price)),
+            fill=accent, width=4, joint="curve",
+        )
 
     # Collision handling: separate chip lanes, clamp to graph boundaries.
     occupied: list[list[tuple[int, int]]] = [[], [], [], []]
@@ -337,9 +363,12 @@ def _render_marked_chart(
         else:
             detail = f"{marker.timestamp:%d %b %H:%M:%S} UTC  |  {marker.reason or 'unavailable'}"
         draw.text((right, y), detail, font=f_small, fill="#c0cee1", anchor="ra")
-    draw.text(
-        (left, 591), "Persisted curve only  |  NOW from event observation  |  no interpolation",
-              font=_font(18), fill="#a7b6ce")
+    footer = (
+        "Persisted curve + observed NOW  |  continuous <=45m sampling  |  no gap fill"
+        if now_segment is not None
+        else "Persisted curve only  |  NOW separate when continuity is unproven"
+    )
+    draw.text((left, 591), footer, font=_font(18), fill="#a7b6ce")
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return ChartResult(selected.label, buffer.getvalue(), points, tuple(markers))
