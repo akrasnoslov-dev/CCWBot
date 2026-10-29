@@ -4,9 +4,10 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from types import SimpleNamespace
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from bot import alerts
+from bot.alerting import event_chart as chart_module
 from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.event_chart import (
     _connectable_now_segment,
@@ -94,6 +95,23 @@ def test_now_joins_last_recorded_price_within_real_sampling_cadence():
     assert _connectable_now_segment(chart.points, chart.markers) == (
         (AT - timedelta(minutes=30), rows[-1].price), (AT, 102.5)
     )
+
+
+def test_now_connection_draws_real_segment_inside_chart_plot(monkeypatch):
+    rows = history(last_offset_minutes=30)
+    continuous = render_price_chart(
+        rows, as_of=AT, symbol="BTC", event_markers=True,
+        current_observation=(AT, 102.5),
+    )
+    monkeypatch.setattr(chart_module, "_connectable_now_segment", lambda *_: None)
+    separated = render_price_chart(
+        rows, as_of=AT, symbol="BTC", event_markers=True,
+        current_observation=(AT, 102.5),
+    )
+    # Restrict comparison to the plot, not the changed caption in the footer.
+    curve = Image.open(BytesIO(continuous.png)).crop((118, 177, 865, 382))
+    disconnected = Image.open(BytesIO(separated.png)).crop((118, 177, 865, 382))
+    assert ImageChops.difference(curve, disconnected).getbbox() is not None
 
 
 def test_now_does_not_join_across_gap_or_invalid_timestamp():
