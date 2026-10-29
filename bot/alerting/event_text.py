@@ -753,9 +753,14 @@ _NEGATED_TECHNICAL_LEVEL_RE = re.compile(
 )
 
 
+def _action_without_negated_technical_levels(value: str) -> str:
+    return _NEGATED_TECHNICAL_LEVEL_RE.sub("unproven reference levels", value)
+
+
 def _has_unsupported_action_market_claim(value: str) -> bool:
-    without_denials = _NEGATED_TECHNICAL_LEVEL_RE.sub("unproven reference levels", value)
-    return _UNSUPPORTED_MARKET_CLAIM_RE.search(without_denials) is not None
+    return _UNSUPPORTED_MARKET_CLAIM_RE.search(
+        _action_without_negated_technical_levels(value)
+    ) is not None
 
 
 def compact_event_alert_possible_action(
@@ -776,7 +781,9 @@ def compact_event_alert_possible_action(
         )
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
         or _has_unsupported_action_market_claim(cleaned)
-        or _has_unsupported_event_claim(cleaned, market_data or {})
+        or _has_unsupported_event_claim(
+            _action_without_negated_technical_levels(cleaned), market_data or {}
+        )
         or _DIRECT_FINANCIAL_INSTRUCTION_RE.search(cleaned)
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."
