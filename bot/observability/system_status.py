@@ -549,6 +549,7 @@ async def _llm_provider_breakdown_rows(
                 LlmUsageLog.error_reason,
             )
             .where(LlmUsageLog.created_at >= since)
+            .where(LlmUsageLog.created_at <= now)
             .order_by(
                 LlmUsageLog.call_type,
                 LlmUsageLog.provider,
@@ -660,6 +661,11 @@ async def build_admin_llm_summary_html(
             rows = await _llm_provider_breakdown_rows(session, now=now)
             logical = await read_logical_llm_health(session, now=now)
             paid_budget = await _openai_budget_status_line(session, now=now)
+            last_log = (await session.execute(
+                select(func.max(LlmUsageLog.created_at))
+                .where(LlmUsageLog.created_at >= now - timedelta(hours=24))
+                .where(LlmUsageLog.created_at <= now)
+            )).scalar_one_or_none()
     except Exception:
         return "<b>LLM · last 24h</b>\n\nTelemetry query failed."
 
@@ -706,6 +712,9 @@ async def build_admin_llm_summary_html(
         "<b>LLM diagnostics · last 24h</b>\n"
         "<pre>" + "\n".join(table_lines) + "</pre>\n"
         + provider_summary
+        + f"\nWindow ending: {_format_utc(now)}"
+        + "\nLatest provider log: "
+        + (_format_utc(last_log) if last_log is not None else "none in window")
         + "\n" + paid_budget
         + "\n\nLow N = fewer than 20 observations; not a failure."
         + "\nSelect Details for per-provider errors, backoffs and recovery."
@@ -901,7 +910,7 @@ async def _openai_budget_status_line(session: AsyncSession, *, now: datetime) ->
         return f"Paid OpenAI: switch {switch} · readiness blocked · invalid cap"
     month_start = now.date().replace(day=1)
     try:
-        used, last_used, invariant_breaches = (
+        used, _last_used, invariant_breaches = (
             await session.execute(
                 select(
                     func.coalesce(
@@ -923,13 +932,19 @@ async def _openai_budget_status_line(session: AsyncSession, *, now: datetime) ->
             f"Paid OpenAI: switch {switch} · readiness blocked · budget telemetry unavailable"
         )
     used = max(used, 0)
-    remaining = max(cap - used, 0)
-    contract_ready = contract_ready and not invariant_breaches
+    if invariant_breaches:
+        readiness = "blocked (local guard anomaly)"
+    elif not contract_ready:
+        readiness = "blocked"
+    elif used >= cap:
+        readiness = "budget exhausted"
+    else:
+        readiness = "ready"
+    # Never show local estimated USD charges in diagnostics. The official
+    # provider cost report owns all visible monetary usage metrics.
     return (
-        f"Paid OpenAI: switch {switch} · readiness "
-        f"{'ready' if contract_ready else 'blocked'} · UTC month "
-        f"${used:.4f} used / ${cap:.2f} cap · ${remaining:.4f} remaining · "
-        f"last reservation {_format_utc(last_used)}"
+        f"Paid OpenAI: switch {switch} · readiness {readiness} "
+        "· local hard guard active"
     )
 
 

@@ -505,8 +505,10 @@ row exists. Failure details are sanitized/redacted.
 Admin -> LLM diagnostics separately summarizes provider/call-type attempts, rate limits, backoffs,
 circuit skips, schema failures, other failures, and active limits from `llm_usage_logs`. Categories
 are aggregate and mutually exclusive; raw prompts, responses, errors, identifiers, and secrets are
-never rendered. It also reports the paid OpenAI switch and readiness separately, current UTC-month
-spend, remaining cap, and the latest paid reservation time.
+never rendered. It reports paid OpenAI readiness and local guard exhaustion,
+not a guarantee that any particular request will fit the remaining allowance.
+It does not display estimated dollar amounts. Official charges and 30-day
+projections appear only under Admin -> OpenAI Costs.
 
 ## Testing And Linting
 

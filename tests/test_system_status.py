@@ -1355,7 +1355,7 @@ async def test_llm_diagnostics_low_volume_shows_actual_outcomes_not_ambiguous_un
 
 
 @pytest.mark.asyncio
-async def test_llm_diagnostics_shows_paid_budget_without_secrets(monkeypatch):
+async def test_llm_diagnostics_shows_guard_state_without_local_costs(monkeypatch):
     now = _now()
     engine, factory = await build_session_factory()
     monkeypatch.setenv("OPENAI_ENABLED", "true")
@@ -1385,9 +1385,9 @@ async def test_llm_diagnostics_shows_paid_budget_without_secrets(monkeypatch):
             db_enabled=True, session_factory=factory, now=now
         )
         assert "Paid OpenAI: switch enabled · readiness ready" in rendered
-        assert "$0.1250 used / $2.50 cap" in rendered
-        assert "$2.3750 remaining" in rendered
-        assert "2026-06-15 15:55 UTC" in rendered
+        assert "local hard guard active" in rendered
+        assert "$" not in rendered
+        assert "last reservation" not in rendered
     finally:
         await engine.dispose()
 

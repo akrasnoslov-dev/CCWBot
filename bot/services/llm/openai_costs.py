@@ -33,6 +33,7 @@ class ProviderCosts:
     coverage_end: datetime
     refreshed_at: datetime
     total_usd: Decimal
+    daily_usd: tuple[Decimal, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,13 +79,14 @@ def _amount(value: Any) -> Decimal:
 def _parse_page(
     payload: Any,
     *, project_id: str, next_bucket: int, end_time: int,
-) -> tuple[Decimal, int, bool, str | None]:
+) -> tuple[Decimal, int, bool, str | None, tuple[Decimal, ...]]:
     if not isinstance(payload, dict) or payload.get("object") != "page":
         raise CostsDataError("invalid page")
     data = payload.get("data")
     if not isinstance(data, list) or type(payload.get("has_more")) is not bool:
         raise CostsDataError("invalid page fields")
     total = Decimal("0")
+    daily_usd: list[Decimal] = []
     for bucket in data:
         if not isinstance(bucket, dict) or bucket.get("object") != "bucket":
             raise CostsDataError("invalid bucket")
@@ -98,6 +100,7 @@ def _parse_page(
         ):
             raise CostsDataError("missing or inconsistent daily coverage")
         next_bucket = finish
+        bucket_usd = Decimal("0")
         for entry in results:
             if (
                 not isinstance(entry, dict)
@@ -108,14 +111,16 @@ def _parse_page(
             amount = entry.get("amount")
             if not isinstance(amount, dict) or amount.get("currency") != "usd":
                 raise CostsDataError("invalid USD currency")
-            total += _amount(amount.get("value"))
+            bucket_usd += _amount(amount.get("value"))
+        daily_usd.append(bucket_usd)
+        total += bucket_usd
     more = payload["has_more"]
     cursor = payload.get("next_page")
     if more and (not isinstance(cursor, str) or not cursor or len(cursor) > 1024):
         raise CostsDataError("missing pagination cursor")
     if not more and cursor is not None:
         raise CostsDataError("unexpected pagination cursor")
-    return total, next_bucket, more, cursor
+    return total, next_bucket, more, cursor, tuple(daily_usd)
 
 
 async def _fetch(
@@ -126,6 +131,7 @@ async def _fetch(
     seen: set[str] = set()
     next_bucket = start_s
     total = Decimal("0")
+    daily_usd: list[Decimal] = []
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(8.0, connect=3.0),
         follow_redirects=False,
@@ -149,14 +155,17 @@ async def _fetch(
             if len(response.content) > 512_000:
                 raise CostsDataError("oversized response")
             payload = json.loads(response.content, parse_float=Decimal)
-            amount, next_bucket, more, cursor = _parse_page(
+            amount, next_bucket, more, cursor, page_daily = _parse_page(
                 payload, project_id=project_id, next_bucket=next_bucket, end_time=end_s
             )
             total += amount
+            daily_usd.extend(page_daily)
             if not more:
                 if next_bucket != end_s:
                     raise CostsDataError("incomplete daily coverage")
-                return ProviderCosts(project_id, start, end, now, total)
+                return ProviderCosts(
+                    project_id, start, end, now, total, tuple(daily_usd)
+                )
             if cursor in seen:
                 raise CostsDataError("cyclic pagination")
             seen.add(cursor)
@@ -255,53 +264,77 @@ async def read_internal_costs(
     )
 
 
+def _official_trends(provider: ProviderCosts) -> tuple[Decimal, Decimal, Decimal | None, int]:
+    """Use complete official daily buckets; avoid dilution before the first active day."""
+    daily = provider.daily_usd
+    expected = (provider.coverage_end - provider.month_start).days
+    if not daily or len(daily) != expected or any(not x.is_finite() for x in daily):
+        raise CostsDataError("incomplete official daily data")
+    recent = daily[-7:]
+    previous_7 = sum(recent, Decimal("0"))
+    first_active = next((i for i, amount in enumerate(daily) if amount != 0), None)
+    if first_active is None:
+        return daily[-1], previous_7, None, 0
+    active_start = max(first_active, len(daily) - 7)
+    period = daily[active_start:]
+    projected_30 = sum(period, Decimal("0")) * Decimal("30") / Decimal(len(period))
+    return daily[-1], previous_7, projected_30, len(period)
+
+
 def format_costs_screen(
     *, now: datetime, state: str, provider: ProviderCosts | None,
-    internal: InternalCosts | None, scope_confirmed: bool,
 ) -> str:
+    """Admin display uses only verified official OpenAI cost data."""
     now = _utc(now)
     lines = [f"OpenAI Costs — {now.strftime('%B %Y')} (UTC)", ""]
-    if internal is None:
-        lines += ["Internal budget: UNAVAILABLE", "Local budget database or cap is unavailable."]
-    else:
-        lines += [
-            "Internal budget (current UTC month):",
-            f"Used: ${internal.used:.4f}",
-            f"Limit: ${internal.limit:.4f}",
-            f"Remaining: ${internal.remaining:.4f}",
-            "",
-            "Internal accounting (no double counting):",
-            f"Settled estimated charges: ${internal.settled:.4f}",
-            f"Pending reservations: ${internal.pending:.4f}",
-            f"Conservative unreconciled: ${internal.conservative:.4f}",
-        ]
-        if internal.cap_breach:
-            lines.append("WARNING: local budget cap invariant breach recorded.")
-    lines += ["", "OpenAI Platform (official, delayed daily data):"]
     if state != "OK" or provider is None:
         lines += [
-            f"Reported cost: {state}",
-            "Last successful refresh: UNAVAILABLE",
+            f"Official MTD: {state}",
+            "Yesterday: UNAVAILABLE",
+            "Last 7 completed days: UNAVAILABLE",
+            "30-day projection: UNAVAILABLE",
             "Coverage: UNAVAILABLE",
         ]
     else:
         lines += [
-            f"Reported cost MTD: ${provider.total_usd:.4f}",
-            f"Last successful refresh: {provider.refreshed_at:%Y-%m-%d %H:%M} UTC",
-            f"Data coverage: {provider.month_start:%Y-%m-%d} to "
-            f"{provider.coverage_end:%Y-%m-%d} 00:00 UTC (end exclusive)",
+            f"Official MTD: ${provider.total_usd:.4f}",
+            f"Last refresh: {provider.refreshed_at:%Y-%m-%d %H:%M} UTC",
+            f"Completed through: {provider.coverage_end - timedelta(days=1):%Y-%m-%d} UTC",
         ]
-    if state == "OK" and provider and internal and scope_confirmed:
-        difference = provider.total_usd - internal.comparable_used
-        lines.append(f"Difference (provider - local, same window): ${difference:+.4f}")
-    else:
-        lines.append("Difference: NOT COMPARABLE (coverage, data, or project scope unverified)")
+        try:
+            yesterday, last_7, projection, active_days = _official_trends(provider)
+        except CostsDataError:
+            lines += [
+                "Yesterday: UNAVAILABLE",
+                "Last 7 completed days: UNAVAILABLE",
+                "30-day projection: UNAVAILABLE",
+            ]
+        else:
+            completed_days = len(provider.daily_usd)
+            days = min(completed_days, 7)
+            end_date = (provider.coverage_end - timedelta(days=1)).strftime("%b %d")
+            lines += [
+                "",
+                f"Yesterday ({end_date}): ${yesterday:.4f}",
+                f"Last {days} completed days: ${last_7:.4f}",
+            ]
+            if projection is None:
+                lines.append("30-day projection: UNAVAILABLE (no observed spending)")
+            else:
+                lines.append(
+                    f"30-day projection: ${projection:.4f} "
+                    f"({active_days}-day observed active period)"
+                )
+                cap = monthly_budget_usd()
+                if cap is not None:
+                    lines.append(f"Monthly target: ${cap:.2f} (local hard cap remains separate)")
+                    if projection > cap:
+                        lines.append("WARNING: observed run rate exceeds monthly target.")
     lines += [
         "",
-        "OpenAI daily costs can lag. Current UTC day is excluded; this is not live billing.",
-        "Local reservations include today and are conservative. "
-        "Provider amounts may include non-token charges.",
-        "The hard local budget guard uses only its own ledger, never this report.",
+        "Official OpenAI Platform daily data is delayed; today (UTC) is excluded.",
+        "Projection is an estimate, not a bill or provider spending limit.",
+        "Local admission guard remains unchanged and may stop requests earlier.",
     ]
     return "\n".join(lines)
 

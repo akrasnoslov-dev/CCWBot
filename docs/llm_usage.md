@@ -773,13 +773,14 @@ raw prompts, or export provider response bodies.
 
 ### Admin OpenAI Platform Costs monitoring (optional, read-only)
 
-The `/admin` → **OpenAI Costs** screen compares the existing conservative
-`openai_budget_reservations` ledger with
+The `/admin` → **OpenAI Costs** screen shows only official USD charges from
 [OpenAI Platform Costs](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs),
-`GET /v1/organization/costs`. This **does not change** the pinned model,
-prices, reserve/settle behavior, or the $2.50 UTC-month admission limit.
-The hard admission guard continues to use only the local database; provider
-Costs data is delayed and is never an admission source of truth.
+`GET /v1/organization/costs`. It shows month-to-date spending, yesterday,
+the last seven completed UTC days (or fewer at the start of the month), and
+an illustrative 30-day run-rate projection. Neither conservative local
+reservations nor a provider/local difference appear in the interface.
+`/admin` → **LLM diagnostics** shows paid-provider readiness and local
+guard state, without estimated dollar amounts.
 
 The monitor requests daily UTC buckets from the first of the current month
 through **00:00 UTC today (exclusive)**. It deliberately excludes today's
@@ -787,28 +788,32 @@ partial bucket. It requests one explicit project ID and `group_by=project_id`,
 verifies each result belongs to the configured project, follows pagination,
 validates USD, and sums decimal amounts without binary-floating rounding.
 Missing days, invalid data, other/unknown project attribution, auth/network
-errors and incomplete pages all report **UNAVAILABLE**, never fake $0. A
-successful response is cached in memory for one hour and is fetched only on
+errors and incomplete pages report **UNAVAILABLE**, never fake $0.
+The recent 7-day sum includes zero-spend days. For the 30-day projection,
+average over up to seven completed UTC days **since the first nonzero official
+daily charge in the current month**; include intervening idle days. If no
+spending is observed, mark the projection unavailable rather than suggesting
+a verified zero future rate. An early 1-2 day projection is especially
+uncertain. This is a planning estimate, not a billing guarantee.
+
+A successful response is cached in memory for one hour and fetched only on
 opening the screen. Cache resets on process restart. The private admin screen
 uses the existing Telegram allowlist/DB-role check and Back navigation.
+Provider totals may contain non-inference charges and can be backfilled.
 
-The internal section counts each reservation **once**, exactly as admission:
-`actual_usd` when known, otherwise `reserved_usd`. Its breakdown is
-`settled`/cap-breach actual estimates, still-`reserved` pending charges,
-and `conservative` unreconciled charges. The local used/remaining values
-cover the entire current UTC month, including today. The difference compares
-the provider result with the current state of local ledger rows **created
-before the provider coverage end**; older rows may have been reconciled since
-that day. These are conservative internal estimates, not invoice charges.
-Provider totals may include non-inference costs and may be backfilled.
+**Budget enforcement is unchanged:** the existing `openai_budget_reservations`
+ledger, conservative reservations, reconciliation, and the $2.50 maximum
+UTC-month hard cap remain authoritative for request admission. Delayed official
+costs must never replace the local admission guard, even if displayed
+official spending is below the planning target. Other projects/clients
+outside the verified CCWBot project are not included in the monitor.
 
-Three independent opt-in variables (in addition to the four inference settings)
-are available. All remain unset/false by default:
+Two independent opt-in monitor variables (in addition to inference settings)
+are available. Both remain unset by default:
 
 ```dotenv
 OPENAI_COSTS_ADMIN_KEY=
 OPENAI_COSTS_PROJECT_ID=
-OPENAI_COSTS_SCOPE_CONFIRMED=false
 ```
 
 **Credential creation and minimum privileges (owner-only, manual):**
@@ -831,9 +836,8 @@ OPENAI_COSTS_SCOPE_CONFIRMED=false
 4. In API Platform **Projects**, verify the dedicated CCWBot project ID
    (format `proj_...`). Confirm the bot's **inference key actually belongs
    to that project** and that no other clients or cost-bearing features use
-   it. The local ledger has no project-ID column. Only after this audit,
-   set `OPENAI_COSTS_SCOPE_CONFIRMED=true` to enable the numeric difference.
-   Otherwise the difference remains `NOT COMPARABLE`.
+   it. The screen reports the verified provider project, not an estimate of
+   per-bot costs when other clients share that project.
 5. Store the restricted key solely in an operator-controlled secret store or
    protected deployment environment as `OPENAI_COSTS_ADMIN_KEY`. Store the
    verified project ID as `OPENAI_COSTS_PROJECT_ID`. Never commit a populated
