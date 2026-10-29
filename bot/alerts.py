@@ -1499,7 +1499,7 @@ def _format_event_related_context(
     related_news: list[dict], *, empty_text: str
 ) -> tuple[str, list[dict], str | None]:
     if not related_news:
-        return empty_text, [], None
+        return empty_text, [], escape(empty_text) if empty_text else None
 
     lines: list[str] = []
     html_lines: list[str] = []
@@ -1544,7 +1544,7 @@ def _format_event_related_context(
             missing_url_count,
         )
     if not lines:
-        return empty_text, [], None
+        return empty_text, [], escape(empty_text) if empty_text else None
     return "\n".join(lines), link_entities, "\n".join(html_lines)
 
 
@@ -1720,6 +1720,7 @@ def _event_alert_market_context_lines(
     current_at: object = None,
     analysed_window_minutes: int | None,
     analysed_window_change: float | None,
+    change_24h: float | None = None,
 ) -> list[str]:
     lines: list[str] = []
     if price is not None:
@@ -1746,6 +1747,9 @@ def _event_alert_market_context_lines(
                 f"{_event_alert_change_label(analysed_window_label)}: "
                 f"{_format_optional_percent(analysed_window_change)}"
             )
+    verified_24h = _optional_float(change_24h)
+    if verified_24h is not None:
+        lines.append(f"24h market move: {_format_optional_percent(verified_24h)}")
     return lines
 
 
@@ -1786,7 +1790,7 @@ def _build_event_alert_payload(
     move = _optional_float(analysed_window_change)
     headline = f"{symbol} Event Alert"
     if move is not None:
-        headline += f" — {_format_optional_percent(move)}"
+        headline += f": {_format_optional_percent(move)}"
     title = headline
     # Provider-selected IDs are not proof of relevance. Re-check final headlines
     # against the asset before exposing them in a Telegram message.
@@ -1796,7 +1800,7 @@ def _build_event_alert_payload(
     ]
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
-        empty_text="",
+        empty_text="No relevant news linked to this market move.",
     )
     presentation_situation_fallback, presentation_action_fallback = (
         event_alert_presentation_fallback(
@@ -1864,6 +1868,7 @@ def _build_event_alert_payload(
         current_at=input_payload.get("timestamp_utc"),
         analysed_window_minutes=analysed_window_minutes,
         analysed_window_change=analysed_window_change,
+        change_24h=market_data.get("chg24h_percent"),
     )
     market_context_text = "\n".join(market_context_lines)
     market_context_block = f"{market_context_text}\n\n" if market_context_text else ""

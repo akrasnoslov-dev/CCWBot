@@ -233,14 +233,33 @@ rumours, or inference about trader intent. Related articles may be shown as coin
 but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
 Keep the existing disclaimer and single shared render per event.
 
+### Owner copy/news correction (2026-10-29)
+
+Keep validated Stage-2 Render text when its factual claims are supported. A
+conditional observation may use `would`, `could` or `might` without an explicit
+`if` or `or`. A denial that a recent observed price is *not* established
+support or resistance must not be treated as an affirmative technical claim.
+Temporal descriptions such as "after two upward steps" are not news causation.
+Still reject unsupported prices, claimed support/resistance, external catalysts,
+causal explanations and trade instructions. Preserve distinct event-specific
+conditional scenarios over generic range-exit filler whenever they are valid.
+
+Candidate news must be backed by the actual article title/summary, not only
+an automatically assigned symbol tag. Invalid/mislabelled links remain excluded.
+`Related context` is a permanent section of every Event Alert across rich, HTML
+and plain deliveries. When no relevant article is selected, print exactly
+`No relevant news linked to this market move.` Never invent or force links.
+News remains supporting evidence, not a standalone reason for an Event Alert.
+
 ## Telegram Event Alert presentation (2026-10)
 
 The market significance decision, one shared render per event, cooldowns, eligibility and
 Market Heartbeat are unchanged. The nine display positions are: coin/Event Alert and
 analysed-window percent, `Price (now)`, since *recipient's last successfully delivered*
 notification when comparable price and delivery time are persisted, actual analysed-window
-move, available historical-price chart, Situation, attributed Related context when present,
-conditional Possible action, and `Not financial advice.`
+move, available historical-price chart, Situation, attributed Related context (always visible: linked headlines or the neutral text
+`No relevant news linked to this market move.`), conditional Possible action, and
+`Not financial advice.`
 
 Rich Messages are supported by Telegram Bot API 10.2+ using `sendRichMessage` and
 `InputRichMessage.media` for an inline PNG. The pinned `python-telegram-bot 22.8`
@@ -292,12 +311,25 @@ market significance decisions, semantic cooldown, recipients and billing are unc
 Production client appearance still needs a private Telegram Desktop/mobile smoke test;
 mock images and CI-only HTML assertions do not prove native client rendering.
 
+### Event Alert 24h metric and title (2026-10-29)
+
+Show the separately sourced verified `24h market move` immediately after the
+actual analysed-window move for every Event Alert (in rich, HTML and plain
+versions). Omit it if the 24-hour change is unavailable; never call it an
+analysed-window result, and never fabricate a missing value. The title uses
+`BTC Event Alert: -1.12%` rather than an em dash followed by a minus sign.
+Per-recipient comparison insertion cannot change the shared 24-hour metric.
+The Market Heartbeat formatting remains unchanged.
+
 ### Event Alert chart reference markers (2026-10-26)
 
 Event Alert PNGs (not Market Heartbeat PNGs) overlay four separate market
-reference observations. The curve still contains only the latest contiguous
-PostgreSQL price-snapshot run; no line is drawn from the persisted curve to the
-NOW marker, and no line connects missing historical intervals.
+reference observations. The historical curve still contains only the latest
+contiguous PostgreSQL price-snapshot run. The observed NOW marker extends the
+line from its last persisted observation only if its actual timestamp is newer
+and no more than 45 minutes later. Never invent a persisted snapshot or join
+across a missing interval; NOW remains an independent, explicitly labelled event
+observation.
 
 - **NOW**: current Event Alert market price from the validated event input
   (stored in the event numeric context) at the actual price-check timestamp.

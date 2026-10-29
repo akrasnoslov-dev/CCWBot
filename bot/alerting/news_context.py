@@ -237,10 +237,8 @@ def _is_clearly_market_wide_news(text: str) -> bool:
     return any(term in text for term in CLEAR_MARKET_WIDE_NEWS_TERMS)
 
 def classify_news_relevance(symbol: str, news_item: dict) -> str:
-    """Classify RSS item relevance before it reaches the LLM."""
+    """Require article-text evidence; symbol metadata alone can be misclassified."""
     normalized_symbol = normalize_symbol(symbol)
-    if _news_metadata_matches_symbol(normalized_symbol, news_item):
-        return "direct"
     text = _news_search_text(news_item)
     if _matches_symbol_alias(normalized_symbol, text):
         return "direct"
