@@ -83,10 +83,11 @@ def test_decimal_parser_sums_daily_buckets_exactly():
     raw += '"amount":{"value":0.2,"currency":"usd"}}]}],'
     raw += '"has_more":false,"next_page":null}'
     payload = json.loads(raw, parse_float=Decimal)
-    total, cursor, has_more, _ = costs._parse_page(
+    total, cursor, has_more, _, daily = costs._parse_page(
         payload, project_id=PROJECT, next_bucket=1790812800, end_time=1790899200,
     )
     assert total == Decimal("0.3")
+    assert daily == (Decimal("0.3"),)
     assert cursor == 1790899200
     assert has_more is False
 
@@ -126,6 +127,7 @@ async def test_success_multiple_days_with_pagination_and_scoping(monkeypatch):
     state, snapshot = await costs.OpenAICostsMonitor().get(now=NOW)
     assert state == "OK"
     assert snapshot.total_usd == Decimal("3")
+    assert snapshot.daily_usd == (Decimal("1"), Decimal("2"))
     assert snapshot.month_start == START
     assert snapshot.coverage_end == datetime(2026, 10, 3, tzinfo=timezone.utc)
     assert len(seen) == 2
@@ -259,34 +261,56 @@ async def test_internal_ledger_partition_and_matching_window(tmp_path, monkeypat
         assert summary.comparable_used == Decimal("0.80")
         assert summary.remaining == Decimal("1.58")
         assert summary.cap_breach is True
-        screen = costs.format_costs_screen(
-            now=NOW, state="OK",
-            provider=costs.ProviderCosts(PROJECT, START, START + timedelta(days=2),
-                                        NOW, Decimal("0.60")),
-            internal=summary, scope_confirmed=True,
-        )
-        assert "Difference (provider - local, same window): $-0.2000" in screen
-        assert "Current UTC day is excluded" in screen
-        assert "WARNING" in screen
     finally:
         await engine.dispose()
 
 
-def test_no_difference_without_scope_confirmation_or_coverage():
-    provider = costs.ProviderCosts(PROJECT, START, START + timedelta(days=2),
-                                   NOW, Decimal("0.5"))
-    internal = costs.InternalCosts(
-        used=Decimal("1"), limit=Decimal("2.5"), remaining=Decimal("1.5"),
-        settled=Decimal("1"), pending=Decimal("0"), conservative=Decimal("0"),
-        cap_breach=False, comparable_used=Decimal("1"),
+def test_official_cost_screen_has_yesterday_7d_and_30d_projection():
+    # Costs started only two days ago, so do not dilute the run rate by 26 idle days.
+    now = datetime(2026, 10, 29, 15, tzinfo=timezone.utc)
+    end = datetime(2026, 10, 29, tzinfo=timezone.utc)
+    daily = (Decimal("0"),) * 26 + (Decimal("0.10"), Decimal("0.20"))
+    provider = costs.ProviderCosts(PROJECT, START, end, now, Decimal("0.30"), daily)
+    screen = costs.format_costs_screen(now=now, state="OK", provider=provider)
+    assert "Official MTD: $0.3000" in screen
+    assert "Yesterday (Oct 28): $0.2000" in screen
+    assert "Last 7 completed days: $0.3000" in screen
+    assert "30-day projection: $4.5000" in screen
+    assert "2-day observed active period" in screen
+    assert "Internal accounting" not in screen
+    assert "Settled" not in screen
+    assert "Difference" not in screen
+    assert "$1.6296" not in screen
+
+
+def test_projected_rate_uses_7_calendar_days_including_idle_days():
+    now = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
+    daily = (Decimal("0.5"),) + (Decimal("0"),) * 20 + (
+        Decimal("0.07"),) * 7
+    provider = costs.ProviderCosts(
+        PROJECT, START, datetime(2026, 10, 29, tzinfo=timezone.utc),
+        now, Decimal("0.99"), daily,
     )
-    for verified in (False, True):
-        screen = costs.format_costs_screen(
-            now=NOW, state="UNAVAILABLE" if verified else "OK",
-            provider=provider if not verified else None,
-            internal=internal, scope_confirmed=verified,
-        )
-        assert "Difference: NOT COMPARABLE" in screen
+    screen = costs.format_costs_screen(now=now, state="OK", provider=provider)
+    assert "Last 7 completed days: $0.4900" in screen
+    assert "30-day projection: $2.1000" in screen
+    assert "7-day observed active period" in screen
+
+
+def test_no_activity_and_missing_official_data_never_invent_live_spending():
+    provider = costs.ProviderCosts(
+        PROJECT, START, datetime(2026, 10, 3, tzinfo=timezone.utc),
+        NOW, Decimal("0"), (Decimal("0"), Decimal("0")),
+    )
+    screen = costs.format_costs_screen(now=NOW, state="OK", provider=provider)
+    assert "30-day projection: UNAVAILABLE (no observed spending)" in screen
+    assert "Last 2 completed days: $0.0000" in screen
+    missing = costs.format_costs_screen(
+        now=NOW, state="UNAVAILABLE", provider=None,
+    )
+    assert "Official MTD: UNAVAILABLE" in missing
+    assert "30-day projection: UNAVAILABLE" in missing
+    assert "$0.0000" not in missing
 
 
 @pytest.mark.asyncio

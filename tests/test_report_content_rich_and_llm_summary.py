@@ -1,7 +1,7 @@
 """Regression contracts for content-rich cached reports and concise admin diagnostics."""
 import json
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -178,6 +178,9 @@ async def test_admin_llm_summary_is_compact_and_provider_details_are_separate():
             db_enabled=True, session_factory=factory, now=now,
         )
         assert "<pre>" in text
+        assert "Window ending:" in text
+        assert "Latest provider log:" in text
+        assert "$" not in text
         assert "Weekly" in text
         assert "1" in text
         assert "Provider requests:" in text
@@ -189,5 +192,52 @@ async def test_admin_llm_summary_is_compact_and_provider_details_are_separate():
         assert menu.inline_keyboard[0][0].callback_data == "admin:llm_diagnostics_detail"
         back = _llm_diagnostics_menu(detailed=True)
         assert back.inline_keyboard[0][0].callback_data == "admin:llm_diagnostics"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_llm_summary_uses_fresh_bounded_24h_query_not_cumulative_snapshot():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as db:
+        await db.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime(2026, 10, 29, 18, tzinfo=timezone.utc)
+    try:
+        async with factory.begin() as session:
+            session.add_all([
+                LlmUsageLog(
+                    provider="groq", model="gpt-oss", call_type="event_analysis",
+                    status="success", created_at=now - timedelta(hours=23),
+                ),
+                LlmUsageLog(
+                    provider="groq", model="gpt-oss", call_type="event_analysis",
+                    status="success", created_at=now - timedelta(hours=25),
+                ),
+                LlmUsageLog(
+                    provider="groq", model="gpt-oss", call_type="event_analysis",
+                    status="success", created_at=now + timedelta(hours=2),
+                ),
+            ])
+        at_now = await build_admin_llm_summary_html(
+            db_enabled=True, session_factory=factory, now=now,
+        )
+        assert "Provider requests: <b>1 succeeded · 0 failed</b>" in at_now
+        assert "Window ending: 2026-10-29 18:00 UTC" in at_now
+        assert "Latest provider log: 2026-10-28 19:00 UTC" in at_now
+
+        just_after_expiry = await build_admin_llm_summary_html(
+            db_enabled=True, session_factory=factory,
+            now=now + timedelta(hours=1, minutes=1),
+        )
+        assert "Provider requests: <b>0 succeeded · 0 failed</b>" in just_after_expiry
+        assert "Latest provider log: none in window" in just_after_expiry
+
+        after_future_record = await build_admin_llm_summary_html(
+            db_enabled=True, session_factory=factory,
+            now=now + timedelta(hours=2, minutes=1),
+        )
+        assert "Provider requests: <b>1 succeeded · 0 failed</b>" in after_future_record
+        assert "Latest provider log: 2026-10-29 20:00 UTC" in after_future_record
     finally:
         await engine.dispose()

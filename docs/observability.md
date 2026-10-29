@@ -801,6 +801,12 @@ finding is UNKNOWN; explicit failed generation remains a triggered finding.
 Admin -> LLM diagnostics opens a compact HTML monospace summary with six
 logical-operation rows (successes, terminal failures, and observed status),
 real provider-request totals, and backoff/circuit skips separately.
+The displayed UTC window ending and most recent provider log timestamp make
+rolling refreshes visible even when a steady scheduler produces identical counts
+(for example, 4 coins × 48 half-hour checks = 192 Events per day).
+Both the logical-operation and provider-log views are bounded to the snapshot
+UTC time; future-dated records do not inflate the current 24-hour snapshot.
+Only local OpenAI admission readiness is shown, not ledger dollar amounts.
 `Low N` denotes insufficient reliability evidence, not an observed failure.
 The **Provider details** button retains the original, sanitized detailed
 breakdown, and **Summary** returns. This presentation change does not alter
