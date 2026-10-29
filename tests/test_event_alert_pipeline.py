@@ -1213,7 +1213,7 @@ def test_event_alert_presentation_is_market_first_with_nonmaterial_related_news(
     assert "broader 24-hour direction remained opposite" in situation
     assert "continue in the current direction" in action
     assert "selected context develops" not in action
-    assert "Related context:" not in payload
+    assert "Related context:\nNo relevant news linked to this market move." in payload
     assert "US stock perpetual futures activity" not in payload
 
 

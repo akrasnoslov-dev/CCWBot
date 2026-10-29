@@ -57,7 +57,39 @@ The project-wide zero-cost/free-tier service policy is owned by `docs/project_co
 For LLM capacity problems, apply that guardrail by checking supported free-tier models, call
 efficiency, caching/reuse, and graceful degradation before considering any paid provider tier.
 
-### CCW-20 owner-selected Event Alert provider order
+### Current Event Alert Luna-only policy (owner update 2026-10-29)
+
+The owner superseded the CCW-20 multi-provider order **for Event Alerts only**.
+Both Stage-1 `event_analysis` and Stage-2 `event_alert_render` must use only
+OpenAI `gpt-6-luna` in the deployed configuration. Set all of the following in
+the **actual** production `.env` during a reviewed release:
+
+```dotenv
+OPENAI_ENABLED=true
+OPENAI_MODEL=gpt-6-luna
+LLM_EVENT_PROVIDERS=openai
+LLM_EVENT_RENDER_PROVIDERS=openai
+```
+
+Keep the existing OpenAI API key and the monthly USD $2.50 spending/admission
+safeguard. Do not bypass budget checks to improve Event Alert availability.
+No Groq or Cloudflare fallback is permitted for either Event Alert call type.
+When OpenAI is disabled, exhausted or unavailable, fail closed at the existing
+operation boundary; deterministic verified Render recovery still applies only
+under its existing invalid-output policy. These overrides do not change other
+LLM tasks. The shipped router still allows legacy multi-provider configurations
+when explicitly requested; `.env.example` is guidance, not a production edit.
+
+Before release, inspect the sanitized startup `ops_event=llm_config` line for
+**both** call types. After release, verify Stage-1 attribution in
+`event_ai_analyses` + `llm_usage_logs`, and **separately** query
+`llm_operation_outcomes` (`call_type='event_alert_render'`) to confirm that
+Stage-2 has `provider=openai` and `model=gpt-6-luna`. The ordinary
+`event_ai_analyses.llm_operation_id` join only establishes Stage-1 provider.
+Production changes require operator access and a reviewed deployment; no
+repository commit alters a running server's local `.env`.
+
+### Historical CCW-20 Event Alert provider order (superseded)
 
 For the next reviewed deployment, the owner chose **Cloudflare -> budget-guarded
 OpenAI GPT-6 Luna -> Groq** for both `event_analysis` and `event_alert_render`.

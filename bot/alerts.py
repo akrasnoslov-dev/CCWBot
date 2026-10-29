@@ -1499,7 +1499,7 @@ def _format_event_related_context(
     related_news: list[dict], *, empty_text: str
 ) -> tuple[str, list[dict], str | None]:
     if not related_news:
-        return empty_text, [], None
+        return empty_text, [], escape(empty_text) if empty_text else None
 
     lines: list[str] = []
     html_lines: list[str] = []
@@ -1544,7 +1544,7 @@ def _format_event_related_context(
             missing_url_count,
         )
     if not lines:
-        return empty_text, [], None
+        return empty_text, [], escape(empty_text) if empty_text else None
     return "\n".join(lines), link_entities, "\n".join(html_lines)
 
 
@@ -1796,7 +1796,7 @@ def _build_event_alert_payload(
     ]
     related_section, related_link_entities, related_section_html = _format_event_related_context(
         related_news,
-        empty_text="",
+        empty_text="No relevant news linked to this market move.",
     )
     presentation_situation_fallback, presentation_action_fallback = (
         event_alert_presentation_fallback(

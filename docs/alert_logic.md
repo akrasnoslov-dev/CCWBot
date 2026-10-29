@@ -233,14 +233,33 @@ rumours, or inference about trader intent. Related articles may be shown as coin
 but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
 Keep the existing disclaimer and single shared render per event.
 
+### Owner copy/news correction (2026-10-29)
+
+Keep validated Stage-2 Render text when its factual claims are supported. A
+conditional observation may use `would`, `could` or `might` without an explicit
+`if` or `or`. A denial that a recent observed price is *not* established
+support or resistance must not be treated as an affirmative technical claim.
+Temporal descriptions such as "after two upward steps" are not news causation.
+Still reject unsupported prices, claimed support/resistance, external catalysts,
+causal explanations and trade instructions. Preserve distinct event-specific
+conditional scenarios over generic range-exit filler whenever they are valid.
+
+Candidate news must be backed by the actual article title/summary, not only
+an automatically assigned symbol tag. Invalid/mislabelled links remain excluded.
+`Related context` is a permanent section of every Event Alert across rich, HTML
+and plain deliveries. When no relevant article is selected, print exactly
+`No relevant news linked to this market move.` Never invent or force links.
+News remains supporting evidence, not a standalone reason for an Event Alert.
+
 ## Telegram Event Alert presentation (2026-10)
 
 The market significance decision, one shared render per event, cooldowns, eligibility and
 Market Heartbeat are unchanged. The nine display positions are: coin/Event Alert and
 analysed-window percent, `Price (now)`, since *recipient's last successfully delivered*
 notification when comparable price and delivery time are persisted, actual analysed-window
-move, available historical-price chart, Situation, attributed Related context when present,
-conditional Possible action, and `Not financial advice.`
+move, available historical-price chart, Situation, attributed Related context (always visible: linked headlines or the neutral text
+`No relevant news linked to this market move.`), conditional Possible action, and
+`Not financial advice.`
 
 Rich Messages are supported by Telegram Bot API 10.2+ using `sendRichMessage` and
 `InputRichMessage.media` for an inline PNG. The pinned `python-telegram-bot 22.8`

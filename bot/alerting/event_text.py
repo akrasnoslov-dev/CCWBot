@@ -35,7 +35,7 @@ _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
     r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
     r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
     r"accelerat\w*|decelerat\w*|faster|slower|percentiles?|rare|unprecedented|"
-    r"record|historic|ath|central[ -]?bank|interven\w*|"
+    r"record|historic|ath|central[ -]?bank|"
     r"institutional|blackrock|grayscale|microstrategy)\b"
 )
 # This only applies to unstructured Render prose, not to deterministic fallbacks.
@@ -66,6 +66,33 @@ _EXTREME_ACTION_RE = re.compile(
     r"(?i)\b(?:entire|all|fully|immediately)\b.*\b(?:position|exposure)\b|"
     r"\b(?:liquidate|close|exit)\b.*\b(?:entire|all|fully|immediately)\b"
 )
+
+
+# Temporal prose about actual market observations is not external news causation.
+# This exemption never permits an unsupported "after [catalyst]" explanation.
+_OBSERVED_TEMPORAL_PATH_RE = re.compile(
+    r"(?i)\b(?:after|following)\s+"
+    r"(?:(?:the|an?|two|three|several|previous|recent|earlier|latest|"
+    r"brief|small|observed|intervening|initial|short-term)\s+){0,5}"
+    r"(?:upward|downward|rising|falling|positive|negative|price|snapshot|"
+    r"moves?|steps?|intervals?|bounce|decline|rise|rebound|recovery|"
+    r"uptick|downtick|pullback|drop|rally|path)"
+    r"(?:\s+(?:steps?|moves?|snapshots?|intervals?))?\b"
+)
+
+
+def _has_unsupported_situation_causality(value: str, market_data: dict) -> bool:
+    without_observed_path = _OBSERVED_TEMPORAL_PATH_RE.sub("observed price path", value)
+    if _UNSUPPORTED_CAUSAL_CLAIM_RE.search(without_observed_path):
+        return True
+    step_changes = _snapshot_step_changes(market_data)
+    for direction, sign in (("upward", 1), ("downward", -1)):
+        if re.search(rf"(?i)\b(?:after|following)\s+two\s+{direction}\s+steps?\b", value):
+            if len(step_changes) < 3 or not all(
+                step * sign > 0 for step in step_changes[-3:-1]
+            ):
+                return True
+    return False
 
 
 def compact_elapsed_since(previous_at: object, current_at: object) -> str | None:
@@ -163,7 +190,7 @@ def compact_event_alert_situation(
         return fallback
     if (
         _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
-        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(cleaned)
+        or _has_unsupported_situation_causality(cleaned, market_data or {})
         or _has_unsupported_event_claim(cleaned, market_data or {})
     ):
         return fallback
@@ -310,7 +337,15 @@ def _is_safe_structured_market_interpretation(value: str, market_data: dict) -> 
     ):
         return False
 
-    return market_direction_claims_supported(value, market_data)
+    # Verified earlier counter-steps do not assert the analysed-window net
+    # direction. Check that sequence above, then mask only its historical
+    # directional adjective before checking period-scoped net direction.
+    direction_text = re.sub(
+        r"(?i)\b(?:after|following)\s+two\s+(?:upward|downward)\s+steps?\b",
+        "after observed earlier steps",
+        value,
+    )
+    return market_direction_claims_supported(direction_text, market_data)
 
 
 def _repeats_rendered_market_fact(value: str, market_data: dict) -> bool:
@@ -372,7 +407,7 @@ def _concise_explanation_clause(value: str, market_data: dict) -> str | None:
         or len(clause.split()) > 28
         or _repeats_rendered_market_fact(clause, market_data)
         or _UNSUPPORTED_MARKET_CLAIM_RE.search(clause)
-        or _UNSUPPORTED_CAUSAL_CLAIM_RE.search(clause)
+        or _has_unsupported_situation_causality(clause, market_data)
     ):
         return None
     return clause[:1].upper() + clause[1:]
@@ -718,6 +753,45 @@ _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
 )
 
 
+# A model may explicitly warn that observed highs/lows are NOT established
+# technical levels. Such a denial is not an assertion of support/resistance.
+_NEGATED_TECHNICAL_LEVEL_RE = re.compile(
+    r"(?i)\b(?:not|never)\s+(?:an?\s+)?(?:confirmed|established|proven|validated|formal)\s+"
+    r"(?:support|resistance)(?:\s*(?:or|and|/)\s*(?:support|resistance))?\b"
+)
+
+
+def _action_without_negated_technical_levels(value: str) -> str:
+    return _NEGATED_TECHNICAL_LEVEL_RE.sub("unproven reference levels", value)
+
+
+def _has_unsupported_action_market_claim(value: str) -> bool:
+    return _UNSUPPORTED_MARKET_CLAIM_RE.search(
+        _action_without_negated_technical_levels(value)
+    ) is not None
+
+
+def _has_final_reference_disclaimer(value: str) -> bool:
+    """Allow a third sentence only when it denies technical/trading levels."""
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<!\d)[.!?]\s+", value)
+        if part.strip()
+    ]
+    if len(sentences) != 3:
+        return False
+    tail = sentences[-1]
+    return (
+        tail.lower().startswith(("these ", "those ", "the observed "))
+        and re.search(
+            r"(?i)\bnot\s+(?:an?\s+)?(?:confirmed|established|proven|formal|trading)\b",
+            tail,
+        ) is not None
+        and re.search(r"(?i)\b(?:support|resistance|targets?|entry|exit)\b", tail)
+        is not None
+    )
+
+
 def compact_event_alert_possible_action(
     value: str, *, fallback: str | None = None, market_data: dict | None = None
 ) -> str:
@@ -728,12 +802,20 @@ def compact_event_alert_possible_action(
         or not _action_price_levels_supported(cleaned, market_data)
         or len(cleaned.split()) > 60
         # A decimal point inside an observed USD price is not a sentence end.
-        or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
+        or (
+            len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
+            and not _has_final_reference_disclaimer(cleaned)
+        )
         or not _OBSERVATION_RE.search(cleaned)
-        or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
+        or not re.search(
+            r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b",
+            cleaned,
+        )
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
-        or _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
-        or _has_unsupported_event_claim(cleaned, market_data or {})
+        or _has_unsupported_action_market_claim(cleaned)
+        or _has_unsupported_event_claim(
+            _action_without_negated_technical_levels(cleaned), market_data or {}
+        )
         or _DIRECT_FINANCIAL_INSTRUCTION_RE.search(cleaned)
     ):
         return fallback or "Watch the next short-term snapshots for confirmation or reversal."
