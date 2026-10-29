@@ -17,7 +17,7 @@ def _market():
         "chg24h_percent": -3.0,
         "analysed_window_minutes": 180,
         "snapshots": [
-            {"m": -90, "p": 99.0},
+            {"m": -90, "p": 100.0},
             {"m": -60, "p": 101.0},
             {"m": -30, "p": 104.0},
             {"m": 0, "p": 100.0},
