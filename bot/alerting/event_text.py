@@ -26,7 +26,7 @@ _UNSUPPORTED_MARKET_CLAIM_RE = re.compile(
     r"whales?|on[ -]?chain)\b"
 )
 _UNSUPPORTED_CAUSAL_CLAIM_RE = re.compile(
-    r"(?i)\b(?:because|due to|caused by|driven by|explains?|after|following|"
+    r"(?i)\b(?:because|due to|caused by|driven by|explains?|"
     r"triggered|sparked|attributed to)\b"
 )
 # Unstructured Render prose cannot establish a catalyst, a new piece of news, or
@@ -35,7 +35,7 @@ _UNSUPPORTED_EVENT_CLAIM_RE = re.compile(
     r"(?i)\b(?:sec|etfs?|approvals?|approved|announc\w*|rumou?rs?|hacks?|hacked|"
     r"breach\w*|listings?|partnership\w*|lawsuit\w*|regulator\w*|confirmed|"
     r"accelerat\w*|decelerat\w*|faster|slower|percentiles?|rare|unprecedented|"
-    r"record|historic|ath|central[ -]?bank|interven\w*|"
+    r"record|historic|ath|central[ -]?bank|"
     r"institutional|blackrock|grayscale|microstrategy)\b"
 )
 # This only applies to unstructured Render prose, not to deterministic fallbacks.
@@ -718,6 +718,19 @@ _UNVERIFIED_FORWARD_RELATION_RE = re.compile(
 )
 
 
+# A model may explicitly warn that observed highs/lows are NOT established
+# technical levels. Such a denial is not an assertion of support/resistance.
+_NEGATED_TECHNICAL_LEVEL_RE = re.compile(
+    r"(?i)\b(?:not|never)\s+(?:an?\s+)?(?:confirmed|established|proven|validated|formal)\s+"
+    r"(?:support|resistance)(?:\s*(?:or|and|/)\s*(?:support|resistance))?\b"
+)
+
+
+def _has_unsupported_action_market_claim(value: str) -> bool:
+    without_denials = _NEGATED_TECHNICAL_LEVEL_RE.sub("unproven reference levels", value)
+    return _UNSUPPORTED_MARKET_CLAIM_RE.search(without_denials) is not None
+
+
 def compact_event_alert_possible_action(
     value: str, *, fallback: str | None = None, market_data: dict | None = None
 ) -> str:
@@ -730,9 +743,9 @@ def compact_event_alert_possible_action(
         # A decimal point inside an observed USD price is not a sentence end.
         or len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
         or not _OBSERVATION_RE.search(cleaned)
-        or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared)\b", cleaned)
+        or not re.search(r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b", cleaned)
         or re.search(r"(?i)\b(?:risk plan|risk controls?|exposure|impulsive)\b", cleaned)
-        or _UNSUPPORTED_MARKET_CLAIM_RE.search(cleaned)
+        or _has_unsupported_action_market_claim(cleaned)
         or _has_unsupported_event_claim(cleaned, market_data or {})
         or _DIRECT_FINANCIAL_INSTRUCTION_RE.search(cleaned)
     ):
