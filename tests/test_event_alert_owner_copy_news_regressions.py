@@ -50,14 +50,15 @@ def test_realistic_llm_two_scenario_action_with_would_is_preserved():
 
 
 def test_unproven_support_resistance_disclaimer_does_not_erase_scenarios():
-    action = (
-        "A sustained move above the observed $104.00 high would strengthen the "
-        "rebound case. A move below $100.00 would undermine it. "
-        "These are not established support or resistance levels."
-    )
-    assert compact_event_alert_possible_action(
-        action, fallback="generic", market_data=_market()
-    ) == action
+    for qualification in ("not established", "not confirmed"):
+        action = (
+            "A sustained move above the observed $104.00 high would strengthen the "
+            "rebound case. A move below $100.00 would undermine it. "
+            f"These are {qualification} support or resistance levels."
+        )
+        assert compact_event_alert_possible_action(
+            action, fallback="generic", market_data=_market()
+        ) == action
 
 
 def test_action_with_asserted_support_or_unobserved_price_still_fails_closed():
