@@ -311,12 +311,25 @@ market significance decisions, semantic cooldown, recipients and billing are unc
 Production client appearance still needs a private Telegram Desktop/mobile smoke test;
 mock images and CI-only HTML assertions do not prove native client rendering.
 
+### Event Alert 24h metric and title (2026-10-29)
+
+Show the separately sourced verified `24h market move` immediately after the
+actual analysed-window move for every Event Alert (in rich, HTML and plain
+versions). Omit it if the 24-hour change is unavailable; never call it an
+analysed-window result, and never fabricate a missing value. The title uses
+`BTC Event Alert: -1.12%` rather than an em dash followed by a minus sign.
+Per-recipient comparison insertion cannot change the shared 24-hour metric.
+The Market Heartbeat formatting remains unchanged.
+
 ### Event Alert chart reference markers (2026-10-26)
 
 Event Alert PNGs (not Market Heartbeat PNGs) overlay four separate market
-reference observations. The curve still contains only the latest contiguous
-PostgreSQL price-snapshot run; no line is drawn from the persisted curve to the
-NOW marker, and no line connects missing historical intervals.
+reference observations. The historical curve still contains only the latest
+contiguous PostgreSQL price-snapshot run. The observed NOW marker extends the
+line from its last persisted observation only if its actual timestamp is newer
+and no more than 45 minutes later. Never invent a persisted snapshot or join
+across a missing interval; NOW remains an independent, explicitly labelled event
+observation.
 
 - **NOW**: current Event Alert market price from the validated event input
   (stored in the event numeric context) at the actual price-check timestamp.
