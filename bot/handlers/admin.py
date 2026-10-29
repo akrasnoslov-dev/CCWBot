@@ -5,7 +5,6 @@ grant/revoke entrypoints, and warning/error log export controls. User-facing
 non-admin commands belong in their domain modules.
 """
 
-import os
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -33,12 +32,7 @@ from bot.observability.system_status import (
     build_admin_llm_summary_html,
     build_admin_system_status_text,
 )
-from bot.services.llm.openai_costs import (
-    _window,
-    format_costs_screen,
-    openai_costs_monitor,
-    read_internal_costs,
-)
+from bot.services.llm.openai_costs import format_costs_screen, openai_costs_monitor
 from bot.settings import (
     get_db_alert_settings,
     get_state_alert_settings,
@@ -100,25 +94,9 @@ def _llm_diagnostics_menu(*, detailed: bool) -> InlineKeyboardMarkup:
 
 
 async def _build_admin_openai_costs_text() -> str:
-    root = handlers_module()
     now = datetime.now(timezone.utc)
     state, provider = await openai_costs_monitor.get(now=now)
-    internal = None
-    if root.DB_ENABLED and root.DB_SESSION_LOCAL:
-        try:
-            start, prior_day = _window(now)
-            internal = await read_internal_costs(
-                root.DB_SESSION_LOCAL, start=start,
-                end=provider.coverage_end if provider else prior_day,
-            )
-        except Exception:
-            # Do not expose database errors or secret-bearing exception messages.
-            internal = None
-    return format_costs_screen(
-        now=now, state=state, provider=provider, internal=internal,
-        scope_confirmed=os.getenv("OPENAI_COSTS_SCOPE_CONFIRMED", "").strip().lower()
-        in {"1", "true", "yes"},
-    )
+    return format_costs_screen(now=now, state=state, provider=provider)
 
 
 def _premium_grant_usage_text() -> str:
