@@ -1159,6 +1159,15 @@ NON_PRICE_PERCENT_FILLER_WORDS = {
 }
 
 
+def _preserve_render_prose(value: str | None) -> str:
+    """Minimal whitespace normalization; retain the model's paragraph structure."""
+    text = str(value or "").strip()
+    text = re.sub(r"(?m)[ \t]+$", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # The shared footer is printed once by the presentation layout.
+    return re.sub(r"(?i)\bnot financial advice\.?\s*$", "", text).strip()
+
+
 def _sanitize_event_text(
     value: str | None,
     fallback: str = "",
@@ -1810,8 +1819,8 @@ def _build_event_alert_payload(
         "message_body": llm_situation,
         "possible_action": llm_action,
     })
-    message_body = _sanitize_event_text(llm_situation, omit_placeholders=False)
-    possible_action = _sanitize_event_text(llm_action, omit_placeholders=False)
+    message_body = _preserve_render_prose(llm_situation)
+    possible_action = _preserve_render_prose(llm_action)
     if not message_body or not possible_action:
         raise EventAnalysisValidationError("alert fields are required for should_alert=true")
     price = market_data.get("price", market_data.get("price_now_usd"))
