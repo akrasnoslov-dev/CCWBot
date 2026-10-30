@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
@@ -3938,8 +3938,10 @@ async def _create_event_analysis_decision(
                 last_msg=input_payload.get("last_msg"),
                 timestamp_utc=input_payload.get("timestamp_utc"),
             )
-            # Test the assembled message against the real Telegram hard limit
-            # while the existing provider retry chain can still repair it.
+            # Test real formatted output, not the validator's single-line copy.
+            validated_render = _validated_render_with_original_prose(
+                validated_render, provider_parsed
+            )
             _build_event_alert_payload(
                 decision=validated_render,
                 input_payload=input_payload,
@@ -4081,6 +4083,8 @@ async def _create_event_analysis_decision(
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
         return None, None
+
+    decision = _validated_render_with_original_prose(decision, render_parsed)
 
     await _save_event_alert_render_outcome(
         llm_operation_id=render_operation_id,
@@ -4281,12 +4285,31 @@ def _validate_event_alert_render_prices(result: object, market_data: dict) -> No
             continue
     for field_name in ("message_body", "possible_action"):
         for match in _RENDER_USD_CLAIM_RE.finditer(str(result.get(field_name) or "")):
+            # Headline loss estimates ($6 billion) are not price levels.
+            suffix = str(result.get(field_name) or "")[match.end():match.end() + 16]
+            if re.match(r"(?i)^\s*(?:billion|million|trillion|bn)\b", suffix):
+                continue
             raw = match.group(1).replace(",", "")
             claimed = Decimal(raw)
             places = len(raw.partition(".")[2])
             tolerance = Decimal("0.5") * (Decimal(10) ** (-places))
             if not any(abs(claimed - actual) <= tolerance for actual in observed):
                 raise EventAnalysisValidationError("unsupported observed USD price")
+
+
+def _validated_render_with_original_prose(
+    decision: EventAnalysisDecision, parsed: dict
+) -> EventAnalysisDecision:
+    """Retain harmless Stage-2 paragraph breaks after numeric/schema checks.
+
+    The shared EventAnalysis validator canonicalizes whitespace for persistence;
+    the rendered copy must use exactly the fact-checked model text.
+    """
+    return replace(
+        decision,
+        message_body=_preserve_render_prose(parsed["message_body"]),
+        possible_action=_preserve_render_prose(parsed["possible_action"]),
+    )
 
 
 def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -> str:
