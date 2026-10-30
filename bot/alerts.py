@@ -1850,6 +1850,8 @@ def _build_event_alert_payload(
         "\n\n" if related_section else ""
     ) + f"Possible action:\n{possible_action}\n\nNot financial advice."
     message = f"{before_related}{related_section}{after_related}"
+    if _utf16_length(message) > 4096:
+        raise EventAnalysisValidationError("telegram_message_too_long")
     final_quality = final_event_alert_quality_flags(message)
     logger.info(
         "ops_event=event_alert_final_text_quality symbol=%s "
@@ -3873,7 +3875,7 @@ async def _create_event_analysis_decision(
         try:
             _validate_event_alert_render_causality(provider_parsed)
             _validate_event_alert_render_prices(provider_parsed, input_payload.get("market") or {})
-            validate_event_analysis_output(
+            validated_render = validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
                     input_payload=input_payload,
@@ -3886,6 +3888,15 @@ async def _create_event_analysis_decision(
                 market_data=input_payload.get("market"),
                 last_msg=input_payload.get("last_msg"),
                 timestamp_utc=input_payload.get("timestamp_utc"),
+            )
+            # Test the assembled message against the real Telegram hard limit
+            # while the existing provider retry chain can still repair it.
+            _build_event_alert_payload(
+                decision=validated_render,
+                input_payload=input_payload,
+                related_news=_selected_event_analysis_news(
+                    input_payload, validated_render.related_news_ids
+                ),
             )
         except EventAnalysisValidationError as error:
             validation_reason = _event_alert_render_validation_reason(error)
@@ -4186,6 +4197,7 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
         ("unverified causal claim", "unverified_causal_claim"),
         ("mixed render sections", "mixed_render_sections"),
         ("unsupported observed usd price", "unsupported_observed_price"),
+        ("telegram_message_too_long", "telegram_message_too_long"),
         ("unsupported outcome certainty", "unsupported_outcome_certainty"),
         ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
         ("market claim is unavailable", "market_claim_unavailable"),
