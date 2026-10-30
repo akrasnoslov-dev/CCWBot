@@ -45,14 +45,7 @@ from bot.alerting.event_analysis import (
 from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
     compact_elapsed_since,
-    compact_event_alert_possible_action,
-    compact_event_alert_situation,
-    event_alert_presentation_fallback,
     final_event_alert_quality_flags,
-    is_news_centered_event_action,
-    observed_event_alert_level_action,
-    sanitize_financial_instruction,
-    soften_possible_action,
 )
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_ANALYSIS_TYPE,
@@ -129,7 +122,6 @@ from bot.reports import generate_daily_report_cache_job, generate_weekly_report_
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
-    AIInvalidJsonError,
     AIProviderRateLimitError,
     AISchemaValidationError,
     LLMRateLimitBackoffActive,
@@ -4180,8 +4172,8 @@ def _validate_event_alert_render_prices(result: object, market_data: dict) -> No
                 observed.append(numeric)
         except (ValueError, ArithmeticError):
             continue
-    for field in ("message_body", "possible_action"):
-        for match in _RENDER_USD_CLAIM_RE.finditer(str(result.get(field) or "")):
+    for field_name in ("message_body", "possible_action"):
+        for match in _RENDER_USD_CLAIM_RE.finditer(str(result.get(field_name) or "")):
             raw = match.group(1).replace(",", "")
             claimed = Decimal(raw)
             places = len(raw.partition(".")[2])
