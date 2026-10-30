@@ -111,7 +111,9 @@ def test_critical_market_wide_outweighs_routine_direct_news():
             primary_symbol=primary, related_symbols=related,
             published_at=datetime(2026, 10, 30, tzinfo=timezone.utc),
             category="security", impact_level="critical",
-            llm_summary=title, raw_summary=title,
+            llm_summary=title, raw_summary=title, source="News source",
+            url="https://example.org/story", dedup_group_id="test:story",
+            llm_status="success",
         )
     routine = row("Bitcoin chart analysis", 20, 80, "btc", ["btc"])
     critical = row(
