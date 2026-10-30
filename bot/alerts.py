@@ -1804,6 +1804,12 @@ def _build_event_alert_payload(
     # Presentation never rewrites its meaning or substitutes Python prose.
     llm_situation = str(decision.message_body or "").strip()
     llm_action = str(decision.possible_action or "").strip()
+    # Reused persisted analyses can predate the structured field contract.
+    # Never expose a combined "Situation: ... Possible action:" as one field.
+    _validate_event_alert_render_causality({
+        "message_body": llm_situation,
+        "possible_action": llm_action,
+    })
     message_body = _sanitize_event_text(llm_situation, omit_placeholders=False)
     possible_action = _sanitize_event_text(llm_action, omit_placeholders=False)
     if not message_body or not possible_action:
@@ -4133,7 +4139,7 @@ def _validate_event_alert_render_causality(result: object) -> None:
             text, flags=re.IGNORECASE,
         ):
             raise EventAnalysisValidationError("unverified causal claim")
-        if re.search(r"(?im)^\s*(?:situation|possible action):", text):
+        if re.search(r"(?i)\b(?:situation|possible action)\s*:", text):
             raise EventAnalysisValidationError("mixed render sections")
         if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
