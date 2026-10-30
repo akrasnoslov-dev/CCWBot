@@ -4,6 +4,7 @@ Synthetic evidence only. No private production records.
 """
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from html import unescape
 
 import pytest
 
@@ -61,8 +62,8 @@ def test_long_valid_render_sections_are_preserved_in_every_format():
         input_payload={"market": _market()}, related_news=[],
     )
     for key in ("plain_text", "html_text", "rich_html"):
-        assert situation.strip() in result[key]
-        assert action.strip() in result[key]
+        assert situation.strip() in unescape(result[key])
+        assert action.strip() in unescape(result[key])
         assert "Not financial advice." in result[key]
 
 
