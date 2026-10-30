@@ -229,3 +229,15 @@ def test_market_wide_news_survives_final_related_context_validation():
     )
     for key in ("plain_text", "html_text", "rich_html"):
         assert "Binance hack drains" in payload[key]
+
+
+def test_legacy_combined_database_message_does_not_leak_multiple_sections():
+    mixed = (
+        "Situation: BTC has a verified lower path. "
+        "Possible action: Watch the observed range."
+    )
+    with pytest.raises(EventAnalysisValidationError, match="mixed render sections"):
+        alerts._build_event_alert_payload(
+            decision=_decision(mixed, "Observe the range."),
+            input_payload={"market": _market()}, related_news=[],
+        )
