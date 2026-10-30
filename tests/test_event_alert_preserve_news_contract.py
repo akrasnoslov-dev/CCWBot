@@ -2,15 +2,15 @@
 
 Synthetic evidence only. No private production records.
 """
-from types import SimpleNamespace
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from bot import alerts
-from bot.news import _news_row_rank
 from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.news_context import classify_news_relevance, filter_news_for_symbol
+from bot.news import _news_row_rank
 
 
 def _market():
@@ -63,7 +63,10 @@ def test_long_valid_render_sections_are_preserved_in_every_format():
 
 def test_trading_vocabulary_is_not_replaced_by_backend():
     situation = "BTC declined in each supplied interval and aligns with the 24-hour down move."
-    action = "If the range breaks, a trader may reduce exposure, sell, or hold based on their risk plan."
+    action = (
+        "If the range breaks, a trader may reduce exposure, "
+        "sell, or hold based on their risk plan."
+    )
     result = alerts._build_event_alert_payload(
         decision=_decision(situation, action),
         input_payload={"market": _market()}, related_news=[],
@@ -87,7 +90,10 @@ def test_no_generated_generic_situation_or_action():
 def test_major_exchange_hack_can_be_market_wide_for_multiple_assets(symbol):
     incident = {
         "title": "Major Binance exchange hack drains $6 billion",
-        "summary": "Multi-billion-dollar breach rattles the broader crypto market and exchange liquidity.",
+        "summary": (
+            "Multi-billion-dollar breach rattles the broader crypto "
+            "market and exchange liquidity."
+        ),
         "category": "security", "impact_level": "critical", "impact_score": 90,
         "primary_symbol": None, "related_symbols": ["btc", "eth"],
     }
