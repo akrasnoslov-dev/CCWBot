@@ -330,9 +330,10 @@ def test_terminal_significance_and_render_failures_count(caplog):
         "except Exception as error:", 1
     )[1].split("normalized_render =", 1)[0]
     assert "_log_event_analysis_failure(" in render_failure
-    assert "_verified_event_alert_render_fallback" in render_source
-    assert "_render_schema_check(candidate)" in render_failure
-    assert "if render_fallback_reason is None:" in render_failure
+    assert "_verified_event_alert_render_fallback" not in render_source
+    assert "_render_schema_check(candidate)" not in render_failure
+    assert 'status="llm_error"' in render_failure
+    assert "return None, None" in render_failure
 
 
 def test_skipped_delivery_reasons_are_reported_separately():

@@ -182,15 +182,11 @@ def test_btc_followup_copy_uses_verified_comparable_prior_window():
     )
     assert "3h market move: -0.29%" in first
     assert "3h market move: -0.68%" in second
-    assert "Situation:\nThe analysed-window decline is smaller in magnitude" in first
-    assert (
-        "Situation:\nThe current 3h decline is larger than the prior recorded alert's comparable"
-        in second
-    )
-    assert (
-        "Possible action:\nWatch whether the next observed interval adds to the decline" in second
-    )
-    assert first.split("Situation:\n")[1] != second.split("Situation:\n")[1]
+    # The accepted Stage-2 text is preserved, including when previous
+    # market metrics differ. The model, not a Python template, owns comparison.
+    assert "Situation:\nMarket movement needs attention." in first
+    assert "Situation:\nMarket movement needs attention." in second
+    assert "Possible action:\nIf the market moves, keep watching." in second
     assert second.endswith("Not financial advice.")
 
 

@@ -164,6 +164,7 @@ class NewsIntelligenceService:
         prioritized_items = sorted(
             valid_items,
             key=lambda item: (
+                _budget_priority_score(item) >= 100,
                 bool(
                     item.published_at
                     and fresh_cutoff <= item.published_at <= now + timedelta(minutes=5)
@@ -199,10 +200,13 @@ class NewsIntelligenceService:
                     and retry_item.news_key not in rss_keys
                 ):
                     retry_items.append(retry_item)
+            retry_items.sort(key=_budget_priority_score, reverse=True)
             if retry_items and self.max_items_per_run > 1:
-                # Reserve at most one new-work slot so a busy RSS feed cannot
-                # starve persisted failures; fresh RSS retains all other slots.
-                prioritized_items.insert(self.max_items_per_run - 1, retry_items.pop(0))
+                # One retry slot stays within the existing budget. A major
+                # incident skipped earlier is revisited before routine items.
+                recovered = retry_items.pop(0)
+                slot = 0 if _budget_priority_score(recovered) >= 100 else self.max_items_per_run - 1
+                prioritized_items.insert(slot, recovered)
             prioritized_items.extend(retry_items)
         processable: list[NormalizedNewsItem] = []
         reused = 0
@@ -323,6 +327,11 @@ class NewsIntelligenceService:
 
         seen_dedup_groups.add(dedup_group_id)
         if not self._budget_allows(hourly_calls):
+            if _budget_priority_score(item) >= 100:
+                logger.warning(
+                    "ops_event=news_intelligence_critical_budget_skip "
+                    "priority=major_incident status=skipped_budget"
+                )
             return await self._persist(
                 item,
                 llm_input_hash=llm_input_hash,
@@ -578,7 +587,11 @@ def build_llm_messages(payload: dict) -> list[dict]:
         'equally relevant multi-coin, unknown-symbol, and irrelevant items; never guess '
         'the first related symbol as primary. '
         'dedup_hint must be a specific story/entity/event phrase for near-duplicate detection; '
-        'leave it empty for broad market themes.'
+        'leave it empty for broad market themes. Distinguish materially new stages '
+        'of the same incident (loss estimates, withdrawals, attacker attribution, '
+        'liquidations, recovery) from repeated coverage. Major exchange breaches '
+        'may be material to the broad crypto market without naming every token. '
+        'Do not mark isolated exchange or regulatory headlines as market-wide.'
     )
     return [
         {"role": "system", "content": "You are a careful crypto news classifier."},
@@ -717,15 +730,22 @@ def is_obvious_noise(item: NormalizedNewsItem) -> bool:
 
 
 def _budget_priority_score(item: NormalizedNewsItem) -> int:
-    """Cheap keyword heuristic ranking items before the per-run LLM budget cutoff.
-
-    Higher-scoring items are analyzed first, so when the hourly/per-run LLM
-    budget runs out mid-batch, low-signal items are the ones left as
-    ``skipped_budget`` rather than whichever items happened to arrive first
-    in feed order.
-    """
+    """Prioritize substantive incidents before consuming fixed free-tier calls."""
     text = f"{item.title} {item.summary or ''}".lower()
-    return sum(1 for keyword in HIGH_PRIORITY_KEYWORDS if keyword in text)
+    baseline = sum(1 for keyword in HIGH_PRIORITY_KEYWORDS if keyword in text)
+    named_exchange = any(
+        term in text for term in ("binance", "coinbase", "bybit", "bitget", "kraken", "okx")
+    )
+    systemic_evidence = any(
+        term in text for term in (
+            "billion", "exchange liquidity", "crypto market", "market-wide",
+            "withdrawals", "liquidations", "record hack",
+        )
+    )
+    serious_incident = any(
+        term in text for term in ("hack", "breach", "exploit", "insolven", "bankrupt")
+    )
+    return baseline + (100 if named_exchange and systemic_evidence and serious_incident else 0)
 
 
 def build_pre_llm_dedup_group_id(item: NormalizedNewsItem) -> str:
@@ -749,7 +769,28 @@ def build_post_llm_dedup_group_id(
     if not _dedup_hint_is_specific_to_title(normalized_hint, title):
         return fallback
     namespace = _normalize_for_hash(f"{primary_symbol or 'multi'} {category or 'market'}")
-    normalized_value = f"{namespace}:{normalized_hint}" if namespace else normalized_hint
+    normalized_title = _normalize_for_hash(title or "")
+    # A single incident can have multiple useful, independently verifiable
+    # developments. Do not collapse recovery and liquidations into the initial
+    # breach report merely because the LLM uses the same incident hint.
+    phase_signals = (
+        ("recovery", ("recover", "cover losses", "fbi", "refund", "compensat")),
+        ("liquidity", ("liquidat", "withdraw", "liquidity", "futures")),
+        ("attackers", ("hacker", "lazarus", "north korea", "wallets")),
+        ("mechanism", ("eip", "upgrade", "private key", "signing")),
+        ("losses", ("loss", "billion", "drain", "stolen")),
+    )
+    phase = next(
+        (
+            phase
+            for phase, words in phase_signals
+            if any(term in normalized_title for term in words)
+        ),
+        "initial",
+    )
+    normalized_value = (
+        f"{namespace}:{normalized_hint}:{phase}" if namespace else f"{normalized_hint}:{phase}"
+    )
     return "hint2:" + hashlib.sha256(normalized_value.encode("utf-8")).hexdigest()[:32]
 
 

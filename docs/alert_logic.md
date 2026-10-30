@@ -95,161 +95,78 @@ for experiment provenance only. See
 for the metrics, denominator caveats and evaluation limits. Actual Groq/Cloudflare
 significance quality still needs measured live evaluation.
 
-## Step 5 - Build the message
-Only a new positive decision gets the render LLM call. It writes presentation text only and cannot
-change the significance decision.
+## Step 5 - Render the accepted event (owner decision, 2026-10-30)
 
-If supported render failures exhaust the provider chain, the backend may build neutral deterministic
-presentation text from the already validated market evidence.
+**Preserve-first contract:** Stage-1 owns significance, novelty and the decision to alert.
+A positive market event receives **one shared** Stage-2 render operation through the existing
+configured provider chain; never render separately per recipient. Stage-2 returns structured
+Situation (`message_body`), Possible action and optional `related_news_ids`.
 
-### Render evidence and backend guard behavior
+The verified Stage-2 text is the final Telegram copy. The backend must not replace or compact
+valid sentences on word count, sentence count, style, descriptive detail, conditional
+scenarios, price trajectory, acceleration, divergence, prior-event comparisons, or use of
+trading-related words. There is **no 28/48-word Situation cap** or 60-word action cap in the
+Event Alert presentation path. Backend performs only structure/symbol checks, factual
+grounding against the actual market snapshots/prices/percentages/time windows, checks for
+unsupported causality/certainty, news-ID validation, missing or mixed sections, and safe
+Telegram normalization/HTML escaping. Do not silently truncate prose.
 
-Render receives backend-computed, non-numeric relationship labels: analysed-window
-versus 24-hour direction, snapshot path, pace when verified, and comparable prior
-alert. Render stays separate from significance. It runs once per positive event,
-not per recipient. Situation explains a verified relationship, and Possible Action
-names the next market observation that distinguishes possible outcomes.
+The headline and metric block remain deterministic and show the observed market numbers.
+Prompt Stage-2 to explain meaning and path rather than restating their exact numbers.
+Verbatim metric redundancy may be rejected with a useful internal reason; valid
+interpretation referencing the same time window must survive. Numeric prices quoted
+by the model must correspond to actual supplied observations, at quoted precision.
+An observed price band may guide scenarios but never mandates two high/low conditions.
+Trading terminology (buy, sell, hold, entry, exit, exposure and risk management) is
+permitted **in Stage-2 presentation fields**, superseding older no-trading-language
+restrictions. This does not alter other product features. No guaranteed outcomes or
+invented technical support/resistance, causes or forecasts are permitted.
 
-Direction checks bind each claim to its named market period and verify that
-cross-period agreement claims are true for both periods, even when only the
-broader trend has an explicit up/down adjective. Negated alignment describes
-divergence, and a comparison with the latest snapshot is not automatically a
-comparison with the broader day. "Consistent with" expresses
-alignment, not persistent snapshot motion. Persistence markers stay linked to
-their described direction across punctuation; unsupported paths remain rejected.
-When only 24-hour alignment supports a fallback, it names direction and compares
-supplied net-move magnitudes without implying pace, novelty or materiality.
+The existing provider chain may repair invalid schema/facts within its configured
+attempt limits. When no valid Render output is available, mark the render/analysis
+failed with a privacy-safe reason. **Never** substitute deterministic Situation
+or Possible action paragraphs; never change Stage-1 significance or invent an
+outgoing alert. The final `Not financial advice.` footer is mandatory. When the
+actual Telegram API message limit prevents safe delivery, reject safely rather
+than silently trimming or duplicating a send.
 
-Backend guards still reject unsupported numbers, directions, trajectories,
-catalysts, causation, and trading instructions. Stage-2 Possible Action also
-fails closed on conditional assertions that extending a future price step would
-**cause convergence, divergence, or alignment** with a different market window:
-such effects are not proven by the present snapshot sequence. The final
-Telegram text uses the specific verified next-interval observation from the
-deterministic market fallback rather than publishing an unsupported inference. They no longer discard grounded
-natural language based on an exhaustive word allowlist. Invalid presentation
-fields may use an evidence-only fallback; the original render-provider exhaustion
-policy remains unchanged, with no additional provider calls for recovery.
+### Related news pipeline
 
-Related headlines are checked again at final assembly: only direct asset coverage
-or explicitly broad crypto-market context remains. No causal claim is inferred.
-An isolated keyword such as Fed, ETF, exchange or hack does not itself make a
-headline broadly relevant. The since-previous-notification line names the actual
-notification type and UTC timestamp, distinct from the analysed market window.
+News is **optional supporting context** for a market-based Event Alert, never an
+independent significance trigger. The full path is RSS ingestion, news intelligence,
+PostgreSQL persistence, substantive relevance, incident-aware deduplication, ranking,
+candidate shortlist, Stage-1/Stage-2 evidence, selected IDs, final relevance check
+and Telegram delivery.
 
-Quality checks inspect the final Telegram message, not only LLM JSON. Sanitized
-event-level replacement/generic/repetition signals are diagnostic only and never
-decide significance. The ops-agent aggregates distinct delivered market events,
-not each recipient or provider draft. See docs/observability.md.
+- Direct symbol relevance requires article-text evidence; a DB symbol tag alone
+  is insufficient. Major, substantiated exchange breaches, liquidity failures,
+  insolvencies, liquidations or other systemic crypto-market incidents may be
+  market-wide evidence for BTC, ETH, SOL and GRAM even if not each coin is named.
+  A generic exchange, ETF, regulatory, security or macro keyword is not enough.
+- Rank by incident impact, article specificity, relevance and freshness. Material
+  market-wide news can outrank routine directly tagged reports.
+- The configurable `EVENT_ALERT_NEWS_SHORTLIST_LIMIT` defaults to six candidates,
+  bounded at eight. Ranked, ordered candidates and their evidence are included in
+  exact-context identity; order changes invalidate reuse. Stage-1 retains its
+  smaller, fixed market-first significance context and unchanged decision policy.
+- Group repeat reports of the same incident but retain materially different
+  developments, including breach confirmation, losses, market reaction,
+  attacker attribution, liquidity issues, and recovery.
+- News-intelligence consumes only the configured per-run and hourly budget.
+  Major incidents are prioritized. Budget-skipped stories remain visible for
+  later classification and may be considered as explicitly unclassified headline
+  evidence when substantive systemic scope is clear. Do not fabricate LLM
+  classifications or pay for additional provider calls.
+- Stage-2 may choose zero news IDs if none genuinely supports the event. Selected
+  IDs must be distinct and belong to the presented candidate set. Final relevance
+  is checked using the same substantive article-text evidence, not only tags.
+  Do not assert that related news caused the price movement without evidence.
 
-### CCW-20: meaningful observed-price scenarios
-
-The owner prefers a concise explanation: *what is happening, which actual
-observed prices matter, and what a move through them would change*.
-Stage-2 Render receives a **backend-computed recent price band** only when
-four distinct time-ordered prices span at least one hour, end at the current
-price and have no gap over 90 minutes. The band uses the **last four actually
-supplied observations**. If evidence is stale, missing, noncontiguous or
-inconsistent, there are no numeric levels for the model to invent.
-
-- **Situation:** 1-2 grounded sentences linking recent path to 24h direction.
-  Two approaches to an observed high may be described only when proven by
-  prices, never as confirmed resistance, volume or buyer intent.
-- **Possible Action:** two conditional scenarios: price holding over the
-  observed high versus falling below the observed low, each with its possible
-  implications for the near-term attempt. These are **past observations, not
-  proven support/resistance or trading entry/exit levels**. The existing
-  financial-advice disclaimer remains unchanged.
-- Output is checked against exact verified USD levels; unsupported prices are
-  replaced with the computed safe scenario. Unsupported conditional future
-  convergence/divergence claims still fail closed.
-- Stage-1 significance, alert eligibility, cooldown, providers, recipient
-  routes and paid spend are unchanged by this content change.
-- **Verified recent path for Stage-2:** When the four-observation price band is
-  valid, Render also receives only the actual ordered step directions, actual
-  step durations, and whether NOW is at the observed high, low or inside
-  the observed range. Missing or discontinuous history supplies no path.
-  A verified snapshot-pace comparison may be described without being discarded
-  by the text guard. Future conditional up/down scenarios are not judged as
-  historical direction claims; any independent present/past claim and all USD
-  levels still require factual verification. A decimal point in a verified
-  USD price must not count as an extra sentence or split a future conditional
-  clause during direction validation and trigger a generic fallback.
-  Content tests check meaningful
-  distinct scenario descriptions, not fabricated uniqueness when facts match.
-  This adds no provider calls and never influences the significance decision.
-- **Numeric market context for Stage-2:** The Render prompt includes the same
-  source market data used in the Telegram alert: current USD price, the actual
-  analysed-window minutes and percentage move, 24-hour percentage change, and
-  the change since the previous delivered market notification only when an
-  attributable prior time/price exists. Verified 30m/1h lookbacks are optional.
-  Missing or nonfinite metrics must not become fabricated zeros. These are
-  observation facts for assessing magnitude and comparing periods, not text
-  to repeat in Situation: the backend alone prints user-facing numbers. Keep
-  the original precision-safe market fact checks, and never relabel a 24-hour
-  move as an analysed-window move. Render is shared per event, so prior-message
-  context must only be attributed to the supplied event, not claimed to hold
-  for every subscriber. No new external price or LLM requests are allowed.
-
-
-
-**Release state:** Source integrated into `main` in PR #378; running production
-still requires independent deployment verification. The prior 20-event Cloudflare
-benchmark predates this richer price-band context. Green tests are not proof
-of improved live Cloudflare prose.
-
-### Event Alert message quality contract
-
-A mobile alert should answer three questions in this order without becoming a report:
-
-1. **What changed?** A deterministic headline and compact metric block show the actual
-   analysed-window move, current price, and movement since the prior delivered alert/message
-   **only when** its reference price and timestamp are available. Never repeat these numbers
-   in free-form situation prose.
-2. **Why does this move matter now?** The situation adds **one verified relationship**:
-   a consistent snapshot path, a counter-move within that path, divergence/alignment with the
-   24-hour direction, or a faster/slower latest *observed snapshot interval* based on
-   actual elapsed minutes and exactly comparable compounded rates, not nominal 30m/1h
-   lookbacks. Pace comparison requires three
-   valid time-ordered snapshots including a current observation, consistent signed
-   consecutive moves and a matching primary-move direction, plus corroborating 30m/1h
-   directional evidence and an analysed window of at least one hour. These relationships
-   describe a previously accepted event; they never create or suppress an alert. If nothing
-   beyond the analysed-window move is confirmed, say so instead of inventing novelty.
-   A recent previous delivered Event Alert may also supply a factual comparison of the
-   **same-length** analysed windows, when both moves and elapsed age are available. This
-   describes relative direction or size, not significance, rarity, or proven novelty.
-3. **What is worth monitoring?** Name the next observation that could distinguish continuation,
-   slowing, or counter-movement. Prefer a specific supplied time frame when justified; otherwise
-   use a short, neutral conditional. Never give a trading instruction or generic risk-plan advice.
-
-Previously delivered alerts and recent-event counts help decide novelty upstream, but **do not
-prove** that the delivered move is unprecedented. The since-last-message metric may establish a
-verified difference in price, not a claim that the event is the first or most important.
-Thirty-day historical percentiles are comparison evidence, not proof of rarity without a
-sufficiently described sample and provenance; the current message contract does not present
-percentile-based rarity claims. Do not add unverified volume, ETF/regulatory actions, causality,
-rumours, or inference about trader intent. Related articles may be shown as coincident context
-but do not become an alert reason. Shorter, missing-data-safe copy is better than padding.
-Keep the existing disclaimer and single shared render per event.
-
-### Owner copy/news correction (2026-10-29)
-
-Keep validated Stage-2 Render text when its factual claims are supported. A
-conditional observation may use `would`, `could` or `might` without an explicit
-`if` or `or`. A denial that a recent observed price is *not* established
-support or resistance must not be treated as an affirmative technical claim.
-Temporal descriptions such as "after two upward steps" are not news causation.
-Still reject unsupported prices, claimed support/resistance, external catalysts,
-causal explanations and trade instructions. Preserve distinct event-specific
-conditional scenarios over generic range-exit filler whenever they are valid.
-
-Candidate news must be backed by the actual article title/summary, not only
-an automatically assigned symbol tag. Invalid/mislabelled links remain excluded.
-`Related context` is a permanent section of every Event Alert across rich, HTML
-and plain deliveries. When no relevant article is selected, print exactly
-`No relevant news linked to this market move.` Never invent or force links.
-News remains supporting evidence, not a standalone reason for an Event Alert.
+Log value-free render rejection reasons, selection counts, high-impact budget skips,
+chosen IDs in bounded/sanitized form and final attachment counts. Never log prompts,
+private Telegram content, raw news exports, or credentials. The October 29-30
+Binance incident export motivates synthetic regression tests; raw exports must
+not be versioned.
 
 ## Telegram Event Alert presentation (2026-10)
 

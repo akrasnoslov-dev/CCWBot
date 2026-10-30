@@ -97,7 +97,7 @@ def test_event_alert_render_schema_only_contains_model_generated_fields():
         }
     )
     assert (
-        "Return exactly message_body, related_news_ids, possible_action."
+        "message_body, related_news_ids"
         in prompt
     )
     assert "reason_for_no_alert=null" not in prompt

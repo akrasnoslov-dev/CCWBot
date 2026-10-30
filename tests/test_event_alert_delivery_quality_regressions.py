@@ -74,15 +74,11 @@ def test_distinct_grounded_event_explanations_survive_final_render():
     "The market fell 15% due to an exchange hack.",
 ])
 def test_unsupported_claims_do_not_reach_delivered_text(situation):
-    delivered = _render(
-        situation,
-        "Check whether the next 1h observation extends the divergence or reverses.",
-    )
-    assert situation not in delivered
-    assert "BlackRock" not in delivered
-    assert "Liquidations" not in delivered
-    assert "exchange hack" not in delivered
-
+    with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": situation, "possible_action": "Monitor the next observation."},
+            market_data=_market("-2", "3"),
+        )
 
 def test_generic_action_quality_uses_final_delivered_message():
     delivered = _render(
@@ -91,10 +87,10 @@ def test_generic_action_quality_uses_final_delivered_message():
         market={"price": Decimal("100"), "chg_window_percent": Decimal("-2"),
                 "analysed_window_minutes": 180},
     )
+    # Generic LLM copy remains visible (with a diagnostic flag): Python
+    # must not silently invent a replacement paragraph.
     assert final_event_alert_quality_flags(delivered)["generic_action"] is True
-    assert "Review the risk plan." not in delivered
-    assert "Possible action:" in delivered
-
+    assert "Possible action:\nReview the risk plan." in delivered
 
 def test_since_previous_reference_identifies_source_and_time():
     delivered = _render(

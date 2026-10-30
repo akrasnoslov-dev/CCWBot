@@ -180,16 +180,19 @@ def test_grounded_render_survives_final_message_without_generic_substitution():
 
 def test_contradictory_period_alignment_is_never_delivered_as_factual_claim():
     situation = "The short-term move is aligned with the broader decline."
-    decision = EventAnalysisDecision(
-        symbol="ETH", should_alert=True, event_key="eth_market_event",
-        title="Untrusted", message_body=situation, related_news_ids=[],
-        urgency="normal", confidence="medium",
-        possible_action="Watch whether the next observed interval turns.",
-        reason_for_no_alert=None,
+    market = _market("2", day="-1")
+    normalized = alerts._event_alert_render_result_for_validation(
+        {"message_body": situation, "related_news_ids": [],
+         "possible_action": "Watch whether the next observed interval turns."},
+        input_payload={"market": market}, expected_symbol="ETH",
+        confidence="medium", candidate_news_ids=set(),
     )
-    final = alerts._build_event_alert_payload(
-        decision=decision,
-        input_payload={"market": _market("2", day="-1")},
-        related_news=[],
-    )["plain_text"]
-    assert situation not in final
+    with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": situation}, market_data=market
+        )
+        alerts.validate_event_analysis_output(
+            normalized, expected_symbol="ETH", candidate_news_ids=set(),
+            market_data=market,
+        )
+

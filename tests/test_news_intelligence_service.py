@@ -297,8 +297,8 @@ async def test_intelligence_news_selector_matches_symbol_and_preserves_dict_shap
         selected = await select_intelligence_news_for_symbol(session, "btc")
 
         assert [item["title"] for item in selected] == [
-            "Bitcoin ETF flows rise",
             "Macro crypto story references BTC",
+            "Bitcoin ETF flows rise",
         ]
         assert selected[0].keys() >= {
             "title",

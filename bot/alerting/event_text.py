@@ -202,10 +202,6 @@ def compact_event_alert_situation(
     if _repeats_rendered_market_fact(cleaned, market_data or {}):
         explanation = _concise_explanation_clause(cleaned, market_data or {})
         return explanation or fallback
-    if len(cleaned.split()) > (
-        48 if observed_event_alert_price_band(market_data or {}) else 28
-    ):
-        return fallback
     compacted = ensure_useful_situation(
         cleaned,
         significance_reason=significance_reason,
@@ -800,12 +796,6 @@ def compact_event_alert_possible_action(
     if (
         _UNVERIFIED_FORWARD_RELATION_RE.search(cleaned)
         or not _action_price_levels_supported(cleaned, market_data)
-        or len(cleaned.split()) > 60
-        # A decimal point inside an observed USD price is not a sentence end.
-        or (
-            len(re.findall(r"(?<!\d)\.|[.](?!\d)|[!?]", cleaned)) > 2
-            and not _has_final_reference_disclaimer(cleaned)
-        )
         or not _OBSERVATION_RE.search(cleaned)
         or not re.search(
             r"(?i)\b(?:if|unless|when|whether|versus|or|compared|would|could|might)\b",
