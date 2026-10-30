@@ -301,9 +301,6 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
                 "source": item.get("source"),
                 "relevance_label": item.get("relevance_label"),
                 "material": item.get("material"),
-                "impact_level": item.get("impact_level"),
-                "category": item.get("category"),
-                "llm_status": item.get("llm_status"),
             }
             summary = _event_analysis_news_summary(item.get("summary"))
             if summary:
@@ -325,7 +322,7 @@ def _canonical_event_analysis_context(input_payload: dict) -> dict:
         recent_event_counts if isinstance(recent_event_counts, dict) else {}
     )
     context = {
-        "schema_version": 13,
+        "schema_version": 12,
         "symbol": normalize_symbol(str(input_payload.get("symbol") or "")),
         "market": {
             key: market.get(key)
