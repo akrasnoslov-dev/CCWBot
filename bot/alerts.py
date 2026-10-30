@@ -1841,6 +1841,10 @@ def _build_event_alert_payload(
     _validate_event_alert_render_redundancy(
         {"message_body": llm_situation}, market_data
     )
+    _validate_event_alert_render_prices(
+        {"message_body": llm_situation, "possible_action": llm_action},
+        market_data,
+    )
     message_body = _preserve_render_prose(llm_situation)
     possible_action = _preserve_render_prose(llm_action)
     if not message_body or not possible_action:
