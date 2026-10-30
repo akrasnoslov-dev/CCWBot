@@ -6,6 +6,8 @@ All cases use synthetic snapshots and no provider/Telegram/DB calls.
 import json
 from decimal import Decimal
 
+import pytest
+
 import bot.alerts as alerts
 from bot.alerting.event_analysis import EventAnalysisDecision
 from bot.alerting.event_text import (
@@ -87,7 +89,9 @@ def test_conditionals_do_not_hide_false_observed_direction():
         "The current analysed window shows a rally; when price falls below "
         "$100.00, the rebound would weaken."
     )
-    assert final_action(market_down(), action) != action
+    assert alerts._guard_event_text_against_market_data(
+        action, field_name="possible_action", symbol="BTC", market_data=market_down()
+    ) != action
 
 
 def test_unverified_dollar_level_is_still_rejected():
@@ -95,7 +99,11 @@ def test_unverified_dollar_level_is_still_rejected():
         "When price moves above $999.00, the rebound would strengthen; "
         "when it falls below $100.00, the case would weaken."
     )
-    assert final_action(market_down(), action) != action
+    with pytest.raises(alerts.EventAnalysisValidationError, match="unsupported observed USD price"):
+        alerts._validate_event_alert_render_prices(
+            {"message_body": "The last step declined.", "possible_action": action},
+            market_down(),
+        )
 
 
 def test_render_evidence_exposes_grounded_recent_path_not_only_direction():
