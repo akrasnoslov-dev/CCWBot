@@ -207,8 +207,8 @@ def test_full_event_alert_keeps_shared_message_structure_and_disclaimer():
     assert "BTC Event Alert: -3.00%" in text
     assert "Price (now): $65,000" in text or "Price (now): $65000" in text
     assert "3h market move:" in text
-    assert "Situation:\nThe latest observed price step is steeper" in text
-    assert "Possible action:\nWatch whether the next observed interval" in text
+    assert "Situation:\nMarket movement is noteworthy." in text
+    assert "Possible action:\nReview risk plan if the move continues." in text
     assert text.endswith("Not financial advice.")
     assert text.count("Not financial advice.") == 1
     situation = text.split("Situation:\n", 1)[1].split("\n\nPossible action:", 1)[0]
@@ -384,67 +384,28 @@ def test_ccw20_action_rejects_unsupported_future_divergence_or_convergence():
 
 def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
     from bot import alerts
-    from bot.alerting.event_analysis import EventAnalysisDecision
-
     cases = [
-        (
-            "ETH",
-            [2471.8461459408736, 2477.5362414138694, 2474.518857885452],
-            0.26286988218543744,
-            -3.7848709953819224,
-            "If the next observed step extends this counter-move, it may further "
-            "diverge from the 24h downward direction.",
-        ),
-        (
-            "SOL",
-            [120.16235634127227, 120.46179920179634, 120.36875010816262],
-            0.13531755890781882,
-            -0.08410708430874848,
-            "If the next step extends this counter-move, it may further diverge "
-            "from the 24h downtrend.",
-        ),
+        ("ETH", "If the next observed step extends this counter-move, it may further "
+         "diverge from the 24h downward direction."),
+        ("SOL", "If the next step extends this counter-move, it may further diverge "
+         "from the 24h downtrend."),
     ]
-    for symbol, prices, window, day, incorrect_action in cases:
-        market = {
-            "price": prices[-1],
-            "chg_window_percent": window,
-            "chg24h_percent": day,
-            "analysed_window_minutes": 180,
-            "snapshots": [
-                {"m": offset, "p": price}
-                for offset, price in zip([-90, -30, 0], prices, strict=True)
-            ],
-        }
-        decision = EventAnalysisDecision(
-            symbol=symbol, should_alert=True, event_key=None, title=None,
-            message_body=(
-                "The most recent supplied snapshot reverses part of the earlier "
-                "path: the latest decline runs against the net analysed-window rise."
-            ), related_news_ids=[], possible_action=incorrect_action,
-            urgency="normal", confidence="high", reason_for_no_alert=None,
-        )
-        final = alerts._build_event_alert_payload(
-            decision=decision, input_payload={"market": market}, related_news=[]
-        )["plain_text"]
-        situation = final.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
-        action = final.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
-        assert "latest decline runs against the net analysed-window rise" in situation
-        assert action == (
-            "Watch the next observed interval for further reversal toward "
-            "the decline or a return to the analysed-window rise."
-        )
-        assert "further diverge" not in final.lower()
-
+    for _symbol, incorrect_action in cases:
+        # Unsupported cross-period prediction now fails schema checking,
+        # rather than being rewritten into another statement by Python.
+        with pytest.raises(alerts.EventAnalysisValidationError,
+                           match="unsupported action market claim"):
+            alerts._validate_event_alert_render_causality(
+                {"message_body": "The latest observation reversed the prior step.",
+                 "possible_action": incorrect_action}
+            )
 
 def test_ccw20_verified_eth_levels_and_useful_conditional_action():
     import json
 
     from bot import alerts
     from bot.alerting.event_analysis import EventAnalysisDecision
-    from bot.alerting.event_text import (
-        observed_event_alert_level_action,
-        observed_event_alert_price_band,
-    )
+    from bot.alerting.event_text import observed_event_alert_price_band
     from bot.services.ai_agent_groq import build_event_alert_render_prompt
 
     market = {
@@ -497,11 +458,13 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
         possible_action=correct_action.replace("$2,478", "$2,999"),
         urgency="normal", confidence="high", reason_for_no_alert=None,
     )
-    corrected = alerts._build_event_alert_payload(
-        decision=wrong_decision, input_payload={"market": market}, related_news=[]
-    )["plain_text"]
-    assert "$2,999" not in corrected
-    assert observed_event_alert_level_action(market) in corrected
+    with pytest.raises(alerts.EventAnalysisValidationError,
+                       match="unsupported observed USD price"):
+        alerts._validate_event_alert_render_prices(
+            {"message_body": wrong_decision.message_body,
+             "possible_action": wrong_decision.possible_action},
+            market,
+        )
 
     false_relation_decision = EventAnalysisDecision(
         symbol="ETH", should_alert=True, event_key=None, title=None,
@@ -512,13 +475,13 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
         ),
         urgency="normal", confidence="high", reason_for_no_alert=None,
     )
-    false_relation = alerts._build_event_alert_payload(
-        decision=false_relation_decision,
-        input_payload={"market": market},
-        related_news=[],
-    )["plain_text"]
-    assert false_relation_decision.possible_action not in false_relation
-    assert observed_event_alert_level_action(market) in false_relation
+    with pytest.raises(alerts.EventAnalysisValidationError,
+                       match="unsupported action market claim"):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": decision.message_body,
+             "possible_action": false_relation_decision.possible_action},
+            market_data=market,
+        )
 
 
 def test_ccw20_sparse_or_stale_market_input_cannot_produce_price_levels():
@@ -574,7 +537,6 @@ def test_release_rejects_unproven_repeated_high_claim():
 def test_release_conditional_levels_cannot_mask_false_observed_direction():
     from bot import alerts
     from bot.alerting.event_analysis import EventAnalysisDecision
-    from bot.alerting.event_text import observed_event_alert_level_action
 
     market = {
         "price": 10000,
@@ -598,11 +560,11 @@ def test_release_conditional_levels_cannot_mask_false_observed_direction():
         related_news_ids=[], possible_action=invalid,
         urgency="normal", confidence="high", reason_for_no_alert=None,
     )
-    message = alerts._build_event_alert_payload(
-        decision=decision, input_payload={"market": market}, related_news=[]
-    )["plain_text"]
-    assert "current window shows a rally" not in message.lower()
-    assert observed_event_alert_level_action(market) in message
+    # Source guard rejects the false observed direction, rather than rewriting
+    # the validated Stage-2 action after provider acceptance.
+    assert alerts._guard_event_text_against_market_data(
+        invalid, field_name="possible_action", symbol="BTC", market_data=market
+    ) != invalid
 
     # Legitimate conditional upside/downside scenarios must remain accepted.
     valid = (

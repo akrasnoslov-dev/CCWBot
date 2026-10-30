@@ -5,7 +5,7 @@ from email.utils import parsedate_to_datetime
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.alerting.news_context import classify_news_relevance
+from bot.alerting.news_context import _alert_news_rank, classify_news_relevance
 from bot.config import ENABLE_NEWS_INTELLIGENCE
 from bot.db.database import (
     NewsItem,
@@ -142,18 +142,27 @@ def _row_matches_symbol(row: NewsItem, symbol: str) -> tuple[bool, bool]:
     return primary_match, related_match
 
 
-def _news_row_rank(row: NewsItem, symbol: str) -> tuple[int, int, int, int, int]:
-    primary_match, related_match = _row_matches_symbol(row, symbol)
-    if not (primary_match or related_match):
-        return -1, -1, -1, 0, 0
-    published_at = _row_published_at(row)
-    return (
-        1 if primary_match else 0,
-        int(row.impact_score if row.impact_score is not None else -1),
-        int(row.relevance_score if row.relevance_score is not None else -1),
-        int(published_at.timestamp()) if published_at else 0,
-        int(row.id or 0),
+def _news_row_rank(row: NewsItem, symbol: str) -> tuple[int, int, int, int, str]:
+    candidate = _news_row_to_compat_dict(row)
+    return _alert_news_rank(symbol, candidate)
+
+
+def _incident_phase(item: dict) -> str:
+    """Only repeat coverage of the same *development* shares a selector key."""
+    text = str(item.get("title") or "").lower()
+    phases = (
+        ("recovery", ("recover", "cover losses", "compensat", "fbi", "refund", "reimburse")),
+        ("liquidity", ("liquidat", "withdraw", "liquidity", "futures trading")),
+        ("attackers", ("hacker", "lazarus", "north korea", "wallets", "private key")),
+        ("mechanism", ("eip-", "ethereum upgrade", "signing", "exploit method")),
+        ("losses", ("loss", "billion", "drain", "stolen")),
+        ("reaction", ("selloff", "price drop", "rattles markets", "bitcoin nears")),
     )
+    for phase, signals in phases:
+        if any(word in text for word in signals):
+            return phase
+    return "initial"
+
 
 
 def _news_row_to_compat_dict(row: NewsItem) -> dict:
@@ -179,6 +188,8 @@ def _news_row_to_compat_dict(row: NewsItem) -> dict:
         "impact_level": str(row.impact_level or "").strip().lower(),
         "impact_score": row.impact_score,
         "relevance_score": row.relevance_score,
+        "dedup_group_id": str(row.dedup_group_id or "").strip(),
+        "llm_status": str(row.llm_status or "").strip().lower(),
     }
 
 
@@ -210,6 +221,7 @@ def _news_row_to_alert_dict(row: NewsItem, matched_symbols: list[str]) -> dict:
         "impact_score": row.impact_score,
         "relevance_score": row.relevance_score,
         "is_alert_worthy": bool(row.is_alert_worthy),
+        "llm_status": str(row.llm_status or "").strip().lower(),
     }
 
 
@@ -257,7 +269,10 @@ async def select_recent_news_items_for_alerts(
         matched_symbols = [
             symbol
             for symbol in sorted(normalized_symbols)
-            if any(_row_matches_symbol(row, symbol))
+            if (
+                any(_row_matches_symbol(row, symbol))
+                or classify_news_relevance(symbol, _news_row_to_compat_dict(row)) != "irrelevant"
+            )
         ]
         if not matched_symbols:
             continue
@@ -302,8 +317,9 @@ async def select_intelligence_news_for_symbol(
         selection_stats["candidate_count"] = len(result_rows)
         selection_stats["noise_filtered_count"] = 0
     for row in result_rows:
-        primary_match, related_match = _row_matches_symbol(row, normalized_symbol)
-        if not (primary_match or related_match):
+        if classify_news_relevance(
+            normalized_symbol, _news_row_to_compat_dict(row)
+        ) == "irrelevant":
             continue
         if not str(row.title or "").strip():
             continue
@@ -317,12 +333,15 @@ async def select_intelligence_news_for_symbol(
         key=lambda item: _news_row_rank(item, normalized_symbol),
         reverse=True,
     ):
+        item_payload = _news_row_to_compat_dict(row)
         group_key = str(row.dedup_group_id or row.news_key or row.id).strip()
+        if group_key.startswith("hint2:"):
+            group_key = f"{group_key}:{_incident_phase(item_payload)}"
         if group_key in seen_groups:
             dedup_filtered_count += 1
             continue
         seen_groups.add(group_key)
-        selected.append(_news_row_to_compat_dict(row))
+        selected.append(item_payload)
         if len(selected) >= limit:
             break
     if selection_stats is not None:

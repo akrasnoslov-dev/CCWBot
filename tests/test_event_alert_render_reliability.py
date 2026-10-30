@@ -105,9 +105,9 @@ def test_ccw20_render_copy_asks_for_meaningful_price_scenarios():
     compact = json.loads(prompt.split("Input JSON:\n", 1)[1])
 
     assert compact["evidence"]["window_vs_24h"] == "opposite_direction"
-    assert "WHY the observed market path matters" in prompt
-    assert "both testable scenarios" in prompt
-    assert "observed_price_band" in prompt
+    assert "explain the verified observed trajectory" in prompt
+    assert "Do not force both the observed high and low" in prompt
+    assert "observed price band" in prompt
     assert compact["market_directions"] == {"window": "down", "24h": "up"}
     # Insufficient snapshots must not invent price levels.
     assert "observed_price_band" not in compact["evidence"]
@@ -122,7 +122,7 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     assert compact["evidence"] == {}
     assert compact["market_directions"] == {}
     assert compact["market_metrics"] == {"price_now_usd": 105.0}
-    assert "When band is missing, do not invent prices" in prompt
+    assert "Do not force both the observed high and low" in prompt
 
 
 
@@ -133,16 +133,15 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     AISchemaValidationError("invalid_urgency"),
     AIInvalidJsonError("malformed JSON"),
 ])
-async def test_invalid_provider_chain_exhaustion_uses_validated_evidence_fallback(
+async def test_invalid_provider_chain_exhaustion_fails_without_fabricated_prose(
     monkeypatch, render_error
 ):
     significance = {
         "symbol": "BTC", "should_alert": True, "confidence": "high",
         "materiality": "material", "novelty": "new", "reason_code": "unusual_move",
     }
-    significance_llm = AsyncMock(return_value=("significance-json", significance))
-    # The mocked router exception must represent a fully invalid-output chain.
     render_error._llm_all_exhausted_attempts_invalid_output = True
+    significance_llm = AsyncMock(return_value=("significance-json", significance))
     render_llm = AsyncMock(side_effect=render_error)
     render_outcome = AsyncMock()
     save_analysis = AsyncMock(return_value=400)
@@ -153,25 +152,14 @@ async def test_invalid_provider_chain_exhaustion_uses_validated_evidence_fallbac
     monkeypatch.setattr(alerts, "_save_event_analysis_attempt", save_analysis)
     monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", delivery_outcome)
     monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
-    monkeypatch.setattr(alerts.event_analysis_health, "record_success", lambda: None)
-
-    payload = _payload()
-    decision, analysis_id = await alerts._create_event_analysis_decision(payload)
-
-    assert analysis_id == 400
-    assert decision is not None and decision.should_alert
-    assert decision.urgency == "normal"
-    assert decision.related_news_ids == []
-    assert "4.8%" not in decision.message_body
-    assert render_outcome.await_args.kwargs["status"] == "success"
-    assert render_outcome.await_args.kwargs["error_reason"].startswith(
-        "deterministic_fallback_from_"
-    )
-    assert save_analysis.await_args.kwargs["status"] == "success"
-    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    decision, analysis_id = await alerts._create_event_analysis_decision(_payload())
+    assert decision is None and analysis_id is None
+    assert render_outcome.await_args.kwargs["status"] == "llm_error"
+    assert save_analysis.await_args.kwargs["status"] == "llm_error"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
     significance_llm.assert_awaited_once()
     render_llm.assert_awaited_once()
-
 
 @pytest.mark.parametrize("claim", [
     "The move was caused by news coverage.",

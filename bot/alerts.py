@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
@@ -43,15 +44,25 @@ from bot.alerting.event_analysis import (
 )
 from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
+    _UNSUPPORTED_MARKET_CLAIM_RE,
+    _UNVERIFIED_FORWARD_RELATION_RE,
+    _has_unsupported_action_market_claim,
+    _has_unsupported_event_claim,
+    _has_unsupported_situation_causality,
     compact_elapsed_since,
-    compact_event_alert_possible_action,
-    compact_event_alert_situation,
-    event_alert_presentation_fallback,
     final_event_alert_quality_flags,
-    is_news_centered_event_action,
-    observed_event_alert_level_action,
-    sanitize_financial_instruction,
-    soften_possible_action,
+)
+from bot.alerting.event_text import (
+    compact_event_alert_possible_action as compact_event_alert_possible_action,
+)
+from bot.alerting.event_text import (
+    compact_event_alert_situation as compact_event_alert_situation,
+)
+from bot.alerting.event_text import (
+    event_alert_presentation_fallback as event_alert_presentation_fallback,
+)
+from bot.alerting.event_text import (
+    observed_event_alert_level_action as observed_event_alert_level_action,
 )
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_ANALYSIS_TYPE,
@@ -128,7 +139,6 @@ from bot.reports import generate_daily_report_cache_job, generate_weekly_report_
 from bot.runtime import DB_ENABLED, DB_SESSION_LOCAL, log
 from bot.services.ai_agent_groq import (
     GROQ_EVENT_ANALYSIS_MODEL,
-    AIInvalidJsonError,
     AIProviderRateLimitError,
     AISchemaValidationError,
     LLMRateLimitBackoffActive,
@@ -216,6 +226,17 @@ is_material_news_item = _news_context.is_material_news_item
 re_search_word = _news_context.re_search_word
 
 logger = logging.getLogger(__name__)
+
+# Bounded LLM news context, configurable without changing alert eligibility.
+def _event_news_shortlist_limit() -> int:
+    try:
+        configured = int(os.getenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "6"))
+    except ValueError:
+        configured = 6
+    return min(8, max(3, configured))
+
+
+EVENT_ALERT_NEWS_SHORTLIST_LIMIT = _event_news_shortlist_limit()
 
 PRODUCT_ALERT_TYPES = {
     NotificationType.MARKET_UPDATE.value,
@@ -928,11 +949,21 @@ async def _get_reusable_event_analysis_by_context(
             current_related_news.append(matching_items[0])
         if len(current_related_news) != len(translated_related_news_keys):
             continue
-        reconstructed_payload = _build_event_alert_payload(
-            decision=identity_decision,
-            input_payload=input_payload,
-            related_news=current_related_news,
-        )
+        try:
+            reconstructed_payload = _build_event_alert_payload(
+                decision=identity_decision,
+                input_payload=input_payload,
+                related_news=current_related_news,
+            )
+        except EventAnalysisValidationError as error:
+            # Pre-fix persisted copy has not passed today's presentation
+            # contract. Skip reuse and request a fresh Stage-2 render instead.
+            logger.info(
+                "ops_event=event_alert_reuse_invalid_render symbol=%s reason=%s",
+                normalize_symbol(identity_decision.symbol).upper(),
+                _event_alert_render_validation_reason(error),
+            )
+            continue
         semantic_family = canonical.semantic_family
         input_payload["raw_event_key"] = canonical.raw_event_key
         input_payload["canonical_event_key"] = canonical.canonical_event_key
@@ -1159,6 +1190,15 @@ NON_PRICE_PERCENT_FILLER_WORDS = {
     "the",
     "was",
 }
+
+
+def _preserve_render_prose(value: str | None) -> str:
+    """Minimal whitespace normalization; retain the model's paragraph structure."""
+    text = str(value or "").strip()
+    text = re.sub(r"(?m)[ \t]+$", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # The shared footer is printed once by the presentation layout.
+    return re.sub(r"(?i)\bnot financial advice\.?\s*$", "", text).strip()
 
 
 def _sanitize_event_text(
@@ -1802,59 +1842,27 @@ def _build_event_alert_payload(
         related_news,
         empty_text="No relevant news linked to this market move.",
     )
-    presentation_situation_fallback, presentation_action_fallback = (
-        event_alert_presentation_fallback(
-            market_data,
-            related_news,
-            previous_event_alert=input_payload.get("previous_event_alert"),
-        )
-    )
-    verified_level_action = observed_event_alert_level_action(market_data)
-    if verified_level_action:
-        presentation_action_fallback = verified_level_action
+    # The Render decision has already passed event-level schema/fact validation.
+    # Presentation never rewrites its meaning or substitutes Python prose.
     llm_situation = str(decision.message_body or "").strip()
     llm_action = str(decision.possible_action or "").strip()
-    message_body = _sanitize_event_text(
-        decision.message_body,
-        "Market conditions changed.",
-        omit_placeholders=True,
-    )
-    message_body = _guard_event_text_against_market_data(
-        message_body,
-        field_name="message_body",
-        symbol=symbol,
+    # Reused persisted analyses can predate the structured field contract.
+    # Never expose a combined "Situation: ... Possible action:" as one field.
+    _validate_event_alert_render_causality(
+        {"message_body": llm_situation, "possible_action": llm_action},
         market_data=market_data,
     )
-    message_body = sanitize_financial_instruction(
-        message_body,
-        fallback=presentation_situation_fallback,
+    _validate_event_alert_render_redundancy(
+        {"message_body": llm_situation}, market_data
     )
-    message_body = compact_event_alert_situation(
-        message_body,
-        significance_reason=None,
-        market_data=market_data,
-        related_news=related_news,
-        previous_event_alert=input_payload.get("previous_event_alert"),
+    _validate_event_alert_render_prices(
+        {"message_body": llm_situation, "possible_action": llm_action},
+        market_data,
     )
-    possible_action = _sanitize_event_text(
-        decision.possible_action,
-        "Review the situation calmly and avoid impulsive decisions.",
-        omit_placeholders=True,
-    )
-    possible_action = _guard_event_text_against_market_data(
-        possible_action,
-        field_name="possible_action",
-        symbol=symbol,
-        market_data=market_data,
-    )
-    possible_action = soften_possible_action(possible_action, urgency=decision.urgency)
-    if is_news_centered_event_action(possible_action):
-        possible_action = presentation_action_fallback
-    possible_action = compact_event_alert_possible_action(
-        possible_action,
-        fallback=presentation_action_fallback,
-        market_data=market_data,
-    )
+    message_body = _preserve_render_prose(llm_situation)
+    possible_action = _preserve_render_prose(llm_action)
+    if not message_body or not possible_action:
+        raise EventAnalysisValidationError("alert fields are required for should_alert=true")
     price = market_data.get("price", market_data.get("price_now_usd"))
     change_since_message = market_data.get("chg_since_msg_percent")
     analysed_window_minutes = market_data.get("analysed_window_minutes")
@@ -1886,6 +1894,8 @@ def _build_event_alert_payload(
         "\n\n" if related_section else ""
     ) + f"Possible action:\n{possible_action}\n\nNot financial advice."
     message = f"{before_related}{related_section}{after_related}"
+    if _utf16_length(message) > 4096:
+        raise EventAnalysisValidationError("telegram_message_too_long")
     final_quality = final_event_alert_quality_flags(message)
     logger.info(
         "ops_event=event_alert_final_text_quality symbol=%s "
@@ -3123,7 +3133,9 @@ async def _build_event_analysis_input(
         day_history,
     )
     snapshots_payload = _compact_event_snapshots(snapshots_payload, now=now)
-    candidate_news = _compact_event_analysis_news(candidate_news, limit=3)
+    candidate_news = _compact_event_analysis_news(
+        candidate_news, limit=EVENT_ALERT_NEWS_SHORTLIST_LIMIT
+    )
     previous_event_alert, _ = await _get_previous_event_alert_for_input(normalized_symbol)
     if previous_event_alert:
         raw_previous_at = previous_event_alert.get("created_at")
@@ -3612,18 +3624,6 @@ def _as_news_only_rejected_decision(decision: EventAnalysisDecision) -> EventAna
     )
 
 
-def _verified_event_alert_render_fallback(input_payload: dict) -> dict:
-    """Use only backend-derived presentation after invalid LLM output exhausts providers."""
-    market = input_payload.get("market")
-    market = market if isinstance(market, dict) else {}
-    situation, action = event_alert_presentation_fallback(market, [])
-    return {
-        "message_body": situation,
-        "related_news_ids": [],
-        "possible_action": action,
-    }
-
-
 async def _save_event_alert_render_outcome(
     *,
     llm_operation_id: str,
@@ -3914,12 +3914,17 @@ async def _create_event_analysis_decision(
     render_usage_log_id = None
     render_provider = None
     render_model = None
-    render_fallback_reason = None
 
     def _render_schema_check(provider_parsed: dict) -> None:
         try:
-            _validate_event_alert_render_causality(provider_parsed)
-            validate_event_analysis_output(
+            _validate_event_alert_render_causality(
+                provider_parsed, market_data=input_payload.get("market") or {}
+            )
+            _validate_event_alert_render_prices(provider_parsed, input_payload.get("market") or {})
+            _validate_event_alert_render_redundancy(
+                provider_parsed, input_payload.get("market") or {}
+            )
+            validated_render = validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
                     input_payload=input_payload,
@@ -3932,6 +3937,17 @@ async def _create_event_analysis_decision(
                 market_data=input_payload.get("market"),
                 last_msg=input_payload.get("last_msg"),
                 timestamp_utc=input_payload.get("timestamp_utc"),
+            )
+            # Test real formatted output, not the validator's single-line copy.
+            validated_render = _validated_render_with_original_prose(
+                validated_render, provider_parsed
+            )
+            _build_event_alert_payload(
+                decision=validated_render,
+                input_payload=input_payload,
+                related_news=_selected_event_analysis_news(
+                    input_payload, validated_render.related_news_ids
+                ),
             )
         except EventAnalysisValidationError as error:
             validation_reason = _event_alert_render_validation_reason(error)
@@ -3958,62 +3974,43 @@ async def _create_event_analysis_decision(
         render_provider = getattr(render_result, "provider", None) or render_provider
         render_model = getattr(render_result, "model", None) or render_model
     except Exception as error:
-        # The router already tried all configured providers. Do not call another LLM:
-        # replace only exhausted invalid output with a backend-derived neutral render.
-        if isinstance(error, (AISchemaValidationError, AIInvalidJsonError)) and getattr(
-            error, "_llm_all_exhausted_attempts_invalid_output", False
-        ):
-            # Invalid-output recovery is presentation only. An otherwise flat
-            # market with available news cannot become an Event Alert merely
-            # because neutral fallback drops related_news_ids, disabling the
-            # downstream news-only rejection.
-            if not (
-                candidate_news_ids and not _has_non_flat_analysed_market_context(input_payload)
-            ):
-                candidate = _verified_event_alert_render_fallback(input_payload)
-                try:
-                    _render_schema_check(candidate)
-                except AISchemaValidationError as fallback_error:
-                    error = fallback_error
-                else:
-                    render_parsed = candidate
-                    render_fallback_reason = classify_ai_error_reason(error)
-        if render_fallback_reason is None:
-            reason = classify_ai_error_reason(error)
-            await _save_event_alert_render_outcome(
-                llm_operation_id=render_operation_id,
-                symbol=expected_symbol,
-                status="llm_error",
-                error_reason=reason,
-                provider=getattr(error, "provider", None) or render_provider,
-                model=getattr(error, "model", None) or render_model,
-            )
-            analysis_id = await _save_event_analysis_attempt(
-                input_payload=input_payload,
-                raw_output_json=decision_raw_output,
-                status="llm_error",
-                parsed_result=decision_parsed,
-                error_message=str(error),
-                error_reason=reason,
-                provider=decision_provider,
-                model=decision_model,
-                llm_operation_id=decision_operation_id,
-            )
-            await _record_alert_delivery_outcome(
-                symbol=expected_symbol,
-                alert_type=EVENT_ALERT_TYPE,
-                status=OUTCOME_FAILED,
-                reason_code=REASON_LLM_INVALID_RESPONSE,
-                event_ai_analysis_id=analysis_id,
-                trigger_source=EVENT_ANALYSIS_TYPE,
-                decision_stage=DECISION_STAGE_LLM,
-                decision_reason=DECISION_REASON_UNKNOWN,
-                previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
-                context_fingerprint=context_fingerprint,
-                detail=f"event_alert_render_failed:{reason}",
-            )
-            _log_event_analysis_failure(expected_symbol, reason)
-            return None, None
+        # Configured providers/retries are already exhausted. A positive
+        # significance decision never authorizes fabricated presentation text.
+        reason = classify_ai_error_reason(error)
+        await _save_event_alert_render_outcome(
+            llm_operation_id=render_operation_id,
+            symbol=expected_symbol,
+            status="llm_error",
+            error_reason=reason,
+            provider=getattr(error, "provider", None) or render_provider,
+            model=getattr(error, "model", None) or render_model,
+        )
+        analysis_id = await _save_event_analysis_attempt(
+            input_payload=input_payload,
+            raw_output_json=decision_raw_output,
+            status="llm_error",
+            parsed_result=decision_parsed,
+            error_message=str(error),
+            error_reason=reason,
+            provider=decision_provider,
+            model=decision_model,
+            llm_operation_id=decision_operation_id,
+        )
+        await _record_alert_delivery_outcome(
+            symbol=expected_symbol,
+            alert_type=EVENT_ALERT_TYPE,
+            status=OUTCOME_FAILED,
+            reason_code=REASON_LLM_INVALID_RESPONSE,
+            event_ai_analysis_id=analysis_id,
+            trigger_source=EVENT_ANALYSIS_TYPE,
+            decision_stage=DECISION_STAGE_LLM,
+            decision_reason=DECISION_REASON_UNKNOWN,
+            previous_alert_id=await _get_previous_event_alert_id(expected_symbol),
+            context_fingerprint=context_fingerprint,
+            detail=f"event_alert_render_failed:{reason}",
+        )
+        _log_event_analysis_failure(expected_symbol, reason)
+        return None, None
 
     normalized_render = _event_alert_render_result_for_validation(
         render_parsed,
@@ -4023,7 +4020,13 @@ async def _create_event_analysis_decision(
         candidate_news_ids=candidate_news_ids,
     )
     try:
-        _validate_event_alert_render_causality(render_parsed)
+        _validate_event_alert_render_causality(
+            render_parsed, market_data=input_payload.get("market") or {}
+        )
+        _validate_event_alert_render_prices(render_parsed, input_payload.get("market") or {})
+        _validate_event_alert_render_redundancy(
+            render_parsed, input_payload.get("market") or {}
+        )
         decision = validate_event_analysis_output(
             normalized_render,
             expected_symbol=expected_symbol,
@@ -4081,17 +4084,13 @@ async def _create_event_analysis_decision(
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
         return None, None
 
+    decision = _validated_render_with_original_prose(decision, render_parsed)
+
     await _save_event_alert_render_outcome(
         llm_operation_id=render_operation_id,
         symbol=expected_symbol,
-        # A validated backend fallback is a successful logical render, not a provider success.
-        # Preserve recovery reason without changing ops-agent terminal success accounting.
         status="success",
-        error_reason=(
-            f"deterministic_fallback_from_{render_fallback_reason}"
-            if render_fallback_reason
-            else None
-        ),
+        error_reason=None,
         provider=render_provider,
         model=render_model,
     )
@@ -4190,18 +4189,135 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
 
 
-def _validate_event_alert_render_causality(result: object) -> None:
-    """No provider may introduce unsupported market/news causality in delivery text."""
+def _validate_event_alert_render_causality(
+    result: object, *, market_data: dict | None = None
+) -> None:
+    """Reject fabricated context, independent of editorial preferences.
+
+    Valid text stays untouched. Unsupported facts fail the provider schema check,
+    allowing the configured model chain to repair them.
+    """
     if not isinstance(result, dict):
         return
+    market = market_data or {}
     for field_name in ("message_body", "possible_action"):
         text = result.get(field_name)
-        if isinstance(text, str) and re.search(
+        if not isinstance(text, str):
+            continue
+        if re.search(r"(?i)\b(?:situation|possible action)\s*:", text):
+            raise EventAnalysisValidationError("mixed render sections")
+        if re.search(
             r"\b(?:because|due to|caused by|driven by|triggered by|explains?)\b",
-            text,
-            flags=re.IGNORECASE,
+            text, flags=re.IGNORECASE,
         ):
             raise EventAnalysisValidationError("unverified causal claim")
+        if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
+            raise EventAnalysisValidationError("unsupported outcome certainty")
+        if field_name == "message_body":
+            # An earlier observed step is not the net analysed-window
+            # direction. Validate its actual path separately, then mask it
+            # only for the period-direction consistency check.
+            direction_text = re.sub(
+                r"(?i)\b(?:after|following)\s+two\s+(?:upward|downward)\s+steps?\b",
+                "after observed earlier steps",
+                text,
+            )
+            if market and not market_direction_claims_supported(direction_text, market):
+                raise EventAnalysisValidationError("unsupported period-direction relationship")
+            if re.search(r"(?i)\bpercentage points?\b", text):
+                raise EventAnalysisValidationError("unsupported percentage-point unit")
+            if (
+                _has_unsupported_situation_causality(text, market)
+                or _UNSUPPORTED_MARKET_CLAIM_RE.search(text)
+                or _has_unsupported_event_claim(text, market)
+            ):
+                raise EventAnalysisValidationError("unsupported market or event claim")
+        elif (
+            _has_unsupported_action_market_claim(text)
+            or _UNVERIFIED_FORWARD_RELATION_RE.search(text)
+        ):
+            raise EventAnalysisValidationError("unsupported action market claim")
+
+
+def _validate_event_alert_render_redundancy(result: object, market: dict) -> None:
+    """Fail two substantial duplicate market metrics, never rewrite valid context."""
+    if not isinstance(result, dict):
+        return
+    situation = str(result.get("message_body") or "")
+    measured = [
+        _optional_float(market.get(key))
+        for key in ("chg_window_percent", "chg_since_msg_percent", "chg24h_percent")
+    ]
+    measured = [x for x in measured if x is not None]
+    matched: set[float] = set()
+    for match in PERCENT_CLAIM_RE.finditer(situation):
+        number = _percent_claim_value(match.group(0))
+        if number is None:
+            continue
+        for observed in measured:
+            if abs(number - observed) <= 0.05:
+                matched.add(observed)
+    if len(matched) >= 2:
+        raise EventAnalysisValidationError("repeated market header metrics")
+
+
+_RENDER_USD_CLAIM_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
+
+
+def _validate_event_alert_render_prices(result: object, market_data: dict) -> None:
+    """Validate every displayed USD quote against actually supplied observations.
+
+    Match at the precision the model quoted; do not invent unsupplied high/low
+    prices or silently replace a quotation with a generic range template.
+    """
+    if not isinstance(result, dict):
+        return
+    observed: list[Decimal] = []
+    for value in [market_data.get("price"), market_data.get("price_now_usd")]:
+        if value is not None:
+            try:
+                numeric = Decimal(str(value))
+                if numeric.is_finite():
+                    observed.append(numeric)
+            except (ValueError, ArithmeticError):
+                pass
+    for snapshot in market_data.get("snapshots") or []:
+        if not isinstance(snapshot, dict):
+            continue
+        value = snapshot.get("p", snapshot.get("price_usd"))
+        try:
+            numeric = Decimal(str(value))
+            if numeric.is_finite():
+                observed.append(numeric)
+        except (ValueError, ArithmeticError):
+            continue
+    for field_name in ("message_body", "possible_action"):
+        for match in _RENDER_USD_CLAIM_RE.finditer(str(result.get(field_name) or "")):
+            # Headline loss estimates ($6 billion) are not price levels.
+            suffix = str(result.get(field_name) or "")[match.end():match.end() + 16]
+            if re.match(r"(?i)^\s*(?:billion|million|trillion|bn)\b", suffix):
+                continue
+            raw = match.group(1).replace(",", "")
+            claimed = Decimal(raw)
+            places = len(raw.partition(".")[2])
+            tolerance = Decimal("0.5") * (Decimal(10) ** (-places))
+            if not any(abs(claimed - actual) <= tolerance for actual in observed):
+                raise EventAnalysisValidationError("unsupported observed USD price")
+
+
+def _validated_render_with_original_prose(
+    decision: EventAnalysisDecision, parsed: dict
+) -> EventAnalysisDecision:
+    """Retain harmless Stage-2 paragraph breaks after numeric/schema checks.
+
+    The shared EventAnalysis validator canonicalizes whitespace for persistence;
+    the rendered copy must use exactly the fact-checked model text.
+    """
+    return replace(
+        decision,
+        message_body=_preserve_render_prose(parsed["message_body"]),
+        possible_action=_preserve_render_prose(parsed["possible_action"]),
+    )
 
 
 def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -> str:
@@ -4209,6 +4325,15 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
     message = str(error).lower()
     mappings = (
         ("unverified causal claim", "unverified_causal_claim"),
+        ("repeated market header metrics", "repeated_market_metrics"),
+        ("unsupported percentage-point unit", "invalid_percentage_point_unit"),
+        ("unsupported market or event claim", "unsupported_event_claim"),
+        ("unsupported period-direction relationship", "period_direction_mismatch"),
+        ("unsupported action market claim", "unsupported_action_claim"),
+        ("mixed render sections", "mixed_render_sections"),
+        ("unsupported observed usd price", "unsupported_observed_price"),
+        ("telegram_message_too_long", "telegram_message_too_long"),
+        ("unsupported outcome certainty", "unsupported_outcome_certainty"),
         ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
         ("market claim is unavailable", "market_claim_unavailable"),
         ("market claim direction does not match input", "market_claim_direction_mismatch"),
@@ -4252,17 +4377,9 @@ def _event_alert_render_result_for_validation(
     market_data = input_payload.get("market", input_payload.get("market_data", {}))
     if not isinstance(market_data, dict):
         market_data = {}
-    raw_related_news_ids = result.get("related_news_ids")
-    if isinstance(raw_related_news_ids, list):
-        related_news_ids = []
-        seen_news_ids = set()
-        for value in raw_related_news_ids:
-            news_id = str(value)
-            if news_id in candidate_news_ids and news_id not in seen_news_ids:
-                related_news_ids.append(news_id)
-                seen_news_ids.add(news_id)
-    else:
-        related_news_ids = raw_related_news_ids
+    # Preserve submitted IDs for schema validation. Unknown IDs and duplicates
+    # are errors; silently dropping them creates misleading successful renders.
+    related_news_ids = result.get("related_news_ids")
     return {
         "symbol": normalize_symbol(expected_symbol).upper(),
         "should_alert": True,
@@ -4688,6 +4805,11 @@ async def _send_alert_to_recipient_once(
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
     rich_html = alert_payload.get("rich_html")
+    # Recipient-specific comparison lines may push a valid shared message
+    # beyond Telegram's hard text limit. Never truncate or attempt transport.
+    if _utf16_length(plain_text) > 4096:
+        logger.warning("ops_event=event_alert_delivery_rejected reason=telegram_message_too_long")
+        return False, "telegram_message_too_long", None
     bot_token = getattr(app.bot, "token", None)
     if rich_html and isinstance(bot_token, str) and bot_token:
         try:
