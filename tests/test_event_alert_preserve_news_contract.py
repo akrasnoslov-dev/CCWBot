@@ -3,8 +3,8 @@
 Synthetic evidence only. No private production records.
 """
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from html import unescape
+from types import SimpleNamespace
 
 import pytest
 
