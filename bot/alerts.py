@@ -228,9 +228,15 @@ re_search_word = _news_context.re_search_word
 logger = logging.getLogger(__name__)
 
 # Bounded LLM news context, configurable without changing alert eligibility.
-EVENT_ALERT_NEWS_SHORTLIST_LIMIT = min(
-    8, max(3, int(os.getenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "6")))
-)
+def _event_news_shortlist_limit() -> int:
+    try:
+        configured = int(os.getenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "6"))
+    except ValueError:
+        configured = 6
+    return min(8, max(3, configured))
+
+
+EVENT_ALERT_NEWS_SHORTLIST_LIMIT = _event_news_shortlist_limit()
 
 PRODUCT_ALERT_TYPES = {
     NotificationType.MARKET_UPDATE.value,
@@ -4765,6 +4771,11 @@ async def _send_alert_to_recipient_once(
     plain_text = str(alert_payload.get("plain_text", ""))
     entities = alert_payload.get("entities")
     rich_html = alert_payload.get("rich_html")
+    # Recipient-specific comparison lines may push a valid shared message
+    # beyond Telegram's hard text limit. Never truncate or attempt transport.
+    if _utf16_length(plain_text) > 4096:
+        logger.warning("ops_event=event_alert_delivery_rejected reason=telegram_message_too_long")
+        return False, "telegram_message_too_long", None
     bot_token = getattr(app.bot, "token", None)
     if rich_html and isinstance(bot_token, str) and bot_token:
         try:
