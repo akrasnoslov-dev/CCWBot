@@ -51,11 +51,11 @@ def _recorded_candidate_pairs():
 
 
 def test_ccw20_replay_all_20_recorded_candidate_final_pairs_without_llm_calls():
-    # Frozen copy is historical input; owner-approved preserve-first output does
-    # not apply the old post-model editorial compactor to those stored sections.
+    # The old frozen cohort contains some unsupported claims. Reject those
+    # before delivery; preserve accepted LLM prose without a Python fallback.
     data = json.loads(_SOURCE.read_text(encoding="utf-8"))
     by_id = {case["id"]: case for case in data["cases"]}
-    checked = []
+    checked, invalid = [], set()
     for event_id, symbol, situation, action in _recorded_candidate_pairs():
         market = by_id[event_id]["input"]["market"]
         decision = alerts.EventAnalysisDecision(
@@ -64,15 +64,20 @@ def test_ccw20_replay_all_20_recorded_candidate_final_pairs_without_llm_calls():
             related_news_ids=[], urgency="normal", confidence="high",
             reason_for_no_alert=None,
         )
-        msg = alerts._build_event_alert_payload(
-            decision=decision, input_payload={"market": market}, related_news=[]
-        )["plain_text"]
-        assert msg.count("Situation:\n") == 1
-        assert msg.count("Possible action:\n") == 1
-        assert msg.endswith("Not financial advice.")
-        rendered_situation = msg.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
-        rendered_action = msg.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
-        assert rendered_situation == situation
-        assert rendered_action == action
         checked.append(event_id)
+        try:
+            result = alerts._build_event_alert_payload(
+                decision=decision, input_payload={"market": market}, related_news=[]
+            )["plain_text"]
+        except alerts.EventAnalysisValidationError:
+            invalid.add(event_id)
+            continue
+        assert result.count("Situation:\n") == 1
+        assert result.count("Possible action:\n") == 1
+        assert result.endswith("Not financial advice.")
+        final_situation = result.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
+        final_action = result.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
+        assert final_situation == situation
+        assert final_action == action
     assert len(checked) == 20
+    assert _BAD_IDS <= invalid

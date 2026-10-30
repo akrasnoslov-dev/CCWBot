@@ -4210,6 +4210,8 @@ def _validate_event_alert_render_causality(
         if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
         if field_name == "message_body":
+            if market and not market_direction_claims_supported(text, market):
+                raise EventAnalysisValidationError("unsupported period-direction relationship")
             if re.search(r"(?i)\bpercentage points?\b", text):
                 raise EventAnalysisValidationError("unsupported percentage-point unit")
             if (
@@ -4295,6 +4297,7 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
         ("repeated market header metrics", "repeated_market_metrics"),
         ("unsupported percentage-point unit", "invalid_percentage_point_unit"),
         ("unsupported market or event claim", "unsupported_event_claim"),
+        ("unsupported period-direction relationship", "period_direction_mismatch"),
         ("unsupported action market claim", "unsupported_action_claim"),
         ("mixed render sections", "mixed_render_sections"),
         ("unsupported observed usd price", "unsupported_observed_price"),
