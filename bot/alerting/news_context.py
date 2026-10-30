@@ -236,14 +236,42 @@ def _mentions_btc(text: str) -> bool:
 def _is_clearly_market_wide_news(text: str) -> bool:
     return any(term in text for term in CLEAR_MARKET_WIDE_NEWS_TERMS)
 
+def _major_market_incident(news_item: dict) -> bool:
+    """Evidence-backed systemic incident, independent of coin tagging.
+
+    This is a relevance candidate, not a causal attribution or Event Alert trigger.
+    Security keywords alone are insufficient; require exchange/system context
+    *and* substantial loss, liquidity disruption, or broad-market consequences.
+    """
+    text = _news_search_text(news_item)
+    named_exchange = re.search(
+        r"\\b(?:binance|coinbase|kraken|bitget|bybit|okx|kucoin|"
+        r"major (?:crypto )?exchange)\\b", text,
+    )
+    serious_incident = re.search(
+        r"\\b(?:hack(?:ed)?|exploit|breach|insolven(?:cy|t)|bankrupt(?:cy)?|"
+        r"liquidation|withdrawal freeze|suspended withdrawals)\\b", text,
+    )
+    broad_impact = re.search(
+        r"(?:\\$\\s*\\d+(?:\\.\\d+)?\\s*(?:billion|bn|b)\\b)|"
+        r"\\b(?:multi[- ]billion|record (?:crypto )?hack|market[- ]wide|"
+        r"crypto market|crypto[- ]wide|market liquidations?|"
+        r"exchange liquidity|customer assets|exchange withdrawals?|"
+        r"systemic security)\\b", text,
+    )
+    return bool(named_exchange and serious_incident and broad_impact)
+
+
 def classify_news_relevance(symbol: str, news_item: dict) -> str:
-    """Require article-text evidence; symbol metadata alone can be misclassified."""
+    """Use article evidence for direct and substantive market-wide relevance."""
     normalized_symbol = normalize_symbol(symbol)
     text = _news_search_text(news_item)
     if _matches_symbol_alias(normalized_symbol, text):
         return "direct"
-    # Broad-market news must explicitly describe the crypto market. Isolated
-    # words like "exchange", "fed", "hack" or "etf" match unrelated stories.
+    if _major_market_incident(news_item):
+        return "market_wide"
+    # Require an explicit market connection, never a generic exchange/ETF/
+    # regulatory/security keyword or a possibly incorrect database symbol tag.
     if _is_clearly_market_wide_news(text):
         return "market_wide"
     return "irrelevant"
@@ -262,6 +290,30 @@ def re_search_word(term: str, text: str) -> bool:
         return re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", text) is not None
     return term in text
 
+def _alert_news_rank(symbol: str, item: dict) -> tuple[int, int, int, int, str]:
+    """Impact dominates primary tags; direct relevance resolves close rankings."""
+    relevance = classify_news_relevance(symbol, item)
+    if relevance == "irrelevant":
+        return (-1, -1, -1, -1, "")
+    try:
+        impact = int(item.get("impact_score") or 0)
+        quality = int(item.get("relevance_score") or 0)
+    except (ValueError, TypeError):
+        impact, quality = 0, 0
+    # A skipped-budget article can still be shown as *unclassified evidence*
+    # when its source headline explicitly establishes a major incident.
+    if _major_market_incident(item):
+        impact = max(impact, 85)
+    published = _parse_news_datetime(item)
+    return (
+        impact,
+        quality,
+        1 if relevance == "direct" else 0,
+        int(published.timestamp()) if published else 0,
+        make_news_key(item),
+    )
+
+
 def filter_news_for_symbol(
     symbol: str,
     news_items: list[dict],
@@ -269,15 +321,22 @@ def filter_news_for_symbol(
     max_direct: int = 5,
     max_market_wide: int = 3,
 ) -> list[dict]:
-    direct: list[dict] = []
-    market_wide: list[dict] = []
-    for item in _sort_news_fresh_first(news_items):
+    ranked: list[dict] = []
+    counts = {"direct": 0, "market_wide": 0}
+    for item in sorted(
+        news_items, key=lambda record: _alert_news_rank(symbol, record), reverse=True
+    ):
         relevance = classify_news_relevance(symbol, item)
-        if relevance == "direct" and len(direct) < max_direct:
-            direct.append({**item, "relevance_label": "direct_symbol"})
-        elif relevance == "market_wide" and len(market_wide) < max_market_wide:
-            market_wide.append({**item, "relevance_label": "market_wide"})
-    return direct + market_wide
+        limit = max_direct if relevance == "direct" else max_market_wide
+        if relevance == "irrelevant" or counts[relevance] >= limit:
+            continue
+        counts[relevance] += 1
+        ranked.append({
+            **item, "relevance_label": (
+                "direct_symbol" if relevance == "direct" else "market_wide"
+            )
+        })
+    return ranked
 
 def _candidate_news_relevance_label(symbol: str | None, item: dict) -> str:
     explicit_label = str(item.get("relevance_label") or "").strip().lower()
@@ -416,6 +475,12 @@ def _format_candidate_news(
                 "url": str(item.get("url") or item.get("link") or "").strip(),
                 "summary": str(item.get("summary") or "").strip(),
                 "relevance_label": _candidate_news_relevance_label(symbol, item),
+                "impact_level": str(item.get("impact_level") or ""),
+                "impact_score": item.get("impact_score"),
+                "relevance_score": item.get("relevance_score"),
+                "category": str(item.get("category") or ""),
+                "dedup_group_id": str(item.get("dedup_group_id") or ""),
+                "llm_status": str(item.get("llm_status") or ""),
             }
         )
     return candidates
