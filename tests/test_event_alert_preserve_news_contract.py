@@ -241,3 +241,30 @@ def test_legacy_combined_database_message_does_not_leak_multiple_sections():
             decision=_decision(mixed, "Observe the range."),
             input_payload={"market": _market()}, related_news=[],
         )
+
+
+@pytest.mark.asyncio
+async def test_recipient_specific_oversize_message_never_attempts_telegram_send():
+    class NoSendBot:
+        token = "local-test"
+        def __getattr__(self, name):
+            raise AssertionError(f"Telegram transport unexpectedly called: {name}")
+
+    sent, reason, error = await alerts._send_alert_to_recipient_once(
+        SimpleNamespace(bot=NoSendBot()),
+        alerts.AlertRecipient(chat_id=1, user_id=1),
+        {"plain_text": "Market observation. " * 300, "html_text": None,
+         "rich_html": "Market observation. " * 300},
+    )
+    assert not sent
+    assert reason == "telegram_message_too_long"
+    assert error is None
+
+
+def test_news_shortlist_config_handles_malformed_value_without_crashing(monkeypatch):
+    monkeypatch.setenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "wrong")
+    assert alerts._event_news_shortlist_limit() == 6
+    monkeypatch.setenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "200")
+    assert alerts._event_news_shortlist_limit() == 8
+    monkeypatch.setenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "-20")
+    assert alerts._event_news_shortlist_limit() == 3
