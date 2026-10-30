@@ -3869,6 +3869,7 @@ async def _create_event_analysis_decision(
     def _render_schema_check(provider_parsed: dict) -> None:
         try:
             _validate_event_alert_render_causality(provider_parsed)
+            _validate_event_alert_render_prices(provider_parsed, input_payload.get("market") or {})
             validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
@@ -3955,6 +3956,7 @@ async def _create_event_analysis_decision(
     )
     try:
         _validate_event_alert_render_causality(render_parsed)
+        _validate_event_alert_render_prices(render_parsed, input_payload.get("market") or {})
         decision = validate_event_analysis_output(
             normalized_render,
             expected_symbol=expected_symbol,
@@ -4134,12 +4136,53 @@ def _validate_event_alert_render_causality(result: object) -> None:
             raise EventAnalysisValidationError("unsupported outcome certainty")
 
 
+_RENDER_USD_CLAIM_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
+
+
+def _validate_event_alert_render_prices(result: object, market_data: dict) -> None:
+    """Validate every displayed USD quote against actually supplied observations.
+
+    Match at the precision the model quoted; do not invent unsupplied high/low
+    prices or silently replace a quotation with a generic range template.
+    """
+    if not isinstance(result, dict):
+        return
+    observed: list[Decimal] = []
+    for value in [market_data.get("price"), market_data.get("price_now_usd")]:
+        if value is not None:
+            try:
+                numeric = Decimal(str(value))
+                if numeric.is_finite():
+                    observed.append(numeric)
+            except (ValueError, ArithmeticError):
+                pass
+    for snapshot in market_data.get("snapshots") or []:
+        if not isinstance(snapshot, dict):
+            continue
+        value = snapshot.get("p", snapshot.get("price_usd"))
+        try:
+            numeric = Decimal(str(value))
+            if numeric.is_finite():
+                observed.append(numeric)
+        except (ValueError, ArithmeticError):
+            continue
+    for field in ("message_body", "possible_action"):
+        for match in _RENDER_USD_CLAIM_RE.finditer(str(result.get(field) or "")):
+            raw = match.group(1).replace(",", "")
+            claimed = Decimal(raw)
+            places = len(raw.partition(".")[2])
+            tolerance = Decimal("0.5") * (Decimal(10) ** (-places))
+            if not any(abs(claimed - actual) <= tolerance for actual in observed):
+                raise EventAnalysisValidationError("unsupported observed USD price")
+
+
 def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -> str:
     """Map render validation failures to stable, value-free operational categories."""
     message = str(error).lower()
     mappings = (
         ("unverified causal claim", "unverified_causal_claim"),
         ("mixed render sections", "mixed_render_sections"),
+        ("unsupported observed usd price", "unsupported_observed_price"),
         ("unsupported outcome certainty", "unsupported_outcome_certainty"),
         ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
         ("market claim is unavailable", "market_claim_unavailable"),
