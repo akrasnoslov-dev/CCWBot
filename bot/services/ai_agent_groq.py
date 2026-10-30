@@ -660,9 +660,6 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
             "t": item.get("title"),
             "r": item.get("relevance_label"),
             "mat": item.get("material"),
-            "impact": item.get("impact_level"),
-            "category": item.get("category"),
-            "review": item.get("llm_status"),
         }
         summary = _event_analysis_news_summary(item.get("summary"))
         if summary:
