@@ -935,11 +935,21 @@ async def _get_reusable_event_analysis_by_context(
             current_related_news.append(matching_items[0])
         if len(current_related_news) != len(translated_related_news_keys):
             continue
-        reconstructed_payload = _build_event_alert_payload(
-            decision=identity_decision,
-            input_payload=input_payload,
-            related_news=current_related_news,
-        )
+        try:
+            reconstructed_payload = _build_event_alert_payload(
+                decision=identity_decision,
+                input_payload=input_payload,
+                related_news=current_related_news,
+            )
+        except EventAnalysisValidationError as error:
+            # Pre-fix persisted copy has not passed today's presentation
+            # contract. Skip reuse and request a fresh Stage-2 render instead.
+            logger.info(
+                "ops_event=event_alert_reuse_invalid_render symbol=%s reason=%s",
+                normalize_symbol(identity_decision.symbol).upper(),
+                _event_alert_render_validation_reason(error),
+            )
+            continue
         semantic_family = canonical.semantic_family
         input_payload["raw_event_key"] = canonical.raw_event_key
         input_payload["canonical_event_key"] = canonical.canonical_event_key
