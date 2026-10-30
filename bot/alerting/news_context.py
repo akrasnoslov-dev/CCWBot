@@ -234,7 +234,15 @@ def _mentions_btc(text: str) -> bool:
     return any(re_search_word(term, text) for term in BTC_ONLY_NEWS_TERMS)
 
 def _is_clearly_market_wide_news(text: str) -> bool:
-    return any(term in text for term in CLEAR_MARKET_WIDE_NEWS_TERMS)
+    # Generic "digital asset" or "cryptocurrencies" in a local legal or
+    # product story does not prove material impact across tracked coins.
+    substantive = (
+        "crypto market", "cryptocurrency market", "market-wide",
+        "market wide", "broader crypto", "broader market",
+        "crypto selloff", "crypto sell-off", "crypto rally",
+        "market-wide selloff", "market-wide rally",
+    )
+    return any(term in text for term in substantive)
 
 def _major_market_incident(news_item: dict) -> bool:
     """Evidence-backed systemic incident, independent of coin tagging.
