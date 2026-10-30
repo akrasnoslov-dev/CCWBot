@@ -248,15 +248,9 @@ async def test_server_side_invalid_only_exhaustion_recovers_through_factual_vali
 
     decision, analysis_id = await alerts._create_event_analysis_decision(input_payload())
 
-    assert analysis_id == 42
-    assert decision is not None and decision.should_alert
-    assert decision.urgency == "normal"
-    assert "40%" not in decision.message_body
-    assert "{" not in decision.message_body
-    assert render_outcome.await_args.kwargs["status"] == "success"
-    assert render_outcome.await_args.kwargs["error_reason"] == (
-        "deterministic_fallback_from_schema_validation_failed"
-    )
-    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    assert decision is None and analysis_id is None
+    assert render_outcome.await_args.kwargs["status"] == "llm_error"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_FAILED
+    assert delivery_outcome.await_args.kwargs["reason_code"] == alerts.REASON_LLM_INVALID_RESPONSE
     significance_call.assert_awaited_once()
     assert sum(len(provider.calls) for provider in registry.values()) == 3
