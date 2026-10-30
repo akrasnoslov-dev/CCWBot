@@ -4124,13 +4124,13 @@ def _validate_event_alert_render_causality(result: object) -> None:
         if not isinstance(text, str):
             continue
         if re.search(
-            r"\\b(?:because|due to|caused by|driven by|triggered by|explains?)\\b",
+            r"\b(?:because|due to|caused by|driven by|triggered by|explains?)\b",
             text, flags=re.IGNORECASE,
         ):
             raise EventAnalysisValidationError("unverified causal claim")
-        if re.search(r"(?im)^\\s*(?:situation|possible action):", text):
+        if re.search(r"(?im)^\s*(?:situation|possible action):", text):
             raise EventAnalysisValidationError("mixed render sections")
-        if re.search(r"(?i)\\b(?:guaranteed? profit|risk.free profit)\\b", text):
+        if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
 
 
