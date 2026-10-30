@@ -245,19 +245,19 @@ def _major_market_incident(news_item: dict) -> bool:
     """
     text = _news_search_text(news_item)
     named_exchange = re.search(
-        r"\\b(?:binance|coinbase|kraken|bitget|bybit|okx|kucoin|"
-        r"major (?:crypto )?exchange)\\b", text,
+        r"\b(?:binance|coinbase|kraken|bitget|bybit|okx|kucoin|"
+        r"major (?:crypto )?exchange)\b", text,
     )
     serious_incident = re.search(
-        r"\\b(?:hack(?:ed)?|exploit|breach|insolven(?:cy|t)|bankrupt(?:cy)?|"
-        r"liquidation|withdrawal freeze|suspended withdrawals)\\b", text,
+        r"\b(?:hack(?:ed)?|exploit|breach|insolven(?:cy|t)|bankrupt(?:cy)?|"
+        r"liquidation|withdrawal freeze|suspended withdrawals)\b", text,
     )
     broad_impact = re.search(
-        r"(?:\\$\\s*\\d+(?:\\.\\d+)?\\s*(?:billion|bn|b)\\b)|"
-        r"\\b(?:multi[- ]billion|record (?:crypto )?hack|market[- ]wide|"
+        r"(?:\$\s*\d+(?:\.\d+)?\s*(?:billion|bn|b)\b)|"
+        r"\b(?:multi[- ]billion|record (?:crypto )?hack|market[- ]wide|"
         r"crypto market|crypto[- ]wide|market liquidations?|"
         r"exchange liquidity|customer assets|exchange withdrawals?|"
-        r"systemic security)\\b", text,
+        r"systemic security)\b", text,
     )
     return bool(named_exchange and serious_incident and broad_impact)
 
