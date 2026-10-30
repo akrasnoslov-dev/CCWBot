@@ -780,7 +780,11 @@ def build_post_llm_dedup_group_id(
         ("losses", ("loss", "billion", "drain", "stolen")),
     )
     phase = next(
-        (phase for phase, words in phase_signals if any(term in normalized_title for term in words)),
+        (
+            phase
+            for phase, words in phase_signals
+            if any(term in normalized_title for term in words)
+        ),
         "initial",
     )
     normalized_value = (
