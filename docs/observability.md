@@ -653,17 +653,20 @@ surfaces such as Market Heartbeats.
 Formatting may make a message readable, but does not use market thresholds or alter Event Alert
 significance, identity, cooldown, eligibility, or LLM call placement.
 
-Event Alert presentation is deterministic where it repeats market facts: the headline uses only
-the primary analysed-window move, and the metric block is the single source for price, prior
-Event Alert/message change, and analysed-window movement. Situation text that repeats those
-numbers is replaced with concise context derived only from supplied snapshots, 24-hour alignment
-or divergence, prior context, or selected related news. Selected news may be described as
-coincident context, never as proven cause. When no additional context exists, the copy explicitly
-says that the analysed-window move is the only confirmed signal and that no additional catalyst is
-evident from the supplied news/context. Possible action is short, conditional monitoring of the
-supplied snapshots, trend, or selected news, with no trading command or generic risk-plan wording.
-Related-news selection and rendering are unchanged. This display-only normalization does not use
-market thresholds or alter significance, identity, cooldown, eligibility, or LLM call placement.
+The Event Alert headline and metric block remain deterministic market facts. Under the
+2026-10-30 preserve-first owner decision, validated Stage-2 Situation and Possible action
+are forwarded substantially intact; no editorial word-count guard, forced trading-language
+sanitization or deterministic presentation fallback may replace them. Render failures after
+configured provider attempts fail the presentation and leave a sanitized, queryable reason;
+they do not reverse Stage-1 significance or create a message. The mandatory
+`Not financial advice.` footer remains. Value-free text-change telemetry is diagnostic:
+legitimate spacing and formatting may differ.
+
+News diagnostics should distinguish source/feed freshness, material incident candidates
+excluded before Stage-2, Stage-2 selected IDs, validated final attached-news counts, and
+important `skipped_budget` items. A candidate without selected/attached news is not, by
+itself, a failure. The news relevance and ranking rules are in `docs/alert_logic.md`.
+No raw LLM prompt, private Telegram content or secret may enter operational logs.
 
 The ops-agent decision context now includes `## Event Alert Regression Checks`. Interpret it as:
 
