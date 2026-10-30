@@ -188,6 +188,9 @@ def test_contradictory_period_alignment_is_never_delivered_as_factual_claim():
         confidence="medium", candidate_news_ids=set(),
     )
     with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": situation}, market_data=market
+        )
         alerts.validate_event_analysis_output(
             normalized, expected_symbol="ETH", candidate_news_ids=set(),
             market_data=market,

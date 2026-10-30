@@ -227,6 +227,9 @@ def test_cross_period_alignment_must_match_both_market_directions(situation):
         confidence="medium", candidate_news_ids=set(),
     )
     with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": situation}, market_data=data
+        )
         alerts.validate_event_analysis_output(
             normalized, expected_symbol="ETH", candidate_news_ids=set(),
             market_data=data,
@@ -345,6 +348,9 @@ def test_more_implicit_and_coordinated_contradictions_are_not_sent_verbatim(
         confidence="medium", candidate_news_ids=set(),
     )
     with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(
+            {"message_body": situation}, market_data=data
+        )
         alerts.validate_event_analysis_output(
             normalized, expected_symbol="ETH", candidate_news_ids=set(),
             market_data=data,

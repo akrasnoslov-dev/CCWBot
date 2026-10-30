@@ -49,7 +49,7 @@ def market_payload(day):
 def decision():
     return EventAnalysisDecision(
         symbol="SOL", should_alert=True, event_key=None, title=None,
-        message_body="The latest observed decline aligns with the broader 24-hour trend.",
+        message_body="The latest observed decline follows the preceding lower observations.",
         related_news_ids=[], possible_action=(
             "Watch whether the next observed interval extends the decline or reverses it."
         ),

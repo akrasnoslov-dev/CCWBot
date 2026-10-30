@@ -4214,7 +4214,15 @@ def _validate_event_alert_render_causality(
         if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
         if field_name == "message_body":
-            if market and not market_direction_claims_supported(text, market):
+            # An earlier observed step is not the net analysed-window
+            # direction. Validate its actual path separately, then mask it
+            # only for the period-direction consistency check.
+            direction_text = re.sub(
+                r"(?i)\b(?:after|following)\s+two\s+(?:upward|downward)\s+steps?\b",
+                "after observed earlier steps",
+                text,
+            )
+            if market and not market_direction_claims_supported(direction_text, market):
                 raise EventAnalysisValidationError("unsupported period-direction relationship")
             if re.search(r"(?i)\bpercentage points?\b", text):
                 raise EventAnalysisValidationError("unsupported percentage-point unit")
