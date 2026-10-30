@@ -218,26 +218,19 @@ def test_alignment_fallback_names_direction_and_verified_size_relationship(
 )
 def test_cross_period_alignment_must_match_both_market_directions(situation):
     from bot.alerting.event_analysis import market_direction_claims_supported
-
     data = market((100, 101, 102), "2", "-3")
     assert not market_direction_claims_supported(situation, data)
-    decision = EventAnalysisDecision(
-        symbol="ETH",
-        should_alert=True,
-        event_key="eth_market_event",
-        title="ignored",
-        message_body=situation,
-        related_news_ids=[],
-        urgency="normal",
-        confidence="medium",
-        possible_action="Watch whether the next observed interval extends the move or turns.",
-        reason_for_no_alert=None,
+    normalized = alerts._event_alert_render_result_for_validation(
+        {"message_body": situation, "related_news_ids": [],
+         "possible_action": "Check a later observation."},
+        input_payload={"market": data}, expected_symbol="ETH",
+        confidence="medium", candidate_news_ids=set(),
     )
-    final_text = alerts._build_event_alert_payload(
-        decision=decision, input_payload={"market": data}, related_news=[]
-    )["plain_text"]
-    assert situation not in final_text
-
+    with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts.validate_event_analysis_output(
+            normalized, expected_symbol="ETH", candidate_news_ids=set(),
+            market_data=data,
+        )
 
 @pytest.mark.parametrize(
     "situation",
@@ -343,26 +336,19 @@ def test_more_implicit_and_coordinated_contradictions_are_not_sent_verbatim(
     situation, window, day
 ):
     from bot.alerting.event_analysis import market_direction_claims_supported
-
     data = market((100, 101, 102), window, day)
     assert not market_direction_claims_supported(situation, data)
-    decision = EventAnalysisDecision(
-        symbol="ETH",
-        should_alert=True,
-        event_key="eth_market_event",
-        title="ignored",
-        message_body=situation,
-        related_news_ids=[],
-        urgency="normal",
-        confidence="medium",
-        possible_action="Watch whether the next observed interval extends or reverses.",
-        reason_for_no_alert=None,
+    normalized = alerts._event_alert_render_result_for_validation(
+        {"message_body": situation, "related_news_ids": [],
+         "possible_action": "Check a later observation."},
+        input_payload={"market": data}, expected_symbol="ETH",
+        confidence="medium", candidate_news_ids=set(),
     )
-    final_text = alerts._build_event_alert_payload(
-        decision=decision, input_payload={"market": data}, related_news=[]
-    )["plain_text"]
-    assert situation not in final_text
-
+    with pytest.raises(alerts.EventAnalysisValidationError):
+        alerts.validate_event_analysis_output(
+            normalized, expected_symbol="ETH", candidate_news_ids=set(),
+            market_data=data,
+        )
 
 def test_supported_coordinated_direction_for_both_periods_is_accepted():
     from bot.alerting.event_analysis import market_direction_claims_supported
