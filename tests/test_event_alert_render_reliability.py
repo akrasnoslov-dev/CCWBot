@@ -133,7 +133,7 @@ def test_ccw20_render_prompt_missing_context_fails_closed():
     AISchemaValidationError("invalid_urgency"),
     AIInvalidJsonError("malformed JSON"),
 ])
-async async def test_invalid_provider_chain_exhaustion_fails_without_fabricated_prose(
+async def test_invalid_provider_chain_exhaustion_fails_without_fabricated_prose(
     monkeypatch, render_error
 ):
     significance = {

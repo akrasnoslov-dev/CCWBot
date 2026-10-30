@@ -390,7 +390,7 @@ def test_ccw20_frozen_eth_and_sol_errors_are_removed_at_final_assembly():
         ("SOL", "If the next step extends this counter-move, it may further diverge "
          "from the 24h downtrend."),
     ]
-    for symbol, incorrect_action in cases:
+    for _symbol, incorrect_action in cases:
         # Unsupported cross-period prediction now fails schema checking,
         # rather than being rewritten into another statement by Python.
         with pytest.raises(alerts.EventAnalysisValidationError,
@@ -405,10 +405,7 @@ def test_ccw20_verified_eth_levels_and_useful_conditional_action():
 
     from bot import alerts
     from bot.alerting.event_analysis import EventAnalysisDecision
-    from bot.alerting.event_text import (
-        observed_event_alert_level_action,
-        observed_event_alert_price_band,
-    )
+    from bot.alerting.event_text import observed_event_alert_price_band
     from bot.services.ai_agent_groq import build_event_alert_render_prompt
 
     market = {
@@ -540,7 +537,6 @@ def test_release_rejects_unproven_repeated_high_claim():
 def test_release_conditional_levels_cannot_mask_false_observed_direction():
     from bot import alerts
     from bot.alerting.event_analysis import EventAnalysisDecision
-    from bot.alerting.event_text import observed_event_alert_level_action
 
     market = {
         "price": 10000,

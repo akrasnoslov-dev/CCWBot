@@ -44,16 +44,24 @@ from bot.alerting.event_analysis import (
 )
 from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
-    _has_unsupported_situation_causality,
-    _has_unsupported_event_claim,
     _UNSUPPORTED_MARKET_CLAIM_RE,
-    _has_unsupported_action_market_claim,
     _UNVERIFIED_FORWARD_RELATION_RE,
+    _has_unsupported_action_market_claim,
+    _has_unsupported_event_claim,
+    _has_unsupported_situation_causality,
     compact_elapsed_since,
-    compact_event_alert_possible_action as compact_event_alert_possible_action,
-    compact_event_alert_situation as compact_event_alert_situation,
-    event_alert_presentation_fallback as event_alert_presentation_fallback,
     final_event_alert_quality_flags,
+)
+from bot.alerting.event_text import (
+    compact_event_alert_possible_action as compact_event_alert_possible_action,
+)
+from bot.alerting.event_text import (
+    compact_event_alert_situation as compact_event_alert_situation,
+)
+from bot.alerting.event_text import (
+    event_alert_presentation_fallback as event_alert_presentation_fallback,
+)
+from bot.alerting.event_text import (
     observed_event_alert_level_action as observed_event_alert_level_action,
 )
 from bot.alerting.market_heartbeat import (

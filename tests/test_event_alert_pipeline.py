@@ -734,7 +734,7 @@ async def test_event_significance_true_calls_render_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async async def test_exhausted_factual_render_failure_uses_safe_fallback(monkeypatch):
+async def test_exhausted_factual_render_failure_uses_safe_fallback(monkeypatch):
     payload = _runtime_no_alert_payload(chg_window_percent=-3.1)
     significance = {
         "symbol": "BTC", "should_alert": True,
@@ -1235,7 +1235,7 @@ def test_existing_market_event_keeps_current_compact_alert_rendering():
 
 
 @pytest.mark.asyncio
-async async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkeypatch):
+async def test_exact_context_reuse_rerenders_legacy_verbose_alert_payload(monkeypatch):
     input_payload = {
         "symbol": "SOL", "timestamp_utc": "2026-09-18T12:00:00+00:00",
         "market": {"price": 109.79, "analysed_window_minutes": 180,
