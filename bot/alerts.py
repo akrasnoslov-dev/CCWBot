@@ -613,6 +613,9 @@ def _compact_event_analysis_news(candidate_news: list[dict], *, limit: int = 3) 
                 "summary": _event_identity._event_analysis_news_summary(item.get("summary")),
                 "relevance_label": str(item.get("relevance_label") or "").strip(),
                 "material": bool(is_material_news_item(item)),
+                "impact_level": str(item.get("impact_level") or "").strip(),
+                "category": str(item.get("category") or "").strip(),
+                "llm_status": str(item.get("llm_status") or "").strip(),
             }
         )
     return compacted
