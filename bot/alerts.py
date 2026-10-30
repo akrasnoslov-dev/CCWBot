@@ -45,7 +45,11 @@ from bot.alerting.event_analysis import (
 from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
     compact_elapsed_since,
+    compact_event_alert_possible_action as compact_event_alert_possible_action,
+    compact_event_alert_situation as compact_event_alert_situation,
+    event_alert_presentation_fallback as event_alert_presentation_fallback,
     final_event_alert_quality_flags,
+    observed_event_alert_level_action as observed_event_alert_level_action,
 )
 from bot.alerting.market_heartbeat import (
     MARKET_HEARTBEAT_ANALYSIS_TYPE,
