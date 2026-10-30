@@ -44,6 +44,10 @@ from bot.alerting.event_analysis import (
 )
 from bot.alerting.event_chart import render_price_chart
 from bot.alerting.event_text import (
+    _has_unsupported_situation_causality,
+    _has_unsupported_event_claim,
+    _UNSUPPORTED_MARKET_CLAIM_RE,
+    _has_unsupported_action_market_claim,
     compact_elapsed_since,
     compact_event_alert_possible_action as compact_event_alert_possible_action,
     compact_event_alert_situation as compact_event_alert_situation,
@@ -1819,10 +1823,10 @@ def _build_event_alert_payload(
     llm_action = str(decision.possible_action or "").strip()
     # Reused persisted analyses can predate the structured field contract.
     # Never expose a combined "Situation: ... Possible action:" as one field.
-    _validate_event_alert_render_causality({
-        "message_body": llm_situation,
-        "possible_action": llm_action,
-    })
+    _validate_event_alert_render_causality(
+        {"message_body": llm_situation, "possible_action": llm_action},
+        market_data=market_data,
+    )
     message_body = _preserve_render_prose(llm_situation)
     possible_action = _preserve_render_prose(llm_action)
     if not message_body or not possible_action:
@@ -3881,7 +3885,9 @@ async def _create_event_analysis_decision(
 
     def _render_schema_check(provider_parsed: dict) -> None:
         try:
-            _validate_event_alert_render_causality(provider_parsed)
+            _validate_event_alert_render_causality(
+                provider_parsed, market_data=input_payload.get("market") or {}
+            )
             _validate_event_alert_render_prices(provider_parsed, input_payload.get("market") or {})
             validated_render = validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
@@ -3977,7 +3983,9 @@ async def _create_event_analysis_decision(
         candidate_news_ids=candidate_news_ids,
     )
     try:
-        _validate_event_alert_render_causality(render_parsed)
+        _validate_event_alert_render_causality(
+            render_parsed, market_data=input_payload.get("market") or {}
+        )
         _validate_event_alert_render_prices(render_parsed, input_payload.get("market") or {})
         decision = validate_event_analysis_output(
             normalized_render,
@@ -4139,23 +4147,39 @@ def _selected_event_analysis_news(input_payload: dict, related_news_ids: list[st
     return [by_id[str(news_id)] for news_id in related_news_ids if str(news_id) in by_id]
 
 
-def _validate_event_alert_render_causality(result: object) -> None:
-    """Reject unsupported causes and mixed/duplicated structured sections."""
+def _validate_event_alert_render_causality(
+    result: object, *, market_data: dict | None = None
+) -> None:
+    """Reject fabricated context, independent of editorial preferences.
+
+    Valid text stays untouched. Unsupported facts fail the provider schema check,
+    allowing the configured model chain to repair them.
+    """
     if not isinstance(result, dict):
         return
+    market = market_data or {}
     for field_name in ("message_body", "possible_action"):
         text = result.get(field_name)
         if not isinstance(text, str):
             continue
+        if re.search(r"(?i)\b(?:situation|possible action)\s*:", text):
+            raise EventAnalysisValidationError("mixed render sections")
         if re.search(
             r"\b(?:because|due to|caused by|driven by|triggered by|explains?)\b",
             text, flags=re.IGNORECASE,
         ):
             raise EventAnalysisValidationError("unverified causal claim")
-        if re.search(r"(?i)\b(?:situation|possible action)\s*:", text):
-            raise EventAnalysisValidationError("mixed render sections")
         if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
+        if field_name == "message_body":
+            if (
+                _has_unsupported_situation_causality(text, market)
+                or _UNSUPPORTED_MARKET_CLAIM_RE.search(text)
+                or _has_unsupported_event_claim(text, market)
+            ):
+                raise EventAnalysisValidationError("unsupported market or event claim")
+        elif _has_unsupported_action_market_claim(text):
+            raise EventAnalysisValidationError("unsupported action market claim")
 
 
 _RENDER_USD_CLAIM_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
@@ -4203,6 +4227,8 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
     message = str(error).lower()
     mappings = (
         ("unverified causal claim", "unverified_causal_claim"),
+        ("unsupported market or event claim", "unsupported_event_claim"),
+        ("unsupported action market claim", "unsupported_action_claim"),
         ("mixed render sections", "mixed_render_sections"),
         ("unsupported observed usd price", "unsupported_observed_price"),
         ("telegram_message_too_long", "telegram_message_too_long"),
