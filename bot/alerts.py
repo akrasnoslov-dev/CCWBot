@@ -48,6 +48,7 @@ from bot.alerting.event_text import (
     _has_unsupported_event_claim,
     _UNSUPPORTED_MARKET_CLAIM_RE,
     _has_unsupported_action_market_claim,
+    _UNVERIFIED_FORWARD_RELATION_RE,
     compact_elapsed_since,
     compact_event_alert_possible_action as compact_event_alert_possible_action,
     compact_event_alert_situation as compact_event_alert_situation,
@@ -4178,7 +4179,10 @@ def _validate_event_alert_render_causality(
                 or _has_unsupported_event_claim(text, market)
             ):
                 raise EventAnalysisValidationError("unsupported market or event claim")
-        elif _has_unsupported_action_market_claim(text):
+        elif (
+            _has_unsupported_action_market_claim(text)
+            or _UNVERIFIED_FORWARD_RELATION_RE.search(text)
+        ):
             raise EventAnalysisValidationError("unsupported action market claim")
 
 
