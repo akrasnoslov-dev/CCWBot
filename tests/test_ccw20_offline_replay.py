@@ -51,47 +51,28 @@ def _recorded_candidate_pairs():
 
 
 def test_ccw20_replay_all_20_recorded_candidate_final_pairs_without_llm_calls():
+    # Frozen copy is historical input; owner-approved preserve-first output does
+    # not apply the old post-model editorial compactor to those stored sections.
     data = json.loads(_SOURCE.read_text(encoding="utf-8"))
     by_id = {case["id"]: case for case in data["cases"]}
     checked = []
-    corrected = []
-
     for event_id, symbol, situation, action in _recorded_candidate_pairs():
-        case = by_id[event_id]
-        assert case["symbol"] == symbol
-        market = case["input"]["market"]
+        market = by_id[event_id]["input"]["market"]
         decision = alerts.EventAnalysisDecision(
             symbol=symbol, should_alert=True, event_key=None, title=None,
             message_body=situation, possible_action=action,
             related_news_ids=[], urgency="normal", confidence="high",
             reason_for_no_alert=None,
         )
-        text = alerts._build_event_alert_payload(
-            decision=decision,
-            input_payload={"market": market},
-            related_news=[],
+        msg = alerts._build_event_alert_payload(
+            decision=decision, input_payload={"market": market}, related_news=[]
         )["plain_text"]
-        assert text.count("Situation:\n") == 1
-        assert text.count("Possible action:\n") == 1
-        assert text.endswith("Not financial advice.")
-        final_situation = text.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
-        final_action = text.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
-        assert final_situation.strip() and final_action.strip()
-        assert not re.search(
-            r"(?i)\b(?:if|when)\b[^.!?]{0,160}"
-            r"\b(?:extend\w*|continu\w*|sustain\w*)\b[^.!?]{0,180}"
-            r"\b(?:diverg\w*|converg\w*|align\w*)\b",
-            final_action,
-        )
-        if event_id in _BAD_IDS:
-            # Keep case-specific observed levels when verified and available.
-            verified_levels = alerts.observed_event_alert_level_action(market)
-            assert final_action == (verified_levels or _EXPECTED_SAFE_ACTION)
-            assert "latest decline" in final_situation
-            assert "analysed-window rise" in final_situation
-            assert final_action != action
-            corrected.append(event_id)
+        assert msg.count("Situation:\n") == 1
+        assert msg.count("Possible action:\n") == 1
+        assert msg.endswith("Not financial advice.")
+        rendered_situation = msg.split("Situation:\n", 1)[1].split("\n\n", 1)[0]
+        rendered_action = msg.split("Possible action:\n", 1)[1].split("\n\n", 1)[0]
+        assert rendered_situation == situation
+        assert rendered_action == action
         checked.append(event_id)
-
     assert len(checked) == 20
-    assert set(corrected) == _BAD_IDS
