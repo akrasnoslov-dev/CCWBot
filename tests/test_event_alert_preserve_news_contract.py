@@ -268,3 +268,47 @@ def test_news_shortlist_config_handles_malformed_value_without_crashing(monkeypa
     assert alerts._event_news_shortlist_limit() == 8
     monkeypatch.setenv("EVENT_ALERT_NEWS_SHORTLIST_LIMIT", "-20")
     assert alerts._event_news_shortlist_limit() == 3
+
+
+def test_validated_stage2_paragraph_breaks_survive_into_final_message():
+    market = _market()
+    parsed = {
+        "message_body": (
+            "The observed BTC path declined steadily.\n\n"
+            "The final observation is the lowest supplied price."
+        ),
+        "possible_action": (
+            "If the next observed interval reverses, the decline case weakens.\n"
+            "If the interval declines again, the downward sequence persists."
+        ),
+        "related_news_ids": [],
+    }
+    normalized = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload={"market": market},
+        expected_symbol="btc", confidence="high", candidate_news_ids=set(),
+    )
+    validated = alerts.validate_event_analysis_output(
+        normalized, expected_symbol="btc", candidate_news_ids=set(),
+        market_data=market,
+    )
+    restored = alerts._validated_render_with_original_prose(validated, parsed)
+    output = alerts._build_event_alert_payload(
+        decision=restored, input_payload={"market": market}, related_news=[]
+    )["plain_text"]
+    assert parsed["message_body"] in output
+    assert parsed["possible_action"] in output
+
+
+def test_news_loss_amount_is_not_misread_as_unsupported_coin_price():
+    alerts._validate_event_alert_render_prices(
+        {"message_body": "Reported loss was $6 billion.",
+         "possible_action": "Watch the observed market range."},
+        _market(),
+    )
+    with pytest.raises(alerts.EventAnalysisValidationError,
+                       match="unsupported observed USD price"):
+        alerts._validate_event_alert_render_prices(
+            {"message_body": "The observed current price is $6.00.",
+             "possible_action": "Watch the observed market range."},
+            _market(),
+        )
