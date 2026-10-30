@@ -1828,6 +1828,9 @@ def _build_event_alert_payload(
         {"message_body": llm_situation, "possible_action": llm_action},
         market_data=market_data,
     )
+    _validate_event_alert_render_redundancy(
+        {"message_body": llm_situation}, market_data
+    )
     message_body = _preserve_render_prose(llm_situation)
     possible_action = _preserve_render_prose(llm_action)
     if not message_body or not possible_action:
@@ -3890,6 +3893,9 @@ async def _create_event_analysis_decision(
                 provider_parsed, market_data=input_payload.get("market") or {}
             )
             _validate_event_alert_render_prices(provider_parsed, input_payload.get("market") or {})
+            _validate_event_alert_render_redundancy(
+                provider_parsed, input_payload.get("market") or {}
+            )
             validated_render = validate_event_analysis_output(
                 _event_alert_render_result_for_validation(
                     provider_parsed,
@@ -3988,6 +3994,9 @@ async def _create_event_analysis_decision(
             render_parsed, market_data=input_payload.get("market") or {}
         )
         _validate_event_alert_render_prices(render_parsed, input_payload.get("market") or {})
+        _validate_event_alert_render_redundancy(
+            render_parsed, input_payload.get("market") or {}
+        )
         decision = validate_event_analysis_output(
             normalized_render,
             expected_symbol=expected_symbol,
@@ -4173,6 +4182,8 @@ def _validate_event_alert_render_causality(
         if re.search(r"(?i)\b(?:guaranteed? profit|risk.free profit)\b", text):
             raise EventAnalysisValidationError("unsupported outcome certainty")
         if field_name == "message_body":
+            if re.search(r"(?i)\bpercentage points?\b", text):
+                raise EventAnalysisValidationError("unsupported percentage-point unit")
             if (
                 _has_unsupported_situation_causality(text, market)
                 or _UNSUPPORTED_MARKET_CLAIM_RE.search(text)
@@ -4184,6 +4195,28 @@ def _validate_event_alert_render_causality(
             or _UNVERIFIED_FORWARD_RELATION_RE.search(text)
         ):
             raise EventAnalysisValidationError("unsupported action market claim")
+
+
+def _validate_event_alert_render_redundancy(result: object, market: dict) -> None:
+    """Fail two substantial duplicate market metrics, never rewrite valid context."""
+    if not isinstance(result, dict):
+        return
+    situation = str(result.get("message_body") or "")
+    measured = [
+        _optional_float(market.get(key))
+        for key in ("chg_window_percent", "chg_since_msg_percent", "chg24h_percent")
+    ]
+    measured = [x for x in measured if x is not None]
+    matched: set[float] = set()
+    for match in PERCENT_CLAIM_RE.finditer(situation):
+        number = _percent_claim_value(match.group(0))
+        if number is None:
+            continue
+        for observed in measured:
+            if abs(number - observed) <= 0.05:
+                matched.add(observed)
+    if len(matched) >= 2:
+        raise EventAnalysisValidationError("repeated market header metrics")
 
 
 _RENDER_USD_CLAIM_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
@@ -4231,6 +4264,8 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
     message = str(error).lower()
     mappings = (
         ("unverified causal claim", "unverified_causal_claim"),
+        ("repeated market header metrics", "repeated_market_metrics"),
+        ("unsupported percentage-point unit", "invalid_percentage_point_unit"),
         ("unsupported market or event claim", "unsupported_event_claim"),
         ("unsupported action market claim", "unsupported_action_claim"),
         ("mixed render sections", "mixed_render_sections"),
