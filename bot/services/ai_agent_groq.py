@@ -660,6 +660,9 @@ def _event_analysis_prompt_payload(input_payload: dict) -> dict:
             "t": item.get("title"),
             "r": item.get("relevance_label"),
             "mat": item.get("material"),
+            "impact": item.get("impact_level"),
+            "category": item.get("category"),
+            "review": item.get("llm_status"),
         }
         summary = _event_analysis_news_summary(item.get("summary"))
         if summary:
@@ -696,59 +699,33 @@ def build_event_analysis_prompt(input_payload: dict) -> str:
 
 _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
     (
-        "JSON English. Event Significance has ALREADY been accepted. Return exactly "
-        "message_body, related_news_ids, possible_action. Do not re-decide whether to alert. "
-        "Never infer news causality or give direct buy/sell instructions.",
-        "Write to help a human understand WHY the observed market path matters and "
-        "WHAT concrete observation would change the interpretation. Avoid robotic "
-        "'watch next snapshots' text when verified price levels are available.",
-        "Input sym; market_directions=verified signs for analysed window and 24h; "
-        "market_metrics=observed numeric price and percentage changes from the same "
-        "market event as the Telegram metric header (30m/1h lookbacks optional); "
-        "evidence=verified backend observations; n=optional attributed news; "
-        "sig=accepted classification. Do not invent missing metrics or catalysts.",
-        "Use market_metrics magnitudes and periods to interpret how important the "
-        "accepted move is, not just the up/down signs. The "
-        "analysed_window_change_percent "
-        "applies only to analysed_window_minutes. A since_previous_notification "
-        "change is a difference from an actual previous market notification, not "
-        "a new event or proof of novelty. Missing metrics mean unknown, not zero. "
-        "Price and changes are already rendered separately by the backend; "
-        "do not restate their numbers in Situation. Never calculate or invent "
-        "new numeric claims, or conflate 30m, 1h, analysed-window and 24h moves.",
-        "When evidence.recent_price_path is supplied, use its ordered actual "
-        "step_directions, measured step_durations_minutes and "
-        "current_range_position to distinguish this event from another coin's "
-        "move. They describe the last four verified observations only. "
-        "Never infer volume, order flow, or persistent momentum from one step. "
-        "Do not claim acceleration unless latest_interval_pace confirms it. "
-        "Prefer what the latest step changes about the prior short-term path "
-        "over generic 24h-alignment filler. Never invent a missing path.",
-        "Situation: 1-2 fluent sentences, about 25-42 words. Connect the short-term "
-        "path with the 24h direction and explain uncertainty. When "
-        "evidence.observed_price_band.high_visits >= 2, you may explain that "
-        "recent observations approached the same high more than once, but do not "
-        "claim formal resistance, proven buyer/seller intent, volume, or a breakout. "
-        "Do not repeat USD prices or percentages already stated by the backend. "
-        "Distinguish a counter-move from a confirmed trend reversal.",
-        "Possible action: 1-2 conditional sentences, about 25-55 words. "
-        "When evidence.observed_price_band is present, quote ONLY its EXACT "
-        "high and low USD strings. Describe both testable scenarios: a sustained "
-        "move above the observed high versus a move below the observed low, and "
-        "what each would mean for the short-term attempt. The observed high/low "
-        "are reference prices from the last four supplied observations, NOT "
-        "confirmed support/resistance or trading entry/exit targets. "
-        "Do not invent other price levels, price forecasts or time deadlines. "
-        "Use measured language ('would strengthen/undermine the rebound case', "
-        "'would break the recent range'), not buy/sell orders. "
-        "When band is missing, do not invent prices: explain a specific "
-        "next-step continuation-versus-reversal observation instead. "
-        "Choose scenario implications grounded in this event's observed "
-        "step sequence and range position, not generic range-exit filler. "
-        "Do not restate that a range break would exit the same range.",
-        "No fabricated causes, market sentiment, unusualness, acceleration or "
-        "persistence. No predictive cross-period convergence/divergence claim. "
-        "Never imply a positive move guarantees a profitable trade.",
+        "Return strict English JSON with only message_body, related_news_ids, "
+        "possible_action. Significance is already accepted. Do not re-decide it.",
+        "Write specific, useful prose based on the supplied market evidence. "
+        "There is no editorial word count or sentence limit. Multiple grounded "
+        "observations and valid comparisons to previous market events are welcome.",
+        "Situation: explain the verified observed trajectory, changes in pace, "
+        "alignment or divergence with the 24-hour market, and uncertainty. "
+        "Use only provided prices, actual time periods and snapshot sequences. "
+        "Do not repeat verbatim the analysed-window move and price already shown "
+        "in the alert headline and metric block. Do not infer a cause from news.",
+        "Possible action: give useful conditional scenarios or practical "
+        "risk-management interpretation grounded in the evidence. Trading-related "
+        "terminology (buy, sell, hold, entry, exit, exposure) is permitted; do not "
+        "manufacture trades, guarantees, forecasts, levels, outcomes or certainty. "
+        "Do not force both the observed high and low into every response. "
+        "If numeric prices are mentioned, quote only values present in the supplied "
+        "observed price band or snapshots at the correct precision. Do not describe "
+        "reference levels as confirmed support or resistance without proof.",
+        "News selection: n contains ranked, source-attributed candidates. Select "
+        "related_news_ids only when the article supplies material, genuinely "
+        "relevant context for the accepted market event. Critical, verified "
+        "market-wide incidents may support several assets even without an explicit "
+        "asset name. Respect candidate IDs exactly. An empty array is correct when "
+        "nothing supports the event. Do not invent causal connections, IDs or news.",
+        "Never invent market data, unsupported sequence comparisons, catalysts or "
+        "causal explanations. Keep uncertainty where needed. The backend adds the "
+        "mandatory Not financial advice. footer.",
     )
 )
 
