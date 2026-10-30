@@ -249,6 +249,9 @@ async def test_exact_context_reuse_recanonicalizes_and_rerenders_market_context(
     assert reusable is not None
     assert reusable.current_context_decision.event_key == "btc_price_downtrend"
     assert reusable.semantic_family == "price_downtrend"
-    assert "persisted across the supplied short-term snapshots" in reusable.alert_payload[
+    assert "Situation:\nMarket movement is meaningful." in reusable.alert_payload[
+        "plain_text"
+    ]
+    assert "Possible action:\nReview your risk plan." in reusable.alert_payload[
         "plain_text"
     ]
