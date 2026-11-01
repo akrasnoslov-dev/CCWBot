@@ -28,6 +28,10 @@ def _mock_openai_admission(monkeypatch):
 
 _BUDGET_ENV_VARS = (
     "LLM_EVENT_ANALYSIS_MAX_TOKENS",
+    "LLM_EVENT_RENDER_MAX_TOKENS",
+    "GROQ_EVENT_RENDER_MAX_TOKENS",
+    "OPENAI_EVENT_RENDER_MAX_TOKENS",
+    "CLOUDFLARE_EVENT_RENDER_MAX_TOKENS",
     "LLM_MARKET_HEARTBEAT_MAX_TOKENS",
     "LLM_REPORT_MAX_TOKENS",
     "LLM_NEWS_INTELLIGENCE_MAX_TOKENS",
@@ -65,6 +69,7 @@ def _clean_llm_env(monkeypatch):
     ("call_type", "default"),
     [
         ("event_analysis", 300),
+        ("event_alert_render", 700),
         ("market_heartbeat", 350),
         ("daily_report", 800),
         ("weekly_report", 800),
@@ -80,6 +85,7 @@ def test_default_budget_matches_previous_hardcoded_value(call_type, default):
     ("call_type", "env_name"),
     [
         ("event_analysis", "LLM_EVENT_ANALYSIS_MAX_TOKENS"),
+        ("event_alert_render", "LLM_EVENT_RENDER_MAX_TOKENS"),
         ("market_heartbeat", "LLM_MARKET_HEARTBEAT_MAX_TOKENS"),
         ("daily_report", "LLM_REPORT_MAX_TOKENS"),
         ("weekly_report", "LLM_REPORT_MAX_TOKENS"),
@@ -95,6 +101,16 @@ def test_each_call_type_honours_its_env_budget(monkeypatch, call_type, env_name)
 def test_legacy_event_analysis_budget_name_still_works(monkeypatch):
     monkeypatch.setenv("GROQ_EVENT_ANALYSIS_MAX_TOKENS", "1234")
     assert llm_config.max_tokens_for("event_analysis") == 1234
+
+
+def test_render_provider_budget_override_is_isolated(monkeypatch):
+    monkeypatch.setenv("GROQ_EVENT_RENDER_MAX_TOKENS", "512")
+    assert llm_config.effective_max_tokens_for(
+        call_type="event_alert_render", provider="groq", model="plain-model"
+    ) == 512
+    assert llm_config.effective_max_tokens_for(
+        call_type="event_alert_render", provider="cloudflare", model="plain-model"
+    ) == 700
 
 
 def test_current_budget_name_wins_over_legacy_name(monkeypatch):

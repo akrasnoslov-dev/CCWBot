@@ -753,6 +753,14 @@ def test_event_alert_render_validation_reason_query_outputs_categories_only():
     assert "call_type = 'event_alert_render'" in query.sql
     assert "error_reason = 'schema_validation_failed'" in query.sql
     assert "unsupported_trajectory" in query.sql
+    for category in (
+        "mixed_render_sections",
+        "period_direction_mismatch",
+        "unsupported_action_claim",
+        "unsupported_event_claim",
+        "unverified_causal_claim",
+    ):
+        assert category in query.sql
     assert "market_claim_mismatch" in query.sql
     assert "unknown_related_news_ids" in query.sql
     assert "validation_reason" in query.sql

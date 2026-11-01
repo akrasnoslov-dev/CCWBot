@@ -728,6 +728,8 @@ QUERIES: tuple[DbQuery, ...] = (
         "count(*) FILTER (WHERE action ~* "
         "'^(monitor (price|market|risk)|keep watching|review|"
         "watch (the )?next (few )?short-term snapshots? for (confirmation|continuation|reversal))' "
+        "OR action ~* '^if considering (an )?(entry|exposure|risk)' "
+        "OR action ~* '\\y(exposure|risk limits?|risk plan)\\y.*\\y(appropriate|suited|manage)\\y' "
         "OR (action ~* '^(watch|check|monitor) (whether )?(the )?(next|upcoming|few) "
         "(few )?(short-term )?snapshots?\\y' AND action !~* "
         "'\\y(24-hour|broader|prior|previous|pace|preceding|1h|30m|observed interval|"
@@ -740,6 +742,9 @@ QUERIES: tuple[DbQuery, ...] = (
         "btrim(possible_action) <> btrim(action)) AS action_replaced_count, "
         "count(situation) - count(DISTINCT lower(situation)) AS repeated_situation_count, "
         "count(action) - count(DISTINCT lower(action)) AS repeated_action_count "
+        ", count(*) FILTER (WHERE situation ~* '\\y(spanning|spanned|lasting|lasted|across)\\y.{0,45}"
+        "\\y[0-9]+\\s*,\\s*[0-9]+\\s*(,\\s*(and\\s*)?|and\\s*)[0-9]+\\s*"
+        "(minutes?|mins?|hours?|hrs?)\\y') AS repeated_interval_recap_count "
         "FROM final_text",
     ),
     DbQuery(
@@ -1128,6 +1133,18 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         "WITH classified AS ("
         "SELECT CASE "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%mixed_render_sections%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%mixed render sections%' THEN 'mixed_render_sections' "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%period_direction_mismatch%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%unsupported period-direction relationship%' THEN 'period_direction_mismatch' "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%unsupported_action_claim%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%unsupported action market claim%' THEN 'unsupported_action_claim' "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%unsupported_event_claim%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%unsupported market or event claim%' THEN 'unsupported_event_claim' "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%unverified_causal_claim%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%unverified causal claim%' THEN 'unverified_causal_claim' "
+        "WHEN lower(coalesce(error_message, '')) LIKE '%unsupported_observed_price%' "
+        "OR lower(coalesce(error_message, '')) LIKE '%unsupported observed usd price%' THEN 'unsupported_observed_price' "
         "WHEN lower(coalesce(error_message, '')) LIKE '%unsupported_trajectory%' "
         "OR lower(coalesce(error_message, '')) LIKE "
         "'%analysed-window trajectory is unsupported%' THEN 'unsupported_trajectory' "

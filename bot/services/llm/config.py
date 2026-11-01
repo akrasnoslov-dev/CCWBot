@@ -110,7 +110,10 @@ KNOWN_CALL_TYPES = (
 # share one variable, mirroring how they share GROQ_REPORT_MODEL and LLM_REPORT_PROVIDERS.
 _CALL_TYPE_MAX_TOKENS_ENV = {
     "event_analysis": ("LLM_EVENT_ANALYSIS_MAX_TOKENS", 300),
-    "event_alert_render": ("LLM_EVENT_ANALYSIS_MAX_TOKENS", 300),
+    # Render produces two user-facing fields and must not inherit the compact
+    # significance-decision ceiling.  It remains bounded and is called only for
+    # an accepted market event.
+    "event_alert_render": ("LLM_EVENT_RENDER_MAX_TOKENS", 700),
     "market_heartbeat": ("LLM_MARKET_HEARTBEAT_MAX_TOKENS", 350),
     "daily_report": ("LLM_REPORT_MAX_TOKENS", 800),
     "weekly_report": ("LLM_REPORT_MAX_TOKENS", 800),
@@ -119,6 +122,15 @@ _CALL_TYPE_MAX_TOKENS_ENV = {
     "legacy_alert_payload": ("LLM_LEGACY_ALERT_PAYLOAD_MAX_TOKENS", 450),
 }
 _DEFAULT_MAX_TOKENS = 450
+
+# A provider-specific override is deliberately separate from the common Render
+# answer budget.  This lets an operator contain a provider with a smaller
+# response allowance without silently reducing the other fallback attempts.
+_EVENT_RENDER_PROVIDER_MAX_TOKENS_ENV = {
+    "groq": "GROQ_EVENT_RENDER_MAX_TOKENS",
+    "openai": "OPENAI_EVENT_RENDER_MAX_TOKENS",
+    "cloudflare": "CLOUDFLARE_EVENT_RENDER_MAX_TOKENS",
+}
 
 # Generous sanity ceiling. Budgets are meant to be raised substantially for reasoning models,
 # so this is not a tuning limit — it exists so an obvious typo (300000 for 300) is rejected
@@ -398,6 +410,10 @@ def effective_max_tokens_for(
     raising plain-model attempts merely because a thinking model exists later in the chain.
     """
     budget = max_tokens_for(call_type) if requested_max_tokens is None else requested_max_tokens
+    if call_type == "event_alert_render":
+        provider_env = _EVENT_RENDER_PROVIDER_MAX_TOKENS_ENV.get(provider.strip().lower())
+        if provider_env and os.getenv(provider_env) is not None:
+            budget = get_int_env(provider_env, budget, minimum=1, maximum=_MAX_TOKENS_CEILING)
     if is_thinking_model(model):
         headroom = reasoning_headroom_tokens_for(model=model, call_type=call_type)
         effective = min(budget + headroom, _MAX_TOKENS_CEILING)

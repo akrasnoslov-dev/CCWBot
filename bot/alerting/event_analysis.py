@@ -1114,6 +1114,13 @@ def _validate_unquantified_time_window_claims(
         if not _MOVEMENT_DIRECTION_RE.search(clause):
             continue
         for duration in _DURATION_RE.finditer(clause):
+            # A recital of snapshot durations is not an analysed-window claim.
+            nearby = clause[max(0, duration.start() - 32):duration.end() + 12]
+            if not (
+                re.search(r"(?i)\b(?:over|in|during|last|past)\b", nearby)
+                or _MOVEMENT_DIRECTION_RE.search(nearby)
+            ):
+                continue
             source = _market_claim_source(
                 clause, duration.start(), market_data, last_msg, timestamp_utc
             )

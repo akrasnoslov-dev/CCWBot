@@ -144,7 +144,7 @@ def test_container_started_at_reads_linux_pid1_time(monkeypatch):
         return actual_open(path, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", fake_open)
-    monkeypatch.setattr(system_status.os, "sysconf", lambda _: 100)
+    monkeypatch.setattr(system_status.os, "sysconf", lambda _: 100, raising=False)
     assert system_status._container_started_at() == datetime.fromtimestamp(
         1720000002.5, tz=timezone.utc
     )

@@ -1900,7 +1900,7 @@ def _build_event_alert_payload(
     logger.info(
         "ops_event=event_alert_final_text_quality symbol=%s "
         "situation_replaced=%s action_replaced=%s generic_action=%s "
-        "missing_situation=%s repeats_market_numbers=%s "
+        "missing_situation=%s repeats_market_numbers=%s repeated_interval_recap=%s "
         "situation_fingerprint=%s action_fingerprint=%s",
         backend_symbol.upper(),
         bool(llm_situation and llm_situation != message_body),
@@ -1908,6 +1908,7 @@ def _build_event_alert_payload(
         final_quality["generic_action"],
         final_quality["missing_situation"],
         final_quality["repeats_market_numbers"],
+        final_quality["repeated_interval_recap"],
         sha256(message_body.lower().encode("utf-8")).hexdigest()[:12],
         sha256(possible_action.lower().encode("utf-8")).hexdigest()[:12],
     )
@@ -3916,6 +3917,7 @@ async def _create_event_analysis_decision(
     render_model = None
 
     def _render_schema_check(provider_parsed: dict) -> None:
+        provider_parsed = _normalize_render_section_labels(provider_parsed)
         try:
             _validate_event_alert_render_causality(
                 provider_parsed, market_data=input_payload.get("market") or {}
@@ -3970,6 +3972,7 @@ async def _create_event_analysis_decision(
                 schema_check=_render_schema_check,
             )
         render_raw_output, render_parsed = render_result
+        render_parsed = _normalize_render_section_labels(render_parsed)
         render_usage_log_id = getattr(render_result, "usage_log_id", None)
         render_provider = getattr(render_result, "provider", None) or render_provider
         render_model = getattr(render_result, "model", None) or render_model
@@ -4237,6 +4240,26 @@ def _validate_event_alert_render_causality(
             or _UNVERIFIED_FORWARD_RELATION_RE.search(text)
         ):
             raise EventAnalysisValidationError("unsupported action market claim")
+
+
+def _normalize_render_section_labels(result: object) -> object:
+    """Tolerate only a redundant label on its own structured field.
+
+    The schema already separates the fields.  Removing a matching leading label
+    repairs a harmless provider formatting habit; embedded or cross-field labels
+    stay visible to the mixed-section validator and remain rejected.
+    """
+    if not isinstance(result, dict):
+        return result
+    normalized = dict(result)
+    labels = (("message_body", "Situation"), ("possible_action", "Possible action"))
+    for field_name, label in labels:
+        value = normalized.get(field_name)
+        if isinstance(value, str):
+            normalized[field_name] = re.sub(
+                rf"(?is)^\s*{re.escape(label)}\s*:\s*", "", value, count=1
+            )
+    return normalized
 
 
 def _validate_event_alert_render_redundancy(result: object, market: dict) -> None:
