@@ -320,6 +320,41 @@ def test_positive_analysis_rejects_unquantified_analysed_window_claim_with_wrong
         )
 
 
+def test_snapshot_duration_recap_is_not_treated_as_an_analysed_window_claim():
+    decision = validate_factual_alert(
+        alert_analysis_result(
+            title="SOL market event",
+            message_body=(
+                "SOL fell over snapshots with durations of 30 minutes, "
+                "60 minutes, and 90 minutes."
+            ),
+        ),
+        factual_market_input(
+            snapshots=[{"m": -180, "p": 100}, {"m": 0, "p": 101}],
+            chg_window_percent=1.0,
+        ),
+    )
+
+    assert decision.should_alert is True
+
+
+def test_directional_window_claim_still_validates_beside_a_snapshot_duration_recap():
+    with pytest.raises(EventAnalysisValidationError, match="direction"):
+        validate_factual_alert(
+            alert_analysis_result(
+                title="SOL market event",
+                message_body=(
+                    "SOL fell over the last 3 hours; snapshots had durations of "
+                    "30 minutes, 60 minutes, and 90 minutes."
+                ),
+            ),
+            factual_market_input(
+                snapshots=[{"m": -180, "p": 100}, {"m": 0, "p": 101}],
+                chg_window_percent=1.0,
+            ),
+        )
+
+
 def test_positive_analysis_rejects_zig_zag_snapshots_as_consistent_decline():
     with pytest.raises(EventAnalysisValidationError, match="trajectory"):
         validate_factual_alert(

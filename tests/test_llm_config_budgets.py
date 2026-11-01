@@ -69,7 +69,7 @@ def _clean_llm_env(monkeypatch):
     ("call_type", "default"),
     [
         ("event_analysis", 300),
-        ("event_alert_render", 700),
+        ("event_alert_render", 300),
         ("market_heartbeat", 350),
         ("daily_report", 800),
         ("weekly_report", 800),
@@ -110,7 +110,7 @@ def test_render_provider_budget_override_is_isolated(monkeypatch):
     ) == 512
     assert llm_config.effective_max_tokens_for(
         call_type="event_alert_render", provider="cloudflare", model="plain-model"
-    ) == 700
+    ) == 300
 
 
 def test_current_budget_name_wins_over_legacy_name(monkeypatch):

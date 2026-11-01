@@ -418,7 +418,7 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` (default `medium`) |
-| `event_alert_render` | Groq GPT-OSS 20B -> optional OpenAI Luna -> Cloudflare Llama 3.3 70B | `LLM_EVENT_RENDER_MAX_TOKENS` (700); optional bounded `*_EVENT_RENDER_MAX_TOKENS` provider override | model-dependent |
+| `event_alert_render` | Groq GPT-OSS 20B -> optional OpenAI Luna -> Cloudflare Llama 3.3 70B | `LLM_EVENT_RENDER_MAX_TOKENS` (300); optional bounded `*_EVENT_RENDER_MAX_TOKENS` provider override | model-dependent |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |

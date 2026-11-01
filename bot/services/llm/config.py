@@ -110,10 +110,9 @@ KNOWN_CALL_TYPES = (
 # share one variable, mirroring how they share GROQ_REPORT_MODEL and LLM_REPORT_PROVIDERS.
 _CALL_TYPE_MAX_TOKENS_ENV = {
     "event_analysis": ("LLM_EVENT_ANALYSIS_MAX_TOKENS", 300),
-    # Render produces two user-facing fields and must not inherit the compact
-    # significance-decision ceiling.  It remains bounded and is called only for
-    # an accepted market event.
-    "event_alert_render": ("LLM_EVENT_RENDER_MAX_TOKENS", 700),
+    # Keep the existing no-cost-increase default.  Operators can explicitly
+    # raise this independent Render budget when they have approved cost evidence.
+    "event_alert_render": ("LLM_EVENT_RENDER_MAX_TOKENS", 300),
     "market_heartbeat": ("LLM_MARKET_HEARTBEAT_MAX_TOKENS", 350),
     "daily_report": ("LLM_REPORT_MAX_TOKENS", 800),
     "weekly_report": ("LLM_REPORT_MAX_TOKENS", 800),

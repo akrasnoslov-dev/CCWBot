@@ -759,6 +759,7 @@ def test_event_alert_render_validation_reason_query_outputs_categories_only():
         "unsupported_action_claim",
         "unsupported_event_claim",
         "unverified_causal_claim",
+        "unsupported_observed_price",
     ):
         assert category in query.sql
     assert "market_claim_mismatch" in query.sql

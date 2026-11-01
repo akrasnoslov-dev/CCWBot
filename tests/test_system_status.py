@@ -158,6 +158,21 @@ def test_container_started_at_falls_back_if_proc_unavailable(monkeypatch):
     assert system_status._container_started_at() == system_status._PROCESS_STARTED_AT
 
 
+def test_container_started_at_falls_back_when_sysconf_is_unavailable(monkeypatch):
+    actual_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if path == "/proc/1/stat":
+            return StringIO("1 (python main.py) S " + " ".join(["0"] * 20))
+        if path == "/proc/stat":
+            return StringIO("btime 1720000000\n")
+        return actual_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    monkeypatch.delattr(system_status.os, "sysconf", raising=False)
+    assert system_status._container_started_at() == system_status._PROCESS_STARTED_AT
+
+
 @pytest.mark.asyncio
 async def test_system_status_shows_container_start_on_database_failure(monkeypatch):
     started = datetime(2026, 6, 15, 12, 34, tzinfo=timezone.utc)
