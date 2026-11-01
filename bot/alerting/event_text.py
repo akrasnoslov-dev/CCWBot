@@ -885,12 +885,30 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
         r"observed interval|divergen\w*|countermov\w*)\b",
         action,
     ))
+    concrete_next_observation = bool(re.search(
+        r"(?i)\b(?:next|upcoming)\b.{0,45}\b(?:interval|observation|pace|continuation|"
+        r"reversal|slow(?:ing|er)?)\b|\b(?:above|below)\s+\$",
+        action,
+    ))
+    generic_risk_padding = bool(re.search(
+        r"(?i)^if\s+considering\s+(?:an\s+)?(?:entry|exposure|risk(?:\s+limits?)?)\b"
+        r"|\b(?:exposure|risk limits?|risk plan)\b.*\b(?:appropriate|suited|manage)\b",
+        action,
+    )) and not concrete_next_observation
+    # Three or more duration mentions in a short Situation are normally a
+    # mechanical snapshot recital, not an explanation of a relationship.
+    repeated_interval_recap = bool(re.search(
+        r"(?i)\b(?:spanning|spanned|lasting|lasted|across)\b.{0,45}\b\d+\s*,\s*\d+\s*(?:,\s*(?:and\s*)?|and\s*)\d+"
+        r"\s*(?:minutes?|mins?|hours?|hrs?)\b",
+        situation,
+    ))
     return {
-        "generic_action": bool(generic_action or generic_snapshot_action),
+        "generic_action": bool(generic_action or generic_snapshot_action or generic_risk_padding),
         "missing_situation": not bool(situation),
         "repeats_market_numbers": bool(
             _PERCENT_RE.search(situation) or _MONEY_VALUE_RE.search(situation)
         ),
+        "repeated_interval_recap": repeated_interval_recap,
     }
 
 

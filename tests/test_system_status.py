@@ -144,7 +144,7 @@ def test_container_started_at_reads_linux_pid1_time(monkeypatch):
         return actual_open(path, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", fake_open)
-    monkeypatch.setattr(system_status.os, "sysconf", lambda _: 100)
+    monkeypatch.setattr(system_status.os, "sysconf", lambda _: 100, raising=False)
     assert system_status._container_started_at() == datetime.fromtimestamp(
         1720000002.5, tz=timezone.utc
     )
@@ -155,6 +155,21 @@ def test_container_started_at_falls_back_if_proc_unavailable(monkeypatch):
         raise FileNotFoundError
 
     monkeypatch.setattr(builtins, "open", no_proc)
+    assert system_status._container_started_at() == system_status._PROCESS_STARTED_AT
+
+
+def test_container_started_at_falls_back_when_sysconf_is_unavailable(monkeypatch):
+    actual_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if path == "/proc/1/stat":
+            return StringIO("1 (python main.py) S " + " ".join(["0"] * 20))
+        if path == "/proc/stat":
+            return StringIO("btime 1720000000\n")
+        return actual_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    monkeypatch.delattr(system_status.os, "sysconf", raising=False)
     assert system_status._container_started_at() == system_status._PROCESS_STARTED_AT
 
 

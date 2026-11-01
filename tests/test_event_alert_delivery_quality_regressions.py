@@ -174,6 +174,34 @@ def test_generic_possible_action_detector_looks_at_delivered_copy(action):
     assert final_event_alert_quality_flags(body)["generic_action"] is True
 
 
+def test_quality_flags_detect_observed_production_padding_without_flagging_grounded_copy():
+    padded = (
+        "BTC up ~1% in the last hour.\n\nSituation:\n"
+        "Three observed intervals spanned 30, 60, and 30 minutes.\n\n"
+        "Possible action:\nIf considering an entry, consider whether exposure and risk limits "
+        "remain appropriate.\n\n"
+        "Not financial advice."
+    )
+    flags = final_event_alert_quality_flags(padded)
+    assert flags["generic_action"] is True
+    assert flags["repeated_interval_recap"] is True
+    grounded = padded.replace(
+        "Three observed intervals spanned 30, 60, and 30 minutes.",
+        "The latest observed step slowed after the earlier move."
+    ).replace(
+        "If considering an entry, consider whether exposure and risk limits remain appropriate.",
+        "Watch whether the next observed interval resumes the earlier pace or slows further."
+    )
+    assert final_event_alert_quality_flags(grounded)["generic_action"] is False
+    assert final_event_alert_quality_flags(grounded)["repeated_interval_recap"] is False
+    grounded_conditional = padded.replace(
+        "If considering an entry, consider whether exposure and risk limits remain appropriate.",
+        "If considering an entry, watch whether the next observed interval "
+        "resumes the earlier pace.",
+    )
+    assert final_event_alert_quality_flags(grounded_conditional)["generic_action"] is False
+
+
 def test_selected_unrelated_article_omitted_from_delivered_alert():
     decision = _decision(
         "The short-term decline diverges from the broader 24-hour rise.",

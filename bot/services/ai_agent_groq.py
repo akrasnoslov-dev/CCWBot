@@ -699,16 +699,17 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Return strict English JSON with only message_body, related_news_ids, "
         "possible_action. Significance is already accepted. Do not re-decide it.",
         "Write specific, useful prose based on the supplied market evidence. "
-        "There is no editorial word count or sentence limit. Multiple grounded "
-        "observations and valid comparisons to previous market events are welcome.",
+        "Use concise prose: prefer one useful verified relationship over a recital "
+        "of snapshot cadence or repeated uncertainty disclaimers.",
         "Situation: explain the verified observed trajectory, changes in pace, "
         "alignment or divergence with the 24-hour market, and uncertainty. "
         "Use only provided prices, actual time periods and snapshot sequences. "
         "Do not repeat verbatim the analysed-window move and price already shown "
         "in the alert headline and metric block. Do not infer a cause from news.",
-        "Possible action: give useful conditional scenarios or practical "
-        "risk-management interpretation grounded in the evidence. Trading-related "
-        "terminology (buy, sell, hold, entry, exit, exposure) is permitted; do not "
+        "Possible action: name the next observed market behaviour that would distinguish "
+        "continuation, slowing or reversal. Do not add generic entry, exposure, or "
+        "risk-plan padding. Trading-related terminology is permitted only when it adds "
+        "a concrete evidence-grounded observation; do not "
         "manufacture trades, guarantees, forecasts, levels, outcomes or certainty. "
         "Do not force both the observed high and low into every response. "
         "If numeric prices are mentioned, quote only values present in the supplied "
@@ -720,7 +721,9 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "market-wide incidents may support several assets even without an explicit "
         "asset name. Respect candidate IDs exactly. An empty array is correct when "
         "nothing supports the event. Do not invent causal connections, IDs or news.",
-        "Never invent market data, unsupported sequence comparisons, catalysts or "
+        "Put prose only in its matching JSON field: no 'Situation:' or 'Possible action:' "
+        "labels, and never embed one section inside the other. Never invent market data, "
+        "unsupported sequence comparisons, catalysts or "
         "causal explanations. Keep uncertainty where needed. The backend adds the "
         "mandatory Not financial advice. footer.",
     )

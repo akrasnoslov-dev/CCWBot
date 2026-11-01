@@ -24,7 +24,9 @@ PROJECT = "proj_ccwbot"
 
 
 def bucket(day, value="0.1", project=PROJECT):
-    begin = int((START + timedelta(days=day)).timestamp())
+    # The monitor fetches the seven complete days ending before today, even
+    # when that window begins in the previous month.
+    begin = int((START - timedelta(days=5) + timedelta(days=day)).timestamp())
     return {
         "object": "bucket",
         "start_time": begin,
@@ -32,6 +34,17 @@ def bucket(day, value="0.1", project=PROJECT):
         "results": [{
             "object": "organization.costs.result",
             "project_id": project,
+            "amount": {"value": Decimal(value), "currency": "usd"},
+        }],
+    }
+
+
+def bucket_at(start, day, value="0.1", project=PROJECT):
+    begin = int((start + timedelta(days=day)).timestamp())
+    return {
+        "object": "bucket", "start_time": begin, "end_time": begin + 86400,
+        "results": [{
+            "object": "organization.costs.result", "project_id": project,
             "amount": {"value": Decimal(value), "currency": "usd"},
         }],
     }
@@ -121,13 +134,13 @@ async def test_rejects_reused_inference_key(monkeypatch):
 async def test_success_multiple_days_with_pagination_and_scoping(monkeypatch):
     configured(monkeypatch)
     # Use native JSON numeric encoding, not a float calculated in Python.
-    p1 = page([bucket(0, "1")], more=True, cursor="next")
-    p2 = page([bucket(1, "2")])
+    p1 = page([bucket(i, "0") for i in range(6)], more=True, cursor="next")
+    p2 = page([bucket(6, "1")])
     seen = client_mock(monkeypatch, [(200, p1), (200, p2)])
     state, snapshot = await costs.OpenAICostsMonitor().get(now=NOW)
     assert state == "OK"
-    assert snapshot.total_usd == Decimal("3")
-    assert snapshot.daily_usd == (Decimal("1"), Decimal("2"))
+    assert snapshot.total_usd == Decimal("1")
+    assert snapshot.daily_usd == (Decimal("0"), Decimal("1"))
     assert snapshot.month_start == START
     assert snapshot.coverage_end == datetime(2026, 10, 3, tzinfo=timezone.utc)
     assert len(seen) == 2
@@ -136,7 +149,7 @@ async def test_success_multiple_days_with_pagination_and_scoping(monkeypatch):
         assert request.url.path == "/v1/organization/costs"
         assert request.url.params.get_list("project_ids") == [PROJECT]
         assert request.url.params.get_list("group_by") == ["project_id"]
-        assert int(request.url.params["start_time"]) == int(START.timestamp())
+        assert int(request.url.params["start_time"]) == int((START - timedelta(days=5)).timestamp())
         assert int(request.url.params["end_time"]) == int(snapshot.coverage_end.timestamp())
         assert request.headers["Authorization"] == "Bearer synthetic-admin-key"
     assert seen[1].url.params["page"] == "next"
@@ -148,7 +161,8 @@ async def test_http_errors_return_unavailable(monkeypatch, status):
     configured(monkeypatch)
     client_mock(monkeypatch, [(status, {"error": {"message": "SECRET"}})])
     state, snapshot = await costs.OpenAICostsMonitor().get(now=NOW)
-    assert (state, snapshot) == ("UNAVAILABLE", None)
+    expected = "AUTHORIZATION FAILED" if status in {401, 403} else "PROVIDER FAILURE"
+    assert (state, snapshot) == (expected, None)
 
 
 @pytest.mark.asyncio
@@ -156,7 +170,7 @@ async def test_timeouts_return_unavailable_and_no_secrets(monkeypatch, caplog):
     configured(monkeypatch)
     client_mock(monkeypatch, [httpx.ReadTimeout("synthetic-admin-key; private payload")])
     state, _ = await costs.OpenAICostsMonitor().get(now=NOW)
-    assert state == "UNAVAILABLE"
+    assert state == "NETWORK FAILURE"
     assert "synthetic-admin-key" not in caplog.text
     assert "private payload" not in caplog.text
 
@@ -177,22 +191,26 @@ async def test_malformed_provider_data_fails_closed(monkeypatch, mutation):
     payload = page([bucket(0), bucket(1)])
     mutation(payload)
     client_mock(monkeypatch, [(200, payload)])
-    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "UNAVAILABLE"
+    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "DATA VALIDATION FAILED"
 
 
 @pytest.mark.asyncio
 async def test_missing_daily_bucket_and_cyclic_page_are_unavailable(monkeypatch):
     configured(monkeypatch)
     client_mock(monkeypatch, [(200, page([bucket(1)]))])
-    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "UNAVAILABLE"
+    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "DATA VALIDATION FAILED"
     client_mock(monkeypatch, [(200, page([], more=True, cursor="again"))])
-    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "UNAVAILABLE"
+    assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "DATA VALIDATION FAILED"
 
 
 @pytest.mark.asyncio
 async def test_success_cache_hour_ttl_and_utc_day_rollover(monkeypatch):
     configured(monkeypatch)
-    seen = client_mock(monkeypatch, [(200, page([bucket(0), bucket(1)]))])
+    first_start = datetime(2026, 9, 26, tzinfo=timezone.utc)
+    seen = client_mock(monkeypatch, [
+        (200, page([bucket_at(first_start, i) for i in range(7)])),
+        (200, page([bucket(i) for i in range(7)])),
+    ])
     monitor = costs.OpenAICostsMonitor()
     assert (await monitor.get(now=NOW))[0] == "OK"
     assert (await monitor.get(now=NOW + timedelta(minutes=59)))[0] == "OK"
@@ -200,7 +218,7 @@ async def test_success_cache_hour_ttl_and_utc_day_rollover(monkeypatch):
     assert (await monitor.get(now=NOW + timedelta(hours=1)))[0] == "OK"
     assert len(seen) == 2
     # New UTC day requires its own daily bucket, not stale cached totals.
-    assert (await monitor.get(now=NOW + timedelta(days=1)))[0] == "UNAVAILABLE"
+    assert (await monitor.get(now=NOW + timedelta(days=1)))[0] == "DATA VALIDATION FAILED"
 
 
 def test_utc_month_transition_uses_new_calendar_month():
@@ -220,12 +238,16 @@ def test_utc_month_transition_uses_new_calendar_month():
 async def test_concurrent_open_coalesces_fetch_and_first_day_has_no_data(monkeypatch):
     configured(monkeypatch)
     first_day = START + timedelta(hours=8)
-    assert (await costs.OpenAICostsMonitor().get(now=first_day))[0] == "UNAVAILABLE"
-    seen = client_mock(monkeypatch, [(200, page([bucket(0), bucket(1)]))])
+    first_start = datetime(2026, 9, 24, tzinfo=timezone.utc)
+    seen = client_mock(monkeypatch, [
+        (200, page([bucket_at(first_start, i) for i in range(7)])),
+        (200, page([bucket(i) for i in range(7)])),
+    ])
+    assert (await costs.OpenAICostsMonitor().get(now=first_day))[0] == "OK"
     monitor = costs.OpenAICostsMonitor()
     results = await asyncio.gather(*(monitor.get(now=NOW) for _ in range(5)))
     assert all(state == "OK" for state, _ in results)
-    assert len(seen) == 1
+    assert len(seen) == 2
 
 
 @pytest.mark.asyncio
@@ -301,16 +323,33 @@ def test_no_activity_and_missing_official_data_never_invent_live_spending():
     provider = costs.ProviderCosts(
         PROJECT, START, datetime(2026, 10, 3, tzinfo=timezone.utc),
         NOW, Decimal("0"), (Decimal("0"), Decimal("0")),
+        datetime(2026, 9, 26, tzinfo=timezone.utc), (Decimal("0"),) * 7,
     )
     screen = costs.format_costs_screen(now=NOW, state="OK", provider=provider)
     assert "30-day projection: UNAVAILABLE (no observed spending)" in screen
-    assert "Last 2 completed days: $0.0000" in screen
+    assert "Last 7 completed days: $0.0000" in screen
     missing = costs.format_costs_screen(
         now=NOW, state="UNAVAILABLE", provider=None,
     )
     assert "Official MTD: UNAVAILABLE" in missing
     assert "30-day projection: UNAVAILABLE" in missing
     assert "$0.0000" not in missing
+
+
+def test_first_utc_day_keeps_mtd_unavailable_but_shows_verified_cross_month_rolling_costs():
+    now = datetime(2027, 1, 1, 8, tzinfo=timezone.utc)
+    end = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    provider = costs.ProviderCosts(
+        PROJECT, end, end, now, Decimal("0"), (),
+        datetime(2026, 12, 25, tzinfo=timezone.utc),
+        (Decimal("0.10"),) * 7,
+    )
+    screen = costs.format_costs_screen(now=now, state="OK", provider=provider)
+    assert "Official MTD: UNAVAILABLE (no completed current-month UTC days)" in screen
+    assert "Yesterday (Dec 31): $0.1000" in screen
+    assert "Last 7 completed days: $0.7000" in screen
+    assert "30-day projection: UNAVAILABLE" in screen
+    assert "Rolling coverage: 2026-12-25 through 2026-12-31 UTC" in screen
 
 
 @pytest.mark.asyncio
@@ -355,7 +394,7 @@ async def test_admin_callback_rejects_unauthorized_and_nonprivate(monkeypatch):
 async def test_monitor_never_changes_admission_guard(monkeypatch):
     configured(monkeypatch)
     monkeypatch.setenv("OPENAI_MONTHLY_BUDGET_USD", "0")
-    client_mock(monkeypatch, [(200, page([bucket(0), bucket(1)]))])
+    client_mock(monkeypatch, [(200, page([bucket(i) for i in range(7)]))])
     assert (await costs.OpenAICostsMonitor().get(now=NOW))[0] == "OK"
     from bot.services.llm.openai_budget import OpenAIBudgetExhausted
     with pytest.raises(OpenAIBudgetExhausted, match="invalid_cap"):
