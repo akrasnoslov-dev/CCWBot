@@ -1125,14 +1125,33 @@ def _validate_unquantified_time_window_claims(
                 continue
             if not _MOVEMENT_DIRECTION_RE.search(clause):
                 continue
+            # Exempt only the durations belonging to a snapshot metadata list.
+            # A separate move duration in the same clause must still be checked.
+            recap_duration_starts: set[int] = set()
+            if snapshot_duration_recap:
+                recap = re.search(
+                    r"(?i)\b(?:snapshots?|observations?|intervals?)\b.{0,80}"
+                    r"\b(?:durations?|cadence|lengths?)\b",
+                    clause,
+                )
+                if recap is not None:
+                    position = recap.end()
+                    prefix = re.match(r"(?i)\s*(?:of\b\s*)?", clause[position:])
+                    position += prefix.end() if prefix is not None else 0
+                    while (recited_duration := _DURATION_RE.match(clause, position)) is not None:
+                        recap_duration_starts.add(recited_duration.start())
+                        position = recited_duration.end()
+                        separator = re.match(
+                            r"(?i)\s*(?:,\s*(?:and\s+)?|and\s+)",
+                            clause[position:],
+                        )
+                        if separator is None:
+                            break
+                        position += separator.end()
+
             for duration in _DURATION_RE.finditer(clause):
-                if (
-                    snapshot_duration_recap
-                    and re.search(r"(?i)\b(?:snapshots?|observations?|intervals?)\b", clause)
-                    and re.search(r"(?i)\b(?:durations?|cadence|lengths?)\b", clause)
-                ):
+                if duration.start() in recap_duration_starts:
                     continue
-            # A recital of snapshot durations is not an analysed-window claim.
                 nearby = clause[max(0, duration.start() - 32):duration.end() + 12]
                 if not (
                     re.search(r"(?i)\b(?:over|in|during|last|past)\b", nearby)
