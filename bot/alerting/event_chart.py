@@ -157,6 +157,11 @@ _MARKER_STYLE = {
 }
 
 
+def _display_marker_label(label: str) -> str:
+    """Expand the historical event marker label without changing its identity."""
+    return "PREVIOUS EVENT ALERT" if label == "PREVIOUS ALERT" else label
+
+
 def _observed(
     reference: tuple[datetime, float | None] | None,
 ) -> tuple[datetime | None, float | None]:
@@ -196,7 +201,12 @@ def _reference_markers(
         if stamp is None:
             found.append(ReferenceMarker(label, None, None, False, missing))
         elif stamp < axis_start or stamp > as_of:
-            found.append(ReferenceMarker(label, stamp, price, False, "outside visible window"))
+            reason = (
+                "outside last 24h"
+                if label == "PREVIOUS ALERT" and stamp < as_of - timedelta(hours=24)
+                else "outside displayed history"
+            )
+            found.append(ReferenceMarker(label, stamp, price, False, reason))
         elif price is None:
             found.append(ReferenceMarker(label, stamp, None, False, "price unavailable"))
         else:
@@ -325,7 +335,8 @@ def _render_marked_chart(
             continue
         color, shape = _MARKER_STYLE[marker.label]
         x, y = x_at(marker.timestamp), y_at(marker.price)
-        display = marker.label.replace("−", "-")  # bundled Pillow bitmap font lacks U+2212
+        # Bundled Pillow bitmap font lacks U+2212.
+        display = _display_marker_label(marker.label).replace("−", "-")
         label_width = round(draw.textlength(display, font=f_chip)) + 22
         chip_x = min(max(x-label_width//2, left), right-label_width)
         chip_right = chip_x + label_width
@@ -355,7 +366,10 @@ def _render_marked_chart(
         if index % 2 == 0:
             draw.rounded_rectangle((left-10, y-5, right+2, y+28), radius=5, fill="#1a293d")
         _draw_reference_shape(draw, shape, left+9, y+11, color)
-        draw.text((left+31, y-2), marker.label.replace("−", "-"), font=f_chip, fill=color)
+        draw.text(
+            (left+31, y-2), _display_marker_label(marker.label).replace("−", "-"),
+            font=f_chip, fill=color,
+        )
         if marker.timestamp is None:
             detail = marker.reason or "unavailable"
         elif marker.plotted:

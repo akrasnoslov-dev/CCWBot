@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from bot import alerts
-from bot.alerting.event_chart import render_price_chart
+from bot.alerting.event_chart import _display_marker_label, render_price_chart
 
 AT = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
 
@@ -61,13 +61,26 @@ def test_missing_references_are_explicitly_unavailable():
     assert marker(chart, "−3H").plotted
 
 
+def test_previous_event_label_distinguishes_market_event_from_user_heartbeat():
+    assert _display_marker_label("PREVIOUS ALERT") == "PREVIOUS EVENT ALERT"
+    assert _display_marker_label("NOW") == "NOW"
+
+
 def test_previous_event_outside_visible_window_never_pinned_to_boundary():
     prior_at = AT - timedelta(hours=30)
     chart = event_chart(previous=(prior_at, 900.0))
     prior = marker(chart, "PREVIOUS ALERT")
     assert prior.timestamp == prior_at
     assert not prior.plotted and prior.label_box is None
-    assert prior.reason == "outside visible window"
+    assert prior.reason == "outside last 24h"
+
+
+def test_previous_event_within_24h_but_outside_partial_history_is_clear():
+    prior_at = AT - timedelta(hours=8)
+    chart = event_chart(samples(hours=4), previous=(prior_at, 900.0))
+    prior = marker(chart, "PREVIOUS ALERT")
+    assert not prior.plotted
+    assert prior.reason == "outside displayed history"
 
 
 def test_current_event_newer_and_different_from_latest_persisted_snapshot():
