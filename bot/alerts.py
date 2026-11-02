@@ -5188,12 +5188,12 @@ async def _prepare_event_alert_chart(
     if chart is not None and chart.png is not None:
         alert_payload["chart_png"] = chart.png
         chart_block = (
-            f"<h3>📈 {escape(chart.label)}</h3>"
+            f"<h3>📊 {escape(chart.label)}</h3>"
             '<img src="tg://photo?id=chart"/>'
         )
     else:
         chart_block = (
-            "<h3>📈 Last 24 hours</h3>"
+            "<h3>📊 Last 24 hours</h3>"
             "<p>Chart unavailable: insufficient reliable recorded prices.</p>"
         )
     alert_payload["rich_html"] = rich_html.replace("__CCWBOT_CHART_BLOCK__", chart_block)

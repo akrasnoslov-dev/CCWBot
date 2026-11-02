@@ -439,9 +439,17 @@ async def test_heartbeat_uses_existing_shared_price_snapshot_chart(monkeypatch):
     await alerts._prepare_event_alert_chart(payload, symbol="SOL", as_of=AT)
     assert calls["db"] == 1
     assert payload["chart_png"].startswith(b"\x89PNG")
-    assert "📈 Last 24 hours" in payload["rich_html"]
+    assert "📊 Last 24 hours" in payload["rich_html"]
     assert "tg://photo?id=chart" in payload["rich_html"]
 
+
+@pytest.mark.asyncio
+async def test_unavailable_chart_heading_uses_neutral_icon(monkeypatch):
+    monkeypatch.setattr(alerts, "DB_ENABLED", False)
+    payload = {"rich_html": "__CCWBOT_CHART_BLOCK__"}
+    await alerts._prepare_event_alert_chart(payload, symbol="ETH", as_of=AT)
+    assert "<h3>📊 Last 24 hours</h3>" in payload["rich_html"]
+    assert "Chart unavailable" in payload["rich_html"]
 
 
 @pytest.mark.asyncio
