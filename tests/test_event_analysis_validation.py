@@ -355,6 +355,28 @@ def test_directional_window_claim_still_validates_beside_a_snapshot_duration_rec
         )
 
 
+@pytest.mark.parametrize(
+    "message_body",
+    (
+        "SOL fell over the last 2 hours while snapshots had durations of "
+        "30 minutes and 60 minutes.",
+        "Snapshots had durations of 30 minutes and 60 minutes while "
+        "SOL fell over the last 2 hours.",
+        "SOL fell over the last 2 hours, snapshots had durations of "
+        "30 minutes and 60 minutes.",
+    ),
+)
+def test_snapshot_recap_does_not_exempt_separate_unsupported_move_duration(message_body):
+    with pytest.raises(EventAnalysisValidationError, match="duration"):
+        validate_factual_alert(
+            alert_analysis_result(title="SOL market event", message_body=message_body),
+            factual_market_input(
+                snapshots=[{"m": -180, "p": 100}, {"m": 0, "p": 99}],
+                chg_window_percent=-1.0,
+            ),
+        )
+
+
 def test_positive_analysis_rejects_zig_zag_snapshots_as_consistent_decline():
     with pytest.raises(EventAnalysisValidationError, match="trajectory"):
         validate_factual_alert(
