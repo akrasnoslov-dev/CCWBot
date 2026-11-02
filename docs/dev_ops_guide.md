@@ -11,6 +11,14 @@ Production runs from `main` on the Hetzner VPS at `/opt/CCWBot`. Local developme
 - Never use the production bot token locally.
 - Never overwrite production `.env`.
 - PostgreSQL and the bot health endpoint are bound to localhost by Compose.
+- Keep root `.ops-agent.env`, all `.env.*` local copies, `logs/`, research `reports/`,
+  and developer-only `graphify-out/` outside the Docker build context via `.dockerignore`.
+  The bot Dockerfile uses `COPY . .`; restrictive host permissions alone do not stop
+  Docker from embedding files in the image. Historical research remains Git-tracked
+  for reproducibility, but is not required by the running bot or ops-agent image.
+  Verify that the rebuilt bot image lacks `.ops-agent.env` and archived research
+  before considering a production packaging remediation complete. Keep old images
+  until rollback and their use have been checked; never run broad image pruning.
 
 For local setup and verification, use `docs/development.md`.
 
