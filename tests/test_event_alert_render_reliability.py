@@ -59,6 +59,20 @@ def test_unverified_render_market_assertions_still_fail_closed(body, expected_ca
     assert alerts._event_alert_render_validation_reason(error.value) == expected_category
 
 
+def test_matching_leading_render_labels_are_normalized_but_cross_sections_remain_rejected():
+    normalized = alerts._normalize_render_section_labels({
+        "message_body": "Situation: The latest observed step slowed.",
+        "possible_action": "Possible action: Watch the next observed interval for reversal.",
+    })
+    assert normalized["message_body"] == "The latest observed step slowed."
+    assert normalized["possible_action"] == "Watch the next observed interval for reversal."
+    with pytest.raises(EventAnalysisValidationError, match="mixed render sections"):
+        alerts._validate_event_alert_render_causality({
+            "message_body": "The latest step slowed. Possible action: watch it.",
+            "possible_action": "Watch the next observed interval.",
+        })
+
+
 def test_render_cannot_invent_or_escalate_urgency():
     payload = _payload()
     result = alerts._event_alert_render_result_for_validation(

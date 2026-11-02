@@ -137,7 +137,15 @@ def _container_started_at() -> datetime:
         return datetime.fromtimestamp(
             boot_seconds + start_ticks / ticks_per_second, tz=timezone.utc
         )
-    except (OSError, ValueError, IndexError, StopIteration, OverflowError, AttributeError):
+    except (
+        OSError,
+        ValueError,
+        IndexError,
+        StopIteration,
+        OverflowError,
+        AttributeError,
+        NotImplementedError,
+    ):
         # Non-Linux developer machines and restricted /proc environments.
         return _PROCESS_STARTED_AT
 

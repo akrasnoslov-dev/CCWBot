@@ -1108,36 +1108,80 @@ def _validate_unquantified_time_window_claims(
     timestamp_utc: object | None,
 ) -> None:
     """Require a supplied metric for directional claims that name a period but no percent."""
-    for clause in _text_clauses(text):
-        if _FUTURE_CONDITIONAL_RE.search(clause):
-            continue
-        if not _MOVEMENT_DIRECTION_RE.search(clause):
-            continue
-        for duration in _DURATION_RE.finditer(clause):
-            source = _market_claim_source(
-                clause, duration.start(), market_data, last_msg, timestamp_utc
-            )
-            if source is None:
+    for sentence in re.split(r"(?<!\d)[.!?]|\n", text):
+        # A list of individual snapshot durations describes evidence cadence,
+        # not a claimed market-move window.  Keep the complete sentence here:
+        # _text_clauses intentionally splits the comma-separated recital.
+        snapshot_duration_recap = (
+            len(list(_DURATION_RE.finditer(sentence))) >= 2
+            and re.search(
+                r"(?i)\b(?:snapshots?|observations?|intervals?)\b.{0,80}"
+                r"\b(?:durations?|cadence|lengths?)\b",
+                sentence,
+            ) is not None
+        )
+        for clause in _text_clauses(sentence):
+            if _FUTURE_CONDITIONAL_RE.search(clause):
                 continue
-            field = {
-                "window": "chg_window_percent",
-                "24h": "chg24h_percent",
-                "since": "chg_since_msg_percent",
-            }[source]
-            if _decimal_market_value(market_data.get(field)) is None:
-                raise EventAnalysisValidationError(
-                    f"{source} market claim is unavailable"
+            if not _MOVEMENT_DIRECTION_RE.search(clause):
+                continue
+            # Exempt only the durations belonging to a snapshot metadata list.
+            # A separate move duration in the same clause must still be checked.
+            recap_duration_starts: set[int] = set()
+            if snapshot_duration_recap:
+                recap = re.search(
+                    r"(?i)\b(?:snapshots?|observations?|intervals?)\b.{0,80}"
+                    r"\b(?:durations?|cadence|lengths?)\b",
+                    clause,
                 )
-            direction = _direction_for_claim(clause, duration.start())
-            supplied = _decimal_market_value(market_data.get(field))
-            if direction == "down" and supplied is not None and supplied >= 0:
-                raise EventAnalysisValidationError(
-                    f"{source} market claim direction does not match input"
+                if recap is not None:
+                    position = recap.end()
+                    prefix = re.match(r"(?i)\s*(?:of\b\s*)?", clause[position:])
+                    position += prefix.end() if prefix is not None else 0
+                    while (recited_duration := _DURATION_RE.match(clause, position)) is not None:
+                        recap_duration_starts.add(recited_duration.start())
+                        position = recited_duration.end()
+                        separator = re.match(
+                            r"(?i)\s*(?:,\s*(?:and\s+)?|and\s+)",
+                            clause[position:],
+                        )
+                        if separator is None:
+                            break
+                        position += separator.end()
+
+            for duration in _DURATION_RE.finditer(clause):
+                if duration.start() in recap_duration_starts:
+                    continue
+                nearby = clause[max(0, duration.start() - 32):duration.end() + 12]
+                if not (
+                    re.search(r"(?i)\b(?:over|in|during|last|past)\b", nearby)
+                    or _MOVEMENT_DIRECTION_RE.search(nearby)
+                ):
+                    continue
+                source = _market_claim_source(
+                    clause, duration.start(), market_data, last_msg, timestamp_utc
                 )
-            if direction == "up" and supplied is not None and supplied <= 0:
-                raise EventAnalysisValidationError(
-                    f"{source} market claim direction does not match input"
-                )
+                if source is None:
+                    continue
+                field = {
+                    "window": "chg_window_percent",
+                    "24h": "chg24h_percent",
+                    "since": "chg_since_msg_percent",
+                }[source]
+                if _decimal_market_value(market_data.get(field)) is None:
+                    raise EventAnalysisValidationError(
+                        f"{source} market claim is unavailable"
+                    )
+                direction = _direction_for_claim(clause, duration.start())
+                supplied = _decimal_market_value(market_data.get(field))
+                if direction == "down" and supplied is not None and supplied >= 0:
+                    raise EventAnalysisValidationError(
+                        f"{source} market claim direction does not match input"
+                    )
+                if direction == "up" and supplied is not None and supplied <= 0:
+                    raise EventAnalysisValidationError(
+                        f"{source} market claim direction does not match input"
+                    )
 
 
 def _supported_snapshot_trajectory(text: str, market_data: dict[str, Any]) -> bool:

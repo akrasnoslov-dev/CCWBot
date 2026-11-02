@@ -117,9 +117,9 @@ Verbatim metric redundancy may be rejected with a useful internal reason; valid
 interpretation referencing the same time window must survive. Numeric prices quoted
 by the model must correspond to actual supplied observations, at quoted precision.
 An observed price band may guide scenarios but never mandates two high/low conditions.
-Trading terminology (buy, sell, hold, entry, exit, exposure and risk management) is
-permitted **in Stage-2 presentation fields**, superseding older no-trading-language
-restrictions. This does not alter other product features. No guaranteed outcomes or
+Trading terminology is permitted only when it adds a concrete, evidence-grounded next
+observation. Generic entry, exposure, or risk-plan padding is not useful Stage-2 copy.
+This does not alter other product features. No guaranteed outcomes or
 invented technical support/resistance, causes or forecasts are permitted.
 
 The existing provider chain may repair invalid schema/facts within its configured

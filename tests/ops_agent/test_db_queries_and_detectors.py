@@ -734,6 +734,11 @@ def test_ops_agent_event_alert_observability_queries_are_sanitized_aggregates():
     for status in ("delivered", "suppressed", "filtered", "failed", "rate_limited"):
         assert f"{status}_count" in outcomes.sql
     assert "generic_possible_action_count" in possible_action_quality.sql
+    # Grounded next-observation guidance must not inflate generic-risk counts.
+    assert "AND action !~*" in possible_action_quality.sql
+    assert "next|upcoming" in possible_action_quality.sql
+    assert "interval|observation|pace|" in possible_action_quality.sql
+    assert "continuation|reversal|slowing|slower" in possible_action_quality.sql
     assert "should_alert = true" in possible_action_quality.sql
     assert "a.message" in possible_action_quality.sql
     assert "DISTINCT ON (a.market_event_id)" in possible_action_quality.sql
@@ -753,6 +758,15 @@ def test_event_alert_render_validation_reason_query_outputs_categories_only():
     assert "call_type = 'event_alert_render'" in query.sql
     assert "error_reason = 'schema_validation_failed'" in query.sql
     assert "unsupported_trajectory" in query.sql
+    for category in (
+        "mixed_render_sections",
+        "period_direction_mismatch",
+        "unsupported_action_claim",
+        "unsupported_event_claim",
+        "unverified_causal_claim",
+        "unsupported_observed_price",
+    ):
+        assert category in query.sql
     assert "market_claim_mismatch" in query.sql
     assert "unknown_related_news_ids" in query.sql
     assert "validation_reason" in query.sql

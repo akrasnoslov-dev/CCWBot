@@ -675,6 +675,7 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
     action_replacements = quality_count("action_replaced_count")
     repeated_situations = quality_count("repeated_situation_count")
     repeated_actions = quality_count("repeated_action_count")
+    repeated_interval_recaps = quality_count("repeated_interval_recap_count")
     missing_situations = quality_count("missing_situation_count")
     missing_actions = quality_count("missing_action_count")
     lines = [
@@ -698,6 +699,7 @@ def _decision_reasons(evidence: dict[str, Any]) -> list[str]:
         f"| Situation replaced after LLM | {situation_replacements} / {action_total} | Text differs; safety edits and whitespace may be intentional. |",
         f"| Possible action replaced after LLM | {action_replacements} / {action_total} | Text differs; safety edits and whitespace may be intentional. |",
         f"| Repeated final Situation / Action | {repeated_situations} / {repeated_actions} | Identical nonempty text across unique delivered events. |",
+        f"| Mechanical interval-recap signals | {repeated_interval_recaps} / {action_total} | Distinct events with a three-duration cadence recital; diagnostic only. |",
         f"| Missing final Situation / Action | {missing_situations} / {missing_actions} | Extraction gaps excluded from replacement and repetition counts. |",
     ]
     if quality_rows and not current_quality_schema:

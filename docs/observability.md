@@ -28,7 +28,7 @@ placeholder counts as independent Event Alert usefulness evidence.
 
 On each assembled market event, event_alert_final_text_quality logs sanitized
 symbol, situation_replaced, action_replaced, generic_action,
-missing_situation, repeats_market_numbers, and short final-text hashes.
+missing_situation, repeats_market_numbers, repeated_interval_recap, and short final-text hashes.
 It does not log user/chat identifiers, message text, raw provider payloads,
 market JSON, or credentials.
 
@@ -37,8 +37,10 @@ delivered market events using alerts.message (final Telegram text). It
 joins the original validated Render fields to count backend substitutions
 and aggregates identical final Situation/Action wording. The collector exports
 counts only, never the underlying strings. These diagnostic metrics are
-not a delivery gate or a numeric significance threshold; check the Render
-operation outcome separately to distinguish provider fallback.
+not a delivery gate or a numeric significance threshold; zero findings are not
+a human-quality review. Check the Render operation outcome separately to distinguish
+provider fallback. Stored `alerts.message` is plain-text fallback evidence, not proof
+of the native rich-message client appearance.
 
 ## RSS News Freshness / Ingestion
 

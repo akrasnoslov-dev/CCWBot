@@ -34,6 +34,8 @@ class ProviderCosts:
     refreshed_at: datetime
     total_usd: Decimal
     daily_usd: tuple[Decimal, ...] = ()
+    rolling_start: datetime | None = None
+    rolling_daily_usd: tuple[Decimal, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,15 @@ async def _fetch(
     raise CostsDataError("too many pages")
 
 
+def _slice_daily(snapshot: ProviderCosts, *, start: datetime, end: datetime) -> tuple[Decimal, ...]:
+    """Return only fully verified buckets in a sub-window of one fetched range."""
+    offset = (start - snapshot.month_start).days
+    count = (end - start).days
+    if offset < 0 or count < 0 or offset + count > len(snapshot.daily_usd):
+        raise CostsDataError("incomplete daily coverage")
+    return snapshot.daily_usd[offset:offset + count]
+
+
 class OpenAICostsMonitor:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -187,23 +198,47 @@ class OpenAICostsMonitor:
         ):
             return "NOT CONFIGURED", None
         start, end = _window(now)
-        if end <= start:
-            return "UNAVAILABLE", None  # First UTC day: no completed daily bucket.
+        # Yesterday and the rolling seven-day view are useful independently of
+        # MTD.  Fetch one contiguous, verified range so their coverage cannot
+        # be confused with the current-month-only MTD window.
+        rolling_start = end - timedelta(days=7)
+        fetch_start = min(start, rolling_start)
         async with self._lock:
             cache = self._cached
             if (
                 cache is not None and cache.project_id == project_id
                 and cache.month_start == start and cache.coverage_end == end
+                and cache.rolling_start == rolling_start
                 and timedelta(0) <= now - cache.refreshed_at < CACHE_TTL
             ):
                 return "OK", cache
             try:
                 async with asyncio.timeout(12):
-                    snapshot = await _fetch(
-                        key=key, project_id=project_id, start=start, end=end, now=now,
+                    fetched = await _fetch(
+                        key=key, project_id=project_id, start=fetch_start, end=end, now=now,
                     )
-            except (httpx.HTTPError, ValueError, UnicodeError, OverflowError, TimeoutError):
-                return "UNAVAILABLE", None
+                    rolling_daily = _slice_daily(fetched, start=rolling_start, end=end)
+                    month_daily = _slice_daily(fetched, start=start, end=end) if end > start else ()
+                    snapshot = ProviderCosts(
+                        project_id=project_id,
+                        month_start=start,
+                        coverage_end=end,
+                        refreshed_at=now,
+                        total_usd=sum(month_daily, Decimal("0")),
+                        daily_usd=month_daily,
+                        rolling_start=rolling_start,
+                        rolling_daily_usd=rolling_daily,
+                    )
+            except httpx.HTTPStatusError as error:
+                status = error.response.status_code
+                state = "AUTHORIZATION FAILED" if status in {401, 403} else "PROVIDER FAILURE"
+                return state, None
+            except (httpx.TimeoutException, httpx.NetworkError, TimeoutError):
+                return "NETWORK FAILURE", None
+            except (CostsDataError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
+                return "DATA VALIDATION FAILED", None
+            except httpx.HTTPError:
+                return "PROVIDER FAILURE", None
             # No raw error/response logging, even if the provider sends secrets.
             self._cached = snapshot
             return "OK", snapshot
@@ -268,10 +303,14 @@ def _official_trends(provider: ProviderCosts) -> tuple[Decimal, Decimal, Decimal
     """Use complete official daily buckets; avoid dilution before the first active day."""
     daily = provider.daily_usd
     expected = (provider.coverage_end - provider.month_start).days
-    if not daily or len(daily) != expected or any(not x.is_finite() for x in daily):
+    if len(daily) != expected or any(not x.is_finite() for x in daily):
         raise CostsDataError("incomplete official daily data")
-    recent = daily[-7:]
-    previous_7 = sum(recent, Decimal("0"))
+    rolling = provider.rolling_daily_usd or daily[-7:]
+    if len(rolling) != 7 or any(not x.is_finite() for x in rolling):
+        raise CostsDataError("incomplete rolling daily data")
+    previous_7 = sum(rolling, Decimal("0"))
+    if not daily:
+        return rolling[-1], previous_7, None, 0
     first_active = next((i for i, amount in enumerate(daily) if amount != 0), None)
     if first_active is None:
         return daily[-1], previous_7, None, 0
@@ -296,11 +335,19 @@ def format_costs_screen(
             "Coverage: UNAVAILABLE",
         ]
     else:
-        lines += [
-            f"Official MTD: ${provider.total_usd:.4f}",
-            f"Last refresh: {provider.refreshed_at:%Y-%m-%d %H:%M} UTC",
-            f"Completed through: {provider.coverage_end - timedelta(days=1):%Y-%m-%d} UTC",
-        ]
+        if provider.daily_usd:
+            lines.append(f"Official MTD: ${provider.total_usd:.4f}")
+        else:
+            lines.append("Official MTD: UNAVAILABLE (no completed current-month UTC days)")
+        lines.append(f"Last refresh: {provider.refreshed_at:%Y-%m-%d %H:%M} UTC")
+        if provider.daily_usd:
+            lines.append(
+                f"MTD coverage: {provider.month_start:%Y-%m-%d} through "
+                f"{provider.coverage_end - timedelta(days=1):%Y-%m-%d} UTC "
+                f"({len(provider.daily_usd)} completed day(s))"
+            )
+        else:
+            lines.append("MTD coverage: no completed current-month UTC days")
         try:
             yesterday, last_7, projection, active_days = _official_trends(provider)
         except CostsDataError:
@@ -310,20 +357,29 @@ def format_costs_screen(
                 "30-day projection: UNAVAILABLE",
             ]
         else:
-            completed_days = len(provider.daily_usd)
-            days = min(completed_days, 7)
             end_date = (provider.coverage_end - timedelta(days=1)).strftime("%b %d")
+            rolling_start = provider.rolling_start or (provider.coverage_end - timedelta(days=7))
             lines += [
                 "",
                 f"Yesterday ({end_date}): ${yesterday:.4f}",
-                f"Last {days} completed days: ${last_7:.4f}",
+                f"Last 7 completed days: ${last_7:.4f}",
+                f"Rolling coverage: {rolling_start:%Y-%m-%d} through "
+                f"{provider.coverage_end - timedelta(days=1):%Y-%m-%d} UTC (7 completed days)",
             ]
             if projection is None:
-                lines.append("30-day projection: UNAVAILABLE (no observed spending)")
+                reason = (
+                    "no completed current-month UTC days"
+                    if not provider.daily_usd else "no observed spending"
+                )
+                lines.append(f"30-day projection: UNAVAILABLE ({reason})")
             else:
                 lines.append(
                     f"30-day projection: ${projection:.4f} "
                     f"({active_days}-day observed active period)"
+                )
+                lines.append(
+                    f"Projection coverage: current-month completed days "
+                    f"({len(provider.daily_usd)} day(s))"
                 )
                 cap = monthly_budget_usd()
                 if cap is not None:

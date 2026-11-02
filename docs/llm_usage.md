@@ -75,8 +75,8 @@ Keep the existing OpenAI API key and the monthly USD $2.50 spending/admission
 safeguard. Do not bypass budget checks to improve Event Alert availability.
 No Groq or Cloudflare fallback is permitted for either Event Alert call type.
 When OpenAI is disabled, exhausted or unavailable, fail closed at the existing
-operation boundary; deterministic verified Render recovery still applies only
-under its existing invalid-output policy. These overrides do not change other
+operation boundary. Render exhaustion never creates deterministic Situation or
+Possible action prose. These overrides do not change other
 LLM tasks. The shipped router still allows legacy multi-provider configurations
 when explicitly requested; `.env.example` is guidance, not a production edit.
 
@@ -418,7 +418,7 @@ adopting a replacement model is an `.env` edit and a restart, not a code deploy.
 | Call type | Model | Completion budget | Reasoning effort |
 | --- | --- | --- | --- |
 | `event_analysis` | `GROQ_EVENT_ANALYSIS_MODEL` | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | `LLM_EVENT_ANALYSIS_REASONING_EFFORT` (default `medium`) |
-| `event_alert_render` | Groq GPT-OSS 20B -> optional OpenAI Luna -> Cloudflare Llama 3.3 70B | `LLM_EVENT_ANALYSIS_MAX_TOKENS` (300) | model-dependent |
+| `event_alert_render` | Groq GPT-OSS 20B -> optional OpenAI Luna -> Cloudflare Llama 3.3 70B | `LLM_EVENT_RENDER_MAX_TOKENS` (300); optional bounded `*_EVENT_RENDER_MAX_TOKENS` provider override | model-dependent |
 | `market_heartbeat` | `GROQ_MARKET_HEARTBEAT_MODEL` | `LLM_MARKET_HEARTBEAT_MAX_TOKENS` (350) | `LLM_MARKET_HEARTBEAT_REASONING_EFFORT` |
 | `daily_report` / `weekly_report` / `market_report` | `GROQ_REPORT_MODEL` | `LLM_REPORT_MAX_TOKENS` (800) | `LLM_REPORT_REASONING_EFFORT` |
 | `news_intelligence` | `GROQ_NEWS_INTELLIGENCE_MODEL` | `LLM_NEWS_INTELLIGENCE_MAX_TOKENS` (350) | `LLM_NEWS_INTELLIGENCE_REASONING_EFFORT` |
@@ -776,19 +776,22 @@ raw prompts, or export provider response bodies.
 The `/admin` → **OpenAI Costs** screen shows only official USD charges from
 [OpenAI Platform Costs](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs),
 `GET /v1/organization/costs`. It shows month-to-date spending, yesterday,
-the last seven completed UTC days (or fewer at the start of the month), and
+the last seven completed UTC days (including prior-month/year days), and
 an illustrative 30-day run-rate projection. Neither conservative local
 reservations nor a provider/local difference appear in the interface.
 `/admin` → **LLM diagnostics** shows paid-provider readiness and local
 guard state, without estimated dollar amounts.
 
-The monitor requests daily UTC buckets from the first of the current month
-through **00:00 UTC today (exclusive)**. It deliberately excludes today's
-partial bucket. It requests one explicit project ID and `group_by=project_id`,
+The monitor requests one verified contiguous UTC range beginning at the earlier of
+the current-month start and the rolling seven-day start, then derives MTD only from
+the current-month portion; it deliberately excludes today's
+partial bucket. On the first UTC day, MTD explicitly says that no completed
+current-month day exists while Yesterday and Last 7 may still be available.
+The screen labels MTD and rolling coverage separately. It requests one explicit project ID and `group_by=project_id`,
 verifies each result belongs to the configured project, follows pagination,
 validates USD, and sums decimal amounts without binary-floating rounding.
-Missing days, invalid data, other/unknown project attribution, auth/network
-errors and incomplete pages report **UNAVAILABLE**, never fake $0.
+Missing days/invalid data, authorization failure, network failure, and provider
+failure are shown as distinct safe states, never fake $0.
 The recent 7-day sum includes zero-spend days. For the 30-day projection,
 average over up to seven completed UTC days **since the first nonzero official
 daily charge in the current month**; include intervening idle days. If no
