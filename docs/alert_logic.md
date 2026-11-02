@@ -251,11 +251,13 @@ observation.
 - **NOW**: current Event Alert market price from the validated event input
   (stored in the event numeric context) at the actual price-check timestamp.
   It is never replaced by the newest persisted snapshot.
-- **PREVIOUS ALERT**: latest *different* recorded market-level Event Alert for
+- **PREVIOUS EVENT ALERT** (display label; internal marker key: `PREVIOUS ALERT`): latest *different* recorded market-level Event Alert for
   the same coin in `market_events`, using its own `detected_at` and `price`.
   It is not the previous per-recipient delivered notification. Historical
   events outside the visible chart have a time/status legend entry, but no
-  boundary marker. Missing/unreliable prices produce no price marker.
+  boundary marker. The legend says `outside last 24h` for older events, or
+  `outside displayed history` when the available chart spans less than 24 hours.
+  Missing/unreliable prices produce no price marker.
 - **−3H**: closest actually recorded snapshot in the visible continuous series
   to the exact current-observation minus three hours, only within **±20 min**.
   This reference is independent of the LLM's actual analysed-window length.
