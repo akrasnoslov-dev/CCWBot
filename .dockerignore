@@ -1,6 +1,7 @@
 .env
 .env.local
 .env.production
+.env.*
 .git
 .venv
 .cache/
@@ -9,12 +10,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 pytest-cache-files-*/
-logs/*.log
-logs/*.log.*
-reports/ops-agent/bundles/
-reports/ops-agent/reports/
-reports/ops-agent/state/
-pytest-cache-files-*/
+logs/
+# Host-only operator secrets must never be copied into a bot image.
+.ops-agent.env
+.ops-agent.env.*
+# Git-tracked research and generated knowledge graphs are not runtime inputs.
+reports/
+graphify-out/
 *.dump
 *.db
 *.sqlite
