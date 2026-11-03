@@ -1,0 +1,72 @@
+{
+  "archive": "CCW-47 final prompt comparison",
+  "archive_added": "2026-11-03",
+  "content_type": "historical offline model evaluation evidence",
+  "original_file_integrity": "All nine original research files retained byte-for-byte",
+  "source_files": [
+    {
+      "path": "CCW12_REFINED_COMPARISON_RAW.md",
+      "sha256": "b82ad555e8bd4ee73c7b3e28984b4b7474978d926298d32904272f9da208d30d",
+      "size_bytes": 4182
+    },
+    {
+      "path": "CCW47_CASE_DIFFERENCES.csv",
+      "sha256": "22134438004b184c293186ff76c3671e899842a1080c4c7c76a4ce80d5e9312b",
+      "size_bytes": 15504
+    },
+    {
+      "path": "CCW47_FINAL_COMPARISON.md",
+      "sha256": "ed6de97ba7523ba1e7b907359d2fa87231acb0086d1ef2d88f08d02be759a94a",
+      "size_bytes": 20138
+    },
+    {
+      "path": "CCW47_METRICS.json",
+      "sha256": "82656e5e66bcb51a0945d04585a1a9b546dcc41a8e3ac5361c45c708de35ead2",
+      "size_bytes": 11073
+    },
+    {
+      "path": "CCW47_OWNER_ERRORS.csv",
+      "sha256": "72621198b22bda89dc28c68f1fe9c24ee1e74715f4b55f3ea3bda8d2484fd170",
+      "size_bytes": 21362
+    },
+    {
+      "path": "CCW47_RUN_MANIFEST.json",
+      "sha256": "fa493dafa716d2f0969b8688ef438fef4c50f25b9bd31d55962bf32d7b56b806",
+      "size_bytes": 1751
+    },
+    {
+      "path": "ccw47_analyze.py",
+      "sha256": "91288a4815afe73f226c7d3d763651431d1e825f7bfbcb57e04b505cc670590b",
+      "size_bytes": 31735
+    },
+    {
+      "path": "ccw47_runner.py",
+      "sha256": "a15254c17c2f1126ff13744318c8819ea8ea14b9532d5a4544473df6ad87c43a",
+      "size_bytes": 24093
+    },
+    {
+      "path": "new_refined_luna_ledger_PRIVATE.json",
+      "sha256": "7b5ecdf8f38c2fc475136e5189ac0e41d31fe97601373aba3b84bf04e149f66a",
+      "size_bytes": 109108
+    }
+  ],
+  "excluded_regenerable_files": [
+    "__pycache__/ccw47_analyze.cpython-314.pyc",
+    "__pycache__/ccw47_runner.cpython-314.pyc"
+  ],
+  "screening": {
+    "status": "passed",
+    "scope": "All nine source files, with structural validation of 200-case decision ledger",
+    "methods": [
+      "Scanned for common credential/token patterns, PEM private keys, bearer tokens, emails, IP addresses and numeric Telegram ID assignments",
+      "Validated ledger row keys and decision keys against explicit allowlists",
+      "Validated every event identifier is an ev_ pseudonym and input_sha256 is a SHA-256 hash",
+      "Verified 200 attempted, 186 valid and 14 schema-invalid outcomes and ledger/runner hashes against original run manifest"
+    ],
+    "disclosure": "The legacy _PRIVATE.json filename is preserved because it names the historical run output. This file contains pseudonymous event-level model decisions and usage metadata; not API keys, user records, or raw market prompts."
+  },
+  "historical_notes": [
+    "CCW47_RUN_MANIFEST.json describes the experiment at its original run time, when the raw ledger was local-only; it is preserved unmodified for provenance.",
+    "The archived Python scripts reference historical research paths; do not mistake them for production bot code or invoke the paid replay unintentionally."
+  ]
+}

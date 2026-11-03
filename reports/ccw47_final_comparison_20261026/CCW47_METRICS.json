@@ -1,0 +1,406 @@
+{
+  "status": "completed_with_schema_failures",
+  "recommendation": "Keep original Refined v2",
+  "recommendation_reason": "Refined v2 Final improved conditional recall but materially increased false positives, reduced paired accuracy/specificity, and produced 14/200 schema-invalid outputs. The full 200-case quality comparison is therefore not valid, while the original retained complete reliability and better low-noise behavior.",
+  "dataset": {
+    "canonical_sha256": "ad06de5fac921c8d0db46f9ab086bed470733df62670bcda5c96d0479c837f7d",
+    "raw_file_sha256": "377fc476beb3c189120bc74998f691a13f895b914eb68e141a7cc4e6c91ade34",
+    "cases": 200,
+    "symbols": {
+      "BTC": 50,
+      "SOL": 50,
+      "GRAM": 50,
+      "ETH": 50
+    }
+  },
+  "coverage": {
+    "old_attempted": 200,
+    "old_valid": 200,
+    "new_attempted": 200,
+    "new_valid": 186,
+    "new_failures": 14
+  },
+  "decisions": {
+    "old_alerts_all_200": 42,
+    "old_no_alerts_all_200": 158,
+    "new_alerts_valid": 59,
+    "new_no_alerts_valid": 127,
+    "new_alert_rate_among_valid": 0.3172043010752688,
+    "new_known_alert_rate_all_attempts": 0.295
+  },
+  "per_coin": {
+    "BTC": {
+      "cases": 50,
+      "old_alerts": 7,
+      "old_alert_rate": 0.14,
+      "new_valid": 45,
+      "new_failures": 5,
+      "new_alerts": 14,
+      "new_alert_rate_among_valid": 0.3111111111111111,
+      "old_owner_on_new_valid": {
+        "n": 11,
+        "TP": 0,
+        "FP": 3,
+        "FN": 0,
+        "TN": 8,
+        "precision": 0.0,
+        "recall": null,
+        "f1": 0.0,
+        "specificity": 0.7272727272727273,
+        "accuracy": 0.7272727272727273,
+        "false_positive_rate": 0.2727272727272727,
+        "false_negative_rate": null
+      },
+      "new_owner": {
+        "n": 11,
+        "TP": 0,
+        "FP": 7,
+        "FN": 0,
+        "TN": 4,
+        "precision": 0.0,
+        "recall": null,
+        "f1": 0.0,
+        "specificity": 0.36363636363636365,
+        "accuracy": 0.36363636363636365,
+        "false_positive_rate": 0.6363636363636364,
+        "false_negative_rate": null
+      }
+    },
+    "ETH": {
+      "cases": 50,
+      "old_alerts": 9,
+      "old_alert_rate": 0.18,
+      "new_valid": 42,
+      "new_failures": 8,
+      "new_alerts": 9,
+      "new_alert_rate_among_valid": 0.21428571428571427,
+      "old_owner_on_new_valid": {
+        "n": 15,
+        "TP": 2,
+        "FP": 1,
+        "FN": 4,
+        "TN": 8,
+        "precision": 0.6666666666666666,
+        "recall": 0.3333333333333333,
+        "f1": 0.4444444444444444,
+        "specificity": 0.8888888888888888,
+        "accuracy": 0.6666666666666666,
+        "false_positive_rate": 0.1111111111111111,
+        "false_negative_rate": 0.6666666666666666
+      },
+      "new_owner": {
+        "n": 15,
+        "TP": 2,
+        "FP": 3,
+        "FN": 4,
+        "TN": 6,
+        "precision": 0.4,
+        "recall": 0.3333333333333333,
+        "f1": 0.36363636363636365,
+        "specificity": 0.6666666666666666,
+        "accuracy": 0.5333333333333333,
+        "false_positive_rate": 0.3333333333333333,
+        "false_negative_rate": 0.6666666666666666
+      }
+    },
+    "GRAM": {
+      "cases": 50,
+      "old_alerts": 10,
+      "old_alert_rate": 0.2,
+      "new_valid": 49,
+      "new_failures": 1,
+      "new_alerts": 15,
+      "new_alert_rate_among_valid": 0.30612244897959184,
+      "old_owner_on_new_valid": {
+        "n": 16,
+        "TP": 3,
+        "FP": 4,
+        "FN": 4,
+        "TN": 5,
+        "precision": 0.42857142857142855,
+        "recall": 0.42857142857142855,
+        "f1": 0.42857142857142855,
+        "specificity": 0.5555555555555556,
+        "accuracy": 0.5,
+        "false_positive_rate": 0.4444444444444444,
+        "false_negative_rate": 0.5714285714285714
+      },
+      "new_owner": {
+        "n": 16,
+        "TP": 4,
+        "FP": 4,
+        "FN": 3,
+        "TN": 5,
+        "precision": 0.5,
+        "recall": 0.5714285714285714,
+        "f1": 0.5333333333333333,
+        "specificity": 0.5555555555555556,
+        "accuracy": 0.5625,
+        "false_positive_rate": 0.4444444444444444,
+        "false_negative_rate": 0.42857142857142855
+      }
+    },
+    "SOL": {
+      "cases": 50,
+      "old_alerts": 16,
+      "old_alert_rate": 0.32,
+      "new_valid": 50,
+      "new_failures": 0,
+      "new_alerts": 21,
+      "new_alert_rate_among_valid": 0.42,
+      "old_owner_on_new_valid": {
+        "n": 14,
+        "TP": 3,
+        "FP": 0,
+        "FN": 7,
+        "TN": 4,
+        "precision": 1.0,
+        "recall": 0.3,
+        "f1": 0.46153846153846156,
+        "specificity": 1.0,
+        "accuracy": 0.5,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.7
+      },
+      "new_owner": {
+        "n": 14,
+        "TP": 6,
+        "FP": 1,
+        "FN": 4,
+        "TN": 3,
+        "precision": 0.8571428571428571,
+        "recall": 0.6,
+        "f1": 0.7058823529411765,
+        "specificity": 0.75,
+        "accuracy": 0.6428571428571429,
+        "false_positive_rate": 0.25,
+        "false_negative_rate": 0.4
+      }
+    }
+  },
+  "owner_quality": {
+    "old_full_58": {
+      "n": 58,
+      "TP": 9,
+      "FP": 8,
+      "FN": 15,
+      "TN": 26,
+      "precision": 0.5294117647058824,
+      "recall": 0.375,
+      "f1": 0.43902439024390244,
+      "specificity": 0.7647058823529411,
+      "accuracy": 0.603448275862069,
+      "false_positive_rate": 0.23529411764705882,
+      "false_negative_rate": 0.625
+    },
+    "old_on_new_valid_56": {
+      "n": 56,
+      "TP": 8,
+      "FP": 8,
+      "FN": 15,
+      "TN": 25,
+      "precision": 0.5,
+      "recall": 0.34782608695652173,
+      "f1": 0.41025641025641024,
+      "specificity": 0.7575757575757576,
+      "accuracy": 0.5892857142857143,
+      "false_positive_rate": 0.24242424242424243,
+      "false_negative_rate": 0.6521739130434783
+    },
+    "new_valid_56": {
+      "n": 56,
+      "TP": 12,
+      "FP": 15,
+      "FN": 11,
+      "TN": 18,
+      "precision": 0.4444444444444444,
+      "recall": 0.5217391304347826,
+      "f1": 0.48,
+      "specificity": 0.5454545454545454,
+      "accuracy": 0.5357142857142857,
+      "false_positive_rate": 0.45454545454545453,
+      "false_negative_rate": 0.4782608695652174
+    },
+    "new_decisive_failures": 2
+  },
+  "differences": {
+    "paired_valid": 186,
+    "agreement": 160,
+    "agreement_rate": 0.8602150537634409,
+    "old_only_alerts": [
+      "ev_251c5b08bdea3dc3",
+      "ev_56ce5a3b11bfb1dc",
+      "ev_eccdf281c0b85c80",
+      "ev_ed2b9dc1c9a9a2af"
+    ],
+    "new_only_alerts": [
+      "ev_112d988b15ae224d",
+      "ev_14758c4bcbd58e1b",
+      "ev_3e3ce48a85ad2810",
+      "ev_48aac7876a7da763",
+      "ev_59528ff24933263f",
+      "ev_5c6f2ef3ed19099c",
+      "ev_673845ec86094a1d",
+      "ev_686065337837bd2d",
+      "ev_747d289d8339476d",
+      "ev_7d0b437fc7918a36",
+      "ev_7d71da21a73bd3fa",
+      "ev_8300d36139fb118b",
+      "ev_892ea2a1ddc8d54b",
+      "ev_8f7f1e3fc7f9abb5",
+      "ev_8fc0a71d48f52691",
+      "ev_9294785f8cecc14b",
+      "ev_a4e1bd93914f6249",
+      "ev_c4f80ddef5b3fe97",
+      "ev_c8704629f5224c76",
+      "ev_df5a044c6b9374c9",
+      "ev_e07c676303ecd260",
+      "ev_f2228512fba9b5c6"
+    ],
+    "invalid_case_ids": [
+      "ev_08a7bd57c3485b30",
+      "ev_1690a9f1b39b5cbf",
+      "ev_1c86ae89efac22ec",
+      "ev_21e992f945fe8416",
+      "ev_3cb5a998c333dae4",
+      "ev_9538d3865f0bd77c",
+      "ev_9bb569c5273af8d7",
+      "ev_a472a1f3d350585d",
+      "ev_b4d9598c0d9ebba7",
+      "ev_c13d47d62dddfc0e",
+      "ev_d12824bead1440e0",
+      "ev_dd2d6f64d087d151",
+      "ev_df21210a26fe1d35",
+      "ev_f2e3ab01706221e2"
+    ]
+  },
+  "distributions": {
+    "old": {
+      "materiality": {
+        "material": 54,
+        "routine": 146,
+        "unclear": 0
+      },
+      "novelty": {
+        "new": 42,
+        "continuation": 12,
+        "repeated": 0,
+        "unclear": 146
+      },
+      "reason_code": {
+        "unusual_move": 18,
+        "fast_move": 15,
+        "reversal": 9,
+        "trend_acceleration": 0,
+        "market_news_alignment": 0,
+        "routine_move": 151,
+        "news_only": 0,
+        "unclear": 7
+      },
+      "confidence": {
+        "low": 0,
+        "medium": 115,
+        "high": 85
+      }
+    },
+    "new_valid": {
+      "materiality": {
+        "material": 63,
+        "routine": 123,
+        "unclear": 0
+      },
+      "novelty": {
+        "new": 59,
+        "continuation": 0,
+        "repeated": 1,
+        "unclear": 126
+      },
+      "reason_code": {
+        "unusual_move": 26,
+        "fast_move": 6,
+        "reversal": 23,
+        "trend_acceleration": 4,
+        "market_news_alignment": 0,
+        "routine_move": 124,
+        "news_only": 0,
+        "unclear": 3
+      },
+      "confidence": {
+        "low": 0,
+        "medium": 127,
+        "high": 59
+      }
+    }
+  },
+  "usage": {
+    "old": {
+      "input_total": 286864,
+      "input_average": 1434.32,
+      "input_median": 1434.0,
+      "completion_total": 67147,
+      "completion_average": 335.735,
+      "completion_median": 247.0,
+      "total_tokens": 354011,
+      "total_average": 1770.055,
+      "cost_total_usd": 0.0622599,
+      "cost_average_usd": 0.0003112995,
+      "latency_mean_ms": 5361.605,
+      "latency_median_ms": 4603.5,
+      "latency_p95_ms": 10694
+    },
+    "new": {
+      "input_total": 142664,
+      "input_average": 713.32,
+      "input_median": 713.0,
+      "completion_total": 79192,
+      "completion_average": 395.96,
+      "completion_median": 336.5,
+      "total_tokens": 221856,
+      "total_average": 1109.28,
+      "cost_total_usd": 0.0538624,
+      "cost_average_usd": 0.000269312,
+      "latency_mean_ms": 5349.825,
+      "latency_median_ms": 4680.0,
+      "latency_p95_ms": 10233
+    },
+    "cost_difference_usd": -0.008397500000000002,
+    "cost_ratio": 0.8651218521070544
+  },
+  "reliability": {
+    "old": {
+      "attempted": 200,
+      "valid": 200,
+      "http_failures": 0,
+      "invalid_json": 0,
+      "schema_failures": 0,
+      "transport_failures": 0
+    },
+    "new": {
+      "attempted": 200,
+      "valid": 186,
+      "http_failures": 0,
+      "invalid_json": 0,
+      "schema_failures": 14,
+      "transport_failures": 0
+    }
+  },
+  "baseline_verification": {
+    "rows": 200,
+    "checks_per_category": {
+      "case_id": 200,
+      "input_sha256": 200,
+      "prompt_sha256": 200,
+      "request_sha256": 200,
+      "symbol": 200,
+      "valid": 200
+    },
+    "provider": "openai",
+    "model": "gpt-6-luna",
+    "endpoint": "/v1/chat/completions",
+    "system_message": "You are a careful crypto monitoring assistant.",
+    "response_format": {
+      "type": "json_object"
+    },
+    "max_completion_tokens": 4096
+  }
+}
