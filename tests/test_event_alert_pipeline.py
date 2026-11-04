@@ -632,6 +632,7 @@ def test_event_alert_render_materialization_keeps_identity_and_facts_backend_own
     (
         ("analysed-window trajectory is unsupported", "unsupported_trajectory"),
         ("window market claim does not match input", "market_claim_mismatch"),
+        ("unsupported period comparison", "period_direction_mismatch"),
         ("related_news_ids contains unknown news ids", "unknown_related_news_ids"),
         ("something new and unexpected", "validation_failed"),
     ),

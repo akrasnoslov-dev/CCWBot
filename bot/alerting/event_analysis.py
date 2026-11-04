@@ -102,7 +102,8 @@ _UPWARD_CLAIM_RE = re.compile(
 )
 _CLAUSE_BOUNDARY_RE = re.compile(r"(?<!\d)[.!?;,]|\n")
 _FUTURE_CONDITIONAL_RE = re.compile(
-    r"\b(?:if|when|unless)\b.*\b(?:next|upcoming|future)\b", re.IGNORECASE
+    r"(?:^\s*(?:if|when|unless|should)\b|"
+    r"\b(?:if|when|unless)\b.*\b(?:next|upcoming|future)\b)", re.IGNORECASE
 )
 _NUMBER_WORDS = {
     "one": 1,
@@ -910,17 +911,15 @@ def _validate_positive_market_claims(
     This deliberately validates attribution and availability only.  It has no materiality
     threshold and does not decide whether a grounded movement merits an Event Alert.
     """
-    text = f"{title}\n{message_body}"
+    text = _normalize_market_period_aliases(f"{title}\n{message_body}")
+    possible_action = _normalize_market_period_aliases(possible_action)
     _validate_snapshot_trajectory_claims(text, market_data)
     _validate_unquantified_time_window_claims(
         text, market_data=market_data, last_msg=last_msg, timestamp_utc=timestamp_utc
     )
 
-    values = {
-        "window": _decimal_market_value(market_data.get("chg_window_percent")),
-        "24h": _decimal_market_value(market_data.get("chg24h_percent")),
-        "since": _decimal_market_value(market_data.get("chg_since_msg_percent")),
-    }
+    values = {source: _market_claim_value(source, market_data) for source in
+              ("window", "24h", "since", "30m", "1h")}
     for match in _PERCENT_CLAIM_RE.finditer(text):
         context, claim_index = _claim_clause(text, match.start(), match.end())
         source = _market_claim_source(
@@ -954,6 +953,35 @@ def _validate_positive_market_claims(
         last_msg=last_msg,
         timestamp_utc=timestamp_utc,
     )
+
+
+_MARKET_CLAIM_FIELDS = {
+    "window": "chg_window_percent", "24h": "chg24h_percent",
+    "since": "chg_since_msg_percent", "30m": "chg30m_percent", "1h": "chg1h_percent",
+}
+
+
+def _normalize_market_period_aliases(text: str) -> str:
+    """Canonicalize unambiguous time labels for validation only, preserving displayed prose."""
+    text = re.sub(r"(?i)\bhalf[- ]hourly\b", "30 minutes", text)
+    text = re.sub(r"(?i)\bhourly\b", "1 hour", text)
+    text = re.sub(r"(?i)\bhalf(?:[- ]an?)?[- ]hour\b", "30 minutes", text)
+    text = re.sub(
+        r"(?i)\b(?:one\s*[- ]?\s*hours?|60\s*[- ]?\s*(?:minutes?|mins?|m))\b", "1 hour", text
+    )
+    text = re.sub(r"(?i)\b0\.5\s*[- ]?\s*(?:hours?|hrs?|h)\b", "30 minutes", text)
+    text = re.sub(r"(?i)\b(last|past|previous|prior)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
+    return re.sub(r"(?i)\b(over|in|during)\s+an?\s+hour\b", r"\1 1 hour", text)
+
+
+def _market_claim_value(source: str, market: dict[str, Any]) -> Decimal | None:
+    value = _decimal_market_value(market.get(_MARKET_CLAIM_FIELDS[source]))
+    minutes = {"30m": 30, "1h": 60}.get(source)
+    if value is None and minutes is not None and _integer_value(
+        market.get("analysed_window_minutes")
+    ) == minutes:
+        return _decimal_market_value(market.get("chg_window_percent"))
+    return value
 
 
 def _market_claim_source(
@@ -1016,6 +1044,9 @@ def _market_claim_source(
     duration_minutes = _duration_minutes(source_match)
     if duration_minutes == 24 * 60:
         return "24h"
+    short_source = {30: "30m", 60: "1h"}.get(duration_minutes)
+    if short_source is not None and _market_claim_value(short_source, market_data) is not None:
+        return short_source
     analysed_window = _integer_value(market_data.get("analysed_window_minutes"))
     if analysed_window is None or duration_minutes != analysed_window:
         raise EventAnalysisValidationError(
@@ -1066,6 +1097,8 @@ def _validate_action_market_claims(
         for clause in _text_clauses(possible_action)
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
+    if not _market_comparisons_supported(possible_action, market_data):
+        raise EventAnalysisValidationError("unsupported period comparison")
     _validate_snapshot_trajectory_claims(historical_action, market_data)
     _validate_unquantified_time_window_claims(
         possible_action,
@@ -1084,15 +1117,7 @@ def _validate_action_market_claims(
         )
         if source is None:
             continue
-        supplied = _decimal_market_value(
-            market_data.get(
-                {
-                    "window": "chg_window_percent",
-                    "24h": "chg24h_percent",
-                    "since": "chg_since_msg_percent",
-                }[source]
-            )
-        )
+        supplied = _market_claim_value(source, market_data)
         claimed = _claimed_percent(match.group("value"), context, claim_index)
         if supplied is None or not _percent_values_match(claimed, supplied):
             raise EventAnalysisValidationError(
@@ -1123,6 +1148,11 @@ def _validate_unquantified_time_window_claims(
         for clause in _text_clauses(sentence):
             if _FUTURE_CONDITIONAL_RE.search(clause):
                 continue
+            if (len(list(re.finditer(_COMPARISON_PERIOD, clause, re.IGNORECASE))) >= 2
+                    and _COMPARISON_CUE_RE.search(clause)):
+                clause = " ".join(_historical_market_clauses(clause))
+                if not clause.strip():
+                    continue
             if not _MOVEMENT_DIRECTION_RE.search(clause):
                 continue
             # Exempt only the durations belonging to a snapshot metadata list.
@@ -1163,17 +1193,12 @@ def _validate_unquantified_time_window_claims(
                 )
                 if source is None:
                     continue
-                field = {
-                    "window": "chg_window_percent",
-                    "24h": "chg24h_percent",
-                    "since": "chg_since_msg_percent",
-                }[source]
-                if _decimal_market_value(market_data.get(field)) is None:
+                supplied = _market_claim_value(source, market_data)
+                if supplied is None:
                     raise EventAnalysisValidationError(
                         f"{source} market claim is unavailable"
                     )
                 direction = _direction_for_claim(clause, duration.start())
-                supplied = _decimal_market_value(market_data.get(field))
                 if direction == "down" and supplied is not None and supplied >= 0:
                     raise EventAnalysisValidationError(
                         f"{source} market claim direction does not match input"
@@ -1226,15 +1251,63 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
             raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
 
 
+_COMPARISON_PERIOD = (
+    r"(?:short[- ]term|current|latest|analysed(?:[- ](?:window|move))?|"
+    r"snapshots?|window|this\s+move|(?:broader\s+)?"
+    r"(?:24\s*[- ]?\s*(?:hours?|hrs?|h)|1\s*[- ]?\s*(?:hours?|hrs?|h)|"
+    r"30\s*[- ]?\s*(?:minutes?|mins?|min|m)))"
+)
+_STRENGTH_COMPARISON_RE = re.compile(
+    rf"(?i)\b(?P<left_period>{_COMPARISON_PERIOD})\s+"
+    r"(?:(?:price|market)\s+)?(?P<left_move>rise|decline|fall|gain)\s+"
+    r"(?P<relation>(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
+    r"significantly|markedly|noticeably)\s+)*(?:weaker|stronger|larger|greater|"
+    r"smaller|less|bigger|more)\s+than|outpaced|exceeded|surpassed)\s+"
+    rf"(?:the\s+)?(?P<right_period>{_COMPARISON_PERIOD})\s+"
+    r"(?:(?:price|market)\s+)?(?P<right_move>rise|decline|fall|gain)\b"
+)
+_COMPARISON_CUE_RE = re.compile(
+    r"(?i)\b(?:than|weaker|stronger|larger|greater|smaller|bigger|more|less|"
+    r"twice|double|out(?:pac|perform|strip|weigh|grow|ran|run)\w*|"
+    r"exceed\w*|surpass\w*|lag\w*|dwarf\w*|eclips\w*|dominat\w*|"
+    r"compared\s+(?:to|with)|as\s+\w+(?:\s+\w+){0,3}\s+as)\b"
+)
+_PERIOD_OPERAND_RE = re.compile(
+    rf"(?i)\b{_COMPARISON_PERIOD}\s+(?:(?:price|market)\s+)?"
+    r"(?:rise|decline|fall|gain|move|trend)\b"
+)
+_NONCOMPARATIVE_LINK_RE = re.compile(
+    r"(?i)^\s+(?:(?:paused|stalled|stabilized|consolidated)\s+)?"
+    r"(?:and|while|whereas|but|alongside|contrasts?\s+with|"
+    r"diverges?\s+from|aligns?\s+with)\s+(?:the\s+)?$"
+)
+_INDEPENDENT_PERIOD_FACT_RE = re.compile(
+    rf"(?i)^\s*(?:and\s+)?(?:the\s+)?{_COMPARISON_PERIOD}\s+"
+    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain|move|trend)\s+"
+    r"(?:(?:is|was|remains|remained)\s+(?:also\s+)?"
+    r"(?:positive|negative|up|down)|paused|stalled|stabilized|consolidated|"
+    r"rose|fell|gained|increased|decreased|advanced|declined|continued)\s*$"
+)
+
+
 def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     claims: list[tuple[str, int]] = []
     labels = re.compile(
         r"(?i)\b(?P<day>24[- ]hours?|24h|daily|broader)|"
+        r"\b(?P<hour>1\s*[- ]?\s*(?:hours?|hrs?|h))\b|"
+        r"\b(?P<half>30\s*[- ]?\s*(?:minutes?|mins?|m))\b|"
         r"\b(?P<window>short[- ]term|current|latest|"
         r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b"
     )
     scoped_text = re.sub(
         r"(?i)\b(?:while|whereas|but|despite|although|contrasts?\s+with|against)\b", ";", text
+    )
+    # Comparative strength describes magnitude, not an additional price direction.
+    scoped_text = _STRENGTH_COMPARISON_RE.sub(
+        lambda match: match.group().replace(
+            match.group("relation"), " " * len(match.group("relation"))
+        ),
+        scoped_text,
     )
     for clause in _text_clauses(scoped_text):
         scopes = list(labels.finditer(clause))
@@ -1275,16 +1348,122 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
                     abs(m.end() - match.start()), abs(match.end() - m.start())
                 ),
             ) if scopes else None
-            claims.append(("24h" if scope and scope.lastgroup == "day" else "window", direction))
+            source = {"day": "24h", "hour": "1h", "half": "30m"}.get(
+                scope.lastgroup if scope else None, "window"
+            )
+            claims.append((source, direction))
     return claims
+
+
+def _historical_market_clauses(text: str) -> list[str]:
+    historical_clauses: list[str] = []
+    for clause in _text_clauses(text):
+        for part in re.split(
+            r"(?i)\b(?:while(?!\s+(?:\w+ly\s+)?(?:\w+(?:ed|ing)|set|put|seen)\b)|"
+            r"whereas|but|although|despite)\b", clause
+        ):
+            future = re.search(
+                r"(?i)\b(?:if|when(?!\s+(?:\w+ly\s+)?"
+                r"(?:\w+(?:ed|ing)|set|put|seen)\b)|unless|should)\b", part
+            )
+            if future and not re.search(
+                r"(?i)\b(?:next|upcoming|future)\b", part[future.end():]
+            ) and re.search(
+                r"(?i)\b(?:was|were|had|fell|rose|outpaced|exceeded|surpassed)\b",
+                part[future.end():],
+            ):
+                future = None
+            historical_clauses.append(part[:future.start()] if future else part)
+    return historical_clauses
+
+
+def _market_comparisons_supported(text: str, market_data: dict[str, Any]) -> bool:
+    """Validate both operands of each recognized historical strength comparison."""
+    text = _normalize_market_period_aliases(text)
+    clauses = []
+    for sentence in re.split(r"(?<!\d)[.!?;]|\n", text):
+        segments: list[list[list[str]]] = [[]]
+        for fragment in _text_clauses(sentence):
+            if segments[-1] and re.match(
+                r"(?i)^\s*(?:while|whereas|but|although|despite)\b", fragment
+            ):
+                segments.append([])
+            segments[-1].append(_historical_market_clauses(fragment))
+        for groups in segments:
+            parts = [part for group in groups for part in group]
+            clauses.extend(parts)
+            # A comparison can put its reference and its claim on opposite
+            # sides of a comma; inspect the combined fragments as well.
+            period_parts = [part for part in parts if _PERIOD_OPERAND_RE.search(part)]
+            if len(groups) > 1 and len(period_parts) > 1 and not all(
+                _INDEPENDENT_PERIOD_FACT_RE.fullmatch(part)
+                or (len(list(_PERIOD_OPERAND_RE.finditer(part))) == 2
+                    and _STRENGTH_COMPARISON_RE.search(part))
+                for part in period_parts
+            ):
+                clauses.append(" ".join(parts))
+    for clause in clauses:
+        comparisons = list(_STRENGTH_COMPARISON_RE.finditer(clause))
+        operands = list(_PERIOD_OPERAND_RE.finditer(clause))
+        for first, second in zip(operands, operands[1:], strict=False):
+            covered = any(
+                match.start() <= first.start() and match.end() >= second.end()
+                for match in comparisons
+            )
+            if not covered and not _NONCOMPARATIVE_LINK_RE.fullmatch(
+                clause[first.end():second.start()]
+            ):
+                return False
+        if len(list(re.finditer(_COMPARISON_PERIOD, clause, re.IGNORECASE))) >= 2:
+            for cue in _COMPARISON_CUE_RE.finditer(clause):
+                if not any(match.start() <= cue.start() < match.end() for match in comparisons):
+                    return False
+        for comparison in comparisons:
+            if not _supported_period_comparison(comparison, market_data):
+                return False
+    return True
+
+
+def _supported_period_comparison(comparison: re.Match[str], market_data: dict[str, Any]) -> bool:
+    def comparison_source(period: str) -> str | None:
+        if _DURATION_RE.search(period):
+            try:
+                return _market_claim_source(period, 0, market_data, None, None)
+            except EventAnalysisValidationError:
+                return None
+        return "window"
+
+    left_source = comparison_source(comparison.group("left_period"))
+    right_source = comparison_source(comparison.group("right_period"))
+    if left_source is None or right_source is None:
+        return False
+    period_minutes = {"30m": 30, "1h": 60, "24h": 1440,
+                      "window": _integer_value(market_data.get("analysed_window_minutes"))}
+    left_minutes = period_minutes[left_source]
+    right_minutes = period_minutes[right_source]
+    left = _market_claim_value(left_source, market_data)
+    right = _market_claim_value(right_source, market_data)
+    if (left_source == right_source
+            or (left_minutes is not None and left_minutes == right_minutes)
+            or left is None or right is None
+            or left == 0 or right == 0 or (left > 0) != (right > 0)):
+        return False
+    for operand, value in (("left_move", left), ("right_move", right)):
+        downward = comparison.group(operand).lower() in {"decline", "fall"}
+        if downward != (value < 0):
+            return False
+    weaker = bool(re.search(r"(?i)\b(?:weaker|smaller|less)\b", comparison.group("relation")))
+    return abs(left) < abs(right) if weaker else abs(left) > abs(right)
 
 
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
     """Check explicit period directions and the direction implied by relationships."""
-    for source, direction in _scoped_direction_claims(text):
-        supplied = _decimal_market_value(market_data.get(
-            "chg24h_percent" if source == "24h" else "chg_window_percent"
-        ))
+    text = _normalize_market_period_aliases(text)
+    if not _market_comparisons_supported(text, market_data):
+        return False
+    historical_text = ". ".join(_historical_market_clauses(text))
+    for source, direction in _scoped_direction_claims(historical_text):
+        supplied = _market_claim_value(source, market_data)
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
             return False
 
@@ -1294,7 +1473,7 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     day = _decimal_market_value(market_data.get("chg24h_percent"))
     clauses = re.split(
         r"(?i)(?<!\d)[.!?;]|\n|\b(?:while|whereas|but|although|despite|even\s+though)\b",
-        text,
+        historical_text,
     )
     relationship = re.compile(
         r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"

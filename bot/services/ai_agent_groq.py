@@ -707,7 +707,12 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Do not repeat verbatim the analysed-window move and price already shown "
         "in the alert headline and metric block. Do not infer a cause from news.",
         "Possible action: name the next observed market behaviour that would distinguish "
-        "continuation, slowing or reversal. Do not add generic entry, exposure, or "
+        "continuation, slowing or reversal; bind the observation to a supplied relationship "
+        "such as the window versus 24-hour direction, a verified change in pace, or an "
+        "observed price band when available. If those are unavailable, use a concrete "
+        "direction or reversal condition without inventing a reference. Avoid generic "
+        "descriptions of pace that do not identify what matters in this market. "
+        "Do not add generic entry, exposure, or "
         "risk-plan padding. Trading-related terminology is permitted only when it adds "
         "a concrete evidence-grounded observation; do not "
         "manufacture trades, guarantees, forecasts, levels, outcomes or certainty. "
