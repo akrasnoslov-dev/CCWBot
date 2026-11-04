@@ -385,3 +385,18 @@ def test_comparative_strength_does_not_reverse_explicit_direction(text, window, 
     assert market_direction_claims_supported(
         text, {"chg_window_percent": window, "chg24h_percent": day}
     ) is expected
+
+
+@pytest.mark.parametrize("modifier", ["slightly", "much", "considerably", "far"])
+def test_qualified_comparison_checks_direction_and_relative_magnitude(modifier):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    text = f"The short-term rise is {modifier} weaker than the broader 24-hour rise."
+    assert market_direction_claims_supported(text, {"chg_window_percent": .5, "chg24h_percent": 2})
+    assert not market_direction_claims_supported(
+        text, {"chg_window_percent": 3, "chg24h_percent": 2}
+    )
+    assert not market_direction_claims_supported(
+        text, {"chg_window_percent": -.5, "chg24h_percent": 2}
+    )
+    assert not market_direction_claims_supported(text, {"chg_window_percent": .5})

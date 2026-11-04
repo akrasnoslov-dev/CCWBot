@@ -59,6 +59,52 @@ def test_unverified_render_market_assertions_still_fail_closed(body, expected_ca
     assert alerts._event_alert_render_validation_reason(error.value) == expected_category
 
 
+@pytest.mark.parametrize("body, valid", [
+    ("BTC rose 1% over 1 hour.", True),
+    ("BTC fell 0.4% over 30 minutes.", True),
+    ("BTC rose 2% over 1 hour.", False),
+    ("BTC fell 1% over 1 hour.", False),
+    ("BTC rose 0.4% over 30 minutes.", False),
+    ("BTC rose 1% over 2 hours.", False),
+])
+def test_render_short_period_claims_validate_against_their_own_metric(body, valid):
+    payload = _payload()
+    payload["market"].update(chg1h_percent=1, chg30m_percent=-0.4)
+    parsed = {"message_body": body, "related_news_ids": [],
+              "possible_action": "Watch subsequent observations."}
+    result = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+        candidate_news_ids=set(),
+    )
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+def test_short_period_source_requires_data_and_prefers_exact_metric():
+    from bot.alerting.event_analysis import _market_claim_source, _market_claim_value
+
+    text = "rose 1% over 1 hour"
+    market = {"analysed_window_minutes": 180, "chg_window_percent": 1}
+    with pytest.raises(EventAnalysisValidationError):
+        _market_claim_source(text, 5, market, None, None)
+    market.update(analysed_window_minutes=60, chg1h_percent=-1)
+    source = _market_claim_source(text, 5, market, None, None)
+    assert source == "1h"
+    assert _market_claim_value(source, market) == -1
+    del market["chg1h_percent"]
+    assert _market_claim_value(source, market) == 1
+
+
 def test_matching_leading_render_labels_are_normalized_but_cross_sections_remain_rejected():
     normalized = alerts._normalize_render_section_labels({
         "message_body": "Situation: The latest observed step slowed.",
@@ -122,6 +168,8 @@ def test_ccw20_render_copy_asks_for_meaningful_price_scenarios():
     assert "explain the verified observed trajectory" in prompt
     assert "Do not force both the observed high and low" in prompt
     assert "observed price band" in prompt
+    assert "bind the observation to a supplied relationship" in prompt
+    assert "generic descriptions of pace" in prompt
     assert compact["market_directions"] == {"window": "down", "24h": "up"}
     # Insufficient snapshots must not invent price levels.
     assert "observed_price_band" not in compact["evidence"]

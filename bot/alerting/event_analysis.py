@@ -916,11 +916,8 @@ def _validate_positive_market_claims(
         text, market_data=market_data, last_msg=last_msg, timestamp_utc=timestamp_utc
     )
 
-    values = {
-        "window": _decimal_market_value(market_data.get("chg_window_percent")),
-        "24h": _decimal_market_value(market_data.get("chg24h_percent")),
-        "since": _decimal_market_value(market_data.get("chg_since_msg_percent")),
-    }
+    values = {source: _market_claim_value(source, market_data) for source in
+              ("window", "24h", "since", "30m", "1h")}
     for match in _PERCENT_CLAIM_RE.finditer(text):
         context, claim_index = _claim_clause(text, match.start(), match.end())
         source = _market_claim_source(
@@ -954,6 +951,22 @@ def _validate_positive_market_claims(
         last_msg=last_msg,
         timestamp_utc=timestamp_utc,
     )
+
+
+_MARKET_CLAIM_FIELDS = {
+    "window": "chg_window_percent", "24h": "chg24h_percent",
+    "since": "chg_since_msg_percent", "30m": "chg30m_percent", "1h": "chg1h_percent",
+}
+
+
+def _market_claim_value(source: str, market: dict[str, Any]) -> Decimal | None:
+    value = _decimal_market_value(market.get(_MARKET_CLAIM_FIELDS[source]))
+    minutes = {"30m": 30, "1h": 60}.get(source)
+    if value is None and minutes is not None and _integer_value(
+        market.get("analysed_window_minutes")
+    ) == minutes:
+        return _decimal_market_value(market.get("chg_window_percent"))
+    return value
 
 
 def _market_claim_source(
@@ -1016,6 +1029,9 @@ def _market_claim_source(
     duration_minutes = _duration_minutes(source_match)
     if duration_minutes == 24 * 60:
         return "24h"
+    short_source = {30: "30m", 60: "1h"}.get(duration_minutes)
+    if short_source is not None and _market_claim_value(short_source, market_data) is not None:
+        return short_source
     analysed_window = _integer_value(market_data.get("analysed_window_minutes"))
     if analysed_window is None or duration_minutes != analysed_window:
         raise EventAnalysisValidationError(
@@ -1084,15 +1100,7 @@ def _validate_action_market_claims(
         )
         if source is None:
             continue
-        supplied = _decimal_market_value(
-            market_data.get(
-                {
-                    "window": "chg_window_percent",
-                    "24h": "chg24h_percent",
-                    "since": "chg_since_msg_percent",
-                }[source]
-            )
-        )
+        supplied = _market_claim_value(source, market_data)
         claimed = _claimed_percent(match.group("value"), context, claim_index)
         if supplied is None or not _percent_values_match(claimed, supplied):
             raise EventAnalysisValidationError(
@@ -1163,17 +1171,12 @@ def _validate_unquantified_time_window_claims(
                 )
                 if source is None:
                     continue
-                field = {
-                    "window": "chg_window_percent",
-                    "24h": "chg24h_percent",
-                    "since": "chg_since_msg_percent",
-                }[source]
-                if _decimal_market_value(market_data.get(field)) is None:
+                supplied = _market_claim_value(source, market_data)
+                if supplied is None:
                     raise EventAnalysisValidationError(
                         f"{source} market claim is unavailable"
                     )
                 direction = _direction_for_claim(clause, duration.start())
-                supplied = _decimal_market_value(market_data.get(field))
                 if direction == "down" and supplied is not None and supplied >= 0:
                     raise EventAnalysisValidationError(
                         f"{source} market claim direction does not match input"
@@ -1227,9 +1230,12 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
 
 
 _STRENGTH_COMPARISON_RE = re.compile(
-    r"(?i)\b(?:short[- ]term|analysed[- ]window)\s+(?:rise|decline|fall|gain)\s+"
-    r"(?:is|was)\s+(?P<comparison>weaker|stronger)\s+than\s+"
-    r"(?:the\s+)?(?:broader\s+)?(?:24[- ]hours?|24h)\s+(?:rise|decline|fall|gain)\b"
+    r"(?i)\b(?:short[- ]term|analysed[- ]window)\s+"
+    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\s+"
+    r"(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
+    r"significantly|markedly|noticeably)\s+)*(?P<comparison>weaker|stronger)\s+than\s+"
+    r"(?:the\s+)?(?:broader\s+)?(?:24[- ]hours?|24h)\s+"
+    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\b"
 )
 
 
@@ -1237,6 +1243,8 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     claims: list[tuple[str, int]] = []
     labels = re.compile(
         r"(?i)\b(?P<day>24[- ]hours?|24h|daily|broader)|"
+        r"\b(?P<hour>1\s*[- ]?\s*(?:hours?|hrs?|h))\b|"
+        r"\b(?P<half>30\s*[- ]?\s*(?:minutes?|mins?|m))\b|"
         r"\b(?P<window>short[- ]term|current|latest|"
         r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b"
     )
@@ -1289,7 +1297,10 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
                     abs(m.end() - match.start()), abs(match.end() - m.start())
                 ),
             ) if scopes else None
-            claims.append(("24h" if scope and scope.lastgroup == "day" else "window", direction))
+            source = {"day": "24h", "hour": "1h", "half": "30m"}.get(
+                scope.lastgroup if scope else None, "window"
+            )
+            claims.append((source, direction))
     return claims
 
 
@@ -1304,9 +1315,7 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
         if not (abs(window) < abs(day) if weaker else abs(window) > abs(day)):
             return False
     for source, direction in _scoped_direction_claims(text):
-        supplied = _decimal_market_value(market_data.get(
-            "chg24h_percent" if source == "24h" else "chg_window_percent"
-        ))
+        supplied = _market_claim_value(source, market_data)
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
             return False
 
