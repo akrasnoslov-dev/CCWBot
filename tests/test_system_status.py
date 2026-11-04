@@ -780,6 +780,7 @@ async def test_system_status_delivery_blocked_only_final_failures_are_not_system
         assert "Overall: ❌ Problems detected" not in text
         assert "❌ Telegram" not in text
         assert "✅ Telegram — no system delivery issue" in text
+        assert "blocked failures 1, unavailable recipients 1 (24h)" in text
         assert "Blocked-user failures" not in text
         assert "Blocked users" not in text
         assert "bot was blocked by the user" not in text

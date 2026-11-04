@@ -1235,7 +1235,10 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     elif non_final_failed > 0:
         summary = "failed deliveries"
     elif blocked_final_failed > 0 or unavailable_final_failed > 0:
-        summary = "no system delivery issue"
+        summary = (
+            f"no system delivery issue; blocked failures {blocked_final_failed}, "
+            f"unavailable recipients {unavailable_final_failed} (24h)"
+        )
     elif sent > 0:
         summary = f"sent {sent} in 24h"
     else:
