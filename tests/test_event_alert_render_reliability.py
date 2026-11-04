@@ -106,7 +106,8 @@ def test_short_period_source_requires_data_and_prefers_exact_metric():
 
 
 @pytest.mark.parametrize("phrase", [
-    "an hour", "the last hour", "the past hour", "the past half-hour", "the last half an hour",
+    "an hour", "one hour", "60 minutes", "0.5 hours", "the last hour", "the past hour",
+    "the past half-hour", "the last half an hour",
 ])
 def test_short_period_aliases_cannot_use_opposite_window_direction(phrase):
     from bot.alerting.event_analysis import market_direction_claims_supported
@@ -115,6 +116,29 @@ def test_short_period_aliases_cannot_use_opposite_window_direction(phrase):
               "chg1h_percent": 1, "chg30m_percent": 1}
     assert not market_direction_claims_supported(f"BTC fell over {phrase}.", market)
     assert market_direction_claims_supported(f"BTC rose over {phrase}.", market)
+
+
+@pytest.mark.parametrize("body", [
+    "The hourly decline continues.",
+    "The half-hourly decline continues.",
+    "BTC fell in the previous hour.",
+])
+def test_short_period_aliases_fail_closed_through_full_validation(body):
+    payload = _payload()
+    payload["market"].update(chg1h_percent=1, chg30m_percent=1)
+    parsed = {"message_body": body, "related_news_ids": [],
+              "possible_action": "Watch subsequent observations."}
+    result = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+        candidate_news_ids=set(),
+    )
+    with pytest.raises(EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
 
 
 def test_matching_leading_render_labels_are_normalized_but_cross_sections_remain_rejected():

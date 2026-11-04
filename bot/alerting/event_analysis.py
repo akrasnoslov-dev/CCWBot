@@ -962,8 +962,14 @@ _MARKET_CLAIM_FIELDS = {
 
 def _normalize_market_period_aliases(text: str) -> str:
     """Canonicalize unambiguous time labels for validation only, preserving displayed prose."""
+    text = re.sub(r"(?i)\bhalf[- ]hourly\b", "30 minutes", text)
+    text = re.sub(r"(?i)\bhourly\b", "1 hour", text)
     text = re.sub(r"(?i)\bhalf(?:[- ]an?)?[- ]hour\b", "30 minutes", text)
-    text = re.sub(r"(?i)\b(last|past)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
+    text = re.sub(
+        r"(?i)\b(?:one\s*[- ]?\s*hours?|60\s*[- ]?\s*(?:minutes?|mins?|m))\b", "1 hour", text
+    )
+    text = re.sub(r"(?i)\b0\.5\s*[- ]?\s*(?:hours?|hrs?|h)\b", "30 minutes", text)
+    text = re.sub(r"(?i)\b(last|past|previous)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
     return re.sub(r"(?i)\b(over|in|during)\s+an?\s+hour\b", r"\1 1 hour", text)
 
 
