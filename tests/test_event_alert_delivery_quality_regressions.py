@@ -188,6 +188,8 @@ def test_specific_observation_with_pace_is_not_generic():
 @pytest.mark.parametrize("action", [
     "Watch whether the next observed steps keep advancing at a similar or faster pace.",
     "Monitor whether the upcoming observations continue moving at a similar or slower pace.",
+    "Watch whether the next observed steps continue progressing at roughly the same speed.",
+    "Check if upcoming observations keep moving at approximately a similar pace.",
 ])
 def test_pace_template_is_detected_in_real_delivered_message(action):
     body = f"Situation:\nObserved movement.\n\nPossible action:\n{action}\n\nNot financial advice."

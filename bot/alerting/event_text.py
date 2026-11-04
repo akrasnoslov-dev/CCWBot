@@ -886,10 +886,11 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
         action,
     ))
     generic_pace_template = bool(re.fullmatch(
-        r"(?i)(?:watch|check|monitor) (?:whether )?(?:the )?(?:next|upcoming) "
+        r"(?i)(?:watch|check|monitor) (?:(?:whether|if) )?(?:the )?(?:next|upcoming) "
         r"(?:observed )?(?:steps?|observations?|intervals?|snapshots?) "
-        r"(?:keep|continue) (?:advancing|moving|rising|falling) "
-        r"at (?:a )?(?:similar|same) (?:or (?:faster|slower) )?pace[.!]?",
+        r"(?:keep|continue) (?:advancing|progressing|moving|rising|falling) "
+        r"at (?:(?:roughly|approximately|about) )?(?:(?:a|the) )?(?:similar|same) "
+        r"(?:or (?:faster|slower) )?(?:pace|speed)[.!]?",
         action,
     ))
     concrete_next_observation = bool(re.search(
