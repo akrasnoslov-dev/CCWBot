@@ -102,7 +102,8 @@ _UPWARD_CLAIM_RE = re.compile(
 )
 _CLAUSE_BOUNDARY_RE = re.compile(r"(?<!\d)[.!?;,]|\n")
 _FUTURE_CONDITIONAL_RE = re.compile(
-    r"\b(?:if|when|unless)\b.*\b(?:next|upcoming|future)\b", re.IGNORECASE
+    r"(?:^\s*(?:if|when|unless|should)\b|"
+    r"\b(?:if|when|unless)\b.*\b(?:next|upcoming|future)\b)", re.IGNORECASE
 )
 _NUMBER_WORDS = {
     "one": 1,
@@ -969,7 +970,7 @@ def _normalize_market_period_aliases(text: str) -> str:
         r"(?i)\b(?:one\s*[- ]?\s*hours?|60\s*[- ]?\s*(?:minutes?|mins?|m))\b", "1 hour", text
     )
     text = re.sub(r"(?i)\b0\.5\s*[- ]?\s*(?:hours?|hrs?|h)\b", "30 minutes", text)
-    text = re.sub(r"(?i)\b(last|past|previous)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
+    text = re.sub(r"(?i)\b(last|past|previous|prior)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
     return re.sub(r"(?i)\b(over|in|during)\s+an?\s+hour\b", r"\1 1 hour", text)
 
 
@@ -1096,7 +1097,7 @@ def _validate_action_market_claims(
         for clause in _text_clauses(possible_action)
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
-    if not _market_comparisons_supported(historical_action, market_data):
+    if not _market_comparisons_supported(possible_action, market_data):
         raise EventAnalysisValidationError("unsupported period comparison")
     _validate_snapshot_trajectory_claims(historical_action, market_data)
     _validate_unquantified_time_window_claims(
@@ -1147,6 +1148,11 @@ def _validate_unquantified_time_window_claims(
         for clause in _text_clauses(sentence):
             if _FUTURE_CONDITIONAL_RE.search(clause):
                 continue
+            if (len(list(re.finditer(_COMPARISON_PERIOD, clause, re.IGNORECASE))) >= 2
+                    and _COMPARISON_CUE_RE.search(clause)):
+                clause = " ".join(_historical_market_clauses(clause))
+                if not clause.strip():
+                    continue
             if not _MOVEMENT_DIRECTION_RE.search(clause):
                 continue
             # Exempt only the durations belonging to a snapshot metadata list.
@@ -1246,17 +1252,41 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
 
 
 _COMPARISON_PERIOD = (
-    r"(?:short[- ]term|analysed[- ]window|(?:broader\s+)?"
+    r"(?:short[- ]term|current|latest|analysed(?:[- ](?:window|move))?|"
+    r"snapshots?|window|this\s+move|(?:broader\s+)?"
     r"(?:24\s*[- ]?\s*(?:hours?|hrs?|h)|1\s*[- ]?\s*(?:hours?|hrs?|h)|"
     r"30\s*[- ]?\s*(?:minutes?|mins?|min|m)))"
 )
 _STRENGTH_COMPARISON_RE = re.compile(
     rf"(?i)\b(?P<left_period>{_COMPARISON_PERIOD})\s+"
     r"(?:(?:price|market)\s+)?(?P<left_move>rise|decline|fall|gain)\s+"
-    r"(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
-    r"significantly|markedly|noticeably)\s+)*(?P<comparison>weaker|stronger)\s+than\s+"
+    r"(?P<relation>(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
+    r"significantly|markedly|noticeably)\s+)*(?:weaker|stronger|larger|greater|"
+    r"smaller|less|bigger|more)\s+than|outpaced|exceeded|surpassed)\s+"
     rf"(?:the\s+)?(?P<right_period>{_COMPARISON_PERIOD})\s+"
     r"(?:(?:price|market)\s+)?(?P<right_move>rise|decline|fall|gain)\b"
+)
+_COMPARISON_CUE_RE = re.compile(
+    r"(?i)\b(?:than|weaker|stronger|larger|greater|smaller|bigger|more|less|"
+    r"twice|double|out(?:pac|perform|strip|weigh|grow|ran|run)\w*|"
+    r"exceed\w*|surpass\w*|lag\w*|dwarf\w*|eclips\w*|dominat\w*|"
+    r"compared\s+(?:to|with)|as\s+\w+(?:\s+\w+){0,3}\s+as)\b"
+)
+_PERIOD_OPERAND_RE = re.compile(
+    rf"(?i)\b{_COMPARISON_PERIOD}\s+(?:(?:price|market)\s+)?"
+    r"(?:rise|decline|fall|gain|move|trend)\b"
+)
+_NONCOMPARATIVE_LINK_RE = re.compile(
+    r"(?i)^\s+(?:(?:paused|stalled|stabilized|consolidated)\s+)?"
+    r"(?:and|while|whereas|but|alongside|contrasts?\s+with|"
+    r"diverges?\s+from|aligns?\s+with)\s+(?:the\s+)?$"
+)
+_INDEPENDENT_PERIOD_FACT_RE = re.compile(
+    rf"(?i)^\s*(?:and\s+)?(?:the\s+)?{_COMPARISON_PERIOD}\s+"
+    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain|move|trend)\s+"
+    r"(?:(?:is|was|remains|remained)\s+(?:also\s+)?"
+    r"(?:positive|negative|up|down)|paused|stalled|stabilized|consolidated|"
+    r"rose|fell|gained|increased|decreased|advanced|declined|continued)\s*$"
 )
 
 
@@ -1275,7 +1305,7 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     # Comparative strength describes magnitude, not an additional price direction.
     scoped_text = _STRENGTH_COMPARISON_RE.sub(
         lambda match: match.group().replace(
-            match.group("comparison"), " " * len(match.group("comparison"))
+            match.group("relation"), " " * len(match.group("relation"))
         ),
         scoped_text,
     )
@@ -1325,40 +1355,105 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     return claims
 
 
+def _historical_market_clauses(text: str) -> list[str]:
+    historical_clauses: list[str] = []
+    for clause in _text_clauses(text):
+        for part in re.split(
+            r"(?i)\b(?:while(?!\s+(?:\w+ly\s+)?(?:\w+(?:ed|ing)|set|put|seen)\b)|"
+            r"whereas|but|although|despite)\b", clause
+        ):
+            future = re.search(
+                r"(?i)\b(?:if|when(?!\s+(?:\w+ly\s+)?"
+                r"(?:\w+(?:ed|ing)|set|put|seen)\b)|unless|should)\b", part
+            )
+            if future and not re.search(
+                r"(?i)\b(?:next|upcoming|future)\b", part[future.end():]
+            ) and re.search(
+                r"(?i)\b(?:was|were|had|fell|rose|outpaced|exceeded|surpassed)\b",
+                part[future.end():],
+            ):
+                future = None
+            historical_clauses.append(part[:future.start()] if future else part)
+    return historical_clauses
+
+
 def _market_comparisons_supported(text: str, market_data: dict[str, Any]) -> bool:
     """Validate both operands of each recognized historical strength comparison."""
-    for comparison in _STRENGTH_COMPARISON_RE.finditer(text):
-        def comparison_source(period: str) -> str | None:
-            if _DURATION_RE.search(period):
-                try:
-                    return _market_claim_source(period, 0, market_data, None, None)
-                except EventAnalysisValidationError:
-                    return None
-            return "window"
-
-        left_source = comparison_source(comparison.group("left_period"))
-        right_source = comparison_source(comparison.group("right_period"))
-        if left_source is None or right_source is None:
-            return False
-        period_minutes = {"30m": 30, "1h": 60, "24h": 1440,
-                          "window": _integer_value(market_data.get("analysed_window_minutes"))}
-        left_minutes = period_minutes[left_source]
-        right_minutes = period_minutes[right_source]
-        left = _market_claim_value(left_source, market_data)
-        right = _market_claim_value(right_source, market_data)
-        if (left_source == right_source
-                or (left_minutes is not None and left_minutes == right_minutes)
-                or left is None or right is None
-                or left == 0 or right == 0 or (left > 0) != (right > 0)):
-            return False
-        for operand, value in (("left_move", left), ("right_move", right)):
-            downward = comparison.group(operand).lower() in {"decline", "fall"}
-            if downward != (value < 0):
+    text = _normalize_market_period_aliases(text)
+    clauses = []
+    for sentence in re.split(r"(?<!\d)[.!?;]|\n", text):
+        segments: list[list[list[str]]] = [[]]
+        for fragment in _text_clauses(sentence):
+            if segments[-1] and re.match(
+                r"(?i)^\s*(?:while|whereas|but|although|despite)\b", fragment
+            ):
+                segments.append([])
+            segments[-1].append(_historical_market_clauses(fragment))
+        for groups in segments:
+            parts = [part for group in groups for part in group]
+            clauses.extend(parts)
+            # A comparison can put its reference and its claim on opposite
+            # sides of a comma; inspect the combined fragments as well.
+            period_parts = [part for part in parts if _PERIOD_OPERAND_RE.search(part)]
+            if len(groups) > 1 and len(period_parts) > 1 and not all(
+                _INDEPENDENT_PERIOD_FACT_RE.fullmatch(part)
+                or (len(list(_PERIOD_OPERAND_RE.finditer(part))) == 2
+                    and _STRENGTH_COMPARISON_RE.search(part))
+                for part in period_parts
+            ):
+                clauses.append(" ".join(parts))
+    for clause in clauses:
+        comparisons = list(_STRENGTH_COMPARISON_RE.finditer(clause))
+        operands = list(_PERIOD_OPERAND_RE.finditer(clause))
+        for first, second in zip(operands, operands[1:], strict=False):
+            covered = any(
+                match.start() <= first.start() and match.end() >= second.end()
+                for match in comparisons
+            )
+            if not covered and not _NONCOMPARATIVE_LINK_RE.fullmatch(
+                clause[first.end():second.start()]
+            ):
                 return False
-        weaker = comparison.group("comparison").lower() == "weaker"
-        if not (abs(left) < abs(right) if weaker else abs(left) > abs(right)):
-            return False
+        if len(list(re.finditer(_COMPARISON_PERIOD, clause, re.IGNORECASE))) >= 2:
+            for cue in _COMPARISON_CUE_RE.finditer(clause):
+                if not any(match.start() <= cue.start() < match.end() for match in comparisons):
+                    return False
+        for comparison in comparisons:
+            if not _supported_period_comparison(comparison, market_data):
+                return False
     return True
+
+
+def _supported_period_comparison(comparison: re.Match[str], market_data: dict[str, Any]) -> bool:
+    def comparison_source(period: str) -> str | None:
+        if _DURATION_RE.search(period):
+            try:
+                return _market_claim_source(period, 0, market_data, None, None)
+            except EventAnalysisValidationError:
+                return None
+        return "window"
+
+    left_source = comparison_source(comparison.group("left_period"))
+    right_source = comparison_source(comparison.group("right_period"))
+    if left_source is None or right_source is None:
+        return False
+    period_minutes = {"30m": 30, "1h": 60, "24h": 1440,
+                      "window": _integer_value(market_data.get("analysed_window_minutes"))}
+    left_minutes = period_minutes[left_source]
+    right_minutes = period_minutes[right_source]
+    left = _market_claim_value(left_source, market_data)
+    right = _market_claim_value(right_source, market_data)
+    if (left_source == right_source
+            or (left_minutes is not None and left_minutes == right_minutes)
+            or left is None or right is None
+            or left == 0 or right == 0 or (left > 0) != (right > 0)):
+        return False
+    for operand, value in (("left_move", left), ("right_move", right)):
+        downward = comparison.group(operand).lower() in {"decline", "fall"}
+        if downward != (value < 0):
+            return False
+    weaker = bool(re.search(r"(?i)\b(?:weaker|smaller|less)\b", comparison.group("relation")))
+    return abs(left) < abs(right) if weaker else abs(left) > abs(right)
 
 
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
@@ -1366,7 +1461,8 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     text = _normalize_market_period_aliases(text)
     if not _market_comparisons_supported(text, market_data):
         return False
-    for source, direction in _scoped_direction_claims(text):
+    historical_text = ". ".join(_historical_market_clauses(text))
+    for source, direction in _scoped_direction_claims(historical_text):
         supplied = _market_claim_value(source, market_data)
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):
             return False
@@ -1377,7 +1473,7 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     day = _decimal_market_value(market_data.get("chg24h_percent"))
     clauses = re.split(
         r"(?i)(?<!\d)[.!?;]|\n|\b(?:while|whereas|but|although|despite|even\s+though)\b",
-        text,
+        historical_text,
     )
     relationship = re.compile(
         r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"

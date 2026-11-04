@@ -125,6 +125,8 @@ Factual claims naming 30-minute or one-hour periods use their corresponding supp
 with the analysed-window metric usable for the same duration when that metric is unavailable.
 Comparisons of period-specific rises or declines require both supplied directions and the
 claimed relative magnitudes to agree; equivalent periods cannot be compared as different windows.
+Reject historical magnitude comparisons whose relationship cannot be verified; preserve
+conditional future scenarios as such rather than treating them as established market facts.
 This does not alter other product features. No guaranteed outcomes or
 invented technical support/resistance, causes or forecasts are permitted.
 
