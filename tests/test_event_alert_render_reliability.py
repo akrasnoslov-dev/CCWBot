@@ -105,6 +105,18 @@ def test_short_period_source_requires_data_and_prefers_exact_metric():
     assert _market_claim_value(source, market) == 1
 
 
+@pytest.mark.parametrize("phrase", [
+    "an hour", "the last hour", "the past hour", "the past half-hour", "the last half an hour",
+])
+def test_short_period_aliases_cannot_use_opposite_window_direction(phrase):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    market = {"chg_window_percent": -2, "chg24h_percent": -3,
+              "chg1h_percent": 1, "chg30m_percent": 1}
+    assert not market_direction_claims_supported(f"BTC fell over {phrase}.", market)
+    assert market_direction_claims_supported(f"BTC rose over {phrase}.", market)
+
+
 def test_matching_leading_render_labels_are_normalized_but_cross_sections_remain_rejected():
     normalized = alerts._normalize_render_section_labels({
         "message_body": "Situation: The latest observed step slowed.",

@@ -400,3 +400,17 @@ def test_qualified_comparison_checks_direction_and_relative_magnitude(modifier):
         text, {"chg_window_percent": -.5, "chg24h_percent": 2}
     )
     assert not market_direction_claims_supported(text, {"chg_window_percent": .5})
+
+
+def test_comparison_can_start_with_the_24_hour_period():
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    text = "The 24-hour rise remains considerably stronger than the short-term rise."
+    assert market_direction_claims_supported(text, {"chg_window_percent": .5, "chg24h_percent": 2})
+    assert not market_direction_claims_supported(
+        text, {"chg_window_percent": 3, "chg24h_percent": 2}
+    )
+    opposite = "The 24-hour rise remains stronger than the short-term decline."
+    assert not market_direction_claims_supported(
+        opposite, {"chg_window_percent": -.5, "chg24h_percent": 2}
+    )

@@ -910,7 +910,8 @@ def _validate_positive_market_claims(
     This deliberately validates attribution and availability only.  It has no materiality
     threshold and does not decide whether a grounded movement merits an Event Alert.
     """
-    text = f"{title}\n{message_body}"
+    text = _normalize_market_period_aliases(f"{title}\n{message_body}")
+    possible_action = _normalize_market_period_aliases(possible_action)
     _validate_snapshot_trajectory_claims(text, market_data)
     _validate_unquantified_time_window_claims(
         text, market_data=market_data, last_msg=last_msg, timestamp_utc=timestamp_utc
@@ -957,6 +958,13 @@ _MARKET_CLAIM_FIELDS = {
     "window": "chg_window_percent", "24h": "chg24h_percent",
     "since": "chg_since_msg_percent", "30m": "chg30m_percent", "1h": "chg1h_percent",
 }
+
+
+def _normalize_market_period_aliases(text: str) -> str:
+    """Canonicalize unambiguous time labels for validation only, preserving displayed prose."""
+    text = re.sub(r"(?i)\bhalf(?:[- ]an?)?[- ]hour\b", "30 minutes", text)
+    text = re.sub(r"(?i)\b(last|past)\s+(?:an?\s+)?hour\b", r"\1 1 hour", text)
+    return re.sub(r"(?i)\b(over|in|during)\s+an?\s+hour\b", r"\1 1 hour", text)
 
 
 def _market_claim_value(source: str, market: dict[str, Any]) -> Decimal | None:
@@ -1229,12 +1237,13 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
             raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
 
 
+_COMPARISON_PERIOD = r"(?:short[- ]term|analysed[- ]window|(?:broader\s+)?(?:24[- ]hours?|24h))"
 _STRENGTH_COMPARISON_RE = re.compile(
-    r"(?i)\b(?:short[- ]term|analysed[- ]window)\s+"
+    rf"(?i)\b(?P<left_period>{_COMPARISON_PERIOD})\s+"
     r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\s+"
     r"(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
     r"significantly|markedly|noticeably)\s+)*(?P<comparison>weaker|stronger)\s+than\s+"
-    r"(?:the\s+)?(?:broader\s+)?(?:24[- ]hours?|24h)\s+"
+    rf"(?:the\s+)?(?P<right_period>{_COMPARISON_PERIOD})\s+"
     r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\b"
 )
 
@@ -1306,13 +1315,20 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
 
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
     """Check explicit period directions and the direction implied by relationships."""
+    text = _normalize_market_period_aliases(text)
     for comparison in _STRENGTH_COMPARISON_RE.finditer(text):
-        window = _decimal_market_value(market_data.get("chg_window_percent"))
-        day = _decimal_market_value(market_data.get("chg24h_percent"))
-        if window is None or day is None:
+        def comparison_source(period: str) -> str:
+            return "24h" if re.search(r"(?i)24[- ]?(?:hours?|h)", period) else "window"
+
+        left_source = comparison_source(comparison.group("left_period"))
+        right_source = comparison_source(comparison.group("right_period"))
+        left = _market_claim_value(left_source, market_data)
+        right = _market_claim_value(right_source, market_data)
+        if (left_source == right_source or left is None or right is None
+                or left == 0 or right == 0 or (left > 0) != (right > 0)):
             return False
         weaker = comparison.group("comparison").lower() == "weaker"
-        if not (abs(window) < abs(day) if weaker else abs(window) > abs(day)):
+        if not (abs(left) < abs(right) if weaker else abs(left) > abs(right)):
             return False
     for source, direction in _scoped_direction_claims(text):
         supplied = _market_claim_value(source, market_data)
