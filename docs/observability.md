@@ -1,5 +1,11 @@
 # Observability Snippets
 
+Event Alert Possible action quality is diagnostic only. Its generic-template count includes
+standalone next-observation pace boilerplate, while retaining specific evidence-grounded prose.
+The collector normalizes whitespace before matching and reports aggregate event counts only.
+Telegram status counts rows created in the rolling 24-hour window separately from failures
+finalized in that window; these are different cohorts and must not be subtracted from each other.
+
 Use these read-only queries for production analysis. Adjust interval windows as needed. Start with
 aggregate evidence. Do not export or paste user IDs, alert text, `numeric_context`, or other
 linkable raw rows unless an incident specifically requires recipient-level tracing; keep that

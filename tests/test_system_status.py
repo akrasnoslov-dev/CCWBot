@@ -857,6 +857,31 @@ async def test_system_status_delivery_mixed_final_failures_show_real_and_blocked
 
 
 @pytest.mark.asyncio
+async def test_delivery_pending_failure_not_masked_by_old_row_finalized_today():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            old = _final_failed_alert(
+                sent_to_chat_id=401, created_at=now - timedelta(days=2),
+                error_message="Forbidden: bot was blocked by the user",
+            )
+            old.final_failed_at = now - timedelta(hours=1)
+            pending = _final_failed_alert(
+                sent_to_chat_id=402, created_at=now - timedelta(hours=2),
+                error_message="Temporary delivery problem",
+            )
+            pending.final_failed_at = None
+            session.add_all([old, pending])
+            await session.commit()
+            health = await system_status._delivery_health(session, now=now)
+        assert health.status == system_status.ComponentStatus.WARN
+        assert "failed deliveries" in health.summary
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_system_status_delivery_ok_shows_blocked_users_info():
     now = _now()
     engine, session_local = await build_session_factory()

@@ -1179,7 +1179,16 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
     pending = counts.get("pending", 0)
     retry_pending = counts.get("retry_pending", 0)
     failed = counts.get("failed", 0)
-    non_final_failed = max(failed - final_failed, 0)
+    # Created-at and final-failure windows are different cohorts: subtracting
+    # their counts can hide a recent non-final failure behind an older row.
+    non_final_failed = int(
+        await session.scalar(
+            select(func.count()).select_from(Alert)
+            .where(Alert.created_at >= since)
+            .where(Alert.status == "failed")
+            .where(Alert.final_failed_at.is_(None))
+        ) or 0
+    )
     if real_final_failed > 0:
         status = ComponentStatus.FAIL
     elif non_final_failed > 0 or pending > 0 or retry_pending > 0:
@@ -1190,8 +1199,8 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         status = ComponentStatus.UNKNOWN
 
     detail = (
-        f"Last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
-        f"failed {failed}, final_failed {final_failed}, "
+        f"Created in last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
+        f"failed {failed}; finalized in last 24h: final_failed {final_failed}, "
         f"blocked_final_failed {blocked_final_failed}, real_final_failed {real_final_failed}, "
         f"blocked_users {blocked_users}"
     )
