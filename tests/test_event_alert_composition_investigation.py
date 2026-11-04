@@ -372,3 +372,16 @@ def test_independent_period_predicates_are_not_mistaken_for_a_shared_move():
         "The short-term move paused and the broader 24-hour trend gained ground.",
         market((102, 101, 100), "-2", "3"),
     )
+@pytest.mark.parametrize("text,window,day,expected", [
+    ("The short-term rise is weaker than the broader 24-hour rise.", 0.5, 2, True),
+    ("The short-term decline is stronger than the broader 24-hour decline.", -2, -0.5, True),
+    ("The short-term rise is weaker than the broader 24-hour rise.", -0.5, 2, False),
+    ("The short-term decline is stronger than the broader 24-hour decline.", -2, 0.5, False),
+    ("The short-term rise is weaker than the broader 24-hour rise.", 3, 2, False),
+])
+def test_comparative_strength_does_not_reverse_explicit_direction(text, window, day, expected):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert market_direction_claims_supported(
+        text, {"chg_window_percent": window, "chg24h_percent": day}
+    ) is expected

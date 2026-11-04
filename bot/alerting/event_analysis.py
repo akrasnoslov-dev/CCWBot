@@ -1226,6 +1226,13 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
             raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
 
 
+_STRENGTH_COMPARISON_RE = re.compile(
+    r"(?i)\b(?:short[- ]term|analysed[- ]window)\s+(?:rise|decline|fall|gain)\s+"
+    r"(?:is|was)\s+(?P<comparison>weaker|stronger)\s+than\s+"
+    r"(?:the\s+)?(?:broader\s+)?(?:24[- ]hours?|24h)\s+(?:rise|decline|fall|gain)\b"
+)
+
+
 def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     claims: list[tuple[str, int]] = []
     labels = re.compile(
@@ -1235,6 +1242,13 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     )
     scoped_text = re.sub(
         r"(?i)\b(?:while|whereas|but|despite|although|contrasts?\s+with|against)\b", ";", text
+    )
+    # Comparative strength describes magnitude, not an additional price direction.
+    scoped_text = _STRENGTH_COMPARISON_RE.sub(
+        lambda match: match.group().replace(
+            match.group("comparison"), " " * len(match.group("comparison"))
+        ),
+        scoped_text,
     )
     for clause in _text_clauses(scoped_text):
         scopes = list(labels.finditer(clause))
@@ -1281,6 +1295,14 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
 
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
     """Check explicit period directions and the direction implied by relationships."""
+    for comparison in _STRENGTH_COMPARISON_RE.finditer(text):
+        window = _decimal_market_value(market_data.get("chg_window_percent"))
+        day = _decimal_market_value(market_data.get("chg24h_percent"))
+        if window is None or day is None:
+            return False
+        weaker = comparison.group("comparison").lower() == "weaker"
+        if not (abs(window) < abs(day) if weaker else abs(window) > abs(day)):
+            return False
     for source, direction in _scoped_direction_claims(text):
         supplied = _decimal_market_value(market_data.get(
             "chg24h_percent" if source == "24h" else "chg_window_percent"
