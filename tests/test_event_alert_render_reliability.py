@@ -105,6 +105,127 @@ def test_short_period_source_requires_data_and_prefers_exact_metric():
     assert _market_claim_value(source, market) == 1
 
 
+@pytest.mark.parametrize("left,right", [
+    ("30-minute", "1-hour"), ("1-hour", "30-minute"),
+    ("30-minute", "analysed-window"), ("analysed-window", "30-minute"),
+    ("30-minute", "24-hour"), ("24-hour", "30-minute"),
+    ("1-hour", "analysed-window"), ("analysed-window", "1-hour"),
+    ("1-hour", "24-hour"), ("24-hour", "1-hour"),
+    ("analysed-window", "24-hour"), ("24-hour", "analysed-window"),
+])
+@pytest.mark.parametrize("case", ["valid", "reversed", "missing", "opposite", "equal"])
+@pytest.mark.parametrize("trend", ["rise", "decline"])
+def test_render_period_comparison_checks_both_operands_end_to_end(left, right, case, trend):
+    payload = _payload()
+    fields = {"30-minute": "chg30m_percent", "1-hour": "chg1h_percent",
+              "analysed-window": "chg_window_percent", "24-hour": "chg24h_percent"}
+    market = payload["market"]
+    market.update(chg30m_percent=0.5, chg1h_percent=1, chg_window_percent=1.5,
+                  chg24h_percent=2)
+    if trend == "decline":
+        for field in fields.values():
+            market[field] *= -1
+    if case == "missing":
+        market[fields[left]] = None
+    elif case == "opposite":
+        market[fields[left]] *= -1
+    elif case == "equal":
+        market[fields[left]] = market[fields[right]]
+    comparison = "weaker" if market.get(fields[left]) is not None and (
+        abs(market[fields[left]]) < abs(market[fields[right]])
+    ) else "stronger"
+    if case == "reversed":
+        comparison = "stronger" if comparison == "weaker" else "weaker"
+    parsed = {"message_body": f"The {left} {trend} is {comparison} than the {right} {trend}.",
+              "related_news_ids": [], "possible_action": "Watch subsequent observations."}
+    result = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+        candidate_news_ids=set(),
+    )
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=market)
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(), market_data=market,
+            last_msg=payload["last_msg"], timestamp_utc=payload["timestamp_utc"],
+        )
+    if case == "valid":
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("minutes,label,field", [
+    (30, "30-minute", "chg30m_percent"),
+    (60, "1-hour", "chg1h_percent"),
+    (1440, "24-hour", "chg24h_percent"),
+])
+def test_render_rejects_comparing_same_market_period_as_distinct(minutes, label, field):
+    payload = _payload()
+    market = payload["market"]
+    market.update(analysed_window_minutes=minutes, chg_window_percent=1)
+    market[field] = 2
+    parsed = {"message_body": f"The analysed-window rise is weaker than the {label} rise.",
+              "related_news_ids": [], "possible_action": "Watch subsequent observations."}
+    with pytest.raises(EventAnalysisValidationError):
+        alerts._validate_event_alert_render_causality(parsed, market_data=market)
+
+
+@pytest.mark.parametrize("short_change,day_change,valid", [
+    (0.5, 2, True), (3, 2, False), (-0.5, -2, False),
+])
+@pytest.mark.parametrize("section", ["message_body", "possible_action"])
+def test_render_compares_30m_and_broader_day_in_both_sections(
+    short_change, day_change, valid, section
+):
+    payload = _payload()
+    market = payload["market"]
+    market.update(chg30m_percent=short_change, chg24h_percent=day_change, chg_window_percent=1)
+    text = "The 30-minute rise is weaker than the broader 24-hour rise."
+    parsed = {"message_body": "The market conditions warrant attention.", "related_news_ids": [],
+              "possible_action": "Watch subsequent observations."}
+    parsed[section] = text
+    result = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+        candidate_news_ids=set(),
+    )
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=market)
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(), market_data=market,
+            last_msg=payload["last_msg"], timestamp_utc=payload["timestamp_utc"],
+        )
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("short_change,valid", [(0.5, True), (3, False)])
+def test_reverse_order_30m_comparison_with_broader_day(short_change, valid):
+    payload = _payload()
+    market = payload["market"]
+    market.update(chg30m_percent=short_change, chg24h_percent=2, chg_window_percent=1)
+    parsed = {"message_body": "The 24-hour rise remains stronger than the 30-minute rise.",
+              "related_news_ids": [], "possible_action": "Watch subsequent observations."}
+    result = alerts._event_alert_render_result_for_validation(
+        parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+        candidate_news_ids=set(),
+    )
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=market)
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(), market_data=market,
+            last_msg=payload["last_msg"], timestamp_utc=payload["timestamp_utc"],
+        )
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
 @pytest.mark.parametrize("phrase", [
     "an hour", "one hour", "60 minutes", "0.5 hours", "the last hour", "the past hour",
     "the past half-hour", "the last half an hour",

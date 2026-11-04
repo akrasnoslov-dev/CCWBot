@@ -1096,6 +1096,8 @@ def _validate_action_market_claims(
         for clause in _text_clauses(possible_action)
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
+    if not _market_comparisons_supported(historical_action, market_data):
+        raise EventAnalysisValidationError("unsupported period comparison")
     _validate_snapshot_trajectory_claims(historical_action, market_data)
     _validate_unquantified_time_window_claims(
         possible_action,
@@ -1243,14 +1245,18 @@ def _validate_snapshot_trajectory_claims(text: str, market_data: dict[str, Any])
             raise EventAnalysisValidationError("analysed-window trajectory is unsupported")
 
 
-_COMPARISON_PERIOD = r"(?:short[- ]term|analysed[- ]window|(?:broader\s+)?(?:24[- ]hours?|24h))"
+_COMPARISON_PERIOD = (
+    r"(?:short[- ]term|analysed[- ]window|(?:broader\s+)?"
+    r"(?:24\s*[- ]?\s*(?:hours?|hrs?|h)|1\s*[- ]?\s*(?:hours?|hrs?|h)|"
+    r"30\s*[- ]?\s*(?:minutes?|mins?|min|m)))"
+)
 _STRENGTH_COMPARISON_RE = re.compile(
     rf"(?i)\b(?P<left_period>{_COMPARISON_PERIOD})\s+"
-    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\s+"
+    r"(?:(?:price|market)\s+)?(?P<left_move>rise|decline|fall|gain)\s+"
     r"(?:is|was|remains)\s+(?:(?:slightly|somewhat|much|far|considerably|"
     r"significantly|markedly|noticeably)\s+)*(?P<comparison>weaker|stronger)\s+than\s+"
     rf"(?:the\s+)?(?P<right_period>{_COMPARISON_PERIOD})\s+"
-    r"(?:(?:price|market)\s+)?(?:rise|decline|fall|gain)\b"
+    r"(?:(?:price|market)\s+)?(?P<right_move>rise|decline|fall|gain)\b"
 )
 
 
@@ -1319,23 +1325,47 @@ def _scoped_direction_claims(text: str) -> list[tuple[str, int]]:
     return claims
 
 
-def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
-    """Check explicit period directions and the direction implied by relationships."""
-    text = _normalize_market_period_aliases(text)
+def _market_comparisons_supported(text: str, market_data: dict[str, Any]) -> bool:
+    """Validate both operands of each recognized historical strength comparison."""
     for comparison in _STRENGTH_COMPARISON_RE.finditer(text):
-        def comparison_source(period: str) -> str:
-            return "24h" if re.search(r"(?i)24[- ]?(?:hours?|h)", period) else "window"
+        def comparison_source(period: str) -> str | None:
+            if _DURATION_RE.search(period):
+                try:
+                    return _market_claim_source(period, 0, market_data, None, None)
+                except EventAnalysisValidationError:
+                    return None
+            return "window"
 
         left_source = comparison_source(comparison.group("left_period"))
         right_source = comparison_source(comparison.group("right_period"))
+        if left_source is None or right_source is None:
+            return False
+        period_minutes = {"30m": 30, "1h": 60, "24h": 1440,
+                          "window": _integer_value(market_data.get("analysed_window_minutes"))}
+        left_minutes = period_minutes[left_source]
+        right_minutes = period_minutes[right_source]
         left = _market_claim_value(left_source, market_data)
         right = _market_claim_value(right_source, market_data)
-        if (left_source == right_source or left is None or right is None
+        if (left_source == right_source
+                or (left_minutes is not None and left_minutes == right_minutes)
+                or left is None or right is None
                 or left == 0 or right == 0 or (left > 0) != (right > 0)):
             return False
+        for operand, value in (("left_move", left), ("right_move", right)):
+            downward = comparison.group(operand).lower() in {"decline", "fall"}
+            if downward != (value < 0):
+                return False
         weaker = comparison.group("comparison").lower() == "weaker"
         if not (abs(left) < abs(right) if weaker else abs(left) > abs(right)):
             return False
+    return True
+
+
+def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
+    """Check explicit period directions and the direction implied by relationships."""
+    text = _normalize_market_period_aliases(text)
+    if not _market_comparisons_supported(text, market_data):
+        return False
     for source, direction in _scoped_direction_claims(text):
         supplied = _market_claim_value(source, market_data)
         if supplied is None or supplied == 0 or (supplied > 0) != (direction > 0):

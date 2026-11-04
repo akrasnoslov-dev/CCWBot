@@ -4352,6 +4352,7 @@ def _event_alert_render_validation_reason(error: EventAnalysisValidationError) -
         ("unsupported percentage-point unit", "invalid_percentage_point_unit"),
         ("unsupported market or event claim", "unsupported_event_claim"),
         ("unsupported period-direction relationship", "period_direction_mismatch"),
+        ("unsupported period comparison", "period_direction_mismatch"),
         ("unsupported action market claim", "unsupported_action_claim"),
         ("mixed render sections", "mixed_render_sections"),
         ("unsupported observed usd price", "unsupported_observed_price"),

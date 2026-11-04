@@ -123,6 +123,8 @@ When available, Possible action should connect the next observation to a supplie
 relationship or observed price band; it must not manufacture a reference when evidence is absent.
 Factual claims naming 30-minute or one-hour periods use their corresponding supplied metric,
 with the analysed-window metric usable for the same duration when that metric is unavailable.
+Comparisons of period-specific rises or declines require both supplied directions and the
+claimed relative magnitudes to agree; equivalent periods cannot be compared as different windows.
 This does not alter other product features. No guaranteed outcomes or
 invented technical support/resistance, causes or forecasts are permitted.
 
