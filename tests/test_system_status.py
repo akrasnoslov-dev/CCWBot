@@ -39,6 +39,18 @@ async def build_session_factory():
     return engine, session_local
 
 
+@pytest.mark.asyncio
+async def test_llm_diagnostics_explains_event_analysis_render_dependency():
+    engine, session_local = await build_session_factory()
+    try:
+        text = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=session_local, now=_now()
+        )
+        assert "Event Analysis includes downstream Event Alert Render failures" in text
+    finally:
+        await engine.dispose()
+
+
 def _now() -> datetime:
     return datetime(2026, 6, 15, 16, 55, tzinfo=timezone.utc)
 

@@ -805,6 +805,7 @@ async def build_admin_llm_diagnostics_text(
         paid_budget,
         "",
         "Logical operations (final outcomes)",
+        "Event Analysis includes downstream Event Alert Render failures.",
     ]
     if logical is None:
         lines.append("⚠️ Unknown — logical telemetry query failed")
