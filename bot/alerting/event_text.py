@@ -885,6 +885,13 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
         r"observed interval|divergen\w*|countermov\w*)\b",
         action,
     ))
+    generic_pace_template = bool(re.fullmatch(
+        r"(?i)(?:watch|check|monitor) (?:whether )?(?:the )?(?:next|upcoming) "
+        r"(?:observed )?(?:steps?|observations?|intervals?|snapshots?) "
+        r"(?:keep|continue) (?:advancing|moving|rising|falling) "
+        r"at (?:a )?(?:similar|same) (?:or (?:faster|slower) )?pace[.!]?",
+        action,
+    ))
     concrete_next_observation = bool(re.search(
         r"(?i)\b(?:next|upcoming)\b.{0,45}\b(?:interval|observation|pace|continuation|"
         r"reversal|slow(?:ing|er)?)\b|\b(?:above|below)\s+\$",
@@ -903,7 +910,10 @@ def final_event_alert_quality_flags(plain_text: str) -> dict[str, bool]:
         situation,
     ))
     return {
-        "generic_action": bool(generic_action or generic_snapshot_action or generic_risk_padding),
+        "generic_action": bool(
+            generic_action or generic_snapshot_action or generic_risk_padding
+            or generic_pace_template
+        ),
         "missing_situation": not bool(situation),
         "repeats_market_numbers": bool(
             _PERCENT_RE.search(situation) or _MONEY_VALUE_RE.search(situation)

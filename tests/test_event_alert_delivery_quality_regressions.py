@@ -165,6 +165,8 @@ def test_significance_model_receives_routine_and_material_context(
     "Watch the next short-term snapshots for confirmation or reversal.",
     "Watch whether the next short-term snapshots continue or reverse.",
     "Monitor market developments.",
+    "Watch whether the next observed steps keep advancing at a similar or faster pace.",
+    "Monitor whether the upcoming observations continue moving at a similar or slower pace.",
 ])
 def test_generic_possible_action_detector_looks_at_delivered_copy(action):
     body = (
@@ -172,6 +174,24 @@ def test_generic_possible_action_detector_looks_at_delivered_copy(action):
         f"\\n\\nPossible action:\\n{action}\\n\\nNot financial advice."
     )
     assert final_event_alert_quality_flags(body)["generic_action"] is True
+
+
+def test_specific_observation_with_pace_is_not_generic():
+    body = (
+        "Situation:\nThe short-term decline diverges from the 24-hour rise.\n\n"
+        "Possible action:\nWatch whether the next observed step slows the decline "
+        "or reverses the divergence with the 24-hour rise.\n\nNot financial advice."
+    )
+    assert not final_event_alert_quality_flags(body)["generic_action"]
+
+
+@pytest.mark.parametrize("action", [
+    "Watch whether the next observed steps keep advancing at a similar or faster pace.",
+    "Monitor whether the upcoming observations continue moving at a similar or slower pace.",
+])
+def test_pace_template_is_detected_in_real_delivered_message(action):
+    body = f"Situation:\nObserved movement.\n\nPossible action:\n{action}\n\nNot financial advice."
+    assert final_event_alert_quality_flags(body)["generic_action"]
 
 
 def test_quality_flags_detect_observed_production_padding_without_flagging_grounded_copy():

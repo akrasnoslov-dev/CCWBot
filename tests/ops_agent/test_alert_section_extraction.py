@@ -11,7 +11,7 @@ from ops_agent.db_queries import QUERIES
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["distinct", "repeated", "missing", "generic"])
+@pytest.mark.parametrize("kind", ["distinct", "repeated", "missing", "generic", "pace"])
 async def test_final_section_sql_handles_newlines_fanout_and_missing_sections(kind):
     url = os.getenv("OPS_AGENT_POSTGRES_TEST_DATABASE_URL")
     if not url:
@@ -46,6 +46,13 @@ async def test_final_section_sql_handles_newlines_fanout_and_missing_sections(ki
                 )
                 if kind == "generic" and index < 2:
                     action = "Watch whether the next short-term snapshots continue or reverse."
+                if kind == "pace" and index < 2:
+                    action = (
+                        "Watch whether the next observed steps keep advancing "
+                        "at a similar or faster pace."
+                    )
+                    if index == 1:
+                        action = action.replace("steps keep", "steps\nkeep")
                 related = (
                     "Related context:\nSynthetic source-backed headline.\n\n" if index % 2 else ""
                 )
@@ -94,8 +101,10 @@ async def test_final_section_sql_handles_newlines_fanout_and_missing_sections(ki
             assert result["repeated_situation_count"] == (4 if kind == "repeated" else 0)
             assert result["situation_replaced_count"] == 0
             assert result["action_replaced_count"] == 2
-            assert result["repeated_action_count"] == (2 if kind == "generic" else 1)
-            assert result["generic_possible_action_count"] == (2 if kind == "generic" else 0)
+            assert result["repeated_action_count"] == (2 if kind in {"generic", "pace"} else 1)
+            assert result["generic_possible_action_count"] == (
+                2 if kind in {"generic", "pace"} else 0
+            )
             assert result["missing_situation_count"] == (2 if kind == "missing" else 0)
             assert result["missing_action_count"] == (2 if kind == "missing" else 0)
             await conn.rollback()
