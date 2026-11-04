@@ -5,6 +5,11 @@ standalone next-observation pace boilerplate, while retaining specific evidence-
 The collector normalizes whitespace before matching and reports aggregate event counts only.
 Telegram status counts rows created in the rolling 24-hour window separately from failures
 finalized in that window; these are different cohorts and must not be subtracted from each other.
+Delivery diagnostics distinguish explicit bot blocks from unavailable or deactivated recipients.
+An otherwise unexplained `Forbidden` response remains an actionable unknown; these diagnostic
+categories do not change delivery retries or recipient eligibility. Event Analysis logical outcome
+rows label their provider and model as significance-stage attribution because a later Render failure
+can make the overall operation fail. Render has separate operation and provider telemetry.
 
 Use these read-only queries for production analysis. Adjust interval windows as needed. Start with
 aggregate evidence. Do not export or paste user IDs, alert text, `numeric_context`, or other

@@ -527,6 +527,14 @@ def test_ops_agent_classifies_legacy_symbols_and_blocked_failures_separately():
     assert "failed_or_retry_pending_total" in query_names[
         "telegram_delivery_failure_summary"
     ].sql
+    for name in ("telegram_delivery_failure_summary", "alerts_failures"):
+        assert "concat_ws(' ', last_error, error_message)" in query_names[name].sql
+
+
+def test_analysis_outcome_provider_is_identified_as_significance_stage():
+    query = next(q for q in QUERIES if q.name == "event_analysis_logical_outcome_summary")
+    assert "provider AS significance_provider" in query.sql
+    assert "model AS significance_model" in query.sql
 
 
 def test_ops_agent_queries_include_hardened_anomaly_evidence():
@@ -1248,7 +1256,8 @@ def test_blocked_user_delivery_failures_stay_visible_without_actionable_severity
                     "rows": [
                         {
                             "failed_or_retry_pending_total": 12,
-                            "blocked_user": 12,
+                            "blocked_user": 10,
+                            "recipient_unavailable": 2,
                             "retry_pending_actionable": 0,
                             "unexplained_telegram_failure": 0,
                         }
@@ -1273,7 +1282,8 @@ def test_blocked_user_delivery_failures_stay_visible_without_actionable_severity
     assert detector.status == "clear"
     assert detector.severity == "info"
     assert detector.metrics["failed"] == 0
-    assert detector.metrics["blocked_user_failures"] == 12
+    assert detector.metrics["blocked_user_failures"] == 10
+    assert detector.metrics["unavailable_recipient_failures"] == 2
     assert detector.metrics["failed_or_retry_pending_total"] == 12
 
 

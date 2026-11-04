@@ -37,7 +37,6 @@ from bot.settings import (
     normalize_automatic_check_interval_seconds,
 )
 from bot.storage import load_state
-from bot.telegram_errors import is_bot_blocked_error
 
 
 class ComponentStatus(StrEnum):
@@ -209,14 +208,17 @@ def _delivery_failure_category(last_error: str | None, error_message: str | None
     return "Other delivery failures"
 
 
-def _is_expected_blocked_delivery_failure(
+def _delivery_recipient_category(
     last_error: str | None,
     error_message: str | None,
-) -> bool:
-    if is_bot_blocked_error(last_error) or is_bot_blocked_error(error_message):
-        return True
+) -> str:
     text = " ".join(part for part in (last_error, error_message) if part)
-    return bool(_CHAT_UNAVAILABLE_DELIVERY_ERROR_RE.search(text))
+    if "bot was blocked" in text.lower():
+        return "blocked"
+    if ("chat not found" in text.lower() or "user is deactivated" in text.lower()
+            or _CHAT_UNAVAILABLE_DELIVERY_ERROR_RE.search(text)):
+        return "recipient_unavailable"
+    return "unknown"
 
 
 def _worst_status(statuses: list[ComponentStatus]) -> ComponentStatus:
@@ -1143,11 +1145,16 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         )
     ).all()
     blocked_final_failed = 0
+    unavailable_final_failed = 0
     real_final_failed = 0
     real_failure_categories: dict[str, int] = {}
     for last_error, error_message in final_failure_rows:
-        if _is_expected_blocked_delivery_failure(last_error, error_message):
+        recipient_category = _delivery_recipient_category(last_error, error_message)
+        if recipient_category == "blocked":
             blocked_final_failed += 1
+            continue
+        if recipient_category == "recipient_unavailable":
+            unavailable_final_failed += 1
             continue
         real_final_failed += 1
         category = _delivery_failure_category(last_error, error_message)
@@ -1194,7 +1201,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         status = ComponentStatus.FAIL
     elif non_final_failed > 0 or pending > 0 or retry_pending > 0:
         status = ComponentStatus.WARN
-    elif sent > 0 or blocked_final_failed > 0:
+    elif sent > 0 or blocked_final_failed > 0 or unavailable_final_failed > 0:
         status = ComponentStatus.OK
     else:
         status = ComponentStatus.UNKNOWN
@@ -1203,15 +1210,19 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         f"Created in last 24h: sent {sent}, pending {pending}, retry_pending {retry_pending}, "
         f"failed {failed}; finalized in last 24h: final_failed {final_failed}, "
         f"blocked_final_failed {blocked_final_failed}, real_final_failed {real_final_failed}, "
+        f"recipient_unavailable {unavailable_final_failed}, "
         f"blocked_users {blocked_users}"
     )
     info_rows = []
     problem_rows = []
-    if real_final_failed > 0 and blocked_final_failed > 0:
+    if real_final_failed > 0 and (blocked_final_failed > 0 or unavailable_final_failed > 0):
         problem_rows.append(f"Real delivery failures: {real_final_failed}")
+    if real_final_failed > 0 and blocked_final_failed > 0:
         info_rows.append(f"Blocked-user failures: {blocked_final_failed}")
     elif blocked_final_failed > 0:
         info_rows.append(f"Blocked-user failures: {blocked_final_failed} in 24h")
+    if unavailable_final_failed > 0:
+        info_rows.append(f"Unavailable-recipient failures: {unavailable_final_failed} in 24h")
     if real_final_failed > 0:
         for category in sorted(real_failure_categories):
             problem_rows.append(f"{category}: {real_failure_categories[category]}")
@@ -1223,7 +1234,7 @@ async def _delivery_health(session: AsyncSession, *, now: datetime) -> Component
         summary = "retry/pending deliveries"
     elif non_final_failed > 0:
         summary = "failed deliveries"
-    elif blocked_final_failed > 0:
+    elif blocked_final_failed > 0 or unavailable_final_failed > 0:
         summary = "no system delivery issue"
     elif sent > 0:
         summary = f"sent {sent} in 24h"

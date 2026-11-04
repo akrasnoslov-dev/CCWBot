@@ -39,6 +39,16 @@ async def build_session_factory():
     return engine, session_local
 
 
+@pytest.mark.parametrize("last_error,error_message,expected", [
+    ("timeout", "Forbidden: bot was blocked by the user", "blocked"),
+    (None, "Bad Request: chat not found", "recipient_unavailable"),
+    (None, "Forbidden: group permissions changed", "unknown"),
+    ("Timed out", None, "unknown"),
+])
+def test_diagnostics_distinguish_recipient_categories(last_error, error_message, expected):
+    assert system_status._delivery_recipient_category(last_error, error_message) == expected
+
+
 @pytest.mark.asyncio
 async def test_llm_diagnostics_explains_event_analysis_render_dependency():
     engine, session_local = await build_session_factory()
@@ -855,7 +865,7 @@ async def test_system_status_delivery_mixed_final_failures_show_real_and_blocked
 
         assert "❌ Telegram — final_failed 3 in 24h" in text
         assert "Real delivery failures: 2" in text
-        assert "Blocked-user failures: 1" in text
+        assert "Unavailable-recipient failures: 1" in text
         assert "Network/timeouts: 1" in text
         assert "Other delivery failures: 1" in text
         assert "user is deactivated" not in text
