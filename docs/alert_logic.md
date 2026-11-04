@@ -119,6 +119,14 @@ by the model must correspond to actual supplied observations, at quoted precisio
 An observed price band may guide scenarios but never mandates two high/low conditions.
 Trading terminology is permitted only when it adds a concrete, evidence-grounded next
 observation. Generic entry, exposure, or risk-plan padding is not useful Stage-2 copy.
+When available, Possible action should connect the next observation to a supplied market
+relationship or observed price band; it must not manufacture a reference when evidence is absent.
+Factual claims naming 30-minute or one-hour periods use their corresponding supplied metric,
+with the analysed-window metric usable for the same duration when that metric is unavailable.
+Comparisons of period-specific rises or declines require both supplied directions and the
+claimed relative magnitudes to agree; equivalent periods cannot be compared as different windows.
+Reject historical magnitude comparisons whose relationship cannot be verified; preserve
+conditional future scenarios as such rather than treating them as established market facts.
 This does not alter other product features. No guaranteed outcomes or
 invented technical support/resistance, causes or forecasts are permitted.
 

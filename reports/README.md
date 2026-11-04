@@ -8,6 +8,7 @@ A clean clone of branch `dev` restores the historical evidence and owner evaluat
 - [`event-alert-review-20261016/`](event-alert-review-20261016/): historical Event Alerts tests (CCW-16/29/41/43), model ledgers and human reviews.
 - [`event-alert-review-20261016/owner_review_20261026/`](event-alert-review-20261016/owner_review_20261026/): the 66 owner reviews, label table, and six-prompt scoring.
 - [`ccw25-20261019/`](ccw25-20261019/): offline LLM benchmark evidence, scores and reproducibility metadata.
+- [`ccw47_final_comparison_20261026/`](ccw47_final_comparison_20261026/): CCW-47 final prompt comparison, screened 200-case decision ledger and SHA-256 archive inventory.
 - [`historical_helpers/`](historical_helpers/): recovered one-off research scripts; the original `event_alert_benchmark.py` is already versioned under `scripts/`.
 - [`migration/`](migration/): original scan manifest and UTF-16 conversion records.
 - [`context-audit.md`](context-audit.md): research context audit.

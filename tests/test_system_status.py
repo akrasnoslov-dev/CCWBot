@@ -39,6 +39,28 @@ async def build_session_factory():
     return engine, session_local
 
 
+@pytest.mark.parametrize("last_error,error_message,expected", [
+    ("timeout", "Forbidden: bot was blocked by the user", "blocked"),
+    (None, "Bad Request: chat not found", "recipient_unavailable"),
+    (None, "Forbidden: group permissions changed", "unknown"),
+    ("Timed out", None, "unknown"),
+])
+def test_diagnostics_distinguish_recipient_categories(last_error, error_message, expected):
+    assert system_status._delivery_recipient_category(last_error, error_message) == expected
+
+
+@pytest.mark.asyncio
+async def test_llm_diagnostics_explains_event_analysis_render_dependency():
+    engine, session_local = await build_session_factory()
+    try:
+        text = await build_admin_llm_diagnostics_text(
+            db_enabled=True, session_factory=session_local, now=_now()
+        )
+        assert "Event Analysis includes downstream Event Alert Render failures" in text
+    finally:
+        await engine.dispose()
+
+
 def _now() -> datetime:
     return datetime(2026, 6, 15, 16, 55, tzinfo=timezone.utc)
 
@@ -758,6 +780,7 @@ async def test_system_status_delivery_blocked_only_final_failures_are_not_system
         assert "Overall: ❌ Problems detected" not in text
         assert "❌ Telegram" not in text
         assert "✅ Telegram — no system delivery issue" in text
+        assert "blocked failures 1, unavailable recipients 1 (24h)" in text
         assert "Blocked-user failures" not in text
         assert "Blocked users" not in text
         assert "bot was blocked by the user" not in text
@@ -843,7 +866,7 @@ async def test_system_status_delivery_mixed_final_failures_show_real_and_blocked
 
         assert "❌ Telegram — final_failed 3 in 24h" in text
         assert "Real delivery failures: 2" in text
-        assert "Blocked-user failures: 1" in text
+        assert "Unavailable-recipient failures: 1" in text
         assert "Network/timeouts: 1" in text
         assert "Other delivery failures: 1" in text
         assert "user is deactivated" not in text
@@ -852,6 +875,31 @@ async def test_system_status_delivery_mixed_final_failures_show_real_and_blocked
         assert "401" not in text
         assert "402" not in text
         assert "403" not in text
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_delivery_pending_failure_not_masked_by_old_row_finalized_today():
+    now = _now()
+    engine, session_local = await build_session_factory()
+    try:
+        async with session_local() as session:
+            old = _final_failed_alert(
+                sent_to_chat_id=401, created_at=now - timedelta(days=2),
+                error_message="Forbidden: bot was blocked by the user",
+            )
+            old.final_failed_at = now - timedelta(hours=1)
+            pending = _final_failed_alert(
+                sent_to_chat_id=402, created_at=now - timedelta(hours=2),
+                error_message="Temporary delivery problem",
+            )
+            pending.final_failed_at = None
+            session.add_all([old, pending])
+            await session.commit()
+            health = await system_status._delivery_health(session, now=now)
+        assert health.status == system_status.ComponentStatus.WARN
+        assert "failed deliveries" in health.summary
     finally:
         await engine.dispose()
 

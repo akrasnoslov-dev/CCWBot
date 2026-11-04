@@ -223,6 +223,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     failure_summary_rows = _query_rows(evidence, aggregate, "telegram_delivery_failure_summary")
     failure_summary = failure_summary_rows[0] if failure_summary_rows else {}
     blocked_user_failures = _int(failure_summary.get("blocked_user"))
+    unavailable_recipient_failures = _int(failure_summary.get("recipient_unavailable"))
     retry_pending_actionable = _int(failure_summary.get("retry_pending_actionable"))
     unexplained_telegram_failures = _int(
         failure_summary.get("unexplained_telegram_failure")
@@ -543,6 +544,7 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 "total": total_deliveries,
                 "failed_rate": failed_rate,
                 "blocked_user_failures": blocked_user_failures,
+                "unavailable_recipient_failures": unavailable_recipient_failures,
                 "retry_pending_actionable": retry_pending_actionable,
                 "unexplained_telegram_failures": unexplained_telegram_failures,
                 "failed_or_retry_pending_total": failed_or_retry_pending_total,

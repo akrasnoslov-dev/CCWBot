@@ -910,7 +910,8 @@ def _detector_user_impact(result: DetectorResult) -> str:
         return (
             f"{_int(metrics.get('retry_pending_actionable'))} retry-pending actionable, "
             f"{_int(metrics.get('unexplained_telegram_failures'))} unexplained, "
-            f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures"
+            f"{_int(metrics.get('blocked_user_failures'))} blocked-user failures, "
+            f"{_int(metrics.get('unavailable_recipient_failures'))} unavailable recipients"
         )
     if result.id == "repeated_llm_failures_or_rate_limits":
         if "provider_attempt_incidents" in metrics:
