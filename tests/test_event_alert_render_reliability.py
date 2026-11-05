@@ -715,3 +715,65 @@ def test_render_metrics_never_invent_missing_prior_notification_or_invalid_numbe
     assert compact["market_metrics"] == {"analysed_window_minutes": 180}
     assert "since_previous_notification" not in compact["market_metrics"]
     assert compact["market_directions"] == {}
+
+@pytest.mark.parametrize("statement,valid", [
+    ("The final snapshot fell after the previous snapshot rose.", True),
+    ("The final snapshot rose after the previous snapshot fell.", False),
+    ("The final snapshot fell after the previous snapshot fell.", False),
+    ("The final snapshot fell after the previous snapshot rose, "
+     "while the 24-hour trend fell.", False),
+    ("The last snapshot fell following the previous snapshot rose.", True),
+])
+@pytest.mark.parametrize("section", ["message_body", "possible_action"])
+def test_mixed_snapshot_steps_are_checked_against_their_own_observations(
+    statement, valid, section
+):
+    payload = _payload()
+    payload["symbol"] = "SOL"
+    payload["market"].update(
+        price=99, chg_window_percent=-1, chg24h_percent=2,
+        snapshots=[{"m": -180, "p": 100}, {"m": -120, "p": 98},
+                   {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+    )
+    parsed = {"message_body": "The short-term decline contrasts with the 24-hour rise.",
+              "related_news_ids": [],
+              "possible_action": "Watch the next observed interval."}
+    parsed[section] = statement
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        result = alerts._event_alert_render_result_for_validation(
+            parsed, input_payload=payload, expected_symbol="SOL", confidence="high",
+            candidate_news_ids=set(),
+        )
+        validate_event_analysis_output(
+            result, expected_symbol="SOL", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("snapshots", [
+    [],
+    [{"m": -120, "p": 98}, {"m": -60, "p": 101}, {"m": -1, "p": 99}],
+    [{"m": -60, "p": 98}, {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+    [{"m": -120, "p": 101}, {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+])
+def test_snapshot_step_claim_requires_unambiguous_current_observations(snapshots):
+    assert not alerts.market_direction_claims_supported(
+        "The final snapshot fell after the previous snapshot rose.",
+        {"snapshots": snapshots, "chg_window_percent": -1},
+    )
+
+
+def test_future_snapshot_step_scenario_is_not_treated_as_a_historical_fact():
+    from bot.alerting.event_analysis import _validate_action_market_claims
+
+    _validate_action_market_claims(
+        "If the final snapshot rose after the previous snapshot fell, watch the next interval.",
+        market_data={"snapshots": []}, last_msg=None, timestamp_utc=None,
+    )
