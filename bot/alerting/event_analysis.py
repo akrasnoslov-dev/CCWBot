@@ -1518,20 +1518,24 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     )
     relationship = re.compile(
         r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"
-        r"in\s+(?:line|step)\s+with|direction\s+of)\b"
+        r"in\s+(?:line|step)\s+with|direction\s+of|contrast\w*\s+with)\b"
     )
     for clause in clauses:
+        claim = relationship.search(clause)
+        if claim is None:
+            continue
+        bare_current_market = (
+            bool(re.match(r"(?i)contrast", claim.group(0)))
+            and bool(re.search(r"(?i)\bmarket\b", clause[:claim.start()]))
+        )
         if not (
-            re.search(
+            (bare_current_market or re.search(
                 r"(?i)\b(?:short[- ]term|current|latest|"
                 r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b",
                 clause,
-            )
+            ))
             and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", clause)
         ):
-            continue
-        claim = relationship.search(clause)
-        if claim is None:
             continue
         if window is None or day is None or window == 0 or day == 0:
             return False
@@ -1547,7 +1551,9 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
             )
         )
         aligned = (window > 0) == (day > 0)
-        if aligned == negated:
+        claims_contrast = bool(re.match(r"(?i)contrast", claim.group(0)))
+        relationship_holds = not aligned if claims_contrast else aligned
+        if relationship_holds == negated:
             return False
     return True
 

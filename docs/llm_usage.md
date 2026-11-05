@@ -179,12 +179,12 @@ The router (`bot/services/llm/router.py`) tries each configured provider/model e
 advances on a rate limit, timeout, 5xx, auth, network error, provider-side model failure, or invalid
 validated output. It surfaces a genuine request defect to the caller unchanged. Generic call types
 retain their existing terminal handling after chain exhaustion. Event Alert Render fails closed
-when any exhausted attempt has a transport, rate-limit, backoff, unavailable-model, or
-circuit-breaker failure. Only exhaustion consisting exclusively of invalid model output
-(client-side JSON/schema rejects or provider-side `provider_json_validate_failed`) permits
-backend-derived deterministic presentation, subject to full factual validation below.
-Providers excluded for missing credentials are not attempted; if none is configured, Render is
-terminal. No further LLM calls are made during deterministic recovery.
+when configured attempts are exhausted. A later configured provider receives only fixed,
+value-free repair guidance after an invalid Render output, without forwarding the rejected
+output or adding provider requests. In a single-provider configuration, there is no later
+attempt to receive this guidance. Render never creates deterministic
+Situation or Possible action text. Providers excluded for missing credentials are not attempted;
+if none is configured, Render is terminal.
 
 ### Event Analysis timeout and operation budget
 
@@ -209,9 +209,9 @@ the logical `llm_operation_id`.
 
 `LLM_EVENT_ANALYSIS_OPERATION_BUDGET_SECONDS` adjusts the total budget (default 90, allowed 15-120).
 Explicit caller timeouts still override the per-provider default but remain bounded by
-the remaining operation budget. All other call types retain their shared 15s timeout,
-including Event Alert Render. No extra LLM requests are added. These settings do not
-change event significance or delivery logic.
+the remaining operation budget. Other call types retain their shared 15s timeout, including
+each Event Alert Render attempt. These timeout settings do not change event significance
+or delivery logic.
 
 A production check should use sanitized startup configuration and correlated `llm_usage_logs`
 attempt/final-outcome timestamps to compare timeout counts, fallback recovery, and active-backoff
