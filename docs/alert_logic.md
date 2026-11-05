@@ -131,7 +131,9 @@ This does not alter other product features. No guaranteed outcomes or
 invented technical support/resistance, causes or forecasts are permitted.
 
 The existing provider chain may repair invalid schema/facts within its configured
-attempt limits. When no valid Render output is available, mark the render/analysis
+attempt limits. Later configured providers receive fixed, value-free guidance after
+invalid output. No additional provider request is introduced. When no valid Render
+output is available, mark the render/analysis
 failed with a privacy-safe reason. **Never** substitute deterministic Situation
 or Possible action paragraphs; never change Stage-1 significance or invent an
 outgoing alert. The final `Not financial advice.` footer is mandatory. When the

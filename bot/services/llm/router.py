@@ -18,8 +18,7 @@ When callers pass ``validate_response``, invalid provider *output* is also fallb
 the callback parses/validates each provider's raw response and raises ``AIInvalidJsonError``
 or ``AISchemaValidationError`` when the output cannot be trusted, which makes the router
 advance to the next provider (logged as ``llm_provider_switch reason=invalid_output``).
-Each concrete provider/model entry is attempted at most once per logical call; there is no
-same-provider retry loop.
+Each concrete provider/model entry is attempted at most once per logical call.
 
 Exhaustion mapping preserves the exception contract existing callers already handle:
 - if any provider returned invalid output -> the last ``AIInvalidJsonError`` /
@@ -104,6 +103,27 @@ _FALLBACK_REASONS = frozenset(
 
 # Providers whose incomplete configuration we have already logged, to avoid per-call log spam.
 _warned_unconfigured: set[str] = set()
+
+# Fixed, value-free guidance only. Never send a prior provider's raw output or
+# exception text to another provider. These hints add no requests.
+_RENDER_REPAIR_HINTS = {
+    "period_direction_mismatch": (
+        "Check each period's own net direction and both sides of any comparison. "
+        "Describe snapshot steps separately from the net window and 24-hour moves."
+    ),
+    "unsupported_event_claim": (
+        "Remove catalysts, indicators and pace claims not established by the supplied "
+        "evidence. Retain relationships explicitly supported by that evidence."
+    ),
+    "unsupported_trajectory": (
+        "Do not claim a persistent or uniform path unless every observed step supports it. "
+        "Describe only the supplied observed path."
+    ),
+    "window_duration_mismatch": (
+        "Use the actual supplied duration for each market move; omit a duration "
+        "when the supplied evidence does not establish it."
+    ),
+}
 
 
 def _default_registry() -> dict:
@@ -237,6 +257,7 @@ class LLMRouter:
         breaker_skipped: list[str] = []
         attempted_names: list[str] = []
         failure_categories: list[str] = []
+        render_repair_hint: str | None = None
         input_chars = message_input_chars(messages)
         # One wall-clock allowance covers the full chain. No provider is retried;
         # three 15s defaults leave ample headroom within the 90s ceiling.
@@ -313,13 +334,18 @@ class LLMRouter:
                     break
                 deadline_capped = request_timeout > remaining
                 request_timeout = min(request_timeout, remaining)
+            attempt_messages = messages
+            if call_type == "event_alert_render" and render_repair_hint:
+                # Copy the caller's messages: later operations and prior attempts must
+                # never inherit this repair instruction or the rejected provider text.
+                attempt_messages = [*messages, {"role": "user", "content": render_repair_hint}]
             attempted_names.append(name)
             try:
                 result = await provider.chat_completion(
                     call_type=call_type,
                     symbol=symbol,
                     model=model,
-                    messages=messages,
+                    messages=attempt_messages,
                     max_tokens=attempt_max_tokens,
                     response_format=attempt_response_format,
                     timeout=request_timeout,
@@ -396,6 +422,9 @@ class LLMRouter:
                         )
                         invalid_output_error.provider = name
                         invalid_output_error.model = model
+                        render_repair_hint = (
+                            "Previous render was invalid JSON. Return the requested JSON object."
+                        )
                     if reason == "rate_limit":
                         saw_rate_limit = True
                         if rate_limited_name is None:
@@ -432,6 +461,20 @@ class LLMRouter:
                     # same as a provider 5xx: advance to the next provider in the chain.
                     attempted += 1
                     invalid_output_error = error
+                    if call_type == "event_alert_render":
+                        reason = str(error) if isinstance(error, AISchemaValidationError) else ""
+                        guidance = _RENDER_REPAIR_HINTS.get(reason)
+                        if guidance:
+                            render_repair_hint = (
+                                f"Previous render failed validation ({reason}). {guidance} "
+                                "Return a new complete JSON response grounded in the "
+                                "original input."
+                            )
+                        else:
+                            render_repair_hint = (
+                                "Previous render failed validation. Return a new complete JSON "
+                                "response grounded in the original input and output schema."
+                            )
                     last_error = error
                     failure_categories.append(
                         f"{name}:{classify_ai_error_reason(error)}"
