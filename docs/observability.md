@@ -218,6 +218,15 @@ recognized terminal statuses enter the failure count. A correlated failed attemp
 successful terminal outcome increments `recovered_operations` once per logical operation,
 not the terminal-failure count.
 
+The `/health.event_analysis.render_24h` block independently summarizes completed
+`event_alert_render` logical operations (successes, terminal failures, missing
+outcomes, success rate, and sample-aware state) over the last 24 hours. A successful
+significance decision followed by failed rendering must remain visible as a Render
+failure even when Telegram delivery never starts. Render status never changes
+the Event Analysis state or top-level `/health.status`. Sparse Render traffic is
+`unknown`, not automatically `ok`, and the block contains no provider/model or
+user identifiers. The shared health-query deadline still applies.
+
 The top-level `/health.status` contract remains unchanged. Nested Event Analysis may now report
 `failed` as well as `ok`, `degraded`, and `unknown`. `logical_24h` is an additive, sanitized
 nested block. The old in-memory `consecutive_failures` counter remains independent and can
