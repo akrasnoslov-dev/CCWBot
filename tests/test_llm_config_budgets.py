@@ -781,7 +781,16 @@ def test_event_alert_render_model_overrides_are_independent(monkeypatch):
         "weekly_report",
     ],
 )
-def test_openai_uses_strict_json_schema_for_every_feature(call_type):
+def test_openai_uses_strict_json_schema_for_every_feature(call_type, monkeypatch):
+    # The request-shape contract must not depend on operator-local .env overrides.
+    for key in (
+        "LLM_EVENT_PROVIDERS",
+        "LLM_EVENT_RENDER_PROVIDERS",
+        "LLM_NEWS_INTELLIGENCE_PROVIDERS",
+        "LLM_HEARTBEAT_PROVIDERS",
+        "LLM_REPORT_PROVIDERS",
+    ):
+        monkeypatch.setenv(key, "groq,openai,cloudflare")
     from bot.services.ai_agent_groq import _structured_response_formats
 
     _default, overrides = _structured_response_formats(

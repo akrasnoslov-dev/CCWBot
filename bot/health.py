@@ -63,6 +63,17 @@ async def _read_event_analysis_logical_health():
         return results["event_analysis"]
 
 
+async def _read_event_alert_render_logical_health():
+    """Read terminal Render outcomes independently of significance health."""
+    if not (DB_ENABLED and DB_SESSION_LOCAL):
+        return None
+    async with DB_SESSION_LOCAL() as session:
+        results = await read_logical_llm_health(
+            session, call_types=("event_alert_render",)
+        )
+        return results["event_alert_render"]
+
+
 async def _event_analysis_block() -> dict[str, Any]:
     """Event Analysis health, as a nested block that never changes the top-level status.
 
@@ -76,6 +87,7 @@ async def _event_analysis_block() -> dict[str, Any]:
     counters = event_analysis_health.snapshot()
     last_success_at = None
     logical = None
+    render_logical = None
     # A shared 2s deadline below Docker's 5s healthcheck timeout.
     # Sequential reads avoid leaving a sibling DB task running after an early error.
     try:
@@ -86,6 +98,7 @@ async def _event_analysis_block() -> dict[str, Any]:
                 pass
             try:
                 logical = await _read_event_analysis_logical_health()
+                render_logical = await _read_event_alert_render_logical_health()
             except Exception:
                 pass
     except TimeoutError:
@@ -124,6 +137,16 @@ async def _event_analysis_block() -> dict[str, Any]:
             "missing_outcomes": logical.missing_outcomes if logical else 0,
             "recovered_operations": logical.recovered_operations if logical else 0,
             "success_rate_percent": logical.success_rate_percent if logical else None,
+        },
+        "render_24h": {
+            "state": render_logical.state if render_logical else "unknown",
+            "operations": render_logical.operations if render_logical else 0,
+            "successes": render_logical.successes if render_logical else 0,
+            "terminal_failures": render_logical.terminal_failures if render_logical else 0,
+            "missing_outcomes": render_logical.missing_outcomes if render_logical else 0,
+            "success_rate_percent": (
+                render_logical.success_rate_percent if render_logical else None
+            ),
         },
     }
 
