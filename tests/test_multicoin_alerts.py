@@ -998,7 +998,10 @@ async def test_automatic_price_check_persists_filtered_outcomes_after_event_anal
 
 
 @pytest.mark.asyncio
-async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipients(monkeypatch):
+@pytest.mark.parametrize("retry_render", [False, True])
+async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipients(
+    monkeypatch, caplog, retry_render
+):
     recipients = [
         alerts.AlertRecipient(chat_id=2001, user_id=1),
         alerts.AlertRecipient(chat_id=2002, user_id=2),
@@ -1044,18 +1047,52 @@ async def test_automatic_price_check_reuses_one_ai_payload_for_eligible_recipien
         "_get_or_create_event_alert_market_event",
         AsyncMock(return_value=(123, "btc:event", "instance-a", False)),
     )
-    monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
+    if retry_render:
+        from bot.services.llm.errors import AISchemaValidationError
+
+        significance = {
+            "symbol": "BTC", "should_alert": True, "confidence": "high",
+            "materiality": "material", "novelty": "new", "reason_code": "unusual_move",
+        }
+        render = {
+            "message_body": "The current observations show a higher short-term range.",
+            "possible_action": "The next observation may clarify whether the move continues.",
+            "related_news_ids": [],
+        }
+
+        async def render_with_retry(input_payload, *, schema_check):
+            with pytest.raises(AISchemaValidationError):
+                schema_check({**render, "related_news_ids": ["n999"]})
+            schema_check(render)
+            return "synthetic", render
+
+        monkeypatch.setattr(
+            alerts, "ask_event_significance_raw",
+            AsyncMock(return_value=("synthetic", significance)),
+        )
+        monkeypatch.setattr(alerts, "ask_event_alert_render_raw", render_with_retry)
+        monkeypatch.setattr(alerts, "_save_event_alert_render_outcome", AsyncMock())
+        monkeypatch.setattr(alerts, "_save_event_analysis_attempt", AsyncMock(return_value=456))
+        monkeypatch.setattr(alerts, "_record_alert_delivery_outcome", AsyncMock())
+        monkeypatch.setattr(alerts, "_get_previous_event_alert_id", AsyncMock(return_value=None))
+    else:
+        monkeypatch.setattr(alerts, "_create_event_analysis_decision", create_decision)
     monkeypatch.setattr(alerts, "_deliver_market_event_alert", deliver_alert)
     monkeypatch.setattr(alerts, "_save_price_state", AsyncMock())
     monkeypatch.setattr(alerts, "remember_news_context", AsyncMock())
 
-    await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
+    with caplog.at_level("INFO", logger="bot.alerts"):
+        await alerts.automatic_price_check(SimpleNamespace(application=SimpleNamespace()))
 
-    create_decision.assert_awaited_once()
+    if not retry_render:
+        create_decision.assert_awaited_once()
     deliver_alert.assert_awaited_once()
     assert deliver_alert.await_args.kwargs["event_type"] == "event_alert"
     assert deliver_alert.await_args.kwargs["recipients"] == recipients
     assert "BTC Event Alert" in deliver_alert.await_args.kwargs["alert_payload"]["plain_text"]
+    assert caplog.text.count("stage=shared_payload_ready") == 1
+    assert caplog.text.count("ops_event=event_news_dispatch") == 1
+    assert "reused=False" in caplog.text
 
 
 @pytest.mark.asyncio
