@@ -706,6 +706,16 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "Use only provided prices, actual time periods and snapshot sequences. "
         "Do not repeat verbatim the analysed-window move and price already shown "
         "in the alert headline and metric block. Do not infer a cause from news.",
+        "Period integrity: market_directions.window is the net analysed-window "
+        "direction; market_directions.24h is the independent 24-hour direction. "
+        "An individual snapshot step, a since-notification move, and a 24-hour "
+        "move must never be described as the net analysed-window move. "
+        "When both net directions are present and opposite, describe divergence, "
+        "not alignment or a shared rise/fall. When either is absent or flat, do "
+        "not claim alignment, divergence or a reversal between these periods. "
+        "Do not claim a stronger/weaker rise or fall across periods unless the "
+        "corresponding exact market_metrics support both direction and magnitude. "
+        "Avoid period comparisons entirely when their evidence is incomplete. ",
         "Possible action: name the next observed market behaviour that would distinguish "
         "continuation, slowing or reversal; bind the observation to a supplied relationship "
         "such as the window versus 24-hour direction, a verified change in pace, or an "
