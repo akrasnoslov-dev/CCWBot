@@ -8,7 +8,6 @@ from ops_agent.db_queries import QUERIES, validate_read_only_queries
 from ops_agent.detectors import run_detectors
 from ops_agent.schemas import Period
 
-
 AGGREGATE = "evidence/db/aggregate_metrics.json"
 
 
