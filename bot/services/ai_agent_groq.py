@@ -764,6 +764,13 @@ def _render_market_direction(value: object) -> str | None:
         return None
     if not change.is_finite():
         return None
+    # A Decimal such as 1e10000 is finite but not a usable finite market
+    # percentage. Keep direction and numeric evidence on the same validity gate.
+    try:
+        if not isfinite(float(change)):
+            return None
+    except (ValueError, OverflowError):
+        return None
     return "up" if change > 0 else "down" if change < 0 else "flat"
 
 
