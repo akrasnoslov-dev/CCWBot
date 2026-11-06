@@ -153,6 +153,9 @@ and Telegram delivery.
   insolvencies, liquidations or other systemic crypto-market incidents may be
   market-wide evidence for BTC, ETH, SOL and GRAM even if not each coin is named.
   A generic exchange, ETF, regulatory, security or macro keyword is not enough.
+  An article about an election, monetary policy, inflation or risk assets may
+  support multiple coins when its own text substantiates a broad crypto-market
+  reaction. A shared BTC/ETH move alone does not prove a connection to SOL or GRAM.
 - Rank by incident impact, article specificity, relevance and freshness. Material
   market-wide news can outrank routine directly tagged reports.
 - The configurable `EVENT_ALERT_NEWS_SHORTLIST_LIMIT` defaults to six candidates,
@@ -177,6 +180,16 @@ chosen IDs in bounded/sanitized form and final attachment counts. Never log prom
 private Telegram content, raw news exports, or credentials. The October 29-30
 Binance incident export motivates synthetic regression tests; raw exports must
 not be versioned.
+
+The `event_news_trace` shortlist record describes available candidate exposure;
+it does not establish that either model was called. Its
+`shared_payload_ready` record is emitted once after the shared message is built and
+distinguishes mapping, relevance rejection, rendered context and linked headlines.
+It is preparation telemetry, not a delivery count. `event_news_dispatch` records
+whether any send succeeded; use the existing delivery summary for recipient totals.
+The records correlate by context fingerprint and analysis ID, and label exact reuse.
+When no shared-payload record exists, consult decision and delivery outcomes;
+the missing record alone cannot establish an attachment failure.
 
 ## Telegram Event Alert presentation (2026-10)
 
