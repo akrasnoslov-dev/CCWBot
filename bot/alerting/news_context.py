@@ -237,12 +237,39 @@ def _is_clearly_market_wide_news(text: str) -> bool:
     # Generic "digital asset" or "cryptocurrencies" in a local legal or
     # product story does not prove material impact across tracked coins.
     substantive = (
-        "crypto market", "cryptocurrency market", "market-wide",
-        "market wide", "broader crypto", "broader market",
+        "crypto market", "cryptocurrency market", "broader crypto",
         "crypto selloff", "crypto sell-off", "crypto rally",
-        "market-wide selloff", "market-wide rally",
     )
-    return any(term in text for term in substantive)
+    if any(term in text for term in substantive):
+        return True
+    # An explicitly shared price move in the two largest crypto assets is
+    # market context, not evidence that the same cause drove another coin.
+    movement = (
+        r"(?:fall|falls|fell|slide|slides|slid|drop|drops|dropped|"
+        r"tumble|tumbles|tumbled|rise|rises|rose|rally|rallies|rallied|"
+        r"gain|gains|gained|surge|surges|surged|sell[- ]off)"
+    )
+    if re.search(rf"\b(?:crypto|cryptocurrency) prices?\s+{movement}\b", text):
+        return True
+    pair = (
+        r"(?:(?:bitcoin|btc)\s*(?:,|and|&)\s*(?:ether|ethereum|eth)|"
+        r"(?:ether|ethereum|eth)\s*(?:,|and|&)\s*(?:bitcoin|btc))"
+    )
+    for sentence in re.split(r"[.;!?\n]", text):
+        shared_move = re.search(
+            rf"\b{pair}(?:\s*(?:,|and|&)\s*altcoins?)?\s+"
+            rf"(?:prices?\s+)?{movement}\b", sentence,
+        )
+        broad_impact = re.search(
+            rf"\brisk[- ]off\b|\b(?:alongside|unsettle|unsettles|unsettled) "
+            rf"risk (?:assets?|markets?)\b|\brisk (?:assets?|markets?) "
+            rf"(?:{movement}|sell(?:s|ing)? off)\b|"
+            rf"\b{pair}\s*(?:,|and|&)\s*altcoins?\s+{movement}\b",
+            sentence,
+        )
+        if shared_move and broad_impact:
+            return True
+    return False
 
 def _major_market_incident(news_item: dict) -> bool:
     """Evidence-backed systemic incident, independent of coin tagging.
@@ -379,18 +406,10 @@ def _log_news_selection_summary(
             market_wide_count += 1
         else:
             irrelevant_count += 1
-    selected_titles = [
-        _truncate_text(str(item.get("title") or "").strip(), 90)
-        for item in selected_news_items
-        if str(item.get("title") or "").strip()
-    ]
-    selected_labels = [
-        _candidate_news_relevance_label(symbol, item) for item in selected_news_items
-    ]
     logger.info(
         "related_news_selection symbol=%s source=%s candidate_count=%s "
         "direct_news_count=%s market_wide_news_count=%s irrelevant_filtered_count=%s "
-        "selected_count=%s selected_news_titles=%s selected_news_relevance_labels=%s "
+        "selected_count=%s "
         "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
         normalize_symbol(symbol).upper(),
         source,
@@ -399,8 +418,6 @@ def _log_news_selection_summary(
         market_wide_count,
         irrelevant_count,
         len(selected_news_items),
-        selected_titles,
-        selected_labels,
         (selection_stats or {}).get("noise_filtered_count", 0),
         (selection_stats or {}).get("dedup_filtered_count", 0),
         fallback_used,

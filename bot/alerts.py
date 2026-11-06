@@ -564,7 +564,7 @@ async def _select_related_news_context(
             logger.info(
                 "related_news_selection symbol=%s source=news_items candidate_count=%s "
                 "direct_news_count=0 market_wide_news_count=0 irrelevant_filtered_count=0 "
-                "selected_count=0 selected_news_titles=[] selected_news_relevance_labels=[] "
+                "selected_count=0 "
                 "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
                 normalized_symbol.upper(),
                 selection_stats.get("candidate_count", 0),
@@ -1147,12 +1147,54 @@ def _related_news_by_id(
         mapped_items.append(item)
     if missing_ids:
         logger.warning(
-            "%s selected related_news_ids could not be mapped: symbol=%s missing_ids=%s",
+            "%s selected related_news_ids could not be mapped: symbol=%s missing_id_count=%s",
             context,
             normalize_symbol(symbol).upper() if symbol else "unknown",
-            missing_ids[:5],
+            len(missing_ids),
         )
     return mapped_items
+
+
+def _log_event_news_trace(
+    *, symbol: str, context_fingerprint: str, analysis_id: int | None,
+    candidates: list[dict], shortlist_count: int, selected_ids: list[str],
+    alert_payload: dict, reused: bool,
+) -> None:
+    """Log one shared prepared payload, never validation attempts or recipient data."""
+    by_id = {str(item.get("news_id") or ""): item for item in candidates}
+    mapped = [by_id[str(item)] for item in selected_ids if str(item) in by_id]
+    irrelevant = sum(
+        _news_context.classify_news_relevance(symbol, item) == "irrelevant" for item in mapped
+    )
+    plain = str(alert_payload.get("plain_text") or "")
+    html = str(alert_payload.get("html_text") or "")
+    plain_marker = "Related context:\n"
+    html_marker = "<b>Related context</b>\n"
+    section = plain.partition(plain_marker)[2].partition("\n\nPossible action:")[0]
+    html_section = html.partition(html_marker)[2].partition(
+        "\n\n<b>Possible action</b>"
+    )[0]
+    rendered = sum(line.startswith("\u2022 ") for line in section.splitlines())
+    linked = html_section.count('<a href="')
+    kept = len(mapped) - irrelevant
+    positions = [str(item) for item in selected_ids if re.fullmatch(r"n[1-8]", str(item))][:8]
+    fingerprint = (
+        context_fingerprint if re.fullmatch(r"[0-9a-f]{64}", context_fingerprint) else "unknown"
+    )
+    logger.info(
+        "ops_event=event_news_trace stage=shared_payload_ready symbol=%s "
+        "context_fingerprint=%s analysis_id=%s reused=%s candidate_count=%s "
+        "stage1_available_count=%s stage2_available_count=%s selected_count=%s "
+        "selected_positions=%s "
+        "mapped_count=%s missing_id_count=%s irrelevant_count=%s relevance_kept_count=%s "
+        "presentation_cap_count=%s formatting_drop_count=%s rendered_count=%s linked_count=%s "
+        "unlinked_count=%s section_available=%s",
+        normalize_symbol(symbol).upper(), fingerprint, analysis_id, reused, len(candidates),
+        min(shortlist_count, 2), shortlist_count, len(selected_ids), positions,
+        len(mapped), len(selected_ids) - len(mapped), irrelevant, kept, max(0, kept - 3),
+        max(0, min(kept, 3) - rendered), rendered, linked,
+        max(0, rendered - linked), plain_marker in plain and html_marker in html,
+    )
 
 
 def _format_optional_percent(value: float | None) -> str:
@@ -6368,6 +6410,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_settings.get("automatic_check_interval_seconds", 300)
                 ),
             )
+            logger.info(
+                "ops_event=event_news_trace stage=shortlist_ready symbol=%s "
+                "context_fingerprint=%s candidate_count=%s stage1_available_count=%s "
+                "stage2_available_count=%s",
+                symbol.upper(), _event_context_fingerprint(input_payload), len(candidate_news),
+                min(len(input_payload.get("news") or []), 2), len(input_payload.get("news") or []),
+            )
             reusable_analysis = await _get_reusable_event_analysis_by_context(
                 input_payload,
                 candidate_news=candidate_news,
@@ -6595,6 +6644,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                             html_text=alert_payload["html_text"],
                         )
                         event_ai_analysis_id = analysis.id if analysis else event_ai_analysis_id
+            _log_event_news_trace(
+                symbol=symbol,
+                context_fingerprint=context_fingerprint,
+                analysis_id=event_ai_analysis_id,
+                candidates=candidate_news,
+                shortlist_count=len(input_payload.get("news") or []),
+                selected_ids=decision.related_news_ids,
+                alert_payload=alert_payload,
+                reused=reusable_analysis is not None,
+            )
             recipient_resolution = await resolve_alert_recipient_outcomes(
                 symbol=symbol,
                 event_type=EVENT_ALERT_TYPE,
@@ -6736,6 +6795,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 delivery_decision_reasons_by_recipient=(
                     recipient_filter.delivery_decision_reasons_by_recipient
                 ),
+            )
+            logger.info(
+                "ops_event=event_news_dispatch symbol=%s context_fingerprint=%s "
+                "analysis_id=%s delivered_any=%s",
+                symbol.upper(), context_fingerprint, event_ai_analysis_id, delivered,
             )
             if delivered:
                 delivered_symbols += 1

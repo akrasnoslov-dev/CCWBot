@@ -734,7 +734,10 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "related_news_ids only when the article supplies material, genuinely "
         "relevant context for the accepted market event. Critical, verified "
         "market-wide incidents may support several assets even without an explicit "
-        "asset name. Respect candidate IDs exactly. An empty array is correct when "
+        "asset name. Election, monetary policy, inflation, regulation or risk-asset "
+        "stories can be context when they contain evidence of broad crypto market impact; "
+        "a political or technology topic alone is not enough. "
+        "Respect candidate IDs exactly. An empty array is correct when "
         "nothing supports the event. Do not invent causal connections, IDs or news.",
         "Put prose only in its matching JSON field: no 'Situation:' or 'Possible action:' "
         "labels, and never embed one section inside the other. Never invent market data, "
