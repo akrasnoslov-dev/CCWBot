@@ -62,7 +62,7 @@ def test_synthetic_period_direction_rejection_matches_incident_category(symbol):
 
 def test_render_prompt_supplies_each_independent_period_direction():
     prompt = ai_agent_groq.build_event_alert_render_prompt(_payload())
-    facts = json.loads(prompt.split("Input JSON:\\n", 1)[1])
+    facts = json.loads(prompt.split("Input JSON:\n", 1)[1])
     assert facts["market_directions"] == {
         "window": "down", "30m": "up", "1h": "down", "24h": "up"
     }
@@ -76,7 +76,7 @@ def test_render_directions_are_only_present_for_supported_market_metrics():
     payload["market"]["chg24h_percent"] = 0
     facts = json.loads(
         ai_agent_groq.build_event_alert_render_prompt(payload)
-        .split("Input JSON:\\n", 1)[1]
+        .split("Input JSON:\n", 1)[1]
     )
     assert facts["market_directions"] == {"window": "down", "24h": "flat"}
     assert "change_30m_percent" not in facts["market_metrics"]
