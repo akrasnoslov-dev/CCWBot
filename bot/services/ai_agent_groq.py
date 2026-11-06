@@ -708,6 +708,8 @@ _EVENT_ALERT_RENDER_INSTRUCTIONS = "\n".join(
         "in the alert headline and metric block. Do not infer a cause from news.",
         "Period integrity: market_directions.window is the net analysed-window "
         "direction; market_directions.24h is the independent 24-hour direction. "
+        "market_directions.30m and .1h describe only those exact separately "
+        "supplied net periods, which may disagree with the analysed window. "
         "An individual snapshot step, a since-notification move, and a 24-hour "
         "move must never be described as the net analysed-window move. "
         "The snapshot spacing is not a 30-minute or 1-hour market metric. For "
@@ -837,6 +839,13 @@ def _event_alert_render_prompt_payload(input_payload: dict) -> dict:
         window = _render_market_direction(market.get("chg_window_percent"))
         if window is not None:
             directions["window"] = window
+    # The validator treats 30m/1h as independent observed periods. Supply their
+    # signs explicitly to Render rather than making the model infer them from
+    # differently scoped window, 24h or individual snapshot movements.
+    for period, field in (("30m", "chg30m_percent"), ("1h", "chg1h_percent")):
+        direction = _render_market_direction(market.get(field))
+        if direction is not None:
+            directions[period] = direction
     day = _render_market_direction(market.get("chg24h_percent"))
     if day is not None:
         directions["24h"] = day
