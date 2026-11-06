@@ -4,6 +4,7 @@ All provider calls are in-memory fakes. No network, Telegram, or production DB.
 """
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -32,10 +33,14 @@ class FakeProvider:
         self.name = name
         self.answers = answers
         self.calls = []
+        self.messages = []
 
     async def chat_completion(self, *, model, response_format, **kwargs):
         self.calls.append((model, response_format))
+        self.messages.append(kwargs["messages"])
         answer = self.answers[model]
+        if callable(answer):
+            answer = answer(kwargs["messages"])
         if isinstance(answer, BaseException):
             raise answer
         return ProviderResult(
@@ -121,6 +126,116 @@ async def test_success_after_each_model_and_no_later_calls(
     assert result.provider == render_chain[winner][0]
     assert result.model == render_chain[winner][1]
     assert sum(len(provider.calls) for provider in registry.values()) == winner + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", [
+    "period_direction_mismatch", "unsupported_event_claim", "unsupported_trajectory",
+    "window_duration_mismatch",
+])
+async def test_next_render_attempt_receives_safe_category_specific_repair_guidance(
+    monkeypatch, render_chain, reason,
+):
+    bad = json.dumps({"message_body": "bad", "related_news_ids": [],
+                      "possible_action": "Watch the next interval."})
+
+    def repaired(messages):
+        # A deterministic fake model improves only when the fallback gets feedback.
+        assert "Previous render" in messages[-1]["content"]
+        assert reason in messages[-1]["content"]
+        assert "bad" not in messages[-1]["content"]
+        if reason == "unsupported_event_claim":
+            assert "pace claims not established" in messages[-1]["content"]
+        return good_render()
+
+    registry = install(monkeypatch, render_chain, [bad, repaired, bad])
+
+    def validate(parsed):
+        if parsed["message_body"] == "bad":
+            raise AISchemaValidationError(reason, raw_content="private provider output")
+
+    result = await ai_agent_groq.ask_event_alert_render_raw(input_payload(), schema_check=validate)
+    assert result[1]["message_body"] == json.loads(good_render())["message_body"]
+    assert sum(len(provider.calls) for provider in registry.values()) == 2
+    first_messages = registry[render_chain[0][0]].messages[0]
+    assert "Previous render" not in first_messages[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_render_schema_error_never_copies_untrusted_error_or_output(
+    monkeypatch, render_chain,
+):
+    bad = json.dumps({"message_body": "bad", "related_news_ids": [],
+                      "possible_action": "Watch the next interval."})
+    secret = "UNTRUSTED_PRIVATE_OUTPUT"
+
+    def recovered(messages):
+        assert secret not in json.dumps(messages)
+        return good_render()
+
+    install(monkeypatch, render_chain, [bad, recovered, bad])
+
+    def validate(parsed):
+        if parsed["message_body"] == "bad":
+            raise AISchemaValidationError(secret, raw_content=secret)
+
+    await ai_agent_groq.ask_event_alert_render_raw(input_payload(), schema_check=validate)
+
+
+@pytest.mark.asyncio
+async def test_single_openai_provider_invalid_output_does_not_add_a_paid_request(monkeypatch):
+    monkeypatch.setenv("LLM_EVENT_RENDER_PROVIDERS", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake")
+    monkeypatch.setenv("OPENAI_ENABLED", "true")
+    monkeypatch.setenv("LLM_BREAKER_ENABLED", "false")
+    from bot.services.llm.config import provider_attempts
+
+    registry = install(monkeypatch, provider_attempts("event_alert_render"), ["not json"])
+    with pytest.raises(AIInvalidJsonError):
+        await call_render()
+    assert len(registry["openai"].calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_fallback_guidance_is_accounted_in_real_openai_provider_admission(
+    monkeypatch, render_chain,
+):
+    from bot.services.llm.base_provider import openai_budget
+    from bot.services.llm.openai_provider import OpenAIProvider
+    from bot.services.llm.operation import current_llm_operation_id
+    from bot.services.llm.telemetry import message_input_chars
+
+    groq = FakeProvider("groq", {render_chain[0][1]: "not json"})
+    reserve = AsyncMock(return_value=object())
+    monkeypatch.setattr(openai_budget, "reserve", reserve)
+    monkeypatch.setattr(openai_budget, "settle", AsyncMock())
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=good_render()))],
+        usage={"prompt_tokens": 50, "completion_tokens": 20},
+    )
+    create = AsyncMock(return_value=response)
+    client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(with_raw_response=None, create=create)
+    ))
+    provider = OpenAIProvider()
+    monkeypatch.setattr(provider, "get_client", lambda: client)
+    monkeypatch.setattr(
+        ai_agent_groq, "get_router", lambda: LLMRouter(registry={"groq": groq, "openai": provider})
+    )
+    rows = []
+
+    async def record_usage(**kwargs):
+        rows.append((current_llm_operation_id(), kwargs))
+        return 1
+
+    monkeypatch.setattr(ai_agent_groq, "write_llm_usage_log", record_usage)
+    await call_render()
+    assert create.await_count == reserve.await_count == 1
+    sent_messages = create.await_args.kwargs["messages"]
+    assert message_input_chars(sent_messages) > message_input_chars(groq.messages[0])
+    assert reserve.await_args.kwargs["input_chars"] == message_input_chars(sent_messages)
+    assert len(rows) == 2 and rows[0][0] == rows[1][0] and rows[0][0] is not None
+    assert rows[1][1]["input_chars"] == message_input_chars(sent_messages)
 
 
 @pytest.mark.asyncio
@@ -233,6 +348,37 @@ async def test_full_factual_validation_at_each_fallback_before_allowed_outcome(
     assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
     significance_call.assert_awaited_once()
     assert sum(len(provider.calls) for provider in registry.values()) == winner + 1
+
+
+@pytest.mark.asyncio
+async def test_repair_guidance_recovers_one_shared_positive_after_two_invalid_responses(
+    monkeypatch, render_chain,
+):
+    wrong_direction = json.dumps({
+        "message_body": "The short-term rise follows the broader 24-hour rise.",
+        "related_news_ids": [], "possible_action": "Watch the next move.",
+    })
+
+    def still_wrong(messages):
+        assert "period_direction_mismatch" in messages[-1]["content"]
+        return wrong_direction
+
+    def corrected(messages):
+        assert "period_direction_mismatch" in messages[-1]["content"]
+        return good_render()
+
+    registry = install(monkeypatch, render_chain, [wrong_direction, still_wrong, corrected])
+    significance_call, render_outcome, delivery_outcome = patch_significance_and_storage(
+        monkeypatch
+    )
+    decision, analysis_id = await alerts._create_event_analysis_decision(input_payload())
+
+    assert analysis_id == 42 and decision is not None and decision.should_alert
+    assert decision.message_body == json.loads(good_render())["message_body"]
+    significance_call.assert_awaited_once()
+    assert render_outcome.await_args.kwargs["status"] == "success"
+    assert delivery_outcome.await_args.kwargs["status"] == alerts.OUTCOME_ALLOWED
+    assert sum(len(provider.calls) for provider in registry.values()) == 3
 
 
 @pytest.mark.asyncio

@@ -1097,6 +1097,8 @@ def _validate_action_market_claims(
         for clause in _text_clauses(possible_action)
         if not _FUTURE_CONDITIONAL_RE.search(clause)
     )
+    if _mask_verified_snapshot_steps(historical_action, market_data) is None:
+        raise EventAnalysisValidationError("unsupported period-direction relationship")
     if not _market_comparisons_supported(possible_action, market_data):
         raise EventAnalysisValidationError("unsupported period comparison")
     _validate_snapshot_trajectory_claims(historical_action, market_data)
@@ -1456,8 +1458,47 @@ def _supported_period_comparison(comparison: re.Match[str], market_data: dict[st
     return abs(left) < abs(right) if weaker else abs(left) > abs(right)
 
 
+_RECENT_SNAPSHOT_STEPS_RE = re.compile(
+    r"(?i)\b(?:the\s+)?(?:final|latest|last)\s+snapshot\s+"
+    r"(?P<latest>rose|fell)\s+(?:after|following)\s+"
+    r"(?:the\s+)?previous\s+snapshot\s+"
+    r"(?P<previous>rose|fell)\b"
+)
+
+
+def _mask_verified_snapshot_steps(text: str, market_data: dict[str, Any]) -> str | None:
+    """Check explicit last-two-step claims separately from net period direction."""
+    matches = list(_RECENT_SNAPSHOT_STEPS_RE.finditer(text))
+    if not matches:
+        return text
+    observations = []
+    for item in market_data.get("snapshots") or []:
+        if not isinstance(item, dict):
+            continue
+        minute = _decimal_market_value(item.get("m"))
+        price = _decimal_market_value(item.get("p", item.get("price_usd")))
+        if minute is not None and price is not None and price > 0 and minute <= 0:
+            observations.append((minute, price))
+    observations.sort(key=lambda item: item[0])
+    recent = observations[-3:]
+    if (len(recent) != 3 or recent[-1][0] != 0
+            or not recent[0][0] < recent[1][0] < recent[2][0]):
+        return None
+    previous = recent[1][1] - recent[0][1]
+    latest = recent[2][1] - recent[1][1]
+    for match in matches:
+        if (not previous or not latest
+                or (latest > 0) != (match.group("latest").lower() == "rose")
+                or (previous > 0) != (match.group("previous").lower() == "rose")):
+            return None
+    return _RECENT_SNAPSHOT_STEPS_RE.sub("the observed snapshot path", text)
+
+
 def market_direction_claims_supported(text: str, market_data: dict[str, Any]) -> bool:
     """Check explicit period directions and the direction implied by relationships."""
+    text = _mask_verified_snapshot_steps(text, market_data)
+    if text is None:
+        return False
     text = _normalize_market_period_aliases(text)
     if not _market_comparisons_supported(text, market_data):
         return False
@@ -1477,20 +1518,24 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
     )
     relationship = re.compile(
         r"(?i)\b(?:same\s+direction|align\w*\s+with|consistent\s+with|"
-        r"in\s+(?:line|step)\s+with|direction\s+of)\b"
+        r"in\s+(?:line|step)\s+with|direction\s+of|contrast\w*\s+with)\b"
     )
     for clause in clauses:
+        claim = relationship.search(clause)
+        if claim is None:
+            continue
+        bare_current_market = (
+            bool(re.match(r"(?i)contrast", claim.group(0)))
+            and bool(re.search(r"(?i)\bmarket\b", clause[:claim.start()]))
+        )
         if not (
-            re.search(
+            (bare_current_market or re.search(
                 r"(?i)\b(?:short[- ]term|current|latest|"
                 r"analysed(?:[- ](?:window|move))?|snapshots?|window|this\s+move)\b",
                 clause,
-            )
+            ))
             and re.search(r"(?i)\b(?:24[- ]hours?|24h|daily|broader)\b", clause)
         ):
-            continue
-        claim = relationship.search(clause)
-        if claim is None:
             continue
         if window is None or day is None or window == 0 or day == 0:
             return False
@@ -1506,7 +1551,9 @@ def market_direction_claims_supported(text: str, market_data: dict[str, Any]) ->
             )
         )
         aligned = (window > 0) == (day > 0)
-        if aligned == negated:
+        claims_contrast = bool(re.match(r"(?i)contrast", claim.group(0)))
+        relationship_holds = not aligned if claims_contrast else aligned
+        if relationship_holds == negated:
             return False
     return True
 
