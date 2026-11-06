@@ -151,6 +151,11 @@ def ensure_useful_situation(
 
 def _has_unsupported_event_claim(value: str, market_data: dict) -> bool:
     """Permit a verified pace comparison, but not an unsupported event claim."""
+    # This states an absence of supplied evidence, not a confirmed event.
+    value = re.sub(
+        r"(?i)\bno\s+confirmed\s+catalyst\s+(?:is|was)\s+(?:supplied|provided)\b",
+        "no catalyst is supplied", value,
+    )
     pace = _short_window_pace_context(market_data)
     faster = pace is not None and "picked up pace" in pace[0]
     slower = pace is not None and "has eased" in pace[0]

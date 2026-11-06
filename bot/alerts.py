@@ -20,6 +20,10 @@ from telegram.ext import Application, ContextTypes
 
 from bot.alerting import event_identity as _event_identity
 from bot.alerting import news_context as _news_context
+from bot.alerting.alert_failure_streaks import (
+    STREAK_WARNING_THRESHOLD,
+    alert_failure_streaks,
+)
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -434,13 +438,7 @@ def _log_event_alert_candidate_crossing(
 
 
 def _log_event_analysis_failure(symbol: str, reason: str) -> None:
-    """Log a failed event analysis, escalating to ERROR once failures stop being isolated.
-
-    The 2026-07 outage produced 3396 identical WARNING lines at unchanged severity, so nothing
-    in the log distinguished "failed once" from "has failed continuously for 18 days". The
-    first occurrences stay at WARNING because a single failure is normal; past the configured
-    threshold the severity reflects duration, and the streak length is on the line itself.
-    """
+    """Log global Event Analysis degradation without changing its historical contract."""
     streak = event_analysis_health.record_failure(reason=reason)
     threshold = event_analysis_health.failure_escalation_threshold()
     level = logging.ERROR if streak >= threshold else logging.WARNING
@@ -451,6 +449,44 @@ def _log_event_analysis_failure(symbol: str, reason: str) -> None:
         reason,
         streak,
     )
+
+
+def _log_event_alert_stage1_failure_streak(symbol: str, reason: str) -> None:
+    """Track terminal Stage-1 failures separately from Render outcomes."""
+    stage_streak = alert_failure_streaks.failure("stage1", symbol)
+    logger.log(
+        logging.ERROR if stage_streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+        "ops_event=event_alert_stage1_failure_streak symbol=%s "
+        "reason=%s consecutive_failures=%s",
+        normalize_symbol(symbol).upper(),
+        reason,
+        stage_streak,
+    )
+
+
+def _log_event_alert_render_streak(
+    *, symbol: str, status: str, error_reason: str | None
+) -> None:
+    """Track one terminal Render operation without changing its delivery semantics."""
+    if status == "success":
+        recovered = alert_failure_streaks.success("render", symbol)
+        if recovered:
+            logger.info(
+                "ops_event=event_alert_render_recovered symbol=%s "
+                "previous_failures=%s",
+                normalize_symbol(symbol).upper(),
+                recovered,
+            )
+    elif status in {"schema_error", "llm_error"}:
+        streak = alert_failure_streaks.failure("render", symbol)
+        logger.log(
+            logging.ERROR if streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+            "ops_event=event_alert_render_failure_streak symbol=%s "
+            "reason=%s consecutive_failures=%s",
+            normalize_symbol(symbol).upper(),
+            error_reason or "unknown",
+            streak,
+        )
 
 
 def _log_event_alert_suppression(
@@ -564,7 +600,7 @@ async def _select_related_news_context(
             logger.info(
                 "related_news_selection symbol=%s source=news_items candidate_count=%s "
                 "direct_news_count=0 market_wide_news_count=0 irrelevant_filtered_count=0 "
-                "selected_count=0 selected_news_titles=[] selected_news_relevance_labels=[] "
+                "selected_count=0 "
                 "noise_filtered_count=%s dedup_filtered_count=%s fallback_used=%s",
                 normalized_symbol.upper(),
                 selection_stats.get("candidate_count", 0),
@@ -1147,12 +1183,54 @@ def _related_news_by_id(
         mapped_items.append(item)
     if missing_ids:
         logger.warning(
-            "%s selected related_news_ids could not be mapped: symbol=%s missing_ids=%s",
+            "%s selected related_news_ids could not be mapped: symbol=%s missing_id_count=%s",
             context,
             normalize_symbol(symbol).upper() if symbol else "unknown",
-            missing_ids[:5],
+            len(missing_ids),
         )
     return mapped_items
+
+
+def _log_event_news_trace(
+    *, symbol: str, context_fingerprint: str, analysis_id: int | None,
+    candidates: list[dict], shortlist_count: int, selected_ids: list[str],
+    alert_payload: dict, reused: bool,
+) -> None:
+    """Log one shared prepared payload, never validation attempts or recipient data."""
+    by_id = {str(item.get("news_id") or ""): item for item in candidates}
+    mapped = [by_id[str(item)] for item in selected_ids if str(item) in by_id]
+    irrelevant = sum(
+        _news_context.classify_news_relevance(symbol, item) == "irrelevant" for item in mapped
+    )
+    plain = str(alert_payload.get("plain_text") or "")
+    html = str(alert_payload.get("html_text") or "")
+    plain_marker = "Related context:\n"
+    html_marker = "<b>Related context</b>\n"
+    section = plain.partition(plain_marker)[2].partition("\n\nPossible action:")[0]
+    html_section = html.partition(html_marker)[2].partition(
+        "\n\n<b>Possible action</b>"
+    )[0]
+    rendered = sum(line.startswith("\u2022 ") for line in section.splitlines())
+    linked = html_section.count('<a href="')
+    kept = len(mapped) - irrelevant
+    positions = [str(item) for item in selected_ids if re.fullmatch(r"n[1-8]", str(item))][:8]
+    fingerprint = (
+        context_fingerprint if re.fullmatch(r"[0-9a-f]{64}", context_fingerprint) else "unknown"
+    )
+    logger.info(
+        "ops_event=event_news_trace stage=shared_payload_ready symbol=%s "
+        "context_fingerprint=%s analysis_id=%s reused=%s candidate_count=%s "
+        "stage1_available_count=%s stage2_available_count=%s selected_count=%s "
+        "selected_positions=%s "
+        "mapped_count=%s missing_id_count=%s irrelevant_count=%s relevance_kept_count=%s "
+        "presentation_cap_count=%s formatting_drop_count=%s rendered_count=%s linked_count=%s "
+        "unlinked_count=%s section_available=%s",
+        normalize_symbol(symbol).upper(), fingerprint, analysis_id, reused, len(candidates),
+        min(shortlist_count, 2), shortlist_count, len(selected_ids), positions,
+        len(mapped), len(selected_ids) - len(mapped), irrelevant, kept, max(0, kept - 3),
+        max(0, min(kept, 3) - rendered), rendered, linked,
+        max(0, rendered - linked), plain_marker in plain and html_marker in html,
+    )
 
 
 def _format_optional_percent(value: float | None) -> str:
@@ -3634,7 +3712,10 @@ async def _save_event_alert_render_outcome(
     provider: str | None = None,
     model: str | None = None,
 ) -> None:
-    """Persist sanitized terminal telemetry for the render-only logical operation."""
+    """Persist terminal telemetry and log an independent per-symbol Render streak."""
+    _log_event_alert_render_streak(
+        symbol=symbol, status=status, error_reason=error_reason
+    )
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     try:
@@ -3742,6 +3823,9 @@ async def _create_event_analysis_decision(
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
@@ -3795,6 +3879,9 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except Exception as error:
         reason = classify_ai_error_reason(error)
@@ -3822,6 +3909,7 @@ async def _create_event_analysis_decision(
             detail=reason,
         )
         _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_alert_stage1_failure_streak(expected_symbol, reason)
         return None, None
 
     try:
@@ -3861,7 +3949,18 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(schema_error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(schema_error)
+        )
         return None, None
+
+    preceding_stage1_failures = alert_failure_streaks.success("stage1", expected_symbol)
+    if preceding_stage1_failures:
+        logger.info(
+            "ops_event=event_alert_stage1_recovered symbol=%s previous_failures=%s",
+            normalize_symbol(expected_symbol).upper(),
+            preceding_stage1_failures,
+        )
 
     if not significance.should_alert or significance.reason_code == "news_only":
         event_analysis_health.record_success()
@@ -4084,7 +4183,9 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=classify_ai_error_reason(schema_error),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_analysis_failure(
+            expected_symbol, classify_ai_error_reason(schema_error)
+        )
         return None, None
 
     decision = _validated_render_with_original_prose(decision, render_parsed)
@@ -6368,6 +6469,13 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                     alert_settings.get("automatic_check_interval_seconds", 300)
                 ),
             )
+            logger.info(
+                "ops_event=event_news_trace stage=shortlist_ready symbol=%s "
+                "context_fingerprint=%s candidate_count=%s stage1_available_count=%s "
+                "stage2_available_count=%s",
+                symbol.upper(), _event_context_fingerprint(input_payload), len(candidate_news),
+                min(len(input_payload.get("news") or []), 2), len(input_payload.get("news") or []),
+            )
             reusable_analysis = await _get_reusable_event_analysis_by_context(
                 input_payload,
                 candidate_news=candidate_news,
@@ -6595,6 +6703,16 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                             html_text=alert_payload["html_text"],
                         )
                         event_ai_analysis_id = analysis.id if analysis else event_ai_analysis_id
+            _log_event_news_trace(
+                symbol=symbol,
+                context_fingerprint=context_fingerprint,
+                analysis_id=event_ai_analysis_id,
+                candidates=candidate_news,
+                shortlist_count=len(input_payload.get("news") or []),
+                selected_ids=decision.related_news_ids,
+                alert_payload=alert_payload,
+                reused=reusable_analysis is not None,
+            )
             recipient_resolution = await resolve_alert_recipient_outcomes(
                 symbol=symbol,
                 event_type=EVENT_ALERT_TYPE,
@@ -6736,6 +6854,11 @@ async def automatic_price_check(context: ContextTypes.DEFAULT_TYPE):
                 delivery_decision_reasons_by_recipient=(
                     recipient_filter.delivery_decision_reasons_by_recipient
                 ),
+            )
+            logger.info(
+                "ops_event=event_news_dispatch symbol=%s context_fingerprint=%s "
+                "analysis_id=%s delivered_any=%s",
+                symbol.upper(), context_fingerprint, event_ai_analysis_id, delivered,
             )
             if delivered:
                 delivered_symbols += 1

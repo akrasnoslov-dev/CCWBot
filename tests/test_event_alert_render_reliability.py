@@ -715,3 +715,229 @@ def test_render_metrics_never_invent_missing_prior_notification_or_invalid_numbe
     assert compact["market_metrics"] == {"analysed_window_minutes": 180}
     assert "since_previous_notification" not in compact["market_metrics"]
     assert compact["market_directions"] == {}
+
+@pytest.mark.parametrize("statement,valid", [
+    ("The final snapshot fell after the previous snapshot rose.", True),
+    ("The final snapshot rose after the previous snapshot fell.", False),
+    ("The final snapshot fell after the previous snapshot fell.", False),
+    ("The final snapshot fell after the previous snapshot rose, "
+     "while the 24-hour trend fell.", False),
+    ("The last snapshot fell following the previous snapshot rose.", True),
+])
+@pytest.mark.parametrize("section", ["message_body", "possible_action"])
+def test_mixed_snapshot_steps_are_checked_against_their_own_observations(
+    statement, valid, section
+):
+    payload = _payload()
+    payload["symbol"] = "SOL"
+    payload["market"].update(
+        price=99, chg_window_percent=-1, chg24h_percent=2,
+        snapshots=[{"m": -180, "p": 100}, {"m": -120, "p": 98},
+                   {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+    )
+    parsed = {"message_body": "The short-term decline contrasts with the 24-hour rise.",
+              "related_news_ids": [],
+              "possible_action": "Watch the next observed interval."}
+    parsed[section] = statement
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        result = alerts._event_alert_render_result_for_validation(
+            parsed, input_payload=payload, expected_symbol="SOL", confidence="high",
+            candidate_news_ids=set(),
+        )
+        validate_event_analysis_output(
+            result, expected_symbol="SOL", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("snapshots", [
+    [],
+    [{"m": -120, "p": 98}, {"m": -60, "p": 101}, {"m": -1, "p": 99}],
+    [{"m": -60, "p": 98}, {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+    [{"m": -120, "p": 101}, {"m": -60, "p": 101}, {"m": 0, "p": 99}],
+])
+def test_snapshot_step_claim_requires_unambiguous_current_observations(snapshots):
+    assert not alerts.market_direction_claims_supported(
+        "The final snapshot fell after the previous snapshot rose.",
+        {"snapshots": snapshots, "chg_window_percent": -1},
+    )
+
+
+def test_future_snapshot_step_scenario_is_not_treated_as_a_historical_fact():
+    from bot.alerting.event_analysis import _validate_action_market_claims
+
+    _validate_action_market_claims(
+        "If the final snapshot rose after the previous snapshot fell, watch the next interval.",
+        market_data={"snapshots": []}, last_msg=None, timestamp_utc=None,
+    )
+
+
+@pytest.mark.parametrize("statement,valid", [
+    ("No confirmed catalyst is supplied; the short-term decline contrasts "
+     "with the broader 24-hour rise.", True),
+    ("No confirmed catalyst was provided; the short-term decline contrasts "
+     "with the broader 24-hour rise.", True),
+    ("A confirmed catalyst drove the decline.", False),
+    ("No confirmed catalyst is supplied; a confirmed ETF approval followed.", False),
+])
+def test_absence_of_confirmed_catalyst_is_not_an_invented_event(statement, valid):
+    payload = _payload()
+    parsed = {"message_body": statement, "related_news_ids": [],
+              "possible_action": "Watch the next observed interval."}
+
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        result = alerts._event_alert_render_result_for_validation(
+            parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+            candidate_news_ids=set(),
+        )
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
+
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+def test_render_prompt_distinguishes_snapshot_cadence_from_period_metrics():
+    payload = _payload()
+    payload["market"]["price"] = 99
+    payload["market"]["snapshots"] = [
+        {"m": -90, "p": 100}, {"m": -60, "p": 99},
+        {"m": -30, "p": 100}, {"m": 0, "p": 99},
+    ]
+    prompt = ai_agent_groq.build_event_alert_render_prompt(payload)
+    evidence = json.loads(prompt.split("Input JSON:\n", 1)[1])["evidence"]
+    assert evidence["recent_price_path"]["step_durations_minutes"] == [30, 30, 30]
+    assert "snapshot spacing is not a 30-minute or 1-hour market metric" in prompt
+    assert "matching market_metrics" in prompt
+    assert "when supplied; use the analysed-window change only if that exact metric" in prompt
+    with pytest.raises(EventAnalysisValidationError):
+        validate_event_analysis_output(
+            alerts._event_alert_render_result_for_validation(
+                {"message_body": "The latest 30-minute move fell.",
+                 "possible_action": "Watch the next observation.", "related_news_ids": []},
+                input_payload=payload, expected_symbol="BTC", confidence="high",
+                candidate_news_ids=set(),
+            ),
+            expected_symbol="BTC", candidate_news_ids=set(), market_data=payload["market"],
+            last_msg=payload["last_msg"], timestamp_utc=payload["timestamp_utc"],
+        )
+
+
+@pytest.mark.parametrize("minutes,field,label", [
+    (30, "chg30m_percent", "30-minute"), (60, "chg1h_percent", "1-hour"),
+])
+def test_exact_short_period_metric_takes_precedence_over_same_duration_window(
+    minutes, field, label
+):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    market = {"analysed_window_minutes": minutes, "chg_window_percent": 1, field: -1}
+    assert market_direction_claims_supported(f"The {label} decline continues.", market)
+    assert not market_direction_claims_supported(f"The {label} rise continues.", market)
+
+
+@pytest.mark.parametrize("body,valid", [
+    ("The latest 30-minute move is down.", True),
+    ("The latest 30-minute move is up.", False),
+    ("The latest 30-minute move fell 5%.", False),
+    ("The market fell over the last 2 hours.", False),
+])
+def test_duration_labelled_market_claims_require_matching_evidence(body, valid):
+    payload = _payload()
+    payload["market"]["chg30m_percent"] = -1
+    parsed = {"message_body": body, "related_news_ids": [],
+              "possible_action": "Watch the next observation."}
+
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=payload["market"])
+        result = alerts._event_alert_render_result_for_validation(
+            parsed, input_payload=payload, expected_symbol="BTC", confidence="high",
+            candidate_news_ids=set(),
+        )
+        validate_event_analysis_output(
+            result, expected_symbol="BTC", candidate_news_ids=set(),
+            market_data=payload["market"], last_msg=payload["last_msg"],
+            timestamp_utc=payload["timestamp_utc"],
+        )
+
+    if valid:
+        check()
+    else:
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("prices,day_change,mixed", [
+    ([100, 101, 100, 99, 98, 97], 2, True),
+    ([100, 99, 98, 97, 96, 97], 2, True),
+    ([100, 99, 98, 97, 98, 96], 2, True),
+    ([100, 99, 98, 97, 96, 95], 2, False),
+    ([100, 99, 98, 99, 98, 97], -2, True),
+    ([100, 99, 98, 97, 96, 95], -2, False),
+])
+def test_synthetic_sol_incident_direction_patterns(prices, day_change, mixed):
+    # Synthetic prices preserve only the observed signs of the six SOL paths;
+    # they are not production prices or model outputs.
+    payload = _payload()
+    payload["symbol"] = "SOL"
+    payload["market"].update(
+        price=prices[-1], chg_window_percent=-3, chg24h_percent=day_change,
+        snapshots=[{"m": -150 + 30 * i, "p": price} for i, price in enumerate(prices)],
+    )
+    market = payload["market"]
+    body = ("The short-term decline contrasts with the 24-hour rise." if day_change > 0
+            else "The short-term decline aligns with the 24-hour decline.")
+    parsed = {"message_body": body, "related_news_ids": [],
+              "possible_action": "Watch the next observed interval."}
+
+    def check():
+        alerts._validate_event_alert_render_causality(parsed, market_data=market)
+        normalized = alerts._event_alert_render_result_for_validation(
+            parsed, input_payload=payload, expected_symbol="SOL", confidence="high",
+            candidate_news_ids=set(),
+        )
+        validate_event_analysis_output(
+            normalized, expected_symbol="SOL", candidate_news_ids=set(), market_data=market,
+            last_msg=payload["last_msg"], timestamp_utc=payload["timestamp_utc"],
+        )
+
+    check()
+    parsed["message_body"] = ("The short-term decline aligns with the 24-hour rise."
+                              if day_change > 0 else
+                              "The short-term decline contrasts with the 24-hour decline.")
+    with pytest.raises(EventAnalysisValidationError):
+        check()
+    if mixed:
+        parsed["message_body"] = "SOL persistently declined across the snapshots."
+        with pytest.raises(EventAnalysisValidationError):
+            check()
+
+
+@pytest.mark.parametrize("text", [
+    "The short-term trend contrasts with the broader 24-hour trend.",
+    "The current market contrasts with the 24-hour decline.",
+    "The market contrasts with the 24-hour decline.",
+])
+def test_contrast_requires_opposite_period_directions(text):
+    from bot.alerting.event_analysis import market_direction_claims_supported
+
+    assert not market_direction_claims_supported(
+        text, {"chg_window_percent": -1, "chg24h_percent": -2}
+    )
+    assert market_direction_claims_supported(
+        text, {"chg_window_percent": 1, "chg24h_percent": -2}
+    )
