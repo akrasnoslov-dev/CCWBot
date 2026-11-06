@@ -79,15 +79,9 @@ def test_render_failure_does_not_increment_stage1_failure_count(monkeypatch):
     counters = AlertFailureStreaks()
     monkeypatch.setattr(alerts, "alert_failure_streaks", counters)
 
-    class FakeHealth:
-        def record_failure(self, *, reason):
-            return 1
-
-        def failure_escalation_threshold(self):
-            return 5
-
-    monkeypatch.setattr(alerts, "event_analysis_health", FakeHealth())
-    alerts._log_event_analysis_failure("SOL", "schema_validation_failed", stage="render")
+    alerts._log_event_alert_render_streak(
+        symbol="SOL", status="schema_error", error_reason="schema_validation_failed"
+    )
     assert counters.get("stage1", "SOL") == 0
-    alerts._log_event_analysis_failure("SOL", "schema_validation_failed")
+    alerts._log_event_alert_stage1_failure_streak("SOL", "schema_validation_failed")
     assert counters.get("stage1", "SOL") == 1

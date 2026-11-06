@@ -437,14 +437,8 @@ def _log_event_alert_candidate_crossing(
         logger.debug("candidate crossing log failed: %s", type(error).__name__)
 
 
-def _log_event_analysis_failure(
-    symbol: str, reason: str, *, stage: str = "stage1"
-) -> None:
-    """Report existing global health and an independent per-symbol Stage-1 streak.
-
-    Render failures also affect global Event Analysis health, but must never be
-    counted as failures of the Stage-1 significance provider.
-    """
+def _log_event_analysis_failure(symbol: str, reason: str) -> None:
+    """Log global Event Analysis degradation without changing its historical contract."""
     streak = event_analysis_health.record_failure(reason=reason)
     threshold = event_analysis_health.failure_escalation_threshold()
     level = logging.ERROR if streak >= threshold else logging.WARNING
@@ -455,15 +449,43 @@ def _log_event_analysis_failure(
         reason,
         streak,
     )
-    if stage == "stage1":
-        stage_streak = alert_failure_streaks.failure("stage1", symbol)
+
+
+def _log_event_alert_stage1_failure_streak(symbol: str, reason: str) -> None:
+    """Track terminal Stage-1 failures separately from Render outcomes."""
+    stage_streak = alert_failure_streaks.failure("stage1", symbol)
+    logger.log(
+        logging.ERROR if stage_streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+        "ops_event=event_alert_stage1_failure_streak symbol=%s "
+        "reason=%s consecutive_failures=%s",
+        normalize_symbol(symbol).upper(),
+        reason,
+        stage_streak,
+    )
+
+
+def _log_event_alert_render_streak(
+    *, symbol: str, status: str, error_reason: str | None
+) -> None:
+    """Track one terminal Render operation without changing its delivery semantics."""
+    if status == "success":
+        recovered = alert_failure_streaks.success("render", symbol)
+        if recovered:
+            logger.info(
+                "ops_event=event_alert_render_recovered symbol=%s "
+                "previous_failures=%s",
+                normalize_symbol(symbol).upper(),
+                recovered,
+            )
+    elif status in {"schema_error", "llm_error"}:
+        streak = alert_failure_streaks.failure("render", symbol)
         logger.log(
-            logging.ERROR if stage_streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
-            "ops_event=event_alert_stage1_failure_streak symbol=%s "
+            logging.ERROR if streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+            "ops_event=event_alert_render_failure_streak symbol=%s "
             "reason=%s consecutive_failures=%s",
             normalize_symbol(symbol).upper(),
-            reason,
-            stage_streak,
+            error_reason or "unknown",
+            streak,
         )
 
 
@@ -3691,25 +3713,9 @@ async def _save_event_alert_render_outcome(
     model: str | None = None,
 ) -> None:
     """Persist terminal telemetry and log an independent per-symbol Render streak."""
-    if status == "success":
-        recovered = alert_failure_streaks.success("render", symbol)
-        if recovered:
-            logger.info(
-                "ops_event=event_alert_render_recovered symbol=%s "
-                "previous_failures=%s",
-                normalize_symbol(symbol).upper(),
-                recovered,
-            )
-    elif status in {"schema_error", "llm_error"}:
-        streak = alert_failure_streaks.failure("render", symbol)
-        logger.log(
-            logging.ERROR if streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
-            "ops_event=event_alert_render_failure_streak symbol=%s "
-            "reason=%s consecutive_failures=%s",
-            normalize_symbol(symbol).upper(),
-            error_reason or "unknown",
-            streak,
-        )
+    _log_event_alert_render_streak(
+        symbol=symbol, status=status, error_reason=error_reason
+    )
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     try:
@@ -3817,6 +3823,9 @@ async def _create_event_analysis_decision(
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
@@ -3870,6 +3879,9 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except Exception as error:
         reason = classify_ai_error_reason(error)
@@ -3897,6 +3909,7 @@ async def _create_event_analysis_decision(
             detail=reason,
         )
         _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_alert_stage1_failure_streak(expected_symbol, reason)
         return None, None
 
     try:
@@ -3936,6 +3949,9 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(schema_error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(schema_error)
+        )
         return None, None
 
     preceding_stage1_failures = alert_failure_streaks.success("stage1", expected_symbol)
@@ -4095,7 +4111,7 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=f"event_alert_render_failed:{reason}",
         )
-        _log_event_analysis_failure(expected_symbol, reason, stage="render")
+        _log_event_analysis_failure(expected_symbol, reason)
         return None, None
 
     normalized_render = _event_alert_render_result_for_validation(
@@ -4168,7 +4184,7 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(schema_error),
         )
         _log_event_analysis_failure(
-            expected_symbol, classify_ai_error_reason(schema_error), stage="render"
+            expected_symbol, classify_ai_error_reason(schema_error)
         )
         return None, None
 
