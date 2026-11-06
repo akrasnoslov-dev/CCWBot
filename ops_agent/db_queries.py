@@ -1140,6 +1140,62 @@ QUERIES: tuple[DbQuery, ...] = (
         "ORDER BY calls DESC, provider, model, call_type, failure_category LIMIT :limit",
     ),
     DbQuery(
+        "event_alert_render_failure_streaks",
+        "evidence/db/aggregate_metrics.json",
+        # One terminal operation per Render. Order newest first and count failures
+        # until the first success or unknown outcome. This survives process restarts.
+        "WITH ordered AS ("
+        "SELECT lower(coalesce(symbol, 'unknown')) AS symbol, status, created_at, "
+        "row_number() OVER (PARTITION BY lower(coalesce(symbol, 'unknown')) "
+        "ORDER BY created_at DESC, id DESC) AS recent_rank "
+        "FROM llm_operation_outcomes WHERE call_type = 'event_alert_render' "
+        "AND created_at >= :since AND created_at < :until"
+        "), streaks AS ("
+        "SELECT symbol, status, created_at, recent_rank, "
+        "sum(CASE WHEN status IN ('schema_error', 'llm_error') THEN 0 "
+        "ELSE 1 END) OVER (PARTITION BY symbol ORDER BY recent_rank) AS interruptions_seen "
+        "FROM ordered"
+        ") SELECT symbol, count(*) AS observed_render_operations, "
+        "count(*) FILTER (WHERE status = 'success') AS successful_render_operations, "
+        "count(*) FILTER (WHERE status IN ('schema_error', 'llm_error')) AS failed_render_operations, "
+        "count(*) FILTER (WHERE status NOT IN ('success', 'schema_error', 'llm_error')) "
+        "AS unknown_render_operations, "
+        "count(*) FILTER (WHERE interruptions_seen = 0 "
+        "AND status IN ('schema_error', 'llm_error')) AS trailing_failed_render_operations, "
+        "max(status) FILTER (WHERE recent_rank = 1) AS latest_status, "
+        "max(created_at) AS latest_outcome_at "
+        "FROM streaks GROUP BY symbol ORDER BY symbol",
+    ),
+    DbQuery(
+        "event_alert_positive_render_loss_summary",
+        "evidence/db/aggregate_metrics.json",
+        # The positive Stage-1 parsed JSON is retained for failed Render attempts;
+        # do not mistake a Render failure for a failed significance model.
+        "SELECT lower(coalesce(symbol, 'unknown')) AS symbol, "
+        "count(*) AS total_event_analyses, "
+        "count(*) FILTER (WHERE status IN ('llm_error', 'schema_error') "
+        "AND coalesce(parsed_result_json, '') ~ "
+        "'\"should_alert\"[[:space:]]*:[[:space:]]*true') AS stage1_positive_render_failures "
+        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
+        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
+        "GROUP BY lower(coalesce(symbol, 'unknown')) ORDER BY symbol",
+    ),
+    DbQuery(
+        "event_alert_check_gap_summary",
+        "evidence/db/aggregate_metrics.json",
+        # Snapshot cadence is an evidence proxy, not proof that a scheduled job ran.
+        "WITH snapshots AS ("
+        "SELECT lower(symbol) AS symbol, checked_at, "
+        "lag(checked_at) OVER (PARTITION BY lower(symbol) ORDER BY checked_at) AS prior_at "
+        "FROM price_snapshots WHERE checked_at >= :since AND checked_at < :until"
+        ") SELECT symbol, count(*) AS observed_snapshots, "
+        "count(*) FILTER (WHERE prior_at IS NOT NULL AND "
+        "extract(epoch FROM (checked_at - prior_at)) > 1920) AS gaps_over_32_minutes, "
+        "max(extract(epoch FROM (checked_at - prior_at))) AS max_observed_gap_seconds, "
+        "max(checked_at) AS latest_snapshot_at "
+        "FROM snapshots GROUP BY symbol ORDER BY symbol",
+    ),
+    DbQuery(
         "event_alert_render_validation_reason_summary",
         "evidence/db/aggregate_metrics.json",
         "WITH classified AS ("

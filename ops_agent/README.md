@@ -410,3 +410,26 @@ Rotate SSH access by replacing `/home/ccwbot_ops/.ssh/authorized_keys`, preservi
 Use `retention` for normal cleanup. If manual cleanup is required, remove only old files under `/opt/CCWBot/reports/ops-agent/bundles/` and `/opt/CCWBot/reports/ops-agent/reports/`. Do not remove `.env`, `.ops-agent.env`, database volumes, tracked project files, or live logs needed for incident analysis.
 
 Generated bundles and reports are local operational artifacts. Keep `.ops-agent.env`, `reports/ops-agent/bundles/`, and `reports/ops-agent/reports/` ignored by Git; commit only safe templates such as `.ops-agent.env.example` and the wrapper scripts.
+
+### Event Alert degradation counters (CCW-50)
+
+The sanitized aggregate bundle now includes
+`event_alert_render_failure_streaks`,
+`event_alert_positive_render_loss_summary` and
+`event_alert_check_gap_summary` in `evidence/db/aggregate_metrics.json`.
+The first uses one logical Render terminal operation per row, not provider
+attempts, and counts trailing failures until a success or unknown outcome.
+A third consecutive failure is an operational warning only. The second
+counts Stage-1-positive Event Analyses that subsequently failed Render.
+The third measures price-snapshot gaps, **not** a proven scheduler outage.
+The `event_analysis_news_candidates_summary` detector additionally flags
+positive analyses with candidates but no attachments as **potential gaps**;
+candidate presence alone cannot establish article relevance. All signals
+are read-only, symbol-level aggregates, and unknown/incomplete evidence
+must never be reported as healthy.
+
+For local reproducibility, see
+`tests/ops_agent/test_event_alert_reliability_diagnostics.py`. The
+separate 30/15/10-minute cadence/cost report is
+`docs/event_alert_cadence_evaluation.md`. No polling interval or LLM
+provider request count is changed by this collector.

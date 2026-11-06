@@ -20,6 +20,10 @@ from telegram.ext import Application, ContextTypes
 
 from bot.alerting import event_identity as _event_identity
 from bot.alerting import news_context as _news_context
+from bot.alerting.alert_failure_streaks import (
+    STREAK_WARNING_THRESHOLD,
+    alert_failure_streaks,
+)
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -433,13 +437,13 @@ def _log_event_alert_candidate_crossing(
         logger.debug("candidate crossing log failed: %s", type(error).__name__)
 
 
-def _log_event_analysis_failure(symbol: str, reason: str) -> None:
-    """Log a failed event analysis, escalating to ERROR once failures stop being isolated.
+def _log_event_analysis_failure(
+    symbol: str, reason: str, *, stage: str = "stage1"
+) -> None:
+    """Report existing global health and an independent per-symbol Stage-1 streak.
 
-    The 2026-07 outage produced 3396 identical WARNING lines at unchanged severity, so nothing
-    in the log distinguished "failed once" from "has failed continuously for 18 days". The
-    first occurrences stay at WARNING because a single failure is normal; past the configured
-    threshold the severity reflects duration, and the streak length is on the line itself.
+    Render failures also affect global Event Analysis health, but must never be
+    counted as failures of the Stage-1 significance provider.
     """
     streak = event_analysis_health.record_failure(reason=reason)
     threshold = event_analysis_health.failure_escalation_threshold()
@@ -451,6 +455,16 @@ def _log_event_analysis_failure(symbol: str, reason: str) -> None:
         reason,
         streak,
     )
+    if stage == "stage1":
+        stage_streak = alert_failure_streaks.failure("stage1", symbol)
+        logger.log(
+            logging.ERROR if stage_streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+            "ops_event=event_alert_stage1_failure_streak symbol=%s "
+            "reason=%s consecutive_failures=%s",
+            normalize_symbol(symbol).upper(),
+            reason,
+            stage_streak,
+        )
 
 
 def _log_event_alert_suppression(
@@ -3676,7 +3690,26 @@ async def _save_event_alert_render_outcome(
     provider: str | None = None,
     model: str | None = None,
 ) -> None:
-    """Persist sanitized terminal telemetry for the render-only logical operation."""
+    """Persist terminal telemetry and log an independent per-symbol Render streak."""
+    if status == "success":
+        recovered = alert_failure_streaks.success("render", symbol)
+        if recovered:
+            logger.info(
+                "ops_event=event_alert_render_recovered symbol=%s "
+                "previous_failures=%s",
+                normalize_symbol(symbol).upper(),
+                recovered,
+            )
+    elif status in {"schema_error", "llm_error"}:
+        streak = alert_failure_streaks.failure("render", symbol)
+        logger.log(
+            logging.ERROR if streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+            "ops_event=event_alert_render_failure_streak symbol=%s "
+            "reason=%s consecutive_failures=%s",
+            normalize_symbol(symbol).upper(),
+            error_reason or "unknown",
+            streak,
+        )
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     try:
@@ -3905,6 +3938,14 @@ async def _create_event_analysis_decision(
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
         return None, None
 
+    preceding_stage1_failures = alert_failure_streaks.success("stage1", expected_symbol)
+    if preceding_stage1_failures:
+        logger.info(
+            "ops_event=event_alert_stage1_recovered symbol=%s previous_failures=%s",
+            normalize_symbol(expected_symbol).upper(),
+            preceding_stage1_failures,
+        )
+
     if not significance.should_alert or significance.reason_code == "news_only":
         event_analysis_health.record_success()
         decision = _no_alert_decision_from_significance(significance)
@@ -4054,7 +4095,7 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=f"event_alert_render_failed:{reason}",
         )
-        _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_analysis_failure(expected_symbol, reason, stage="render")
         return None, None
 
     normalized_render = _event_alert_render_result_for_validation(
@@ -4126,7 +4167,9 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=classify_ai_error_reason(schema_error),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_analysis_failure(
+            expected_symbol, classify_ai_error_reason(schema_error), stage="render"
+        )
         return None, None
 
     decision = _validated_render_with_original_prose(decision, render_parsed)

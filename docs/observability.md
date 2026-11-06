@@ -881,3 +881,42 @@ and failed delivery are separate signals. The successful delivery clock uses
 legacy sent records without a completion timestamp. Reservation time must
 not be used as proof of current delivery. This diagnostic change adds no
 polling, provider calls, or new LLM requests.
+
+## CCW-50 Event Alert reliability signals (2026-11)
+
+The bot logs `event_alert_stage1_failure_streak` and
+`event_alert_render_failure_streak` with only supported symbol, sanitized
+failure reason and per-process consecutive failures. On the **third**
+consecutive failure for that symbol/stage, severity becomes ERROR.
+`event_alert_stage1_recovered` and `event_alert_render_recovered` indicate
+reset after a verified successful stage. Render failures do **not** increment
+the Stage-1-specific counter. These diagnostics never alter alert significance,
+cooldown, provider routing, costs or recipient eligibility. Counters reset
+after a process restart; they are not a durable guarantee of historical streaks.
+
+For a cross-restart evidence window, the ops-agent includes these bounded,
+sanitized aggregate SQL queries:
+- `event_alert_render_failure_streaks`: trailing failure streak per coin from
+  **terminal** `llm_operation_outcomes`, not provider attempts. A success or
+  unrecognized status interrupts the streak. No observed outcomes is UNKNOWN.
+  A reported three-failure streak is sufficient evidence even though the
+  period boundary may truncate older failures.
+- `event_alert_positive_render_loss_summary`: number of Stage-1-positive
+  parsed decisions whose final Event Analysis status is `llm_error` or
+  `schema_error`. It does not expose the original model's response text.
+- `event_alert_check_gap_summary`: largest gap between recorded price
+  snapshots and number over 32 minutes, **not** proof that the scheduler failed.
+  CoinGecko failures, missing observations and app-level skipping require
+  separate correlation.
+
+Corresponding detectors distinguish positive Render loss, three consecutive
+terminal Render failures, news candidates without attachments and observed
+snapshot gaps. News-candidate presence does **not** prove an article was
+genuinely relevant; a missing link is an investigation warning, not a
+confirmed causal fault. A sampled or absent log/query is UNKNOWN, not success.
+
+The 30/15/10-minute latency and cost evaluation is recorded in
+`docs/event_alert_cadence_evaluation.md`. Its shorter-interval scenarios are
+theoretical and do not change scheduler configuration. Production ops-agent
+code changes also require the separately reviewed image rebuild described in
+`docs/dev_ops_guide.md`; the normal bot deployment does not rebuild that image.
