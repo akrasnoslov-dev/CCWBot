@@ -20,6 +20,10 @@ from telegram.ext import Application, ContextTypes
 
 from bot.alerting import event_identity as _event_identity
 from bot.alerting import news_context as _news_context
+from bot.alerting.alert_failure_streaks import (
+    STREAK_WARNING_THRESHOLD,
+    alert_failure_streaks,
+)
 from bot.alerting.alert_rules import calculate_price_change_percent
 from bot.alerting.alert_severity import (
     AlertDecision,
@@ -434,13 +438,7 @@ def _log_event_alert_candidate_crossing(
 
 
 def _log_event_analysis_failure(symbol: str, reason: str) -> None:
-    """Log a failed event analysis, escalating to ERROR once failures stop being isolated.
-
-    The 2026-07 outage produced 3396 identical WARNING lines at unchanged severity, so nothing
-    in the log distinguished "failed once" from "has failed continuously for 18 days". The
-    first occurrences stay at WARNING because a single failure is normal; past the configured
-    threshold the severity reflects duration, and the streak length is on the line itself.
-    """
+    """Log global Event Analysis degradation without changing its historical contract."""
     streak = event_analysis_health.record_failure(reason=reason)
     threshold = event_analysis_health.failure_escalation_threshold()
     level = logging.ERROR if streak >= threshold else logging.WARNING
@@ -451,6 +449,44 @@ def _log_event_analysis_failure(symbol: str, reason: str) -> None:
         reason,
         streak,
     )
+
+
+def _log_event_alert_stage1_failure_streak(symbol: str, reason: str) -> None:
+    """Track terminal Stage-1 failures separately from Render outcomes."""
+    stage_streak = alert_failure_streaks.failure("stage1", symbol)
+    logger.log(
+        logging.ERROR if stage_streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+        "ops_event=event_alert_stage1_failure_streak symbol=%s "
+        "reason=%s consecutive_failures=%s",
+        normalize_symbol(symbol).upper(),
+        reason,
+        stage_streak,
+    )
+
+
+def _log_event_alert_render_streak(
+    *, symbol: str, status: str, error_reason: str | None
+) -> None:
+    """Track one terminal Render operation without changing its delivery semantics."""
+    if status == "success":
+        recovered = alert_failure_streaks.success("render", symbol)
+        if recovered:
+            logger.info(
+                "ops_event=event_alert_render_recovered symbol=%s "
+                "previous_failures=%s",
+                normalize_symbol(symbol).upper(),
+                recovered,
+            )
+    elif status in {"schema_error", "llm_error"}:
+        streak = alert_failure_streaks.failure("render", symbol)
+        logger.log(
+            logging.ERROR if streak >= STREAK_WARNING_THRESHOLD else logging.WARNING,
+            "ops_event=event_alert_render_failure_streak symbol=%s "
+            "reason=%s consecutive_failures=%s",
+            normalize_symbol(symbol).upper(),
+            error_reason or "unknown",
+            streak,
+        )
 
 
 def _log_event_alert_suppression(
@@ -3676,7 +3712,10 @@ async def _save_event_alert_render_outcome(
     provider: str | None = None,
     model: str | None = None,
 ) -> None:
-    """Persist sanitized terminal telemetry for the render-only logical operation."""
+    """Persist terminal telemetry and log an independent per-symbol Render streak."""
+    _log_event_alert_render_streak(
+        symbol=symbol, status=status, error_reason=error_reason
+    )
     if not DB_ENABLED or not DB_SESSION_LOCAL:
         return
     try:
@@ -3784,6 +3823,9 @@ async def _create_event_analysis_decision(
             analysed_window_minutes=_analysed_window_minutes_from_payload(input_payload),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except LLMRateLimitBackoffActive as error:
         analysis_id = await _save_event_analysis_attempt(
@@ -3837,6 +3879,9 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(error)
+        )
         return None, None
     except Exception as error:
         reason = classify_ai_error_reason(error)
@@ -3864,6 +3909,7 @@ async def _create_event_analysis_decision(
             detail=reason,
         )
         _log_event_analysis_failure(expected_symbol, reason)
+        _log_event_alert_stage1_failure_streak(expected_symbol, reason)
         return None, None
 
     try:
@@ -3903,7 +3949,18 @@ async def _create_event_analysis_decision(
             detail=classify_ai_error_reason(schema_error),
         )
         _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_alert_stage1_failure_streak(
+            expected_symbol, classify_ai_error_reason(schema_error)
+        )
         return None, None
+
+    preceding_stage1_failures = alert_failure_streaks.success("stage1", expected_symbol)
+    if preceding_stage1_failures:
+        logger.info(
+            "ops_event=event_alert_stage1_recovered symbol=%s previous_failures=%s",
+            normalize_symbol(expected_symbol).upper(),
+            preceding_stage1_failures,
+        )
 
     if not significance.should_alert or significance.reason_code == "news_only":
         event_analysis_health.record_success()
@@ -4126,7 +4183,9 @@ async def _create_event_analysis_decision(
             context_fingerprint=context_fingerprint,
             detail=classify_ai_error_reason(schema_error),
         )
-        _log_event_analysis_failure(expected_symbol, classify_ai_error_reason(schema_error))
+        _log_event_analysis_failure(
+            expected_symbol, classify_ai_error_reason(schema_error)
+        )
         return None, None
 
     decision = _validated_render_with_original_prose(decision, render_parsed)

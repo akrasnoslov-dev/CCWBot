@@ -183,6 +183,10 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
     event_analysis_logical_rows = _query_rows(
         evidence, aggregate, "event_analysis_logical_outcome_summary"
     )
+    render_streak_rows = _query_rows(evidence, aggregate, "event_alert_render_failure_streaks")
+    render_loss_rows = _query_rows(evidence, aggregate, "event_alert_positive_render_loss_summary")
+    check_gap_rows = _query_rows(evidence, aggregate, "event_alert_check_gap_summary")
+    news_candidate_rows = _query_rows(evidence, aggregate, "event_analysis_news_candidates_summary")
     reports = _query_rows(evidence, aggregate, "market_reports_summary")
     report_freshness = _query_rows(evidence, aggregate, "market_reports_freshness")
     heartbeats = _query_rows(evidence, aggregate, "market_heartbeats_summary")
@@ -526,6 +530,21 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
             age_seconds = (period.end - checked_at).total_seconds()
             if age_seconds > freshness_threshold_seconds:
                 stale_price_rows.append(row)
+
+    render_streak_alerts = [
+        row for row in render_streak_rows
+        if _int(row.get("trailing_failed_render_operations")) >= 3
+    ]
+    positive_render_losses = sum(
+        _int(row.get("stage1_positive_render_failures")) for row in render_loss_rows
+    )
+    news_without_context = sum(
+        _int(row.get("alerts_with_candidates_but_no_attached_news"))
+        for row in news_candidate_rows
+    )
+    snapshot_gap_rows = [
+        row for row in check_gap_rows if _int(row.get("gaps_over_32_minutes")) > 0
+    ]
 
     detectors = [
         db_result(
@@ -886,6 +905,71 @@ def run_detectors(evidence: dict[str, Any], period: Period) -> list[DetectorResu
                 "total_news_intelligence": total_news_intelligence,
                 "excessive_budget_skips": excessive_budget_skips,
                 "sample_rows": len(news_rows),
+            },
+        ),
+        db_result(
+            "event_alert_render_consecutive_failures",
+            "high",
+            [(aggregate, "event_alert_render_failure_streaks")],
+            "triggered" if render_streak_alerts else "unknown" if not render_streak_rows else "clear",
+            (
+                f"{len(render_streak_alerts)} symbols reached at least 3 consecutive "
+                "failed Render outcomes in the observed window"
+            ),
+            [aggregate],
+            {
+                "threshold": 3,
+                "observed_symbols": len(render_streak_rows),
+                "affected_symbols": [row.get("symbol") for row in render_streak_alerts],
+                "max_trailing_failures": max(
+                    (_int(row.get("trailing_failed_render_operations"))
+                     for row in render_streak_rows), default=0
+                ),
+                "scope": "terminal_render_operations_not_provider_attempts",
+            },
+        ),
+        db_result(
+            "event_alert_positive_render_loss",
+            "high",
+            [(aggregate, "event_alert_positive_render_loss_summary")],
+            "triggered" if positive_render_losses else "unknown" if not render_loss_rows else "clear",
+            f"{positive_render_losses} Stage-1-positive analyses ended with failed Render",
+            [aggregate],
+            {
+                "stage1_positive_render_failures": positive_render_losses,
+                "affected_symbols": [
+                    row.get("symbol") for row in render_loss_rows
+                    if _int(row.get("stage1_positive_render_failures")) > 0
+                ],
+                "scope": "stored_stage1_positive_decisions_only",
+            },
+        ),
+        db_result(
+            "event_alert_news_context_missing_with_candidates",
+            "medium",
+            [(aggregate, "event_analysis_news_candidates_summary")],
+            "triggered" if news_without_context else "unknown" if not news_candidate_rows else "clear",
+            (
+                f"{news_without_context} positive analyses had news candidates but no "
+                "attachments; relevance of those candidates is not established"
+            ),
+            [aggregate],
+            {
+                "positive_analyses_without_attached_news": news_without_context,
+                "interpretation": "investigation_signal_not_confirmed_attachment_defect",
+            },
+        ),
+        db_result(
+            "event_alert_market_snapshot_gaps",
+            "medium",
+            [(aggregate, "event_alert_check_gap_summary")],
+            "triggered" if snapshot_gap_rows else "unknown" if not check_gap_rows else "clear",
+            f"{len(snapshot_gap_rows)} symbols show snapshot gaps over 32 minutes",
+            [aggregate],
+            {
+                "affected_symbols": [row.get("symbol") for row in snapshot_gap_rows],
+                "scope": "price_snapshot_proxy_not_direct_scheduler_execution",
+                "grace_seconds": 120,
             },
         ),
         db_result(
