@@ -312,3 +312,74 @@ def test_news_loss_amount_is_not_misread_as_unsupported_coin_price():
              "possible_action": "Watch the observed market range."},
             _market(),
         )
+
+@pytest.mark.parametrize("title", [
+    "Bitcoin and Ether fall as US election results unsettle risk assets",
+    "Bitcoin and Ethereum slide as risk assets fall after Federal Reserve rate decision",
+    "Ether and Bitcoin fall alongside risk assets after inflation report",
+    "Bitcoin, Ethereum and altcoins fall as risk assets sell off after the Fed decision",
+    "Bitcoin and Ether slide in a risk-off move after inflation data",
+])
+def test_cross_crypto_market_move_is_relevant_to_sol(title):
+    assert classify_news_relevance("sol", {"title": title}) == "market_wide"
+
+
+@pytest.mark.parametrize("title", [
+    "US election candidates debate technology policy",
+    "AI company launches a faster chip as Nasdaq rises",
+    "US election result sends broader market higher as stocks rally",
+    "Market-wide technology selloff hits chipmakers",
+    "Bitcoin ETF provider reports earnings as the broader market rallies",
+    "Bitcoin developers discuss a market-wide technology selloff",
+    "Bitcoin and Ethereum developers discuss election policy",
+    "Bitcoin and Ether fall as investors rotate between the two assets",
+    "Bitcoin and Ether fall while a crypto assets company reports earnings",
+    "Bitcoin and Ether fall on separate news; cryptocurrencies remain mixed",
+])
+def test_unrelated_macro_and_technology_stories_are_not_market_wide(title):
+    assert classify_news_relevance("sol", {"title": title}) == "irrelevant"
+
+
+@pytest.mark.parametrize("title", [
+    "Crypto prices tumble following US election results",
+    "Crypto prices fall after Federal Reserve interest rate decision",
+    "Crypto prices slide as inflation data tightens liquidity",
+    "Crypto prices drop as Nasdaq and AI stocks sell off",
+    "Cryptocurrency prices fall after major regulatory decision",
+])
+def test_macro_news_with_explicit_crypto_price_impact_is_market_wide(title):
+    assert classify_news_relevance("sol", {"title": title}) == "market_wide"
+
+
+def test_selection_log_omits_headlines(caplog):
+    from bot.alerting.news_context import _log_news_selection_summary
+
+    article = {"title": "Bitcoin and Ether fall: private marker"}
+    with caplog.at_level("INFO", logger="bot.alerts"):
+        _log_news_selection_summary(
+            symbol="sol", source="fallback", raw_news_items=[article],
+            selected_news_items=[article], fallback_used=True,
+        )
+    assert "private marker" not in caplog.text
+    assert "selected_count=1" in caplog.text
+
+
+def test_selected_cross_crypto_news_survives_telegram_link():
+    article = {
+        "title": "Bitcoin and Ether fall as US election results unsettle risk assets",
+        "source": "Independent Crypto News", "url": "https://example.org/market",
+    }
+    candidate = alerts._format_candidate_news([article], symbol="sol")
+    decision = EventAnalysisDecision(
+        symbol="SOL", should_alert=True, event_key=None, title=None,
+        message_body="The current observations show a lower short-term range.",
+        related_news_ids=["n1"],
+        possible_action="The next observation may clarify whether the move continues.",
+        urgency="normal", confidence="high", reason_for_no_alert=None,
+    )
+    selected = alerts._related_news_by_id(candidate, decision.related_news_ids, symbol="sol")
+    payload = alerts._build_event_alert_payload(
+        decision=decision, input_payload={"market": _market()}, related_news=selected,
+    )
+    assert 'href="https://example.org/market"' in payload["rich_html"]
+    assert "Bitcoin and Ether fall" in payload["plain_text"]

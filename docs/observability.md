@@ -852,6 +852,16 @@ attachment, which existing aggregates alone do not establish. The four
 historical GRAM examples must not be described as runtime failures without
 such evidence.
 
+For newer runs, correlate `event_news_trace` shortlist and shared-payload records
+with `event_news_dispatch` and the delivery summary. The shared-payload record
+counts prepared text and links, not successful Telegram deliveries; a missing
+section is explicitly flagged. The `reused` flag means no new model selection
+was made for that run. These logs cannot reconstruct unrecorded historical choices.
+If the shared-payload record is absent, the trace is incomplete, not proof of
+attachment loss: correlate the fingerprint with decision and delivery outcomes
+to distinguish no-alert, failure, reuse and interruption. `section_available=false`
+also signals an incomplete payload observation, not a confirmed Telegram defect.
+
 ## Model routing and heartbeat evidence
 
 The ops-agent's untruncated `event_analysis_provider_models` census includes
