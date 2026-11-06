@@ -1171,14 +1171,18 @@ QUERIES: tuple[DbQuery, ...] = (
         "evidence/db/aggregate_metrics.json",
         # The positive Stage-1 parsed JSON is retained for failed Render attempts;
         # do not mistake a Render failure for a failed significance model.
-        "SELECT lower(coalesce(symbol, 'unknown')) AS symbol, "
+        "SELECT lower(coalesce(e.symbol, 'unknown')) AS symbol, "
         "count(*) AS total_event_analyses, "
-        "count(*) FILTER (WHERE status IN ('llm_error', 'schema_error') "
-        "AND coalesce(parsed_result_json, '') ~ "
-        "'\"should_alert\"[[:space:]]*:[[:space:]]*true') AS stage1_positive_render_failures "
-        "FROM event_ai_analyses WHERE created_at >= :since AND created_at < :until "
-        "AND coalesce(analysis_type, 'event_analysis') = 'event_analysis' "
-        "GROUP BY lower(coalesce(symbol, 'unknown')) ORDER BY symbol",
+        "count(*) FILTER (WHERE e.status IN ('llm_error', 'schema_error') "
+        "AND coalesce(e.parsed_result_json, '') ~ "
+        "'\"should_alert\"[[:space:]]*:[[:space:]]*true' "
+        "AND EXISTS (SELECT 1 FROM llm_usage_logs u "
+        "WHERE u.llm_operation_id = e.llm_operation_id "
+        "AND u.call_type = 'event_analysis' "
+        "AND u.status IN ('success', 'completed'))) AS stage1_positive_render_failures "
+        "FROM event_ai_analyses e WHERE e.created_at >= :since AND e.created_at < :until "
+        "AND coalesce(e.analysis_type, 'event_analysis') = 'event_analysis' "
+        "GROUP BY lower(coalesce(e.symbol, 'unknown')) ORDER BY symbol",
     ),
     DbQuery(
         "event_alert_check_gap_summary",

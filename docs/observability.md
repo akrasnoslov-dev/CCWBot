@@ -901,9 +901,11 @@ sanitized aggregate SQL queries:
   unrecognized status interrupts the streak. No observed outcomes is UNKNOWN.
   A reported three-failure streak is sufficient evidence even though the
   period boundary may truncate older failures.
-- `event_alert_positive_render_loss_summary`: number of Stage-1-positive
-  parsed decisions whose final Event Analysis status is `llm_error` or
-  `schema_error`. It does not expose the original model's response text.
+- `event_alert_positive_render_loss_summary`: lower-bound count of
+  Stage-1-positive parsed decisions whose final Event Analysis status is
+  `llm_error` or `schema_error`, **and** whose correlated Stage-1 provider
+  attempt completed successfully. Missing provider telemetry is unknown, not
+  proof of an additional Render failure. No model response text is exported.
 - `event_alert_check_gap_summary`: largest gap between recorded price
   snapshots and number over 32 minutes, **not** proof that the scheduler failed.
   CoinGecko failures, missing observations and app-level skipping require

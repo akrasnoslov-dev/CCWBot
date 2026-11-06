@@ -1,4 +1,7 @@
 """Contract tests for sanitized CCW-50 alert degradation observability."""
+
+from __future__ import annotations
+
 from datetime import datetime, timezone
 
 from ops_agent.db_queries import QUERIES, validate_read_only_queries
@@ -51,6 +54,8 @@ def test_reliability_queries_are_sanitized_and_read_only():
     assert "ORDER BY created_at DESC, id DESC" in streak
     loss = queries["event_alert_positive_render_loss_summary"].sql
     assert "parsed_result_json" in loss
+    assert "EXISTS (SELECT 1 FROM llm_usage_logs" in loss
+    assert "u.status IN ('success', 'completed')" in loss
     assert "stage1_positive_render_failures" in loss
     gaps = queries["event_alert_check_gap_summary"].sql
     assert "lag(checked_at)" in gaps
@@ -115,7 +120,10 @@ def test_news_candidates_without_links_are_investigation_only():
     )
     detector = _find(evidence, "event_alert_news_context_missing_with_candidates")
     assert detector.status == "triggered"
-    assert detector.metrics["interpretation"] == "investigation_signal_not_confirmed_attachment_defect"
+    assert (
+        detector.metrics["interpretation"]
+        == "investigation_signal_not_confirmed_attachment_defect"
+    )
     recovered = _evidence(
         event_analysis_news_candidates_summary=[
             {"symbol": "sol", "alerts_with_candidates_but_no_attached_news": 0}
